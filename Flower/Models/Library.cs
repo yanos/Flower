@@ -8,10 +8,10 @@ namespace Flower.Models
 {
     public class Library
     {
-        public IReadOnlyCollection<Track> Tracks { get; private set; }
-        public IReadOnlyCollection<Playlist> Playlists { get; private set; }
+        public List<Track> Tracks { get; private set; }
+        public List<Playlist> Playlists { get; private set; } = new List<Playlist>();
 
-        public Library(ICollection<Track> tracks)
+        public Library(List<Track> tracks)
         {
             Tracks = new List<Track>(tracks);
         }
