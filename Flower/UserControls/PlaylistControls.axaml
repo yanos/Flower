@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:local="Flower.UserControls"
+             mc:Ignorable="d" 
+             x:Class="Flower.UserControls.PlaylistControls"
+             BorderBrush="AliceBlue"
+             BorderThickness="1">
+
+  <StackPanel Orientation="Horizontal"
+              Height="{Binding $parent.Height}">
+    
+    <Button Background="Transparent"
+            HorizontalAlignment="Center"
+            HorizontalContentAlignment="Center"
+            VerticalContentAlignment="Center">
+
+      <materialIcons:MaterialIcon HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Foreground="Black"
+                                  Kind="Rewind"
+                                  Height="{Binding $parent[StackPanel].Height}"
+                                  Width="{Binding $parent[StackPanel].Height}"/>
+    </Button>
+    
+    <Button Background="Transparent"
+            HorizontalAlignment="Center"
+            HorizontalContentAlignment="Center"
+            VerticalContentAlignment="Center">
+      <materialIcons:MaterialIcon HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Foreground="Black"
+                                  Kind="Play"
+                                  Height="{Binding $parent[StackPanel].Height}"
+                                  Width="{Binding $parent[StackPanel].Height}"/>
+    </Button>
+
+    <Button Background="Transparent"
+            HorizontalAlignment="Center"
+            HorizontalContentAlignment="Center"
+            VerticalContentAlignment="Center">
+      <materialIcons:MaterialIcon HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Foreground="Black"
+                                  Kind="FastForward"
+                                  Height="{Binding $parent[StackPanel].Height}"
+                                  Width="{Binding $parent[StackPanel].Height}"/>
+    </Button>
+    
+  </StackPanel>
+  
+</UserControl>

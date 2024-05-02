@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="Flower.UserControls.CurrentlyPlayingControl"
+             BorderBrush="AliceBlue"
+             BorderThickness="1">
+  <StackPanel Margin="10">
+    <TextBlock Text="Artist - Song"
+               HorizontalAlignment="Center"/>
+    <TextBlock Text="Album (year)"
+                HorizontalAlignment="Center"/>
+    <StackPanel Orientation="Horizontal">
+      <TextBlock Text="1:23"
+                  HorizontalAlignment="Center"/>
+      <Slider x:Name="slider" />
+      <TextBlock Text="4:56"
+                 HorizontalAlignment="Center"/>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

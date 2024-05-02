@@ -3,10 +3,12 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             xmlns:controls="clr-namespace:Flower.UserControls"
+             mc:Ignorable="d" 
              x:Class="Flower.Views.MainView"
              x:DataType="vm:MainViewModel"
-             Background="Beige">
+             BorderBrush="AliceBlue"
+             BorderThickness="1">
   <Design.DataContext>
     <!-- This only sets the DataContext for the previewer in an IDE,
          to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
@@ -16,12 +18,38 @@
   <Grid>
 
     <Grid.RowDefinitions>
-      <RowDefinition Height="80" />
+      <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
-    </Grid.RowDefinitions>  
+    </Grid.RowDefinitions>
     
-    <DataGrid 
-      Grid.Row="1"
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <StackPanel Orientation="Horizontal" Grid.Row="0">
+        
+      <controls:PlaylistControls 
+        VerticalAlignment="Center" 
+        HorizontalAlignment="Left"
+        Height="32"
+        Margin="32,0,0,0"/>
+      
+      <controls:VolumeControl 
+        VerticalAlignment="Center" 
+        MinWidth="200" />
+      
+      <controls:CurrentlyPlayingControl 
+        VerticalAlignment="Center" 
+        MinWidth="400" />
+      
+      <controls:FilterControl 
+        VerticalAlignment="Center" 
+        HorizontalAlignment="Right"
+        MinWidth="200"/>
+      
+    </StackPanel>
+    
+    <DataGrid Grid.Row="1"
       ItemsSource="{Binding Tracks}"
       AutoGenerateColumns="True"
       CanUserReorderColumns="True"
