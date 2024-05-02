@@ -8,17 +8,36 @@ namespace Flower.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
+    private readonly PlaylistControlViewModel _playlistControlViewModel;
+
     public Library Library { get; private set; }
-    public ObservableCollection<Track> Tracks => new (Library.Tracks);
 
-    public MainViewModel() { }
-
-    public MainViewModel(Library library)
+    public Track? SelectedTrack
     {
-        Library = library;
+        get => _playlistControlViewModel.SelectedTrack;
+        set => _playlistControlViewModel.SelectedTrack = value;
     }
 
-    public string Greeting => Library.Tracks.FirstOrDefault().Name;
+    public ObservableCollection<Track> Tracks => new (Library.Tracks);
 
+    public MainViewModel() 
+    {
+        
+    }
 
+    public MainViewModel(
+        PlaylistControlViewModel playlistControlViewModel, 
+        Library library)
+    {
+        Library = library;
+        _playlistControlViewModel = playlistControlViewModel;
+
+        _playlistControlViewModel.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(_playlistControlViewModel.SelectedTrack))
+            {
+                OnPropertyChanged(nameof(SelectedTrack));
+            }
+        };
+    }
 }
