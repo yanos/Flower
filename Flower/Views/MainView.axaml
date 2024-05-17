@@ -15,7 +15,7 @@
     <vm:MainViewModel />
   </Design.DataContext>
 
-  <Grid>
+  <Grid >
 
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -26,34 +26,52 @@
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
 
-    <StackPanel Orientation="Horizontal" Grid.Row="0">
-        
-      <controls:PlaylistControls 
-        VerticalAlignment="Center" 
-        HorizontalAlignment="Left"
-        Height="32"
-        Margin="32,0,0,0"/>
+    <Grid Grid.Row="0">
+
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
       
-      <controls:VolumeControl 
-        VerticalAlignment="Center" 
-        MinWidth="200" />
+      <StackPanel Grid.Column="0" Orientation="Horizontal">
+        <controls:PlaylistControls 
+          VerticalAlignment="Center" 
+          HorizontalAlignment="Left"
+          Height="32"
+          Margin="16,0,16,0"/>
+
+        <controls:VolumeControl
+          VerticalAlignment="Center" 
+          HorizontalAlignment="Left"
+          Margin="16,0,16,0"
+          Width="150" />
+      </StackPanel>
       
       <controls:CurrentlyPlayingControl 
+        Grid.Column="1"
+        Margin="16,0,16,0"
         VerticalAlignment="Center" 
-        MinWidth="400" />
+        HorizontalAlignment="Center" />
       
       <controls:FilterControl 
+        Margin="16,0,16,0"
+        Grid.Column="2"
         VerticalAlignment="Center" 
         HorizontalAlignment="Right"
         MinWidth="200"/>
       
-    </StackPanel>
+    </Grid>
     
     <DataGrid Grid.Row="1"
       ItemsSource="{Binding Tracks}"
+      SelectedItem="{Binding SelectedTrack, Mode=TwoWay}"
       AutoGenerateColumns="True"
       CanUserReorderColumns="True"
-      CanUserResizeColumns="True">
+      CanUserResizeColumns="True"
+      DoubleTapped="DataGrid_DoubleTapped"
+      IsReadOnly="True">
+
     </DataGrid>
     
   </Grid>

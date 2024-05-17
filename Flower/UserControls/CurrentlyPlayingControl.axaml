@@ -2,21 +2,65 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             mc:Ignorable="d"
+             xmlns:vm="using:Flower.ViewModels"
+             mc:Ignorable="d"             
              x:Class="Flower.UserControls.CurrentlyPlayingControl"
+             x:DataType="vm:CurrentlyPlayingControlViewModel"
              BorderBrush="AliceBlue"
              BorderThickness="1">
-  <StackPanel Margin="10">
-    <TextBlock Text="Artist - Song"
-               HorizontalAlignment="Center"/>
-    <TextBlock Text="Album (year)"
-                HorizontalAlignment="Center"/>
-    <StackPanel Orientation="Horizontal">
-      <TextBlock Text="1:23"
-                  HorizontalAlignment="Center"/>
-      <Slider x:Name="slider" />
-      <TextBlock Text="4:56"
-                 HorizontalAlignment="Center"/>
-    </StackPanel>
-  </StackPanel>
+  
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition />
+      <RowDefinition />
+      <RowDefinition />
+    </Grid.RowDefinitions>
+      
+    <TextBlock Grid.Row="0" 
+               Text="{Binding CurrentlyPlayingTrack.Title}"
+               HorizontalAlignment="Center" />
+    
+    <TextBlock Grid.Row="1" 
+               HorizontalAlignment="Center"
+               IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}">
+      
+      <TextBlock.Text>
+        <MultiBinding StringFormat="{}{0} - {1} ({2})">
+          <Binding Path="CurrentlyPlayingTrack.Artists" />
+          <Binding Path="CurrentlyPlayingTrack.Album" />
+          <Binding Path="CurrentlyPlayingTrack.Year" />
+        </MultiBinding>
+      </TextBlock.Text>
+    </TextBlock>
+    
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+      
+      <TextBlock Grid.Column="0" 
+                 Text="{Binding ElapsedTime}"
+                 HorizontalAlignment="Left"
+                 VerticalAlignment="Center"
+                 IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+      
+      <Slider Grid.Column="1" x:Name="slider"
+              Margin="8"
+              Maximum="100"
+              Value="0"
+              MinWidth="500"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+              BorderBrush="Coral"
+              BorderThickness="1"/>
+              
+      <TextBlock Grid.Column="2" 
+                 Text="{Binding TotalTime}"
+                 HorizontalAlignment="Left"
+                 VerticalAlignment="Center"
+                 IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+    </Grid>
+  </Grid>
 </UserControl>

@@ -3,14 +3,19 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d" 
+             xmlns:vm="using:Flower.ViewModels"
              x:Class="Flower.UserControls.VolumeControl"
+             x:DataType="vm:VolumeControlViewModel"
              BorderBrush="AliceBlue"
              BorderThickness="1">
 
-  <StackPanel >
-    <Slider x:Name="slider" 
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"/>
+  <StackPanel Width="{Binding $parent.Width}">
+    <Slider x:Name="slider"
+        Maximum="100"
+        Value="{Binding Volume, Mode=TwoWay}"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        Width="{Binding $parent[StackPanel].Width}"/>
   </StackPanel>
   
 </UserControl>
