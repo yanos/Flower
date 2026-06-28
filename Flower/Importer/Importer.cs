@@ -19,7 +19,7 @@ namespace Flower.Importer
         {
             var tracks = new List<Track>();
 
-            var path = "C:\\Users\\ycholette\\Music\\iTunes\\iTunes Media";
+            var path = "/Users/yanos/Music"; //"C:\\Users\\ycholette\\Music\\iTunes\\iTunes Media";
 
             var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
                 .Where(f => _validExtensions.Contains(Path.GetExtension(f).ToLower()));
