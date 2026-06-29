@@ -32,6 +32,12 @@ namespace Flower.Models
             Tracks.Remove(track);
         }
 
+        public void ReplaceAll(List<Track> tracks)
+        {
+            Tracks.Clear();
+            Tracks.AddRange(tracks);
+        }
+
         public Track? GetTrack(int index)
         {
             return Tracks.ElementAtOrDefault(index);

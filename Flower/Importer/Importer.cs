@@ -9,7 +9,7 @@ using Flower.Models;
 
 namespace Flower.Importer
 {
-    internal class Importer
+    public class Importer
     {
         private readonly HashSet<string> _validExtensions = [".mp3", ".m4a", ".wav", ".flac", ".alac"];
 
