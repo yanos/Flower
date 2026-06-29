@@ -202,6 +202,17 @@ public partial class MainView : UserControl
             OpenTrackInfo();
             e.Handled = true;
         }
+        else if (e.Key == Key.Space)
+        {
+            _playlistControlViewModel.PlayOrPause();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Return)
+        {
+            if (TrackGrid.SelectedItem is Track track)
+                _playlistControlViewModel.Play(track);
+            e.Handled = true;
+        }
     }
 
     private void OpenTrackInfo()
