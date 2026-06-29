@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:controls="clr-namespace:Flower.UserControls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
              x:Class="Flower.Views.MainView"
              x:DataType="vm:MainViewModel">
@@ -58,16 +59,87 @@
       </Grid>
     </Border>
 
-    <DataGrid Grid.Row="1"
-      x:Name="TrackGrid"
-      ItemsSource="{Binding Tracks}"
-      SelectedItem="{Binding SelectedTrack, Mode=TwoWay}"
-      AutoGenerateColumns="False"
-      CanUserReorderColumns="True"
-      CanUserResizeColumns="True"
-      CanUserSortColumns="True"
-      DoubleTapped="DataGrid_DoubleTapped"
-      IsReadOnly="True"/>
+    <!-- Content row: sidebar + main area -->
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="180" MinWidth="120" MaxWidth="280"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <!-- Sidebar -->
+      <Border Grid.Column="0"
+              BorderThickness="0,0,1,0"
+              BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+        <ListBox x:Name="SidebarList"
+                 ItemsSource="{Binding SidebarItems}"
+                 SelectedItem="{Binding SelectedSidebarItem, Mode=TwoWay}"
+                 Background="Transparent"
+                 Padding="0,4,0,4"
+                 SelectionChanged="SidebarList_SelectionChanged">
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Padding" Value="0"/>
+              <Setter Property="MinHeight" Value="0"/>
+            </Style>
+          </ListBox.Styles>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:SidebarItem">
+              <Panel>
+                <!-- Section header -->
+                <TextBlock Text="{Binding Name}"
+                           IsVisible="{Binding IsHeader}"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           Opacity="0.55"
+                           Margin="12,14,8,4"
+                           LetterSpacing="0.8"/>
+                <!-- Selectable item -->
+                <StackPanel IsVisible="{Binding IsSelectable}"
+                            Orientation="Horizontal"
+                            Margin="12,5,8,5">
+                  <materialIcons:MaterialIcon Kind="{Binding Icon}"
+                                             Width="16" Height="16"
+                                             Margin="0,0,8,0"
+                                             VerticalAlignment="Center"/>
+                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                </StackPanel>
+              </Panel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+
+      <!-- Main content: optional sub-list + track grid -->
+      <Grid Grid.Column="1">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Album / Artist sub-list -->
+        <Border Grid.Column="0"
+                IsVisible="{Binding IsSubListVisible}"
+                Width="200"
+                BorderThickness="0,0,1,0"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+          <ListBox ItemsSource="{Binding SubListItems}"
+                   SelectedItem="{Binding SelectedSubItem, Mode=TwoWay}"
+                   Background="Transparent"/>
+        </Border>
+
+        <!-- Track grid -->
+        <DataGrid Grid.Column="1"
+          x:Name="TrackGrid"
+          ItemsSource="{Binding Tracks}"
+          SelectedItem="{Binding SelectedTrack, Mode=TwoWay}"
+          AutoGenerateColumns="False"
+          CanUserReorderColumns="True"
+          CanUserResizeColumns="True"
+          CanUserSortColumns="True"
+          DoubleTapped="DataGrid_DoubleTapped"
+          IsReadOnly="True"/>
+      </Grid>
+    </Grid>
   </Grid>
 
 </UserControl>

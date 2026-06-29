@@ -40,7 +40,7 @@ public partial class MainView : UserControl
         _albumColumn    = new DataGridTextColumn { Header = "Album",    Binding = new Binding(nameof(Track.Album)),    Width = new DataGridLength(1.5, DataGridLengthUnitType.Star) };
         _yearColumn     = new DataGridTextColumn { Header = "Year",     Binding = new Binding(nameof(Track.Year)),     Width = new DataGridLength(60) };
         _genreColumn    = new DataGridTextColumn { Header = "Genre",    Binding = new Binding(nameof(Track.Genre)),    Width = new DataGridLength(100) };
-        _durationColumn = new DataGridTextColumn { Header = "Duration", Binding = new Binding(nameof(Track.Duration)) { Converter = durationConverter }, Width = new DataGridLength(70) };
+        _durationColumn = new DataGridTextColumn { Header = "Duration", Binding = new Binding("_DebugDurationTicks"), Width = new DataGridLength(120) };
 
         TrackGrid.Columns.Add(_titleColumn);
         TrackGrid.Columns.Add(_artistColumn);
@@ -134,5 +134,16 @@ public partial class MainView : UserControl
             _playlistControlViewModel.Play(selectedTrack);
             e.Handled = true;
         }
+    }
+
+    private SidebarItem? _lastSelectableSidebarItem;
+
+    private void SidebarList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ListBox list) return;
+        if (list.SelectedItem is SidebarItem { IsHeader: true })
+            list.SelectedItem = _lastSelectableSidebarItem;
+        else if (list.SelectedItem is SidebarItem item)
+            _lastSelectableSidebarItem = item;
     }
 }
