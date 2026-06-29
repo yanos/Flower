@@ -1,13 +1,14 @@
-﻿using Avalonia;
+﻿using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
-using Flower.Importer;
 using Flower.Manager;
 using Flower.Models;
+using Flower.Persistence;
 using Flower.ViewModels;
 using Flower.Views;
 
@@ -25,41 +26,26 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        // Line below is needed to remove Avalonia data validation.
-        // Without this line you will get duplicate validations from both Avalonia and CT
         BindingPlugins.DataValidators.RemoveAt(0);
 
-        var importer = new Importer.Importer();
-        var tracks = importer.Import();
-        var library = new Library(tracks);
+        var libraryStore = new LibraryStore();
 
-        // Register all the services needed for the application to run
-        //var collection = new ServiceCollection();
-        //collection.AddCommonServices();
-
-        //collection.AddSingleton<IAudioManager>(new VlcAudioManager());
-        
-
-        // Creates a ServiceProvider containing services from the provided IServiceCollection
-        //var services = collection.BuildServiceProvider();
-
+        // Load cached library synchronously so the UI shows immediately with data
+        var cachedTracks = libraryStore.Load();
+        var library = new Library(cachedTracks);
         var mainPlaylist = new MainPlaylist(library.Tracks);
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
                 .AddSingleton<IAudioManager>(new VlcAudioManager())
                 .AddSingleton<PlaylistControlViewModel>()
-                .AddSingleton(importer)
                 .AddSingleton(library)
                 .AddSingleton(mainPlaylist)
+                .AddSingleton<ColumnVisibilityStore>()
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
                 .BuildServiceProvider());
-
-        //var vm = services.GetRequiredService<MainViewModel>();
-
-        //var mainViewModel = new MainViewModel(library);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -78,6 +64,17 @@ public partial class App : Application
 
         base.OnFrameworkInitializationCompleted();
 
-        
+        // Rescan the music folder in the background while the UI is already showing
+        _ = Task.Run(async () =>
+        {
+            var importer = new Importer.Importer();
+            var freshTracks = importer.Import();
+
+            // Update the playlist first so navigation is consistent when TracksUpdated fires
+            mainPlaylist.ReplaceAll(freshTracks);
+            library.UpdateTracks(freshTracks);
+
+            await libraryStore.SaveAsync(freshTracks);
+        });
     }
 }
