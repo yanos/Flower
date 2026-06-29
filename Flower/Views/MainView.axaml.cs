@@ -7,6 +7,8 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
@@ -34,6 +36,9 @@ public partial class MainView : UserControl
 
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
+
+    private DispatcherTimer? _spinTimer;
+    private RotateTransform? _spinTransform;
 
     public MainView()
     {
@@ -65,7 +70,10 @@ public partial class MainView : UserControl
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_viewModel != null)
+        {
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            StopSpinner();
+        }
 
         _viewModel = DataContext as MainViewModel;
 
@@ -74,7 +82,27 @@ public partial class MainView : UserControl
             ApplyColumnVisibility();
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             BuildMenus();
+            if (_viewModel.IsBusy) StartSpinner();
         }
+    }
+
+    private void StartSpinner()
+    {
+        if (_spinTimer != null) return;
+        _spinTransform = new RotateTransform();
+        SpinnerIcon.RenderTransformOrigin = RelativePoint.Center;
+        SpinnerIcon.RenderTransform = _spinTransform;
+        _spinTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _spinTimer.Tick += (_, _) => _spinTransform.Angle = (_spinTransform.Angle + 6) % 360;
+        _spinTimer.Start();
+    }
+
+    private void StopSpinner()
+    {
+        _spinTimer?.Stop();
+        _spinTimer = null;
+        _spinTransform = null;
+        if (SpinnerIcon != null) SpinnerIcon.RenderTransform = null;
     }
 
     private void ApplyColumnVisibility()
@@ -98,6 +126,9 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.IsYearVisible):     _yearColumn.IsVisible     = _viewModel!.IsYearVisible;     break;
             case nameof(MainViewModel.IsGenreVisible):    _genreColumn.IsVisible    = _viewModel!.IsGenreVisible;    break;
             case nameof(MainViewModel.IsDurationVisible): _durationColumn.IsVisible = _viewModel!.IsDurationVisible; break;
+            case nameof(MainViewModel.IsBusy):
+                if (_viewModel!.IsBusy) StartSpinner(); else StopSpinner();
+                break;
         }
     }
 

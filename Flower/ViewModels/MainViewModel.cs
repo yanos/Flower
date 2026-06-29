@@ -63,14 +63,19 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    // Busy state — increment/decrement via BeginBusy()
+    // Busy state — increment/decrement via BeginBusy(message)
     private int _busyCount;
-    public bool IsBusy => _busyCount > 0;
+    private string? _busyMessage;
 
-    private IDisposable BeginBusy()
+    public bool IsBusy => _busyCount > 0;
+    public string? BusyMessage => _busyMessage;
+
+    private IDisposable BeginBusy(string? message = null)
     {
+        _busyMessage = message;
         Interlocked.Increment(ref _busyCount);
         OnPropertyChanged(nameof(IsBusy));
+        OnPropertyChanged(nameof(BusyMessage));
         return new BusyScope(this);
     }
 
@@ -81,7 +86,12 @@ public partial class MainViewModel : ViewModelBase
         public void Dispose()
         {
             if (Interlocked.Decrement(ref _vm._busyCount) == 0)
-                Dispatcher.UIThread.Post(() => _vm.OnPropertyChanged(nameof(IsBusy)));
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _vm._busyMessage = null;
+                    _vm.OnPropertyChanged(nameof(IsBusy));
+                    _vm.OnPropertyChanged(nameof(BusyMessage));
+                });
         }
     }
 
@@ -310,7 +320,7 @@ public partial class MainViewModel : ViewModelBase
     private async Task RebuildDatabaseAsync()
     {
         if (_importer == null || _mainPlaylist == null) return;
-        using var _ = BeginBusy();
+        using var _ = BeginBusy("Rebuilding library…");
         var freshTracks = await Task.Run(() => _importer.Import());
         _mainPlaylist.ReplaceAll(freshTracks);
         Library.UpdateTracks(freshTracks);
