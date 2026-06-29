@@ -63,6 +63,28 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    // Busy state — increment/decrement via BeginBusy()
+    private int _busyCount;
+    public bool IsBusy => _busyCount > 0;
+
+    private IDisposable BeginBusy()
+    {
+        Interlocked.Increment(ref _busyCount);
+        OnPropertyChanged(nameof(IsBusy));
+        return new BusyScope(this);
+    }
+
+    private sealed class BusyScope : IDisposable
+    {
+        private readonly MainViewModel _vm;
+        internal BusyScope(MainViewModel vm) => _vm = vm;
+        public void Dispose()
+        {
+            if (Interlocked.Decrement(ref _vm._busyCount) == 0)
+                Dispatcher.UIThread.Post(() => _vm.OnPropertyChanged(nameof(IsBusy)));
+        }
+    }
+
     private List<Track> _allTracks = new();
     private CancellationTokenSource? _filterCts;
 
@@ -288,6 +310,7 @@ public partial class MainViewModel : ViewModelBase
     private async Task RebuildDatabaseAsync()
     {
         if (_importer == null || _mainPlaylist == null) return;
+        using var _ = BeginBusy();
         var freshTracks = await Task.Run(() => _importer.Import());
         _mainPlaylist.ReplaceAll(freshTracks);
         Library.UpdateTracks(freshTracks);
