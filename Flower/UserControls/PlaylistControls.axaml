@@ -26,13 +26,18 @@
     </Button>
 
     <Button Background="Transparent"
-            Padding="6"
+            Width="{Binding $parent[UserControl].Height}"
+            Height="{Binding $parent[UserControl].Height}"
+            Padding="0"
             VerticalContentAlignment="Center"
             HorizontalContentAlignment="Center"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+            BorderThickness="1.5"
+            CornerRadius="9999"
             Click="PlayOrPause">
       <materialIcons:MaterialIcon Kind="{Binding IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                  Height="{Binding $parent[UserControl].Height}"
-                                  Width="{Binding $parent[UserControl].Height}"/>
+                                  Height="28"
+                                  Width="28"/>
     </Button>
 
     <Button Background="Transparent"

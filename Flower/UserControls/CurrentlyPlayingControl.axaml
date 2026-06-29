@@ -7,6 +7,11 @@
              x:Class="Flower.UserControls.CurrentlyPlayingControl"
              x:DataType="vm:CurrentlyPlayingControlViewModel">
 
+  <Border Background="#F5EFC4"
+          BorderBrush="#C8BB7A"
+          BorderThickness="1"
+          CornerRadius="6"
+          Padding="12,6,12,6">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -67,4 +72,5 @@
                  IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
     </Grid>
   </Grid>
+  </Border>
 </UserControl>
