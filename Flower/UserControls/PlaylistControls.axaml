@@ -4,61 +4,47 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             xmlns:local="Flower.UserControls"
              xmlns:conv="clr-namespace:Flower.Converters"
-             mc:Ignorable="d" 
+             mc:Ignorable="d"
              x:Class="Flower.UserControls.PlaylistControls"
-             x:DataType="vm:PlaylistControlViewModel"
-             BorderBrush="AliceBlue"
-             BorderThickness="1">
+             x:DataType="vm:PlaylistControlViewModel">
 
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter"/>
   </UserControl.Resources>
 
-  <StackPanel Orientation="Horizontal"
-              Height="{Binding $parent.Height}">
-    
+  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
     <Button Background="Transparent"
-            HorizontalAlignment="Center"
-            HorizontalContentAlignment="Center"
+            Padding="6"
             VerticalContentAlignment="Center"
+            HorizontalContentAlignment="Center"
             Click="Previous">
-
-      <materialIcons:MaterialIcon HorizontalAlignment="Center"
-                                  VerticalAlignment="Center"
-                                  Foreground="Black"
-                                  Kind="Rewind"
-                                  Height="{Binding $parent[StackPanel].Height}"
-                                  Width="{Binding $parent[StackPanel].Height}"/>
+      <materialIcons:MaterialIcon Kind="Rewind"
+                                  Height="{Binding $parent[UserControl].Height}"
+                                  Width="{Binding $parent[UserControl].Height}"/>
     </Button>
-    
+
     <Button Background="Transparent"
-            HorizontalAlignment="Center"
-            HorizontalContentAlignment="Center"
+            Padding="6"
             VerticalContentAlignment="Center"
+            HorizontalContentAlignment="Center"
             Click="PlayOrPause">
-      <materialIcons:MaterialIcon HorizontalAlignment="Center"
-                                  VerticalAlignment="Center"
-                                  Foreground="Black"
-                                  Kind="{Binding IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                  Height="{Binding $parent[StackPanel].Height}"
-                                  Width="{Binding $parent[StackPanel].Height}"/>
+      <materialIcons:MaterialIcon Kind="{Binding IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
+                                  Height="{Binding $parent[UserControl].Height}"
+                                  Width="{Binding $parent[UserControl].Height}"/>
     </Button>
 
     <Button Background="Transparent"
-            HorizontalAlignment="Center"
-            HorizontalContentAlignment="Center"
+            Padding="6"
             VerticalContentAlignment="Center"
+            HorizontalContentAlignment="Center"
             Click="Next">
-      <materialIcons:MaterialIcon HorizontalAlignment="Center"
-                                  VerticalAlignment="Center"
-                                  Foreground="Black"
-                                  Kind="FastForward"
-                                  Height="{Binding $parent[StackPanel].Height}"
-                                  Width="{Binding $parent[StackPanel].Height}"/>
+      <materialIcons:MaterialIcon Kind="FastForward"
+                                  Height="{Binding $parent[UserControl].Height}"
+                                  Width="{Binding $parent[UserControl].Height}"/>
     </Button>
-    
+
   </StackPanel>
-  
+
 </UserControl>

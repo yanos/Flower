@@ -4,78 +4,70 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:controls="clr-namespace:Flower.UserControls"
-             mc:Ignorable="d" 
+             mc:Ignorable="d"
              x:Class="Flower.Views.MainView"
-             x:DataType="vm:MainViewModel"
-             BorderBrush="AliceBlue"
-             BorderThickness="1">
+             x:DataType="vm:MainViewModel">
   <Design.DataContext>
-    <!-- This only sets the DataContext for the previewer in an IDE,
-         to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
     <vm:MainViewModel />
   </Design.DataContext>
 
-  <Grid >
-
+  <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
-    
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*" />
-    </Grid.ColumnDefinitions>
 
-    <Grid Grid.Row="0">
+    <!-- Top bar -->
+    <Border Grid.Row="0"
+            Padding="4,10,4,10"
+            BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
 
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto"/>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
-      </Grid.ColumnDefinitions>
-      
-      <StackPanel Grid.Column="0" Orientation="Horizontal">
-        <controls:PlaylistControls 
-          VerticalAlignment="Center" 
-          HorizontalAlignment="Left"
-          Height="32"
-          Margin="16,0,16,0"/>
+        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+          <controls:PlaylistControls
+            VerticalAlignment="Center"
+            HorizontalAlignment="Left"
+            Height="36"
+            Margin="8,0,4,0"/>
+          <controls:VolumeControl
+            VerticalAlignment="Center"
+            HorizontalAlignment="Left"
+            Margin="4,0,8,0"
+            Width="120" />
+        </StackPanel>
 
-        <controls:VolumeControl
-          VerticalAlignment="Center" 
-          HorizontalAlignment="Left"
-          Margin="16,0,16,0"
-          Width="150" />
-      </StackPanel>
-      
-      <controls:CurrentlyPlayingControl 
-        Grid.Column="1"
-        Margin="16,0,16,0"
-        VerticalAlignment="Center" 
-        HorizontalAlignment="Center" />
-      
-      <controls:FilterControl 
-        Margin="16,0,16,0"
-        Grid.Column="2"
-        VerticalAlignment="Center" 
-        HorizontalAlignment="Right"
-        MinWidth="200"/>
-      
-    </Grid>
-    
+        <controls:CurrentlyPlayingControl
+          Grid.Column="1"
+          Margin="12,0,12,0"
+          VerticalAlignment="Center"
+          HorizontalAlignment="Stretch" />
+
+        <controls:FilterControl
+          Grid.Column="2"
+          Margin="8,0,8,0"
+          VerticalAlignment="Center"
+          HorizontalAlignment="Right"
+          MinWidth="180"
+          FilterText="{Binding FilterText}"/>
+      </Grid>
+    </Border>
+
     <DataGrid Grid.Row="1"
+      x:Name="TrackGrid"
       ItemsSource="{Binding Tracks}"
       SelectedItem="{Binding SelectedTrack, Mode=TwoWay}"
-      AutoGenerateColumns="True"
+      AutoGenerateColumns="False"
       CanUserReorderColumns="True"
       CanUserResizeColumns="True"
+      CanUserSortColumns="True"
       DoubleTapped="DataGrid_DoubleTapped"
-      IsReadOnly="True">
-
-    </DataGrid>
-    
+      IsReadOnly="True"/>
   </Grid>
-  
 
-  
 </UserControl>
