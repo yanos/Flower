@@ -7,6 +7,8 @@
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="Flower.Views.MainWindow"
         Icon="/Assets/avalonia-logo.ico"
-        Title="Flower">
+        Title="Flower"
+        MinWidth="620"
+        MinHeight="200">
         <views:MainView />
 </Window>
