@@ -1,5 +1,6 @@
 ﻿using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
@@ -42,16 +43,19 @@ public partial class App : Application
                 .AddSingleton(library)
                 .AddSingleton(mainPlaylist)
                 .AddSingleton<ColumnVisibilityStore>()
+                .AddSingleton<Importer.Importer>()
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
                 .BuildServiceProvider());
 
+        var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.MainWindow = new MainWindow
             {
-                DataContext = Ioc.Default.GetRequiredService<MainViewModel>()
+                DataContext = mainViewModel
             };
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewPlatform)
@@ -67,7 +71,7 @@ public partial class App : Application
         // Rescan the music folder in the background while the UI is already showing
         _ = Task.Run(async () =>
         {
-            var importer = new Importer.Importer();
+            var importer = Ioc.Default.GetRequiredService<Importer.Importer>();
             var freshTracks = importer.Import();
 
             // Update the playlist first so navigation is consistent when TracksUpdated fires
@@ -77,4 +81,5 @@ public partial class App : Application
             await libraryStore.SaveAsync(freshTracks);
         });
     }
+
 }
