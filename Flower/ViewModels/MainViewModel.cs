@@ -230,10 +230,10 @@ public partial class MainViewModel : ViewModelBase
     {
         if (_selectedSidebarItem?.Kind == SidebarItemKind.Albums)
             SubListItems = new ObservableCollection<string>(
-                _allTracks.Select(t => t.Album).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
+                _allTracks.Select(t => t.Album!).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
         else if (_selectedSidebarItem?.Kind == SidebarItemKind.Artists)
             SubListItems = new ObservableCollection<string>(
-                _allTracks.Select(t => t.Artists).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
+                _allTracks.Select(t => t.Artists!).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
         else
             SubListItems = new ObservableCollection<string>();
     }
