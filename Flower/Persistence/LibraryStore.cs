@@ -12,7 +12,7 @@ namespace Flower.Persistence
 {
     public class LibraryStore
     {
-        private static string StorePath
+        public static string StorePath
         {
             get
             {
@@ -27,7 +27,7 @@ namespace Flower.Persistence
 
         private static readonly JsonSerializerOptions Options = new()
         {
-            WriteIndented = false,
+            WriteIndented = true,
             Converters = { new TimeSpanTicksConverter() }
         };
 

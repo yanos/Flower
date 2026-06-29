@@ -1,11 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Input;
 
 using Avalonia.Threading;
+
+using CommunityToolkit.Mvvm.Input;
 
 using Flower.Models;
 using Flower.Persistence;
@@ -17,6 +23,11 @@ public partial class MainViewModel : ViewModelBase
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private readonly ColumnVisibilityStore _columnVisibilityStore;
     private readonly ColumnVisibilitySettings _columnSettings;
+    private Importer.Importer? _importer;
+    private MainPlaylist? _mainPlaylist;
+
+    public ICommand? OpenDatabaseLocationCommand { get; private set; }
+    public ICommand? RebuildDatabaseCommand { get; private set; }
 
     public Library Library { get; private set; }
 
@@ -107,11 +118,18 @@ public partial class MainViewModel : ViewModelBase
     public MainViewModel(
         PlaylistControlViewModel playlistControlViewModel,
         Library library,
-        ColumnVisibilityStore columnVisibilityStore)
+        ColumnVisibilityStore columnVisibilityStore,
+        Importer.Importer importer,
+        MainPlaylist mainPlaylist)
     {
         Library = library;
         _playlistControlViewModel = playlistControlViewModel;
         _columnVisibilityStore = columnVisibilityStore;
+        _importer = importer;
+        _mainPlaylist = mainPlaylist;
+
+        OpenDatabaseLocationCommand = new RelayCommand(OpenDatabaseLocation);
+        RebuildDatabaseCommand = new AsyncRelayCommand(RebuildDatabaseAsync);
 
         _columnSettings = columnVisibilityStore.Load();
         _isTitleVisible = _columnSettings.Title;
@@ -131,6 +149,27 @@ public partial class MainViewModel : ViewModelBase
             if (e.PropertyName == nameof(_playlistControlViewModel.SelectedTrack))
                 OnPropertyChanged(nameof(SelectedTrack));
         };
+    }
+
+    private void OpenDatabaseLocation()
+    {
+        var dir = Path.GetDirectoryName(LibraryStore.StorePath)!;
+        Directory.CreateDirectory(dir);
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            Process.Start(new ProcessStartInfo { FileName = "open", ArgumentList = { dir } });
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            Process.Start(new ProcessStartInfo { FileName = "explorer.exe", ArgumentList = { dir } });
+        else
+            Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { dir } });
+    }
+
+    private async Task RebuildDatabaseAsync()
+    {
+        if (_importer == null || _mainPlaylist == null) return;
+        var freshTracks = await Task.Run(() => _importer.Import());
+        _mainPlaylist.ReplaceAll(freshTracks);
+        Library.UpdateTracks(freshTracks);
+        await new LibraryStore().SaveAsync(freshTracks);
     }
 
     private void PopulateTracks()

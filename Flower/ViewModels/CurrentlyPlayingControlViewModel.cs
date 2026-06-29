@@ -30,12 +30,27 @@ namespace Flower.ViewModels
         }
 
         public string? ElapsedTime => _audioManager.Time > 0
-            ? TimeSpan.FromMilliseconds(_audioManager.Time).ToString(@"m\:ss")
+            ? FormatDuration(TimeSpan.FromMilliseconds(_audioManager.Time))
             : null;
 
-        public string? TotalTime => _audioManager.Length > 0
-            ? TimeSpan.FromMilliseconds(_audioManager.Length).ToString(@"m\:ss")
-            : null;
+        public string? TotalTime
+        {
+            get
+            {
+                var track = CurrentlyPlayingTrack;
+                TimeSpan ts;
+                if (track != null && track.Duration > TimeSpan.Zero)
+                    ts = track.Duration;
+                else if (_audioManager.Length > 0)
+                    ts = TimeSpan.FromMilliseconds(_audioManager.Length);
+                else
+                    return null;
+                return FormatDuration(ts);
+            }
+        }
+
+        private static string FormatDuration(TimeSpan ts)
+            => (int)ts.TotalHours > 0 ? ts.ToString(@"h\:mm\:ss") : ts.ToString(@"m\:ss");
 
         public CurrentlyPlayingControlViewModel(
             PlaylistControlViewModel playlistControlViewModel,
@@ -47,7 +62,10 @@ namespace Flower.ViewModels
             _playlistControlViewModel.PropertyChanged += (s, e) =>
             {
                 if (e.PropertyName == nameof(_playlistControlViewModel.CurrentlyPlayingTrack))
+                {
                     OnPropertyChanged(nameof(CurrentlyPlayingTrack));
+                    OnPropertyChanged(nameof(TotalTime));
+                }
             };
 
             _audioManager.PositionChanged += (s, e) =>

@@ -26,19 +26,21 @@ namespace Flower.Importer
 
             foreach (var file in files)
             {
-                var tagFile = TagLib.File.Create(file);
-                var track = new Track
+                try
                 {
-                    Title = tagFile.Tag.Title,
-                    Artists = string.Join(", ", tagFile.Tag.Performers),
-                    Album = tagFile.Tag.Album,
-                    Year = tagFile.Tag.Year.ToString(),
-                    Duration = tagFile.Properties.Duration,
-                    Genre = tagFile.Tag.FirstGenre,
-                    Path = file
-                };
-
-                tracks.Add(track);
+                    var tagFile = TagLib.File.Create(file);
+                    tracks.Add(new Track
+                    {
+                        Title = tagFile.Tag.Title,
+                        Artists = string.Join(", ", tagFile.Tag.Performers),
+                        Album = tagFile.Tag.Album,
+                        Year = tagFile.Tag.Year.ToString(),
+                        Duration = tagFile.Properties?.Duration ?? TimeSpan.Zero,
+                        Genre = tagFile.Tag.FirstGenre,
+                        Path = file
+                    });
+                }
+                catch { /* skip unreadable files */ }
             }
 
             return tracks;

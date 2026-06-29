@@ -27,11 +27,11 @@ namespace Flower.Persistence
                         "Library", "Application Support", "Flower")
                     : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                         "Flower");
-                return Path.Combine(dir, "columns.json");
+                return Path.Combine(dir, "config.json");
             }
         }
 
-        private static readonly JsonSerializerOptions Options = new() { WriteIndented = false };
+        private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
         public ColumnVisibilitySettings Load()
         {
