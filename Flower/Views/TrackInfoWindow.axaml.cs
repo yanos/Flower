@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 
 using Avalonia.Controls;
@@ -10,44 +11,51 @@ namespace Flower.Views;
 public partial class TrackInfoWindow : Window
 {
     private static readonly DurationConverter _durationConverter = new();
+    private readonly Track _track;
 
     public TrackInfoWindow(Track track)
     {
         InitializeComponent();
+        _track = track;
         Populate(track);
     }
 
     private void Populate(Track track)
     {
         // Header
-        TitleLabel.Text  = track.Title ?? "(Unknown title)";
-        ArtistLabel.Text = track.Artists ?? "(Unknown artist)";
-        AlbumLabel.Text  = track.Album ?? "";
+        TitleBox.Text  = track.Title ?? "";
+        ArtistBox.Text = track.Artists ?? "";
+        AlbumBox.Text  = track.Album ?? "";
 
         // Album section
-        TrackNumValue.Text  = FormatNumber(track.TrackNumber, track.TrackCount);
-        DiscValue.Text      = FormatNumber(track.DiscNumber, track.DiscCount);
-        YearValue.Text      = track.Year ?? "—";
-        GenreValue.Text     = track.Genre ?? "—";
-        BpmValue.Text       = track.BeatsPerMinute > 0 ? track.BeatsPerMinute.ToString() : "—";
-        KeyValue.Text       = track.InitialKey ?? "—";
-        GroupingValue.Text  = track.Grouping ?? "—";
+        TrackNumBox.Text   = track.TrackNumber > 0 ? track.TrackNumber.ToString() : "";
+        TrackTotalBox.Text = track.TrackCount  > 0 ? track.TrackCount.ToString()  : "";
+        DiscNumBox.Text    = track.DiscNumber  > 0 ? track.DiscNumber.ToString()  : "";
+        DiscTotalBox.Text  = track.DiscCount   > 0 ? track.DiscCount.ToString()   : "";
+        YearBox.Text       = track.Year ?? "";
+        GenreBox.Text      = track.Genre ?? "";
+        BpmBox.Text        = track.BeatsPerMinute > 0 ? track.BeatsPerMinute.ToString() : "";
+        KeyBox.Text        = track.InitialKey ?? "";
+        GroupingBox.Text   = track.Grouping ?? "";
 
         // People section
-        AlbumArtistValue.Text = track.AlbumArtists ?? "—";
-        ComposerValue.Text    = track.Composers ?? "—";
-        ConductorValue.Text   = track.Conductor ?? "—";
-        RemixedByValue.Text   = track.RemixedBy ?? "—";
+        AlbumArtistBox.Text = track.AlbumArtists ?? "";
+        ComposerBox.Text    = track.Composers ?? "";
+        ConductorBox.Text   = track.Conductor ?? "";
+        RemixedByBox.Text   = track.RemixedBy ?? "";
 
         // Descriptions section
-        SubtitleValue.Text    = track.Subtitle ?? "—";
-        DescriptionValue.Text = track.Description ?? "—";
-        CommentValue.Text     = track.Comment ?? "—";
-        PublisherValue.Text   = track.Publisher ?? "—";
-        CopyrightValue.Text   = track.Copyright ?? "—";
-        ISRCValue.Text        = track.ISRC ?? "—";
+        SubtitleBox.Text    = track.Subtitle ?? "";
+        DescriptionBox.Text = track.Description ?? "";
+        CommentBox.Text     = track.Comment ?? "";
+        PublisherBox.Text   = track.Publisher ?? "";
+        CopyrightBox.Text   = track.Copyright ?? "";
+        ISRCBox.Text        = track.ISRC ?? "";
 
-        // Technical section
+        // Lyrics
+        LyricsBox.Text = track.Lyrics ?? "";
+
+        // Technical (read-only)
         DurationValue.Text   = _durationConverter.Convert(track.Duration, typeof(string), null, CultureInfo.CurrentCulture) as string ?? "—";
         CodecValue.Text      = track.Codec ?? "—";
         BitrateValue.Text    = track.Bitrate > 0 ? $"{track.Bitrate} kbps" : "—";
@@ -55,22 +63,96 @@ public partial class TrackInfoWindow : Window
         ChannelsValue.Text   = track.Channels switch { 1 => "Mono", 2 => "Stereo", > 2 => $"{track.Channels} channels", _ => "—" };
         BitDepthValue.Text   = track.BitsPerSample > 0 ? $"{track.BitsPerSample}-bit" : "—";
 
-        // Lyrics (only shown if present)
-        if (!string.IsNullOrWhiteSpace(track.Lyrics))
-        {
-            LyricsValue.Text      = track.Lyrics;
-            LyricsSection.IsVisible = true;
-        }
-
         // File
         PathValue.Text = track.Path ?? "—";
     }
 
-    private static string FormatNumber(uint number, uint total) =>
-        (number, total) switch
+    private void OkButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        SaveChanges();
+        Close();
+    }
+
+    private void CancelButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private void SaveChanges()
+    {
+        if (_track.Path is not string path) return;
+
+        try
         {
-            (0, _)   => "—",
-            (_, 0)   => number.ToString(),
-            var (n, t) => $"{n} of {t}"
-        };
+            using var tagFile = TagLib.File.Create(path);
+            var tag = tagFile.Tag;
+
+            tag.Title       = NullIfEmpty(TitleBox.Text);
+            tag.Performers  = SplitArray(ArtistBox.Text);
+            tag.Album       = NullIfEmpty(AlbumBox.Text);
+            tag.AlbumArtists = SplitArray(AlbumArtistBox.Text);
+            tag.Track       = ParseUInt(TrackNumBox.Text);
+            tag.TrackCount  = ParseUInt(TrackTotalBox.Text);
+            tag.Disc        = ParseUInt(DiscNumBox.Text);
+            tag.DiscCount   = ParseUInt(DiscTotalBox.Text);
+            tag.Year        = ParseUInt(YearBox.Text);
+            tag.Genres      = NullIfEmpty(GenreBox.Text) is string g ? [g] : [];
+            tag.BeatsPerMinute = ParseUInt(BpmBox.Text);
+            tag.InitialKey  = NullIfEmpty(KeyBox.Text);
+            tag.Grouping    = NullIfEmpty(GroupingBox.Text);
+            tag.AlbumArtists = SplitArray(AlbumArtistBox.Text);
+            tag.Composers   = SplitArray(ComposerBox.Text);
+            tag.Conductor   = NullIfEmpty(ConductorBox.Text);
+            tag.RemixedBy   = NullIfEmpty(RemixedByBox.Text);
+            tag.Subtitle    = NullIfEmpty(SubtitleBox.Text);
+            tag.Description = NullIfEmpty(DescriptionBox.Text);
+            tag.Comment     = NullIfEmpty(CommentBox.Text);
+            tag.Publisher   = NullIfEmpty(PublisherBox.Text);
+            tag.Copyright   = NullIfEmpty(CopyrightBox.Text);
+            tag.ISRC        = NullIfEmpty(ISRCBox.Text);
+            tag.Lyrics      = NullIfEmpty(LyricsBox.Text);
+
+            tagFile.Save();
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        // Mirror changes into the in-memory Track
+        _track.Title          = NullIfEmpty(TitleBox.Text);
+        _track.Artists        = NullIfEmpty(ArtistBox.Text);
+        _track.Album          = NullIfEmpty(AlbumBox.Text);
+        _track.AlbumArtists   = NullIfEmpty(AlbumArtistBox.Text);
+        _track.TrackNumber    = ParseUInt(TrackNumBox.Text);
+        _track.TrackCount     = ParseUInt(TrackTotalBox.Text);
+        _track.DiscNumber     = ParseUInt(DiscNumBox.Text);
+        _track.DiscCount      = ParseUInt(DiscTotalBox.Text);
+        _track.Year           = NullIfEmpty(YearBox.Text);
+        _track.Genre          = NullIfEmpty(GenreBox.Text);
+        _track.BeatsPerMinute = ParseUInt(BpmBox.Text);
+        _track.InitialKey     = NullIfEmpty(KeyBox.Text);
+        _track.Grouping       = NullIfEmpty(GroupingBox.Text);
+        _track.Composers      = NullIfEmpty(ComposerBox.Text);
+        _track.Conductor      = NullIfEmpty(ConductorBox.Text);
+        _track.RemixedBy      = NullIfEmpty(RemixedByBox.Text);
+        _track.Subtitle       = NullIfEmpty(SubtitleBox.Text);
+        _track.Description    = NullIfEmpty(DescriptionBox.Text);
+        _track.Comment        = NullIfEmpty(CommentBox.Text);
+        _track.Publisher      = NullIfEmpty(PublisherBox.Text);
+        _track.Copyright      = NullIfEmpty(CopyrightBox.Text);
+        _track.ISRC           = NullIfEmpty(ISRCBox.Text);
+        _track.Lyrics         = NullIfEmpty(LyricsBox.Text);
+    }
+
+    private static string? NullIfEmpty(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private static string[] SplitArray(string? s) =>
+        string.IsNullOrWhiteSpace(s)
+            ? []
+            : [.. s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    private static uint ParseUInt(string? s) =>
+        uint.TryParse(s?.Trim(), out var n) ? n : 0;
 }
