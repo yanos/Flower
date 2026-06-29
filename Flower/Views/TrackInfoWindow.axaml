@@ -3,8 +3,7 @@
         x:Class="Flower.Views.TrackInfoWindow"
         Title="Track Info"
         Width="460"
-        MaxHeight="700"
-        SizeToContent="Height"
+        Height="680"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
@@ -12,7 +11,7 @@
     <Style Selector="TextBlock.lbl">
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="Opacity" Value="0.45"/>
-      <Setter Property="Margin" Value="0,0,0,7"/>
+      <Setter Property="Margin" Value="0,4,0,7"/>
       <Setter Property="VerticalAlignment" Value="Top"/>
     </Style>
     <Style Selector="TextBlock.val">
@@ -26,113 +25,156 @@
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="LetterSpacing" Value="0.8"/>
       <Setter Property="Opacity" Value="0.4"/>
-      <Setter Property="Margin" Value="0,0,0,8"/>
+      <Setter Property="Margin" Value="0,0,0,6"/>
+    </Style>
+    <Style Selector="TextBox.val">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Margin" Value="0,0,0,4"/>
+      <Setter Property="Padding" Value="4,3"/>
+      <Setter Property="VerticalAlignment" Value="Top"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="TextBox.numVal">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Padding" Value="4,3"/>
+      <Setter Property="Width" Value="50"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
   </Window.Styles>
 
-  <ScrollViewer>
-    <StackPanel Margin="24,20,24,20" Spacing="0">
+  <DockPanel>
 
-      <!-- ── Header ── -->
-      <TextBlock x:Name="TitleLabel"  FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,3"/>
-      <TextBlock x:Name="ArtistLabel" FontSize="13" Opacity="0.65" TextWrapping="Wrap" Margin="0,0,0,2"/>
-      <TextBlock x:Name="AlbumLabel"  FontSize="12" Opacity="0.5" FontStyle="Italic" TextWrapping="Wrap" Margin="0,0,0,18"/>
-
-      <!-- ── ALBUM ── -->
-      <TextBlock Text="ALBUM" Classes="sectionHeader"/>
-      <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,14">
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="Track"    Classes="lbl"/>
-        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="TrackNumValue"  Classes="val"/>
-
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="Disc"     Classes="lbl"/>
-        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DiscValue"      Classes="val"/>
-
-        <TextBlock Grid.Row="2" Grid.Column="0" Text="Year"     Classes="lbl"/>
-        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="YearValue"      Classes="val"/>
-
-        <TextBlock Grid.Row="3" Grid.Column="0" Text="Genre"    Classes="lbl"/>
-        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="GenreValue"     Classes="val"/>
-
-        <TextBlock Grid.Row="4" Grid.Column="0" Text="BPM"      Classes="lbl"/>
-        <TextBlock Grid.Row="4" Grid.Column="1" x:Name="BpmValue"       Classes="val"/>
-
-        <TextBlock Grid.Row="5" Grid.Column="0" Text="Key"      Classes="lbl"/>
-        <TextBlock Grid.Row="5" Grid.Column="1" x:Name="KeyValue"       Classes="val"/>
-
-        <TextBlock Grid.Row="6" Grid.Column="0" Text="Grouping" Classes="lbl"/>
-        <TextBlock Grid.Row="6" Grid.Column="1" x:Name="GroupingValue"  Classes="val"/>
-      </Grid>
-
-      <!-- ── PEOPLE ── -->
-      <TextBlock Text="PEOPLE" Classes="sectionHeader"/>
-      <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,14">
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="Album Artist" Classes="lbl"/>
-        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="AlbumArtistValue" Classes="val"/>
-
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="Composer"    Classes="lbl"/>
-        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="ComposerValue"   Classes="val"/>
-
-        <TextBlock Grid.Row="2" Grid.Column="0" Text="Conductor"   Classes="lbl"/>
-        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="ConductorValue"  Classes="val"/>
-
-        <TextBlock Grid.Row="3" Grid.Column="0" Text="Remixed By"  Classes="lbl"/>
-        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="RemixedByValue"  Classes="val"/>
-      </Grid>
-
-      <!-- ── DESCRIPTIONS ── -->
-      <TextBlock Text="DESCRIPTIONS" Classes="sectionHeader"/>
-      <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,14">
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="Subtitle"    Classes="lbl"/>
-        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SubtitleValue"   Classes="val"/>
-
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="Description" Classes="lbl"/>
-        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DescriptionValue" Classes="val"/>
-
-        <TextBlock Grid.Row="2" Grid.Column="0" Text="Comment"     Classes="lbl"/>
-        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="CommentValue"    Classes="val"/>
-
-        <TextBlock Grid.Row="3" Grid.Column="0" Text="Publisher"   Classes="lbl"/>
-        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="PublisherValue"  Classes="val"/>
-
-        <TextBlock Grid.Row="4" Grid.Column="0" Text="Copyright"   Classes="lbl"/>
-        <TextBlock Grid.Row="4" Grid.Column="1" x:Name="CopyrightValue"  Classes="val"/>
-
-        <TextBlock Grid.Row="5" Grid.Column="0" Text="ISRC"        Classes="lbl"/>
-        <TextBlock Grid.Row="5" Grid.Column="1" x:Name="ISRCValue"       Classes="val"/>
-      </Grid>
-
-      <!-- ── TECHNICAL ── -->
-      <TextBlock Text="TECHNICAL" Classes="sectionHeader"/>
-      <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,14">
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="Duration"    Classes="lbl"/>
-        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DurationValue"   Classes="val"/>
-
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="Codec"       Classes="lbl"/>
-        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="CodecValue"      Classes="val"/>
-
-        <TextBlock Grid.Row="2" Grid.Column="0" Text="Bit Rate"    Classes="lbl"/>
-        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="BitrateValue"    Classes="val"/>
-
-        <TextBlock Grid.Row="3" Grid.Column="0" Text="Sample Rate" Classes="lbl"/>
-        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SampleRateValue" Classes="val"/>
-
-        <TextBlock Grid.Row="4" Grid.Column="0" Text="Channels"    Classes="lbl"/>
-        <TextBlock Grid.Row="4" Grid.Column="1" x:Name="ChannelsValue"   Classes="val"/>
-
-        <TextBlock Grid.Row="5" Grid.Column="0" Text="Bit Depth"   Classes="lbl"/>
-        <TextBlock Grid.Row="5" Grid.Column="1" x:Name="BitDepthValue"   Classes="val"/>
-      </Grid>
-
-      <!-- ── LYRICS (only shown when present) ── -->
-      <StackPanel x:Name="LyricsSection" IsVisible="False" Margin="0,0,0,14">
-        <TextBlock Text="LYRICS" Classes="sectionHeader"/>
-        <TextBlock x:Name="LyricsValue" FontSize="12" TextWrapping="Wrap" Opacity="0.8" LineHeight="18"/>
+    <!-- ── Button bar (always visible at bottom) ── -->
+    <Border DockPanel.Dock="Bottom" Padding="24,10,24,16">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button x:Name="CancelButton" Content="Cancel" Width="80" Click="CancelButton_Click"/>
+        <Button x:Name="OkButton"     Content="OK"     Width="80" IsDefault="True" Click="OkButton_Click"/>
       </StackPanel>
+    </Border>
 
-      <!-- ── FILE ── -->
-      <TextBlock Text="FILE" Classes="sectionHeader"/>
-      <TextBlock x:Name="PathValue" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+    <ScrollViewer>
+      <StackPanel Margin="24,20,24,8" Spacing="0">
 
-    </StackPanel>
-  </ScrollViewer>
+        <!-- ── Header ── -->
+        <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,18">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Title"  Classes="lbl" VerticalAlignment="Center"/>
+          <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val" FontSize="17" FontWeight="SemiBold"/>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Artist" Classes="lbl" VerticalAlignment="Center"/>
+          <TextBox   Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val" FontSize="13"/>
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Album"  Classes="lbl" VerticalAlignment="Center"/>
+          <TextBox   Grid.Row="2" Grid.Column="1" x:Name="AlbumBox"  Classes="val" FontSize="12" FontStyle="Italic"/>
+        </Grid>
+
+        <!-- ── ALBUM ── -->
+        <TextBlock Text="ALBUM" Classes="sectionHeader"/>
+        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,14">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Track"    Classes="lbl"/>
+          <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,2,0,4">
+            <TextBox x:Name="TrackNumBox"   Classes="numVal"/>
+            <TextBlock Text=" / " VerticalAlignment="Center" Opacity="0.45" FontSize="12" Margin="4,0"/>
+            <TextBox x:Name="TrackTotalBox" Classes="numVal"/>
+          </StackPanel>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Disc"     Classes="lbl"/>
+          <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,2,0,4">
+            <TextBox x:Name="DiscNumBox"    Classes="numVal"/>
+            <TextBlock Text=" / " VerticalAlignment="Center" Opacity="0.45" FontSize="12" Margin="4,0"/>
+            <TextBox x:Name="DiscTotalBox"  Classes="numVal"/>
+          </StackPanel>
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Year"     Classes="lbl"/>
+          <TextBox   Grid.Row="2" Grid.Column="1" x:Name="YearBox"      Classes="val"/>
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Text="Genre"    Classes="lbl"/>
+          <TextBox   Grid.Row="3" Grid.Column="1" x:Name="GenreBox"     Classes="val"/>
+
+          <TextBlock Grid.Row="4" Grid.Column="0" Text="BPM"      Classes="lbl"/>
+          <TextBox   Grid.Row="4" Grid.Column="1" x:Name="BpmBox"       Classes="val"/>
+
+          <TextBlock Grid.Row="5" Grid.Column="0" Text="Key"      Classes="lbl"/>
+          <TextBox   Grid.Row="5" Grid.Column="1" x:Name="KeyBox"       Classes="val"/>
+
+          <TextBlock Grid.Row="6" Grid.Column="0" Text="Grouping" Classes="lbl"/>
+          <TextBox   Grid.Row="6" Grid.Column="1" x:Name="GroupingBox"  Classes="val"/>
+        </Grid>
+
+        <!-- ── PEOPLE ── -->
+        <TextBlock Text="PEOPLE" Classes="sectionHeader"/>
+        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,14">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Album Artist" Classes="lbl"/>
+          <TextBox   Grid.Row="0" Grid.Column="1" x:Name="AlbumArtistBox" Classes="val"/>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Composer"    Classes="lbl"/>
+          <TextBox   Grid.Row="1" Grid.Column="1" x:Name="ComposerBox"    Classes="val"/>
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Conductor"   Classes="lbl"/>
+          <TextBox   Grid.Row="2" Grid.Column="1" x:Name="ConductorBox"   Classes="val"/>
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Text="Remixed By"  Classes="lbl"/>
+          <TextBox   Grid.Row="3" Grid.Column="1" x:Name="RemixedByBox"   Classes="val"/>
+        </Grid>
+
+        <!-- ── Tabbed: Descriptions / Technical ── -->
+        <TabControl Margin="0,0,0,8">
+
+          <TabItem Header="Descriptions">
+            <StackPanel Margin="0,12,0,4" Spacing="0">
+              <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,10">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Subtitle"    Classes="lbl"/>
+                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox"    Classes="val"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Description" Classes="lbl"/>
+                <TextBox   Grid.Row="1" Grid.Column="1" x:Name="DescriptionBox" Classes="val" AcceptsReturn="True" MinHeight="48"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Comment"     Classes="lbl"/>
+                <TextBox   Grid.Row="2" Grid.Column="1" x:Name="CommentBox"     Classes="val" AcceptsReturn="True" MinHeight="48"/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Publisher"   Classes="lbl"/>
+                <TextBox   Grid.Row="3" Grid.Column="1" x:Name="PublisherBox"   Classes="val"/>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="Copyright"   Classes="lbl"/>
+                <TextBox   Grid.Row="4" Grid.Column="1" x:Name="CopyrightBox"   Classes="val"/>
+
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="ISRC"        Classes="lbl"/>
+                <TextBox   Grid.Row="5" Grid.Column="1" x:Name="ISRCBox"        Classes="val"/>
+              </Grid>
+
+              <TextBlock Text="LYRICS" Classes="sectionHeader"/>
+              <TextBox x:Name="LyricsBox" FontSize="12" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="80"/>
+            </StackPanel>
+          </TabItem>
+
+          <TabItem Header="Technical">
+            <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,12,4,4">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="Duration"    Classes="lbl"/>
+              <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DurationValue"   Classes="val"/>
+
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="Codec"       Classes="lbl"/>
+              <TextBlock Grid.Row="1" Grid.Column="1" x:Name="CodecValue"      Classes="val"/>
+
+              <TextBlock Grid.Row="2" Grid.Column="0" Text="Bit Rate"    Classes="lbl"/>
+              <TextBlock Grid.Row="2" Grid.Column="1" x:Name="BitrateValue"    Classes="val"/>
+
+              <TextBlock Grid.Row="3" Grid.Column="0" Text="Sample Rate" Classes="lbl"/>
+              <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SampleRateValue" Classes="val"/>
+
+              <TextBlock Grid.Row="4" Grid.Column="0" Text="Channels"    Classes="lbl"/>
+              <TextBlock Grid.Row="4" Grid.Column="1" x:Name="ChannelsValue"   Classes="val"/>
+
+              <TextBlock Grid.Row="5" Grid.Column="0" Text="Bit Depth"   Classes="lbl"/>
+              <TextBlock Grid.Row="5" Grid.Column="1" x:Name="BitDepthValue"   Classes="val"/>
+
+              <TextBlock Grid.Row="6" Grid.Column="0" Text="File"        Classes="lbl"/>
+              <TextBlock Grid.Row="6" Grid.Column="1" x:Name="PathValue" Classes="val" FontSize="11" Opacity="0.6"/>
+            </Grid>
+          </TabItem>
+
+        </TabControl>
+
+      </StackPanel>
+    </ScrollViewer>
+
+  </DockPanel>
 </Window>
