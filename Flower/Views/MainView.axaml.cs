@@ -1,9 +1,13 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
@@ -28,6 +32,9 @@ public partial class MainView : UserControl
     private readonly DataGridTextColumn _genreColumn;
     private readonly DataGridTextColumn _durationColumn;
 
+    private ContextMenu _columnMenu = new();
+    private ContextMenu _trackMenu  = new();
+
     public MainView()
     {
         InitializeComponent();
@@ -51,6 +58,7 @@ public partial class MainView : UserControl
         TrackGrid.Columns.Add(_durationColumn);
 
         TrackGrid.KeyDown += TrackGrid_KeyDown;
+        TrackGrid.AddHandler(ContextRequestedEvent, TrackGrid_ContextRequested, RoutingStrategies.Bubble);
         DataContextChanged += OnDataContextChanged;
     }
 
@@ -65,7 +73,7 @@ public partial class MainView : UserControl
         {
             ApplyColumnVisibility();
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
-            BuildContextMenu();
+            BuildMenus();
         }
     }
 
@@ -93,20 +101,47 @@ public partial class MainView : UserControl
         }
     }
 
-    private void BuildContextMenu()
+    private void BuildMenus()
     {
         if (_viewModel == null) return;
         var vm = _viewModel;
 
-        var menu = new ContextMenu();
-        menu.Items.Add(MakeToggleItem("Title",    () => vm.IsTitleVisible,    v => vm.IsTitleVisible = v));
-        menu.Items.Add(MakeToggleItem("Artist",   () => vm.IsArtistVisible,   v => vm.IsArtistVisible = v));
-        menu.Items.Add(MakeToggleItem("Album",    () => vm.IsAlbumVisible,    v => vm.IsAlbumVisible = v));
-        menu.Items.Add(MakeToggleItem("Year",     () => vm.IsYearVisible,     v => vm.IsYearVisible = v));
-        menu.Items.Add(MakeToggleItem("Genre",    () => vm.IsGenreVisible,    v => vm.IsGenreVisible = v));
-        menu.Items.Add(MakeToggleItem("Duration", () => vm.IsDurationVisible, v => vm.IsDurationVisible = v));
+        _columnMenu = new ContextMenu();
+        _columnMenu.Items.Add(MakeToggleItem("Title",    () => vm.IsTitleVisible,    v => vm.IsTitleVisible = v));
+        _columnMenu.Items.Add(MakeToggleItem("Artist",   () => vm.IsArtistVisible,   v => vm.IsArtistVisible = v));
+        _columnMenu.Items.Add(MakeToggleItem("Album",    () => vm.IsAlbumVisible,    v => vm.IsAlbumVisible = v));
+        _columnMenu.Items.Add(MakeToggleItem("Year",     () => vm.IsYearVisible,     v => vm.IsYearVisible = v));
+        _columnMenu.Items.Add(MakeToggleItem("Genre",    () => vm.IsGenreVisible,    v => vm.IsGenreVisible = v));
+        _columnMenu.Items.Add(MakeToggleItem("Duration", () => vm.IsDurationVisible, v => vm.IsDurationVisible = v));
 
-        TrackGrid.ContextMenu = menu;
+        var getInfoItem = new MenuItem
+        {
+            Header = "Get Info",
+            InputGesture = new KeyGesture(Key.I, KeyModifiers.Meta)
+        };
+        getInfoItem.Click += (_, _) => OpenTrackInfo();
+
+        _trackMenu = new ContextMenu();
+        _trackMenu.Items.Add(getInfoItem);
+    }
+
+    private void TrackGrid_ContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        bool onHeader = (e.Source as Visual)?
+            .GetSelfAndVisualAncestors()
+            .OfType<DataGridColumnHeader>()
+            .Any() ?? false;
+
+        if (onHeader)
+        {
+            _columnMenu.Open(TrackGrid);
+            e.Handled = true;
+        }
+        else if (TrackGrid.SelectedItem is Track)
+        {
+            _trackMenu.Open(TrackGrid);
+            e.Handled = true;
+        }
     }
 
     private static MenuItem MakeToggleItem(string header, Func<bool> getter, Action<bool> setter)
@@ -131,16 +166,21 @@ public partial class MainView : UserControl
 
     private void TrackGrid_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.I && e.KeyModifiers == KeyModifiers.Meta &&
-            TrackGrid.SelectedItem is Track track)
+        if (e.Key == Key.I && e.KeyModifiers == KeyModifiers.Meta)
         {
-            var infoWindow = new TrackInfoWindow(track) { ShowInTaskbar = false };
-            if (TopLevel.GetTopLevel(this) is Window owner)
-                infoWindow.Show(owner);
-            else
-                infoWindow.Show();
+            OpenTrackInfo();
             e.Handled = true;
         }
+    }
+
+    private void OpenTrackInfo()
+    {
+        if (TrackGrid.SelectedItem is not Track track) return;
+        var infoWindow = new TrackInfoWindow(track) { ShowInTaskbar = false };
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            infoWindow.Show(owner);
+        else
+            infoWindow.Show();
     }
 
     private void DataGrid_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
