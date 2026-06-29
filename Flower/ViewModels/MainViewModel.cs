@@ -16,6 +16,8 @@ using CommunityToolkit.Mvvm.Input;
 using Flower.Models;
 using Flower.Persistence;
 
+using Material.Icons;
+
 namespace Flower.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
@@ -54,6 +56,50 @@ public partial class MainViewModel : ViewModelBase
         set
         {
             _filterText = value;
+            OnPropertyChanged();
+            ScheduleFilter();
+        }
+    }
+
+    // Sidebar
+    private ObservableCollection<SidebarItem> _sidebarItems = new();
+    public ObservableCollection<SidebarItem> SidebarItems
+    {
+        get => _sidebarItems;
+        private set { _sidebarItems = value; OnPropertyChanged(); }
+    }
+
+    private SidebarItem? _selectedSidebarItem;
+    public SidebarItem? SelectedSidebarItem
+    {
+        get => _selectedSidebarItem;
+        set
+        {
+            if (value != null && !value.IsSelectable) return;
+            _selectedSidebarItem = value;
+            OnPropertyChanged();
+            OnSidebarSelectionChanged();
+        }
+    }
+
+    public bool IsSubListVisible =>
+        _selectedSidebarItem?.Kind == SidebarItemKind.Albums ||
+        _selectedSidebarItem?.Kind == SidebarItemKind.Artists;
+
+    private ObservableCollection<string> _subListItems = new();
+    public ObservableCollection<string> SubListItems
+    {
+        get => _subListItems;
+        private set { _subListItems = value; OnPropertyChanged(); }
+    }
+
+    private string? _selectedSubItem;
+    public string? SelectedSubItem
+    {
+        get => _selectedSubItem;
+        set
+        {
+            _selectedSubItem = value;
             OnPropertyChanged();
             ScheduleFilter();
         }
@@ -139,6 +185,7 @@ public partial class MainViewModel : ViewModelBase
         _isGenreVisible = _columnSettings.Genre;
         _isDurationVisible = _columnSettings.Duration;
 
+        BuildSidebarItems();
         PopulateTracks();
 
         library.TracksUpdated += (s, e) =>
@@ -148,6 +195,64 @@ public partial class MainViewModel : ViewModelBase
         {
             if (e.PropertyName == nameof(_playlistControlViewModel.SelectedTrack))
                 OnPropertyChanged(nameof(SelectedTrack));
+        };
+    }
+
+    private void BuildSidebarItems()
+    {
+        _sidebarItems.Clear();
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Library"));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Songs,   "Songs",   MaterialIconKind.MusicNote));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Albums,  "Albums",  MaterialIconKind.Album));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Artists, "Artists", MaterialIconKind.AccountMusic));
+
+        if (Library.Playlists.Count > 0)
+        {
+            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Playlists"));
+            foreach (var playlist in Library.Playlists)
+                _sidebarItems.Add(new SidebarItem(SidebarItemKind.Playlist, playlist.Name, MaterialIconKind.PlaylistPlay, playlist));
+        }
+
+        _selectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
+        OnPropertyChanged(nameof(SelectedSidebarItem));
+    }
+
+    private void OnSidebarSelectionChanged()
+    {
+        OnPropertyChanged(nameof(IsSubListVisible));
+        _selectedSubItem = null;
+        OnPropertyChanged(nameof(SelectedSubItem));
+        RebuildSubListItems();
+        ScheduleFilter();
+    }
+
+    private void RebuildSubListItems()
+    {
+        if (_selectedSidebarItem?.Kind == SidebarItemKind.Albums)
+            SubListItems = new ObservableCollection<string>(
+                _allTracks.Select(t => t.Album).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
+        else if (_selectedSidebarItem?.Kind == SidebarItemKind.Artists)
+            SubListItems = new ObservableCollection<string>(
+                _allTracks.Select(t => t.Artists).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
+        else
+            SubListItems = new ObservableCollection<string>();
+    }
+
+    private List<Track> GetBaseTracksForFilter()
+    {
+        return _selectedSidebarItem?.Kind switch
+        {
+            SidebarItemKind.Playlist when _selectedSidebarItem.Playlist != null
+                => new List<Track>(_selectedSidebarItem.Playlist.Tracks),
+            SidebarItemKind.Albums when _selectedSubItem != null
+                => _allTracks.Where(t => t.Album == _selectedSubItem).ToList(),
+            SidebarItemKind.Albums
+                => new List<Track>(),
+            SidebarItemKind.Artists when _selectedSubItem != null
+                => _allTracks.Where(t => t.Artists == _selectedSubItem).ToList(),
+            SidebarItemKind.Artists
+                => new List<Track>(),
+            _ => _allTracks
         };
     }
 
@@ -175,6 +280,7 @@ public partial class MainViewModel : ViewModelBase
     private void PopulateTracks()
     {
         _allTracks = new List<Track>(Library.Tracks);
+        RebuildSubListItems();
         ScheduleFilter();
     }
 
@@ -189,12 +295,13 @@ public partial class MainViewModel : ViewModelBase
             await Task.Delay(250, token);
 
             var text = _filterText;
+            var baseTracks = GetBaseTracksForFilter();
             var results = await Task.Run(() =>
             {
                 if (string.IsNullOrWhiteSpace(text))
-                    return _allTracks;
+                    return baseTracks;
 
-                return _allTracks.Where(t =>
+                return baseTracks.Where(t =>
                     t.Title?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
                     t.Artists?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
                     t.Album?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
