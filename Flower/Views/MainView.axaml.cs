@@ -3,6 +3,7 @@ using System.ComponentModel;
 
 using Avalonia.Controls;
 using Avalonia.Data;
+using Avalonia.Input;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
@@ -49,6 +50,7 @@ public partial class MainView : UserControl
         TrackGrid.Columns.Add(_genreColumn);
         TrackGrid.Columns.Add(_durationColumn);
 
+        TrackGrid.KeyDown += TrackGrid_KeyDown;
         DataContextChanged += OnDataContextChanged;
     }
 
@@ -125,6 +127,20 @@ public partial class MainView : UserControl
         item.Icon = visible
             ? new MaterialIcon { Kind = MaterialIconKind.Check, Width = 14, Height = 14 }
             : null;
+    }
+
+    private void TrackGrid_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.I && e.KeyModifiers == KeyModifiers.Meta &&
+            TrackGrid.SelectedItem is Track track)
+        {
+            var infoWindow = new TrackInfoWindow(track) { ShowInTaskbar = false };
+            if (TopLevel.GetTopLevel(this) is Window owner)
+                infoWindow.Show(owner);
+            else
+                infoWindow.Show();
+            e.Handled = true;
+        }
     }
 
     private void DataGrid_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)

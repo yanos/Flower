@@ -137,6 +137,7 @@
           CanUserResizeColumns="True"
           CanUserSortColumns="True"
           DoubleTapped="DataGrid_DoubleTapped"
+          FontSize="1"
           IsReadOnly="True"/>
       </Grid>
     </Grid>
