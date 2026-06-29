@@ -62,13 +62,24 @@
 
     <!-- Status bar -->
     <Border Grid.Row="2"
-            Padding="12,4,12,4"
+            Padding="8,3,8,3"
             BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
-      <TextBlock Text="{Binding StatusBarText}"
-                 HorizontalAlignment="Center"
-                 FontSize="11"
-                 Opacity="0.6"/>
+      <Grid>
+        <!-- Activity spinner (left) — add more operations via BeginBusy() in MainViewModel -->
+        <ProgressBar IsIndeterminate="True"
+                     IsVisible="{Binding IsBusy}"
+                     Height="3"
+                     Width="80"
+                     VerticalAlignment="Center"
+                     HorizontalAlignment="Left"/>
+        <!-- Stats for current view (center) -->
+        <TextBlock Text="{Binding StatusBarText}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   FontSize="11"
+                   Opacity="0.6"/>
+      </Grid>
     </Border>
 
     <!-- Content row: sidebar + main area -->
