@@ -43,7 +43,24 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<Track> Tracks
     {
         get => _tracks;
-        private set { _tracks = value; OnPropertyChanged(); }
+        private set { _tracks = value; OnPropertyChanged(); OnPropertyChanged(nameof(StatusBarText)); }
+    }
+
+    public string StatusBarText
+    {
+        get
+        {
+            var tracks = _tracks;
+            var songCount = tracks.Count;
+            var albumCount = tracks.Select(t => t.Album).Where(a => !string.IsNullOrEmpty(a)).Distinct().Count();
+            var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
+            var songStr = songCount == 1 ? "1 song" : $"{songCount:N0} songs";
+            var albumStr = albumCount == 1 ? "1 album" : $"{albumCount:N0} albums";
+            var durStr = total.TotalHours >= 1
+                ? $"{(int)total.TotalHours}:{total.Minutes:D2}:{total.Seconds:D2}"
+                : $"{total.Minutes}:{total.Seconds:D2}";
+            return $"{songStr}  ·  {albumStr}  ·  {durStr}";
+        }
     }
 
     private List<Track> _allTracks = new();
