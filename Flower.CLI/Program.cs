@@ -2,56 +2,96 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
+
+using Flower.Importer;
+using Flower.Manager;
+using Flower.Models;
+using Flower.Persistence;
+
 using LibVLCSharp.Shared;
 
-if (args.Length == 0)
-{
-    Console.WriteLine("Usage: flower-cli <audio-file> [audio-file2 ...]");
-    return 1;
-}
-
-var vlcBase = "/Applications/VLC.app/Contents/MacOS";
-var vlcLib = $"{vlcBase}/lib";
-
-if (Directory.Exists(vlcLib))
-{
-    // Environment.SetEnvironmentVariable goes through the CLR's own env table;
-    // libvlc reads the OS-level environment via getenv(), so call setenv directly.
-    setenv("VLC_PLUGIN_PATH", $"{vlcBase}/plugins", 1);
-    // Pre-load libvlccore so its @rpath install-name is already in dyld's
-    // cache when libvlc.dylib is loaded and tries to link it.
-    NativeLibrary.Load(Path.Combine(vlcLib, "libvlccore.dylib"));
-}
-
-[DllImport("libc")]
-static extern int setenv(string name, string value, int overwrite);
-
-Core.Initialize(Directory.Exists(vlcLib) ? vlcLib : null);
-
+VlcNativeSetup.Initialize();
 using var libVlc = new LibVLC("--no-video");
 using var player = new MediaPlayer(libVlc);
 
-var queue = args.ToList();
+// --- Build play queue ---
+// File mode: all args exist as paths on disk → play them directly.
+// Library mode: no args → play full library; args → search library by title/artist/album.
+List<Track?> queue;
+
+bool fileMode = args.Length > 0 && args.All(File.Exists);
+
+if (fileMode)
+{
+    queue = args.Select(p => (Track?)new Track { Title = Path.GetFileNameWithoutExtension(p), Path = p }).ToList();
+}
+else
+{
+    Console.Write("Loading library...");
+    var store = new LibraryStore();
+    var tracks = await store.LoadAsync();
+
+    if (tracks.Count == 0)
+    {
+        Console.WriteLine(" scanning music folder...");
+        var importer = new Importer();
+        tracks = importer.Import();
+        if (tracks.Count == 0)
+        {
+            Console.WriteLine("No tracks found.");
+            return 1;
+        }
+        _ = store.SaveAsync(tracks);
+    }
+
+    Console.WriteLine($" {tracks.Count} tracks.");
+
+    if (args.Length > 0)
+    {
+        var query = string.Join(" ", args).ToLowerInvariant();
+        tracks = tracks.Where(t =>
+            (t.Title?.ToLowerInvariant().Contains(query) ?? false) ||
+            (t.Artists?.ToLowerInvariant().Contains(query) ?? false) ||
+            (t.Album?.ToLowerInvariant().Contains(query) ?? false)
+        ).ToList();
+
+        if (tracks.Count == 0)
+        {
+            Console.WriteLine($"No tracks matching \"{string.Join(" ", args)}\".");
+            return 1;
+        }
+        Console.WriteLine($"{tracks.Count} matching track(s).");
+    }
+
+    queue = tracks.Cast<Track?>().ToList();
+}
+
+// --- Playback ---
 int index = 0;
 
 bool playNext()
 {
-    if (index >= queue.Count) return false;
-
-    var path = queue[index++];
-    if (!File.Exists(path))
+    while (index < queue.Count)
     {
-        Console.WriteLine($"File not found: {path}");
-        return playNext();
-    }
+        var track = queue[index++]!;
+        if (!File.Exists(track.Path))
+        {
+            Console.WriteLine($"Not found, skipping: {track.Path}");
+            continue;
+        }
+        using var media = new Media(libVlc, track.Path, FromType.FromPath);
+        player.Media = media;
+        player.Play();
 
-    using var media = new Media(libVlc, path, FromType.FromPath);
-    player.Media = media;
-    player.Play();
-    Console.WriteLine($"[{index}/{queue.Count}] {Path.GetFileName(path)}");
-    return true;
+        var label = string.IsNullOrWhiteSpace(track.Artists)
+            ? track.Title ?? Path.GetFileName(track.Path)
+            : $"{track.Title} — {track.Artists}";
+        Console.WriteLine($"[{index}/{queue.Count}] {label}");
+        return true;
+    }
+    return false;
 }
 
 player.EndReached += (_, _) => ThreadPool.QueueUserWorkItem(_ => playNext());
