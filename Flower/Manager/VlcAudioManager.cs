@@ -34,6 +34,9 @@ namespace Flower.Manager
             set => _mediaPlayer.Position = value;
         }
 
+        public long Time => _mediaPlayer.Time;
+        public long Length => _mediaPlayer.Length;
+
         public event EventHandler? Paused;
         public event EventHandler? Stopped;
         public event EventHandler? Playing;
@@ -41,8 +44,9 @@ namespace Flower.Manager
         public event EventHandler? VolumeChanged;
         public event EventHandler? EndReached;
 
-        public VlcAudioManager() 
+        public VlcAudioManager()
         {
+            VlcNativeSetup.Initialize();
             _libVLC = new LibVLC();
             _mediaPlayer = new MediaPlayer(_libVLC);
 

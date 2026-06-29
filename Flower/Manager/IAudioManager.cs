@@ -11,6 +11,8 @@ namespace Flower.Manager
 
         int Volume { get; set; }
         float Position { get; set; }
+        long Time { get; }
+        long Length { get; }
 
         void Play(Track track);
         void Resume();
