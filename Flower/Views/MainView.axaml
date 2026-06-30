@@ -208,7 +208,7 @@
             <DataGridTextColumn Header="Album"    Binding="{Binding Album}"    Width="1.5*" SortMemberPath="Album"/>
             <DataGridTextColumn Header="Year"     Binding="{Binding Year}"     Width="60"   SortMemberPath="Year"/>
             <DataGridTextColumn Header="Genre"    Binding="{Binding Genre}"    Width="100"  SortMemberPath="Genre"/>
-            <DataGridTextColumn Header="Duration" Binding="{Binding Duration, Converter={StaticResource DurationConverter}}" Width="80" SortMemberPath="Duration"/>
+            <DataGridTextColumn Header="Duration" Binding="{Binding Duration, Converter={StaticResource DurationConverter}, Mode=OneWay}" Width="80" SortMemberPath="Duration"/>
           </DataGrid.Columns>
         </DataGrid>
       </Grid>
