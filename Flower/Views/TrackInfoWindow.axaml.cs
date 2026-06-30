@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading.Tasks;
 
 using Avalonia.Controls;
 
 using Flower.Converters;
 using Flower.Models;
+using Flower.Persistence;
 
 namespace Flower.Views;
 
@@ -13,23 +15,25 @@ public partial class TrackInfoWindow : Window
 {
     private static readonly DurationConverter _durationConverter = new();
     private readonly IReadOnlyList<Track> _tracks;
+    private readonly Library _library;
     private int _index;
 
     private Track _track => _tracks[_index];
 
     public event EventHandler<Track>? TrackNavigated;
 
-    public TrackInfoWindow(IReadOnlyList<Track> tracks, int index)
+    public TrackInfoWindow(IReadOnlyList<Track> tracks, int index, Library library)
     {
         InitializeComponent();
-        _tracks = tracks;
-        _index  = index;
+        _tracks  = tracks;
+        _library = library;
+        _index   = index;
         Populate(_track);
         UpdateNavButtons();
     }
 
-    private void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Navigate(-1);
-    private void NextButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Navigate(+1);
+    private async void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Navigate(-1);
+    private async void NextButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Navigate(+1);
 
     private void UpdateNavButtons()
     {
@@ -37,11 +41,11 @@ public partial class TrackInfoWindow : Window
         NextButton.IsEnabled = _index < _tracks.Count - 1;
     }
 
-    private void Navigate(int delta)
+    private async Task Navigate(int delta)
     {
         var next = _index + delta;
         if (next < 0 || next >= _tracks.Count) return;
-        SaveChanges();
+        await SaveChanges();
         _index = next;
         Populate(_track);
         UpdateNavButtons();
@@ -95,9 +99,9 @@ public partial class TrackInfoWindow : Window
         PathValue.Text = track.Path ?? "—";
     }
 
-    private void OkButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void OkButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        SaveChanges();
+        await SaveChanges();
         Close();
     }
 
@@ -106,7 +110,7 @@ public partial class TrackInfoWindow : Window
         Close();
     }
 
-    private void SaveChanges()
+    private async Task SaveChanges()
     {
         if (_track.Path is not string path) return;
 
@@ -171,6 +175,10 @@ public partial class TrackInfoWindow : Window
         _track.Copyright      = NullIfEmpty(CopyrightBox.Text);
         _track.ISRC           = NullIfEmpty(ISRCBox.Text);
         _track.Lyrics         = NullIfEmpty(LyricsBox.Text);
+
+        // Refresh views bound to the library and persist the change to disk
+        _library.UpdateTracks(_library.Tracks);
+        await new LibraryStore().SaveAsync(_library.Tracks);
     }
 
     private static string? NullIfEmpty(string? s) =>
