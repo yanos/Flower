@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 using Avalonia.Controls;
@@ -11,13 +12,40 @@ namespace Flower.Views;
 public partial class TrackInfoWindow : Window
 {
     private static readonly DurationConverter _durationConverter = new();
-    private readonly Track _track;
+    private readonly IReadOnlyList<Track> _tracks;
+    private int _index;
 
-    public TrackInfoWindow(Track track)
+    private Track _track => _tracks[_index];
+
+    public event EventHandler<Track>? TrackNavigated;
+
+    public TrackInfoWindow(IReadOnlyList<Track> tracks, int index)
     {
         InitializeComponent();
-        _track = track;
-        Populate(track);
+        _tracks = tracks;
+        _index  = index;
+        Populate(_track);
+        UpdateNavButtons();
+    }
+
+    private void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Navigate(-1);
+    private void NextButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Navigate(+1);
+
+    private void UpdateNavButtons()
+    {
+        PrevButton.IsEnabled = _index > 0;
+        NextButton.IsEnabled = _index < _tracks.Count - 1;
+    }
+
+    private void Navigate(int delta)
+    {
+        var next = _index + delta;
+        if (next < 0 || next >= _tracks.Count) return;
+        SaveChanges();
+        _index = next;
+        Populate(_track);
+        UpdateNavButtons();
+        TrackNavigated?.Invoke(this, _track);
     }
 
     private void Populate(Track track)
