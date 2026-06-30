@@ -16,41 +16,7 @@
 
   <UserControl.Resources>
     <converters:DurationConverter x:Key="DurationConverter"/>
-    <!-- Column widths — updated from code-behind when visibility changes -->
-    <GridLength x:Key="TitleColWidth">2*</GridLength>
-    <GridLength x:Key="ArtistColWidth">1.5*</GridLength>
-    <GridLength x:Key="AlbumColWidth">1.5*</GridLength>
-    <GridLength x:Key="YearColWidth">60</GridLength>
-    <GridLength x:Key="GenreColWidth">100</GridLength>
-    <GridLength x:Key="DurationColWidth">80</GridLength>
   </UserControl.Resources>
-
-  <UserControl.Styles>
-    <!-- Flat column-header buttons -->
-    <Style Selector="Button.col-header">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding" Value="8,4,8,4"/>
-      <Setter Property="HorizontalContentAlignment" Value="Left"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="VerticalAlignment" Value="Stretch"/>
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Cursor" Value="Arrow"/>
-    </Style>
-    <Style Selector="Button.col-header:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="Transparent"/>
-    </Style>
-    <Style Selector="Button.col-header:pressed /template/ ContentPresenter">
-      <Setter Property="Background" Value="Transparent"/>
-    </Style>
-    <!-- Track list items -->
-    <Style Selector="ListBoxItem.track-row">
-      <Setter Property="Padding" Value="0"/>
-      <Setter Property="Margin" Value="0"/>
-      <Setter Property="MinHeight" Value="22"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-    </Style>
-  </UserControl.Styles>
 
   <Grid>
     <Grid.RowDefinitions>
@@ -198,75 +164,53 @@
                    Background="Transparent"/>
         </Border>
 
-        <!-- Track area: column headers + list -->
-        <Grid Grid.Column="1">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-          </Grid.RowDefinitions>
-
-          <!-- Column header row -->
-          <Border Grid.Row="0"
-                  BorderThickness="0,0,0,1"
-                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-                  ContextRequested="ColumnHeader_ContextRequested">
-            <Grid>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="{Binding TitleColWidth}"/>
-                <ColumnDefinition Width="{Binding ArtistColWidth}"/>
-                <ColumnDefinition Width="{Binding AlbumColWidth}"/>
-                <ColumnDefinition Width="{Binding YearColWidth}"/>
-                <ColumnDefinition Width="{Binding GenreColWidth}"/>
-                <ColumnDefinition Width="{Binding DurationColWidth}"/>
-              </Grid.ColumnDefinitions>
-              <Button Grid.Column="0" Content="{Binding TitleHeader}"    Command="{Binding SortCommand}" CommandParameter="Title"    Classes="col-header"/>
-              <Button Grid.Column="1" Content="{Binding ArtistHeader}"   Command="{Binding SortCommand}" CommandParameter="Artists"  Classes="col-header"/>
-              <Button Grid.Column="2" Content="{Binding AlbumHeader}"    Command="{Binding SortCommand}" CommandParameter="Album"    Classes="col-header"/>
-              <Button Grid.Column="3" Content="{Binding YearHeader}"     Command="{Binding SortCommand}" CommandParameter="Year"     Classes="col-header"/>
-              <Button Grid.Column="4" Content="{Binding GenreHeader}"    Command="{Binding SortCommand}" CommandParameter="Genre"    Classes="col-header"/>
-              <Button Grid.Column="5" Content="{Binding DurationHeader}" Command="{Binding SortCommand}" CommandParameter="Duration" Classes="col-header"/>
-            </Grid>
-          </Border>
-
-          <!-- Track list -->
-          <ListBox Grid.Row="1"
-                   x:Name="TrackList"
-                   ItemsSource="{Binding Tracks}"
-                   SelectedItem="{Binding SelectedTrack, Mode=TwoWay}"
-                   Background="Transparent"
-                   DoubleTapped="TrackList_DoubleTapped"
-                   KeyDown="TrackList_KeyDown"
-                   ContextRequested="TrackList_ContextRequested">
-            <ListBox.Styles>
-              <Style Selector="ListBoxItem">
-                <Setter Property="Padding" Value="0"/>
-                <Setter Property="Margin" Value="0"/>
-                <Setter Property="MinHeight" Value="22"/>
-                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-              </Style>
-            </ListBox.Styles>
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="{DynamicResource TitleColWidth}"/>
-                    <ColumnDefinition Width="{DynamicResource ArtistColWidth}"/>
-                    <ColumnDefinition Width="{DynamicResource AlbumColWidth}"/>
-                    <ColumnDefinition Width="{DynamicResource YearColWidth}"/>
-                    <ColumnDefinition Width="{DynamicResource GenreColWidth}"/>
-                    <ColumnDefinition Width="{DynamicResource DurationColWidth}"/>
-                  </Grid.ColumnDefinitions>
-                  <TextBlock Grid.Column="0" Text="{Binding Title}"   Padding="8,0,8,0" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="1" Text="{Binding Artists}" Padding="8,0,8,0" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="2" Text="{Binding Album}"   Padding="8,0,8,0" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="3" Text="{Binding Year}"    Padding="8,0,8,0" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="4" Text="{Binding Genre}"   Padding="8,0,8,0" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                  <TextBlock Grid.Column="5" Text="{Binding Duration, Converter={StaticResource DurationConverter}}" Padding="8,0,8,0" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                </Grid>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </Grid>
+        <!-- Track grid -->
+        <DataGrid Grid.Column="1"
+                  x:Name="TrackList"
+                  x:CompileBindings="False"
+                  ItemsSource="{Binding Tracks}"
+                  SelectedItem="{Binding SelectedTrack, Mode=TwoWay}"
+                  AutoGenerateColumns="False"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="True"
+                  GridLinesVisibility="None"
+                  HeadersVisibility="Column"
+                  SelectionMode="Single"
+                  IsReadOnly="True"
+                  Background="Transparent"
+                  DoubleTapped="TrackList_DoubleTapped"
+                  ContextRequested="TrackList_ContextRequested">
+          <DataGrid.Styles>
+            <!-- Row density and font -->
+            <Style Selector="DataGridRow">
+              <Setter Property="MinHeight" Value="22"/>
+              <Setter Property="FontSize" Value="12"/>
+            </Style>
+            <Style Selector="DataGridColumnHeader">
+              <Setter Property="FontSize" Value="12"/>
+            </Style>
+            <Style Selector="DataGridCell">
+              <Setter Property="Padding" Value="8,0"/>
+            </Style>
+            <!-- Remove the dotted cell-focus rectangle -->
+            <Style Selector="DataGridCell:current">
+              <Setter Property="BorderBrush" Value="Transparent"/>
+              <Setter Property="BorderThickness" Value="0"/>
+            </Style>
+            <Style Selector="DataGridCell:current /template/ Border">
+              <Setter Property="BorderBrush" Value="Transparent"/>
+              <Setter Property="BorderThickness" Value="0"/>
+            </Style>
+          </DataGrid.Styles>
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Title"    Binding="{Binding Title}"    Width="2*"   SortMemberPath="Title"/>
+            <DataGridTextColumn Header="Artist"   Binding="{Binding Artists}"  Width="1.5*" SortMemberPath="Artists"/>
+            <DataGridTextColumn Header="Album"    Binding="{Binding Album}"    Width="1.5*" SortMemberPath="Album"/>
+            <DataGridTextColumn Header="Year"     Binding="{Binding Year}"     Width="60"   SortMemberPath="Year"/>
+            <DataGridTextColumn Header="Genre"    Binding="{Binding Genre}"    Width="100"  SortMemberPath="Genre"/>
+            <DataGridTextColumn Header="Duration" Binding="{Binding Duration, Converter={StaticResource DurationConverter}}" Width="80" SortMemberPath="Duration"/>
+          </DataGrid.Columns>
+        </DataGrid>
       </Grid>
     </Grid>
   </Grid>

@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
@@ -34,6 +35,8 @@ public partial class MainView : UserControl
         InitializeComponent();
         _playlistControlViewModel = Ioc.Default.GetService<PlaylistControlViewModel>()!;
         DataContextChanged += OnDataContextChanged;
+        // Tunnel intercepts Enter/Space before DataGrid's own keyboard handler runs
+        TrackList.AddHandler(InputElement.KeyDownEvent, TrackList_KeyDown, RoutingStrategies.Tunnel);
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -50,7 +53,7 @@ public partial class MainView : UserControl
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             BuildMenus();
-            UpdateColumnResources();
+            ApplyColumnVisibility();
             if (_viewModel.IsBusy) StartSpinner();
         }
     }
@@ -68,23 +71,23 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.IsYearVisible):
             case nameof(MainViewModel.IsGenreVisible):
             case nameof(MainViewModel.IsDurationVisible):
-                UpdateColumnResources();
+                ApplyColumnVisibility();
                 break;
         }
     }
 
-    private void UpdateColumnResources()
+    private void ApplyColumnVisibility()
     {
         if (_viewModel == null) return;
-        Resources["TitleColWidth"]    = _viewModel.TitleColWidth;
-        Resources["ArtistColWidth"]   = _viewModel.ArtistColWidth;
-        Resources["AlbumColWidth"]    = _viewModel.AlbumColWidth;
-        Resources["YearColWidth"]     = _viewModel.YearColWidth;
-        Resources["GenreColWidth"]    = _viewModel.GenreColWidth;
-        Resources["DurationColWidth"] = _viewModel.DurationColWidth;
+        TrackList.Columns[0].IsVisible = _viewModel.IsTitleVisible;
+        TrackList.Columns[1].IsVisible = _viewModel.IsArtistVisible;
+        TrackList.Columns[2].IsVisible = _viewModel.IsAlbumVisible;
+        TrackList.Columns[3].IsVisible = _viewModel.IsYearVisible;
+        TrackList.Columns[4].IsVisible = _viewModel.IsGenreVisible;
+        TrackList.Columns[5].IsVisible = _viewModel.IsDurationVisible;
     }
 
-    // ── Spinner ──────────────────────────────────────────────────────────────
+    // ── Spinner ───────────────────────────────────────────────────────────────
 
     private void StartSpinner()
     {
@@ -131,19 +134,28 @@ public partial class MainView : UserControl
         _trackMenu.Items.Add(getInfoItem);
     }
 
-    private void ColumnHeader_ContextRequested(object? sender, ContextRequestedEventArgs e)
-    {
-        _columnMenu.Open(TrackList);
-        e.Handled = true;
-    }
-
     private void TrackList_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (TrackList.SelectedItem is Track)
+        if (IsInColumnHeader(e.Source as Visual))
+        {
+            _columnMenu.Open(TrackList);
+            e.Handled = true;
+        }
+        else if (TrackList.SelectedItem is Track)
         {
             _trackMenu.Open(TrackList);
             e.Handled = true;
         }
+    }
+
+    private static bool IsInColumnHeader(Visual? v)
+    {
+        while (v != null)
+        {
+            if (v is DataGridColumnHeader) return true;
+            v = v.GetVisualParent();
+        }
+        return false;
     }
 
     private static MenuItem MakeToggleItem(string header, Func<bool> getter, Action<bool> setter)
