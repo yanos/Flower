@@ -50,16 +50,38 @@ public partial class MainView : UserControl
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             BuildMenus();
+            UpdateColumnResources();
             if (_viewModel.IsBusy) StartSpinner();
         }
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainViewModel.IsBusy))
+        switch (e.PropertyName)
         {
-            if (_viewModel!.IsBusy) StartSpinner(); else StopSpinner();
+            case nameof(MainViewModel.IsBusy):
+                if (_viewModel!.IsBusy) StartSpinner(); else StopSpinner();
+                break;
+            case nameof(MainViewModel.IsTitleVisible):
+            case nameof(MainViewModel.IsArtistVisible):
+            case nameof(MainViewModel.IsAlbumVisible):
+            case nameof(MainViewModel.IsYearVisible):
+            case nameof(MainViewModel.IsGenreVisible):
+            case nameof(MainViewModel.IsDurationVisible):
+                UpdateColumnResources();
+                break;
         }
+    }
+
+    private void UpdateColumnResources()
+    {
+        if (_viewModel == null) return;
+        Resources["TitleColWidth"]    = _viewModel.TitleColWidth;
+        Resources["ArtistColWidth"]   = _viewModel.ArtistColWidth;
+        Resources["AlbumColWidth"]    = _viewModel.AlbumColWidth;
+        Resources["YearColWidth"]     = _viewModel.YearColWidth;
+        Resources["GenreColWidth"]    = _viewModel.GenreColWidth;
+        Resources["DurationColWidth"] = _viewModel.DurationColWidth;
     }
 
     // ── Spinner ──────────────────────────────────────────────────────────────
