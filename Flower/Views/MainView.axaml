@@ -3,9 +3,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels"
-             xmlns:models="clr-namespace:Flower.Models"
-             xmlns:controls="clr-namespace:Flower.UserControls"
-             xmlns:converters="clr-namespace:Flower.Converters"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:usercontrols="clr-namespace:Flower.UserControls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
              x:Class="Flower.Views.MainView"
@@ -13,11 +12,6 @@
   <Design.DataContext>
     <vm:MainViewModel />
   </Design.DataContext>
-
-  <UserControl.Resources>
-    <converters:DurationConverter x:Key="DurationConverter"/>
-    <converters:IsCurrentTrackConverter x:Key="IsCurrentTrackConverter"/>
-  </UserControl.Resources>
 
   <Grid>
     <Grid.RowDefinitions>
@@ -39,25 +33,25 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-          <controls:PlaylistControls
+          <usercontrols:PlaylistControls
             VerticalAlignment="Center"
             HorizontalAlignment="Left"
             Height="36"
             Margin="8,0,4,0"/>
-          <controls:VolumeControl
+          <usercontrols:VolumeControl
             VerticalAlignment="Center"
             HorizontalAlignment="Left"
             Margin="4,0,8,0"
             Width="120" />
         </StackPanel>
 
-        <controls:CurrentlyPlayingControl
+        <usercontrols:CurrentlyPlayingControl
           Grid.Column="1"
           Margin="12,0,12,0"
           VerticalAlignment="Center"
           HorizontalAlignment="Stretch" />
 
-        <controls:FilterControl
+        <usercontrols:FilterControl
           Grid.Column="2"
           Margin="8,0,8,0"
           VerticalAlignment="Center"
@@ -73,7 +67,6 @@
             BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
       <Grid>
-        <!-- Activity spinner (left) — add more operations via BeginBusy() in MainViewModel -->
         <StackPanel Orientation="Horizontal"
                     IsVisible="{Binding IsBusy}"
                     VerticalAlignment="Center"
@@ -88,7 +81,6 @@
                      Opacity="0.55"
                      VerticalAlignment="Center"/>
         </StackPanel>
-        <!-- Stats for current view (center) -->
         <TextBlock Text="{Binding StatusBarText}"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
@@ -123,7 +115,6 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:SidebarItem">
               <Panel>
-                <!-- Section header -->
                 <TextBlock Text="{Binding Name}"
                            IsVisible="{Binding IsHeader}"
                            FontSize="10"
@@ -131,7 +122,6 @@
                            Opacity="0.55"
                            Margin="12,14,8,4"
                            LetterSpacing="0.8"/>
-                <!-- Selectable item -->
                 <StackPanel IsVisible="{Binding IsSelectable}"
                             Orientation="Horizontal"
                             Margin="12,5,8,5">
@@ -165,64 +155,10 @@
                    Background="Transparent"/>
         </Border>
 
-        <!-- Track grid -->
-        <DataGrid Grid.Column="1"
-                  x:Name="TrackList"
-                  x:CompileBindings="False"
-                  ItemsSource="{Binding Tracks}"
-                  SelectedItem="{Binding SelectedTrack, Mode=TwoWay}"
-                  AutoGenerateColumns="False"
-                  CanUserResizeColumns="True"
-                  CanUserSortColumns="True"
-                  GridLinesVisibility="None"
-                  HeadersVisibility="Column"
-                  SelectionMode="Single"
-                  IsReadOnly="True"
-                  Background="Transparent"
-                  DoubleTapped="TrackList_DoubleTapped"
-                  ContextRequested="TrackList_ContextRequested">
-          <DataGrid.Styles>
-            <!-- Row density and font -->
-            <Style Selector="DataGridRow">
-              <Setter Property="MinHeight" Value="22"/>
-              <Setter Property="FontSize" Value="12"/>
-            </Style>
-            <Style Selector="DataGridColumnHeader">
-              <Setter Property="FontSize" Value="12"/>
-            </Style>
-            <Style Selector="DataGridCell">
-              <Setter Property="Padding" Value="8,0"/>
-            </Style>
-          </DataGrid.Styles>
-          <DataGrid.Columns>
-            <DataGridTemplateColumn Header="Title" Width="2*" SortMemberPath="Title">
-              <DataGridTemplateColumn.CellTemplate>
-                <DataTemplate>
-                  <Grid>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="14"/>
-                      <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="▶" FontSize="8" VerticalAlignment="Center" HorizontalAlignment="Center">
-                      <TextBlock.IsVisible>
-                        <MultiBinding Converter="{StaticResource IsCurrentTrackConverter}">
-                          <Binding Path="."/>
-                          <Binding Path="DataContext.CurrentlyPlayingTrack" ElementName="TrackList"/>
-                        </MultiBinding>
-                      </TextBlock.IsVisible>
-                    </TextBlock>
-                    <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  </Grid>
-                </DataTemplate>
-              </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTextColumn Header="Artist"   Binding="{Binding Artists}"  Width="1.5*" SortMemberPath="Artists"/>
-            <DataGridTextColumn Header="Album"    Binding="{Binding Album}"    Width="1.5*" SortMemberPath="Album"/>
-            <DataGridTextColumn Header="Year"     Binding="{Binding Year}"     Width="60"   SortMemberPath="Year"/>
-            <DataGridTextColumn Header="Genre"    Binding="{Binding Genre}"    Width="100"  SortMemberPath="Genre"/>
-            <DataGridTextColumn Header="Duration" Binding="{Binding Duration, Converter={StaticResource DurationConverter}, Mode=OneWay}" Width="80" SortMemberPath="Duration"/>
-          </DataGrid.Columns>
-        </DataGrid>
+        <!-- Custom track list -->
+        <controls:MusicListView Grid.Column="1"
+                                x:Name="MusicList"
+                                SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
       </Grid>
     </Grid>
   </Grid>

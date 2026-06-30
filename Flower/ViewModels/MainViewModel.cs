@@ -13,8 +13,10 @@ using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.Input;
 
+using Flower.Controls;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Services;
 
 using Material.Icons;
 
@@ -23,15 +25,17 @@ namespace Flower.ViewModels;
 public partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistControlViewModel _playlistControlViewModel;
-    private readonly ColumnVisibilityStore _columnVisibilityStore;
-    private readonly ColumnVisibilitySettings _columnSettings;
+    private readonly ColumnVisibilityStore    _columnVisibilityStore;
     private Importer.Importer? _importer;
-    private MainPlaylist? _mainPlaylist;
+    private MainPlaylist?      _mainPlaylist;
 
     public ICommand? OpenDatabaseLocationCommand { get; private set; }
-    public ICommand? RebuildDatabaseCommand { get; private set; }
+    public ICommand? RebuildDatabaseCommand      { get; private set; }
+    public ICommand? SortByColumnCommand         { get; private set; }
 
     public Library Library { get; private set; }
+
+    // ── Selection ─────────────────────────────────────────────────────────────
 
     public Track? SelectedTrack
     {
@@ -41,35 +45,42 @@ public partial class MainViewModel : ViewModelBase
 
     public Track? CurrentlyPlayingTrack => _playlistControlViewModel.CurrentlyPlayingTrack;
 
-    private ObservableCollection<Track> _tracks = new();
-    public ObservableCollection<Track> Tracks
+    // ── Rows (flat list for MusicListView) ────────────────────────────────────
+
+    private ObservableCollection<TrackRowViewModel> _rows = new();
+    public ObservableCollection<TrackRowViewModel> Rows
     {
-        get => _tracks;
-        private set { _tracks = value; OnPropertyChanged(); OnPropertyChanged(nameof(StatusBarText)); }
+        get => _rows;
+        private set { _rows = value; OnPropertyChanged(); OnPropertyChanged(nameof(StatusBarText)); }
     }
+
+    // ── Status bar ────────────────────────────────────────────────────────────
+
+    private List<Track> _currentFilteredTracks = new();
 
     public string StatusBarText
     {
         get
         {
-            var tracks = _tracks;
+            var tracks    = _currentFilteredTracks;
             var songCount = tracks.Count;
             var albumCount = tracks.Select(t => t.Album).Where(a => !string.IsNullOrEmpty(a)).Distinct().Count();
-            var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
-            var songStr = songCount == 1 ? "1 song" : $"{songCount:N0} songs";
-            var albumStr = albumCount == 1 ? "1 album" : $"{albumCount:N0} albums";
-            var durStr = total.TotalHours >= 1
+            var total     = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
+            var songStr   = songCount == 1 ? "1 song"   : $"{songCount:N0} songs";
+            var albumStr  = albumCount == 1 ? "1 album" : $"{albumCount:N0} albums";
+            var durStr    = total.TotalHours >= 1
                 ? $"{(int)total.TotalHours}:{total.Minutes:D2}:{total.Seconds:D2}"
                 : $"{total.Minutes}:{total.Seconds:D2}";
             return $"{songStr}  ·  {albumStr}  ·  {durStr}";
         }
     }
 
-    // Busy state — increment/decrement via BeginBusy(message)
-    private int _busyCount;
+    // ── Busy state ────────────────────────────────────────────────────────────
+
+    private int     _busyCount;
     private string? _busyMessage;
 
-    public bool IsBusy => _busyCount > 0;
+    public bool    IsBusy      => _busyCount > 0;
     public string? BusyMessage => _busyMessage;
 
     private IDisposable BeginBusy(string? message = null)
@@ -97,6 +108,25 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    // ── Sort state ────────────────────────────────────────────────────────────
+
+    private string _sortColumn    = "TrackNumber";
+    private bool   _sortAscending = true;
+
+    public string SortColumn
+    {
+        get => _sortColumn;
+        private set { _sortColumn = value; OnPropertyChanged(); }
+    }
+
+    public bool SortAscending
+    {
+        get => _sortAscending;
+        private set { _sortAscending = value; OnPropertyChanged(); }
+    }
+
+    // ── Filter ────────────────────────────────────────────────────────────────
+
     private List<Track> _allTracks = new();
     private CancellationTokenSource? _filterCts;
 
@@ -112,7 +142,8 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    // Sidebar
+    // ── Sidebar ───────────────────────────────────────────────────────────────
+
     private ObservableCollection<SidebarItem> _sidebarItems = new();
     public ObservableCollection<SidebarItem> SidebarItems
     {
@@ -156,59 +187,7 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    // Column visibility
-    private bool _isTitleVisible;
-    public bool IsTitleVisible
-    {
-        get => _isTitleVisible;
-        set { _isTitleVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
-    }
-
-    private bool _isArtistVisible;
-    public bool IsArtistVisible
-    {
-        get => _isArtistVisible;
-        set { _isArtistVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
-    }
-
-    private bool _isAlbumVisible;
-    public bool IsAlbumVisible
-    {
-        get => _isAlbumVisible;
-        set { _isAlbumVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
-    }
-
-    private bool _isYearVisible;
-    public bool IsYearVisible
-    {
-        get => _isYearVisible;
-        set { _isYearVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
-    }
-
-    private bool _isGenreVisible;
-    public bool IsGenreVisible
-    {
-        get => _isGenreVisible;
-        set { _isGenreVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
-    }
-
-    private bool _isDurationVisible;
-    public bool IsDurationVisible
-    {
-        get => _isDurationVisible;
-        set { _isDurationVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
-    }
-
-    private void SaveColumnSettings()
-    {
-        _columnSettings.Title = _isTitleVisible;
-        _columnSettings.Artist = _isArtistVisible;
-        _columnSettings.Album = _isAlbumVisible;
-        _columnSettings.Year = _isYearVisible;
-        _columnSettings.Genre = _isGenreVisible;
-        _columnSettings.Duration = _isDurationVisible;
-        _ = _columnVisibilityStore.SaveAsync(_columnSettings);
-    }
+    // ── Constructors ──────────────────────────────────────────────────────────
 
     public MainViewModel() { }
 
@@ -219,42 +198,64 @@ public partial class MainViewModel : ViewModelBase
         Importer.Importer importer,
         MainPlaylist mainPlaylist)
     {
-        Library = library;
+        Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
         _columnVisibilityStore = columnVisibilityStore;
-        _importer = importer;
-        _mainPlaylist = mainPlaylist;
+        _importer              = importer;
+        _mainPlaylist          = mainPlaylist;
 
         OpenDatabaseLocationCommand = new RelayCommand(OpenDatabaseLocation);
-        RebuildDatabaseCommand = new AsyncRelayCommand(RebuildDatabaseAsync);
-
-        _columnSettings = columnVisibilityStore.Load();
-        _isTitleVisible = _columnSettings.Title;
-        _isArtistVisible = _columnSettings.Artist;
-        _isAlbumVisible = _columnSettings.Album;
-        _isYearVisible = _columnSettings.Year;
-        _isGenreVisible = _columnSettings.Genre;
-        _isDurationVisible = _columnSettings.Duration;
+        RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
+        SortByColumnCommand         = new RelayCommand<string>(SortByColumn);
 
         BuildSidebarItems();
         PopulateTracks();
 
-        library.TracksUpdated += (s, e) =>
+        library.TracksUpdated += (_, _) =>
             Dispatcher.UIThread.Post(PopulateTracks);
 
-        _playlistControlViewModel.PropertyChanged += (s, e) =>
+        _playlistControlViewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(_playlistControlViewModel.SelectedTrack))
+            if (e.PropertyName == nameof(PlaylistControlViewModel.SelectedTrack))
                 OnPropertyChanged(nameof(SelectedTrack));
-            if (e.PropertyName == nameof(_playlistControlViewModel.CurrentlyPlayingTrack))
+            if (e.PropertyName == nameof(PlaylistControlViewModel.CurrentlyPlayingTrack))
+            {
                 OnPropertyChanged(nameof(CurrentlyPlayingTrack));
+                UpdatePlayingIndicators();
+            }
         };
     }
+
+    // ── Sort ──────────────────────────────────────────────────────────────────
+
+    private void SortByColumn(string? columnId)
+    {
+        if (columnId == null) return;
+        if (SortColumn == columnId)
+            SortAscending = !SortAscending;
+        else
+        {
+            SortColumn    = columnId;
+            SortAscending = true;
+        }
+        ScheduleFilter();
+    }
+
+    // ── Playing indicators ────────────────────────────────────────────────────
+
+    private void UpdatePlayingIndicators()
+    {
+        var playing = CurrentlyPlayingTrack;
+        foreach (var row in _rows)
+            row.IsCurrentlyPlaying = row.Track.Path == playing?.Path;
+    }
+
+    // ── Sidebar ───────────────────────────────────────────────────────────────
 
     private void BuildSidebarItems()
     {
         _sidebarItems.Clear();
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Library"));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header,  "Library"));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Songs,   "Songs",   MaterialIconKind.MusicNote));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Albums,  "Albums",  MaterialIconKind.Album));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Artists, "Artists", MaterialIconKind.AccountMusic));
@@ -262,8 +263,8 @@ public partial class MainViewModel : ViewModelBase
         if (Library.Playlists.Count > 0)
         {
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Playlists"));
-            foreach (var playlist in Library.Playlists)
-                _sidebarItems.Add(new SidebarItem(SidebarItemKind.Playlist, playlist.Name, MaterialIconKind.PlaylistPlay, playlist));
+            foreach (var pl in Library.Playlists)
+                _sidebarItems.Add(new SidebarItem(SidebarItemKind.Playlist, pl.Name, MaterialIconKind.PlaylistPlay, pl));
         }
 
         _selectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
@@ -309,6 +310,8 @@ public partial class MainViewModel : ViewModelBase
         };
     }
 
+    // ── Database ops ──────────────────────────────────────────────────────────
+
     private void OpenDatabaseLocation()
     {
         var dir = Path.GetDirectoryName(LibraryStore.StorePath)!;
@@ -348,21 +351,20 @@ public partial class MainViewModel : ViewModelBase
         {
             await Task.Delay(250, token);
 
-            var text = _filterText;
+            var text       = _filterText;
+            var sortCol    = _sortColumn;
+            var sortAsc    = _sortAscending;
+            var playing    = CurrentlyPlayingTrack;
             var baseTracks = GetBaseTracksForFilter();
-            var results = await Task.Run(() =>
-            {
-                if (string.IsNullOrWhiteSpace(text)) return baseTracks;
-                return baseTracks.Where(t =>
-                    t.Title?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true ||
-                    t.Artists?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
-                    t.Album?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true ||
-                    t.Genre?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true).ToList();
-            }, token);
+
+            var rows = await Task.Run(() =>
+                TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing), token);
 
             if (token.IsCancellationRequested) return;
 
-            Tracks = new ObservableCollection<Track>(results);
+            _currentFilteredTracks = rows.Select(r => r.Track).ToList();
+            Rows = new ObservableCollection<TrackRowViewModel>(rows);
+            OnPropertyChanged(nameof(StatusBarText));
         }
         catch (OperationCanceledException) { }
     }

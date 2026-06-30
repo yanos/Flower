@@ -13,6 +13,7 @@ using Avalonia.VisualTree;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
+using Flower.Controls;
 using Flower.Models;
 using Flower.ViewModels;
 
@@ -37,8 +38,15 @@ public partial class MainView : UserControl
         InitializeComponent();
         _playlistControlViewModel = Ioc.Default.GetService<PlaylistControlViewModel>()!;
         DataContextChanged += OnDataContextChanged;
-        // Tunnel intercepts Enter/Space before DataGrid's own keyboard handler runs
-        TrackList.AddHandler(InputElement.KeyDownEvent, TrackList_KeyDown, RoutingStrategies.Tunnel);
+
+        // Wire MusicListView events
+        MusicList.RowActivated    += OnRowActivated;
+        MusicList.RowContextMenu  += OnRowContextMenu;
+        MusicList.HeaderContextMenu += OnHeaderContextMenu;
+        MusicList.SortRequested   += OnSortRequested;
+
+        // Forward Space / Cmd+I from inside the list
+        MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -54,9 +62,11 @@ public partial class MainView : UserControl
         if (_viewModel != null)
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
-            BuildMenus();
-            ApplyColumnVisibility();
+            BuildColumnMenu();
             if (_viewModel.IsBusy) StartSpinner();
+
+            // Push initial rows to MusicListView
+            MusicList.SetItems(_viewModel.Rows);
         }
     }
 
@@ -67,26 +77,14 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.IsBusy):
                 if (_viewModel!.IsBusy) StartSpinner(); else StopSpinner();
                 break;
-            case nameof(MainViewModel.IsTitleVisible):
-            case nameof(MainViewModel.IsArtistVisible):
-            case nameof(MainViewModel.IsAlbumVisible):
-            case nameof(MainViewModel.IsYearVisible):
-            case nameof(MainViewModel.IsGenreVisible):
-            case nameof(MainViewModel.IsDurationVisible):
-                ApplyColumnVisibility();
+            case nameof(MainViewModel.Rows):
+                MusicList.SetItems(_viewModel!.Rows);
+                break;
+            case nameof(MainViewModel.SortColumn):
+            case nameof(MainViewModel.SortAscending):
+                MusicList.UpdateSortIndicators(_viewModel!.SortColumn, _viewModel.SortAscending);
                 break;
         }
-    }
-
-    private void ApplyColumnVisibility()
-    {
-        if (_viewModel == null) return;
-        TrackList.Columns[0].IsVisible = _viewModel.IsTitleVisible;
-        TrackList.Columns[1].IsVisible = _viewModel.IsArtistVisible;
-        TrackList.Columns[2].IsVisible = _viewModel.IsAlbumVisible;
-        TrackList.Columns[3].IsVisible = _viewModel.IsYearVisible;
-        TrackList.Columns[4].IsVisible = _viewModel.IsGenreVisible;
-        TrackList.Columns[5].IsVisible = _viewModel.IsDurationVisible;
     }
 
     // ── Spinner ───────────────────────────────────────────────────────────────
@@ -110,25 +108,45 @@ public partial class MainView : UserControl
         if (SpinnerIcon != null) SpinnerIcon.RenderTransform = null;
     }
 
+    // ── MusicListView event handlers ──────────────────────────────────────────
+
+    private void OnRowActivated(object? sender, TrackRowViewModel row)
+        => _playlistControlViewModel.Play(row.Track);
+
+    private void OnRowContextMenu(object? sender, TrackRowViewModel row)
+        => _trackMenu.Open(MusicList);
+
+    private void OnHeaderContextMenu(object? sender, EventArgs e)
+        => _columnMenu.Open(MusicList);
+
+    private void OnSortRequested(object? sender, string columnId)
+        => _viewModel?.SortByColumnCommand?.Execute(columnId);
+
     // ── Context menus ─────────────────────────────────────────────────────────
 
-    private void BuildMenus()
+    private void BuildColumnMenu()
     {
         if (_viewModel == null) return;
-        var vm = _viewModel;
+        var columnManager = Ioc.Default.GetService<ColumnManager>()!;
 
         _columnMenu = new ContextMenu();
-        _columnMenu.Items.Add(MakeToggleItem("Title",    () => vm.IsTitleVisible,    v => vm.IsTitleVisible = v));
-        _columnMenu.Items.Add(MakeToggleItem("Artist",   () => vm.IsArtistVisible,   v => vm.IsArtistVisible = v));
-        _columnMenu.Items.Add(MakeToggleItem("Album",    () => vm.IsAlbumVisible,    v => vm.IsAlbumVisible = v));
-        _columnMenu.Items.Add(MakeToggleItem("Year",     () => vm.IsYearVisible,     v => vm.IsYearVisible = v));
-        _columnMenu.Items.Add(MakeToggleItem("Genre",    () => vm.IsGenreVisible,    v => vm.IsGenreVisible = v));
-        _columnMenu.Items.Add(MakeToggleItem("Duration", () => vm.IsDurationVisible, v => vm.IsDurationVisible = v));
+        foreach (var col in columnManager.Columns)
+        {
+            var col1 = col; // capture
+            var item = new MenuItem { Header = col.Header };
+            SetCheckIcon(item, col.IsVisible);
+            item.Click += (_, _) =>
+            {
+                col1.IsVisible = !col1.IsVisible;
+                SetCheckIcon(item, col1.IsVisible);
+            };
+            _columnMenu.Items.Add(item);
+        }
 
         var getInfoItem = new MenuItem
         {
-            Header = "Get Info",
-            InputGesture = new KeyGesture(Key.I, KeyModifiers.Meta)
+            Header       = "Get Info",
+            InputGesture = new KeyGesture(Key.I, KeyModifiers.Meta),
         };
         getInfoItem.Click += (_, _) => OpenTrackInfo();
 
@@ -140,43 +158,6 @@ public partial class MainView : UserControl
         _trackMenu.Items.Add(locateFileItem);
     }
 
-    private void TrackList_ContextRequested(object? sender, ContextRequestedEventArgs e)
-    {
-        if (IsInColumnHeader(e.Source as Visual))
-        {
-            _columnMenu.Open(TrackList);
-            e.Handled = true;
-        }
-        else if (TrackList.SelectedItem is Track)
-        {
-            _trackMenu.Open(TrackList);
-            e.Handled = true;
-        }
-    }
-
-    private static bool IsInColumnHeader(Visual? v)
-    {
-        while (v != null)
-        {
-            if (v is DataGridColumnHeader) return true;
-            v = v.GetVisualParent();
-        }
-        return false;
-    }
-
-    private static MenuItem MakeToggleItem(string header, Func<bool> getter, Action<bool> setter)
-    {
-        var item = new MenuItem { Header = header };
-        SetCheckIcon(item, getter());
-        item.Click += (_, _) =>
-        {
-            var newValue = !getter();
-            setter(newValue);
-            SetCheckIcon(item, newValue);
-        };
-        return item;
-    }
-
     private static void SetCheckIcon(MenuItem item, bool visible)
     {
         item.Icon = visible
@@ -184,9 +165,9 @@ public partial class MainView : UserControl
             : null;
     }
 
-    // ── Keyboard ──────────────────────────────────────────────────────────────
+    // ── Keyboard (tunnel to catch keys before MusicListView) ─────────────────
 
-    private void TrackList_KeyDown(object? sender, KeyEventArgs e)
+    private void MusicList_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.I && e.KeyModifiers == KeyModifiers.Meta)
         {
@@ -198,28 +179,14 @@ public partial class MainView : UserControl
             _playlistControlViewModel.PlayOrPause();
             e.Handled = true;
         }
-        else if (e.Key == Key.Return)
-        {
-            if (TrackList.SelectedItem is Track track)
-                _playlistControlViewModel.Play(track);
-            e.Handled = true;
-        }
+        // Enter is handled inside MusicListView (fires RowActivated)
     }
 
     // ── Track actions ─────────────────────────────────────────────────────────
 
-    private void TrackList_DoubleTapped(object? sender, TappedEventArgs e)
-    {
-        if (TrackList.SelectedItem is Track track)
-        {
-            _playlistControlViewModel.Play(track);
-            e.Handled = true;
-        }
-    }
-
     private void OpenTrackInfo()
     {
-        if (TrackList.SelectedItem is not Track track) return;
+        if (MusicList.SelectedTrack is not Track track) return;
         var infoWindow = new TrackInfoWindow(track) { ShowInTaskbar = false };
         if (TopLevel.GetTopLevel(this) is Window owner)
             infoWindow.Show(owner);
@@ -229,16 +196,16 @@ public partial class MainView : UserControl
 
     private void LocateFile()
     {
-        if (TrackList.SelectedItem is not Track track) return;
+        if (MusicList.SelectedTrack is not Track track) return;
         var path = track.Path;
         if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
 
         if (OperatingSystem.IsMacOS())
-            Process.Start("open", new[] { "-R", path });
+            Process.Start("open", ["-R", path]);
         else if (OperatingSystem.IsWindows())
             Process.Start("explorer.exe", $"/select,\"{path}\"");
         else
-            Process.Start("xdg-open", new[] { Path.GetDirectoryName(path)! });
+            Process.Start("xdg-open", [Path.GetDirectoryName(path)!]);
     }
 
     // ── Sidebar ───────────────────────────────────────────────────────────────

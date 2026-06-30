@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Flower.ViewModels"
+             x:Class="Flower.Controls.TrackRowControl"
+             x:DataType="vm:TrackRowViewModel"
+             x:CompileBindings="True"
+             Background="Transparent"
+             ClipToBounds="False"
+             Height="28">
+
+  <UserControl.Styles>
+    <!-- Hover highlight restricted to the data columns — art column is excluded -->
+    <Style Selector="UserControl:pointerover Border#HoverBorder">
+      <Setter Property="IsVisible" Value="True"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid ColumnDefinitions="80,*">
+    <!-- Hover background (column 1 only — stops before the art) -->
+    <Border Grid.Column="1"
+            x:Name="HoverBorder"
+            Background="{DynamicResource SystemControlHighlightListLowBrush}"
+            IsVisible="False"
+            IsHitTestVisible="False"/>
+    <!-- Selection background (column 1 only) -->
+    <Border Grid.Column="1"
+            Background="{DynamicResource SystemControlHighlightListAccentLowBrush}"
+            IsVisible="{Binding IsSelected}"
+            IsHitTestVisible="False"/>
+
+    <!-- ── Art cell (first track of album group only) ─────────────────────── -->
+    <!-- ClipToBounds="False" lets the image overflow downward into subsequent rows of the same group. -->
+    <!-- VerticalAlignment="Top" on Image ensures overflow goes downward, not upward. -->
+    <Panel Grid.Column="0"
+           Margin="2,2,2,0"
+           ClipToBounds="False"
+           IsVisible="{Binding IsFirstInAlbumGroup}">
+
+      <!-- Placeholder shown while art is loading or absent -->
+      <Border Background="#30808080"
+              CornerRadius="2"
+              IsHitTestVisible="False"
+              IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNull}}"
+              Width="{Binding AlbumArtDisplaySize}"
+              Height="{Binding AlbumArtDisplaySize}"
+              VerticalAlignment="Top"
+              HorizontalAlignment="Center"/>
+
+      <!-- Album art; height = min(groupSize × rowHeight, maxArt) — spans multiple rows visually -->
+      <Image x:Name="ArtImage"
+             Width="{Binding AlbumArtDisplaySize}"
+             Height="{Binding AlbumArtDisplaySize}"
+             VerticalAlignment="Top"
+             HorizontalAlignment="Center"
+             Stretch="UniformToFill"
+             Source="{Binding AlbumArt}"/>
+    </Panel>
+
+    <!-- ── Data cells (built in code-behind from ColumnManager) ──────────── -->
+    <StackPanel x:Name="CellsPanel"
+                Grid.Column="1"
+                Orientation="Horizontal"
+                VerticalAlignment="Stretch"/>
+  </Grid>
+
+</UserControl>
