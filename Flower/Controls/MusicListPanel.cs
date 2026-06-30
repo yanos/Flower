@@ -23,6 +23,10 @@ public class MusicListPanel : Panel
     public void SetItems(IReadOnlyList<TrackRowViewModel> items)
     {
         _items = items;
+        // The new list may reuse the same indices as the old one (e.g. switching
+        // albums while scrolled near the top), so force every active slot to
+        // re-bind its DataContext rather than relying on the index comparison.
+        for (int i = 0; i < _activeIndex.Count; i++) _activeIndex[i] = -1;
         RefreshActiveSet();
         InvalidateMeasure();
     }
