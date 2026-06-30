@@ -1,7 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Flower.Controls.MusicListView"
-             x:CompileBindings="False">
+             x:CompileBindings="False"
+             Focusable="True">
 
   <Grid RowDefinitions="28,*">
 

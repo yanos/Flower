@@ -7,6 +7,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -114,7 +115,7 @@ public partial class MusicListView : UserControl
         _panel.DoubleTapped    += Panel_DoubleTapped;
         _panel.ContextRequested += Panel_ContextRequested;
 
-        AddHandler(KeyDownEvent, OnKeyDown, handledEventsToo: false);
+        AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
 
         BuildHeader();
     }
@@ -274,6 +275,7 @@ public partial class MusicListView : UserControl
         var row = HitTestRow(pt);
         if (row == null) return;
         SelectedRow = row;
+        Focus();
     }
 
     private void Panel_DoubleTapped(object? sender, TappedEventArgs e)
