@@ -1,5 +1,7 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -130,8 +132,12 @@ public partial class MainView : UserControl
         };
         getInfoItem.Click += (_, _) => OpenTrackInfo();
 
+        var locateFileItem = new MenuItem { Header = "Locate File" };
+        locateFileItem.Click += (_, _) => LocateFile();
+
         _trackMenu = new ContextMenu();
         _trackMenu.Items.Add(getInfoItem);
+        _trackMenu.Items.Add(locateFileItem);
     }
 
     private void TrackList_ContextRequested(object? sender, ContextRequestedEventArgs e)
@@ -219,6 +225,20 @@ public partial class MainView : UserControl
             infoWindow.Show(owner);
         else
             infoWindow.Show();
+    }
+
+    private void LocateFile()
+    {
+        if (TrackList.SelectedItem is not Track track) return;
+        var path = track.Path;
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+
+        if (OperatingSystem.IsMacOS())
+            Process.Start("open", new[] { "-R", path });
+        else if (OperatingSystem.IsWindows())
+            Process.Start("explorer.exe", $"/select,\"{path}\"");
+        else
+            Process.Start("xdg-open", new[] { Path.GetDirectoryName(path)! });
     }
 
     // ── Sidebar ───────────────────────────────────────────────────────────────
