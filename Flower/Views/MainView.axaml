@@ -16,6 +16,13 @@
 
   <UserControl.Resources>
     <converters:DurationConverter x:Key="DurationConverter"/>
+    <!-- Column widths — updated from code-behind when visibility changes -->
+    <GridLength x:Key="TitleColWidth">2*</GridLength>
+    <GridLength x:Key="ArtistColWidth">1.5*</GridLength>
+    <GridLength x:Key="AlbumColWidth">1.5*</GridLength>
+    <GridLength x:Key="YearColWidth">60</GridLength>
+    <GridLength x:Key="GenreColWidth">100</GridLength>
+    <GridLength x:Key="DurationColWidth">80</GridLength>
   </UserControl.Resources>
 
   <UserControl.Styles>
@@ -230,24 +237,24 @@
                    DoubleTapped="TrackList_DoubleTapped"
                    KeyDown="TrackList_KeyDown"
                    ContextRequested="TrackList_ContextRequested">
-            <ListBox.ItemContainerTheme>
-              <ControlTheme TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
                 <Setter Property="Padding" Value="0"/>
                 <Setter Property="Margin" Value="0"/>
                 <Setter Property="MinHeight" Value="22"/>
                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-              </ControlTheme>
-            </ListBox.ItemContainerTheme>
+              </Style>
+            </ListBox.Styles>
             <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="models:Track">
+              <DataTemplate>
                 <Grid>
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="{Binding DataContext.TitleColWidth,    ElementName=TrackList}"/>
-                    <ColumnDefinition Width="{Binding DataContext.ArtistColWidth,   ElementName=TrackList}"/>
-                    <ColumnDefinition Width="{Binding DataContext.AlbumColWidth,    ElementName=TrackList}"/>
-                    <ColumnDefinition Width="{Binding DataContext.YearColWidth,     ElementName=TrackList}"/>
-                    <ColumnDefinition Width="{Binding DataContext.GenreColWidth,    ElementName=TrackList}"/>
-                    <ColumnDefinition Width="{Binding DataContext.DurationColWidth, ElementName=TrackList}"/>
+                    <ColumnDefinition Width="{DynamicResource TitleColWidth}"/>
+                    <ColumnDefinition Width="{DynamicResource ArtistColWidth}"/>
+                    <ColumnDefinition Width="{DynamicResource AlbumColWidth}"/>
+                    <ColumnDefinition Width="{DynamicResource YearColWidth}"/>
+                    <ColumnDefinition Width="{DynamicResource GenreColWidth}"/>
+                    <ColumnDefinition Width="{DynamicResource DurationColWidth}"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Grid.Column="0" Text="{Binding Title}"   Padding="8,0,8,0" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                   <TextBlock Grid.Column="1" Text="{Binding Artists}" Padding="8,0,8,0" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
