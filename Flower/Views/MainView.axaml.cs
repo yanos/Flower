@@ -193,7 +193,7 @@ public partial class MainView : UserControl
         var tracks = vm.DisplayedTracks;
         var index  = tracks.ToList().IndexOf(track);
         if (index < 0) index = 0;
-        var infoWindow = new TrackInfoWindow(tracks, index) { ShowInTaskbar = false };
+        var infoWindow = new TrackInfoWindow(tracks, index, vm.Library) { ShowInTaskbar = false };
         infoWindow.TrackNavigated += (_, t) => MusicList.SelectedTrack = t;
         if (TopLevel.GetTopLevel(this) is Window owner)
             infoWindow.Show(owner);
