@@ -17,14 +17,34 @@
     <!-- Album art: negative margins counteract the outer padding so art sits 2px from edges -->
     <Border Grid.Column="0"
             x:CompileBindings="False"
-            IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}"
             Width="{Binding $self.Bounds.Height}"
             Margin="-10,-4,10,-4"
             CornerRadius="4"
-            ClipToBounds="True"
+            BorderBrush="#80000000"
+            BorderThickness="1"
             VerticalAlignment="Stretch">
-      <Image Source="{Binding AlbumArt}"
-             Stretch="UniformToFill"/>
+      <Border CornerRadius="3"
+              ClipToBounds="True">
+        <Panel>
+          <Border Background="#18FFFFFF"
+                  IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNull}}">
+            <TextBlock Text="♫"
+                       Foreground="#606060"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontSize="36"
+                       FontWeight="Bold"/>
+          </Border>
+          <Canvas IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Stretch">
+            <Image Source="{Binding AlbumArt}"
+                   Stretch="UniformToFill"
+                   Width="{Binding $parent.Bounds.Width}"
+                   Height="{Binding $parent.Bounds.Height}"/>
+          </Canvas>
+        </Panel>
+      </Border>
     </Border>
 
   <Grid Grid.Column="1">
