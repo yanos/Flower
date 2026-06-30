@@ -192,15 +192,6 @@
             <Style Selector="DataGridCell">
               <Setter Property="Padding" Value="8,0"/>
             </Style>
-            <!-- Remove the dotted cell-focus rectangle -->
-            <Style Selector="DataGridCell:current">
-              <Setter Property="BorderBrush" Value="Transparent"/>
-              <Setter Property="BorderThickness" Value="0"/>
-            </Style>
-            <Style Selector="DataGridCell:current /template/ Border">
-              <Setter Property="BorderBrush" Value="Transparent"/>
-              <Setter Property="BorderThickness" Value="0"/>
-            </Style>
           </DataGrid.Styles>
           <DataGrid.Columns>
             <DataGridTextColumn Header="Title"    Binding="{Binding Title}"    Width="2*"   SortMemberPath="Title"/>

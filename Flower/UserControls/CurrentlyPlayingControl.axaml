@@ -12,7 +12,22 @@
           BorderThickness="1"
           CornerRadius="6"
           Padding="12,6,12,6">
-  <Grid>
+  <Grid ColumnDefinitions="Auto,*">
+
+    <!-- Album art: negative margins counteract the outer padding so art sits 2px from edges -->
+    <Border Grid.Column="0"
+            x:CompileBindings="False"
+            IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}"
+            Width="{Binding $self.Bounds.Height}"
+            Margin="-10,-4,10,-4"
+            CornerRadius="4"
+            ClipToBounds="True"
+            VerticalAlignment="Stretch">
+      <Image Source="{Binding AlbumArt}"
+             Stretch="UniformToFill"/>
+    </Border>
+
+  <Grid Grid.Column="1">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
@@ -71,6 +86,7 @@
                  VerticalAlignment="Center"
                  IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
     </Grid>
+  </Grid>
   </Grid>
   </Border>
 </UserControl>
