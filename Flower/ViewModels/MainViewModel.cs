@@ -39,6 +39,8 @@ public partial class MainViewModel : ViewModelBase
         set => _playlistControlViewModel.SelectedTrack = value;
     }
 
+    public Track? CurrentlyPlayingTrack => _playlistControlViewModel.CurrentlyPlayingTrack;
+
     private ObservableCollection<Track> _tracks = new();
     public ObservableCollection<Track> Tracks
     {
@@ -244,6 +246,8 @@ public partial class MainViewModel : ViewModelBase
         {
             if (e.PropertyName == nameof(_playlistControlViewModel.SelectedTrack))
                 OnPropertyChanged(nameof(SelectedTrack));
+            if (e.PropertyName == nameof(_playlistControlViewModel.CurrentlyPlayingTrack))
+                OnPropertyChanged(nameof(CurrentlyPlayingTrack));
         };
     }
 
