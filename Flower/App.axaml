@@ -3,35 +3,9 @@
              x:Class="Flower.App"
              RequestedThemeVariant="Default"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
-
-    <Application.Resources>
-        <ResourceDictionary>
-            <!-- Override per-theme so ThemeDictionary lookup doesn't beat our value -->
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="DataGridCurrencyVisualPrimaryBrush" Color="Transparent"/>
-                    <SolidColorBrush x:Key="DataGridCurrencyVisualSecondaryBrush" Color="Transparent"/>
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="DataGridCurrencyVisualPrimaryBrush" Color="Transparent"/>
-                    <SolidColorBrush x:Key="DataGridCurrencyVisualSecondaryBrush" Color="Transparent"/>
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
-        </ResourceDictionary>
-    </Application.Resources>
 
     <Application.Styles>
         <FluentTheme />
-        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
-        <!--<StyleInclude Source="avares://Material.Icons.Avalonia/App.xaml" />-->
         <materialIcons:MaterialIconStyles />
-        <!-- Remove current-cell indicator: hide the CurrencyVisual rectangle and suppress focus adorner -->
-        <Style Selector="DataGridCell:current /template/ Rectangle#CurrencyVisual">
-            <Setter Property="IsVisible" Value="False"/>
-        </Style>
-        <Style Selector="DataGridCell">
-            <Setter Property="FocusAdorner" Value="{x:Null}"/>
-        </Style>
     </Application.Styles>
 </Application>

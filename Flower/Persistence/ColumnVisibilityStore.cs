@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -6,14 +7,25 @@ using System.Threading.Tasks;
 
 namespace Flower.Persistence
 {
+    // Kept for backward-compat with existing config.json reads
     public class ColumnVisibilitySettings
     {
-        public bool Title { get; set; } = true;
-        public bool Artist { get; set; } = true;
-        public bool Album { get; set; } = true;
-        public bool Year { get; set; } = true;
-        public bool Genre { get; set; } = true;
+        public bool Title    { get; set; } = true;
+        public bool Artist   { get; set; } = true;
+        public bool Album    { get; set; } = true;
+        public bool Year     { get; set; } = true;
+        public bool Genre    { get; set; } = true;
         public bool Duration { get; set; } = true;
+
+        public List<ColumnState>? ColumnStates { get; set; }
+    }
+
+    public class ColumnState
+    {
+        public string Id        { get; set; } = "";
+        public bool   IsVisible { get; set; } = true;
+        public double Width     { get; set; } = 100;
+        public int    Order     { get; set; } = 0;
     }
 
     public class ColumnVisibilityStore
@@ -50,12 +62,22 @@ namespace Flower.Persistence
             }
         }
 
+        public List<ColumnState>? LoadColumnStates()
+            => Load().ColumnStates;
+
         public async Task SaveAsync(ColumnVisibilitySettings settings)
         {
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var json = JsonSerializer.Serialize(settings, Options);
             await File.WriteAllTextAsync(path, json);
+        }
+
+        public async Task SaveColumnStatesAsync(List<ColumnState> states)
+        {
+            var settings = Load();
+            settings.ColumnStates = states;
+            await SaveAsync(settings);
         }
     }
 }

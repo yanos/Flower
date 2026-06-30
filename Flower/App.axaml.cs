@@ -7,6 +7,7 @@ using Avalonia.Markup.Xaml;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
+using Flower.Controls;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
@@ -43,6 +44,7 @@ public partial class App : Application
                 .AddSingleton(library)
                 .AddSingleton(mainPlaylist)
                 .AddSingleton<ColumnVisibilityStore>()
+                .AddSingleton<ColumnManager>()
                 .AddSingleton<Importer.Importer>()
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
