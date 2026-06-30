@@ -1,19 +1,15 @@
 using System;
 using System.ComponentModel;
-using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
-using Flower.Converters;
 using Flower.Models;
 using Flower.ViewModels;
 
@@ -27,13 +23,6 @@ public partial class MainView : UserControl
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private MainViewModel? _viewModel;
 
-    private readonly DataGridTextColumn _titleColumn;
-    private readonly DataGridTextColumn _artistColumn;
-    private readonly DataGridTextColumn _albumColumn;
-    private readonly DataGridTextColumn _yearColumn;
-    private readonly DataGridTextColumn _genreColumn;
-    private readonly DataGridTextColumn _durationColumn;
-
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
 
@@ -43,27 +32,7 @@ public partial class MainView : UserControl
     public MainView()
     {
         InitializeComponent();
-
         _playlistControlViewModel = Ioc.Default.GetService<PlaylistControlViewModel>()!;
-
-        var durationConverter = new DurationConverter();
-
-        _titleColumn    = new DataGridTextColumn { Header = "Title",    Binding = new Binding(nameof(Track.Title)),    Width = new DataGridLength(2, DataGridLengthUnitType.Star) };
-        _artistColumn   = new DataGridTextColumn { Header = "Artist",   Binding = new Binding(nameof(Track.Artists)),  Width = new DataGridLength(1.5, DataGridLengthUnitType.Star) };
-        _albumColumn    = new DataGridTextColumn { Header = "Album",    Binding = new Binding(nameof(Track.Album)),    Width = new DataGridLength(1.5, DataGridLengthUnitType.Star) };
-        _yearColumn     = new DataGridTextColumn { Header = "Year",     Binding = new Binding(nameof(Track.Year)),     Width = new DataGridLength(60) };
-        _genreColumn    = new DataGridTextColumn { Header = "Genre",    Binding = new Binding(nameof(Track.Genre)),    Width = new DataGridLength(100) };
-        _durationColumn = new DataGridTextColumn { Header = "Duration", Binding = new Binding("_DebugDurationTicks"), Width = new DataGridLength(120) };
-
-        TrackGrid.Columns.Add(_titleColumn);
-        TrackGrid.Columns.Add(_artistColumn);
-        TrackGrid.Columns.Add(_albumColumn);
-        TrackGrid.Columns.Add(_yearColumn);
-        TrackGrid.Columns.Add(_genreColumn);
-        TrackGrid.Columns.Add(_durationColumn);
-
-        TrackGrid.KeyDown += TrackGrid_KeyDown;
-        TrackGrid.AddHandler(ContextRequestedEvent, TrackGrid_ContextRequested, RoutingStrategies.Bubble);
         DataContextChanged += OnDataContextChanged;
     }
 
@@ -79,12 +48,21 @@ public partial class MainView : UserControl
 
         if (_viewModel != null)
         {
-            ApplyColumnVisibility();
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             BuildMenus();
             if (_viewModel.IsBusy) StartSpinner();
         }
     }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.IsBusy))
+        {
+            if (_viewModel!.IsBusy) StartSpinner(); else StopSpinner();
+        }
+    }
+
+    // ── Spinner ──────────────────────────────────────────────────────────────
 
     private void StartSpinner()
     {
@@ -105,32 +83,7 @@ public partial class MainView : UserControl
         if (SpinnerIcon != null) SpinnerIcon.RenderTransform = null;
     }
 
-    private void ApplyColumnVisibility()
-    {
-        if (_viewModel == null) return;
-        _titleColumn.IsVisible    = _viewModel.IsTitleVisible;
-        _artistColumn.IsVisible   = _viewModel.IsArtistVisible;
-        _albumColumn.IsVisible    = _viewModel.IsAlbumVisible;
-        _yearColumn.IsVisible     = _viewModel.IsYearVisible;
-        _genreColumn.IsVisible    = _viewModel.IsGenreVisible;
-        _durationColumn.IsVisible = _viewModel.IsDurationVisible;
-    }
-
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(MainViewModel.IsTitleVisible):    _titleColumn.IsVisible    = _viewModel!.IsTitleVisible;    break;
-            case nameof(MainViewModel.IsArtistVisible):   _artistColumn.IsVisible   = _viewModel!.IsArtistVisible;   break;
-            case nameof(MainViewModel.IsAlbumVisible):    _albumColumn.IsVisible    = _viewModel!.IsAlbumVisible;    break;
-            case nameof(MainViewModel.IsYearVisible):     _yearColumn.IsVisible     = _viewModel!.IsYearVisible;     break;
-            case nameof(MainViewModel.IsGenreVisible):    _genreColumn.IsVisible    = _viewModel!.IsGenreVisible;    break;
-            case nameof(MainViewModel.IsDurationVisible): _durationColumn.IsVisible = _viewModel!.IsDurationVisible; break;
-            case nameof(MainViewModel.IsBusy):
-                if (_viewModel!.IsBusy) StartSpinner(); else StopSpinner();
-                break;
-        }
-    }
+    // ── Context menus ─────────────────────────────────────────────────────────
 
     private void BuildMenus()
     {
@@ -156,21 +109,17 @@ public partial class MainView : UserControl
         _trackMenu.Items.Add(getInfoItem);
     }
 
-    private void TrackGrid_ContextRequested(object? sender, ContextRequestedEventArgs e)
+    private void ColumnHeader_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        bool onHeader = (e.Source as Visual)?
-            .GetSelfAndVisualAncestors()
-            .OfType<DataGridColumnHeader>()
-            .Any() ?? false;
+        _columnMenu.Open(TrackList);
+        e.Handled = true;
+    }
 
-        if (onHeader)
+    private void TrackList_ContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (TrackList.SelectedItem is Track)
         {
-            _columnMenu.Open(TrackGrid);
-            e.Handled = true;
-        }
-        else if (TrackGrid.SelectedItem is Track)
-        {
-            _trackMenu.Open(TrackGrid);
+            _trackMenu.Open(TrackList);
             e.Handled = true;
         }
     }
@@ -195,7 +144,9 @@ public partial class MainView : UserControl
             : null;
     }
 
-    private void TrackGrid_KeyDown(object? sender, KeyEventArgs e)
+    // ── Keyboard ──────────────────────────────────────────────────────────────
+
+    private void TrackList_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.I && e.KeyModifiers == KeyModifiers.Meta)
         {
@@ -209,15 +160,26 @@ public partial class MainView : UserControl
         }
         else if (e.Key == Key.Return)
         {
-            if (TrackGrid.SelectedItem is Track track)
+            if (TrackList.SelectedItem is Track track)
                 _playlistControlViewModel.Play(track);
+            e.Handled = true;
+        }
+    }
+
+    // ── Track actions ─────────────────────────────────────────────────────────
+
+    private void TrackList_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (TrackList.SelectedItem is Track track)
+        {
+            _playlistControlViewModel.Play(track);
             e.Handled = true;
         }
     }
 
     private void OpenTrackInfo()
     {
-        if (TrackGrid.SelectedItem is not Track track) return;
+        if (TrackList.SelectedItem is not Track track) return;
         var infoWindow = new TrackInfoWindow(track) { ShowInTaskbar = false };
         if (TopLevel.GetTopLevel(this) is Window owner)
             infoWindow.Show(owner);
@@ -225,14 +187,7 @@ public partial class MainView : UserControl
             infoWindow.Show();
     }
 
-    private void DataGrid_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
-    {
-        if (sender is DataGrid dataGrid && dataGrid.SelectedItem is Track selectedTrack)
-        {
-            _playlistControlViewModel.Play(selectedTrack);
-            e.Handled = true;
-        }
-    }
+    // ── Sidebar ───────────────────────────────────────────────────────────────
 
     private SidebarItem? _lastSelectableSidebarItem;
 
