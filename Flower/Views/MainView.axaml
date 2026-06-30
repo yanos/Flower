@@ -16,6 +16,7 @@
 
   <UserControl.Resources>
     <converters:DurationConverter x:Key="DurationConverter"/>
+    <converters:IsCurrentTrackConverter x:Key="IsCurrentTrackConverter"/>
   </UserControl.Resources>
 
   <Grid>
@@ -194,7 +195,27 @@
             </Style>
           </DataGrid.Styles>
           <DataGrid.Columns>
-            <DataGridTextColumn Header="Title"    Binding="{Binding Title}"    Width="2*"   SortMemberPath="Title"/>
+            <DataGridTemplateColumn Header="Title" Width="2*" SortMemberPath="Title">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate>
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="14"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="▶" FontSize="8" VerticalAlignment="Center" HorizontalAlignment="Center">
+                      <TextBlock.IsVisible>
+                        <MultiBinding Converter="{StaticResource IsCurrentTrackConverter}">
+                          <Binding Path="."/>
+                          <Binding Path="DataContext.CurrentlyPlayingTrack" ElementName="TrackList"/>
+                        </MultiBinding>
+                      </TextBlock.IsVisible>
+                    </TextBlock>
+                    <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  </Grid>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
             <DataGridTextColumn Header="Artist"   Binding="{Binding Artists}"  Width="1.5*" SortMemberPath="Artists"/>
             <DataGridTextColumn Header="Album"    Binding="{Binding Album}"    Width="1.5*" SortMemberPath="Album"/>
             <DataGridTextColumn Header="Year"     Binding="{Binding Year}"     Width="60"   SortMemberPath="Year"/>
