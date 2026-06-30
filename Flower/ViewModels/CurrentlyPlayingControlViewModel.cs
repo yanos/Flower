@@ -15,6 +15,7 @@ namespace Flower.ViewModels
     {
         private readonly PlaylistControlViewModel _playlistControlViewModel;
         private readonly IAudioManager _audioManager;
+        private readonly Library _library;
 
         private double _seekPosition;
         private bool _isUpdatingFromAudio;
@@ -111,16 +112,41 @@ namespace Flower.ViewModels
                     catch { }
                 }
 
+                // 3. Embedded art from another track on the same album
+                if (bitmap == null && !string.IsNullOrEmpty(track.Album))
+                {
+                    var siblings = _library.Tracks
+                        .Where(t => t.Path != track.Path &&
+                                    string.Equals(t.Album, track.Album, StringComparison.OrdinalIgnoreCase));
+                    foreach (var sibling in siblings)
+                    {
+                        try
+                        {
+                            using var tagFile = TagLib.File.Create(sibling.Path);
+                            var pic = tagFile.Tag.Pictures.FirstOrDefault();
+                            if (pic?.Data?.Data is { Length: > 0 } data)
+                            {
+                                using var ms = new MemoryStream(data);
+                                bitmap = new Bitmap(ms);
+                                break;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
                 Dispatcher.UIThread.Post(() => AlbumArt = bitmap);
             });
         }
 
         public CurrentlyPlayingControlViewModel(
             PlaylistControlViewModel playlistControlViewModel,
-            IAudioManager audioManager)
+            IAudioManager audioManager,
+            Library library)
         {
             _playlistControlViewModel = playlistControlViewModel;
             _audioManager = audioManager;
+            _library = library;
 
             _playlistControlViewModel.PropertyChanged += (s, e) =>
             {
