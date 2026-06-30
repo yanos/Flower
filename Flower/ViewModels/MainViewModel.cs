@@ -170,6 +170,16 @@ public partial class MainViewModel : ViewModelBase
         _selectedSidebarItem?.Kind == SidebarItemKind.Albums ||
         _selectedSidebarItem?.Kind == SidebarItemKind.Artists;
 
+    // Identifies the currently displayed track list (Songs / a given album / artist / playlist)
+    // so the view can remember a separate scroll position and selection for each one.
+    public string CurrentViewKey => _selectedSidebarItem?.Kind switch
+    {
+        SidebarItemKind.Albums   => $"album:{_selectedSubItem}",
+        SidebarItemKind.Artists  => $"artist:{_selectedSubItem}",
+        SidebarItemKind.Playlist => $"playlist:{_selectedSidebarItem.Playlist?.Name}",
+        _                        => "songs"
+    };
+
     private ObservableCollection<string> _subListItems = new();
     public ObservableCollection<string> SubListItems
     {
@@ -178,14 +188,28 @@ public partial class MainViewModel : ViewModelBase
     }
 
     private string? _selectedSubItem;
+    private string? _lastSelectedAlbum;
+    private string? _lastSelectedArtist;
+
     public string? SelectedSubItem
     {
         get => _selectedSubItem;
         set
         {
             _selectedSubItem = value;
+            RememberSubItemSelection(value);
             OnPropertyChanged();
             ScheduleFilter();
+        }
+    }
+
+    private void RememberSubItemSelection(string? value)
+    {
+        if (value == null) return;
+        switch (_selectedSidebarItem?.Kind)
+        {
+            case SidebarItemKind.Albums:  _lastSelectedAlbum  = value; break;
+            case SidebarItemKind.Artists: _lastSelectedArtist = value; break;
         }
     }
 
@@ -276,9 +300,20 @@ public partial class MainViewModel : ViewModelBase
     private void OnSidebarSelectionChanged()
     {
         OnPropertyChanged(nameof(IsSubListVisible));
-        _selectedSubItem = null;
-        OnPropertyChanged(nameof(SelectedSubItem));
         RebuildSubListItems();
+
+        var lastSelected = _selectedSidebarItem?.Kind switch
+        {
+            SidebarItemKind.Albums  => _lastSelectedAlbum,
+            SidebarItemKind.Artists => _lastSelectedArtist,
+            _ => null
+        };
+        _selectedSubItem = lastSelected != null && _subListItems.Contains(lastSelected)
+            ? lastSelected
+            : _subListItems.FirstOrDefault();
+        RememberSubItemSelection(_selectedSubItem);
+        OnPropertyChanged(nameof(SelectedSubItem));
+
         ScheduleFilter();
     }
 

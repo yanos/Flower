@@ -95,7 +95,11 @@ public partial class MusicListView : UserControl
     {
         InitializeComponent();
         _columnManager = Ioc.Default.GetService<ColumnManager>()!;
-        _panel         = new MusicListPanel { ClipToBounds = false };
+        _panel         = new MusicListPanel
+        {
+            ClipToBounds      = false,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
 
         Scroller.Content = _panel;
 
@@ -118,6 +122,19 @@ public partial class MusicListView : UserControl
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
 
         BuildHeader();
+    }
+
+    // ── Scroll position ───────────────────────────────────────────────────────
+
+    public double GetScrollOffsetY() => Scroller.Offset.Y;
+
+    public void SetScrollOffsetY(double y)
+    {
+        // Force a layout pass first so the ScrollViewer's extent reflects the
+        // items just assigned via SetItems, otherwise the offset gets clamped
+        // against the stale (pre-update) extent.
+        Scroller.UpdateLayout();
+        Scroller.Offset = new Vector(0, y);
     }
 
     // ── Items ─────────────────────────────────────────────────────────────────

@@ -35,6 +35,12 @@ public partial class MainView : UserControl
     private DispatcherTimer? _spinTimer;
     private RotateTransform? _spinTransform;
 
+    // Per-view (Songs / album / artist / playlist) scroll position + selection memory
+    private readonly Dictionary<string, ViewScrollState> _viewStates = new();
+    private string? _currentViewKey;
+
+    private readonly record struct ViewScrollState(double ScrollOffsetY, string? SelectedTrackPath);
+
     public MainView()
     {
         InitializeComponent();
@@ -68,7 +74,7 @@ public partial class MainView : UserControl
             if (_viewModel.IsBusy) StartSpinner();
 
             // Push initial rows to MusicListView
-            MusicList.SetItems(_viewModel.Rows);
+            ApplyRows();
         }
     }
 
@@ -80,13 +86,48 @@ public partial class MainView : UserControl
                 if (_viewModel!.IsBusy) StartSpinner(); else StopSpinner();
                 break;
             case nameof(MainViewModel.Rows):
-                MusicList.SetItems(_viewModel!.Rows);
+                ApplyRows();
                 break;
             case nameof(MainViewModel.SortColumn):
             case nameof(MainViewModel.SortAscending):
                 MusicList.UpdateSortIndicators(_viewModel!.SortColumn, _viewModel.SortAscending);
                 break;
         }
+    }
+
+    // ── Per-view scroll position + selection ────────────────────────────────────
+
+    private void ApplyRows()
+    {
+        if (_viewModel == null) return;
+
+        var newKey = _viewModel.CurrentViewKey;
+
+        // Only save/restore on an actual view switch — leave filtering/sorting
+        // within the same view untouched.
+        if (newKey == _currentViewKey)
+        {
+            MusicList.SetItems(_viewModel.Rows);
+            return;
+        }
+
+        if (_currentViewKey != null)
+            _viewStates[_currentViewKey] = new ViewScrollState(MusicList.GetScrollOffsetY(), MusicList.SelectedRow?.Track.Path);
+
+        MusicList.SetItems(_viewModel.Rows);
+
+        if (_viewStates.TryGetValue(newKey, out var saved))
+        {
+            MusicList.SelectedRow = _viewModel.Rows.FirstOrDefault(r => r.Track.Path == saved.SelectedTrackPath);
+            MusicList.SetScrollOffsetY(saved.ScrollOffsetY);
+        }
+        else
+        {
+            MusicList.SelectedRow = null;
+            MusicList.SetScrollOffsetY(0);
+        }
+
+        _currentViewKey = newKey;
     }
 
     // ── Spinner ───────────────────────────────────────────────────────────────
