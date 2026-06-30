@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
+using Claunia.PropertyList;
+
 using Flower.Models;
 
 namespace Flower.Importer
@@ -17,7 +19,7 @@ namespace Flower.Importer
         {
             var tracks = new List<Track>();
 
-            var path = "/Users/yanos/Music";
+            var path = ResolveMusicPath();
 
             var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
                 .Where(f => _validExtensions.Contains(Path.GetExtension(f).ToLower()));
@@ -83,6 +85,31 @@ namespace Flower.Importer
             }
 
             return tracks;
+        }
+
+        private static string ResolveMusicPath()
+        {
+            if (OperatingSystem.IsMacOS())
+            {
+                try
+                {
+                    var plistPath = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                        "Library", "Preferences", "com.apple.Music.plist");
+
+                    if (File.Exists(plistPath) &&
+                        PropertyListParser.Parse(plistPath) is NSDictionary root &&
+                        root.TryGetValue("media-folder-url", out var locationNode) &&
+                        Uri.TryCreate(locationNode.ToString(), UriKind.Absolute, out var mediaFolderUri))
+                    {
+                        var mediaFolder = mediaFolderUri.LocalPath;
+                        if (!string.IsNullOrEmpty(mediaFolder) && Directory.Exists(mediaFolder))
+                            return mediaFolder;
+                    }
+                }
+                catch { }
+            }
+            return Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
         }
     }
 }
