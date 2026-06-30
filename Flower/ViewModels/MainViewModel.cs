@@ -9,7 +9,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 
-using Avalonia.Controls;
 using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.Input;
@@ -31,7 +30,6 @@ public partial class MainViewModel : ViewModelBase
 
     public ICommand? OpenDatabaseLocationCommand { get; private set; }
     public ICommand? RebuildDatabaseCommand { get; private set; }
-    public ICommand SortCommand { get; private set; } = null!;
 
     public Library Library { get; private set; }
 
@@ -156,81 +154,47 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    // Column visibility + GridLength widths for header and item rows
+    // Column visibility
     private bool _isTitleVisible;
     public bool IsTitleVisible
     {
         get => _isTitleVisible;
-        set { _isTitleVisible = value; OnPropertyChanged(); OnPropertyChanged(nameof(TitleColWidth)); SaveColumnSettings(); }
+        set { _isTitleVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
     }
 
     private bool _isArtistVisible;
     public bool IsArtistVisible
     {
         get => _isArtistVisible;
-        set { _isArtistVisible = value; OnPropertyChanged(); OnPropertyChanged(nameof(ArtistColWidth)); SaveColumnSettings(); }
+        set { _isArtistVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
     }
 
     private bool _isAlbumVisible;
     public bool IsAlbumVisible
     {
         get => _isAlbumVisible;
-        set { _isAlbumVisible = value; OnPropertyChanged(); OnPropertyChanged(nameof(AlbumColWidth)); SaveColumnSettings(); }
+        set { _isAlbumVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
     }
 
     private bool _isYearVisible;
     public bool IsYearVisible
     {
         get => _isYearVisible;
-        set { _isYearVisible = value; OnPropertyChanged(); OnPropertyChanged(nameof(YearColWidth)); SaveColumnSettings(); }
+        set { _isYearVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
     }
 
     private bool _isGenreVisible;
     public bool IsGenreVisible
     {
         get => _isGenreVisible;
-        set { _isGenreVisible = value; OnPropertyChanged(); OnPropertyChanged(nameof(GenreColWidth)); SaveColumnSettings(); }
+        set { _isGenreVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
     }
 
     private bool _isDurationVisible;
     public bool IsDurationVisible
     {
         get => _isDurationVisible;
-        set { _isDurationVisible = value; OnPropertyChanged(); OnPropertyChanged(nameof(DurationColWidth)); SaveColumnSettings(); }
-    }
-
-    // GridLength for each column — consumed by both the header and item DataTemplate
-    public GridLength TitleColWidth    => IsTitleVisible    ? new GridLength(2,   GridUnitType.Star) : new GridLength(0);
-    public GridLength ArtistColWidth   => IsArtistVisible   ? new GridLength(1.5, GridUnitType.Star) : new GridLength(0);
-    public GridLength AlbumColWidth    => IsAlbumVisible    ? new GridLength(1.5, GridUnitType.Star) : new GridLength(0);
-    public GridLength YearColWidth     => IsYearVisible     ? new GridLength(60)                     : new GridLength(0);
-    public GridLength GenreColWidth    => IsGenreVisible    ? new GridLength(100)                    : new GridLength(0);
-    public GridLength DurationColWidth => IsDurationVisible ? new GridLength(80)                     : new GridLength(0);
-
-    // Column header labels with sort indicator
-    private string? _sortProperty;
-    private bool _sortDescending;
-
-    private string SortArrow(string prop) => _sortProperty == prop ? (_sortDescending ? " ↓" : " ↑") : "";
-    public string TitleHeader    => $"Title{SortArrow("Title")}";
-    public string ArtistHeader   => $"Artist{SortArrow("Artists")}";
-    public string AlbumHeader    => $"Album{SortArrow("Album")}";
-    public string YearHeader     => $"Year{SortArrow("Year")}";
-    public string GenreHeader    => $"Genre{SortArrow("Genre")}";
-    public string DurationHeader => $"Duration{SortArrow("Duration")}";
-
-    private void Sort(string? property)
-    {
-        if (property == null) return;
-        _sortDescending = _sortProperty == property && !_sortDescending;
-        _sortProperty = property;
-        OnPropertyChanged(nameof(TitleHeader));
-        OnPropertyChanged(nameof(ArtistHeader));
-        OnPropertyChanged(nameof(AlbumHeader));
-        OnPropertyChanged(nameof(YearHeader));
-        OnPropertyChanged(nameof(GenreHeader));
-        OnPropertyChanged(nameof(DurationHeader));
-        ScheduleFilter();
+        set { _isDurationVisible = value; OnPropertyChanged(); SaveColumnSettings(); }
     }
 
     private void SaveColumnSettings()
@@ -261,7 +225,6 @@ public partial class MainViewModel : ViewModelBase
 
         OpenDatabaseLocationCommand = new RelayCommand(OpenDatabaseLocation);
         RebuildDatabaseCommand = new AsyncRelayCommand(RebuildDatabaseAsync);
-        SortCommand = new RelayCommand<string>(Sort);
 
         _columnSettings = columnVisibilityStore.Load();
         _isTitleVisible = _columnSettings.Title;
@@ -383,29 +346,14 @@ public partial class MainViewModel : ViewModelBase
 
             var text = _filterText;
             var baseTracks = GetBaseTracksForFilter();
-            var sortProp = _sortProperty;
-            var sortDesc = _sortDescending;
             var results = await Task.Run(() =>
             {
-                IEnumerable<Track> filtered = string.IsNullOrWhiteSpace(text)
-                    ? baseTracks
-                    : baseTracks.Where(t =>
-                        t.Title?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
-                        t.Artists?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
-                        t.Album?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
-                        t.Genre?.Contains(text, StringComparison.OrdinalIgnoreCase) == true);
-
-                if (sortProp == null) return filtered.ToList();
-                return sortProp switch
-                {
-                    "Title"    => sortDesc ? filtered.OrderByDescending(t => t.Title).ToList()    : filtered.OrderBy(t => t.Title).ToList(),
-                    "Artists"  => sortDesc ? filtered.OrderByDescending(t => t.Artists).ToList()  : filtered.OrderBy(t => t.Artists).ToList(),
-                    "Album"    => sortDesc ? filtered.OrderByDescending(t => t.Album).ToList()    : filtered.OrderBy(t => t.Album).ToList(),
-                    "Year"     => sortDesc ? filtered.OrderByDescending(t => t.Year).ToList()     : filtered.OrderBy(t => t.Year).ToList(),
-                    "Genre"    => sortDesc ? filtered.OrderByDescending(t => t.Genre).ToList()    : filtered.OrderBy(t => t.Genre).ToList(),
-                    "Duration" => sortDesc ? filtered.OrderByDescending(t => t.Duration).ToList() : filtered.OrderBy(t => t.Duration).ToList(),
-                    _ => filtered.ToList()
-                };
+                if (string.IsNullOrWhiteSpace(text)) return baseTracks;
+                return baseTracks.Where(t =>
+                    t.Title?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true ||
+                    t.Artists?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
+                    t.Album?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true ||
+                    t.Genre?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true).ToList();
             }, token);
 
             if (token.IsCancellationRequested) return;
