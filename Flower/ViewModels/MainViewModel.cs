@@ -58,6 +58,8 @@ public partial class MainViewModel : ViewModelBase
 
     private List<Track> _currentFilteredTracks = new();
 
+    public IReadOnlyList<Track> DisplayedTracks => _currentFilteredTracks;
+
     public string StatusBarText
     {
         get

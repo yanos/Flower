@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -187,7 +189,12 @@ public partial class MainView : UserControl
     private void OpenTrackInfo()
     {
         if (MusicList.SelectedTrack is not Track track) return;
-        var infoWindow = new TrackInfoWindow(track) { ShowInTaskbar = false };
+        if (_viewModel is not MainViewModel vm) return;
+        var tracks = vm.DisplayedTracks;
+        var index  = tracks.ToList().IndexOf(track);
+        if (index < 0) index = 0;
+        var infoWindow = new TrackInfoWindow(tracks, index) { ShowInTaskbar = false };
+        infoWindow.TrackNavigated += (_, t) => MusicList.SelectedTrack = t;
         if (TopLevel.GetTopLevel(this) is Window owner)
             infoWindow.Show(owner);
         else
