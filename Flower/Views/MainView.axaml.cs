@@ -71,6 +71,7 @@ public partial class MainView : UserControl
         {
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.SettingsRequested -= OnSettingsRequested;
+            _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             StopSpinner();
         }
 
@@ -80,6 +81,7 @@ public partial class MainView : UserControl
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.SettingsRequested += OnSettingsRequested;
+            _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             BuildColumnMenu();
             if (_viewModel.IsBusy) StartSpinner();
 
@@ -273,7 +275,14 @@ public partial class MainView : UserControl
             _viewModel?.OpenSettingsCommand?.Execute(null);
             e.Handled = true;
         }
+        else if (e.Key == Key.L && e.KeyModifiers == KeyModifiers.Meta)
+        {
+            _ = _viewModel?.GoToCurrentlyPlayingTrackAsync();
+            e.Handled = true;
+        }
     }
+
+    private void OnNavigateToTrackRequested(object? sender, Track track) => MusicList.ScrollToTrack(track);
 
     private void OnSettingsRequested(object? sender, EventArgs e) => OpenSettingsWindow();
 

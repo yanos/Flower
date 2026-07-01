@@ -162,6 +162,26 @@ public partial class MusicListView : UserControl
         Scroller.Offset = new Vector(0, y);
     }
 
+    // Selects the row for `track` and centers it in the viewport (used by "go to
+    // currently playing track"). Returns false if the track isn't in the current items.
+    public bool ScrollToTrack(FlowerTrack track)
+    {
+        int index = -1;
+        for (int i = 0; i < _items.Count; i++)
+            if (_items[i].Track.Path == track.Path) { index = i; break; }
+        if (index < 0) return false;
+
+        SelectedRow = _items[index];
+        Focus();
+
+        Scroller.UpdateLayout();
+        double rowTop     = index * TrackRowViewModel.RowHeight;
+        double target     = rowTop - (Scroller.Viewport.Height - TrackRowViewModel.RowHeight) / 2;
+        double maxOffset  = Math.Max(0, _items.Count * TrackRowViewModel.RowHeight - Scroller.Viewport.Height);
+        Scroller.Offset   = new Vector(0, Math.Clamp(target, 0, maxOffset));
+        return true;
+    }
+
     // ── Items ─────────────────────────────────────────────────────────────────
 
     public void SetItems(IReadOnlyList<TrackRowViewModel> items)

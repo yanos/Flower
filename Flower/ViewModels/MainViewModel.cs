@@ -36,6 +36,7 @@ public partial class MainViewModel : ViewModelBase
     public ICommand? OpenSettingsCommand         { get; private set; }
 
     public event EventHandler? SettingsRequested;
+    public event EventHandler<Track>? NavigateToTrackRequested;
 
     public Library Library { get; private set; }
 
@@ -447,24 +448,70 @@ public partial class MainViewModel : ViewModelBase
         try
         {
             await Task.Delay(250, token);
-
-            var text       = _filterText;
-            // Playlists have a user-defined (drag-reorderable) track order rather
-            // than a sortable one, so ignore the column sort while viewing one.
-            var sortCol    = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist ? "PlaylistOrder" : _sortColumn;
-            var sortAsc    = _sortAscending;
-            var playing    = CurrentlyPlayingTrack;
-            var baseTracks = GetBaseTracksForFilter();
-
-            var rows = await Task.Run(() =>
-                TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing), token);
-
-            if (token.IsCancellationRequested) return;
-
-            _currentFilteredTracks = rows.Select(r => r.Track).ToList();
-            Rows = new ObservableCollection<TrackRowViewModel>(rows);
-            OnPropertyChanged(nameof(StatusBarText));
+            await RebuildRowsAsync(token);
         }
         catch (OperationCanceledException) { }
+    }
+
+    private async Task RebuildRowsAsync(CancellationToken token)
+    {
+        var text       = _filterText;
+        // Playlists have a user-defined (drag-reorderable) track order rather
+        // than a sortable one, so ignore the column sort while viewing one.
+        var sortCol    = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist ? "PlaylistOrder" : _sortColumn;
+        var sortAsc    = _sortAscending;
+        var playing    = CurrentlyPlayingTrack;
+        var baseTracks = GetBaseTracksForFilter();
+
+        var rows = await Task.Run(() =>
+            TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing), token);
+
+        if (token.IsCancellationRequested) return;
+
+        _currentFilteredTracks = rows.Select(r => r.Track).ToList();
+        Rows = new ObservableCollection<TrackRowViewModel>(rows);
+        OnPropertyChanged(nameof(StatusBarText));
+    }
+
+    // ── Go to currently playing track (Cmd+L) ────────────────────────────────
+
+    public async Task GoToCurrentlyPlayingTrackAsync()
+    {
+        var track = CurrentlyPlayingTrack;
+        if (track == null) return;
+
+        if (_currentFilteredTracks.Any(t => t.Path == track.Path))
+        {
+            NavigateToTrackRequested?.Invoke(this, track);
+            return;
+        }
+
+        // Hidden by an active search and/or being scoped to the wrong
+        // playlist/album/artist — fix whichever applies, then rebuild
+        // immediately (bypassing the normal debounce) so the jump feels instant.
+        if (!string.IsNullOrEmpty(FilterText))
+            FilterText = null;
+
+        switch (_selectedSidebarItem?.Kind)
+        {
+            case SidebarItemKind.Playlist
+                when _selectedSidebarItem.Playlist?.Tracks.Any(t => t.Path == track.Path) != true:
+                var songs = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
+                if (songs != null) SelectedSidebarItem = songs;
+                break;
+            case SidebarItemKind.Albums:
+                SelectedSubItem = track.Album;
+                break;
+            case SidebarItemKind.Artists:
+                SelectedSubItem = track.Artists;
+                break;
+        }
+
+        _filterCts?.Cancel();
+        _filterCts = new CancellationTokenSource();
+        try { await RebuildRowsAsync(_filterCts.Token); }
+        catch (OperationCanceledException) { return; }
+
+        NavigateToTrackRequested?.Invoke(this, track);
     }
 }
