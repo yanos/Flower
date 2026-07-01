@@ -20,5 +20,10 @@ namespace Flower.Models
             Tracks = new List<Track>(tracks);
             TracksUpdated?.Invoke(this, EventArgs.Empty);
         }
+
+        public void AddPlaylist(Playlist playlist)
+        {
+            Playlists.Add(playlist);
+        }
     }
 }

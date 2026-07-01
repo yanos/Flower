@@ -36,6 +36,8 @@ public static class TrackListBuilder
 
     private static IEnumerable<Track> Sort(IEnumerable<Track> tracks, string col, bool asc)
     {
+        if (col == "PlaylistOrder") return tracks;
+
         IEnumerable<Track> ordered = col switch
         {
             "TrackNumber" => tracks.OrderBy(t => t.Album ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),

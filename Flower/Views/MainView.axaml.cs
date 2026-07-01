@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -17,6 +18,7 @@ using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Flower.Controls;
 using Flower.Models;
+using Flower.Persistence;
 using Flower.ViewModels;
 
 using Material.Icons;
@@ -31,6 +33,7 @@ public partial class MainView : UserControl
 
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
+    private MenuItem    _addToPlaylistItem = new();
 
     private DispatcherTimer? _spinTimer;
     private RotateTransform? _spinTransform;
@@ -52,6 +55,7 @@ public partial class MainView : UserControl
         MusicList.RowContextMenu  += OnRowContextMenu;
         MusicList.HeaderContextMenu += OnHeaderContextMenu;
         MusicList.SortRequested   += OnSortRequested;
+        MusicList.RowReordered    += OnRowReordered;
 
         // Forward Space / Cmd+I from inside the list
         MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
@@ -100,6 +104,8 @@ public partial class MainView : UserControl
     private void ApplyRows()
     {
         if (_viewModel == null) return;
+
+        MusicList.AllowReorder = _viewModel.SelectedSidebarItem?.Kind == SidebarItemKind.Playlist;
 
         var newKey = _viewModel.CurrentViewKey;
 
@@ -157,7 +163,10 @@ public partial class MainView : UserControl
         => _playlistControlViewModel.Play(row.Track);
 
     private void OnRowContextMenu(object? sender, TrackRowViewModel row)
-        => _trackMenu.Open(MusicList);
+    {
+        PopulateAddToPlaylistMenu(row.Track);
+        _trackMenu.Open(MusicList);
+    }
 
     private void OnHeaderContextMenu(object? sender, EventArgs e)
         => _columnMenu.Open(MusicList);
@@ -196,9 +205,35 @@ public partial class MainView : UserControl
         var locateFileItem = new MenuItem { Header = "Locate File" };
         locateFileItem.Click += (_, _) => LocateFile();
 
+        _addToPlaylistItem = new MenuItem { Header = "Add To Playlist" };
+
         _trackMenu = new ContextMenu();
         _trackMenu.Items.Add(getInfoItem);
+        _trackMenu.Items.Add(_addToPlaylistItem);
         _trackMenu.Items.Add(locateFileItem);
+    }
+
+    private void PopulateAddToPlaylistMenu(Track track)
+    {
+        if (_viewModel is not MainViewModel vm) return;
+
+        _addToPlaylistItem.Items.Clear();
+
+        var newPlaylistItem = new MenuItem { Header = "New Playlist" };
+        newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTrack(track);
+        _addToPlaylistItem.Items.Add(newPlaylistItem);
+
+        if (vm.Library.Playlists.Count > 0)
+        {
+            _addToPlaylistItem.Items.Add(new Separator());
+            foreach (var playlist in vm.Library.Playlists)
+            {
+                var target = playlist; // capture
+                var item = new MenuItem { Header = target.Name };
+                item.Click += async (_, _) => await vm.AddTrackToPlaylist(track, target);
+                _addToPlaylistItem.Items.Add(item);
+            }
+        }
     }
 
     private static void SetCheckIcon(MenuItem item, bool visible)
@@ -267,5 +302,52 @@ public partial class MainView : UserControl
             list.SelectedItem = _lastSelectableSidebarItem;
         else if (list.SelectedItem is SidebarItem item)
             _lastSelectableSidebarItem = item;
+    }
+
+    // ── Sidebar rename (new playlist) ────────────────────────────────────────
+
+    private void RenameBox_Loaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not TextBox tb) return;
+        tb.Focus();
+        tb.SelectAll();
+    }
+
+    private async void RenameBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox tb) return;
+        if (e.Key == Key.Enter || e.Key == Key.Escape)
+        {
+            await CommitRename(tb);
+            e.Handled = true;
+        }
+    }
+
+    private async void RenameBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb) await CommitRename(tb);
+    }
+
+    private async Task CommitRename(TextBox tb)
+    {
+        if (tb.DataContext is not SidebarItem item || !item.IsEditing) return;
+
+        var name = tb.Text?.Trim();
+        item.Name = string.IsNullOrEmpty(name) ? "New Playlist" : name;
+        item.IsEditing = false;
+
+        if (item.Playlist == null || _viewModel == null) return;
+        item.Playlist.Name = item.Name;
+        await new PlaylistStore().SaveAsync(_viewModel.Library.Playlists);
+    }
+
+    // ── Drag-to-reorder (playlist view only) ────────────────────────────────────
+
+    private async void OnRowReordered(object? sender, (Track dragged, Track? insertBefore) e)
+    {
+        if (_viewModel is not MainViewModel vm) return;
+        if (vm.SelectedSidebarItem?.Playlist is not Playlist playlist) return;
+
+        await vm.ReorderPlaylistTrack(playlist, e.dragged, e.insertBefore);
     }
 }

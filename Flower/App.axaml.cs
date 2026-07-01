@@ -37,6 +37,9 @@ public partial class App : Application
         var library = new Library(cachedTracks);
         var mainPlaylist = new MainPlaylist(library.Tracks);
 
+        foreach (var playlist in new PlaylistStore().Load(library.Tracks))
+            library.AddPlaylist(playlist);
+
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
                 .AddSingleton<IAudioManager>(new VlcAudioManager())
