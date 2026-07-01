@@ -13,6 +13,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Flower.iOS", "Flower.iOS\Fl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.CLI", "Flower.CLI\Flower.CLI.csproj", "{DAD6A135-307A-4ADD-B3DA-CC8551D3C3CC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Tests", "Flower.Tests\Flower.Tests.csproj", "{515D402C-228F-46E9-B014-99EA9F4460E0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -83,6 +85,18 @@ Global
 		{DAD6A135-307A-4ADD-B3DA-CC8551D3C3CC}.Release|x64.Build.0 = Release|Any CPU
 		{DAD6A135-307A-4ADD-B3DA-CC8551D3C3CC}.Release|x86.ActiveCfg = Release|Any CPU
 		{DAD6A135-307A-4ADD-B3DA-CC8551D3C3CC}.Release|x86.Build.0 = Release|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Debug|x64.Build.0 = Debug|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Debug|x86.Build.0 = Debug|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Release|x64.ActiveCfg = Release|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Release|x64.Build.0 = Release|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Release|x86.ActiveCfg = Release|Any CPU
+		{515D402C-228F-46E9-B014-99EA9F4460E0}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
