@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -16,6 +17,12 @@ namespace Flower.Manager
             {
                 if (_initialized) return;
                 _initialized = true;
+
+                if (!OperatingSystem.IsMacOS())
+                {
+                    Core.Initialize();
+                    return;
+                }
 
                 var vlcBase = "/Applications/VLC.app/Contents/MacOS";
                 var vlcLib = $"{vlcBase}/lib";

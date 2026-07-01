@@ -1,11 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0-ios</TargetFramework>
-    <SupportedOSPlatformVersion>10.0</SupportedOSPlatformVersion>
+    <TargetFramework>net9.0-ios18.0</TargetFramework>
+    <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
     <ProvisioningType>manual</ProvisioningType>
     <Nullable>enable</Nullable>
-    <RuntimeIdentifier>iossimulator-x64</RuntimeIdentifier>
+    <RuntimeIdentifier>iossimulator-arm64</RuntimeIdentifier>
     
     <!-- These properties need to be set in order to run on a real iDevice -->
     <!--<RuntimeIdentifier>ios-arm64</RuntimeIdentifier>-->
@@ -14,6 +14,8 @@
 
   <ItemGroup>
     <PackageReference Include="Avalonia.iOS" Version="11.3.13" />
+    <PackageReference Include="VideoLAN.LibVLC.iOS" Version="3.3.18" />
+    <PackageReference Include="LibVLCSharp.Avalonia" Version="3.10.0" />
   </ItemGroup>
 
   <ItemGroup>
