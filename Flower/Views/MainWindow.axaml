@@ -19,6 +19,8 @@
             <NativeMenuItem Header="Open Database Location" Command="{Binding OpenDatabaseLocationCommand}"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Rebuild Database" Command="{Binding RebuildDatabaseCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Settings…" Command="{Binding OpenSettingsCommand}" Gesture="Cmd+OemComma"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>

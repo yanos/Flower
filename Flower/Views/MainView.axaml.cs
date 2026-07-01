@@ -59,6 +59,10 @@ public partial class MainView : UserControl
 
         // Forward Space / Cmd+I from inside the list
         MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
+
+        // Cmd+, (Settings) must work regardless of which control currently has focus,
+        // so it's handled at the MainView root rather than scoped to MusicList.
+        AddHandler(KeyDownEvent, MainView_PreviewKeyDown, RoutingStrategies.Tunnel);
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -66,6 +70,7 @@ public partial class MainView : UserControl
         if (_viewModel != null)
         {
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _viewModel.SettingsRequested -= OnSettingsRequested;
             StopSpinner();
         }
 
@@ -74,6 +79,7 @@ public partial class MainView : UserControl
         if (_viewModel != null)
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _viewModel.SettingsRequested += OnSettingsRequested;
             BuildColumnMenu();
             if (_viewModel.IsBusy) StartSpinner();
 
@@ -258,6 +264,27 @@ public partial class MainView : UserControl
             e.Handled = true;
         }
         // Enter is handled inside MusicListView (fires RowActivated)
+    }
+
+    private void MainView_PreviewKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.OemComma && e.KeyModifiers == KeyModifiers.Meta)
+        {
+            _viewModel?.OpenSettingsCommand?.Execute(null);
+            e.Handled = true;
+        }
+    }
+
+    private void OnSettingsRequested(object? sender, EventArgs e) => OpenSettingsWindow();
+
+    private void OpenSettingsWindow()
+    {
+        if (_viewModel == null) return;
+        var settingsWindow = new SettingsWindow(_viewModel);
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            settingsWindow.ShowDialog(owner);
+        else
+            settingsWindow.Show();
     }
 
     // ── Track actions ─────────────────────────────────────────────────────────
