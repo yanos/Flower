@@ -20,7 +20,7 @@
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Rebuild Database" Command="{Binding RebuildDatabaseCommand}"/>
             <NativeMenuItemSeparator/>
-            <NativeMenuItem Header="Settings…" Command="{Binding OpenSettingsCommand}" Gesture="Cmd+OemComma"/>
+            <NativeMenuItem Header="Settings…" Command="{Binding OpenSettingsCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>

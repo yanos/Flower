@@ -473,7 +473,7 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(StatusBarText));
     }
 
-    // ── Go to currently playing track (Cmd+L) ────────────────────────────────
+    // ── Go to currently playing track (Cmd/Ctrl+L) ───────────────────────────
 
     public async Task GoToCurrentlyPlayingTrackAsync()
     {

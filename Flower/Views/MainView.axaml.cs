@@ -19,6 +19,7 @@ using CommunityToolkit.Mvvm.DependencyInjection;
 using Flower.Controls;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Services;
 using Flower.ViewModels;
 
 using Material.Icons;
@@ -57,11 +58,11 @@ public partial class MainView : UserControl
         MusicList.SortRequested   += OnSortRequested;
         MusicList.RowReordered    += OnRowReordered;
 
-        // Forward Space / Cmd+I from inside the list
+        // Forward Space / Cmd+I (Ctrl+I on Windows/Linux) from inside the list
         MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
 
-        // Cmd+, (Settings) must work regardless of which control currently has focus,
-        // so it's handled at the MainView root rather than scoped to MusicList.
+        // Cmd/Ctrl+, (Settings) must work regardless of which control currently
+        // has focus, so it's handled at the MainView root rather than scoped to MusicList.
         AddHandler(KeyDownEvent, MainView_PreviewKeyDown, RoutingStrategies.Tunnel);
     }
 
@@ -206,7 +207,7 @@ public partial class MainView : UserControl
         var getInfoItem = new MenuItem
         {
             Header       = "Get Info",
-            InputGesture = new KeyGesture(Key.I, KeyModifiers.Meta),
+            InputGesture = new KeyGesture(Key.I, PlatformShortcuts.Primary),
         };
         getInfoItem.Click += (_, _) => OpenTrackInfo();
 
@@ -255,7 +256,7 @@ public partial class MainView : UserControl
 
     private void MusicList_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.I && e.KeyModifiers == KeyModifiers.Meta)
+        if (e.Key == Key.I && e.KeyModifiers == PlatformShortcuts.Primary)
         {
             OpenTrackInfo();
             e.Handled = true;
@@ -270,12 +271,12 @@ public partial class MainView : UserControl
 
     private void MainView_PreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.OemComma && e.KeyModifiers == KeyModifiers.Meta)
+        if (e.Key == Key.OemComma && e.KeyModifiers == PlatformShortcuts.Primary)
         {
             _viewModel?.OpenSettingsCommand?.Execute(null);
             e.Handled = true;
         }
-        else if (e.Key == Key.L && e.KeyModifiers == KeyModifiers.Meta)
+        else if (e.Key == Key.L && e.KeyModifiers == PlatformShortcuts.Primary)
         {
             _ = _viewModel?.GoToCurrentlyPlayingTrackAsync();
             e.Handled = true;
