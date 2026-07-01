@@ -1,24 +1,14 @@
-itunes-like current song widget
-album art
-unit tests
 improve cli
 import play count
 icon
-status bar
- total number of songs
- bg progress
-format json 
 side bar
- artists
- songs
  years
- playlist
 album mode
 repeat, shuffle
-search -> filter
 sync database, playlist
 download songs on phone
-stream local files
 lyric service
 song history
-
+folder in playlist
+context menu in playlist
+cmd+j
