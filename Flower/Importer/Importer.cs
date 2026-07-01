@@ -104,7 +104,15 @@ namespace Flower.Importer
         }
 
         private static string ResolveMusicPath()
-            => TryResolveAppleMusicFolder() ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+        {
+            // iOS has no shared Music folder; the app's sandboxed Documents directory
+            // (populated via Finder file sharing, see Info.plist UIFileSharingEnabled)
+            // is the only place it can read files from.
+            if (OperatingSystem.IsIOS())
+                return Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+
+            return TryResolveAppleMusicFolder() ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+        }
 
         // Reads the media folder Apple Music is configured to use, straight from its
         // preferences plist. Public so it can also be used to auto-populate the
