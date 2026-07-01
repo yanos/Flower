@@ -36,6 +36,8 @@ public class TrackRowViewModel : ViewModelBase
 
     public string TrackNumberDisplay => Track.TrackNumber > 0 ? Track.TrackNumber.ToString() : "";
 
+    public string PlayCountDisplay => Track.PlayCount > 0 ? Track.PlayCount.ToString() : "";
+
     public string DurationDisplay
     {
         get

@@ -4,6 +4,7 @@ using Avalonia.Threading;
 
 using Flower.Manager;
 using Flower.Models;
+using Flower.Persistence;
 
 namespace Flower.ViewModels
 {
@@ -12,6 +13,7 @@ namespace Flower.ViewModels
         private Playlist _currentPlaylist;
         private Track? _currentlyPlayingTrack;
         private Track? _selectedTrack;
+        private readonly Library _library;
 
         private IAudioManager _audioManager { get; }
         
@@ -41,10 +43,12 @@ namespace Flower.ViewModels
 
         public PlaylistControlViewModel(
             IAudioManager audioManager,
-            MainPlaylist playlist)
+            MainPlaylist playlist,
+            Library library)
         {
             _audioManager = audioManager;
             _currentPlaylist = playlist;
+            _library = library;
 
             _audioManager.Playing += (s, e) =>
             {
@@ -62,11 +66,16 @@ namespace Flower.ViewModels
                 OnPropertyChanged(nameof(IsPlaying));
             };
 
-            _audioManager.EndReached += (s, e) =>
+            _audioManager.EndReached += async (s, e) =>
             {
                 if (CurrentlyPlayingTrack != null)
                 {
-                    var nextTrack = _currentPlaylist.GetNextTrack(CurrentlyPlayingTrack);
+                    var finishedTrack = CurrentlyPlayingTrack;
+                    finishedTrack.PlayCount++;
+                    _library.UpdateTracks(_library.Tracks);
+                    await new LibraryStore().SaveAsync(_library.Tracks);
+
+                    var nextTrack = _currentPlaylist.GetNextTrack(finishedTrack);
                     if (nextTrack != null)
                     {
                         Dispatcher.UIThread.Post(() => Play(nextTrack));
