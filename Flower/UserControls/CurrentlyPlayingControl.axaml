@@ -61,19 +61,11 @@
                HorizontalAlignment="Center" />
 
     <TextBlock Grid.Row="1"
+               Text="{Binding Subtitle}"
                HorizontalAlignment="Center"
                FontSize="12"
                Opacity="0.65"
-               Margin="0,2,0,0"
-               IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}">
-      <TextBlock.Text>
-        <MultiBinding StringFormat="{}{0} — {1} ({2})">
-          <Binding Path="CurrentlyPlayingTrack.Artists" />
-          <Binding Path="CurrentlyPlayingTrack.Album" />
-          <Binding Path="CurrentlyPlayingTrack.Year" />
-        </MultiBinding>
-      </TextBlock.Text>
-    </TextBlock>
+               Margin="0,2,0,0" />
 
     <Grid Grid.Row="2" Margin="0,4,0,0">
       <Grid.ColumnDefinitions>

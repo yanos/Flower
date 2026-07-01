@@ -23,6 +23,12 @@ namespace Flower.ViewModels
 
         public Track? CurrentlyPlayingTrack => _playlistControlViewModel.CurrentlyPlayingTrack;
 
+        // Always rendered (never IsVisible=false) so the control's height stays constant
+        // whether or not a track is playing, instead of growing when playback starts.
+        public string Subtitle => CurrentlyPlayingTrack is { } track
+            ? $"{track.Artists} — {track.Album} ({track.Year})"
+            : " ";
+
         public Bitmap? AlbumArt
         {
             get => _albumArt;
@@ -153,6 +159,7 @@ namespace Flower.ViewModels
                 if (e.PropertyName == nameof(_playlistControlViewModel.CurrentlyPlayingTrack))
                 {
                     OnPropertyChanged(nameof(CurrentlyPlayingTrack));
+                    OnPropertyChanged(nameof(Subtitle));
                     OnPropertyChanged(nameof(TotalTime));
                     LoadAlbumArt(_playlistControlViewModel.CurrentlyPlayingTrack);
                 }
