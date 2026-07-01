@@ -37,7 +37,8 @@ else
     {
         Console.WriteLine(" scanning music folder...");
         var importer = new Importer();
-        tracks = importer.Import();
+        var settings = new AppSettingsStore().Load();
+        tracks = importer.Import(settings.LibraryPaths);
         if (tracks.Count == 0)
         {
             Console.WriteLine("No tracks found.");

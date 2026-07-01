@@ -26,14 +26,20 @@ public partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private readonly ColumnVisibilityStore    _columnVisibilityStore;
+    private AppSettings? _appSettings;
     private Importer.Importer? _importer;
     private MainPlaylist?      _mainPlaylist;
 
     public ICommand? OpenDatabaseLocationCommand { get; private set; }
     public ICommand? RebuildDatabaseCommand      { get; private set; }
     public ICommand? SortByColumnCommand         { get; private set; }
+    public ICommand? OpenSettingsCommand         { get; private set; }
+
+    public event EventHandler? SettingsRequested;
 
     public Library Library { get; private set; }
+
+    public IReadOnlyList<string> LibraryPaths => _appSettings?.LibraryPaths ?? [];
 
     // ── Selection ─────────────────────────────────────────────────────────────
 
@@ -221,18 +227,21 @@ public partial class MainViewModel : ViewModelBase
         PlaylistControlViewModel playlistControlViewModel,
         Library library,
         ColumnVisibilityStore columnVisibilityStore,
+        AppSettings appSettings,
         Importer.Importer importer,
         MainPlaylist mainPlaylist)
     {
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
         _columnVisibilityStore = columnVisibilityStore;
+        _appSettings           = appSettings;
         _importer              = importer;
         _mainPlaylist          = mainPlaylist;
 
         OpenDatabaseLocationCommand = new RelayCommand(OpenDatabaseLocation);
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
         SortByColumnCommand         = new RelayCommand<string>(SortByColumn);
+        OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
 
         BuildSidebarItems();
         PopulateTracks();
@@ -407,10 +416,19 @@ public partial class MainViewModel : ViewModelBase
     {
         if (_importer == null || _mainPlaylist == null) return;
         using var _ = BeginBusy("Rebuilding library…");
-        var freshTracks = await Task.Run(() => _importer.Import());
+        var libraryPaths = _appSettings?.LibraryPaths;
+        var freshTracks = await Task.Run(() => _importer.Import(libraryPaths));
         _mainPlaylist.ReplaceAll(freshTracks);
         Library.UpdateTracks(freshTracks);
         await new LibraryStore().SaveAsync(freshTracks);
+    }
+
+    public async Task UpdateLibraryPathsAsync(List<string> paths)
+    {
+        _appSettings ??= new AppSettings();
+        _appSettings.LibraryPaths = paths;
+        await new AppSettingsStore().SaveAsync(_appSettings);
+        await RebuildDatabaseAsync();
     }
 
     private void PopulateTracks()
