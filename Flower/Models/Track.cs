@@ -46,5 +46,8 @@ namespace Flower.Models
 
         // File
         public string? Path { get; set; }
+
+        // Stats
+        public int PlayCount { get; set; }
     }
 }

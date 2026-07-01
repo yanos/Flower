@@ -67,5 +67,6 @@ public class ColumnManager
         new("Year",        "Year",     60,  40, true, 4),
         new("Genre",       "Genre",   100,  60, true, 5),
         new("Duration",    "Duration", 80,  50, true, 6),
+        new("PlayCount",   "Plays",    55,  40, true, 7),
     ];
 }

@@ -47,6 +47,7 @@ public static class TrackListBuilder
             "Year"        => tracks.OrderBy(t => t.Year    ?? ""),
             "Genre"       => tracks.OrderBy(t => t.Genre   ?? ""),
             "Duration"    => tracks.OrderBy(t => t.Duration),
+            "PlayCount"   => tracks.OrderBy(t => t.PlayCount),
             _             => tracks.OrderBy(t => t.Album   ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
         };
         return asc ? ordered : ordered.Reverse();

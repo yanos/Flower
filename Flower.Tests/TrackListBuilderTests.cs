@@ -100,6 +100,23 @@ public class TrackListBuilderTests
     }
 
     [Fact]
+    public void Sort_by_playcount_ascending_and_descending()
+    {
+        var tracks = new List<Track>
+        {
+            T("Popular",  album: "A") with { PlayCount = 42 },
+            T("Unplayed", album: "B") with { PlayCount = 0 },
+            T("Some",     album: "C") with { PlayCount = 7 },
+        };
+
+        var asc = TrackListBuilder.Build(tracks, null, "PlayCount", true);
+        Assert.Equal(new[] { "Unplayed", "Some", "Popular" }, asc.ConvertAll(r => r.Track.Title));
+
+        var desc = TrackListBuilder.Build(tracks, null, "PlayCount", false);
+        Assert.Equal(new[] { "Popular", "Some", "Unplayed" }, desc.ConvertAll(r => r.Track.Title));
+    }
+
+    [Fact]
     public void Sort_by_column_other_than_album_or_tracknumber_does_not_group()
     {
         var tracks = new List<Track>

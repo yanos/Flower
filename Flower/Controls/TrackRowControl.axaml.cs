@@ -106,6 +106,7 @@ public partial class TrackRowControl : UserControl
             "Year"        => "Track.Year",
             "Genre"       => "Track.Genre",
             "Duration"    => nameof(TrackRowViewModel.DurationDisplay),
+            "PlayCount"   => nameof(TrackRowViewModel.PlayCountDisplay),
             _             => ".",
         }));
         return tb;
