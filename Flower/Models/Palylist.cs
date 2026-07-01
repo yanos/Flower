@@ -8,7 +8,7 @@ namespace Flower.Models
 {
     public class Playlist
     {
-        public string Name { get; }
+        public string Name { get; set; }
         public List<Track> Tracks { get; }
 
         public Playlist(string name, List<Track> tracks)

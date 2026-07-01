@@ -89,6 +89,25 @@ public partial class MusicListView : UserControl
     // ── Sort command callback ─────────────────────────────────────────────────
     public event EventHandler<string>? SortRequested; // string = column id
 
+    // ── Drag-to-reorder (enabled by the host only while a playlist is shown) ────
+    public bool AllowReorder { get; set; }
+    public event EventHandler<(FlowerTrack dragged, FlowerTrack? insertBefore)>? RowReordered;
+
+    private readonly Border _dropIndicator = new()
+    {
+        Height              = 2,
+        Background          = Brushes.DodgerBlue,
+        IsVisible           = false,
+        IsHitTestVisible    = false,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        VerticalAlignment   = VerticalAlignment.Top,
+    };
+
+    private TrackRowViewModel? _draggedRow;
+    private Point _dragStartPoint;
+    private bool  _isDragging;
+    private const double DragThreshold = 4.0;
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public MusicListView()
@@ -101,7 +120,10 @@ public partial class MusicListView : UserControl
             VerticalAlignment = VerticalAlignment.Top,
         };
 
-        Scroller.Content = _panel;
+        var contentHost = new Grid();
+        contentHost.Children.Add(_panel);
+        contentHost.Children.Add(_dropIndicator);
+        Scroller.Content = contentHost;
 
         _columnManager.ColumnsChanged += (_, _) => BuildHeader();
 
@@ -115,9 +137,12 @@ public partial class MusicListView : UserControl
         };
 
         // Handle pointer / keyboard on the panel
-        _panel.PointerPressed  += Panel_PointerPressed;
-        _panel.DoubleTapped    += Panel_DoubleTapped;
-        _panel.ContextRequested += Panel_ContextRequested;
+        _panel.PointerPressed     += Panel_PointerPressed;
+        _panel.PointerMoved       += Panel_PointerMoved;
+        _panel.PointerReleased    += Panel_PointerReleased;
+        _panel.PointerCaptureLost += (_, _) => EndDrag();
+        _panel.DoubleTapped       += Panel_DoubleTapped;
+        _panel.ContextRequested   += Panel_ContextRequested;
 
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
 
@@ -293,7 +318,54 @@ public partial class MusicListView : UserControl
         if (row == null) return;
         SelectedRow = row;
         Focus();
+
+        if (AllowReorder && e.GetCurrentPoint(_panel).Properties.IsLeftButtonPressed)
+        {
+            _draggedRow     = row;
+            _dragStartPoint = pt;
+            e.Pointer.Capture(_panel);
+        }
     }
+
+    private void Panel_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_draggedRow == null) return;
+        var pt = e.GetPosition(_panel);
+
+        if (!_isDragging)
+        {
+            if (Math.Abs(pt.Y - _dragStartPoint.Y) < DragThreshold) return;
+            _isDragging = true;
+            _dropIndicator.IsVisible = true;
+        }
+
+        int index = InsertionIndexAt(pt.Y);
+        _dropIndicator.Margin = new Thickness(0, Math.Max(0, index * TrackRowViewModel.RowHeight - 1), 0, 0);
+    }
+
+    private void Panel_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_isDragging && _draggedRow != null)
+        {
+            var pt = e.GetPosition(_panel);
+            int index = InsertionIndexAt(pt.Y);
+            var insertBefore = index < _items.Count ? _items[index] : null;
+            if (insertBefore != _draggedRow)
+                RowReordered?.Invoke(this, (_draggedRow.Track, insertBefore?.Track));
+        }
+        e.Pointer.Capture(null);
+        EndDrag();
+    }
+
+    private void EndDrag()
+    {
+        _draggedRow = null;
+        _isDragging = false;
+        _dropIndicator.IsVisible = false;
+    }
+
+    private int InsertionIndexAt(double panelY)
+        => Math.Clamp((int)Math.Round(panelY / TrackRowViewModel.RowHeight), 0, _items.Count);
 
     private void Panel_DoubleTapped(object? sender, TappedEventArgs e)
     {

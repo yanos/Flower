@@ -129,7 +129,17 @@
                                              Width="16" Height="16"
                                              Margin="0,0,8,0"
                                              VerticalAlignment="Center"/>
-                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                  <TextBlock Text="{Binding Name}"
+                             IsVisible="{Binding !IsEditing}"
+                             VerticalAlignment="Center"/>
+                  <TextBox Text="{Binding Name, Mode=TwoWay}"
+                           IsVisible="{Binding IsEditing}"
+                           VerticalAlignment="Center"
+                           Padding="2,0"
+                           MinWidth="80"
+                           Loaded="RenameBox_Loaded"
+                           KeyDown="RenameBox_KeyDown"
+                           LostFocus="RenameBox_LostFocus"/>
                 </StackPanel>
               </Panel>
             </DataTemplate>

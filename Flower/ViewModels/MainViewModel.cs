@@ -297,6 +297,48 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedSidebarItem));
     }
 
+    public async Task CreatePlaylistWithTrack(Track? track)
+    {
+        var tracks   = track != null ? new List<Track> { track } : new List<Track>();
+        var playlist = new Playlist("New Playlist", tracks);
+        Library.AddPlaylist(playlist);
+
+        if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Playlist))
+            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Playlists"));
+
+        var sidebarItem = new SidebarItem(SidebarItemKind.Playlist, playlist.Name, MaterialIconKind.PlaylistPlay, playlist)
+        {
+            IsEditing = true
+        };
+        _sidebarItems.Add(sidebarItem);
+
+        SelectedSidebarItem = sidebarItem;
+
+        await new PlaylistStore().SaveAsync(Library.Playlists);
+    }
+
+    public async Task AddTrackToPlaylist(Track track, Playlist playlist)
+    {
+        playlist.AppendTrack(track);
+        if (_selectedSidebarItem?.Playlist == playlist)
+            ScheduleFilter();
+
+        await new PlaylistStore().SaveAsync(Library.Playlists);
+    }
+
+    public async Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore)
+    {
+        if (!playlist.Tracks.Remove(dragged)) return;
+
+        var index = insertBefore != null ? playlist.Tracks.IndexOf(insertBefore) : -1;
+        playlist.Tracks.Insert(index < 0 ? playlist.Tracks.Count : index, dragged);
+
+        if (_selectedSidebarItem?.Playlist == playlist)
+            ScheduleFilter();
+
+        await new PlaylistStore().SaveAsync(Library.Playlists);
+    }
+
     private void OnSidebarSelectionChanged()
     {
         OnPropertyChanged(nameof(IsSubListVisible));
@@ -389,7 +431,9 @@ public partial class MainViewModel : ViewModelBase
             await Task.Delay(250, token);
 
             var text       = _filterText;
-            var sortCol    = _sortColumn;
+            // Playlists have a user-defined (drag-reorderable) track order rather
+            // than a sortable one, so ignore the column sort while viewing one.
+            var sortCol    = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist ? "PlaylistOrder" : _sortColumn;
             var sortAsc    = _sortAscending;
             var playing    = CurrentlyPlayingTrack;
             var baseTracks = GetBaseTracksForFilter();
