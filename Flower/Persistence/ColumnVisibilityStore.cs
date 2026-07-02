@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -30,18 +29,7 @@ namespace Flower.Persistence
 
     public class ColumnVisibilityStore
     {
-        private static string StorePath
-        {
-            get
-            {
-                string dir = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                        "Library", "Application Support", "Flower")
-                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "Flower");
-                return Path.Combine(dir, "config.json");
-            }
-        }
+        private static string StorePath => Path.Combine(AppDataDirectory.Path, "config.json");
 
         private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 

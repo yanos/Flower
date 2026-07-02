@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -12,18 +11,7 @@ namespace Flower.Persistence
 {
     public class PlaylistStore
     {
-        public static string StorePath
-        {
-            get
-            {
-                string dir = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                        "Library", "Application Support", "Flower")
-                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "Flower");
-                return Path.Combine(dir, "playlists.json");
-            }
-        }
+        public static string StorePath => Path.Combine(AppDataDirectory.Path, "playlists.json");
 
         private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
