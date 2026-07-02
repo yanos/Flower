@@ -1,0 +1,65 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Views.Mobile.SettingsView"
+             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}"
+             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+
+  <UserControl.Styles>
+    <Style Selector="Button.action">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="20,14" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Height="52" Margin="4,4,16,4">
+      <Button Grid.Column="0"
+              Command="{Binding CloseSheetCommand}"
+              Background="Transparent" BorderThickness="0" Padding="10">
+        <materialIcons:MaterialIcon Kind="ChevronDown" Width="26" Height="26" />
+      </Button>
+      <TextBlock Grid.Column="1"
+                 Text="Settings"
+                 FontSize="22"
+                 FontWeight="SemiBold"
+                 VerticalAlignment="Center"
+                 Margin="12,0,0,0" />
+    </Grid>
+
+    <StackPanel Grid.Row="1" Margin="0,8,0,0">
+
+      <Button Classes="action" Command="{Binding RescanCommand}">
+        <StackPanel Orientation="Horizontal" Spacing="14">
+          <materialIcons:MaterialIcon Kind="Autorenew" Width="22" Height="22" />
+          <TextBlock Text="Rescan Library" FontSize="16" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+
+      <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Margin="20,16,20,0" Spacing="8">
+        <StackPanel IsVisible="{Binding !HasMediaPermission}" Spacing="8">
+          <TextBlock Text="Music access permission was denied, so Flower cannot see your library."
+                     FontSize="14"
+                     Opacity="0.7"
+                     TextWrapping="Wrap" />
+          <Button Command="{Binding OpenAppSettingsCommand}" HorizontalAlignment="Left">
+            <TextBlock Text="Open App Settings" FontSize="14" />
+          </Button>
+        </StackPanel>
+        <TextBlock IsVisible="{Binding HasMediaPermission}"
+                    Text="Music access permission is granted."
+                    FontSize="14"
+                    Opacity="0.5" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</UserControl>

@@ -433,6 +433,11 @@ public partial class MainViewModel : ViewModelBase
         await RebuildDatabaseAsync();
     }
 
+    // Mobile has no library-paths UI to rescan as a side effect of (desktop's
+    // SettingsWindow "Save & Rescan" button) — it needs to trigger a rescan directly,
+    // e.g. after granting a previously-denied Android media permission.
+    public Task RescanLibraryAsync() => RebuildDatabaseAsync();
+
     private void PopulateTracks()
     {
         _allTracks = new List<Track>(Library.Tracks);

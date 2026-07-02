@@ -40,7 +40,7 @@
   <Grid RowDefinitions="Auto,*,Auto,Auto">
 
     <!-- Top bar: back button (when drilled into an album/artist/playlist) + title/search -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="52" Margin="4,4,16,4">
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" Height="52" Margin="4,4,16,4">
       <Button Grid.Column="0"
               Command="{Binding BackCommand}"
               IsVisible="{Binding CanGoBack}"
@@ -84,6 +84,14 @@
               BorderThickness="0"
               Padding="10">
         <materialIcons:MaterialIcon Kind="Plus" Width="24" Height="24" />
+      </Button>
+
+      <Button Grid.Column="3"
+              Command="{Binding OpenSettingsCommand}"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="10">
+        <materialIcons:MaterialIcon Kind="Cogs" Width="22" Height="22" />
       </Button>
     </Grid>
 
@@ -282,5 +290,7 @@
                           IsVisible="{Binding IsShowingTrackInfo}" />
     <views:AddToPlaylistView Grid.Row="0" Grid.RowSpan="4"
                               IsVisible="{Binding IsShowingAddToPlaylist}" />
+    <views:SettingsView Grid.Row="0" Grid.RowSpan="4"
+                         IsVisible="{Binding IsShowingSettings}" />
   </Grid>
 </UserControl>
