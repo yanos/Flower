@@ -12,7 +12,9 @@ using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.ViewModels;
+using Flower.ViewModels.Mobile;
 using Flower.Views;
+using Flower.Views.Mobile;
 
 using Microsoft.Extensions.DependencyInjection;
 
@@ -55,6 +57,7 @@ public partial class App : Application
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
+                .AddSingleton<MobileMainViewModel>()
                 .BuildServiceProvider());
 
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
@@ -68,9 +71,9 @@ public partial class App : Application
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewPlatform)
         {
-            singleViewPlatform.MainView = new MainView
+            singleViewPlatform.MainView = new MobileMainView
             {
-                DataContext = Ioc.Default.GetRequiredService<MainViewModel>()
+                DataContext = Ioc.Default.GetRequiredService<MobileMainViewModel>()
             };
         }
 
