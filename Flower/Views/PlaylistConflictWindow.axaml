@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Flower.Views.PlaylistConflictWindow"
+        Title="Playlist Sync Conflict"
+        Width="440"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock x:Name="HeadlineText"
+               FontWeight="SemiBold"
+               FontSize="14"
+               TextWrapping="Wrap"/>
+    <TextBlock Text="Both this device and the other device changed it since they last synced. Which version should be kept?"
+               TextWrapping="Wrap"
+               Opacity="0.75"
+               FontSize="12"/>
+
+    <Border BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" Padding="10">
+      <StackPanel Spacing="4">
+        <TextBlock Text="This device" FontWeight="SemiBold" FontSize="12"/>
+        <TextBlock x:Name="LocalSummaryText" FontSize="12" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+
+    <Border BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" Padding="10">
+      <StackPanel Spacing="4">
+        <TextBlock x:Name="RemoteHeaderText" FontWeight="SemiBold" FontSize="12"/>
+        <TextBlock x:Name="RemoteSummaryText" FontSize="12" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="KeepLocalButton" Content="Keep This Device" Click="KeepLocalButton_Click"/>
+      <Button x:Name="KeepRemoteButton" Click="KeepRemoteButton_Click" IsDefault="True"/>
+    </StackPanel>
+  </StackPanel>
+</Window>

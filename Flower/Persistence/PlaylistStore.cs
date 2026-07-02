@@ -16,8 +16,11 @@ namespace Flower.Persistence
         private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
         // Tracks are stored by file path and resolved against the library on load,
-        // so playlists.json never duplicates track metadata.
-        private sealed record PlaylistRecord(string Name, List<string> TrackPaths);
+        // so playlists.json never duplicates track metadata. Id/UpdatedAt default to
+        // Guid.Empty/default(DateTimeOffset) when absent so records written before
+        // sync support (no Id field at all) still deserialize - see Load's migration
+        // below rather than failing the whole file.
+        private sealed record PlaylistRecord(string Name, List<string> TrackPaths, Guid Id = default, DateTimeOffset UpdatedAt = default);
 
         public List<Playlist> Load(IReadOnlyList<Track> libraryTracks)
         {
@@ -36,8 +39,10 @@ namespace Flower.Persistence
 
                 return records
                     .Select(r => new Playlist(
+                        r.Id == Guid.Empty ? Guid.NewGuid() : r.Id,
                         r.Name,
-                        r.TrackPaths.Where(byPath.ContainsKey).Select(p => byPath[p]).ToList()))
+                        r.TrackPaths.Where(byPath.ContainsKey).Select(p => byPath[p]).ToList(),
+                        r.UpdatedAt == default ? DateTimeOffset.UtcNow : r.UpdatedAt))
                     .ToList();
             }
             catch
@@ -54,7 +59,9 @@ namespace Flower.Persistence
             var records = playlists
                 .Select(p => new PlaylistRecord(
                     p.Name,
-                    p.Tracks.Where(t => t.Path != null).Select(t => t.Path!).ToList()))
+                    p.Tracks.Where(t => t.Path != null).Select(t => t.Path!).ToList(),
+                    p.Id,
+                    p.UpdatedAt))
                 .ToList();
 
             var json = JsonSerializer.Serialize(records, Options);

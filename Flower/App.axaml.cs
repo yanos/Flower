@@ -47,6 +47,14 @@ public partial class App : Application
 
         var networkDiscovery = new NetworkDiscoveryService();
 
+        // SyncHttpServer loads/generates this device's identity itself (see
+        // DeviceIdentityStore) - read it once here too so PlaylistSyncService can
+        // use the same fingerprint for initiator election (see its ordinal-compare
+        // comment) without a second dependency between the two services.
+        var ownFingerprint = new DeviceIdentityStore().Load().Fingerprint;
+        var syncHttpServer = new SyncHttpServer(networkDiscovery.OwnInstanceName, library);
+        var playlistSyncService = new PlaylistSyncService(library, ownFingerprint);
+
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
                 .AddSingleton<IAudioManager>(new VlcAudioManager())
@@ -58,6 +66,7 @@ public partial class App : Application
                 .AddSingleton<ColumnManager>()
                 .AddSingleton(importer)
                 .AddSingleton(networkDiscovery)
+                .AddSingleton(playlistSyncService)
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
@@ -88,7 +97,6 @@ public partial class App : Application
         // port it actually bound (see SyncHttpServer.Start for why that can differ
         // from SyncHttpServer.DefaultPort).
         PlatformMulticastLock.Current?.Acquire();
-        var syncHttpServer = new SyncHttpServer(networkDiscovery.OwnInstanceName);
         syncHttpServer.Start();
         networkDiscovery.Start(syncHttpServer.BoundPort ?? SyncHttpServer.DefaultPort);
 

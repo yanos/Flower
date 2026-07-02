@@ -73,6 +73,7 @@ public partial class MainView : UserControl
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.SettingsRequested -= OnSettingsRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
+            _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             StopSpinner();
         }
 
@@ -83,6 +84,7 @@ public partial class MainView : UserControl
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
+            _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             BuildColumnMenu();
             if (_viewModel.IsBusy)
                 StartSpinner();
@@ -295,6 +297,23 @@ public partial class MainView : UserControl
     private void OnNavigateToTrackRequested(object? sender, Track track) => MusicList.ScrollToTrack(track);
 
     private void OnSettingsRequested(object? sender, EventArgs e) => OpenSettingsWindow();
+
+    // Raised by MainViewModel (forwarding PlaylistSyncService.ConflictDetected)
+    // when the same playlist changed on both this device and a peer since they
+    // last agreed - see SYNC-PLAN.md Phase 2. The dialog's result is fed back into
+    // e.Resolution, which unblocks that one playlist's merge on the sync-session
+    // background task; nothing else about the sync waits on the dialog closing.
+    private async void OnPlaylistConflictRequested(object? sender, PlaylistConflictEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            e.Resolution.TrySetResult(PlaylistConflictChoice.KeepLocal);
+            return;
+        }
+
+        var choice = await new PlaylistConflictWindow(e).ShowDialog<PlaylistConflictChoice>(owner);
+        e.Resolution.TrySetResult(choice);
+    }
 
     private void OpenSettingsWindow()
     {

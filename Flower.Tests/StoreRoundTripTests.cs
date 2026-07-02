@@ -96,4 +96,50 @@ public class StoreRoundTripTests : IDisposable
         var loaded = new PlaylistStore().Load(new List<Track>());
         Assert.Empty(loaded);
     }
+
+    [Fact]
+    public async Task PlaylistStore_round_trips_Id_and_UpdatedAt()
+    {
+        var playlist = new Playlist("Favorites", new List<Track>());
+        var originalId = playlist.Id;
+        var originalUpdatedAt = playlist.UpdatedAt;
+
+        await new PlaylistStore().SaveAsync(new List<Playlist> { playlist });
+        var loaded = new PlaylistStore().Load(new List<Track>());
+
+        var only = Assert.Single(loaded);
+        Assert.Equal(originalId, only.Id);
+        Assert.Equal(originalUpdatedAt, only.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task PlaylistStore_renaming_does_not_change_Id()
+    {
+        var playlist = new Playlist("Old Name", new List<Track>());
+        var id = playlist.Id;
+        playlist.Name = "New Name";
+
+        await new PlaylistStore().SaveAsync(new List<Playlist> { playlist });
+        var loaded = new PlaylistStore().Load(new List<Track>());
+
+        var only = Assert.Single(loaded);
+        Assert.Equal(id, only.Id);
+        Assert.Equal("New Name", only.Name);
+    }
+
+    [Fact]
+    public void PlaylistStore_Load_assigns_a_fresh_Id_to_pre_sync_records_missing_one()
+    {
+        // Simulates playlists.json written before Playlist.Id existed: the JSON
+        // has no "id" property at all, which PlaylistRecord's default parameter
+        // deserializes as Guid.Empty - Load must not persist that sentinel.
+        var trackA = new Track { Title = "A", Path = "/music/a.mp3" };
+        Directory.CreateDirectory(Path.GetDirectoryName(PlaylistStore.StorePath)!);
+        File.WriteAllText(PlaylistStore.StorePath, """[{"Name":"Legacy","TrackPaths":["/music/a.mp3"]}]""");
+
+        var loaded = new PlaylistStore().Load(new List<Track> { trackA });
+
+        var only = Assert.Single(loaded);
+        Assert.NotEqual(Guid.Empty, only.Id);
+    }
 }
