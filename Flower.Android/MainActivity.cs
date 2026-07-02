@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Android;
 
 using Flower.Importer;
+using Flower.Persistence;
 
 namespace Flower.Android;
 
@@ -19,6 +20,7 @@ public class MainActivity : AvaloniaMainActivity<App>
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
         PlatformMusicImporter.Current = new AndroidMediaStoreImporter(this);
+        PlatformDataDirectory.Current = FilesDir!.AbsolutePath;
 
         return base.CustomizeAppBuilder(builder)
             .WithInterFont();
