@@ -179,6 +179,9 @@ public partial class MainViewModel : ViewModelBase
         _selectedSidebarItem?.Kind == SidebarItemKind.Albums ||
         _selectedSidebarItem?.Kind == SidebarItemKind.Artists;
 
+    public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
+    public DiscoveredDevice? SelectedDevice => _selectedSidebarItem?.Device;
+
     // Identifies the currently displayed track list (Songs / a given album / artist / playlist)
     // so the view can remember a separate scroll position and selection for each one.
     public string CurrentViewKey => _selectedSidebarItem?.Kind switch
@@ -233,7 +236,8 @@ public partial class MainViewModel : ViewModelBase
         ColumnVisibilityStore columnVisibilityStore,
         AppSettings appSettings,
         IMusicImporter importer,
-        MainPlaylist mainPlaylist)
+        MainPlaylist mainPlaylist,
+        NetworkDiscoveryService networkDiscovery)
     {
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
@@ -252,6 +256,11 @@ public partial class MainViewModel : ViewModelBase
 
         library.TracksUpdated += (_, _) =>
             Dispatcher.UIThread.Post(PopulateTracks);
+
+        networkDiscovery.DeviceDiscovered += (_, device) =>
+            Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
+        networkDiscovery.DeviceLost += (_, instanceName) =>
+            Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
 
         _playlistControlViewModel.PropertyChanged += (_, e) =>
         {
@@ -311,6 +320,45 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedSidebarItem));
     }
 
+    // Mirrors CreatePlaylistWithTrack's incremental _sidebarItems.Add(...) pattern:
+    // devices arrive one at a time from NetworkDiscoveryService, so the "Devices"
+    // section is built up live rather than as part of BuildSidebarItems().
+    private void AddOrUpdateDeviceSidebarItem(DiscoveredDevice device)
+    {
+        var existing = _sidebarItems.FirstOrDefault(i =>
+            i.Kind == SidebarItemKind.Device && i.Device?.InstanceName == device.InstanceName);
+        if (existing != null)
+        {
+            existing.Name = device.Alias;
+            return;
+        }
+
+        if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Device))
+            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Devices"));
+
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, device.Alias, MaterialIconKind.Laptop, device: device));
+    }
+
+    private void RemoveDeviceSidebarItem(string instanceName)
+    {
+        var item = _sidebarItems.FirstOrDefault(i =>
+            i.Kind == SidebarItemKind.Device && i.Device?.InstanceName == instanceName);
+        if (item == null)
+            return;
+
+        if (SelectedSidebarItem == item)
+            SelectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
+
+        _sidebarItems.Remove(item);
+
+        if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Device))
+        {
+            var header = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
+            if (header != null)
+                _sidebarItems.Remove(header);
+        }
+    }
+
     public async Task CreatePlaylistWithTrack(Track? track)
     {
         var tracks   = track != null ? new List<Track> { track } : new List<Track>();
@@ -357,6 +405,8 @@ public partial class MainViewModel : ViewModelBase
     private void OnSidebarSelectionChanged()
     {
         OnPropertyChanged(nameof(IsSubListVisible));
+        OnPropertyChanged(nameof(IsShowingDeviceDetail));
+        OnPropertyChanged(nameof(SelectedDevice));
         RebuildSubListItems();
 
         var lastSelected = _selectedSidebarItem?.Kind switch
@@ -399,6 +449,8 @@ public partial class MainViewModel : ViewModelBase
             SidebarItemKind.Artists when _selectedSubItem != null
                 => _allTracks.Where(t => t.Artists == _selectedSubItem).ToList(),
             SidebarItemKind.Artists
+                => new List<Track>(),
+            SidebarItemKind.Device
                 => new List<Track>(),
             _ => _allTracks
         };
