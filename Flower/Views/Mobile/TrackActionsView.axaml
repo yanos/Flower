@@ -47,6 +47,13 @@
           </StackPanel>
         </Button>
 
+        <Button Classes="action" Command="{Binding OpenAddToPlaylistCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="22" Height="22" />
+            <TextBlock Text="Add to Playlist" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
         <Button Classes="action" Command="{Binding CloseSheetCommand}" Margin="0,8,0,0">
           <TextBlock Text="Cancel" FontSize="16" HorizontalAlignment="Center" Opacity="0.7" />
         </Button>
