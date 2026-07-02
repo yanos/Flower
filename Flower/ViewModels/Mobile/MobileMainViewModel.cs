@@ -221,7 +221,11 @@ public class MobileMainViewModel : ViewModelBase
         BackCommand = new RelayCommand(GoBack);
         PlayTrackCommand = new RelayCommand<Track>(track =>
         {
-            if (track != null) PlaylistControl.PlayOrPause(track);
+            // Always starts this track, mirroring desktop's row-activation handler
+            // (MainView.axaml.cs calls Play, not PlayOrPause, on Enter/double-click).
+            // PlayOrPause ignores its track argument whenever something is already
+            // playing, so reusing it here paused instead of switching tracks.
+            if (track != null) PlaylistControl.Play(track);
         });
         ToggleMiniPlayerCommand = new RelayCommand(() =>
         {
