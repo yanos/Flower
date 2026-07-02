@@ -21,7 +21,17 @@ public class NetworkDiscoveryService : IDisposable
     {
         _serviceDiscovery = new ServiceDiscovery(_mdns);
         _serviceDiscovery.ServiceInstanceDiscovered += (_, e) =>
+        {
+            // ServiceInstanceDiscovered fires for any service instance seen on the
+            // LAN, not just ones matching what we queried for (mDNS is a shared
+            // multicast channel) - e.g. printers, Chromecasts, or Apple's own
+            // _apple-mobdev2._tcp device-pairing traffic show up here too. Filter to
+            // our own service type so the log only reflects actual Flower peers.
+            if (!e.ServiceInstanceName.ToString().EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase))
+                return;
+
             Console.WriteLine($"[NetworkDiscovery] Discovered peer: {e.ServiceInstanceName}");
+        };
     }
 
     public void Start()
