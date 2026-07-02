@@ -80,9 +80,12 @@ public class AndroidMediaStoreImporter : IMusicImporter
             MediaStore.Audio.Media.InterfaceConsts.Year,
             MediaStore.Audio.Media.InterfaceConsts.Track,
         };
-        var selection = $"{MediaStore.Audio.Media.InterfaceConsts.IsMusic} != 0";
-
-        using var cursor = resolver.Query(contentUri, projection, selection, null, null);
+        // MediaStore's "is_music" column is a legacy heuristic that's frequently NULL
+        // rather than 1 even for genuine music files (confirmed on this device) - a
+        // "WHERE is_music != 0" filter would silently exclude everything, since SQL
+        // NULL comparisons are neither true nor false. audio/media is already
+        // audio-only by definition, so no filtering is needed here.
+        using var cursor = resolver.Query(contentUri, projection, null, null, null);
         if (cursor == null) return tracks;
 
         var idCol = cursor.GetColumnIndexOrThrow(MediaStore.Audio.Media.InterfaceConsts.Id);
