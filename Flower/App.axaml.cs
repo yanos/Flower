@@ -32,6 +32,7 @@ public partial class App : Application
 
         var libraryStore = new LibraryStore();
         var appSettings = new AppSettingsStore().Load();
+        var importer = Importer.PlatformMusicImporter.Current ?? new Importer.Importer();
 
         // Load cached library synchronously so the UI shows immediately with data
         var cachedTracks = libraryStore.Load();
@@ -50,7 +51,7 @@ public partial class App : Application
                 .AddSingleton(appSettings)
                 .AddSingleton<ColumnVisibilityStore>()
                 .AddSingleton<ColumnManager>()
-                .AddSingleton<Importer.Importer>()
+                .AddSingleton(importer)
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
@@ -78,8 +79,7 @@ public partial class App : Application
         // Rescan the music folder in the background while the UI is already showing
         _ = Task.Run(async () =>
         {
-            var importer = Ioc.Default.GetRequiredService<Importer.Importer>();
-            var freshTracks = importer.Import(appSettings.LibraryPaths);
+            var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
 
             // Update the playlist first so navigation is consistent when TracksUpdated fires
             mainPlaylist.ReplaceAll(freshTracks);

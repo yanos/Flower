@@ -4,6 +4,8 @@ using Android.Content.PM;
 using Avalonia;
 using Avalonia.Android;
 
+using Flower.Importer;
+
 namespace Flower.Android;
 
 [Activity(
@@ -16,7 +18,15 @@ public class MainActivity : AvaloniaMainActivity<App>
 {
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
+        PlatformMusicImporter.Current = new AndroidMediaStoreImporter(this);
+
         return base.CustomizeAppBuilder(builder)
             .WithInterFont();
+    }
+
+    public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
+    {
+        base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+        AndroidMediaStoreImporter.HandlePermissionResult(requestCode, grantResults);
     }
 }

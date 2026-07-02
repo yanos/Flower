@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 using Claunia.PropertyList;
 
@@ -9,11 +10,14 @@ using Flower.Models;
 
 namespace Flower.Importer
 {
-    public class Importer
+    public class Importer : IMusicImporter
     {
         private readonly HashSet<string> _validExtensions = [".mp3", ".m4a", ".wav", ".flac", ".alac"];
 
         public Importer() { }
+
+        public Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null)
+            => Task.Run(() => Import(libraryPaths));
 
         public List<Track> Import(IEnumerable<string>? libraryPaths = null)
         {
