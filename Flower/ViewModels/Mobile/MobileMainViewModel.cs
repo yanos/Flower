@@ -38,6 +38,8 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand PreviousTrackCommand { get; }
     public ICommand OpenTrackActionsCommand { get; }
     public ICommand ViewTrackInfoCommand { get; }
+    public ICommand ToggleSearchCommand { get; }
+    public ICommand ClearSearchCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.Songs;
     public MobileTab SelectedTab
@@ -75,6 +77,24 @@ public class MobileMainViewModel : ViewModelBase
         SelectedTab == MobileTab.Playlists && _hasDrilledIn ? Main.SelectedSidebarItem?.Playlist : null;
 
     public bool IsShowingPlaylistTracks => CurrentPlaylist != null;
+
+    // The search box only makes sense over a track list (Main.FilterText filters
+    // Rows, which the Albums/Artists/Playlists picker screens do not use).
+    public bool CanSearch => IsShowingTrackList;
+
+    private bool _isSearchVisible;
+    public bool IsSearchVisible
+    {
+        get => _isSearchVisible;
+        private set
+        {
+            if (_isSearchVisible == value) return;
+            _isSearchVisible = value;
+            if (!value)
+                Main.FilterText = null;
+            OnPropertyChanged();
+        }
+    }
 
     private MobileSheet _activeSheet = MobileSheet.None;
     public MobileSheet ActiveSheet
@@ -161,6 +181,8 @@ public class MobileMainViewModel : ViewModelBase
             if (ActionTarget != null)
                 ActiveSheet = MobileSheet.TrackInfo;
         });
+        ToggleSearchCommand = new RelayCommand(() => IsSearchVisible = !IsSearchVisible);
+        ClearSearchCommand = new RelayCommand(() => IsSearchVisible = false);
     }
 
     private void RebuildPlaylistPicker()
@@ -209,6 +231,9 @@ public class MobileMainViewModel : ViewModelBase
 
     private void RaiseNavigationChanged()
     {
+        if (!IsShowingTrackList)
+            IsSearchVisible = false;
+
         OnPropertyChanged(nameof(IsShowingAlbumArtistPicker));
         OnPropertyChanged(nameof(IsShowingPlaylistPicker));
         OnPropertyChanged(nameof(IsShowingTrackList));
@@ -216,6 +241,7 @@ public class MobileMainViewModel : ViewModelBase
         OnPropertyChanged(nameof(ScreenTitle));
         OnPropertyChanged(nameof(CurrentPlaylist));
         OnPropertyChanged(nameof(IsShowingPlaylistTracks));
+        OnPropertyChanged(nameof(CanSearch));
     }
 
     // Driven by the track list's touch drag-to-reorder gesture (see MobileMainView's
