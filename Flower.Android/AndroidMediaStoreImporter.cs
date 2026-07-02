@@ -37,7 +37,8 @@ public class AndroidMediaStoreImporter : IMusicImporter
     // delivers the result of the runtime permission prompt requested below.
     public static void HandlePermissionResult(int requestCode, Permission[] grantResults)
     {
-        if (requestCode != PermissionRequestCode) return;
+        if (requestCode != PermissionRequestCode)
+            return;
         _permissionTcs?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
     }
 
@@ -68,7 +69,8 @@ public class AndroidMediaStoreImporter : IMusicImporter
         var tracks = new List<Track>();
         var resolver = _activity.ContentResolver;
         var contentUri = MediaStore.Audio.Media.ExternalContentUri;
-        if (resolver == null || contentUri == null) return tracks;
+        if (resolver == null || contentUri == null)
+            return tracks;
 
         var projection = new[]
         {
@@ -86,7 +88,8 @@ public class AndroidMediaStoreImporter : IMusicImporter
         // NULL comparisons are neither true nor false. audio/media is already
         // audio-only by definition, so no filtering is needed here.
         using var cursor = resolver.Query(contentUri, projection, null, null, null);
-        if (cursor == null) return tracks;
+        if (cursor == null)
+            return tracks;
 
         var idCol = cursor.GetColumnIndexOrThrow(MediaStore.Audio.Media.InterfaceConsts.Id);
         var titleCol = cursor.GetColumnIndex(MediaStore.Audio.Media.InterfaceConsts.Title);

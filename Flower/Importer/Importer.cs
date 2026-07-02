@@ -46,7 +46,8 @@ namespace Flower.Importer
             foreach (var file in files)
             {
                 // Skip files already imported from an overlapping configured path.
-                if (!seenFiles.Add(file)) continue;
+                if (!seenFiles.Add(file))
+                    continue;
 
                 try
                 {
@@ -124,7 +125,8 @@ namespace Flower.Importer
         // fallback when nothing is configured.
         public static string? TryResolveAppleMusicFolder()
         {
-            if (!OperatingSystem.IsMacOS()) return null;
+            if (!OperatingSystem.IsMacOS())
+                return null;
 
             try
             {

@@ -37,7 +37,8 @@ public class ColumnManager
         foreach (var state in states)
         {
             var col = Columns.FirstOrDefault(c => c.Id == state.Id);
-            if (col == null) continue;
+            if (col == null)
+                continue;
             col.Width = state.Width;
             col.IsVisible = state.IsVisible;
             col.Order = state.Order;

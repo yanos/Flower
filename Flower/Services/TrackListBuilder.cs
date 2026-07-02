@@ -26,7 +26,8 @@ public static class TrackListBuilder
 
     private static IEnumerable<Track> Filter(IEnumerable<Track> tracks, string? text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return tracks;
+        if (string.IsNullOrWhiteSpace(text))
+            return tracks;
         return tracks.Where(t =>
             t.Title?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true ||
             t.Artists?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
@@ -36,7 +37,8 @@ public static class TrackListBuilder
 
     private static IEnumerable<Track> Sort(IEnumerable<Track> tracks, string col, bool asc)
     {
-        if (col == "PlaylistOrder") return tracks;
+        if (col == "PlaylistOrder")
+            return tracks;
 
         IEnumerable<Track> ordered = col switch
         {

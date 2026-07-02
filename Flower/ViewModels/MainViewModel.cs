@@ -167,7 +167,8 @@ public partial class MainViewModel : ViewModelBase
         get => _selectedSidebarItem;
         set
         {
-            if (value != null && !value.IsSelectable) return;
+            if (value != null && !value.IsSelectable)
+                return;
             _selectedSidebarItem = value;
             OnPropertyChanged();
             OnSidebarSelectionChanged();
@@ -213,7 +214,8 @@ public partial class MainViewModel : ViewModelBase
 
     private void RememberSubItemSelection(string? value)
     {
-        if (value == null) return;
+        if (value == null)
+            return;
         switch (_selectedSidebarItem?.Kind)
         {
             case SidebarItemKind.Albums:  _lastSelectedAlbum  = value; break;
@@ -267,7 +269,8 @@ public partial class MainViewModel : ViewModelBase
 
     private void SortByColumn(string? columnId)
     {
-        if (columnId == null) return;
+        if (columnId == null)
+            return;
         if (SortColumn == columnId)
             SortAscending = !SortAscending;
         else
@@ -339,7 +342,8 @@ public partial class MainViewModel : ViewModelBase
 
     public async Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore)
     {
-        if (!playlist.Tracks.Remove(dragged)) return;
+        if (!playlist.Tracks.Remove(dragged))
+            return;
 
         var index = insertBefore != null ? playlist.Tracks.IndexOf(insertBefore) : -1;
         playlist.Tracks.Insert(index < 0 ? playlist.Tracks.Count : index, dragged);
@@ -416,7 +420,8 @@ public partial class MainViewModel : ViewModelBase
 
     private async Task RebuildDatabaseAsync()
     {
-        if (_importer == null || _mainPlaylist == null) return;
+        if (_importer == null || _mainPlaylist == null)
+            return;
         using var _ = BeginBusy("Rebuilding library…");
         var libraryPaths = _appSettings?.LibraryPaths;
         var freshTracks = await _importer.ImportAsync(libraryPaths);
@@ -472,7 +477,8 @@ public partial class MainViewModel : ViewModelBase
         var rows = await Task.Run(() =>
             TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing), token);
 
-        if (token.IsCancellationRequested) return;
+        if (token.IsCancellationRequested)
+            return;
 
         _currentFilteredTracks = rows.Select(r => r.Track).ToList();
         Rows = new ObservableCollection<TrackRowViewModel>(rows);
@@ -484,7 +490,8 @@ public partial class MainViewModel : ViewModelBase
     public async Task GoToCurrentlyPlayingTrackAsync()
     {
         var track = CurrentlyPlayingTrack;
-        if (track == null) return;
+        if (track == null)
+            return;
 
         if (_currentFilteredTracks.Any(t => t.Path == track.Path))
         {
@@ -503,7 +510,8 @@ public partial class MainViewModel : ViewModelBase
             case SidebarItemKind.Playlist
                 when _selectedSidebarItem.Playlist?.Tracks.Any(t => t.Path == track.Path) != true:
                 var songs = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
-                if (songs != null) SelectedSidebarItem = songs;
+                if (songs != null)
+                    SelectedSidebarItem = songs;
                 break;
             case SidebarItemKind.Albums:
                 SelectedSubItem = track.Album;

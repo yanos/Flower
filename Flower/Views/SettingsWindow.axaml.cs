@@ -24,7 +24,8 @@ public partial class SettingsWindow : Window
 
     private async void AddButton_Click(object? sender, RoutedEventArgs e)
     {
-        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storageProvider) return;
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storageProvider)
+            return;
 
         var folders = await storageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {

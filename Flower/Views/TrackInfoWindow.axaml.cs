@@ -44,7 +44,8 @@ public partial class TrackInfoWindow : Window
     private async Task Navigate(int delta)
     {
         var next = _index + delta;
-        if (next < 0 || next >= _tracks.Count) return;
+        if (next < 0 || next >= _tracks.Count)
+            return;
         await SaveChanges();
         _index = next;
         Populate(_track);
@@ -112,7 +113,8 @@ public partial class TrackInfoWindow : Window
 
     private async Task SaveChanges()
     {
-        if (_track.Path is not string path) return;
+        if (_track.Path is not string path)
+            return;
 
         try
         {
