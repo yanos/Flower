@@ -23,6 +23,7 @@ public class MainActivity : AvaloniaMainActivity<App>
         PlatformMusicImporter.Current = new AndroidMediaStoreImporter(this);
         PlatformDataDirectory.Current = FilesDir!.AbsolutePath;
         PlatformPermissions.Current = new AndroidMediaPermissionStatus(this);
+        PlatformMulticastLock.Current = new AndroidMulticastLockHolder(this);
 
         return base.CustomizeAppBuilder(builder)
             .WithInterFont();

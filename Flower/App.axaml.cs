@@ -11,6 +11,7 @@ using Flower.Controls;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Services;
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 using Flower.Views;
@@ -78,6 +79,11 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+
+        // Spike: prove mDNS discovery works cross-platform before building real sync
+        // (see SYNC-PLAN.md). Console-only, no UI - throwaway verification code.
+        PlatformMulticastLock.Current?.Acquire();
+        new NetworkDiscoveryService().Start();
 
         // Rescan the music folder in the background while the UI is already showing
         _ = Task.Run(async () =>
