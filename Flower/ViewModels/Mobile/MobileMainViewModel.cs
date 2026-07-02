@@ -12,7 +12,7 @@ public enum MobileTab { Songs, Albums, Artists, Playlists }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying }
+public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -36,6 +36,8 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand CloseSheetCommand { get; }
     public ICommand NextTrackCommand { get; }
     public ICommand PreviousTrackCommand { get; }
+    public ICommand OpenTrackActionsCommand { get; }
+    public ICommand ViewTrackInfoCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.Songs;
     public MobileTab SelectedTab
@@ -75,12 +77,26 @@ public class MobileMainViewModel : ViewModelBase
         {
             if (_activeSheet == value) return;
             _activeSheet = value;
+            if (value == MobileSheet.None)
+                ActionTarget = null;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsShowingNowPlaying));
+            OnPropertyChanged(nameof(IsShowingTrackActions));
+            OnPropertyChanged(nameof(IsShowingTrackInfo));
         }
     }
 
     public bool IsShowingNowPlaying => ActiveSheet == MobileSheet.NowPlaying;
+    public bool IsShowingTrackActions => ActiveSheet == MobileSheet.TrackActions;
+    public bool IsShowingTrackInfo => ActiveSheet == MobileSheet.TrackInfo;
+
+    // The track a row's "..." action menu (and, in turn, the Track Info sheet) applies to.
+    private Track? _actionTarget;
+    public Track? ActionTarget
+    {
+        get => _actionTarget;
+        private set { _actionTarget = value; OnPropertyChanged(); }
+    }
 
     public MobileMainViewModel(
         MainViewModel main,
@@ -127,6 +143,17 @@ public class MobileMainViewModel : ViewModelBase
         CloseSheetCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
         NextTrackCommand = new RelayCommand(PlaylistControl.Next);
         PreviousTrackCommand = new RelayCommand(PlaylistControl.Previous);
+        OpenTrackActionsCommand = new RelayCommand<Track>(track =>
+        {
+            if (track == null) return;
+            ActionTarget = track;
+            ActiveSheet = MobileSheet.TrackActions;
+        });
+        ViewTrackInfoCommand = new RelayCommand(() =>
+        {
+            if (ActionTarget != null)
+                ActiveSheet = MobileSheet.TrackInfo;
+        });
     }
 
     private void RebuildPlaylistPicker()

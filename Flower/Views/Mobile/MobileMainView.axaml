@@ -106,7 +106,7 @@
                     Classes.playing="{Binding IsCurrentlyPlaying}"
                     Command="{Binding $parent[UserControl].DataContext.PlayTrackCommand}"
                     CommandParameter="{Binding Track}">
-              <Grid ColumnDefinitions="*,Auto">
+              <Grid ColumnDefinitions="*,Auto,Auto">
                 <StackPanel Grid.Column="0" Spacing="2">
                   <TextBlock Text="{Binding Track.Title}"
                              FontSize="16"
@@ -122,6 +122,16 @@
                            Opacity="0.65"
                            VerticalAlignment="Center"
                            Margin="8,0,0,0" />
+                <Button Grid.Column="2"
+                        Command="{Binding $parent[UserControl].DataContext.OpenTrackActionsCommand}"
+                        CommandParameter="{Binding Track}"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="6"
+                        Margin="4,0,0,0"
+                        VerticalAlignment="Center">
+                  <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
+                </Button>
               </Grid>
             </Button>
           </DataTemplate>
@@ -211,5 +221,11 @@
     <!-- Now-playing sheet: full-screen overlay above everything else -->
     <views:NowPlayingView Grid.Row="0" Grid.RowSpan="4"
                            IsVisible="{Binding IsShowingNowPlaying}" />
+
+    <!-- Track actions (row "..." menu) and Track Info sheets -->
+    <views:TrackActionsView Grid.Row="0" Grid.RowSpan="4"
+                             IsVisible="{Binding IsShowingTrackActions}" />
+    <views:TrackInfoView Grid.Row="0" Grid.RowSpan="4"
+                          IsVisible="{Binding IsShowingTrackInfo}" />
   </Grid>
 </UserControl>
