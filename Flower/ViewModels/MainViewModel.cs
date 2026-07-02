@@ -14,6 +14,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 
 using Flower.Controls;
+using Flower.Importer;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
@@ -27,7 +28,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private readonly ColumnVisibilityStore    _columnVisibilityStore;
     private AppSettings? _appSettings;
-    private Importer.Importer? _importer;
+    private IMusicImporter? _importer;
     private MainPlaylist?      _mainPlaylist;
 
     public ICommand? OpenDatabaseLocationCommand { get; private set; }
@@ -229,7 +230,7 @@ public partial class MainViewModel : ViewModelBase
         Library library,
         ColumnVisibilityStore columnVisibilityStore,
         AppSettings appSettings,
-        Importer.Importer importer,
+        IMusicImporter importer,
         MainPlaylist mainPlaylist)
     {
         Library                = library;
@@ -418,7 +419,7 @@ public partial class MainViewModel : ViewModelBase
         if (_importer == null || _mainPlaylist == null) return;
         using var _ = BeginBusy("Rebuilding library…");
         var libraryPaths = _appSettings?.LibraryPaths;
-        var freshTracks = await Task.Run(() => _importer.Import(libraryPaths));
+        var freshTracks = await _importer.ImportAsync(libraryPaths);
         _mainPlaylist.ReplaceAll(freshTracks);
         Library.UpdateTracks(freshTracks);
         await new LibraryStore().SaveAsync(freshTracks);

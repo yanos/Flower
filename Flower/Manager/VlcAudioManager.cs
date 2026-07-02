@@ -60,7 +60,12 @@ namespace Flower.Manager
                 
         public void Play(Track track)
         {
-            _mediaPlayer.Play(new Media(_libVLC, track.Path));
+            // Android's MediaStore importer hands back content:// URIs rather than
+            // filesystem paths; those need FromLocation, not the default FromPath.
+            var media = track.Path is { } path && path.Contains("://")
+                ? new Media(_libVLC, path, FromType.FromLocation)
+                : new Media(_libVLC, track.Path);
+            _mediaPlayer.Play(media);
         }
 
         public void Resume()
