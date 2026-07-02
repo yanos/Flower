@@ -36,10 +36,30 @@ public class NetworkDiscoveryService : IDisposable
 
     public void Start()
     {
-        var profile = new ServiceProfile(Environment.MachineName, ServiceType, ServicePort);
+        // Env.MachineName alone collides between desktop and the iOS Simulator,
+        // since the simulator shares the host Mac's actual hostname rather than
+        // having a network identity of its own - tag with the platform so the two
+        // are distinguishable when testing that way.
+        var instanceName = $"{Environment.MachineName}-{PlatformTag()}";
+        var profile = new ServiceProfile(instanceName, ServiceType, ServicePort);
         _serviceDiscovery.Advertise(profile);
         _mdns.Start();
         _serviceDiscovery.QueryServiceInstances(ServiceType);
+    }
+
+    private static string PlatformTag()
+    {
+        if (OperatingSystem.IsIOS())
+            return "iOS";
+        if (OperatingSystem.IsAndroid())
+            return "Android";
+        if (OperatingSystem.IsMacOS())
+            return "macOS";
+        if (OperatingSystem.IsWindows())
+            return "Windows";
+        if (OperatingSystem.IsLinux())
+            return "Linux";
+        return "Unknown";
     }
 
     public void Stop()
