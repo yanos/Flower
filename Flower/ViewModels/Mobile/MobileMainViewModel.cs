@@ -54,7 +54,8 @@ public class MobileMainViewModel : ViewModelBase
         get => _selectedTab;
         private set
         {
-            if (_selectedTab == value) return;
+            if (_selectedTab == value)
+                return;
             _selectedTab = value;
             _hasDrilledIn = false;
             ApplyTabSelection();
@@ -95,7 +96,8 @@ public class MobileMainViewModel : ViewModelBase
         get => _isSearchVisible;
         private set
         {
-            if (_isSearchVisible == value) return;
+            if (_isSearchVisible == value)
+                return;
             _isSearchVisible = value;
             if (!value)
                 Main.FilterText = null;
@@ -109,7 +111,8 @@ public class MobileMainViewModel : ViewModelBase
         get => _activeSheet;
         private set
         {
-            if (_activeSheet == value) return;
+            if (_activeSheet == value)
+                return;
             _activeSheet = value;
             if (value == MobileSheet.None)
                 ActionTarget = null;
@@ -153,9 +156,12 @@ public class MobileMainViewModel : ViewModelBase
     {
         get
         {
-            if (IsShowingPlaylistTracks) return "Playlist is Empty";
-            if (!string.IsNullOrEmpty(Main.FilterText)) return "No Results";
-            if (Main.Library.Tracks.Count == 0) return "No Music Yet";
+            if (IsShowingPlaylistTracks)
+                return "Playlist is Empty";
+            if (!string.IsNullOrEmpty(Main.FilterText))
+                return "No Results";
+            if (Main.Library.Tracks.Count == 0)
+                return "No Music Yet";
             return "Nothing Here";
         }
     }
@@ -225,7 +231,8 @@ public class MobileMainViewModel : ViewModelBase
             // (MainView.axaml.cs calls Play, not PlayOrPause, on Enter/double-click).
             // PlayOrPause ignores its track argument whenever something is already
             // playing, so reusing it here paused instead of switching tracks.
-            if (track != null) PlaylistControl.Play(track);
+            if (track != null)
+                PlaylistControl.Play(track);
         });
         ToggleMiniPlayerCommand = new RelayCommand(() =>
         {
@@ -242,7 +249,8 @@ public class MobileMainViewModel : ViewModelBase
         PreviousTrackCommand = new RelayCommand(PlaylistControl.Previous);
         OpenTrackActionsCommand = new RelayCommand<Track>(track =>
         {
-            if (track == null) return;
+            if (track == null)
+                return;
             ActionTarget = track;
             ActiveSheet = MobileSheet.TrackActions;
         });
@@ -302,7 +310,8 @@ public class MobileMainViewModel : ViewModelBase
 
     private void SelectAlbumOrArtist(string? name)
     {
-        if (name == null) return;
+        if (name == null)
+            return;
         Main.SelectedSubItem = name;
         _hasDrilledIn = true;
         RaiseNavigationChanged();
@@ -310,7 +319,8 @@ public class MobileMainViewModel : ViewModelBase
 
     private void SelectPlaylist(SidebarItem? item)
     {
-        if (item == null) return;
+        if (item == null)
+            return;
         Main.SelectedSidebarItem = item;
         _hasDrilledIn = true;
         RaiseNavigationChanged();

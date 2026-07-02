@@ -132,7 +132,8 @@ public class TrackRowViewModel : ViewModelBase
                                 stem.Equals("folder", StringComparison.OrdinalIgnoreCase))
                             && ImageExtensions.Contains(ext);
                     });
-                    if (file != null) return new Bitmap(file);
+                    if (file != null)
+                        return new Bitmap(file);
                 }
             }
             catch { }

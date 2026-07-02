@@ -22,7 +22,8 @@ namespace Flower.Persistence
         public List<Playlist> Load(IReadOnlyList<Track> libraryTracks)
         {
             var path = StorePath;
-            if (!File.Exists(path)) return new List<Playlist>();
+            if (!File.Exists(path))
+                return new List<Playlist>();
 
             try
             {

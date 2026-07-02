@@ -27,8 +27,10 @@ public partial class MobileMainView : UserControl
 
     private void DragHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (sender is not Border handle || handle.DataContext is not TrackRowViewModel row) return;
-        if (!e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed) return;
+        if (sender is not Border handle || handle.DataContext is not TrackRowViewModel row)
+            return;
+        if (!e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)
+            return;
 
         _draggedRow = row;
         _dragStartY = e.GetPosition(TrackListBox).Y;
@@ -39,12 +41,14 @@ public partial class MobileMainView : UserControl
 
     private void DragHandle_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (_draggedRow == null) return;
+        if (_draggedRow == null)
+            return;
         var y = e.GetPosition(TrackListBox).Y;
 
         if (!_isDragging)
         {
-            if (Math.Abs(y - _dragStartY) < DragThreshold) return;
+            if (Math.Abs(y - _dragStartY) < DragThreshold)
+                return;
             _isDragging = true;
             DropIndicator.IsVisible = true;
         }
@@ -82,7 +86,8 @@ public partial class MobileMainView : UserControl
         int count = TrackListBox.ItemCount;
         for (int i = 0; i < count; i++)
         {
-            if (TrackListBox.ContainerFromIndex(i) is not Control container) continue;
+            if (TrackListBox.ContainerFromIndex(i) is not Control container)
+                continue;
             var top = container.TranslatePoint(new Point(0, 0), TrackListBox)?.Y ?? 0;
             if (listY < top + container.Bounds.Height / 2)
                 return i;
@@ -94,7 +99,8 @@ public partial class MobileMainView : UserControl
     {
         var container = TrackListBox.ContainerFromIndex(index)
             ?? (index > 0 ? TrackListBox.ContainerFromIndex(index - 1) : null);
-        if (container == null) return 0;
+        if (container == null)
+            return 0;
 
         var topLeft = container.TranslatePoint(new Point(0, 0), ContentGrid) ?? default;
         return index >= TrackListBox.ItemCount ? topLeft.Y + container.Bounds.Height : topLeft.Y;

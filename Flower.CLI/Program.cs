@@ -116,7 +116,8 @@ else
         switch (key)
         {
             case ConsoleKey.Spacebar:
-                if (player.IsPlaying) player.Pause();
+                if (player.IsPlaying)
+                    player.Pause();
                 else player.Play();
                 Console.WriteLine(player.IsPlaying ? "Resumed" : "Paused");
                 break;

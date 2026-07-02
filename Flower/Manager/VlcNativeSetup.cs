@@ -15,7 +15,8 @@ namespace Flower.Manager
         {
             lock (_lock)
             {
-                if (_initialized) return;
+                if (_initialized)
+                    return;
                 _initialized = true;
 
                 if (!OperatingSystem.IsMacOS())

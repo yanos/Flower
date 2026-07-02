@@ -84,7 +84,8 @@ public partial class MainView : UserControl
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             BuildColumnMenu();
-            if (_viewModel.IsBusy) StartSpinner();
+            if (_viewModel.IsBusy)
+                StartSpinner();
 
             // Push initial rows to MusicListView
             ApplyRows();
@@ -96,7 +97,10 @@ public partial class MainView : UserControl
         switch (e.PropertyName)
         {
             case nameof(MainViewModel.IsBusy):
-                if (_viewModel!.IsBusy) StartSpinner(); else StopSpinner();
+                if (_viewModel!.IsBusy)
+                    StartSpinner();
+                else
+                    StopSpinner();
                 break;
             case nameof(MainViewModel.Rows):
                 ApplyRows();
@@ -112,7 +116,8 @@ public partial class MainView : UserControl
 
     private void ApplyRows()
     {
-        if (_viewModel == null) return;
+        if (_viewModel == null)
+            return;
 
         MusicList.AllowReorder = _viewModel.SelectedSidebarItem?.Kind == SidebarItemKind.Playlist;
 
@@ -149,7 +154,8 @@ public partial class MainView : UserControl
 
     private void StartSpinner()
     {
-        if (_spinTimer != null) return;
+        if (_spinTimer != null)
+            return;
         _spinTransform = new RotateTransform();
         SpinnerIcon.RenderTransformOrigin = RelativePoint.Center;
         SpinnerIcon.RenderTransform = _spinTransform;
@@ -163,7 +169,8 @@ public partial class MainView : UserControl
         _spinTimer?.Stop();
         _spinTimer = null;
         _spinTransform = null;
-        if (SpinnerIcon != null) SpinnerIcon.RenderTransform = null;
+        if (SpinnerIcon != null)
+            SpinnerIcon.RenderTransform = null;
     }
 
     // ── MusicListView event handlers ──────────────────────────────────────────
@@ -187,7 +194,8 @@ public partial class MainView : UserControl
 
     private void BuildColumnMenu()
     {
-        if (_viewModel == null) return;
+        if (_viewModel == null)
+            return;
         var columnManager = Ioc.Default.GetService<ColumnManager>()!;
 
         _columnMenu = new ContextMenu();
@@ -224,7 +232,8 @@ public partial class MainView : UserControl
 
     private void PopulateAddToPlaylistMenu(Track track)
     {
-        if (_viewModel is not MainViewModel vm) return;
+        if (_viewModel is not MainViewModel vm)
+            return;
 
         _addToPlaylistItem.Items.Clear();
 
@@ -289,7 +298,8 @@ public partial class MainView : UserControl
 
     private void OpenSettingsWindow()
     {
-        if (_viewModel == null) return;
+        if (_viewModel == null)
+            return;
         var settingsWindow = new SettingsWindow(_viewModel);
         if (TopLevel.GetTopLevel(this) is Window owner)
             settingsWindow.ShowDialog(owner);
@@ -301,11 +311,14 @@ public partial class MainView : UserControl
 
     private void OpenTrackInfo()
     {
-        if (MusicList.SelectedTrack is not Track track) return;
-        if (_viewModel is not MainViewModel vm) return;
+        if (MusicList.SelectedTrack is not Track track)
+            return;
+        if (_viewModel is not MainViewModel vm)
+            return;
         var tracks = vm.DisplayedTracks;
         var index  = tracks.ToList().IndexOf(track);
-        if (index < 0) index = 0;
+        if (index < 0)
+            index = 0;
         var infoWindow = new TrackInfoWindow(tracks, index, vm.Library) { ShowInTaskbar = false };
         infoWindow.TrackNavigated += (_, t) => MusicList.SelectedTrack = t;
         if (TopLevel.GetTopLevel(this) is Window owner)
@@ -316,9 +329,11 @@ public partial class MainView : UserControl
 
     private void LocateFile()
     {
-        if (MusicList.SelectedTrack is not Track track) return;
+        if (MusicList.SelectedTrack is not Track track)
+            return;
         var path = track.Path;
-        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            return;
 
         if (OperatingSystem.IsMacOS())
             Process.Start("open", ["-R", path]);
@@ -334,7 +349,8 @@ public partial class MainView : UserControl
 
     private void SidebarList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (sender is not ListBox list) return;
+        if (sender is not ListBox list)
+            return;
         if (list.SelectedItem is SidebarItem { IsHeader: true })
             list.SelectedItem = _lastSelectableSidebarItem;
         else if (list.SelectedItem is SidebarItem item)
@@ -345,14 +361,16 @@ public partial class MainView : UserControl
 
     private void RenameBox_Loaded(object? sender, RoutedEventArgs e)
     {
-        if (sender is not TextBox tb) return;
+        if (sender is not TextBox tb)
+            return;
         tb.Focus();
         tb.SelectAll();
     }
 
     private async void RenameBox_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (sender is not TextBox tb) return;
+        if (sender is not TextBox tb)
+            return;
         if (e.Key == Key.Enter || e.Key == Key.Escape)
         {
             await CommitRename(tb);
@@ -362,18 +380,21 @@ public partial class MainView : UserControl
 
     private async void RenameBox_LostFocus(object? sender, RoutedEventArgs e)
     {
-        if (sender is TextBox tb) await CommitRename(tb);
+        if (sender is TextBox tb)
+            await CommitRename(tb);
     }
 
     private async Task CommitRename(TextBox tb)
     {
-        if (tb.DataContext is not SidebarItem item || !item.IsEditing) return;
+        if (tb.DataContext is not SidebarItem item || !item.IsEditing)
+            return;
 
         var name = tb.Text?.Trim();
         item.Name = string.IsNullOrEmpty(name) ? "New Playlist" : name;
         item.IsEditing = false;
 
-        if (item.Playlist == null || _viewModel == null) return;
+        if (item.Playlist == null || _viewModel == null)
+            return;
         item.Playlist.Name = item.Name;
         await new PlaylistStore().SaveAsync(_viewModel.Library.Playlists);
     }
@@ -382,8 +403,10 @@ public partial class MainView : UserControl
 
     private async void OnRowReordered(object? sender, (Track dragged, Track? insertBefore) e)
     {
-        if (_viewModel is not MainViewModel vm) return;
-        if (vm.SelectedSidebarItem?.Playlist is not Playlist playlist) return;
+        if (_viewModel is not MainViewModel vm)
+            return;
+        if (vm.SelectedSidebarItem?.Playlist is not Playlist playlist)
+            return;
 
         await vm.ReorderPlaylistTrack(playlist, e.dragged, e.insertBefore);
     }

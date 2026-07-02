@@ -47,10 +47,13 @@ public partial class MusicListView : UserControl
         get => _selectedRow;
         set
         {
-            if (_selectedRow == value) return;
-            if (_selectedRow != null) SetRowSelected(_selectedRow, false);
+            if (_selectedRow == value)
+                return;
+            if (_selectedRow != null)
+                SetRowSelected(_selectedRow, false);
             _selectedRow = value;
-            if (_selectedRow != null) SetRowSelected(_selectedRow, true);
+            if (_selectedRow != null)
+                SetRowSelected(_selectedRow, true);
             var track = _selectedRow?.Track;
             SetAndRaise(SelectedTrackProperty, ref _selectedTrack, track);
         }
@@ -77,9 +80,11 @@ public partial class MusicListView : UserControl
         var row = _items.FirstOrDefault(r => r.Track.Path == track?.Path);
         if (row != _selectedRow)
         {
-            if (_selectedRow != null) SetRowSelected(_selectedRow, false);
+            if (_selectedRow != null)
+                SetRowSelected(_selectedRow, false);
             _selectedRow = row;
-            if (_selectedRow != null) SetRowSelected(_selectedRow, true);
+            if (_selectedRow != null)
+                SetRowSelected(_selectedRow, true);
         }
     }
 
@@ -169,7 +174,8 @@ public partial class MusicListView : UserControl
         int index = -1;
         for (int i = 0; i < _items.Count; i++)
             if (_items[i].Track.Path == track.Path) { index = i; break; }
-        if (index < 0) return false;
+        if (index < 0)
+            return false;
 
         SelectedRow = _items[index];
         Focus();
@@ -302,7 +308,8 @@ public partial class MusicListView : UserControl
 
         handle.PointerPressed += (s, e) =>
         {
-            if (!e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed) return;
+            if (!e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)
+                return;
             dragging   = true;
             startX     = e.GetPosition(null).X; // screen coords — stable during resize
             startWidth = col.Width;
@@ -312,7 +319,8 @@ public partial class MusicListView : UserControl
 
         handle.PointerMoved += (_, e) =>
         {
-            if (!dragging) return;
+            if (!dragging)
+                return;
             double delta = e.GetPosition(null).X - startX;
             col.Width = Math.Max(col.MinWidth, startWidth + delta);
         };
@@ -327,7 +335,8 @@ public partial class MusicListView : UserControl
     {
         // panelPoint is already in the panel's local coordinate space (scroll included)
         int index = (int)Math.Floor(panelPoint.Y / TrackRowViewModel.RowHeight);
-        if (index < 0 || index >= _items.Count) return null;
+        if (index < 0 || index >= _items.Count)
+            return null;
         return _items[index];
     }
 
@@ -335,7 +344,8 @@ public partial class MusicListView : UserControl
     {
         var pt  = e.GetPosition(_panel);
         var row = HitTestRow(pt);
-        if (row == null) return;
+        if (row == null)
+            return;
         SelectedRow = row;
         Focus();
 
@@ -349,12 +359,14 @@ public partial class MusicListView : UserControl
 
     private void Panel_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (_draggedRow == null) return;
+        if (_draggedRow == null)
+            return;
         var pt = e.GetPosition(_panel);
 
         if (!_isDragging)
         {
-            if (Math.Abs(pt.Y - _dragStartPoint.Y) < DragThreshold) return;
+            if (Math.Abs(pt.Y - _dragStartPoint.Y) < DragThreshold)
+                return;
             _isDragging = true;
             _dropIndicator.IsVisible = true;
         }
@@ -391,7 +403,8 @@ public partial class MusicListView : UserControl
     {
         var pt  = e.GetPosition(_panel);
         var row = HitTestRow(pt);
-        if (row == null) return;
+        if (row == null)
+            return;
         SelectedRow = row;
         RowActivated?.Invoke(this, row);
     }
@@ -433,10 +446,12 @@ public partial class MusicListView : UserControl
 
     private void MoveSelection(int delta)
     {
-        if (_items.Count == 0) return;
+        if (_items.Count == 0)
+            return;
         int current = _selectedRow == null ? -1 : IndexOf(_items, _selectedRow);
         int next = Math.Clamp(current + delta, 0, _items.Count - 1);
-        if (next == current) return;
+        if (next == current)
+            return;
         SelectedRow = _items[next];
         EnsureVisible(next);
     }
@@ -444,7 +459,8 @@ public partial class MusicListView : UserControl
     private static int IndexOf(IReadOnlyList<TrackRowViewModel> list, TrackRowViewModel item)
     {
         for (int i = 0; i < list.Count; i++)
-            if (list[i] == item) return i;
+            if (list[i] == item)
+                return i;
         return -1;
     }
 

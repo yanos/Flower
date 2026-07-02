@@ -33,7 +33,8 @@ public partial class TrackInfoView : UserControl
 
     private void Vm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (sender is not MobileMainViewModel vm) return;
+        if (sender is not MobileMainViewModel vm)
+            return;
         if (e.PropertyName is nameof(MobileMainViewModel.ActionTarget) or nameof(MobileMainViewModel.ActiveSheet))
         {
             if (vm.IsShowingTrackInfo && vm.ActionTarget != null && vm.ActionTarget != _track)
@@ -96,7 +97,8 @@ public partial class TrackInfoView : UserControl
 
     private async System.Threading.Tasks.Task SaveChanges()
     {
-        if (_track?.Path is not string path || DataContext is not MobileMainViewModel vm) return;
+        if (_track?.Path is not string path || DataContext is not MobileMainViewModel vm)
+            return;
 
         try
         {

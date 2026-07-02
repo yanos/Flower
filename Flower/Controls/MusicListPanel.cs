@@ -84,7 +84,8 @@ public class MusicListPanel : Panel
 
     private List<int> ComputeRenderIndices()
     {
-        if (_items.Count == 0) return [];
+        if (_items.Count == 0)
+            return [];
 
         int first = Math.Max(0, (int)Math.Floor(_scrollOffset / TrackRowViewModel.RowHeight));
         int count = (int)Math.Ceiling(_viewportHeight  / TrackRowViewModel.RowHeight) + 3;
@@ -99,7 +100,8 @@ public class MusicListPanel : Panel
             {
                 int j = i - 1;
                 while (j >= 0 && !_items[j].IsFirstInAlbumGroup) j--;
-                if (j >= 0) set.Add(j);
+                if (j >= 0)
+                    set.Add(j);
             }
         }
         return [.. set];
@@ -124,7 +126,8 @@ public class MusicListPanel : Panel
     {
         for (int slot = 0; slot < Children.Count; slot++)
         {
-            if (!Children[slot].IsVisible) continue;
+            if (!Children[slot].IsVisible)
+                continue;
             double y = _activeIndex[slot] * TrackRowViewModel.RowHeight;
             Children[slot].Arrange(new Rect(0, y, finalSize.Width, TrackRowViewModel.RowHeight));
         }
