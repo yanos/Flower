@@ -1,51 +1,122 @@
 using System;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 using Makaretu.Dns;
 
 namespace Flower.Services;
 
-// Throwaway spike (see SYNC-PLAN.md): proves mDNS/DNS-SD discovery works across
-// desktop, iOS, and Android before investing in the real WiFi/LAN sync transport.
-// Advertises this instance under "_flowersync._tcp" and logs any other Flower
-// instance found on the LAN. No file transfer, no persistence, no UI - console
-// output only, verified via platform logs (stdout / adb logcat / Xcode console).
+// A Flower instance found on the LAN. Alias starts out as the raw mDNS
+// instance name and is replaced once the /info handshake resolves - see
+// NetworkDiscoveryService.ResolveAliasAsync.
+public class DiscoveredDevice
+{
+    public required string InstanceName { get; init; }
+    public required IPEndPoint EndPoint { get; init; }
+    public string Alias { get; set; } = "";
+}
+
+// See SYNC-PLAN.md: mDNS discovery (proven working macOS <-> iOS Simulator) plus
+// the start of the real sync protocol - device identity exchange over plain HTTP
+// (see SyncHttpServer). File transfer itself is a later phase.
 public class NetworkDiscoveryService : IDisposable
 {
     private const string ServiceType = "_flowersync._tcp";
-    private const int ServicePort = 53317;
+
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
 
     private readonly MulticastService _mdns = new();
     private readonly ServiceDiscovery _serviceDiscovery;
 
+    // Env.MachineName alone collides between desktop and the iOS Simulator, since
+    // the simulator shares the host Mac's actual hostname rather than having a
+    // network identity of its own - tag with the platform so the two are
+    // distinguishable when testing that way. Also used as the alias SyncHttpServer
+    // reports over /info, so both sides of the sync protocol agree on our identity.
+    public string OwnInstanceName { get; } = $"{Environment.MachineName}-{PlatformTag()}";
+
+    public event EventHandler<DiscoveredDevice>? DeviceDiscovered;
+    public event EventHandler<string>? DeviceLost;
+
     public NetworkDiscoveryService()
     {
         _serviceDiscovery = new ServiceDiscovery(_mdns);
-        _serviceDiscovery.ServiceInstanceDiscovered += (_, e) =>
+        _serviceDiscovery.ServiceInstanceDiscovered += OnServiceInstanceDiscovered;
+        _serviceDiscovery.ServiceInstanceShutdown += (_, e) =>
         {
-            // ServiceInstanceDiscovered fires for any service instance seen on the
-            // LAN, not just ones matching what we queried for (mDNS is a shared
-            // multicast channel) - e.g. printers, Chromecasts, or Apple's own
-            // _apple-mobdev2._tcp device-pairing traffic show up here too. Filter to
-            // our own service type so the log only reflects actual Flower peers.
-            if (!e.ServiceInstanceName.ToString().EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase))
+            if (!IsOurServiceType(e.ServiceInstanceName))
                 return;
 
-            Console.WriteLine($"[NetworkDiscovery] Discovered peer: {e.ServiceInstanceName}");
+            DeviceLost?.Invoke(this, e.ServiceInstanceName.ToString());
         };
     }
 
-    public void Start()
+    // port is whatever SyncHttpServer actually bound (see SyncHttpServer.Start) - not
+    // necessarily SyncHttpServer.DefaultPort, since that can be taken by another
+    // Flower instance on the same machine (e.g. the iOS Simulator). Advertising the
+    // real port means peers never need to assume a fixed one; they read it from the
+    // SRV record in the discovery answer instead (see OnServiceInstanceDiscovered).
+    public void Start(int port)
     {
-        // Env.MachineName alone collides between desktop and the iOS Simulator,
-        // since the simulator shares the host Mac's actual hostname rather than
-        // having a network identity of its own - tag with the platform so the two
-        // are distinguishable when testing that way.
-        var instanceName = $"{Environment.MachineName}-{PlatformTag()}";
-        var profile = new ServiceProfile(instanceName, ServiceType, ServicePort);
+        var profile = new ServiceProfile(OwnInstanceName, ServiceType, (ushort)port);
         _serviceDiscovery.Advertise(profile);
         _mdns.Start();
         _serviceDiscovery.QueryServiceInstances(ServiceType);
     }
+
+    private void OnServiceInstanceDiscovered(object? sender, ServiceInstanceDiscoveryEventArgs e)
+    {
+        // ServiceInstanceDiscovered fires for any service instance seen on the LAN,
+        // not just ones matching what we queried for (mDNS is a shared multicast
+        // channel) - e.g. printers, Chromecasts, or Apple's own device-pairing
+        // traffic show up here too. Filter to our own service type.
+        if (!IsOurServiceType(e.ServiceInstanceName))
+            return;
+
+        var name = e.ServiceInstanceName.ToString();
+        if (name.StartsWith(OwnInstanceName + ".", StringComparison.OrdinalIgnoreCase))
+            return; // mDNS reflects our own advertisement back to us - not a peer.
+
+        // No separate resolve round-trip needed: the discovery answer already
+        // carries the sender's real address (RemoteEndPoint) and, per DNS-SD
+        // convention, the SRV record with the service port in AdditionalRecords.
+        var srv = e.Message.AdditionalRecords.OfType<SRVRecord>().FirstOrDefault();
+        var port = srv?.Port ?? (ushort)SyncHttpServer.DefaultPort;
+        var endpoint = new IPEndPoint(e.RemoteEndPoint.Address, port);
+
+        var device = new DiscoveredDevice { InstanceName = name, EndPoint = endpoint, Alias = name };
+        DeviceDiscovered?.Invoke(this, device);
+
+        _ = ResolveAliasAsync(device);
+    }
+
+    // Fetches the peer's real alias via the /info handshake (SyncHttpServer),
+    // replacing the raw mDNS instance name shown until this resolves. Best-effort:
+    // a peer that is not yet listening, or never will be, just keeps the fallback.
+    private async Task ResolveAliasAsync(DiscoveredDevice device)
+    {
+        try
+        {
+            var json = await Http.GetStringAsync($"http://{device.EndPoint}/api/localsend/v2/info");
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("alias", out var aliasProp) && aliasProp.GetString() is { } alias)
+            {
+                device.Alias = alias;
+                DeviceDiscovered?.Invoke(this, device);
+            }
+        }
+        catch
+        {
+            // Peer unreachable or not running the /info endpoint yet - keep the
+            // mDNS-name fallback alias rather than failing the discovery.
+        }
+    }
+
+    private static bool IsOurServiceType(DomainName name) =>
+        name.ToString().EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);
 
     private static string PlatformTag()
     {

@@ -45,6 +45,8 @@ public partial class App : Application
         foreach (var playlist in new PlaylistStore().Load(library.Tracks))
             library.AddPlaylist(playlist);
 
+        var networkDiscovery = new NetworkDiscoveryService();
+
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
                 .AddSingleton<IAudioManager>(new VlcAudioManager())
@@ -55,6 +57,7 @@ public partial class App : Application
                 .AddSingleton<ColumnVisibilityStore>()
                 .AddSingleton<ColumnManager>()
                 .AddSingleton(importer)
+                .AddSingleton(networkDiscovery)
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
@@ -80,10 +83,14 @@ public partial class App : Application
 
         base.OnFrameworkInitializationCompleted();
 
-        // Spike: prove mDNS discovery works cross-platform before building real sync
-        // (see SYNC-PLAN.md). Console-only, no UI - throwaway verification code.
+        // See SYNC-PLAN.md: mDNS discovery + the start of the real sync protocol.
+        // SyncHttpServer starts first so networkDiscovery can advertise whichever
+        // port it actually bound (see SyncHttpServer.Start for why that can differ
+        // from SyncHttpServer.DefaultPort).
         PlatformMulticastLock.Current?.Acquire();
-        new NetworkDiscoveryService().Start();
+        var syncHttpServer = new SyncHttpServer(networkDiscovery.OwnInstanceName);
+        syncHttpServer.Start();
+        networkDiscovery.Start(syncHttpServer.BoundPort ?? SyncHttpServer.DefaultPort);
 
         // Rescan the music folder in the background while the UI is already showing
         _ = Task.Run(async () =>

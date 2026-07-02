@@ -175,6 +175,20 @@
         <controls:MusicListView Grid.Column="1"
                                 x:Name="MusicList"
                                 SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
+
+        <!-- Device detail: shown instead of the track list when a Devices sidebar row is selected -->
+        <StackPanel Grid.Column="0" Grid.ColumnSpan="2"
+                    IsVisible="{Binding IsShowingDeviceDetail}"
+                    Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                    Margin="24" Spacing="8" VerticalAlignment="Top">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <materialIcons:MaterialIcon Kind="Laptop" Width="28" Height="28" />
+            <TextBlock Text="{Binding SelectedDevice.Alias}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock Text="{Binding SelectedDevice.EndPoint}" Opacity="0.6" FontSize="13"/>
+          <TextBlock Text="Found on your local network via Flower's sync discovery. File sync is not built yet."
+                     Opacity="0.5" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" MaxWidth="360"/>
+        </StackPanel>
       </Grid>
     </Grid>
   </Grid>

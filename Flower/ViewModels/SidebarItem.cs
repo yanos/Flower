@@ -1,9 +1,11 @@
 using Flower.Models;
+using Flower.Services;
+
 using Material.Icons;
 
 namespace Flower.ViewModels;
 
-public enum SidebarItemKind { Header, Songs, Albums, Artists, Playlist }
+public enum SidebarItemKind { Header, Songs, Albums, Artists, Playlist, Device }
 
 public class SidebarItem : ViewModelBase
 {
@@ -17,6 +19,7 @@ public class SidebarItem : ViewModelBase
     public SidebarItemKind Kind { get; }
     public MaterialIconKind Icon { get; }
     public Playlist? Playlist { get; }
+    public DiscoveredDevice? Device { get; }
     public bool IsHeader => Kind == SidebarItemKind.Header;
     public bool IsSelectable => !IsHeader;
 
@@ -27,11 +30,13 @@ public class SidebarItem : ViewModelBase
         set { _isEditing = value; OnPropertyChanged(); }
     }
 
-    public SidebarItem(SidebarItemKind kind, string name, MaterialIconKind icon = MaterialIconKind.MusicNote, Playlist? playlist = null)
+    public SidebarItem(SidebarItemKind kind, string name, MaterialIconKind icon = MaterialIconKind.MusicNote,
+        Playlist? playlist = null, DiscoveredDevice? device = null)
     {
         Kind = kind;
         _name = name;
         Icon = icon;
         Playlist = playlist;
+        Device = device;
     }
 }
