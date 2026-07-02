@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Views.Mobile.AddToPlaylistView"
+             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}">
+
+  <UserControl.Styles>
+    <Style Selector="Button.action">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="20,14" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid>
+    <!-- Dimmed backdrop; tapping it dismisses the sheet -->
+    <Button Command="{Binding CloseSheetCommand}"
+            Background="#66000000"
+            BorderThickness="0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch" />
+
+    <!-- Playlist picker card -->
+    <Border VerticalAlignment="Bottom"
+            MaxHeight="420"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+            CornerRadius="12,12,0,0"
+            Padding="0,8">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top"
+                   Text="Add to Playlist"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Opacity="0.6"
+                   Margin="20,8,20,8" />
+
+        <Button DockPanel.Dock="Bottom" Classes="action" Command="{Binding CloseSheetCommand}" Margin="0,8,0,0">
+          <TextBlock Text="Cancel" FontSize="16" HorizontalAlignment="Center" Opacity="0.7" />
+        </Button>
+
+        <ScrollViewer>
+          <StackPanel>
+            <Button Classes="action" Command="{Binding CreatePlaylistCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="14">
+                <materialIcons:MaterialIcon Kind="Plus" Width="22" Height="22" />
+                <TextBlock Text="New Playlist" FontSize="16" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+
+            <ItemsControl ItemsSource="{Binding PlaylistPickerItems}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Classes="action"
+                          Command="{Binding $parent[UserControl].DataContext.AddTrackToPlaylistCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Orientation="Horizontal" Spacing="14">
+                      <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" />
+                      <TextBlock Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+  </Grid>
+</UserControl>

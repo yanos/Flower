@@ -76,6 +76,15 @@
           <materialIcons:MaterialIcon Kind="Close" IsVisible="{Binding IsSearchVisible}" Width="22" Height="22" />
         </Panel>
       </Button>
+
+      <Button Grid.Column="2"
+              Command="{Binding CreatePlaylistCommand}"
+              IsVisible="{Binding IsShowingPlaylistPicker}"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="10">
+        <materialIcons:MaterialIcon Kind="Plus" Width="24" Height="24" />
+      </Button>
     </Grid>
 
     <!-- Content -->
@@ -271,5 +280,7 @@
                              IsVisible="{Binding IsShowingTrackActions}" />
     <views:TrackInfoView Grid.Row="0" Grid.RowSpan="4"
                           IsVisible="{Binding IsShowingTrackInfo}" />
+    <views:AddToPlaylistView Grid.Row="0" Grid.RowSpan="4"
+                              IsVisible="{Binding IsShowingAddToPlaylist}" />
   </Grid>
 </UserControl>

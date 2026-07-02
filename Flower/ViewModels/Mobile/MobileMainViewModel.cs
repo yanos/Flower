@@ -12,7 +12,7 @@ public enum MobileTab { Songs, Albums, Artists, Playlists }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo }
+public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -40,6 +40,9 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand ViewTrackInfoCommand { get; }
     public ICommand ToggleSearchCommand { get; }
     public ICommand ClearSearchCommand { get; }
+    public ICommand OpenAddToPlaylistCommand { get; }
+    public ICommand AddTrackToPlaylistCommand { get; }
+    public ICommand CreatePlaylistCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.Songs;
     public MobileTab SelectedTab
@@ -110,12 +113,14 @@ public class MobileMainViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsShowingNowPlaying));
             OnPropertyChanged(nameof(IsShowingTrackActions));
             OnPropertyChanged(nameof(IsShowingTrackInfo));
+            OnPropertyChanged(nameof(IsShowingAddToPlaylist));
         }
     }
 
     public bool IsShowingNowPlaying => ActiveSheet == MobileSheet.NowPlaying;
     public bool IsShowingTrackActions => ActiveSheet == MobileSheet.TrackActions;
     public bool IsShowingTrackInfo => ActiveSheet == MobileSheet.TrackInfo;
+    public bool IsShowingAddToPlaylist => ActiveSheet == MobileSheet.AddToPlaylist;
 
     // The track a row's "..." action menu (and, in turn, the Track Info sheet) applies to.
     private Track? _actionTarget;
@@ -183,6 +188,22 @@ public class MobileMainViewModel : ViewModelBase
         });
         ToggleSearchCommand = new RelayCommand(() => IsSearchVisible = !IsSearchVisible);
         ClearSearchCommand = new RelayCommand(() => IsSearchVisible = false);
+        OpenAddToPlaylistCommand = new RelayCommand(() =>
+        {
+            if (ActionTarget != null)
+                ActiveSheet = MobileSheet.AddToPlaylist;
+        });
+        AddTrackToPlaylistCommand = new RelayCommand<SidebarItem>(async item =>
+        {
+            if (ActionTarget != null && item?.Playlist != null)
+                await Main.AddTrackToPlaylist(ActionTarget, item.Playlist);
+            ActiveSheet = MobileSheet.None;
+        });
+        CreatePlaylistCommand = new RelayCommand(async () =>
+        {
+            await Main.CreatePlaylistWithTrack(ActionTarget);
+            ActiveSheet = MobileSheet.None;
+        });
     }
 
     private void RebuildPlaylistPicker()
