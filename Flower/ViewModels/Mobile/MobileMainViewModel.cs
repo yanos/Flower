@@ -69,6 +69,13 @@ public class MobileMainViewModel : ViewModelBase
         ? (Main.SelectedSidebarItem?.Name ?? SelectedTab.ToString())
         : SelectedTab.ToString();
 
+    // Non-null only while drilled into a specific playlist's track list, which is the
+    // one place mobile allows reordering (Songs/Albums/Artists have no persisted order).
+    public Playlist? CurrentPlaylist =>
+        SelectedTab == MobileTab.Playlists && _hasDrilledIn ? Main.SelectedSidebarItem?.Playlist : null;
+
+    public bool IsShowingPlaylistTracks => CurrentPlaylist != null;
+
     private MobileSheet _activeSheet = MobileSheet.None;
     public MobileSheet ActiveSheet
     {
@@ -207,5 +214,15 @@ public class MobileMainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(ScreenTitle));
+        OnPropertyChanged(nameof(CurrentPlaylist));
+        OnPropertyChanged(nameof(IsShowingPlaylistTracks));
+    }
+
+    // Driven by the track list's touch drag-to-reorder gesture (see MobileMainView's
+    // code-behind); a no-op if the user isn't currently viewing a playlist's tracks.
+    public async void ReorderCurrentPlaylistTrack(Track dragged, Track? insertBefore)
+    {
+        if (CurrentPlaylist is { } playlist)
+            await Main.ReorderPlaylistTrack(playlist, dragged, insertBefore);
     }
 }
