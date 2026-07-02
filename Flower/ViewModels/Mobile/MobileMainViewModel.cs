@@ -142,6 +142,49 @@ public class MobileMainViewModel : ViewModelBase
         private set { _actionTarget = value; OnPropertyChanged(); }
     }
 
+    // Whichever list is currently on screen (picker or track list) has nothing in it.
+    // Without this, an empty library or an empty search just renders a blank screen.
+    public bool IsContentEmpty =>
+        (IsShowingAlbumArtistPicker && Main.SubListItems.Count == 0) ||
+        (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0) ||
+        (IsShowingTrackList && Main.Rows.Count == 0);
+
+    public string EmptyStateTitle
+    {
+        get
+        {
+            if (IsShowingPlaylistTracks) return "Playlist is Empty";
+            if (!string.IsNullOrEmpty(Main.FilterText)) return "No Results";
+            if (Main.Library.Tracks.Count == 0) return "No Music Yet";
+            return "Nothing Here";
+        }
+    }
+
+    public string EmptyStateMessage
+    {
+        get
+        {
+            if (IsShowingPlaylistTracks)
+                return "Add tracks from a track's ... menu.";
+            if (!string.IsNullOrEmpty(Main.FilterText))
+                return $"No matches for \"{Main.FilterText}\".";
+            if (Main.Library.Tracks.Count > 0)
+                return "Nothing to show here yet.";
+            if (System.OperatingSystem.IsAndroid())
+                return "Grant music access in Settings, then add songs to your device library.";
+            if (System.OperatingSystem.IsIOS())
+                return "Connect to a computer and drag music files into the Flower app in Finder.";
+            return "Add a library folder in Settings to get started.";
+        }
+    }
+
+    private void RaiseEmptyStateChanged()
+    {
+        OnPropertyChanged(nameof(IsContentEmpty));
+        OnPropertyChanged(nameof(EmptyStateTitle));
+        OnPropertyChanged(nameof(EmptyStateMessage));
+    }
+
     public MobileMainViewModel(
         MainViewModel main,
         PlaylistControlViewModel playlistControl,
@@ -159,6 +202,12 @@ public class MobileMainViewModel : ViewModelBase
         };
 
         Main.SidebarItems.CollectionChanged += (_, _) => RebuildPlaylistPicker();
+        Main.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems)
+                or nameof(MainViewModel.FilterText))
+                RaiseEmptyStateChanged();
+        };
         RebuildPlaylistPicker();
         ApplyTabSelection();
 
@@ -230,6 +279,7 @@ public class MobileMainViewModel : ViewModelBase
         PlaylistPickerItems.Clear();
         foreach (var item in Main.SidebarItems.Where(i => i.Kind == SidebarItemKind.Playlist))
             PlaylistPickerItems.Add(item);
+        RaiseEmptyStateChanged();
     }
 
     private void ApplyTabSelection()
@@ -282,6 +332,7 @@ public class MobileMainViewModel : ViewModelBase
         OnPropertyChanged(nameof(CurrentPlaylist));
         OnPropertyChanged(nameof(IsShowingPlaylistTracks));
         OnPropertyChanged(nameof(CanSearch));
+        RaiseEmptyStateChanged();
     }
 
     // Driven by the track list's touch drag-to-reorder gesture (see MobileMainView's
