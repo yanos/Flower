@@ -198,6 +198,27 @@
               VerticalAlignment="Top"
               IsHitTestVisible="False"
               IsVisible="False" />
+
+      <!-- Empty state: shown instead of a blank screen when the current list has nothing in it -->
+      <StackPanel IsVisible="{Binding IsContentEmpty}"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Spacing="10"
+                  MaxWidth="280">
+        <materialIcons:MaterialIcon Kind="MusicNoteOff" Width="40" Height="40" Opacity="0.35" HorizontalAlignment="Center" />
+        <TextBlock Text="{Binding EmptyStateTitle}"
+                   FontSize="17"
+                   FontWeight="SemiBold"
+                   Opacity="0.6"
+                   HorizontalAlignment="Center"
+                   TextAlignment="Center" />
+        <TextBlock Text="{Binding EmptyStateMessage}"
+                   FontSize="14"
+                   Opacity="0.5"
+                   HorizontalAlignment="Center"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap" />
+      </StackPanel>
     </Grid>
 
     <!-- Mini player -->
