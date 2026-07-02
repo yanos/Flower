@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Views.Mobile.TrackActionsView"
+             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}">
+
+  <UserControl.Styles>
+    <Style Selector="Button.action">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="20,14" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid>
+    <!-- Dimmed backdrop; tapping it dismisses the sheet -->
+    <Button Command="{Binding CloseSheetCommand}"
+            Background="#66000000"
+            BorderThickness="0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch" />
+
+    <!-- Action card -->
+    <Border VerticalAlignment="Bottom"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+            CornerRadius="12,12,0,0"
+            Padding="0,8">
+      <StackPanel>
+        <TextBlock Text="{Binding ActionTarget.Title}"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Opacity="0.6"
+                   TextTrimming="CharacterEllipsis"
+                   Margin="20,8,20,8" />
+
+        <Button Classes="action" Command="{Binding ViewTrackInfoCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="InformationOutline" Width="22" Height="22" />
+            <TextBlock Text="View Info" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="action" Command="{Binding CloseSheetCommand}" Margin="0,8,0,0">
+          <TextBlock Text="Cancel" FontSize="16" HorizontalAlignment="Center" Opacity="0.7" />
+        </Button>
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

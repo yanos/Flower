@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Views.Mobile.TrackInfoView"
+             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}"
+             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.lbl">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Opacity" Value="0.45" />
+      <Setter Property="Margin" Value="0,10,0,2" />
+    </Style>
+    <Style Selector="TextBlock.sectionHeader">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="LetterSpacing" Value="0.8" />
+      <Setter Property="Opacity" Value="0.4" />
+      <Setter Property="Margin" Value="0,20,0,2" />
+    </Style>
+    <Style Selector="TextBox.val">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Padding" Value="8,6" />
+    </Style>
+    <Style Selector="TextBlock.val">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="52" Margin="4,4,16,4">
+      <Button Grid.Column="0"
+              Click="Cancel_Click"
+              Background="Transparent" BorderThickness="0" Padding="10">
+        <materialIcons:MaterialIcon Kind="ChevronDown" Width="26" Height="26" />
+      </Button>
+      <TextBlock Grid.Column="1" Text="Track Info" FontSize="15" FontWeight="SemiBold"
+                 HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.7" />
+      <Button Grid.Column="2"
+              Click="Save_Click"
+              Background="Transparent" BorderThickness="0" Padding="10">
+        <TextBlock Text="Save" FontSize="15" FontWeight="SemiBold" />
+      </Button>
+    </Grid>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="20,0,20,32">
+
+        <TextBlock Text="Title" Classes="lbl" />
+        <TextBox x:Name="TitleBox" Classes="val" FontSize="18" FontWeight="SemiBold" />
+
+        <TextBlock Text="Artist" Classes="lbl" />
+        <TextBox x:Name="ArtistBox" Classes="val" />
+
+        <TextBlock Text="Album" Classes="lbl" />
+        <TextBox x:Name="AlbumBox" Classes="val" />
+
+        <TextBlock Text="ALBUM" Classes="sectionHeader" />
+        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" Margin="0,0,0,4">
+          <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,4,0">
+            <TextBlock Text="Track #" Classes="lbl" />
+            <TextBox x:Name="TrackNumBox" Classes="val" />
+          </StackPanel>
+          <StackPanel Grid.Row="0" Grid.Column="1" Margin="4,0,0,0">
+            <TextBlock Text="of" Classes="lbl" />
+            <TextBox x:Name="TrackTotalBox" Classes="val" />
+          </StackPanel>
+          <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,4,0">
+            <TextBlock Text="Disc #" Classes="lbl" />
+            <TextBox x:Name="DiscNumBox" Classes="val" />
+          </StackPanel>
+          <StackPanel Grid.Row="1" Grid.Column="1" Margin="4,0,0,0">
+            <TextBlock Text="of" Classes="lbl" />
+            <TextBox x:Name="DiscTotalBox" Classes="val" />
+          </StackPanel>
+        </Grid>
+
+        <TextBlock Text="Year" Classes="lbl" />
+        <TextBox x:Name="YearBox" Classes="val" />
+
+        <TextBlock Text="Genre" Classes="lbl" />
+        <TextBox x:Name="GenreBox" Classes="val" />
+
+        <TextBlock Text="BPM" Classes="lbl" />
+        <TextBox x:Name="BpmBox" Classes="val" />
+
+        <TextBlock Text="Key" Classes="lbl" />
+        <TextBox x:Name="KeyBox" Classes="val" />
+
+        <TextBlock Text="Grouping" Classes="lbl" />
+        <TextBox x:Name="GroupingBox" Classes="val" />
+
+        <TextBlock Text="PEOPLE" Classes="sectionHeader" />
+        <TextBlock Text="Album Artist" Classes="lbl" />
+        <TextBox x:Name="AlbumArtistBox" Classes="val" />
+
+        <TextBlock Text="Composer" Classes="lbl" />
+        <TextBox x:Name="ComposerBox" Classes="val" />
+
+        <TextBlock Text="Conductor" Classes="lbl" />
+        <TextBox x:Name="ConductorBox" Classes="val" />
+
+        <TextBlock Text="Remixed By" Classes="lbl" />
+        <TextBox x:Name="RemixedByBox" Classes="val" />
+
+        <TextBlock Text="DESCRIPTIONS" Classes="sectionHeader" />
+        <TextBlock Text="Subtitle" Classes="lbl" />
+        <TextBox x:Name="SubtitleBox" Classes="val" />
+
+        <TextBlock Text="Description" Classes="lbl" />
+        <TextBox x:Name="DescriptionBox" Classes="val" AcceptsReturn="True" MinHeight="48" TextWrapping="Wrap" />
+
+        <TextBlock Text="Comment" Classes="lbl" />
+        <TextBox x:Name="CommentBox" Classes="val" AcceptsReturn="True" MinHeight="48" TextWrapping="Wrap" />
+
+        <TextBlock Text="Publisher" Classes="lbl" />
+        <TextBox x:Name="PublisherBox" Classes="val" />
+
+        <TextBlock Text="Copyright" Classes="lbl" />
+        <TextBox x:Name="CopyrightBox" Classes="val" />
+
+        <TextBlock Text="ISRC" Classes="lbl" />
+        <TextBox x:Name="ISRCBox" Classes="val" />
+
+        <TextBlock Text="LYRICS" Classes="sectionHeader" />
+        <TextBox x:Name="LyricsBox" Classes="val" AcceptsReturn="True" MinHeight="80" TextWrapping="Wrap" />
+
+        <TextBlock Text="TECHNICAL" Classes="sectionHeader" />
+        <TextBlock Text="Duration" Classes="lbl" />
+        <TextBlock x:Name="DurationValue" Classes="val" />
+
+        <TextBlock Text="Codec" Classes="lbl" />
+        <TextBlock x:Name="CodecValue" Classes="val" />
+
+        <TextBlock Text="Bit Rate" Classes="lbl" />
+        <TextBlock x:Name="BitrateValue" Classes="val" />
+
+        <TextBlock Text="Sample Rate" Classes="lbl" />
+        <TextBlock x:Name="SampleRateValue" Classes="val" />
+
+        <TextBlock Text="Channels" Classes="lbl" />
+        <TextBlock x:Name="ChannelsValue" Classes="val" />
+
+        <TextBlock Text="Bit Depth" Classes="lbl" />
+        <TextBlock x:Name="BitDepthValue" Classes="val" />
+
+        <TextBlock Text="File" Classes="lbl" />
+        <TextBlock x:Name="PathValue" Classes="val" FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>
