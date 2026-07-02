@@ -5,6 +5,7 @@ using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 
 using Flower.Models;
+using Flower.Services;
 
 namespace Flower.ViewModels.Mobile;
 
@@ -12,7 +13,7 @@ public enum MobileTab { Songs, Albums, Artists, Playlists }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist }
+public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -43,6 +44,9 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand OpenAddToPlaylistCommand { get; }
     public ICommand AddTrackToPlaylistCommand { get; }
     public ICommand CreatePlaylistCommand { get; }
+    public ICommand OpenSettingsCommand { get; }
+    public ICommand RescanCommand { get; }
+    public ICommand OpenAppSettingsCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.Songs;
     public MobileTab SelectedTab
@@ -114,6 +118,7 @@ public class MobileMainViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsShowingTrackActions));
             OnPropertyChanged(nameof(IsShowingTrackInfo));
             OnPropertyChanged(nameof(IsShowingAddToPlaylist));
+            OnPropertyChanged(nameof(IsShowingSettings));
         }
     }
 
@@ -121,6 +126,13 @@ public class MobileMainViewModel : ViewModelBase
     public bool IsShowingTrackActions => ActiveSheet == MobileSheet.TrackActions;
     public bool IsShowingTrackInfo => ActiveSheet == MobileSheet.TrackInfo;
     public bool IsShowingAddToPlaylist => ActiveSheet == MobileSheet.AddToPlaylist;
+    public bool IsShowingSettings => ActiveSheet == MobileSheet.Settings;
+
+    // Android's media-access permission can be permanently denied, in which case the
+    // only way back in is the system app-settings screen; desktop/iOS have nothing
+    // equivalent to check (PlatformPermissions.Current is left null there).
+    public bool HasMediaPermissionPrompt => PlatformPermissions.Current != null;
+    public bool HasMediaPermission => PlatformPermissions.Current?.IsGranted() ?? true;
 
     // The track a row's "..." action menu (and, in turn, the Track Info sheet) applies to.
     private Track? _actionTarget;
@@ -204,6 +216,13 @@ public class MobileMainViewModel : ViewModelBase
             await Main.CreatePlaylistWithTrack(ActionTarget);
             ActiveSheet = MobileSheet.None;
         });
+        OpenSettingsCommand = new RelayCommand(() =>
+        {
+            OnPropertyChanged(nameof(HasMediaPermission));
+            ActiveSheet = MobileSheet.Settings;
+        });
+        RescanCommand = new RelayCommand(async () => await Main.RescanLibraryAsync());
+        OpenAppSettingsCommand = new RelayCommand(() => PlatformPermissions.Current?.OpenAppSettings());
     }
 
     private void RebuildPlaylistPicker()
