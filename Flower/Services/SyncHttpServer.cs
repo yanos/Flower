@@ -1,19 +1,24 @@
 using System;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Flower.Models;
 using Flower.Persistence;
 
 namespace Flower.Services;
 
-// Plain-HTTP identity endpoint for the sync protocol phase 1 (see SYNC-PLAN.md):
-// GET /api/localsend/v2/info returns this device's alias/fingerprint, mirroring
-// LocalSend's own protocol shape (deliberately plain HTTP for now, not HTTPS - see
-// the plan doc for why). No file transfer yet; that needs more endpoints and TLS,
-// both deferred.
+// Plain-HTTP sync endpoints (see SYNC-PLAN.md):
+//   GET  /api/localsend/v2/info        - device identity (phase 1)
+//   GET  /api/flower/v1/playlists      - this device's current playlist manifest
+//   POST /api/flower/v1/playlists/apply - adopt a peer-merged manifest wholesale
+// (phase 2, playlist metadata sync). Deliberately plain HTTP for now, not HTTPS -
+// see the plan doc for why. No audio file transfer yet; playlists can only
+// reference tracks already present on both sides (see PlaylistSyncMapper).
 public class SyncHttpServer : IDisposable
 {
     public const int DefaultPort = 53317;
@@ -22,15 +27,20 @@ public class SyncHttpServer : IDisposable
     private HttpListener? _listener;
     private readonly string _alias;
     private readonly string _fingerprint;
+    private readonly Library _library;
+    private readonly PlaylistStore _playlistStore = new();
     private CancellationTokenSource? _cts;
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     // The port actually bound once Start() succeeds - may differ from DefaultPort,
     // see Start(). Null if binding failed on every port tried (sync unavailable).
     public int? BoundPort { get; private set; }
 
-    public SyncHttpServer(string alias)
+    public SyncHttpServer(string alias, Library library)
     {
         _alias = alias;
+        _library = library;
         _fingerprint = new DeviceIdentityStore().Load().Fingerprint;
     }
 
@@ -94,27 +104,17 @@ public class SyncHttpServer : IDisposable
     {
         try
         {
-            if (context.Request.Url?.AbsolutePath == "/api/localsend/v2/info" && context.Request.HttpMethod == "GET")
-            {
-                var deviceType = OperatingSystem.IsIOS() || OperatingSystem.IsAndroid() ? "mobile" : "desktop";
-                var body = JsonSerializer.Serialize(new
-                {
-                    alias = _alias,
-                    version = "2.0",
-                    deviceModel = (string?)null,
-                    deviceType,
-                    fingerprint = _fingerprint,
-                    download = false
-                });
-                var bytes = Encoding.UTF8.GetBytes(body);
-                context.Response.ContentType = "application/json";
-                context.Response.ContentLength64 = bytes.Length;
-                await context.Response.OutputStream.WriteAsync(bytes);
-            }
+            var path = context.Request.Url?.AbsolutePath;
+            var method = context.Request.HttpMethod;
+
+            if (path == "/api/localsend/v2/info" && method == "GET")
+                await HandleInfoAsync(context);
+            else if (path == "/api/flower/v1/playlists" && method == "GET")
+                await HandleGetPlaylistsAsync(context);
+            else if (path == "/api/flower/v1/playlists/apply" && method == "POST")
+                await HandleApplyPlaylistsAsync(context);
             else
-            {
                 context.Response.StatusCode = 404;
-            }
         }
         catch
         {
@@ -124,6 +124,58 @@ public class SyncHttpServer : IDisposable
         {
             context.Response.Close();
         }
+    }
+
+    private async Task HandleInfoAsync(HttpListenerContext context)
+    {
+        var deviceType = OperatingSystem.IsIOS() || OperatingSystem.IsAndroid() ? "mobile" : "desktop";
+        var body = JsonSerializer.Serialize(new
+        {
+            alias = _alias,
+            version = "2.0",
+            deviceModel = (string?)null,
+            deviceType,
+            fingerprint = _fingerprint,
+            download = false
+        });
+        await WriteJsonAsync(context, body);
+    }
+
+    private async Task HandleGetPlaylistsAsync(HttpListenerContext context)
+    {
+        var manifest = PlaylistSyncMapper.ToManifest(_fingerprint, _library.Playlists);
+        await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
+    }
+
+    // The initiator of a sync session (see PlaylistSyncService) has already resolved
+    // every conflict by the time it POSTs here, so this side just replaces its whole
+    // playlist collection to match - no merge logic runs on this end.
+    private async Task HandleApplyPlaylistsAsync(HttpListenerContext context)
+    {
+        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+        var json = await reader.ReadToEndAsync();
+        var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(json, JsonOptions);
+        if (manifest == null)
+        {
+            context.Response.StatusCode = 400;
+            return;
+        }
+
+        var playlists = manifest.Playlists
+            .Select(dto => PlaylistSyncMapper.ToPlaylist(dto, _library.Tracks))
+            .ToList();
+        _library.ReplacePlaylists(playlists);
+        await _playlistStore.SaveAsync(playlists);
+
+        context.Response.StatusCode = 204;
+    }
+
+    private static async Task WriteJsonAsync(HttpListenerContext context, string body)
+    {
+        var bytes = Encoding.UTF8.GetBytes(body);
+        context.Response.ContentType = "application/json";
+        context.Response.ContentLength64 = bytes.Length;
+        await context.Response.OutputStream.WriteAsync(bytes);
     }
 
     public void Stop()

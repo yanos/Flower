@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace Flower.Models
 {
@@ -49,5 +50,22 @@ namespace Flower.Models
 
         // Stats
         public int PlayCount { get; set; }
+
+        // Cross-device identity for playlist sync (see PlaylistSyncService): Path is
+        // a local filesystem path and never matches between two devices' libraries,
+        // so playlist track membership is matched by this fingerprint instead. Not
+        // persisted - computed on demand, ignored by both library.json and the sync
+        // wire DTOs (which carry the same fields directly).
+        [JsonIgnore]
+        public string SyncKey => BuildSyncKey(Title, Artists, Album, (int)Duration.TotalSeconds);
+
+        // Shared with PlaylistSyncPlanner, which builds the same key from the wire
+        // DTO (PlaylistSyncTrackDto) on the other side of a sync - both must
+        // normalize identically or every cross-device track match silently fails.
+        public static string BuildSyncKey(string? title, string? artists, string? album, int durationSeconds) =>
+            $"{Normalize(title)}|{Normalize(artists)}|{Normalize(album)}|{durationSeconds}";
+
+        private static string Normalize(string? value) =>
+            value?.Trim().ToLowerInvariant() ?? "";
     }
 }

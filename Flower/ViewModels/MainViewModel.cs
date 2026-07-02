@@ -30,6 +30,15 @@ public partial class MainViewModel : ViewModelBase
     private AppSettings? _appSettings;
     private IMusicImporter? _importer;
     private MainPlaylist?      _mainPlaylist;
+    private PlaylistSyncService? _playlistSyncService;
+
+    // Fingerprints of devices already sync'd (or currently syncing) this app
+    // session, so DeviceDiscovered re-firing for the same peer (e.g. once with the
+    // mDNS-name fallback alias, again once /info resolves) doesn't start a second,
+    // overlapping sync session. Cleared per-device on DeviceLost so a peer that
+    // drops off and comes back later gets a fresh sync. Concurrent dictionary
+    // because discovery events aren't guaranteed to arrive on one fixed thread.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _syncedDeviceFingerprints = new();
 
     public ICommand? OpenDatabaseLocationCommand { get; private set; }
     public ICommand? RebuildDatabaseCommand      { get; private set; }
@@ -38,6 +47,7 @@ public partial class MainViewModel : ViewModelBase
 
     public event EventHandler? SettingsRequested;
     public event EventHandler<Track>? NavigateToTrackRequested;
+    public event EventHandler<PlaylistConflictEventArgs>? PlaylistConflictRequested;
 
     public Library Library { get; private set; }
 
@@ -237,7 +247,8 @@ public partial class MainViewModel : ViewModelBase
         AppSettings appSettings,
         IMusicImporter importer,
         MainPlaylist mainPlaylist,
-        NetworkDiscoveryService networkDiscovery)
+        NetworkDiscoveryService networkDiscovery,
+        PlaylistSyncService playlistSyncService)
     {
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
@@ -245,6 +256,7 @@ public partial class MainViewModel : ViewModelBase
         _appSettings           = appSettings;
         _importer              = importer;
         _mainPlaylist          = mainPlaylist;
+        _playlistSyncService   = playlistSyncService;
 
         OpenDatabaseLocationCommand = new RelayCommand(OpenDatabaseLocation);
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
@@ -256,11 +268,32 @@ public partial class MainViewModel : ViewModelBase
 
         library.TracksUpdated += (_, _) =>
             Dispatcher.UIThread.Post(PopulateTracks);
+        library.PlaylistsUpdated += (_, _) =>
+            Dispatcher.UIThread.Post(RefreshPlaylistSidebarItems);
 
         networkDiscovery.DeviceDiscovered += (_, device) =>
+        {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
+            TriggerPlaylistSyncIfReady(device);
+        };
         networkDiscovery.DeviceLost += (_, instanceName) =>
             Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
+
+        // On mobile, MainViewModel is still constructed (App.axaml.cs resolves it
+        // unconditionally) but MainView - the only subscriber to
+        // PlaylistConflictRequested - never is, since mobile shows MobileMainView
+        // instead. Without this check, a conflict during a mobile-initiated sync
+        // would await e.Resolution forever. Until mobile gets its own conflict UI,
+        // fail safe by keeping the local version rather than hanging the sync.
+        playlistSyncService.ConflictDetected += (_, e) =>
+        {
+            if (PlaylistConflictRequested == null)
+            {
+                e.Resolution.TrySetResult(PlaylistConflictChoice.KeepLocal);
+                return;
+            }
+            Dispatcher.UIThread.Post(() => PlaylistConflictRequested?.Invoke(this, e));
+        };
 
         _playlistControlViewModel.PropertyChanged += (_, e) =>
         {
@@ -346,6 +379,10 @@ public partial class MainViewModel : ViewModelBase
         if (item == null)
             return;
 
+        // Allow a fresh sync if this device is discovered again later this session.
+        if (item.Device?.Fingerprint is { Length: > 0 } fingerprint)
+            _syncedDeviceFingerprints.TryRemove(fingerprint, out _);
+
         if (SelectedSidebarItem == item)
             SelectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
 
@@ -356,6 +393,57 @@ public partial class MainViewModel : ViewModelBase
             var header = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
             if (header != null)
                 _sidebarItems.Remove(header);
+        }
+    }
+
+    // Runs a playlist sync session with a newly (re-)discovered device once - see
+    // SYNC-PLAN.md Phase 2. DeviceDiscovered fires more than once per peer (mDNS
+    // fallback alias, then the resolved /info alias+fingerprint), so this only
+    // fires once the fingerprint is known and only the first time per session.
+    private void TriggerPlaylistSyncIfReady(DiscoveredDevice device)
+    {
+        if (string.IsNullOrEmpty(device.Fingerprint))
+            return;
+        if (!_syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0))
+            return;
+
+        _ = _playlistSyncService?.SyncWithAsync(device);
+    }
+
+    // Rebuilds just the "Playlists" section in place, preserving the current
+    // selection by playlist Id when possible - PlaylistsUpdated replaces the whole
+    // Library.Playlists list (see Library.ReplacePlaylists), so the previously
+    // selected Playlist object reference may no longer be the one shown.
+    private void RefreshPlaylistSidebarItems()
+    {
+        var selectedPlaylistId = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist
+            ? _selectedSidebarItem.Playlist?.Id
+            : null;
+
+        foreach (var stale in _sidebarItems.Where(i => i.Kind == SidebarItemKind.Playlist).ToList())
+            _sidebarItems.Remove(stale);
+
+        var header = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Header && i.Name == "Playlists");
+        if (Library.Playlists.Count == 0)
+        {
+            if (header != null)
+                _sidebarItems.Remove(header);
+            if (selectedPlaylistId != null)
+                SelectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
+            return;
+        }
+
+        var insertAt = header != null ? _sidebarItems.IndexOf(header) + 1 : _sidebarItems.Count;
+        if (header == null)
+            _sidebarItems.Insert(insertAt++, new SidebarItem(SidebarItemKind.Header, "Playlists"));
+
+        foreach (var pl in Library.Playlists)
+            _sidebarItems.Insert(insertAt++, new SidebarItem(SidebarItemKind.Playlist, pl.Name, MaterialIconKind.PlaylistPlay, pl));
+
+        if (selectedPlaylistId != null)
+        {
+            var reselected = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Playlist && i.Playlist?.Id == selectedPlaylistId);
+            SelectedSidebarItem = reselected ?? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
         }
     }
 

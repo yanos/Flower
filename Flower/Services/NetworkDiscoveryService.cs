@@ -17,6 +17,11 @@ public class DiscoveredDevice
     public required string InstanceName { get; init; }
     public required IPEndPoint EndPoint { get; init; }
     public string Alias { get; set; } = "";
+
+    // Resolved alongside Alias via the /info handshake - see ResolveAliasAsync.
+    // Empty until that resolves; PlaylistSyncService treats an empty fingerprint
+    // as "not ready to sync yet" rather than guessing an identity for the peer.
+    public string Fingerprint { get; set; } = "";
 }
 
 // See SYNC-PLAN.md: mDNS discovery (proven working macOS <-> iOS Simulator) plus
@@ -93,20 +98,30 @@ public class NetworkDiscoveryService : IDisposable
         _ = ResolveAliasAsync(device);
     }
 
-    // Fetches the peer's real alias via the /info handshake (SyncHttpServer),
-    // replacing the raw mDNS instance name shown until this resolves. Best-effort:
-    // a peer that is not yet listening, or never will be, just keeps the fallback.
+    // Fetches the peer's real alias and fingerprint via the /info handshake
+    // (SyncHttpServer), replacing the raw mDNS instance name shown until this
+    // resolves. Best-effort: a peer that is not yet listening, or never will be,
+    // just keeps the fallback (and PlaylistSyncService won't attempt to sync with
+    // it, since Fingerprint stays empty).
     private async Task ResolveAliasAsync(DiscoveredDevice device)
     {
         try
         {
             var json = await Http.GetStringAsync($"http://{device.EndPoint}/api/localsend/v2/info");
             using var doc = JsonDocument.Parse(json);
+            var resolved = false;
             if (doc.RootElement.TryGetProperty("alias", out var aliasProp) && aliasProp.GetString() is { } alias)
             {
                 device.Alias = alias;
-                DeviceDiscovered?.Invoke(this, device);
+                resolved = true;
             }
+            if (doc.RootElement.TryGetProperty("fingerprint", out var fpProp) && fpProp.GetString() is { } fingerprint)
+            {
+                device.Fingerprint = fingerprint;
+                resolved = true;
+            }
+            if (resolved)
+                DeviceDiscovered?.Invoke(this, device);
         }
         catch
         {

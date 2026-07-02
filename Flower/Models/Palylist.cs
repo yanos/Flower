@@ -8,34 +8,64 @@ namespace Flower.Models
 {
     public class Playlist
     {
-        public string Name { get; set; }
+        // Stable across renames so sync can tell "same playlist, new name" apart
+        // from "a different playlist" - see PlaylistSyncService. Generated once,
+        // either freshly or restored from disk by PlaylistStore.
+        public Guid Id { get; }
+
+        private string _name;
+        public string Name
+        {
+            get => _name;
+            set
+            {
+                _name = value;
+                UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
         public List<Track> Tracks { get; }
 
-        public Playlist(string name, List<Track> tracks)
+        // Bumped on every mutation (rename, track add/remove/reorder). Sync uses
+        // this against a per-peer last-synced baseline to tell which side(s)
+        // changed since they last agreed - see PlaylistSyncPlanner.
+        public DateTimeOffset UpdatedAt { get; private set; }
+
+        public Playlist(string name, List<Track> tracks) : this(Guid.NewGuid(), name, tracks, DateTimeOffset.UtcNow)
         {
-            Name = name;
+        }
+
+        public Playlist(Guid id, string name, List<Track> tracks, DateTimeOffset updatedAt)
+        {
+            Id = id;
+            _name = name;
             Tracks = tracks;
+            UpdatedAt = updatedAt;
         }
 
         public void InsertTrack(int index, Track track)
         {
             Tracks.Insert(index, track);
+            UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         public void AppendTrack(Track track)
         {
             Tracks.Add(track);
+            UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         public void RemoveTrack(Track track)
         {
             Tracks.Remove(track);
+            UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         public void ReplaceAll(List<Track> tracks)
         {
             Tracks.Clear();
             Tracks.AddRange(tracks);
+            UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         public Track? GetTrack(int index)
