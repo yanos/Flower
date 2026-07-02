@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:conv="clr-namespace:Flower.Converters"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Views.Mobile.NowPlayingView"
+             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}"
+             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+
+  <UserControl.Resources>
+    <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
+  </UserControl.Resources>
+
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="24,8,24,24">
+
+    <!-- Top bar: collapse -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Height="52">
+      <Button Grid.Column="0"
+              Command="{Binding CloseSheetCommand}"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="10">
+        <materialIcons:MaterialIcon Kind="ChevronDown" Width="26" Height="26" />
+      </Button>
+      <TextBlock Grid.Column="1"
+                 Text="Now Playing"
+                 FontSize="13"
+                 FontWeight="SemiBold"
+                 Opacity="0.6"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center" />
+    </Grid>
+
+    <!-- Album art + track info -->
+    <StackPanel Grid.Row="1" VerticalAlignment="Center" Spacing="24">
+      <Border Width="280" Height="280" HorizontalAlignment="Center"
+              Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+              CornerRadius="8"
+              ClipToBounds="True">
+        <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
+      </Border>
+
+      <StackPanel Spacing="4" HorizontalAlignment="Center">
+        <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
+                   FontSize="20"
+                   FontWeight="SemiBold"
+                   HorizontalAlignment="Center"
+                   TextAlignment="Center"
+                   TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding CurrentlyPlaying.Subtitle}"
+                   FontSize="14"
+                   Opacity="0.65"
+                   HorizontalAlignment="Center"
+                   TextAlignment="Center"
+                   TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Seek slider + times -->
+    <StackPanel Grid.Row="2" Margin="0,8,0,0">
+      <Slider Minimum="0" Maximum="1"
+              Value="{Binding CurrentlyPlaying.SeekPosition}" />
+      <Grid ColumnDefinitions="*,*">
+        <TextBlock Grid.Column="0" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="12" Opacity="0.65" />
+        <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="12" Opacity="0.65" HorizontalAlignment="Right" />
+      </Grid>
+    </StackPanel>
+
+    <!-- Transport controls -->
+    <Grid Grid.Row="3" ColumnDefinitions="*,*,*" Margin="0,20,0,0">
+      <Button Grid.Column="0"
+              Command="{Binding PreviousTrackCommand}"
+              Background="Transparent" BorderThickness="0"
+              HorizontalAlignment="Center">
+        <materialIcons:MaterialIcon Kind="Rewind" Width="32" Height="32" />
+      </Button>
+      <Button Grid.Column="1"
+              Command="{Binding ToggleMiniPlayerCommand}"
+              Width="72" Height="72"
+              Background="Transparent"
+              BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+              BorderThickness="1.5"
+              CornerRadius="9999"
+              HorizontalAlignment="Center">
+        <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
+                                     Width="34" Height="34" />
+      </Button>
+      <Button Grid.Column="2"
+              Command="{Binding NextTrackCommand}"
+              Background="Transparent" BorderThickness="0"
+              HorizontalAlignment="Center">
+        <materialIcons:MaterialIcon Kind="FastForward" Width="32" Height="32" />
+      </Button>
+    </Grid>
+  </Grid>
+</UserControl>

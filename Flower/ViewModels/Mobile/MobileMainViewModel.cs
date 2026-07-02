@@ -10,6 +10,10 @@ namespace Flower.ViewModels.Mobile;
 
 public enum MobileTab { Songs, Albums, Artists, Playlists }
 
+// Full-screen overlays shown on top of the tab content, e.g. the expanded
+// now-playing view opened by tapping the mini-player.
+public enum MobileSheet { None, NowPlaying }
+
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
 // MainViewModel itself. Songs is a flat list; Albums/Artists/Playlists show a picker
@@ -28,6 +32,10 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand BackCommand { get; }
     public ICommand PlayTrackCommand { get; }
     public ICommand ToggleMiniPlayerCommand { get; }
+    public ICommand OpenNowPlayingCommand { get; }
+    public ICommand CloseSheetCommand { get; }
+    public ICommand NextTrackCommand { get; }
+    public ICommand PreviousTrackCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.Songs;
     public MobileTab SelectedTab
@@ -59,6 +67,21 @@ public class MobileMainViewModel : ViewModelBase
         ? (Main.SelectedSidebarItem?.Name ?? SelectedTab.ToString())
         : SelectedTab.ToString();
 
+    private MobileSheet _activeSheet = MobileSheet.None;
+    public MobileSheet ActiveSheet
+    {
+        get => _activeSheet;
+        private set
+        {
+            if (_activeSheet == value) return;
+            _activeSheet = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsShowingNowPlaying));
+        }
+    }
+
+    public bool IsShowingNowPlaying => ActiveSheet == MobileSheet.NowPlaying;
+
     public MobileMainViewModel(
         MainViewModel main,
         PlaylistControlViewModel playlistControl,
@@ -67,6 +90,13 @@ public class MobileMainViewModel : ViewModelBase
         Main = main;
         PlaylistControl = playlistControl;
         CurrentlyPlaying = currentlyPlaying;
+
+        PlaylistControl.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(PlaylistControlViewModel.CurrentlyPlayingTrack) &&
+                PlaylistControl.CurrentlyPlayingTrack == null)
+                ActiveSheet = MobileSheet.None;
+        };
 
         Main.SidebarItems.CollectionChanged += (_, _) => RebuildPlaylistPicker();
         RebuildPlaylistPicker();
@@ -89,6 +119,14 @@ public class MobileMainViewModel : ViewModelBase
             if (PlaylistControl.CurrentlyPlayingTrack is { } track)
                 PlaylistControl.PlayOrPause(track);
         });
+        OpenNowPlayingCommand = new RelayCommand(() =>
+        {
+            if (PlaylistControl.CurrentlyPlayingTrack != null)
+                ActiveSheet = MobileSheet.NowPlaying;
+        });
+        CloseSheetCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
+        NextTrackCommand = new RelayCommand(PlaylistControl.Next);
+        PreviousTrackCommand = new RelayCommand(PlaylistControl.Previous);
     }
 
     private void RebuildPlaylistPicker()
