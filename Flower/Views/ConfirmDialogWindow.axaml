@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Flower.Views.ConfirmDialogWindow"
+        Width="380"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock x:Name="HeadlineText"
+               FontWeight="SemiBold"
+               FontSize="14"
+               TextWrapping="Wrap"/>
+    <TextBlock x:Name="MessageText"
+               TextWrapping="Wrap"
+               Opacity="0.75"
+               FontSize="12"/>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="CancelButton" Content="Cancel" Click="CancelButton_Click" IsDefault="True" IsCancel="True"/>
+      <Button x:Name="ConfirmButton" Click="ConfirmButton_Click"/>
+    </StackPanel>
+  </StackPanel>
+</Window>

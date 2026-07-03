@@ -84,6 +84,7 @@ public partial class MainView : UserControl
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
+            _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
             StopSpinner();
         }
 
@@ -96,6 +97,7 @@ public partial class MainView : UserControl
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
+            _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
             BuildColumnMenu();
             if (_viewModel.IsBusy)
                 StartSpinner();
@@ -493,6 +495,22 @@ public partial class MainView : UserControl
 
         var choice = await new PlaylistConflictWindow(e).ShowDialog<PlaylistConflictChoice>(owner);
         e.Resolution.TrySetResult(choice);
+    }
+
+    private async void OnDeletePlaylistConfirmationRequested(object? sender, DeletePlaylistConfirmationEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            e.Confirmed.TrySetResult(true);
+            return;
+        }
+
+        var confirmed = await ConfirmDialogWindow.ShowAsync(
+            owner,
+            "Delete Playlist?",
+            $"\"{e.Playlist.Name}\" will be permanently deleted. This cannot be undone.",
+            "Delete");
+        e.Confirmed.TrySetResult(confirmed);
     }
 
     private void OpenSettingsWindow()
