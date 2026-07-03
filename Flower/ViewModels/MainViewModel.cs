@@ -497,6 +497,18 @@ public partial class MainViewModel : ViewModelBase
         await new PlaylistStore().SaveAsync(Library.Playlists);
     }
 
+    public async Task DeletePlaylistAsync(Playlist playlist)
+    {
+        Library.RemovePlaylist(playlist);
+
+        // Reuses the sidebar-rebuild logic sync already needed to reflect a
+        // changed Library.Playlists (see PlaylistSyncService) - it also handles
+        // falling back to Songs if the deleted playlist was selected.
+        RefreshPlaylistSidebarItems();
+
+        await new PlaylistStore().SaveAsync(Library.Playlists);
+    }
+
     public async Task AddTrackToPlaylist(Track track, Playlist playlist)
     {
         playlist.AppendTrack(track);

@@ -35,6 +35,7 @@ public partial class MainView : UserControl
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
     private MenuItem    _addToPlaylistItem = new();
+    private readonly ContextMenu _playlistMenu = new();
 
     private DispatcherTimer? _spinTimer;
     private RotateTransform? _spinTransform;
@@ -60,6 +61,8 @@ public partial class MainView : UserControl
 
         // Forward Space / Cmd+I (Ctrl+I on Windows/Linux) from inside the list
         MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
+
+        SidebarList.ContextRequested += SidebarList_ContextRequested;
 
         // Cmd/Ctrl+, (Settings) must work regardless of which control currently
         // has focus, so it's handled at the MainView root rather than scoped to MusicList.
@@ -191,6 +194,28 @@ public partial class MainView : UserControl
 
     private void OnSortRequested(object? sender, string columnId)
         => _viewModel?.SortByColumnCommand?.Execute(columnId);
+
+    // Right-click on a Playlist row in the sidebar. SidebarList is a stock ListBox
+    // (unlike MusicList's hand-rolled hit-testing), so the target row is found by
+    // walking up from the routed event's Source to its containing ListBoxItem.
+    private void SidebarList_ContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (e.Source is not Visual visual)
+            return;
+        if (visual.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not
+            SidebarItem { Kind: SidebarItemKind.Playlist, Playlist: { } playlist })
+            return;
+        if (_viewModel is not MainViewModel vm)
+            return;
+
+        _playlistMenu.Items.Clear();
+        var deleteItem = new MenuItem { Header = "Delete Playlist" };
+        deleteItem.Click += async (_, _) => await vm.DeletePlaylistAsync(playlist);
+        _playlistMenu.Items.Add(deleteItem);
+
+        _playlistMenu.Open(SidebarList);
+        e.Handled = true;
+    }
 
     // ── Context menus ─────────────────────────────────────────────────────────
 

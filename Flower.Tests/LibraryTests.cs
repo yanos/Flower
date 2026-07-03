@@ -50,4 +50,31 @@ public class LibraryTests
         Assert.Single(library.Playlists);
         Assert.Same(playlist, library.Playlists.Single());
     }
+
+    [Fact]
+    public void RemovePlaylist_removes_the_given_playlist()
+    {
+        var library = new Library(new List<Track>());
+        var keep = new Playlist("Keep", new List<Track>());
+        var remove = new Playlist("Remove", new List<Track>());
+        library.AddPlaylist(keep);
+        library.AddPlaylist(remove);
+
+        library.RemovePlaylist(remove);
+
+        Assert.Single(library.Playlists);
+        Assert.Same(keep, library.Playlists.Single());
+    }
+
+    [Fact]
+    public void RemovePlaylist_for_a_playlist_not_in_the_library_is_a_no_op()
+    {
+        var library = new Library(new List<Track>());
+        var playlist = new Playlist("Mix", new List<Track>());
+        library.AddPlaylist(playlist);
+
+        library.RemovePlaylist(new Playlist("Not Present", new List<Track>()));
+
+        Assert.Single(library.Playlists);
+    }
 }

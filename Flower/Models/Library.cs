@@ -32,6 +32,11 @@ namespace Flower.Models
             Playlists.Add(playlist);
         }
 
+        public void RemovePlaylist(Playlist playlist)
+        {
+            Playlists.Remove(playlist);
+        }
+
         // Atomically swaps in a merged playlist set from a sync session and notifies
         // listeners - see PlaylistsUpdated.
         public void ReplacePlaylists(List<Playlist> playlists)
