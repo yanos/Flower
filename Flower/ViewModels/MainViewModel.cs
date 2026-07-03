@@ -288,6 +288,12 @@ public partial class MainViewModel : ViewModelBase
         _mainPlaylist          = mainPlaylist;
         _playlistSyncService   = playlistSyncService;
 
+        if (columnVisibilityStore.LoadSortState() is { } savedSort)
+        {
+            _sortColumn    = savedSort.SortColumn;
+            _sortAscending = savedSort.SortAscending;
+        }
+
         OpenDatabaseLocationCommand = new RelayCommand(OpenDatabaseLocation);
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
         SortByColumnCommand         = new RelayCommand<string>(SortByColumn);
@@ -390,6 +396,7 @@ public partial class MainViewModel : ViewModelBase
             SortAscending = true;
         }
         ScheduleFilter();
+        _ = _columnVisibilityStore.SaveSortStateAsync(SortColumn, SortAscending);
     }
 
     // ── Playing indicators ────────────────────────────────────────────────────
