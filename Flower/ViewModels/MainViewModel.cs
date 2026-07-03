@@ -23,6 +23,17 @@ using Material.Icons;
 
 namespace Flower.ViewModels;
 
+// Raised by DeletePlaylistAsync before it actually deletes anything - the view
+// is expected to confirm with the user and report back via Confirmed, the same
+// TaskCompletionSource-based handoff PlaylistConflictEventArgs uses (see
+// Services/PlaylistSyncService.cs) so the ViewModel never has to know a dialog
+// is involved.
+public sealed class DeletePlaylistConfirmationEventArgs : EventArgs
+{
+    public required Playlist Playlist { get; init; }
+    public required TaskCompletionSource<bool> Confirmed { get; init; }
+}
+
 public partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistControlViewModel _playlistControlViewModel;
@@ -64,6 +75,9 @@ public partial class MainViewModel : ViewModelBase
     // MainView.axaml.cs's BeginRename), which is a View concern this ViewModel
     // cannot reach directly.
     public event EventHandler? RenamePlaylistRequested;
+
+    // See DeletePlaylistConfirmationEventArgs above.
+    public event EventHandler<DeletePlaylistConfirmationEventArgs>? DeletePlaylistConfirmationRequested;
 
     public Library Library { get; private set; }
 
@@ -524,6 +538,19 @@ public partial class MainViewModel : ViewModelBase
 
     public async Task DeletePlaylistAsync(Playlist playlist)
     {
+        // Gated here rather than at each call site (the sidebar's context menu
+        // and the Playlist main-menu command both land here) so neither one can
+        // forget to confirm. No subscriber (e.g. no window yet) means proceed
+        // unconfirmed, matching how PlaylistConflictRequested degrades elsewhere
+        // in this class.
+        if (DeletePlaylistConfirmationRequested is { } handler)
+        {
+            var confirmed = new TaskCompletionSource<bool>();
+            handler.Invoke(this, new DeletePlaylistConfirmationEventArgs { Playlist = playlist, Confirmed = confirmed });
+            if (!await confirmed.Task)
+                return;
+        }
+
         Library.RemovePlaylist(playlist);
 
         // Reuses the sidebar-rebuild logic sync already needed to reflect a
