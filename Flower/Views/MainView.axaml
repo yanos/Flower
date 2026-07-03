@@ -204,9 +204,11 @@
                 Width="200"
                 BorderThickness="0,0,1,0"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
-          <ListBox ItemsSource="{Binding SubListItems}"
-                   SelectedItem="{Binding SelectedSubItem, Mode=TwoWay}"
-                   Background="Transparent"/>
+          <ListBox x:Name="SubList"
+                   ItemsSource="{Binding SubListItems}"
+                   SelectionMode="Multiple"
+                   Background="Transparent"
+                   SelectionChanged="SubList_SelectionChanged"/>
         </Border>
 
         <!-- Custom track list -->
