@@ -11,6 +11,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
@@ -188,6 +189,18 @@ public partial class MusicListView : UserControl
         _panel.DoubleTapped       += Panel_DoubleTapped;
         _panel.ContextRequested   += Panel_ContextRequested;
 
+        // Column header drag-to-reorder: capture/move/release are wired once,
+        // here, on HeaderBorder - a stable element that outlives any single
+        // BuildHeader() call. The per-cell PointerPressed handlers (added fresh
+        // each BuildHeader(), see MakeHeaderCell) only set _draggedColumn and
+        // capture the pointer to HeaderBorder; capturing the individual header
+        // cell instead would break as soon as anything rebuilt the header mid-
+        // drag (e.g. a column width binding update), silently dropping capture
+        // and collapsing the gesture into a plain click.
+        HeaderBorder.PointerMoved       += HeaderBorder_PointerMoved;
+        HeaderBorder.PointerReleased    += HeaderBorder_PointerReleased;
+        HeaderBorder.PointerCaptureLost += (_, _) => EndColumnDrag();
+
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
 
         BuildHeader();
@@ -244,6 +257,7 @@ public partial class MusicListView : UserControl
     // ── Header bar ────────────────────────────────────────────────────────────
 
     private StackPanel? _headerPanel;
+    private readonly Grid _headerHost = new();
 
     private void BuildHeader()
     {
@@ -256,26 +270,33 @@ public partial class MusicListView : UserControl
         foreach (var col in _columnManager.VisibleColumns)
             _headerPanel.Children.Add(MakeHeaderCell(col, separatorBrush));
 
-        var headerHost = new Grid();
-        headerHost.Children.Add(_headerPanel);
-        headerHost.Children.Add(_columnDropIndicator);
+        // _headerHost is a single, stable Grid reused across every BuildHeader()
+        // call (which can happen several times in a row - e.g. Reorder() changes
+        // every column's Order, each change triggering its own rebuild). Clearing
+        // and re-adding through the SAME Grid properly detaches _columnDropIndicator
+        // (a single reused Border) from its previous parent; creating a brand new
+        // host Grid each time and adding the still-parented indicator to it threw
+        // "already has a visual parent".
+        _headerHost.Children.Clear();
+        _headerHost.Children.Add(_headerPanel);
+        _headerHost.Children.Add(_columnDropIndicator);
 
-        HeaderBorder.Child = headerHost;
+        HeaderBorder.Child = _headerHost;
         HeaderBorder.ContextRequested += (_, e) => { HeaderContextMenu?.Invoke(this, EventArgs.Empty); e.Handled = true; };
     }
 
-    // Visible columns other than the one currently being dragged, in display
-    // order - the sequence a column drag reorders within.
-    private List<MusicColumnDefinition> VisibleColumnsExcluding(MusicColumnDefinition? excluding) =>
-        _columnManager.VisibleColumns.Where(c => c != excluding).ToList();
-
-    // Slot index (within VisibleColumnsExcluding) that `headerX` falls into -
-    // used both to resolve where a column drag should land and to position the
-    // drop indicator while dragging.
-    private int ColumnInsertionIndexAt(double headerX, MusicColumnDefinition? excluding)
+    // Gap index (0..VisibleColumns.Count) that `headerX` falls into, measured
+    // against the header as it's actually rendered right now - which, mid-drag,
+    // still shows the dragged column occupying its original slot (only the
+    // drop-indicator overlay moves; the cells themselves don't rearrange until
+    // drop). Must NOT exclude the dragged column from the width sum: doing so
+    // desyncs this from the real on-screen positions by exactly that column's
+    // width, which showed up as the indicator sitting inside a cell instead of
+    // at its edge.
+    private int FullGapIndexAt(double headerX)
     {
         double cursor = TrackRowViewModel.ArtColumnWidth;
-        var cols = VisibleColumnsExcluding(excluding);
+        var cols = _columnManager.VisibleColumns.ToList();
         for (int i = 0; i < cols.Count; i++)
         {
             if (headerX < cursor + cols[i].Width / 2)
@@ -285,13 +306,76 @@ public partial class MusicListView : UserControl
         return cols.Count;
     }
 
-    private double HeaderXForVisibleIndex(int index, MusicColumnDefinition? excluding)
+    // x-offset, in that same real-layout coordinate space, where a given gap index begins.
+    private double FullGapX(int gapIndex)
     {
         double cursor = TrackRowViewModel.ArtColumnWidth;
-        var cols = VisibleColumnsExcluding(excluding);
-        for (int i = 0; i < index && i < cols.Count; i++)
+        var cols = _columnManager.VisibleColumns.ToList();
+        for (int i = 0; i < gapIndex && i < cols.Count; i++)
             cursor += cols[i].Width;
         return cursor;
+    }
+
+    // ColumnManager.Reorder's newVisibleIndex is defined relative to the
+    // sequence with the dragged column already removed (see its own doc
+    // comment) - convert a gap index from the full (dragged-column-included)
+    // sequence into that convention.
+    private int ToExcludingIndex(int fullGapIndex, MusicColumnDefinition excluding)
+    {
+        var all = _columnManager.VisibleColumns.ToList();
+        int draggedIndex = all.IndexOf(excluding);
+        return fullGapIndex > draggedIndex ? fullGapIndex - 1 : fullGapIndex;
+    }
+
+    private void HeaderBorder_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_draggedColumn == null)
+            return;
+        double x = e.GetPosition(_headerPanel).X;
+        if (!_isColumnDragging)
+        {
+            if (Math.Abs(x - _columnDragStartX) < DragThreshold)
+                return;
+            _isColumnDragging = true;
+            _columnDropIndicator.IsVisible = true;
+        }
+        int gapIndex = FullGapIndexAt(x);
+        _columnDropIndicator.Margin = new Thickness(FullGapX(gapIndex), 0, 0, 0);
+    }
+
+    private void HeaderBorder_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_draggedColumn == null)
+            return;
+
+        // Snapshot everything needed before releasing capture below:
+        // Capture(null) synchronously fires PointerCaptureLost on HeaderBorder,
+        // which runs EndColumnDrag() reentrantly and nulls _draggedColumn /
+        // resets _isColumnDragging - reading them only after Capture(null) NRE'd
+        // on a now-null column and silently always took the "not dragging"
+        // branch (the very bug this snapshot avoids).
+        var    column      = _draggedColumn;
+        bool   wasDragging = _isColumnDragging;
+        int    dropIndex   = ToExcludingIndex(FullGapIndexAt(e.GetPosition(_headerPanel).X), column);
+
+        e.Pointer.Capture(null);
+        EndColumnDrag(); // idempotent - PointerCaptureLost above likely already ran this
+
+        if (wasDragging)
+        {
+            // Deferred: Reorder() changes every column's Order, and each change
+            // synchronously rebuilds the header (Columns.PropertyChanged ->
+            // ColumnManager.ColumnsChanged -> BuildHeader(), replacing
+            // HeaderBorder.Child) - doing that reentrantly, still inside the
+            // PointerReleased dispatch for the very element being replaced,
+            // crashed Avalonia's routed-event dispatch. Posting it lets this
+            // handler - and the event route calling it - finish first.
+            Dispatcher.UIThread.Post(() => _columnManager.Reorder(column, dropIndex));
+        }
+        else
+            SortRequested?.Invoke(this, column.Id);
+
+        e.Handled = true;
     }
 
     private void EndColumnDrag()
@@ -374,6 +458,9 @@ public partial class MusicListView : UserControl
         // Press-and-drag a header cell horizontally to reorder columns; a plain
         // click (no drag past DragThreshold) sorts by it instead - same
         // click-vs-drag split as the track rows use for reordering a playlist.
+        // The capture target is HeaderBorder (see HeaderBorder_PointerMoved/
+        // Released below), not this cell - see the comment where those are wired
+        // up in the constructor for why.
         outer.PointerPressed += (_, e) =>
         {
             if (!e.GetCurrentPoint(outer).Properties.IsLeftButtonPressed)
@@ -381,45 +468,9 @@ public partial class MusicListView : UserControl
             _draggedColumn      = col;
             _columnDragStartX   = e.GetPosition(_headerPanel).X;
             _isColumnDragging   = false;
-            e.Pointer.Capture(outer);
+            e.Pointer.Capture(HeaderBorder);
             e.Handled = true;
         };
-
-        outer.PointerMoved += (_, e) =>
-        {
-            if (_draggedColumn != col)
-                return;
-            double x = e.GetPosition(_headerPanel).X;
-            if (!_isColumnDragging)
-            {
-                if (Math.Abs(x - _columnDragStartX) < DragThreshold)
-                    return;
-                _isColumnDragging = true;
-                _columnDropIndicator.IsVisible = true;
-            }
-            int index = ColumnInsertionIndexAt(x, _draggedColumn);
-            _columnDropIndicator.Margin = new Thickness(HeaderXForVisibleIndex(index, _draggedColumn), 0, 0, 0);
-        };
-
-        outer.PointerReleased += (_, e) =>
-        {
-            if (_draggedColumn != col)
-                return;
-
-            e.Pointer.Capture(null);
-            bool wasDragging = _isColumnDragging;
-            int  dropIndex   = ColumnInsertionIndexAt(e.GetPosition(_headerPanel).X, col);
-            EndColumnDrag(); // clear drag state / hide indicator before Reorder rebuilds the header
-
-            if (wasDragging)
-                _columnManager.Reorder(col, dropIndex);
-            else
-                SortRequested?.Invoke(this, col.Id);
-
-            e.Handled = true;
-        };
-
-        outer.PointerCaptureLost += (_, _) => EndColumnDrag();
 
         col.PropertyChanged += (_, e) =>
         {
