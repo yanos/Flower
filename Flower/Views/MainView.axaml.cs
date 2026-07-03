@@ -70,6 +70,9 @@ public partial class MainView : UserControl
         // Cmd/Ctrl+, (Settings) must work regardless of which control currently
         // has focus, so it's handled at the MainView root rather than scoped to MusicList.
         AddHandler(KeyDownEvent, MainView_PreviewKeyDown, RoutingStrategies.Tunnel);
+
+        // See MainView_PreviewPointerPressed for why this can't just rely on LostFocus.
+        AddHandler(PointerPressedEvent, MainView_PreviewPointerPressed, RoutingStrategies.Tunnel);
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -164,6 +167,7 @@ public partial class MainView : UserControl
     {
         if (_spinTimer != null)
             return;
+        
         _spinTransform = new RotateTransform();
         SpinnerIcon.RenderTransformOrigin = RelativePoint.Center;
         SpinnerIcon.RenderTransform = _spinTransform;
@@ -177,6 +181,7 @@ public partial class MainView : UserControl
         _spinTimer?.Stop();
         _spinTimer = null;
         _spinTransform = null;
+        
         if (SpinnerIcon != null)
             SpinnerIcon.RenderTransform = null;
     }
@@ -217,7 +222,7 @@ public partial class MainView : UserControl
         // drops a freshly-created playlist into - see RenameBox_Loaded/KeyDown/
         // LostFocus and CommitRename below.
         var renameItem = new MenuItem { Header = "Rename Playlist" };
-        renameItem.Click += (_, _) => item.IsEditing = true;
+        renameItem.Click += (_, _) => BeginRename(item);
         _playlistMenu.Items.Add(renameItem);
 
         var deleteItem = new MenuItem { Header = "Delete Playlist" };
@@ -559,29 +564,95 @@ public partial class MainView : UserControl
         tb.SelectAll();
     }
 
-    private async void RenameBox_KeyDown(object? sender, KeyEventArgs e)
+    // Entry point for renaming an *existing* playlist (the context-menu path).
+    // CreatePlaylistWithTrack's brand-new SidebarItem gets a freshly realized
+    // container, so its TextBox's Loaded event fires and RenameBox_Loaded's
+    // Focus() above just works. An existing item's container was realized long
+    // ago, though - flipping IsEditing only flips that already-realized
+    // TextBox's IsVisible, which does not raise Loaded again, so nothing ever
+    // focused it (every downstream symptom - arrow keys reaching SidebarList,
+    // Enter not confirming - traced back to this). Posted a frame so IsVisible
+    // has actually applied before Focus() is attempted.
+    private void BeginRename(SidebarItem item)
     {
-        if (sender is not TextBox tb)
+        item.IsEditing = true;
+
+        var index = _viewModel?.SidebarItems.IndexOf(item) ?? -1;
+        if (index < 0)
             return;
-        if (e.Key == Key.Enter || e.Key == Key.Escape)
+
+        Dispatcher.UIThread.Post(() =>
         {
-            await CommitRename(tb);
-            e.Handled = true;
+            if (SidebarList.ContainerFromIndex(index) is Control container &&
+                container.FindDescendantOfType<TextBox>() is { } tb)
+            {
+                tb.Focus();
+                tb.SelectAll();
+            }
+        });
+    }
+
+    private void RenameBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox { DataContext: SidebarItem item })
+            return;
+
+        switch (e.Key)
+        {
+            case Key.Enter:
+            case Key.Escape:
+                // Handled must be set before the (async) commit, not after -
+                // otherwise, since this is fire-and-forget, the KeyDown event has
+                // already finished bubbling with Handled still false by the time
+                // CommitRename's awaited save completes, letting SidebarList's own
+                // KeyDown handling see an apparently-unhandled Enter/Escape too.
+                e.Handled = true;
+                _ = CommitRename(item);
+                break;
+            case Key.Up:
+            case Key.Down:
+            case Key.Left:
+            case Key.Right:
+                // Keep arrow keys scoped to the rename box - otherwise SidebarList's
+                // own arrow-key handling moves SelectedItem (and, since it drops
+                // focus off this TextBox, ends the rename) while this one is still
+                // mid-rename. Left/Right normally never reach here at all - the
+                // TextBox's own caret movement already marks them handled - except
+                // right at the start/end of the text, where there is no caret move
+                // left to make and the event falls through unhandled.
+                e.Handled = true;
+                break;
         }
     }
 
     private async void RenameBox_LostFocus(object? sender, RoutedEventArgs e)
     {
-        if (sender is TextBox tb)
-            await CommitRename(tb);
+        if (sender is TextBox { DataContext: SidebarItem item })
+            await CommitRename(item);
     }
 
-    private async Task CommitRename(TextBox tb)
+    // LostFocus alone isn't enough to end a rename: not every control a click can
+    // land on actually takes keyboard focus (MusicListView's hand-rolled row panel
+    // only calls Focus() when the click hits an actual row - see its
+    // Panel_PointerPressed), so a click elsewhere can leave the textbox focused
+    // and the item stuck in edit mode. Tunnelled so it commits before the click's
+    // own target handles it.
+    private void MainView_PreviewPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (tb.DataContext is not SidebarItem item || !item.IsEditing)
+        if (_viewModel?.SidebarItems.FirstOrDefault(i => i.IsEditing) is not { } editing)
+            return;
+        if (e.Source is Visual visual && visual.FindAncestorOfType<TextBox>(includeSelf: true)?.DataContext == editing)
             return;
 
-        var name = tb.Text?.Trim();
+        _ = CommitRename(editing);
+    }
+
+    private async Task CommitRename(SidebarItem item)
+    {
+        if (!item.IsEditing)
+            return;
+
+        var name = item.Name?.Trim();
         item.Name = string.IsNullOrEmpty(name) ? "New Playlist" : name;
         item.IsEditing = false;
 
