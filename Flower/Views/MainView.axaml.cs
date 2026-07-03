@@ -102,6 +102,13 @@ public partial class MainView : UserControl
             if (_viewModel.IsBusy)
                 StartSpinner();
 
+            // Reflect the ViewModel's (possibly persisted) sort state immediately -
+            // MusicList's own SortColumn/SortAscending fields default to
+            // "TrackNumber"/ascending and only update via the PropertyChanged handler
+            // below, which won't fire for a value the ViewModel already had before
+            // this handler was attached.
+            MusicList.UpdateSortIndicators(_viewModel.SortColumn, _viewModel.SortAscending);
+
             // Push initial rows to MusicListView
             ApplyRows();
         }

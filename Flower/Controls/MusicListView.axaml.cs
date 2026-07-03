@@ -233,18 +233,27 @@ public partial class MusicListView : UserControl
     private void BuildHeader()
     {
         _headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
+        var separatorBrush = GetSeparatorBrush();
 
         // Spacer for the art column (matches ColumnDefinitions="80,*" in TrackRowControl)
         _headerPanel.Children.Add(new Border { Width = TrackRowViewModel.ArtColumnWidth });
 
         foreach (var col in _columnManager.VisibleColumns)
-            _headerPanel.Children.Add(MakeHeaderCell(col));
+            _headerPanel.Children.Add(MakeHeaderCell(col, separatorBrush));
 
         HeaderBorder.Child = _headerPanel;
         HeaderBorder.ContextRequested += (_, e) => { HeaderContextMenu?.Invoke(this, EventArgs.Empty); e.Handled = true; };
     }
 
-    private Control MakeHeaderCell(MusicColumnDefinition col)
+    private static IBrush GetSeparatorBrush()
+    {
+        if (Application.Current?.TryFindResource("SystemControlForegroundBaseMediumLowBrush", out var res) == true &&
+            res is IBrush brush)
+            return brush;
+        return Brushes.Gray;
+    }
+
+    private Control MakeHeaderCell(MusicColumnDefinition col, IBrush separatorBrush)
     {
         // Sort arrow
         var arrow = new TextBlock
@@ -287,12 +296,26 @@ public partial class MusicListView : UserControl
         };
         SetupResizeHandle(handle, col);
 
-        var outer = new Grid();
+        var separator = new Border
+        {
+            Width               = 1,
+            Background          = separatorBrush,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            IsHitTestVisible    = false,
+        };
+
+        var outer = new Grid
+        {
+            // Transparent (not null) background so the whole cell - not just the
+            // text glyphs - is hit-test visible for the sort click below.
+            Background = Brushes.Transparent,
+        };
         outer.Bind(WidthProperty, new Avalonia.Data.Binding(nameof(col.Width)) { Source = col });
         outer.Children.Add(labelArea);
+        outer.Children.Add(separator);
         outer.Children.Add(handle);
 
-        // Click on header label = sort
+        // Click anywhere on the header cell = sort
         outer.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(outer).Properties.IsLeftButtonPressed)

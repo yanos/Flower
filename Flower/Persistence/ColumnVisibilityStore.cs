@@ -17,6 +17,9 @@ namespace Flower.Persistence
         public bool Duration { get; set; } = true;
 
         public List<ColumnState>? ColumnStates { get; set; }
+
+        public string? SortColumn    { get; set; }
+        public bool    SortAscending { get; set; } = true;
     }
 
     public class ColumnState
@@ -53,6 +56,14 @@ namespace Flower.Persistence
         public List<ColumnState>? LoadColumnStates()
             => Load().ColumnStates;
 
+        public (string SortColumn, bool SortAscending)? LoadSortState()
+        {
+            var settings = Load();
+            if (string.IsNullOrEmpty(settings.SortColumn))
+                return null;
+            return (settings.SortColumn, settings.SortAscending);
+        }
+
         public async Task SaveAsync(ColumnVisibilitySettings settings)
         {
             var path = StorePath;
@@ -65,6 +76,14 @@ namespace Flower.Persistence
         {
             var settings = Load();
             settings.ColumnStates = states;
+            await SaveAsync(settings);
+        }
+
+        public async Task SaveSortStateAsync(string sortColumn, bool sortAscending)
+        {
+            var settings = Load();
+            settings.SortColumn    = sortColumn;
+            settings.SortAscending = sortAscending;
             await SaveAsync(settings);
         }
     }
