@@ -32,6 +32,40 @@ public class ColumnManager
             col.PropertyChanged += (_, _) => { ColumnsChanged?.Invoke(this, EventArgs.Empty); ScheduleSave(); };
     }
 
+    // Moves `column` so it becomes the `newVisibleIndex`-th visible column
+    // (other visible columns shifting to make room), then renumbers every
+    // column's Order to match - hidden columns keep their existing relative
+    // position among the ones that didn't move. Persisted the same way any
+    // other column-state change is, via the PropertyChanged/ScheduleSave hookup
+    // in the constructor.
+    public void Reorder(MusicColumnDefinition column, int newVisibleIndex)
+    {
+        var ordered = Columns.OrderBy(c => c.Order).ToList();
+        ordered.Remove(column);
+
+        int insertAt = ordered.Count;
+        int visibleSeen = 0;
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            if (!ordered[i].IsVisible)
+                continue;
+            if (visibleSeen == newVisibleIndex)
+            {
+                insertAt = i;
+                break;
+            }
+            visibleSeen++;
+        }
+
+        ordered.Insert(insertAt, column);
+
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            if (ordered[i].Order != i)
+                ordered[i].Order = i;
+        }
+    }
+
     private void ApplySaved(List<ColumnState> states)
     {
         foreach (var state in states)
