@@ -59,15 +59,8 @@ public partial class MainView : UserControl
         MusicList.HeaderContextMenu += OnHeaderContextMenu;
         MusicList.SortRequested   += OnSortRequested;
         MusicList.RowReordered    += OnRowReordered;
-        MusicList.TrackDragEnded  += (_, _) => ResetDragVisuals();
-
-        // Drag-onto-playlist: AllowDrop lives on ContentGrid (spanning sidebar +
-        // track list) rather than just SidebarList, so the ghost visual can follow
-        // the cursor for the whole drag, not just once it reaches the sidebar.
-        DragDrop.SetAllowDrop(ContentGrid, true);
-        ContentGrid.AddHandler(DragDrop.DragOverEvent, ContentGrid_DragOver);
-        ContentGrid.AddHandler(DragDrop.DragLeaveEvent, ContentGrid_DragLeave);
-        ContentGrid.AddHandler(DragDrop.DropEvent, ContentGrid_Drop);
+        MusicList.TrackDragMoved  += OnTrackDragMoved;
+        MusicList.TrackDragEnded  += OnTrackDragEnded;
 
         // Forward Space / Cmd+I (Ctrl+I on Windows/Linux) from inside the list
         MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
@@ -228,53 +221,106 @@ public partial class MainView : UserControl
     }
 
     // ── Drag a track onto a sidebar playlist ────────────────────────────────────
-    // See MusicListView.TrackDragFormat/TrackDragEnded for the source side. Only
-    // active outside a playlist's own view (AllowReorder owns the drag gesture
-    // there instead, for reordering within it).
+    // See MusicListView's TrackDragMoved/TrackDragEnded for the source side and why
+    // this is built on plain pointer capture rather than Avalonia's native
+    // DragDrop (a real OS-level drag on macOS, which leaked a missed drop into
+    // Music.app instead of harmlessly doing nothing). Only active outside a
+    // playlist's own view (AllowReorder owns the drag gesture there instead, for
+    // reordering within it).
 
-    private void ContentGrid_DragOver(object? sender, DragEventArgs e)
+    // A hit on a specific playlist row (PlaylistItem set) adds to that playlist;
+    // a hit anywhere else in the Playlists section (CreateNew) - including its
+    // empty tail, or the whole section when there are no playlists yet -
+    // creates a new one instead. See HitTestSidebarDrop.
+    private readonly record struct SidebarDropTarget(SidebarItem? PlaylistItem, bool CreateNew);
+
+    private void OnTrackDragMoved(object? sender, (Track track, Point position) e)
     {
-        if (!e.Data.Contains(MusicListView.TrackDragFormat))
+        if (MusicList.TranslatePoint(e.position, ContentGrid) is { } ghostPos)
         {
-            e.DragEffects = DragDropEffects.None;
-            return;
+            DragGhost.Margin = new Thickness(ghostPos.X + 14, ghostPos.Y + 14, 0, 0);
+            DragGhost.IsVisible = true;
+            DragGhostText.Text = e.track.Title ?? "Untitled";
         }
 
-        var pos = e.GetPosition(ContentGrid);
-        DragGhost.Margin = new Thickness(pos.X + 14, pos.Y + 14, 0, 0);
-        DragGhost.IsVisible = true;
-        if (e.Data.Get(MusicListView.TrackDragFormat) is Track track)
-            DragGhostText.Text = track.Title ?? "Untitled";
-
-        var target = HitTestSidebarPlaylist(e);
-        SetDropTargetHighlight(target);
-        e.DragEffects = target != null ? DragDropEffects.Copy : DragDropEffects.None;
+        SetSidebarDropHighlight(HitTestSidebarDrop(e.position));
     }
 
-    private void ContentGrid_DragLeave(object? sender, RoutedEventArgs e)
-        => ResetDragVisuals();
-
-    private void ContentGrid_Drop(object? sender, DragEventArgs e)
+    private void OnTrackDragEnded(object? sender, (Track track, Point position) e)
     {
-        var target = HitTestSidebarPlaylist(e);
+        var target = HitTestSidebarDrop(e.position);
         ResetDragVisuals();
 
-        if (target?.Playlist is not { } playlist)
-            return;
-        if (e.Data.Get(MusicListView.TrackDragFormat) is not Track track)
-            return;
-
-        _ = _viewModel?.AddTrackToPlaylist(track, playlist);
+        if (target?.PlaylistItem?.Playlist is { } playlist)
+            _ = _viewModel?.AddTrackToPlaylist(e.track, playlist);
+        else if (target?.CreateNew == true)
+            _ = _viewModel?.CreatePlaylistWithTrack(e.track);
     }
 
-    // e.Source reflects the actual visual under the pointer regardless of which
-    // ancestor has AllowDrop set (same as SidebarList_ContextRequested's approach).
-    private static SidebarItem? HitTestSidebarPlaylist(DragEventArgs e)
+    // musicListPosition is in MusicListView's own local coordinate space (see
+    // MusicListView's TrackDragMoved/TrackDragEnded) - translated here into
+    // SidebarList's space. A specific playlist row wins if the pointer is
+    // directly over one; otherwise falls back to GetPlaylistsDropBand to see if
+    // the pointer is still somewhere within the Playlists section.
+    private SidebarDropTarget? HitTestSidebarDrop(Point musicListPosition)
     {
-        if (e.Source is not Visual visual)
+        if (MusicList.TranslatePoint(musicListPosition, SidebarList) is not { } sidebarPos)
             return null;
-        return visual.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is
-            SidebarItem { Kind: SidebarItemKind.Playlist } item ? item : null;
+        if (!new Rect(SidebarList.Bounds.Size).Contains(sidebarPos))
+            return null;
+
+        if ((SidebarList.InputHitTest(sidebarPos) as Visual)
+            ?.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is
+            SidebarItem { Kind: SidebarItemKind.Playlist } item)
+            return new SidebarDropTarget(item, false);
+
+        if (GetPlaylistsDropBand() is { } band && sidebarPos.Y >= band.Top && sidebarPos.Y < band.Bottom)
+            return new SidebarDropTarget(null, true);
+
+        return null;
+    }
+
+    // The "drop here to create a new playlist" zone spans everything below the
+    // Library section (Songs/Albums/Artists) and above Devices (if any) - so a
+    // drop that misses a specific playlist row still creates a playlist rather
+    // than silently doing nothing, and this works even with zero playlists (no
+    // "Playlists" header exists yet in that case). Computed from realized
+    // container bounds rather than a real stretchy layout element, since
+    // SidebarList's items are sized to content and don't grow to fill its
+    // leftover height.
+    private Rect? GetPlaylistsDropBand()
+    {
+        if (_viewModel is not { } vm)
+            return null;
+
+        var items = vm.SidebarItems;
+        var libraryEndIndex = -1;
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (items[i].Kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists)
+                libraryEndIndex = i;
+        }
+        if (libraryEndIndex < 0)
+            return null;
+
+        var devicesHeaderIndex = -1;
+        for (var i = libraryEndIndex + 1; i < items.Count; i++)
+        {
+            if (items[i] is { Kind: SidebarItemKind.Header, Name: "Devices" })
+            {
+                devicesHeaderIndex = i;
+                break;
+            }
+        }
+
+        var top = SidebarList.ContainerFromIndex(libraryEndIndex) is Control lastLibraryRow
+            ? lastLibraryRow.Bounds.Bottom
+            : 0;
+        var bottom = devicesHeaderIndex >= 0 && SidebarList.ContainerFromIndex(devicesHeaderIndex) is Control devicesHeader
+            ? devicesHeader.Bounds.Top
+            : SidebarList.Bounds.Height;
+
+        return bottom > top ? new Rect(0, top, SidebarList.Bounds.Width, bottom - top) : null;
     }
 
     private void SetDropTargetHighlight(SidebarItem? item)
@@ -288,9 +334,26 @@ public partial class MainView : UserControl
             _dropTargetPlaylistItem.IsDropTarget = true;
     }
 
+    private void SetSidebarDropHighlight(SidebarDropTarget? target)
+    {
+        SetDropTargetHighlight(target?.PlaylistItem);
+
+        if (target?.CreateNew == true && GetPlaylistsDropBand() is { } band)
+        {
+            NewPlaylistDropZone.Margin = new Thickness(4, band.Top + 1, 4, 0);
+            NewPlaylistDropZone.Height = Math.Max(0, band.Height - 2);
+            NewPlaylistDropZone.IsVisible = true;
+        }
+        else
+        {
+            NewPlaylistDropZone.IsVisible = false;
+        }
+    }
+
     private void ResetDragVisuals()
     {
         DragGhost.IsVisible = false;
+        NewPlaylistDropZone.IsVisible = false;
         SetDropTargetHighlight(null);
     }
 
