@@ -20,6 +20,8 @@ namespace Flower.Persistence
 
         public string? SortColumn    { get; set; }
         public bool    SortAscending { get; set; } = true;
+
+        public bool SortArtistAlbumsByYear { get; set; }
     }
 
     public class ColumnState
@@ -84,6 +86,16 @@ namespace Flower.Persistence
             var settings = Load();
             settings.SortColumn    = sortColumn;
             settings.SortAscending = sortAscending;
+            await SaveAsync(settings);
+        }
+
+        public bool LoadSortArtistAlbumsByYear()
+            => Load().SortArtistAlbumsByYear;
+
+        public async Task SaveSortArtistAlbumsByYearAsync(bool value)
+        {
+            var settings = Load();
+            settings.SortArtistAlbumsByYear = value;
             await SaveAsync(settings);
         }
     }

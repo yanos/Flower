@@ -13,10 +13,11 @@ public static class TrackListBuilder
         string? filterText,
         string sortColumn,
         bool sortAscending,
-        Track? currentlyPlayingTrack = null)
+        Track? currentlyPlayingTrack = null,
+        bool sortArtistAlbumsByYear = false)
     {
         var filtered = Filter(tracks, filterText).ToList();
-        var sorted   = Sort(filtered, sortColumn, sortAscending).ToList();
+        var sorted   = Sort(filtered, sortColumn, sortAscending, sortArtistAlbumsByYear).ToList();
 
         bool groupByAlbum = string.Equals(sortColumn, "Album", StringComparison.OrdinalIgnoreCase)
                          || string.Equals(sortColumn, "TrackNumber", StringComparison.OrdinalIgnoreCase);
@@ -35,7 +36,7 @@ public static class TrackListBuilder
             t.Genre?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true);
     }
 
-    private static IEnumerable<Track> Sort(IEnumerable<Track> tracks, string col, bool asc)
+    private static IEnumerable<Track> Sort(IEnumerable<Track> tracks, string col, bool asc, bool sortArtistAlbumsByYear)
     {
         if (col == "PlaylistOrder")
             return tracks;
@@ -44,7 +45,7 @@ public static class TrackListBuilder
         {
             "TrackNumber" => tracks.OrderBy(t => t.Album ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
             "Title"       => tracks.OrderBy(t => t.Title   ?? ""),
-            "Artist"      => tracks.OrderBy(t => t.Artists ?? ""),
+            "Artist"      => SortByArtist(tracks, sortArtistAlbumsByYear),
             "Album"       => tracks.OrderBy(t => t.Album   ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
             "Year"        => tracks.OrderBy(t => t.Year    ?? ""),
             "Genre"       => tracks.OrderBy(t => t.Genre   ?? ""),
@@ -54,6 +55,15 @@ public static class TrackListBuilder
         };
         return asc ? ordered : ordered.Reverse();
     }
+
+    // Each artist's albums are ordered alphabetically by default; with the
+    // option on, by year instead - falling back to alphabetical for albums
+    // that share a year. Either way, disc/track number order still applies
+    // within an album.
+    private static IOrderedEnumerable<Track> SortByArtist(IEnumerable<Track> tracks, bool sortAlbumsByYear) =>
+        sortAlbumsByYear
+            ? tracks.OrderBy(t => t.Artists ?? "").ThenBy(t => t.Year ?? "").ThenBy(t => t.Album ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber)
+            : tracks.OrderBy(t => t.Artists ?? "").ThenBy(t => t.Album ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber);
 
     private static List<TrackRowViewModel> BuildRows(
         List<Track> tracks,

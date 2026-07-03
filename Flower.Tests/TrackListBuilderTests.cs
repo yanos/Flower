@@ -9,7 +9,7 @@ public class TrackListBuilderTests
 {
     private static Track T(
         string title, string artist = "X", string album = "Y", uint trackNumber = 1,
-        uint discNumber = 0, string? genre = null, string? path = null)
+        uint discNumber = 0, string? genre = null, string? path = null, string? year = null)
         => new Track
         {
             Title       = title,
@@ -18,6 +18,7 @@ public class TrackListBuilderTests
             TrackNumber = trackNumber,
             DiscNumber  = discNumber,
             Genre       = genre,
+            Year        = year,
             Path        = path ?? $"/music/{artist}/{album}/{title}.mp3",
         };
 
@@ -74,6 +75,53 @@ public class TrackListBuilderTests
 
         Assert.Equal(
             new[] { "A-Track1", "A-Track2", "B-Disc1-Track1", "B-Disc2-Track1" },
+            rows.ConvertAll(r => r.Track.Title));
+    }
+
+    [Fact]
+    public void Sort_by_artist_orders_each_artists_albums_alphabetically_by_default()
+    {
+        var tracks = new List<Track>
+        {
+            T("Newer", artist: "Nova", album: "2020 Album", year: "2020"),
+            T("Older", artist: "Nova", album: "2010 Album", year: "2010"),
+        };
+
+        var rows = TrackListBuilder.Build(tracks, null, "Artist", true);
+
+        // "2010 Album" sorts before "2020 Album" alphabetically, ignoring year.
+        Assert.Equal(new[] { "Older", "Newer" }, rows.ConvertAll(r => r.Track.Title));
+    }
+
+    [Fact]
+    public void Sort_by_artist_with_albums_by_year_breaks_ties_on_same_year_alphabetically()
+    {
+        var tracks = new List<Track>
+        {
+            T("Zebra",  artist: "Nova", album: "Zebra Album",  year: "2020"),
+            T("Aurora", artist: "Nova", album: "Aurora Album", year: "2020"),
+        };
+
+        var rows = TrackListBuilder.Build(tracks, null, "Artist", true, sortArtistAlbumsByYear: true);
+
+        Assert.Equal(new[] { "Aurora", "Zebra" }, rows.ConvertAll(r => r.Track.Title));
+    }
+
+    [Fact]
+    public void Sort_by_artist_with_albums_by_year_orders_each_artists_albums_chronologically()
+    {
+        var tracks = new List<Track>
+        {
+            T("B-Newer", artist: "Beta",  album: "2020 Album", year: "2020"),
+            T("A-Newer", artist: "Alpha", album: "2020 Album", year: "2020"),
+            T("A-Older", artist: "Alpha", album: "2010 Album", year: "2010"),
+            T("B-Older", artist: "Beta",  album: "2010 Album", year: "2010"),
+        };
+
+        var rows = TrackListBuilder.Build(tracks, null, "Artist", true, sortArtistAlbumsByYear: true);
+
+        Assert.Equal(
+            new[] { "A-Older", "A-Newer", "B-Older", "B-Newer" },
             rows.ConvertAll(r => r.Track.Title));
     }
 

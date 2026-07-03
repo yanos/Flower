@@ -177,6 +177,27 @@ public partial class MainViewModel : ViewModelBase
         private set { _sortAscending = value; OnPropertyChanged(); }
     }
 
+    private bool _sortArtistAlbumsByYear;
+
+    // When sorting by Artist, order each artist's albums by year (then disc/
+    // track number within an album) instead of by whichever order they
+    // happened to appear in - so an artist's discography reads
+    // chronologically. Surfaced as a checkbox in ColumnSelectorWindow.
+    public bool SortArtistAlbumsByYear
+    {
+        get => _sortArtistAlbumsByYear;
+        set
+        {
+            if (_sortArtistAlbumsByYear == value)
+                return;
+            _sortArtistAlbumsByYear = value;
+            OnPropertyChanged();
+            _ = _columnVisibilityStore.SaveSortArtistAlbumsByYearAsync(value);
+            if (SortColumn == "Artist")
+                ScheduleFilter();
+        }
+    }
+
     // ── Filter ────────────────────────────────────────────────────────────────
 
     private List<Track> _allTracks = new();
@@ -295,6 +316,7 @@ public partial class MainViewModel : ViewModelBase
             _sortColumn    = savedSort.SortColumn;
             _sortAscending = savedSort.SortAscending;
         }
+        _sortArtistAlbumsByYear = columnVisibilityStore.LoadSortArtistAlbumsByYear();
 
         OpenDatabaseLocationCommand = new RelayCommand(OpenDatabaseLocation);
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
@@ -732,7 +754,7 @@ public partial class MainViewModel : ViewModelBase
         var baseTracks = GetBaseTracksForFilter();
 
         var rows = await Task.Run(() =>
-            TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing), token);
+            TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear), token);
 
         if (token.IsCancellationRequested)
             return;
