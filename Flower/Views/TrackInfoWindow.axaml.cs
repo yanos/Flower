@@ -9,6 +9,7 @@ using Avalonia.Controls;
 using Flower.Converters;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Services;
 
 namespace Flower.Views;
 
@@ -16,16 +17,16 @@ public partial class TrackInfoWindow : Window
 {
     private static readonly DurationConverter _durationConverter = new();
 
-    // Only meaningful in single-track/navigable mode - see _navigable below.
+    // Only meaningful in single-track/navigable mode (see the two constructors below).
     private readonly IReadOnlyList<Track> _tracks = Array.Empty<Track>();
     private readonly Library _library;
     private int _index;
-    private readonly bool _navigable;
 
     // The set of tracks being edited: exactly one in navigable mode (re-seeded
     // on every Navigate()), or the whole multi-selection in batch mode.
     private IReadOnlyList<Track> _editTracks = Array.Empty<Track>();
     private List<EditableField> _fields = null!;
+    private int _artRequestId; // guards against a stale Navigate()'s art load winning a race
 
     private Track _track => _tracks[_index];
 
@@ -39,7 +40,6 @@ public partial class TrackInfoWindow : Window
         _tracks    = tracks;
         _library   = library;
         _index     = index;
-        _navigable = true;
         BuildFields();
         _editTracks = [_track];
         Populate();
@@ -52,7 +52,6 @@ public partial class TrackInfoWindow : Window
     {
         InitializeComponent();
         _library    = library;
-        _navigable  = false;
         _editTracks = editTracks;
         BuildFields();
         Populate();
@@ -178,6 +177,25 @@ public partial class TrackInfoWindow : Window
         ChannelsValue.Text   = UniformOrMixed(t => t.Channels switch { 1 => "Mono", 2 => "Stereo", > 2 => $"{t.Channels} channels", _ => "—" });
         BitDepthValue.Text   = UniformOrMixed(t => t.BitsPerSample > 0 ? $"{t.BitsPerSample}-bit" : "—");
         PathValue.Text       = UniformOrMixed(t => t.Path ?? "—");
+
+        _ = LoadAlbumArtAsync();
+    }
+
+    // Shows the first selected track's art (embedded tag picture, falling back
+    // to a cover/folder image file - see AlbumArtLoader). For a batch selection
+    // spanning multiple albums this is necessarily just one representative
+    // thumbnail, not a "mixed" indicator - album art has no text form to show
+    // "Multiple values" with.
+    private async Task LoadAlbumArtAsync()
+    {
+        var requestId = ++_artRequestId;
+        AlbumArtImage.Source = null;
+        if (_editTracks.Count == 0)
+            return;
+
+        var bmp = await AlbumArtLoader.LoadAsync(_editTracks[0]);
+        if (requestId == _artRequestId)
+            AlbumArtImage.Source = bmp;
     }
 
     private string UniformOrMixed(Func<Track, string> display)
