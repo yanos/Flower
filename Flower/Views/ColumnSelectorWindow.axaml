@@ -24,6 +24,15 @@
       </ItemsControl.ItemTemplate>
     </ItemsControl>
 
+    <Border BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+            Margin="0,2,0,0"
+            Padding="0,8,0,0">
+      <CheckBox Content="Sort artist's albums by year"
+                IsChecked="{Binding SortArtistAlbumsByYear}"
+                FontSize="11"/>
+    </Border>
+
     <Button x:Name="CloseButton"
             Content="Close"
             HorizontalAlignment="Right"

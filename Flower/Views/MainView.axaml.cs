@@ -542,8 +542,10 @@ public partial class MainView : UserControl
 
     private void OpenColumnSelectorWindow()
     {
+        if (_viewModel == null)
+            return;
         var columnManager = Ioc.Default.GetService<ColumnManager>()!;
-        var columnSelectorWindow = new ColumnSelectorWindow(columnManager);
+        var columnSelectorWindow = new ColumnSelectorWindow(columnManager, _viewModel);
         if (TopLevel.GetTopLevel(this) is Window owner)
             columnSelectorWindow.ShowDialog(owner);
         else
