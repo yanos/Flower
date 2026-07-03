@@ -30,6 +30,15 @@ public class SidebarItem : ViewModelBase
         set { _isEditing = value; OnPropertyChanged(); }
     }
 
+    // Highlighted while a dragged track is hovering this row during a
+    // drag-onto-playlist gesture - see MainView.axaml.cs's ContentGrid_DragOver.
+    private bool _isDropTarget;
+    public bool IsDropTarget
+    {
+        get => _isDropTarget;
+        set { _isDropTarget = value; OnPropertyChanged(); }
+    }
+
     public SidebarItem(SidebarItemKind kind, string name, MaterialIconKind icon = MaterialIconKind.MusicNote,
         Playlist? playlist = null, DiscoveredDevice? device = null)
     {

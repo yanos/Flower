@@ -90,7 +90,7 @@
     </Border>
 
     <!-- Content row: sidebar + main area -->
-    <Grid Grid.Row="1">
+    <Grid Grid.Row="1" x:Name="ContentGrid">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="180" MinWidth="120" MaxWidth="280"/>
         <ColumnDefinition Width="Auto"/>
@@ -116,6 +116,13 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:SidebarItem">
               <Panel>
+                <!-- Highlighted while a dragged track hovers this playlist row -->
+                <Border IsVisible="{Binding IsDropTarget}"
+                        Background="DodgerBlue"
+                        Opacity="0.25"
+                        CornerRadius="4"
+                        Margin="4,1"
+                        IsHitTestVisible="False"/>
                 <TextBlock Text="{Binding Name}"
                            IsVisible="{Binding IsHeader}"
                            FontSize="10"
@@ -190,6 +197,32 @@
                      Opacity="0.5" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" MaxWidth="360"/>
         </StackPanel>
       </Grid>
+
+      <!-- Floating "what you're dragging" ghost for the drag-onto-playlist gesture
+           (see MusicListView's TrackDragFormat / MainView.axaml.cs's
+           ContentGrid_DragOver). Spans all 3 columns of ContentGrid so it can
+           follow the cursor from the track list all the way to the sidebar. -->
+      <Border x:Name="DragGhost"
+              Grid.ColumnSpan="3"
+              IsVisible="False"
+              IsHitTestVisible="False"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Top"
+              Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+              BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+              BorderThickness="1"
+              CornerRadius="6"
+              Padding="10,6"
+              BoxShadow="0 2 8 0 #40000000">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <materialIcons:MaterialIcon Kind="MusicNote" Width="14" Height="14" VerticalAlignment="Center"/>
+          <TextBlock x:Name="DragGhostText"
+                     FontSize="12"
+                     VerticalAlignment="Center"
+                     MaxWidth="220"
+                     TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+      </Border>
     </Grid>
   </Grid>
 
