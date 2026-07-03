@@ -149,6 +149,8 @@
                              MinHeight="0"
                              Padding="4,0"
                              MinWidth="80"
+                             SelectionBrush="#B4D7FF"
+                             SelectionForegroundBrush="Black"
                              Loaded="RenameBox_Loaded"
                              KeyDown="RenameBox_KeyDown"
                              LostFocus="RenameBox_LostFocus"/>

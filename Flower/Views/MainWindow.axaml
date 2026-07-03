@@ -24,6 +24,16 @@
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
+      <NativeMenuItem Header="Playlist">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="New Playlist" Command="{Binding NewPlaylistCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Rename Playlist" Command="{Binding RenamePlaylistCommand}"/>
+            <NativeMenuItem Header="Delete Playlist" Command="{Binding DeletePlaylistCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
     </NativeMenu>
   </NativeMenu.Menu>
   <views:MainView />

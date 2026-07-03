@@ -44,10 +44,26 @@ public partial class MainViewModel : ViewModelBase
     public ICommand? RebuildDatabaseCommand      { get; private set; }
     public ICommand? SortByColumnCommand         { get; private set; }
     public ICommand? OpenSettingsCommand         { get; private set; }
+    public ICommand? NewPlaylistCommand          { get; private set; }
+    public ICommand? RenamePlaylistCommand       { get; private set; }
+    public ICommand? DeletePlaylistCommand       { get; private set; }
+
+    // Concrete-typed twins of RenamePlaylistCommand/DeletePlaylistCommand, kept
+    // alongside the public ICommand? properties above (same pattern as the rest
+    // of this class) purely so OnSidebarSelectionChanged can re-query CanExecute
+    // - a plain ICommand reference cannot call NotifyCanExecuteChanged itself.
+    private RelayCommand?      _renamePlaylistCommand;
+    private AsyncRelayCommand? _deletePlaylistCommand;
 
     public event EventHandler? SettingsRequested;
     public event EventHandler<Track>? NavigateToTrackRequested;
     public event EventHandler<PlaylistConflictEventArgs>? PlaylistConflictRequested;
+
+    // Raised by the "Playlist > Rename Playlist" main-menu command - unlike
+    // deleting, renaming needs the sidebar's own inline-rename textbox (see
+    // MainView.axaml.cs's BeginRename), which is a View concern this ViewModel
+    // cannot reach directly.
+    public event EventHandler? RenamePlaylistRequested;
 
     public Library Library { get; private set; }
 
@@ -262,6 +278,15 @@ public partial class MainViewModel : ViewModelBase
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
         SortByColumnCommand         = new RelayCommand<string>(SortByColumn);
         OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
+        NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));
+
+        _renamePlaylistCommand = new RelayCommand(
+            () => RenamePlaylistRequested?.Invoke(this, EventArgs.Empty),
+            CanRenameOrDeleteSelectedPlaylist);
+        RenamePlaylistCommand = _renamePlaylistCommand;
+
+        _deletePlaylistCommand = new AsyncRelayCommand(DeleteSelectedPlaylistAsync, CanRenameOrDeleteSelectedPlaylist);
+        DeletePlaylistCommand = _deletePlaylistCommand;
 
         BuildSidebarItems();
         PopulateTracks();
@@ -509,6 +534,17 @@ public partial class MainViewModel : ViewModelBase
         await new PlaylistStore().SaveAsync(Library.Playlists);
     }
 
+    // Backs the "Playlist" main-menu's Rename/Delete entries, which - unlike the
+    // sidebar's own right-click menu - have no specific row to operate on, only
+    // whichever playlist is currently selected.
+    private bool CanRenameOrDeleteSelectedPlaylist() => SelectedSidebarItem?.Kind == SidebarItemKind.Playlist;
+
+    private async Task DeleteSelectedPlaylistAsync()
+    {
+        if (SelectedSidebarItem?.Playlist is { } playlist)
+            await DeletePlaylistAsync(playlist);
+    }
+
     public async Task AddTrackToPlaylist(Track track, Playlist playlist)
     {
         playlist.AppendTrack(track);
@@ -538,6 +574,8 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(SelectedDevice));
         RebuildSubListItems();
+        _renamePlaylistCommand?.NotifyCanExecuteChanged();
+        _deletePlaylistCommand?.NotifyCanExecuteChanged();
 
         var lastSelected = _selectedSidebarItem?.Kind switch
         {
