@@ -101,58 +101,84 @@
       <Border Grid.Column="0"
               BorderThickness="0,0,1,0"
               BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
-        <ListBox x:Name="SidebarList"
-                 ItemsSource="{Binding SidebarItems}"
-                 SelectedItem="{Binding SelectedSidebarItem, Mode=TwoWay}"
-                 Background="Transparent"
-                 Padding="0,4,0,4"
-                 SelectionChanged="SidebarList_SelectionChanged">
-          <ListBox.Styles>
-            <Style Selector="ListBoxItem">
-              <Setter Property="Padding" Value="0"/>
-              <Setter Property="MinHeight" Value="0"/>
-            </Style>
-          </ListBox.Styles>
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="vm:SidebarItem">
-              <Panel>
-                <!-- Highlighted while a dragged track hovers this playlist row -->
-                <Border IsVisible="{Binding IsDropTarget}"
-                        Background="DodgerBlue"
-                        Opacity="0.25"
-                        CornerRadius="4"
-                        Margin="4,1"
-                        IsHitTestVisible="False"/>
-                <TextBlock Text="{Binding Name}"
-                           IsVisible="{Binding IsHeader}"
-                           FontSize="10"
-                           FontWeight="SemiBold"
-                           Opacity="0.55"
-                           Margin="12,14,8,4"
-                           LetterSpacing="0.8"/>
-                <StackPanel IsVisible="{Binding IsSelectable}"
-                            Orientation="Horizontal"
-                            Margin="12,5,8,5">
-                  <materialIcons:MaterialIcon Kind="{Binding Icon}"
-                                             Width="16" Height="16"
-                                             Margin="0,0,8,0"
-                                             VerticalAlignment="Center"/>
+        <Panel>
+          <ListBox x:Name="SidebarList"
+                   ItemsSource="{Binding SidebarItems}"
+                   SelectedItem="{Binding SelectedSidebarItem, Mode=TwoWay}"
+                   Background="Transparent"
+                   Padding="0,4,0,4"
+                   SelectionChanged="SidebarList_SelectionChanged">
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="MinHeight" Value="0"/>
+              </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:SidebarItem">
+                <Panel>
+                  <!-- Highlighted while a dragged track hovers this playlist row -->
+                  <Border IsVisible="{Binding IsDropTarget}"
+                          Background="DodgerBlue"
+                          Opacity="0.25"
+                          CornerRadius="4"
+                          Margin="4,1"
+                          IsHitTestVisible="False"/>
                   <TextBlock Text="{Binding Name}"
-                             IsVisible="{Binding !IsEditing}"
-                             VerticalAlignment="Center"/>
-                  <TextBox Text="{Binding Name, Mode=TwoWay}"
-                           IsVisible="{Binding IsEditing}"
-                           VerticalAlignment="Center"
-                           Padding="2,0"
-                           MinWidth="80"
-                           Loaded="RenameBox_Loaded"
-                           KeyDown="RenameBox_KeyDown"
-                           LostFocus="RenameBox_LostFocus"/>
-                </StackPanel>
-              </Panel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+                             IsVisible="{Binding IsHeader}"
+                             FontSize="10"
+                             FontWeight="SemiBold"
+                             Opacity="0.55"
+                             Margin="12,14,8,4"
+                             LetterSpacing="0.8"/>
+                  <StackPanel IsVisible="{Binding IsSelectable}"
+                              Orientation="Horizontal"
+                              Margin="12,5,8,5">
+                    <materialIcons:MaterialIcon Kind="{Binding Icon}"
+                                               Width="16" Height="16"
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding Name}"
+                               IsVisible="{Binding !IsEditing}"
+                               VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding Name, Mode=TwoWay}"
+                             IsVisible="{Binding IsEditing}"
+                             VerticalAlignment="Center"
+                             Padding="2,0"
+                             MinWidth="80"
+                             Loaded="RenameBox_Loaded"
+                             KeyDown="RenameBox_KeyDown"
+                             LostFocus="RenameBox_LostFocus"/>
+                  </StackPanel>
+                </Panel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <!-- Drop-onto-empty-space cue for the drag-a-track-onto-the-sidebar
+               gesture (see MainView.axaml.cs's GetPlaylistsDropBand /
+               HitTestSidebarDrop). Shown while a track is dragged over the
+               Playlists section but not over one specific playlist row -
+               including the section's empty tail below the last playlist, or
+               the whole section when there are no playlists yet - meaning the
+               drop will create a new playlist rather than add to one. -->
+          <Border x:Name="NewPlaylistDropZone"
+                  IsVisible="False"
+                  IsHitTestVisible="False"
+                  ClipToBounds="True"
+                  Background="#401E90FF"
+                  BorderBrush="#901E90FF"
+                  BorderThickness="1"
+                  CornerRadius="4"
+                  VerticalAlignment="Top"
+                  Margin="4,1">
+            <TextBlock Text="New Playlist"
+                       FontSize="11"
+                       Opacity="0.7"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"/>
+          </Border>
+        </Panel>
       </Border>
 
       <GridSplitter Grid.Column="1"

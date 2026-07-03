@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
-using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -116,16 +115,27 @@ public partial class MusicListView : UserControl
 
     // ── Drag-onto-playlist (enabled by the host everywhere except a playlist's own
     // view, where AllowReorder already owns the drag gesture for reordering within
-    // it) - see MainView.axaml.cs's ContentGrid_DragOver/Drop for the receiving end.
-    public const string TrackDragFormat = "application/x-flower-track";
+    // it) - see MainView.axaml.cs's OnTrackDragMoved/OnTrackDragEnded for the
+    // receiving end.
+    //
+    // Deliberately NOT built on Avalonia's native DragDrop.DoDragDrop: on macOS
+    // that starts a real NSDraggingSession, which is a system-level, cross-
+    // application drag. A drop that misses our own target doesn't just fail
+    // silently - if the pointer strays outside our window at all (easy to do
+    // dragging toward a sidebar at the window's edge), the OS can hand the
+    // dangling drag session to whatever's underneath. Confirmed in practice: a
+    // missed drop over the sidebar got picked up by Music.app, which created its
+    // own "Untitled Playlist" from it - a completely different app's playlist,
+    // not a bug in this app's own data at all, but exactly as confusing as one.
+    // Pointer capture (same mechanism the reorder-within-playlist gesture above
+    // already uses) never leaves Avalonia's own input pipeline, so this can't
+    // leak into another application no matter where the pointer ends up.
+    private TrackRowViewModel? _crossDragRow;
+    private Point _crossDragStartPoint;
+    private bool  _isCrossDragging;
 
-    // Fired once DragDrop.DoDragDrop returns, success or not (including an
-    // Escape-cancelled drag, which reaches neither Drop nor necessarily
-    // DragLeave) - the host's cue to clear any drag-feedback UI unconditionally.
-    public event EventHandler? TrackDragEnded;
-
-    private TrackRowViewModel? _dragCandidateRow;
-    private Point _dragCandidateStart;
+    public event EventHandler<(FlowerTrack track, Point position)>? TrackDragMoved;
+    public event EventHandler<(FlowerTrack track, Point position)>? TrackDragEnded;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -373,27 +383,30 @@ public partial class MusicListView : UserControl
         {
             // Not in a playlist view, so this press could become a drag-onto-a-
             // sidebar-playlist gesture instead - see Panel_PointerMoved's threshold
-            // check below. No pointer capture here: DragDrop.DoDragDrop manages its
-            // own capture once the drag actually starts, and until then this must
-            // still behave like a normal click (selection, double-tap-to-play).
-            _dragCandidateRow   = row;
-            _dragCandidateStart = pt;
+            // check below. Captured immediately (unlike the old DragDrop-based
+            // version) so a normal click/double-tap still works below threshold,
+            // and once the threshold is crossed this control keeps receiving
+            // move/release regardless of where the pointer physically ends up.
+            _crossDragRow        = row;
+            _crossDragStartPoint = pt;
+            e.Pointer.Capture(_panel);
         }
     }
 
     private void Panel_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (_dragCandidateRow != null)
+        if (_crossDragRow != null)
         {
             var pt = e.GetPosition(_panel);
-            var dx = pt.X - _dragCandidateStart.X;
-            var dy = pt.Y - _dragCandidateStart.Y;
-            if (dx * dx + dy * dy >= DragThreshold * DragThreshold)
+            if (!_isCrossDragging)
             {
-                var row = _dragCandidateRow;
-                _dragCandidateRow = null;
-                _ = StartTrackDragAsync(row, e);
+                var dx = pt.X - _crossDragStartPoint.X;
+                var dy = pt.Y - _crossDragStartPoint.Y;
+                if (dx * dx + dy * dy < DragThreshold * DragThreshold)
+                    return;
+                _isCrossDragging = true;
             }
+            TrackDragMoved?.Invoke(this, (_crossDragRow.Track, e.GetPosition(this)));
             return;
         }
 
@@ -413,26 +426,10 @@ public partial class MusicListView : UserControl
         _dropIndicator.Margin = new Thickness(0, Math.Max(0, index * TrackRowViewModel.RowHeight - 1), 0, 0);
     }
 
-    // Kicks off the native cross-control drag; MainView.axaml.cs handles DragOver/
-    // Drop to show a floating "ghost" of the dragged track, highlight the hovered
-    // sidebar playlist row, and actually add the track on a valid drop.
-    private async Task StartTrackDragAsync(TrackRowViewModel row, PointerEventArgs triggerArgs)
-    {
-        var data = new DataObject();
-        data.Set(TrackDragFormat, row.Track);
-        try
-        {
-            await DragDrop.DoDragDrop(triggerArgs, data, DragDropEffects.Copy);
-        }
-        finally
-        {
-            TrackDragEnded?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
     private void Panel_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        _dragCandidateRow = null;
+        if (_isCrossDragging && _crossDragRow != null)
+            TrackDragEnded?.Invoke(this, (_crossDragRow.Track, e.GetPosition(this)));
 
         if (_isDragging && _draggedRow != null)
         {
@@ -451,7 +448,8 @@ public partial class MusicListView : UserControl
         _draggedRow = null;
         _isDragging = false;
         _dropIndicator.IsVisible = false;
-        _dragCandidateRow = null;
+        _crossDragRow = null;
+        _isCrossDragging = false;
     }
 
     private int InsertionIndexAt(double panelY)
