@@ -36,6 +36,7 @@ public partial class MainView : UserControl
     private ContextMenu _trackMenu  = new();
     private MenuItem    _addToPlaylistItem = new();
     private readonly ContextMenu _playlistMenu = new();
+    private SidebarItem? _dropTargetPlaylistItem;
 
     private DispatcherTimer? _spinTimer;
     private RotateTransform? _spinTransform;
@@ -58,6 +59,15 @@ public partial class MainView : UserControl
         MusicList.HeaderContextMenu += OnHeaderContextMenu;
         MusicList.SortRequested   += OnSortRequested;
         MusicList.RowReordered    += OnRowReordered;
+        MusicList.TrackDragEnded  += (_, _) => ResetDragVisuals();
+
+        // Drag-onto-playlist: AllowDrop lives on ContentGrid (spanning sidebar +
+        // track list) rather than just SidebarList, so the ghost visual can follow
+        // the cursor for the whole drag, not just once it reaches the sidebar.
+        DragDrop.SetAllowDrop(ContentGrid, true);
+        ContentGrid.AddHandler(DragDrop.DragOverEvent, ContentGrid_DragOver);
+        ContentGrid.AddHandler(DragDrop.DragLeaveEvent, ContentGrid_DragLeave);
+        ContentGrid.AddHandler(DragDrop.DropEvent, ContentGrid_Drop);
 
         // Forward Space / Cmd+I (Ctrl+I on Windows/Linux) from inside the list
         MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
@@ -215,6 +225,73 @@ public partial class MainView : UserControl
 
         _playlistMenu.Open(SidebarList);
         e.Handled = true;
+    }
+
+    // ── Drag a track onto a sidebar playlist ────────────────────────────────────
+    // See MusicListView.TrackDragFormat/TrackDragEnded for the source side. Only
+    // active outside a playlist's own view (AllowReorder owns the drag gesture
+    // there instead, for reordering within it).
+
+    private void ContentGrid_DragOver(object? sender, DragEventArgs e)
+    {
+        if (!e.Data.Contains(MusicListView.TrackDragFormat))
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
+
+        var pos = e.GetPosition(ContentGrid);
+        DragGhost.Margin = new Thickness(pos.X + 14, pos.Y + 14, 0, 0);
+        DragGhost.IsVisible = true;
+        if (e.Data.Get(MusicListView.TrackDragFormat) is Track track)
+            DragGhostText.Text = track.Title ?? "Untitled";
+
+        var target = HitTestSidebarPlaylist(e);
+        SetDropTargetHighlight(target);
+        e.DragEffects = target != null ? DragDropEffects.Copy : DragDropEffects.None;
+    }
+
+    private void ContentGrid_DragLeave(object? sender, RoutedEventArgs e)
+        => ResetDragVisuals();
+
+    private void ContentGrid_Drop(object? sender, DragEventArgs e)
+    {
+        var target = HitTestSidebarPlaylist(e);
+        ResetDragVisuals();
+
+        if (target?.Playlist is not { } playlist)
+            return;
+        if (e.Data.Get(MusicListView.TrackDragFormat) is not Track track)
+            return;
+
+        _ = _viewModel?.AddTrackToPlaylist(track, playlist);
+    }
+
+    // e.Source reflects the actual visual under the pointer regardless of which
+    // ancestor has AllowDrop set (same as SidebarList_ContextRequested's approach).
+    private static SidebarItem? HitTestSidebarPlaylist(DragEventArgs e)
+    {
+        if (e.Source is not Visual visual)
+            return null;
+        return visual.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is
+            SidebarItem { Kind: SidebarItemKind.Playlist } item ? item : null;
+    }
+
+    private void SetDropTargetHighlight(SidebarItem? item)
+    {
+        if (_dropTargetPlaylistItem == item)
+            return;
+        if (_dropTargetPlaylistItem != null)
+            _dropTargetPlaylistItem.IsDropTarget = false;
+        _dropTargetPlaylistItem = item;
+        if (_dropTargetPlaylistItem != null)
+            _dropTargetPlaylistItem.IsDropTarget = true;
+    }
+
+    private void ResetDragVisuals()
+    {
+        DragGhost.IsVisible = false;
+        SetDropTargetHighlight(null);
     }
 
     // ── Context menus ─────────────────────────────────────────────────────────

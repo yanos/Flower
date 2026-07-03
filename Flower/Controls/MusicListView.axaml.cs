@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
+using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -112,6 +113,19 @@ public partial class MusicListView : UserControl
     private Point _dragStartPoint;
     private bool  _isDragging;
     private const double DragThreshold = 4.0;
+
+    // ── Drag-onto-playlist (enabled by the host everywhere except a playlist's own
+    // view, where AllowReorder already owns the drag gesture for reordering within
+    // it) - see MainView.axaml.cs's ContentGrid_DragOver/Drop for the receiving end.
+    public const string TrackDragFormat = "application/x-flower-track";
+
+    // Fired once DragDrop.DoDragDrop returns, success or not (including an
+    // Escape-cancelled drag, which reaches neither Drop nor necessarily
+    // DragLeave) - the host's cue to clear any drag-feedback UI unconditionally.
+    public event EventHandler? TrackDragEnded;
+
+    private TrackRowViewModel? _dragCandidateRow;
+    private Point _dragCandidateStart;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -355,28 +369,71 @@ public partial class MusicListView : UserControl
             _dragStartPoint = pt;
             e.Pointer.Capture(_panel);
         }
+        else if (e.GetCurrentPoint(_panel).Properties.IsLeftButtonPressed)
+        {
+            // Not in a playlist view, so this press could become a drag-onto-a-
+            // sidebar-playlist gesture instead - see Panel_PointerMoved's threshold
+            // check below. No pointer capture here: DragDrop.DoDragDrop manages its
+            // own capture once the drag actually starts, and until then this must
+            // still behave like a normal click (selection, double-tap-to-play).
+            _dragCandidateRow   = row;
+            _dragCandidateStart = pt;
+        }
     }
 
     private void Panel_PointerMoved(object? sender, PointerEventArgs e)
     {
+        if (_dragCandidateRow != null)
+        {
+            var pt = e.GetPosition(_panel);
+            var dx = pt.X - _dragCandidateStart.X;
+            var dy = pt.Y - _dragCandidateStart.Y;
+            if (dx * dx + dy * dy >= DragThreshold * DragThreshold)
+            {
+                var row = _dragCandidateRow;
+                _dragCandidateRow = null;
+                _ = StartTrackDragAsync(row, e);
+            }
+            return;
+        }
+
         if (_draggedRow == null)
             return;
-        var pt = e.GetPosition(_panel);
+        var movedPt = e.GetPosition(_panel);
 
         if (!_isDragging)
         {
-            if (Math.Abs(pt.Y - _dragStartPoint.Y) < DragThreshold)
+            if (Math.Abs(movedPt.Y - _dragStartPoint.Y) < DragThreshold)
                 return;
             _isDragging = true;
             _dropIndicator.IsVisible = true;
         }
 
-        int index = InsertionIndexAt(pt.Y);
+        int index = InsertionIndexAt(movedPt.Y);
         _dropIndicator.Margin = new Thickness(0, Math.Max(0, index * TrackRowViewModel.RowHeight - 1), 0, 0);
+    }
+
+    // Kicks off the native cross-control drag; MainView.axaml.cs handles DragOver/
+    // Drop to show a floating "ghost" of the dragged track, highlight the hovered
+    // sidebar playlist row, and actually add the track on a valid drop.
+    private async Task StartTrackDragAsync(TrackRowViewModel row, PointerEventArgs triggerArgs)
+    {
+        var data = new DataObject();
+        data.Set(TrackDragFormat, row.Track);
+        try
+        {
+            await DragDrop.DoDragDrop(triggerArgs, data, DragDropEffects.Copy);
+        }
+        finally
+        {
+            TrackDragEnded?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private void Panel_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        _dragCandidateRow = null;
+
         if (_isDragging && _draggedRow != null)
         {
             var pt = e.GetPosition(_panel);
@@ -394,6 +451,7 @@ public partial class MusicListView : UserControl
         _draggedRow = null;
         _isDragging = false;
         _dropIndicator.IsVisible = false;
+        _dragCandidateRow = null;
     }
 
     private int InsertionIndexAt(double panelY)
