@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Flower.Views.ColumnSelectorWindow"
+        x:CompileBindings="False"
+        Title="Select Columns"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+  <StackPanel Margin="10" Spacing="8">
+    <ItemsControl x:Name="ColumnsList">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="Horizontal" MaxWidth="260"/>
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <CheckBox Content="{Binding Header}"
+                    IsChecked="{Binding IsVisible}"
+                    FontSize="11"
+                    Margin="0,1,10,1"
+                    MinWidth="70"/>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <Button x:Name="CloseButton"
+            Content="Close"
+            HorizontalAlignment="Right"
+            IsDefault="True"
+            Click="CloseButton_Click"/>
+  </StackPanel>
+</Window>
