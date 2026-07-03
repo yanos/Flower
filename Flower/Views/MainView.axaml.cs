@@ -38,6 +38,17 @@ public partial class MainView : UserControl
     private readonly ContextMenu _playlistMenu = new();
     private SidebarItem? _dropTargetPlaylistItem;
 
+    // Drag album/artist names from SubList onto a sidebar playlist - mirrors
+    // MusicListView's own cross-drag fields/gesture (see OnTrackDragMoved/
+    // OnTrackDragEnded) but lives here since SubList is a stock ListBox with no
+    // hand-rolled panel to raise that event itself.
+    private const double SubListDragThreshold = 4.0;
+    private string? _subListDragHitItem;               // item under the pointer at press-time
+    private IReadOnlyList<string>? _subListDragItems;   // final drag set, resolved at threshold-crossing
+    private Point   _subListDragStartPoint;
+    private bool    _isSubListDragging;
+    private bool    _syncingSubListSelection; // guards against feedback loops between SubList and the VM
+
     private DispatcherTimer? _spinTimer;
     private RotateTransform? _spinTransform;
 
@@ -66,6 +77,20 @@ public partial class MainView : UserControl
         MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
 
         SidebarList.ContextRequested += SidebarList_ContextRequested;
+
+        // Drag album/artist names from SubList onto a sidebar playlist. Also
+        // fully owns SubList's click-to-select behavior (see SubList_PointerPressed)
+        // rather than relying on ListBoxItem's native SelectionMode="Multiple"
+        // handling, which doesn't give the plain-click-collapses-the-rest /
+        // Ctrl-toggle / Shift-range semantics this needs. Registered on the
+        // Tunnel phase - not Bubble - so this runs BEFORE ListBoxItem's own
+        // PointerPressed handling and can mark the event Handled to suppress it
+        // entirely; a Bubble handler (even with handledEventsToo) would only ever
+        // see the press after native selection processing already ran.
+        SubList.AddHandler(PointerPressedEvent, SubList_PointerPressed, RoutingStrategies.Tunnel);
+        SubList.PointerMoved += SubList_PointerMoved;
+        SubList.PointerReleased += SubList_PointerReleased;
+        SubList.PointerCaptureLost += SubList_PointerCaptureLost;
 
         // Cmd/Ctrl+, (Settings) must work regardless of which control currently
         // has focus, so it's handled at the MainView root rather than scoped to MusicList.
@@ -133,7 +158,37 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.SortAscending):
                 MusicList.UpdateSortIndicators(_viewModel!.SortColumn, _viewModel.SortAscending);
                 break;
+            case nameof(MainViewModel.SelectedSubItems):
+                SyncSubListSelectionFromViewModel();
+                break;
         }
+    }
+
+    // Pushes the ViewModel's SelectedSubItems set into SubList's own selection.
+    // Guarded so the resulting SelectionChanged (fired by SubList.SelectedItems
+    // mutation below) doesn't loop back into SetSelectedSubItems.
+    private void SyncSubListSelectionFromViewModel()
+    {
+        if (_viewModel == null)
+            return;
+        _syncingSubListSelection = true;
+        try
+        {
+            SubList.SelectedItems!.Clear();
+            foreach (var item in _viewModel.SelectedSubItems)
+                SubList.SelectedItems!.Add(item);
+        }
+        finally
+        {
+            _syncingSubListSelection = false;
+        }
+    }
+
+    private void SubList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingSubListSelection || _viewModel == null)
+            return;
+        _viewModel.SetSelectedSubItems(SubList.SelectedItems!.Cast<string>().ToList());
     }
 
     // ── Per-view scroll position + selection ────────────────────────────────────
@@ -206,7 +261,11 @@ public partial class MainView : UserControl
 
     private void OnRowContextMenu(object? sender, TrackRowViewModel row)
     {
-        PopulateAddToPlaylistMenu(row.Track);
+        // MusicList's Panel_ContextRequested already guarantees the selection is
+        // either preserved (row was already selected) or collapsed to just this
+        // row (it wasn't) before this fires, so SelectedTracks is always the
+        // right set to act on here.
+        PopulateAddToPlaylistMenu(MusicList.SelectedTracks);
         _trackMenu.Open(MusicList);
     }
 
@@ -260,37 +319,179 @@ public partial class MainView : UserControl
     // creates a new one instead. See HitTestSidebarDrop.
     private readonly record struct SidebarDropTarget(SidebarItem? PlaylistItem, bool CreateNew);
 
-    private void OnTrackDragMoved(object? sender, (Track track, Point position) e)
+    private void OnTrackDragMoved(object? sender, (IReadOnlyList<Track> tracks, Point position) e)
     {
-        if (MusicList.TranslatePoint(e.position, ContentGrid) is { } ghostPos)
-        {
-            DragGhost.Margin = new Thickness(ghostPos.X + 14, ghostPos.Y + 14, 0, 0);
-            DragGhost.IsVisible = true;
-            DragGhostText.Text = e.track.Title ?? "Untitled";
-        }
-
-        SetSidebarDropHighlight(HitTestSidebarDrop(e.position));
+        ShowDragGhost(MusicList, e.position, DragGhostLabel(e.tracks));
+        SetSidebarDropHighlight(HitTestSidebarDrop(MusicList, e.position));
     }
 
-    private void OnTrackDragEnded(object? sender, (Track track, Point position) e)
+    private void OnTrackDragEnded(object? sender, (IReadOnlyList<Track> tracks, Point position) e)
     {
-        var target = HitTestSidebarDrop(e.position);
+        var target = HitTestSidebarDrop(MusicList, e.position);
         ResetDragVisuals();
 
         if (target?.PlaylistItem?.Playlist is { } playlist)
-            _ = _viewModel?.AddTrackToPlaylist(e.track, playlist);
+            _ = _viewModel?.AddTracksToPlaylist(e.tracks, playlist);
         else if (target?.CreateNew == true)
-            _ = _viewModel?.CreatePlaylistWithTrack(e.track);
+            _ = _viewModel?.CreatePlaylistWithTracks(e.tracks);
     }
 
-    // musicListPosition is in MusicListView's own local coordinate space (see
-    // MusicListView's TrackDragMoved/TrackDragEnded) - translated here into
-    // SidebarList's space. A specific playlist row wins if the pointer is
-    // directly over one; otherwise falls back to GetPlaylistsDropBand to see if
-    // the pointer is still somewhere within the Playlists section.
-    private SidebarDropTarget? HitTestSidebarDrop(Point musicListPosition)
+    private static string DragGhostLabel(IReadOnlyList<Track> tracks) =>
+        tracks.Count == 1 ? (tracks[0].Title ?? "Untitled") : $"{tracks.Count} tracks";
+
+    // ── Drag an album/artist name (SubList) onto a sidebar playlist ─────────────
+    // Same gesture as OnTrackDragMoved/OnTrackDragEnded above, but SubList is a
+    // stock ListBox rather than MusicListView's hand-rolled panel, so there's no
+    // control-owned event to subscribe to - the pointer sequence is handled
+    // directly here instead.
+
+    private string? _subListAnchor; // Shift+click range-select anchor, analogous to MusicListView's _anchorPath
+
+    private void SubList_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (MusicList.TranslatePoint(musicListPosition, SidebarList) is not { } sidebarPos)
+        if (!e.GetCurrentPoint(SubList).Properties.IsLeftButtonPressed)
+            return;
+        var container = (SubList.InputHitTest(e.GetPosition(SubList)) as Visual)
+            ?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
+        if (container?.DataContext is not string item)
+            return;
+        if (_viewModel is not { } vm)
+            return;
+
+        // SubList's selection is fully owned here rather than left to
+        // ListBoxItem's native SelectionMode="Multiple" click handling, which
+        // doesn't give the plain-click-collapses-everything-else / Ctrl-toggle /
+        // Shift-range semantics this needs - mirrors MusicListView's own
+        // hand-rolled Panel_PointerPressed selection logic.
+        bool alreadySelected = vm.SelectedSubItems.Contains(item);
+        bool shift  = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        bool toggle = e.KeyModifiers.HasFlag(PlatformShortcuts.Primary);
+
+        if (shift)
+            SelectSubListRange(item);
+        else if (toggle)
+            ToggleSubListItem(item);
+        else if (!alreadySelected)
+        {
+            vm.SetSelectedSubItems(new[] { item });
+            _subListAnchor = item;
+        }
+        // else: item already selected, no modifier - preserve the whole
+        // selection so it can be dragged or right-clicked as a batch.
+
+        container.Focus();
+        e.Handled = true;
+
+        _subListDragHitItem = item;
+        _subListDragStartPoint = e.GetPosition(SubList);
+        e.Pointer.Capture(SubList);
+    }
+
+    private void ToggleSubListItem(string item)
+    {
+        if (_viewModel is not { } vm)
+            return;
+        var current = vm.SelectedSubItems.ToList();
+        if (!current.Remove(item))
+            current.Add(item);
+        vm.SetSelectedSubItems(current);
+        _subListAnchor = item;
+    }
+
+    private void SelectSubListRange(string item)
+    {
+        if (_viewModel is not { } vm)
+            return;
+        var items = vm.SubListItems;
+        int anchorIdx = _subListAnchor != null ? items.IndexOf(_subListAnchor) : -1;
+        int clickIdx  = items.IndexOf(item);
+        if (anchorIdx < 0)
+            anchorIdx = clickIdx;
+        int lo = Math.Min(anchorIdx, clickIdx);
+        int hi = Math.Max(anchorIdx, clickIdx);
+
+        var range = new List<string>();
+        for (int i = lo; i <= hi; i++)
+            range.Add(items[i]);
+        // Anchor deliberately left untouched so repeated Shift+clicks keep
+        // extending/shrinking the range from the same starting point.
+        vm.SetSelectedSubItems(range);
+    }
+
+    private void SubList_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_subListDragHitItem == null)
+            return;
+
+        var pt = e.GetPosition(SubList);
+        if (!_isSubListDragging)
+        {
+            var dx = pt.X - _subListDragStartPoint.X;
+            var dy = pt.Y - _subListDragStartPoint.Y;
+            if (dx * dx + dy * dy < SubListDragThreshold * SubListDragThreshold)
+                return;
+            _isSubListDragging = true;
+            // Selection is final by now (SubList_PointerPressed above already
+            // resolved it for this press).
+            _subListDragItems = _viewModel?.SelectedSubItems.Contains(_subListDragHitItem) == true
+                ? _viewModel.SelectedSubItems.ToList()
+                : new List<string> { _subListDragHitItem };
+        }
+
+        ShowDragGhost(SubList, pt, DragGhostLabel(_subListDragItems!));
+        SetSidebarDropHighlight(HitTestSidebarDrop(SubList, pt));
+    }
+
+    private void SubList_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_isSubListDragging && _subListDragItems is { } items)
+        {
+            var target = HitTestSidebarDrop(SubList, e.GetPosition(SubList));
+            var tracks = _viewModel?.GetTracksForSubListItems(items) ?? Enumerable.Empty<Track>();
+
+            if (target?.PlaylistItem?.Playlist is { } playlist)
+                _ = _viewModel?.AddTracksToPlaylist(tracks, playlist);
+            else if (target?.CreateNew == true)
+                _ = _viewModel?.CreatePlaylistWithTracks(tracks);
+        }
+
+        e.Pointer.Capture(null);
+        EndSubListDrag();
+    }
+
+    private void SubList_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+        => EndSubListDrag();
+
+    private static string DragGhostLabel(IReadOnlyList<string> items) =>
+        items.Count == 1 ? items[0] : $"{items.Count} items";
+
+    private void EndSubListDrag()
+    {
+        _subListDragHitItem = null;
+        _subListDragItems = null;
+        _isSubListDragging = false;
+        ResetDragVisuals();
+    }
+
+    private void ShowDragGhost(Visual source, Point sourcePosition, string text)
+    {
+        if (source.TranslatePoint(sourcePosition, ContentGrid) is { } ghostPos)
+        {
+            DragGhost.Margin = new Thickness(ghostPos.X + 14, ghostPos.Y + 14, 0, 0);
+            DragGhost.IsVisible = true;
+            DragGhostText.Text = text;
+        }
+    }
+
+    // sourcePosition is in source's own local coordinate space (e.g.
+    // MusicListView's TrackDragMoved/TrackDragEnded, or SubList's pointer
+    // events) - translated here into SidebarList's space. A specific playlist
+    // row wins if the pointer is directly over one; otherwise falls back to
+    // GetPlaylistsDropBand to see if the pointer is still somewhere within the
+    // Playlists section.
+    private SidebarDropTarget? HitTestSidebarDrop(Visual source, Point sourcePosition)
+    {
+        if (source.TranslatePoint(sourcePosition, SidebarList) is not { } sidebarPos)
             return null;
         if (!new Rect(SidebarList.Bounds.Size).Contains(sidebarPos))
             return null;
@@ -423,7 +624,7 @@ public partial class MainView : UserControl
         _trackMenu.Items.Add(locateFileItem);
     }
 
-    private void PopulateAddToPlaylistMenu(Track track)
+    private void PopulateAddToPlaylistMenu(IReadOnlyList<Track> tracks)
     {
         if (_viewModel is not MainViewModel vm)
             return;
@@ -431,7 +632,7 @@ public partial class MainView : UserControl
         _addToPlaylistItem.Items.Clear();
 
         var newPlaylistItem = new MenuItem { Header = "New Playlist" };
-        newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTrack(track);
+        newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTracks(tracks);
         _addToPlaylistItem.Items.Add(newPlaylistItem);
 
         if (vm.Library.Playlists.Count > 0)
@@ -441,7 +642,7 @@ public partial class MainView : UserControl
             {
                 var target = playlist; // capture
                 var item = new MenuItem { Header = target.Name };
-                item.Click += async (_, _) => await vm.AddTrackToPlaylist(track, target);
+                item.Click += async (_, _) => await vm.AddTracksToPlaylist(tracks, target);
                 _addToPlaylistItem.Items.Add(item);
             }
         }

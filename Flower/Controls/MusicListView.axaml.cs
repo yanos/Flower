@@ -16,6 +16,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Flower.Models;
+using Flower.Services;
 using Flower.ViewModels;
 
 using FlowerTrack = Flower.Models.Track;
@@ -42,22 +43,111 @@ public partial class MusicListView : UserControl
     public event EventHandler?                    HeaderContextMenu; // right-click on header
 
     // ── Selection ─────────────────────────────────────────────────────────────
+    // Keyed by Track.Path rather than TrackRowViewModel identity: rows are
+    // rebuilt from scratch on every SetItems() (filter/sort/view-switch), but
+    // path is the stable identity used everywhere else in this control.
+    private readonly HashSet<string> _selectedPaths = new();
+    private readonly List<TrackRowViewModel> _selectedRows = new();
+    private string? _anchorPath; // Shift+click range-select anchor
+
+    public IReadOnlyList<FlowerTrack> SelectedTracks => _selectedRows.Select(r => r.Track).ToList();
+
     private TrackRowViewModel? _selectedRow;
     public TrackRowViewModel? SelectedRow
     {
         get => _selectedRow;
         set
         {
-            if (_selectedRow == value)
+            if (_selectedRow == value && _selectedRows.Count <= 1)
                 return;
-            if (_selectedRow != null)
-                SetRowSelected(_selectedRow, false);
-            _selectedRow = value;
-            if (_selectedRow != null)
-                SetRowSelected(_selectedRow, true);
-            var track = _selectedRow?.Track;
-            SetAndRaise(SelectedTrackProperty, ref _selectedTrack, track);
+            SelectSingleRow(value);
+            RaiseSelectedTrackChanged(_selectedRow?.Track);
         }
+    }
+
+    // SelectedTrackProperty is TwoWay-bound to MainViewModel.SelectedTrack, which
+    // forwards through PlaylistControlViewModel and raises PropertyChanged, which
+    // the binding then writes straight back into this control - synchronously,
+    // within the same call. Left unguarded, that echo re-enters SetSelectedTrack
+    // and (since it can't otherwise tell an echo apart from a genuine external
+    // "select this track" request) stomps a multi-selection back down to one row
+    // right after ToggleRow/SelectRange just built it. This flag lets
+    // SetSelectedTrack recognize and ignore its own echo.
+    private bool _isRaisingSelectedTrack;
+
+    private void RaiseSelectedTrackChanged(FlowerTrack? track)
+    {
+        _isRaisingSelectedTrack = true;
+        try { SetAndRaise(SelectedTrackProperty, ref _selectedTrack, track); }
+        finally { _isRaisingSelectedTrack = false; }
+    }
+
+    // Collapses selection down to just `row` (or clears it if null) - the
+    // "click on an unselected row" / programmatic-selection primitive shared
+    // by SelectedRow's setter, double-click, arrow-key navigation, and
+    // SetSelectedTrack below.
+    private void SelectSingleRow(TrackRowViewModel? row)
+    {
+        ClearSelection();
+        _selectedRow = row;
+        if (row != null)
+        {
+            row.IsSelected = true;
+            _selectedRows.Add(row);
+            _selectedPaths.Add(row.Track.Path);
+            _anchorPath = row.Track.Path;
+        }
+    }
+
+    private void ClearSelection()
+    {
+        foreach (var row in _selectedRows)
+            row.IsSelected = false;
+        _selectedRows.Clear();
+        _selectedPaths.Clear();
+    }
+
+    private void ToggleRow(TrackRowViewModel row)
+    {
+        row.IsSelected = !row.IsSelected;
+        if (row.IsSelected)
+        {
+            _selectedPaths.Add(row.Track.Path);
+            _selectedRows.Add(row);
+            _selectedRow = row;
+            _anchorPath = row.Track.Path;
+        }
+        else
+        {
+            _selectedPaths.Remove(row.Track.Path);
+            _selectedRows.Remove(row);
+            if (_selectedRow == row)
+                _selectedRow = _selectedRows.Count > 0 ? _selectedRows[^1] : null;
+        }
+        RaiseSelectedTrackChanged(_selectedRow?.Track);
+    }
+
+    private void SelectRange(TrackRowViewModel row)
+    {
+        var anchorRow = _anchorPath != null ? _items.FirstOrDefault(r => r.Track.Path == _anchorPath) : null;
+        int anchorIdx = anchorRow != null ? IndexOf(_items, anchorRow) : IndexOf(_items, row);
+        int clickIdx  = IndexOf(_items, row);
+        if (anchorIdx < 0)
+            anchorIdx = clickIdx;
+        int lo = Math.Min(anchorIdx, clickIdx);
+        int hi = Math.Max(anchorIdx, clickIdx);
+
+        // Anchor itself is deliberately left untouched so subsequent Shift+clicks
+        // keep extending/shrinking the range from the same starting point.
+        ClearSelection();
+        for (int i = lo; i <= hi; i++)
+        {
+            _items[i].IsSelected = true;
+            _selectedPaths.Add(_items[i].Track.Path);
+            _selectedRows.Add(_items[i]);
+        }
+        _selectedRow = row;
+        RaiseSelectedTrackChanged(_selectedRow.Track);
     }
 
     private FlowerTrack? _selectedTrack;
@@ -77,20 +167,12 @@ public partial class MusicListView : UserControl
     private void SetSelectedTrack(FlowerTrack? track)
     {
         _selectedTrack = track;
-        // Sync row selection
+        if (_isRaisingSelectedTrack)
+            return; // echo of our own change via the TwoWay binding - see RaiseSelectedTrackChanged
         var row = _items.FirstOrDefault(r => r.Track.Path == track?.Path);
         if (row != _selectedRow)
-        {
-            if (_selectedRow != null)
-                SetRowSelected(_selectedRow, false);
-            _selectedRow = row;
-            if (_selectedRow != null)
-                SetRowSelected(_selectedRow, true);
-        }
+            SelectSingleRow(row);
     }
-
-    private static void SetRowSelected(TrackRowViewModel row, bool selected)
-        => row.IsSelected = selected;
 
     // ── Sort command callback ─────────────────────────────────────────────────
     public event EventHandler<string>? SortRequested; // string = column id
@@ -149,9 +231,10 @@ public partial class MusicListView : UserControl
     private TrackRowViewModel? _crossDragRow;
     private Point _crossDragStartPoint;
     private bool  _isCrossDragging;
+    private IReadOnlyList<FlowerTrack>? _crossDragTracks; // snapshotted once, at threshold-crossing
 
-    public event EventHandler<(FlowerTrack track, Point position)>? TrackDragMoved;
-    public event EventHandler<(FlowerTrack track, Point position)>? TrackDragEnded;
+    public event EventHandler<(IReadOnlyList<FlowerTrack> tracks, Point position)>? TrackDragMoved;
+    public event EventHandler<(IReadOnlyList<FlowerTrack> tracks, Point position)>? TrackDragEnded;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -246,11 +329,32 @@ public partial class MusicListView : UserControl
     {
         _items = items;
         _panel.SetItems(items);
-        // Re-apply selection (path-based match)
+
+        // Re-apply selection (path-based match) against the new row instances -
+        // rows are rebuilt from scratch on every SetItems() call, so IsSelected
+        // never survives on its own. Anything no longer present in this view
+        // (filtered/sorted out) is dropped from the selection.
+        _selectedRows.Clear();
+        if (_selectedPaths.Count > 0)
+        {
+            var stillPresent = new HashSet<string>();
+            foreach (var row in items)
+            {
+                if (_selectedPaths.Contains(row.Track.Path))
+                {
+                    row.IsSelected = true;
+                    _selectedRows.Add(row);
+                    stillPresent.Add(row.Track.Path);
+                }
+            }
+            _selectedPaths.IntersectWith(stillPresent);
+        }
+
         if (_selectedTrack != null)
         {
             var match = items.FirstOrDefault(r => r.Track.Path == _selectedTrack.Path);
-            if (match != null) { _selectedRow = match; }
+            if (match != null)
+                _selectedRow = match;
         }
     }
 
@@ -540,16 +644,26 @@ public partial class MusicListView : UserControl
         var row = HitTestRow(pt);
         if (row == null)
             return;
-        SelectedRow = row;
         Focus();
 
-        if (AllowReorder && e.GetCurrentPoint(_panel).Properties.IsLeftButtonPressed)
+        bool isLeft = e.GetCurrentPoint(_panel).Properties.IsLeftButtonPressed;
+
+        if (isLeft && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            SelectRange(row);
+        else if (isLeft && e.KeyModifiers.HasFlag(PlatformShortcuts.Primary))
+            ToggleRow(row);
+        else if (!row.IsSelected)
+            SelectedRow = row;
+        // else: row is already part of the current multi-selection - preserve
+        // the whole selection so a drag or the context menu can act on all of it.
+
+        if (AllowReorder && isLeft)
         {
             _draggedRow     = row;
             _dragStartPoint = pt;
             e.Pointer.Capture(_panel);
         }
-        else if (e.GetCurrentPoint(_panel).Properties.IsLeftButtonPressed)
+        else if (isLeft && row.IsSelected)
         {
             // Not in a playlist view, so this press could become a drag-onto-a-
             // sidebar-playlist gesture instead - see Panel_PointerMoved's threshold
@@ -557,6 +671,8 @@ public partial class MusicListView : UserControl
             // version) so a normal click/double-tap still works below threshold,
             // and once the threshold is crossed this control keeps receiving
             // move/release regardless of where the pointer physically ends up.
+            // Gated on row.IsSelected so a Ctrl+click that just deselected the
+            // last remaining row (leaving an empty selection) can't start a drag.
             _crossDragRow        = row;
             _crossDragStartPoint = pt;
             e.Pointer.Capture(_panel);
@@ -575,8 +691,9 @@ public partial class MusicListView : UserControl
                 if (dx * dx + dy * dy < DragThreshold * DragThreshold)
                     return;
                 _isCrossDragging = true;
+                _crossDragTracks = SelectedTracks; // snapshot once selection is final for this press
             }
-            TrackDragMoved?.Invoke(this, (_crossDragRow.Track, e.GetPosition(this)));
+            TrackDragMoved?.Invoke(this, (_crossDragTracks!, e.GetPosition(this)));
             return;
         }
 
@@ -598,8 +715,8 @@ public partial class MusicListView : UserControl
 
     private void Panel_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (_isCrossDragging && _crossDragRow != null)
-            TrackDragEnded?.Invoke(this, (_crossDragRow.Track, e.GetPosition(this)));
+        if (_isCrossDragging && _crossDragTracks != null)
+            TrackDragEnded?.Invoke(this, (_crossDragTracks, e.GetPosition(this)));
 
         if (_isDragging && _draggedRow != null)
         {
@@ -620,6 +737,7 @@ public partial class MusicListView : UserControl
         _dropIndicator.IsVisible = false;
         _crossDragRow = null;
         _isCrossDragging = false;
+        _crossDragTracks = null;
     }
 
     private int InsertionIndexAt(double panelY)
@@ -642,7 +760,11 @@ public partial class MusicListView : UserControl
             var row = HitTestRow(pt);
             if (row != null)
             {
-                SelectedRow = row;
+                // Only collapse to this row if it isn't already part of the
+                // current multi-selection, so right-click can act on the whole
+                // selection (see RowContextMenu's consumer in MainView).
+                if (!row.IsSelected)
+                    SelectedRow = row;
                 RowContextMenu?.Invoke(this, row);
                 e.Handled = true;
             }
@@ -656,11 +778,11 @@ public partial class MusicListView : UserControl
         switch (e.Key)
         {
             case Key.Down:
-                MoveSelection(1);
+                MoveSelection(1, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 e.Handled = true;
                 break;
             case Key.Up:
-                MoveSelection(-1);
+                MoveSelection(-1, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 e.Handled = true;
                 break;
             case Key.Return when _selectedRow != null:
@@ -670,7 +792,7 @@ public partial class MusicListView : UserControl
         }
     }
 
-    private void MoveSelection(int delta)
+    private void MoveSelection(int delta, bool extend)
     {
         if (_items.Count == 0)
             return;
@@ -678,7 +800,12 @@ public partial class MusicListView : UserControl
         int next = Math.Clamp(current + delta, 0, _items.Count - 1);
         if (next == current)
             return;
-        SelectedRow = _items[next];
+        // Shift+Up/Down grows or shrinks the range from the existing anchor
+        // (same primitive as Shift+click) instead of collapsing to one row.
+        if (extend)
+            SelectRange(_items[next]);
+        else
+            SelectedRow = _items[next];
         EnsureVisible(next);
     }
 

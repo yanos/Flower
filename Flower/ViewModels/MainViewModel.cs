@@ -249,8 +249,12 @@ public partial class MainViewModel : ViewModelBase
     // so the view can remember a separate scroll position and selection for each one.
     public string CurrentViewKey => _selectedSidebarItem?.Kind switch
     {
-        SidebarItemKind.Albums   => $"album:{_selectedSubItem}",
-        SidebarItemKind.Artists  => $"artist:{_selectedSubItem}",
+        // Keyed on the whole set (sorted, so order doesn't matter) rather than
+        // just the primary item - otherwise two different multi-selections that
+        // happen to share the same first-selected item would collide and
+        // incorrectly share saved scroll/selection state in ApplyRows.
+        SidebarItemKind.Albums   => $"album:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
+        SidebarItemKind.Artists  => $"artist:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
         SidebarItemKind.Playlist => $"playlist:{_selectedSidebarItem.Playlist?.Name}",
         _                        => "songs"
     };
@@ -265,17 +269,31 @@ public partial class MainViewModel : ViewModelBase
     private string? _selectedSubItem;
     private string? _lastSelectedAlbum;
     private string? _lastSelectedArtist;
+    private HashSet<string> _selectedSubItems = new();
+
+    // The full multi-selection of album/artist names in SubList - drives both
+    // the track-list union filter (GetBaseTracksForFilter) and what gets
+    // dragged onto a playlist (GetTracksForSubListItems). SelectedSubItem below
+    // stays the "primary" (first) item for single-item consumers.
+    public IReadOnlyCollection<string> SelectedSubItems => _selectedSubItems;
 
     public string? SelectedSubItem
     {
         get => _selectedSubItem;
-        set
-        {
-            _selectedSubItem = value;
-            RememberSubItemSelection(value);
-            OnPropertyChanged();
-            ScheduleFilter();
-        }
+        set => ApplySubItemSelection(value != null ? new[] { value } : Array.Empty<string>());
+    }
+
+    // Used by SubList's multi-select drag/selection-sync code in MainView.axaml.cs.
+    public void SetSelectedSubItems(IReadOnlyList<string> items) => ApplySubItemSelection(items);
+
+    private void ApplySubItemSelection(IReadOnlyList<string> items)
+    {
+        _selectedSubItems = new HashSet<string>(items);
+        _selectedSubItem  = items.Count > 0 ? items[0] : null;
+        RememberSubItemSelection(_selectedSubItem);
+        OnPropertyChanged(nameof(SelectedSubItem));
+        OnPropertyChanged(nameof(SelectedSubItems));
+        ScheduleFilter();
     }
 
     private void RememberSubItemSelection(string? value)
@@ -548,10 +566,12 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    public async Task CreatePlaylistWithTrack(Track? track)
+    public Task CreatePlaylistWithTrack(Track? track)
+        => CreatePlaylistWithTracks(track != null ? new List<Track> { track } : new List<Track>());
+
+    public async Task CreatePlaylistWithTracks(IEnumerable<Track> tracks)
     {
-        var tracks   = track != null ? new List<Track> { track } : new List<Track>();
-        var playlist = new Playlist("New Playlist", tracks);
+        var playlist = new Playlist("New Playlist", tracks.ToList());
         Library.AddPlaylist(playlist);
 
         if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Playlist))
@@ -604,9 +624,13 @@ public partial class MainViewModel : ViewModelBase
             await DeletePlaylistAsync(playlist);
     }
 
-    public async Task AddTrackToPlaylist(Track track, Playlist playlist)
+    public Task AddTrackToPlaylist(Track track, Playlist playlist)
+        => AddTracksToPlaylist(new[] { track }, playlist);
+
+    public async Task AddTracksToPlaylist(IEnumerable<Track> tracks, Playlist playlist)
     {
-        playlist.AppendTrack(track);
+        foreach (var track in tracks)
+            playlist.AppendTrack(track);
         if (_selectedSidebarItem?.Playlist == playlist)
             ScheduleFilter();
 
@@ -642,13 +666,10 @@ public partial class MainViewModel : ViewModelBase
             SidebarItemKind.Artists => _lastSelectedArtist,
             _ => null
         };
-        _selectedSubItem = lastSelected != null && _subListItems.Contains(lastSelected)
+        var initial = lastSelected != null && _subListItems.Contains(lastSelected)
             ? lastSelected
             : _subListItems.FirstOrDefault();
-        RememberSubItemSelection(_selectedSubItem);
-        OnPropertyChanged(nameof(SelectedSubItem));
-
-        ScheduleFilter();
+        ApplySubItemSelection(initial != null ? new[] { initial } : Array.Empty<string>());
     }
 
     private void RebuildSubListItems()
@@ -663,18 +684,33 @@ public partial class MainViewModel : ViewModelBase
             SubListItems = new ObservableCollection<string>();
     }
 
+    // Resolves the tracks behind a set of SubListItems entries (album or artist
+    // names, depending on the current sidebar view) - used by the drag-albums/
+    // artists-onto-a-playlist gesture in MainView.axaml.cs, which drags the
+    // sub-list's selected string items rather than specific Tracks.
+    public IEnumerable<Track> GetTracksForSubListItems(IEnumerable<string> items)
+    {
+        var set = new HashSet<string>(items);
+        return _selectedSidebarItem?.Kind switch
+        {
+            SidebarItemKind.Albums  => _allTracks.Where(t => t.Album != null && set.Contains(t.Album)),
+            SidebarItemKind.Artists => _allTracks.Where(t => t.Artists != null && set.Contains(t.Artists)),
+            _ => Enumerable.Empty<Track>()
+        };
+    }
+
     private List<Track> GetBaseTracksForFilter()
     {
         return _selectedSidebarItem?.Kind switch
         {
             SidebarItemKind.Playlist when _selectedSidebarItem.Playlist != null
                 => new List<Track>(_selectedSidebarItem.Playlist.Tracks),
-            SidebarItemKind.Albums when _selectedSubItem != null
-                => _allTracks.Where(t => t.Album == _selectedSubItem).ToList(),
+            SidebarItemKind.Albums when _selectedSubItems.Count > 0
+                => _allTracks.Where(t => t.Album != null && _selectedSubItems.Contains(t.Album)).ToList(),
             SidebarItemKind.Albums
                 => new List<Track>(),
-            SidebarItemKind.Artists when _selectedSubItem != null
-                => _allTracks.Where(t => t.Artists == _selectedSubItem).ToList(),
+            SidebarItemKind.Artists when _selectedSubItems.Count > 0
+                => _allTracks.Where(t => t.Artists != null && _selectedSubItems.Contains(t.Artists)).ToList(),
             SidebarItemKind.Artists
                 => new List<Track>(),
             SidebarItemKind.Device
