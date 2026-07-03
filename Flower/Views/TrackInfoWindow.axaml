@@ -73,9 +73,15 @@
           <StackPanel Margin="24,16,24,8" Spacing="0">
 
             <Grid ColumnDefinitions="Auto,80,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,18">
-              <Border x:Name="AlbumArtBorder" Grid.Column="0" Grid.RowSpan="3"
-                      Width="{Binding #AlbumArtBorder.Bounds.Height}"
-                      VerticalAlignment="Stretch" Margin="0,0,16,0"
+              <!-- Fixed size, deliberately not bound to the text fields' own
+                   measured height: an Image with no explicit size measures
+                   itself against the embedded art's native pixel resolution
+                   when unconstrained, so a self-referencing/Stretch-based
+                   height here fed that back into the Grid's own auto-row
+                   sizing - producing an occasionally huge box that visibly
+                   snapped to a different size once layout re-settled. -->
+              <Border Grid.Column="0" Grid.RowSpan="3"
+                      Width="76" Height="76" Margin="0,0,16,0"
                       CornerRadius="4" ClipToBounds="True"
                       Background="#30808080">
                 <Image x:Name="AlbumArtImage" Stretch="UniformToFill"/>
