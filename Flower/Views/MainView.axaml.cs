@@ -83,6 +83,7 @@ public partial class MainView : UserControl
             _viewModel.SettingsRequested -= OnSettingsRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
+            _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             StopSpinner();
         }
 
@@ -94,6 +95,7 @@ public partial class MainView : UserControl
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
+            _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
             BuildColumnMenu();
             if (_viewModel.IsBusy)
                 StartSpinner();
@@ -564,7 +566,8 @@ public partial class MainView : UserControl
         tb.SelectAll();
     }
 
-    // Entry point for renaming an *existing* playlist (the context-menu path).
+    // Entry point for renaming an *existing* playlist (the sidebar's own
+    // context-menu, and the "Playlist > Rename Playlist" main-menu command below).
     // CreatePlaylistWithTrack's brand-new SidebarItem gets a freshly realized
     // container, so its TextBox's Loaded event fires and RenameBox_Loaded's
     // Focus() above just works. An existing item's container was realized long
@@ -590,6 +593,16 @@ public partial class MainView : UserControl
                 tb.SelectAll();
             }
         });
+    }
+
+    // "Playlist > Rename Playlist" main-menu command (see MainWindow.axaml and
+    // MainViewModel.RenamePlaylistRequested) - operates on whichever playlist is
+    // currently selected, since unlike the sidebar's context menu there is no
+    // specific right-clicked row to go on.
+    private void OnRenamePlaylistRequested(object? sender, EventArgs e)
+    {
+        if (_viewModel?.SelectedSidebarItem is { Kind: SidebarItemKind.Playlist } item)
+            BeginRename(item);
     }
 
     private void RenameBox_KeyDown(object? sender, KeyEventArgs e)
