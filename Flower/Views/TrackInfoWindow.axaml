@@ -186,7 +186,7 @@
           <TextBlock Grid.Row="5" Grid.Column="1" x:Name="BitDepthValue"   Classes="val"/>
 
           <TextBlock Grid.Row="6" Grid.Column="0" Text="File"        Classes="lbl"/>
-          <TextBlock Grid.Row="6" Grid.Column="1" x:Name="PathValue" Classes="val" FontSize="11" Opacity="0.6"/>
+          <SelectableTextBlock Grid.Row="6" Grid.Column="1" x:Name="PathValue" Classes="val" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
         </Grid>
       </TabItem>
 
