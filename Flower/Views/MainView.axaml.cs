@@ -757,16 +757,28 @@ public partial class MainView : UserControl
 
     private void OpenTrackInfo()
     {
-        if (MusicList.SelectedTrack is not Track track)
-            return;
         if (_viewModel is not MainViewModel vm)
             return;
-        var tracks = vm.DisplayedTracks;
-        var index  = tracks.ToList().IndexOf(track);
-        if (index < 0)
-            index = 0;
-        var infoWindow = new TrackInfoWindow(tracks, index, vm.Library) { ShowInTaskbar = false };
-        infoWindow.TrackNavigated += (_, t) => MusicList.SelectedTrack = t;
+
+        TrackInfoWindow infoWindow;
+        var selected = MusicList.SelectedTracks;
+        if (selected.Count > 1)
+        {
+            // Batch mode: edit the whole multi-selection together, no Prev/Next.
+            infoWindow = new TrackInfoWindow(selected, vm.Library) { ShowInTaskbar = false };
+        }
+        else
+        {
+            if (MusicList.SelectedTrack is not Track track)
+                return;
+            var tracks = vm.DisplayedTracks;
+            var index  = tracks.ToList().IndexOf(track);
+            if (index < 0)
+                index = 0;
+            infoWindow = new TrackInfoWindow(tracks, index, vm.Library) { ShowInTaskbar = false };
+            infoWindow.TrackNavigated += (_, t) => MusicList.SelectedTrack = t;
+        }
+
         if (TopLevel.GetTopLevel(this) is Window owner)
             infoWindow.Show(owner);
         else

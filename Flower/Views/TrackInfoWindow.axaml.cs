@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 
 using Avalonia.Controls;
@@ -14,22 +15,51 @@ namespace Flower.Views;
 public partial class TrackInfoWindow : Window
 {
     private static readonly DurationConverter _durationConverter = new();
-    private readonly IReadOnlyList<Track> _tracks;
+
+    // Only meaningful in single-track/navigable mode - see _navigable below.
+    private readonly IReadOnlyList<Track> _tracks = Array.Empty<Track>();
     private readonly Library _library;
     private int _index;
+    private readonly bool _navigable;
+
+    // The set of tracks being edited: exactly one in navigable mode (re-seeded
+    // on every Navigate()), or the whole multi-selection in batch mode.
+    private IReadOnlyList<Track> _editTracks = Array.Empty<Track>();
+    private List<EditableField> _fields = null!;
 
     private Track _track => _tracks[_index];
 
     public event EventHandler<Track>? TrackNavigated;
 
+    // Single-track mode: tracks/index is the full displayed list, so Prev/Next
+    // can browse through it one at a time.
     public TrackInfoWindow(IReadOnlyList<Track> tracks, int index, Library library)
     {
         InitializeComponent();
-        _tracks  = tracks;
-        _library = library;
-        _index   = index;
-        Populate(_track);
+        _tracks    = tracks;
+        _library   = library;
+        _index     = index;
+        _navigable = true;
+        BuildFields();
+        _editTracks = [_track];
+        Populate();
         UpdateNavButtons();
+    }
+
+    // Batch mode: edit this exact set of tracks together. No Prev/Next - there's
+    // no "next" when editing a fixed set as one.
+    public TrackInfoWindow(IReadOnlyList<Track> editTracks, Library library)
+    {
+        InitializeComponent();
+        _library    = library;
+        _navigable  = false;
+        _editTracks = editTracks;
+        BuildFields();
+        Populate();
+        PrevButton.IsVisible = false;
+        NextButton.IsVisible = false;
+        if (editTracks.Count > 1)
+            Title = $"Track Info ({editTracks.Count} tracks)";
     }
 
     private async void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Navigate(-1);
@@ -48,56 +78,112 @@ public partial class TrackInfoWindow : Window
             return;
         await SaveChanges();
         _index = next;
-        Populate(_track);
+        _editTracks = [_track];
+        Populate();
         UpdateNavButtons();
         TrackNavigated?.Invoke(this, _track);
     }
 
-    private void Populate(Track track)
+    // One row per editable field: how to read a display string off a Track, and
+    // how to apply an edited string to both a Track and a TagLib tag. Built once
+    // so the same field list drives population and save uniformly - the
+    // alternative is ~23 fields each hand-written twice over.
+    //
+    // Dirty-tracking is done by comparing Box.Text against OriginalText at save
+    // time, NOT via TextChanged + a "currently populating" guard flag - Avalonia's
+    // TextBox.TextChanged doesn't fire synchronously with a `.Text =` assignment,
+    // it's deferred, so by the time it actually fires Populate() has already
+    // returned and reset any such guard, incorrectly marking every field dirty
+    // (confirmed via logging: every TextChanged during population fired with the
+    // guard already back to false). Comparing final text state at save time
+    // sidesteps that timing entirely.
+    private sealed class EditableField(TextBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply)
     {
-        // Header
-        TitleBox.Text  = track.Title ?? "";
-        ArtistBox.Text = track.Artists ?? "";
-        AlbumBox.Text  = track.Album ?? "";
+        public readonly TextBox Box = box;
+        public readonly Func<Track, string> Display = display;
+        public readonly Action<Track, TagLib.Tag, string?> Apply = apply;
+        public string OriginalText = "";
+        public bool IsDirty => Box.Text != OriginalText;
+    }
 
-        // Album section
-        TrackNumBox.Text   = track.TrackNumber > 0 ? track.TrackNumber.ToString() : "";
-        TrackTotalBox.Text = track.TrackCount  > 0 ? track.TrackCount.ToString()  : "";
-        DiscNumBox.Text    = track.DiscNumber  > 0 ? track.DiscNumber.ToString()  : "";
-        DiscTotalBox.Text  = track.DiscCount   > 0 ? track.DiscCount.ToString()   : "";
-        YearBox.Text       = track.Year ?? "";
-        GenreBox.Text      = track.Genre ?? "";
-        BpmBox.Text        = track.BeatsPerMinute > 0 ? track.BeatsPerMinute.ToString() : "";
-        KeyBox.Text        = track.InitialKey ?? "";
-        GroupingBox.Text   = track.Grouping ?? "";
+    private static EditableField SimpleField(
+        TextBox box, Func<Track, string?> get, Action<Track, string?> setTrack, Action<TagLib.Tag, string?> setTag) =>
+        new(box, t => get(t) ?? "", (t, tag, v) =>
+        {
+            var n = NullIfEmpty(v);
+            setTrack(t, n);
+            setTag(tag, n);
+        });
 
-        // People section
-        AlbumArtistBox.Text = track.AlbumArtists ?? "";
-        ComposerBox.Text    = track.Composers ?? "";
-        ConductorBox.Text   = track.Conductor ?? "";
-        RemixedByBox.Text   = track.RemixedBy ?? "";
+    private void BuildFields()
+    {
+        _fields =
+        [
+            SimpleField(TitleBox, t => t.Title, (t, v) => t.Title = v, (tag, v) => tag.Title = v),
+            new(ArtistBox, t => t.Artists ?? "", (t, tag, v) => { t.Artists = NullIfEmpty(v); tag.Performers = SplitArray(v); }),
+            SimpleField(AlbumBox, t => t.Album, (t, v) => t.Album = v, (tag, v) => tag.Album = v),
 
-        // Descriptions section
-        SubtitleBox.Text    = track.Subtitle ?? "";
-        DescriptionBox.Text = track.Description ?? "";
-        CommentBox.Text     = track.Comment ?? "";
-        PublisherBox.Text   = track.Publisher ?? "";
-        CopyrightBox.Text   = track.Copyright ?? "";
-        ISRCBox.Text        = track.ISRC ?? "";
+            new(TrackNumBox, t => t.TrackNumber > 0 ? t.TrackNumber.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.TrackNumber = n; tag.Track = n; }),
+            new(TrackTotalBox, t => t.TrackCount > 0 ? t.TrackCount.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.TrackCount = n; tag.TrackCount = n; }),
+            new(DiscNumBox, t => t.DiscNumber > 0 ? t.DiscNumber.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.DiscNumber = n; tag.Disc = n; }),
+            new(DiscTotalBox, t => t.DiscCount > 0 ? t.DiscCount.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.DiscCount = n; tag.DiscCount = n; }),
+            // Track.Year stays a raw string while tag.Year is parsed to uint - an
+            // existing asymmetry in how this field was already handled, preserved as-is.
+            new(YearBox, t => t.Year ?? "", (t, tag, v) => { t.Year = NullIfEmpty(v); tag.Year = ParseUInt(v); }),
+            new(GenreBox, t => t.Genre ?? "", (t, tag, v) => { var g = NullIfEmpty(v); t.Genre = g; tag.Genres = g is string gg ? [gg] : []; }),
+            new(BpmBox, t => t.BeatsPerMinute > 0 ? t.BeatsPerMinute.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.BeatsPerMinute = n; tag.BeatsPerMinute = n; }),
+            SimpleField(KeyBox, t => t.InitialKey, (t, v) => t.InitialKey = v, (tag, v) => tag.InitialKey = v),
+            SimpleField(GroupingBox, t => t.Grouping, (t, v) => t.Grouping = v, (tag, v) => tag.Grouping = v),
 
-        // Lyrics
-        LyricsBox.Text = track.Lyrics ?? "";
+            new(AlbumArtistBox, t => t.AlbumArtists ?? "", (t, tag, v) => { t.AlbumArtists = NullIfEmpty(v); tag.AlbumArtists = SplitArray(v); }),
+            new(ComposerBox, t => t.Composers ?? "", (t, tag, v) => { t.Composers = NullIfEmpty(v); tag.Composers = SplitArray(v); }),
+            SimpleField(ConductorBox, t => t.Conductor, (t, v) => t.Conductor = v, (tag, v) => tag.Conductor = v),
+            SimpleField(RemixedByBox, t => t.RemixedBy, (t, v) => t.RemixedBy = v, (tag, v) => tag.RemixedBy = v),
+
+            SimpleField(SubtitleBox, t => t.Subtitle, (t, v) => t.Subtitle = v, (tag, v) => tag.Subtitle = v),
+            SimpleField(DescriptionBox, t => t.Description, (t, v) => t.Description = v, (tag, v) => tag.Description = v),
+            SimpleField(CommentBox, t => t.Comment, (t, v) => t.Comment = v, (tag, v) => tag.Comment = v),
+            SimpleField(PublisherBox, t => t.Publisher, (t, v) => t.Publisher = v, (tag, v) => tag.Publisher = v),
+            SimpleField(CopyrightBox, t => t.Copyright, (t, v) => t.Copyright = v, (tag, v) => tag.Copyright = v),
+            SimpleField(ISRCBox, t => t.ISRC, (t, v) => t.ISRC = v, (tag, v) => tag.ISRC = v),
+
+            SimpleField(LyricsBox, t => t.Lyrics, (t, v) => t.Lyrics = v, (tag, v) => tag.Lyrics = v),
+        ];
+    }
+
+    private void Populate()
+    {
+        foreach (var field in _fields)
+        {
+            var values = _editTracks.Select(field.Display).Distinct().ToList();
+            if (values.Count == 1)
+            {
+                field.Box.Text = values[0];
+                field.Box.Watermark = null;
+                field.OriginalText = values[0];
+            }
+            else
+            {
+                field.Box.Text = "";
+                field.Box.Watermark = "Multiple values";
+                field.OriginalText = ""; // untouched sentinel for a mixed field
+            }
+        }
 
         // Technical (read-only)
-        DurationValue.Text   = _durationConverter.Convert(track.Duration, typeof(string), null, CultureInfo.CurrentCulture) as string ?? "—";
-        CodecValue.Text      = track.Codec ?? "—";
-        BitrateValue.Text    = track.Bitrate > 0 ? $"{track.Bitrate} kbps" : "—";
-        SampleRateValue.Text = track.SampleRate > 0 ? $"{track.SampleRate / 1000.0:0.###} kHz" : "—";
-        ChannelsValue.Text   = track.Channels switch { 1 => "Mono", 2 => "Stereo", > 2 => $"{track.Channels} channels", _ => "—" };
-        BitDepthValue.Text   = track.BitsPerSample > 0 ? $"{track.BitsPerSample}-bit" : "—";
+        DurationValue.Text   = UniformOrMixed(t => _durationConverter.Convert(t.Duration, typeof(string), null, CultureInfo.CurrentCulture) as string ?? "—");
+        CodecValue.Text      = UniformOrMixed(t => t.Codec ?? "—");
+        BitrateValue.Text    = UniformOrMixed(t => t.Bitrate > 0 ? $"{t.Bitrate} kbps" : "—");
+        SampleRateValue.Text = UniformOrMixed(t => t.SampleRate > 0 ? $"{t.SampleRate / 1000.0:0.###} kHz" : "—");
+        ChannelsValue.Text   = UniformOrMixed(t => t.Channels switch { 1 => "Mono", 2 => "Stereo", > 2 => $"{t.Channels} channels", _ => "—" });
+        BitDepthValue.Text   = UniformOrMixed(t => t.BitsPerSample > 0 ? $"{t.BitsPerSample}-bit" : "—");
+        PathValue.Text       = UniformOrMixed(t => t.Path ?? "—");
+    }
 
-        // File
-        PathValue.Text = track.Path ?? "—";
+    private string UniformOrMixed(Func<Track, string> display)
+    {
+        var values = _editTracks.Select(display).Distinct().ToList();
+        return values.Count == 1 ? values[0] : "Multiple values";
     }
 
     private async void OkButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -113,70 +199,28 @@ public partial class TrackInfoWindow : Window
 
     private async Task SaveChanges()
     {
-        if (_track.Path is not string path)
+        var dirty = _fields.Where(f => f.IsDirty).ToList();
+        if (dirty.Count == 0)
             return;
 
-        try
+        foreach (var track in _editTracks)
         {
-            using var tagFile = TagLib.File.Create(path);
-            var tag = tagFile.Tag;
+            if (track.Path is not string path)
+                continue;
 
-            tag.Title       = NullIfEmpty(TitleBox.Text);
-            tag.Performers  = SplitArray(ArtistBox.Text);
-            tag.Album       = NullIfEmpty(AlbumBox.Text);
-            tag.AlbumArtists = SplitArray(AlbumArtistBox.Text);
-            tag.Track       = ParseUInt(TrackNumBox.Text);
-            tag.TrackCount  = ParseUInt(TrackTotalBox.Text);
-            tag.Disc        = ParseUInt(DiscNumBox.Text);
-            tag.DiscCount   = ParseUInt(DiscTotalBox.Text);
-            tag.Year        = ParseUInt(YearBox.Text);
-            tag.Genres      = NullIfEmpty(GenreBox.Text) is string g ? [g] : [];
-            tag.BeatsPerMinute = ParseUInt(BpmBox.Text);
-            tag.InitialKey  = NullIfEmpty(KeyBox.Text);
-            tag.Grouping    = NullIfEmpty(GroupingBox.Text);
-            tag.AlbumArtists = SplitArray(AlbumArtistBox.Text);
-            tag.Composers   = SplitArray(ComposerBox.Text);
-            tag.Conductor   = NullIfEmpty(ConductorBox.Text);
-            tag.RemixedBy   = NullIfEmpty(RemixedByBox.Text);
-            tag.Subtitle    = NullIfEmpty(SubtitleBox.Text);
-            tag.Description = NullIfEmpty(DescriptionBox.Text);
-            tag.Comment     = NullIfEmpty(CommentBox.Text);
-            tag.Publisher   = NullIfEmpty(PublisherBox.Text);
-            tag.Copyright   = NullIfEmpty(CopyrightBox.Text);
-            tag.ISRC        = NullIfEmpty(ISRCBox.Text);
-            tag.Lyrics      = NullIfEmpty(LyricsBox.Text);
-
-            tagFile.Save();
+            try
+            {
+                using var tagFile = TagLib.File.Create(path);
+                var tag = tagFile.Tag;
+                foreach (var field in dirty)
+                    field.Apply(track, tag, field.Box.Text);
+                tagFile.Save();
+            }
+            catch (Exception)
+            {
+                continue;
+            }
         }
-        catch (Exception)
-        {
-            return;
-        }
-
-        // Mirror changes into the in-memory Track
-        _track.Title          = NullIfEmpty(TitleBox.Text);
-        _track.Artists        = NullIfEmpty(ArtistBox.Text);
-        _track.Album          = NullIfEmpty(AlbumBox.Text);
-        _track.AlbumArtists   = NullIfEmpty(AlbumArtistBox.Text);
-        _track.TrackNumber    = ParseUInt(TrackNumBox.Text);
-        _track.TrackCount     = ParseUInt(TrackTotalBox.Text);
-        _track.DiscNumber     = ParseUInt(DiscNumBox.Text);
-        _track.DiscCount      = ParseUInt(DiscTotalBox.Text);
-        _track.Year           = NullIfEmpty(YearBox.Text);
-        _track.Genre          = NullIfEmpty(GenreBox.Text);
-        _track.BeatsPerMinute = ParseUInt(BpmBox.Text);
-        _track.InitialKey     = NullIfEmpty(KeyBox.Text);
-        _track.Grouping       = NullIfEmpty(GroupingBox.Text);
-        _track.Composers      = NullIfEmpty(ComposerBox.Text);
-        _track.Conductor      = NullIfEmpty(ConductorBox.Text);
-        _track.RemixedBy      = NullIfEmpty(RemixedByBox.Text);
-        _track.Subtitle       = NullIfEmpty(SubtitleBox.Text);
-        _track.Description    = NullIfEmpty(DescriptionBox.Text);
-        _track.Comment        = NullIfEmpty(CommentBox.Text);
-        _track.Publisher      = NullIfEmpty(PublisherBox.Text);
-        _track.Copyright      = NullIfEmpty(CopyrightBox.Text);
-        _track.ISRC           = NullIfEmpty(ISRCBox.Text);
-        _track.Lyrics         = NullIfEmpty(LyricsBox.Text);
 
         // Refresh views bound to the library and persist the change to disk
         _library.UpdateTracks(_library.Tracks);
