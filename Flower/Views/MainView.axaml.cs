@@ -81,6 +81,7 @@ public partial class MainView : UserControl
         {
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.SettingsRequested -= OnSettingsRequested;
+            _viewModel.ColumnSelectorRequested -= OnColumnSelectorRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
@@ -94,6 +95,7 @@ public partial class MainView : UserControl
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.SettingsRequested += OnSettingsRequested;
+            _viewModel.ColumnSelectorRequested += OnColumnSelectorRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
@@ -481,11 +483,18 @@ public partial class MainView : UserControl
             _ = _viewModel?.GoToCurrentlyPlayingTrackAsync();
             e.Handled = true;
         }
+        else if (e.Key == Key.J && e.KeyModifiers == PlatformShortcuts.Primary)
+        {
+            _viewModel?.OpenColumnSelectorCommand?.Execute(null);
+            e.Handled = true;
+        }
     }
 
     private void OnNavigateToTrackRequested(object? sender, Track track) => MusicList.ScrollToTrack(track);
 
     private void OnSettingsRequested(object? sender, EventArgs e) => OpenSettingsWindow();
+
+    private void OnColumnSelectorRequested(object? sender, EventArgs e) => OpenColumnSelectorWindow();
 
     // Raised by MainViewModel (forwarding PlaylistSyncService.ConflictDetected)
     // when the same playlist changed on both this device and a peer since they
@@ -529,6 +538,16 @@ public partial class MainView : UserControl
             settingsWindow.ShowDialog(owner);
         else
             settingsWindow.Show();
+    }
+
+    private void OpenColumnSelectorWindow()
+    {
+        var columnManager = Ioc.Default.GetService<ColumnManager>()!;
+        var columnSelectorWindow = new ColumnSelectorWindow(columnManager);
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            columnSelectorWindow.ShowDialog(owner);
+        else
+            columnSelectorWindow.Show();
     }
 
     // ── Track actions ─────────────────────────────────────────────────────────

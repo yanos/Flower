@@ -13,16 +13,21 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // The gesture shown for "Settings…" in the native menu bar must match
-        // MainView's actual key handling (Cmd on macOS, Ctrl elsewhere), so set
-        // it here instead of a static XAML "Cmd+OemComma" string.
-        var settingsItem = NativeMenu.GetMenu(this)?.Items
+        // The gestures shown in the native menu bar must match MainView's actual
+        // key handling (Cmd on macOS, Ctrl elsewhere), so set them here instead
+        // of static XAML "Cmd+..." strings.
+        var topLevelItems = NativeMenu.GetMenu(this)?.Items
             .OfType<NativeMenuItem>()
             .SelectMany(item => item.Menu?.Items ?? Enumerable.Empty<NativeMenuItemBase>())
             .OfType<NativeMenuItem>()
-            .FirstOrDefault(item => item.Header == "Settings…");
+            .ToList() ?? [];
 
+        var settingsItem = topLevelItems.FirstOrDefault(item => item.Header == "Settings…");
         if (settingsItem != null)
             settingsItem.Gesture = new KeyGesture(Key.OemComma, PlatformShortcuts.Primary);
+
+        var selectColumnsItem = topLevelItems.FirstOrDefault(item => item.Header == "Select Columns…");
+        if (selectColumnsItem != null)
+            selectColumnsItem.Gesture = new KeyGesture(Key.J, PlatformShortcuts.Primary);
     }
 }

@@ -34,6 +34,13 @@
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
+      <NativeMenuItem Header="View">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Select Columns…" Command="{Binding OpenColumnSelectorCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
     </NativeMenu>
   </NativeMenu.Menu>
   <views:MainView />
