@@ -307,6 +307,36 @@ public partial class MainViewModel : ViewModelBase
         };
     }
 
+    // ── Playback ─────────────────────────────────────────────────────────────
+
+    // Plays a specific track the user picked from whatever's currently displayed
+    // (Songs, an album/artist drill-down, or a playlist), establishing that view's
+    // current order as the Next/Previous queue - see PlaylistControlViewModel's
+    // SetCurrentPlaylist. Unconditional: activating a row is always "start a new
+    // queue from here," regardless of what was playing before.
+    public void PlayTrack(Track track)
+    {
+        SyncPlayQueueToCurrentView();
+        _playlistControlViewModel.Play(track);
+    }
+
+    // Space bar / toolbar play-pause button. Only snapshots a fresh queue when
+    // PlaylistControlViewModel.PlayOrPause is actually about to start a track from
+    // scratch (nothing currently playing or paused) - mirrors the exact condition
+    // under which it calls Play(track) internally. Toggling pause/resume of an
+    // already-playing/paused track must never touch the queue, or switching views
+    // while paused would silently redirect Next/Previous to the new view (the bug
+    // this whole thing exists to avoid).
+    public void PlayOrPauseFromCurrentView()
+    {
+        if (!_playlistControlViewModel.IsPlaying && !_playlistControlViewModel.CanResume)
+            SyncPlayQueueToCurrentView();
+        _playlistControlViewModel.PlayOrPause();
+    }
+
+    private void SyncPlayQueueToCurrentView() =>
+        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(_currentFilteredTracks)));
+
     // ── Sort ──────────────────────────────────────────────────────────────────
 
     private void SortByColumn(string? columnId)

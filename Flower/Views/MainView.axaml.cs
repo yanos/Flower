@@ -178,7 +178,7 @@ public partial class MainView : UserControl
     // ── MusicListView event handlers ──────────────────────────────────────────
 
     private void OnRowActivated(object? sender, TrackRowViewModel row)
-        => _playlistControlViewModel.Play(row.Track);
+        => _viewModel?.PlayTrack(row.Track);
 
     private void OnRowContextMenu(object? sender, TrackRowViewModel row)
     {
@@ -274,7 +274,7 @@ public partial class MainView : UserControl
         }
         else if (e.Key == Key.Space)
         {
-            _playlistControlViewModel.PlayOrPause();
+            _viewModel?.PlayOrPauseFromCurrentView();
             e.Handled = true;
         }
         // Enter is handled inside MusicListView (fires RowActivated)
