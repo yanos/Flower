@@ -113,6 +113,21 @@ public partial class MusicListView : UserControl
     private bool  _isDragging;
     private const double DragThreshold = 4.0;
 
+    // ── Column header drag-to-reorder ───────────────────────────────────────────
+    private readonly Border _columnDropIndicator = new()
+    {
+        Width               = 2,
+        Background          = Brushes.DodgerBlue,
+        IsVisible           = false,
+        IsHitTestVisible    = false,
+        HorizontalAlignment = HorizontalAlignment.Left,
+        VerticalAlignment   = VerticalAlignment.Stretch,
+    };
+
+    private MusicColumnDefinition? _draggedColumn;
+    private double _columnDragStartX;
+    private bool   _isColumnDragging;
+
     // ── Drag-onto-playlist (enabled by the host everywhere except a playlist's own
     // view, where AllowReorder already owns the drag gesture for reordering within
     // it) - see MainView.axaml.cs's OnTrackDragMoved/OnTrackDragEnded for the
@@ -241,8 +256,49 @@ public partial class MusicListView : UserControl
         foreach (var col in _columnManager.VisibleColumns)
             _headerPanel.Children.Add(MakeHeaderCell(col, separatorBrush));
 
-        HeaderBorder.Child = _headerPanel;
+        var headerHost = new Grid();
+        headerHost.Children.Add(_headerPanel);
+        headerHost.Children.Add(_columnDropIndicator);
+
+        HeaderBorder.Child = headerHost;
         HeaderBorder.ContextRequested += (_, e) => { HeaderContextMenu?.Invoke(this, EventArgs.Empty); e.Handled = true; };
+    }
+
+    // Visible columns other than the one currently being dragged, in display
+    // order - the sequence a column drag reorders within.
+    private List<MusicColumnDefinition> VisibleColumnsExcluding(MusicColumnDefinition? excluding) =>
+        _columnManager.VisibleColumns.Where(c => c != excluding).ToList();
+
+    // Slot index (within VisibleColumnsExcluding) that `headerX` falls into -
+    // used both to resolve where a column drag should land and to position the
+    // drop indicator while dragging.
+    private int ColumnInsertionIndexAt(double headerX, MusicColumnDefinition? excluding)
+    {
+        double cursor = TrackRowViewModel.ArtColumnWidth;
+        var cols = VisibleColumnsExcluding(excluding);
+        for (int i = 0; i < cols.Count; i++)
+        {
+            if (headerX < cursor + cols[i].Width / 2)
+                return i;
+            cursor += cols[i].Width;
+        }
+        return cols.Count;
+    }
+
+    private double HeaderXForVisibleIndex(int index, MusicColumnDefinition? excluding)
+    {
+        double cursor = TrackRowViewModel.ArtColumnWidth;
+        var cols = VisibleColumnsExcluding(excluding);
+        for (int i = 0; i < index && i < cols.Count; i++)
+            cursor += cols[i].Width;
+        return cursor;
+    }
+
+    private void EndColumnDrag()
+    {
+        _draggedColumn = null;
+        _isColumnDragging = false;
+        _columnDropIndicator.IsVisible = false;
     }
 
     private static IBrush GetSeparatorBrush()
@@ -315,15 +371,55 @@ public partial class MusicListView : UserControl
         outer.Children.Add(separator);
         outer.Children.Add(handle);
 
-        // Click anywhere on the header cell = sort
+        // Press-and-drag a header cell horizontally to reorder columns; a plain
+        // click (no drag past DragThreshold) sorts by it instead - same
+        // click-vs-drag split as the track rows use for reordering a playlist.
         outer.PointerPressed += (_, e) =>
         {
-            if (e.GetCurrentPoint(outer).Properties.IsLeftButtonPressed)
-            {
-                SortRequested?.Invoke(this, col.Id);
-                e.Handled = true;
-            }
+            if (!e.GetCurrentPoint(outer).Properties.IsLeftButtonPressed)
+                return;
+            _draggedColumn      = col;
+            _columnDragStartX   = e.GetPosition(_headerPanel).X;
+            _isColumnDragging   = false;
+            e.Pointer.Capture(outer);
+            e.Handled = true;
         };
+
+        outer.PointerMoved += (_, e) =>
+        {
+            if (_draggedColumn != col)
+                return;
+            double x = e.GetPosition(_headerPanel).X;
+            if (!_isColumnDragging)
+            {
+                if (Math.Abs(x - _columnDragStartX) < DragThreshold)
+                    return;
+                _isColumnDragging = true;
+                _columnDropIndicator.IsVisible = true;
+            }
+            int index = ColumnInsertionIndexAt(x, _draggedColumn);
+            _columnDropIndicator.Margin = new Thickness(HeaderXForVisibleIndex(index, _draggedColumn), 0, 0, 0);
+        };
+
+        outer.PointerReleased += (_, e) =>
+        {
+            if (_draggedColumn != col)
+                return;
+
+            e.Pointer.Capture(null);
+            bool wasDragging = _isColumnDragging;
+            int  dropIndex   = ColumnInsertionIndexAt(e.GetPosition(_headerPanel).X, col);
+            EndColumnDrag(); // clear drag state / hide indicator before Reorder rebuilds the header
+
+            if (wasDragging)
+                _columnManager.Reorder(col, dropIndex);
+            else
+                SortRequested?.Invoke(this, col.Id);
+
+            e.Handled = true;
+        };
+
+        outer.PointerCaptureLost += (_, _) => EndColumnDrag();
 
         col.PropertyChanged += (_, e) =>
         {
