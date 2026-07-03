@@ -206,12 +206,20 @@ public partial class MainView : UserControl
         if (e.Source is not Visual visual)
             return;
         if (visual.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not
-            SidebarItem { Kind: SidebarItemKind.Playlist, Playlist: { } playlist })
+            SidebarItem { Kind: SidebarItemKind.Playlist, Playlist: { } playlist } item)
             return;
         if (_viewModel is not MainViewModel vm)
             return;
 
         _playlistMenu.Items.Clear();
+
+        // Reuses the same IsEditing/RenameBox flow CreatePlaylistWithTrack already
+        // drops a freshly-created playlist into - see RenameBox_Loaded/KeyDown/
+        // LostFocus and CommitRename below.
+        var renameItem = new MenuItem { Header = "Rename Playlist" };
+        renameItem.Click += (_, _) => item.IsEditing = true;
+        _playlistMenu.Items.Add(renameItem);
+
         var deleteItem = new MenuItem { Header = "Delete Playlist" };
         deleteItem.Click += async (_, _) => await vm.DeletePlaylistAsync(playlist);
         _playlistMenu.Items.Add(deleteItem);
