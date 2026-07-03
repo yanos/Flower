@@ -7,5 +7,12 @@
     <Application.Styles>
         <FluentTheme />
         <materialIcons:MaterialIconStyles />
+        <!-- Subtle rounded corners on every list selection highlight app-wide
+             (sidebar, sub-list, Settings' library paths list, etc). The track
+             list's own selection box is a hand-rolled control, not a
+             ListBoxItem - see TrackRowControl.axaml for its matching radius. -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
     </Application.Styles>
 </Application>

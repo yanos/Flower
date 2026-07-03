@@ -29,6 +29,7 @@
     <Border Grid.Column="1"
             Background="DodgerBlue"
             Opacity="0.25"
+            CornerRadius="4"
             IsVisible="{Binding IsSelected}"
             IsHitTestVisible="False"/>
 
