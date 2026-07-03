@@ -72,15 +72,23 @@
         <ScrollViewer>
           <StackPanel Margin="24,16,24,8" Spacing="0">
 
-            <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,18">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="Title"  Classes="lbl" VerticalAlignment="Center"/>
-              <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val" FontSize="17" FontWeight="SemiBold"/>
+            <Grid ColumnDefinitions="Auto,80,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,18">
+              <Border x:Name="AlbumArtBorder" Grid.Column="0" Grid.RowSpan="3"
+                      Width="{Binding #AlbumArtBorder.Bounds.Height}"
+                      VerticalAlignment="Stretch" Margin="0,0,16,0"
+                      CornerRadius="4" ClipToBounds="True"
+                      Background="#30808080">
+                <Image x:Name="AlbumArtImage" Stretch="UniformToFill"/>
+              </Border>
 
-              <TextBlock Grid.Row="1" Grid.Column="0" Text="Artist" Classes="lbl" VerticalAlignment="Center"/>
-              <TextBox   Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val" FontSize="13"/>
+              <TextBlock Grid.Row="0" Grid.Column="1" Text="Title"  Classes="lbl" VerticalAlignment="Center"/>
+              <TextBox   Grid.Row="0" Grid.Column="2" x:Name="TitleBox"  Classes="val"/>
 
-              <TextBlock Grid.Row="2" Grid.Column="0" Text="Album"  Classes="lbl" VerticalAlignment="Center"/>
-              <TextBox   Grid.Row="2" Grid.Column="1" x:Name="AlbumBox"  Classes="val" FontSize="12" FontStyle="Italic"/>
+              <TextBlock Grid.Row="1" Grid.Column="1" Text="Artist" Classes="lbl" VerticalAlignment="Center"/>
+              <TextBox   Grid.Row="1" Grid.Column="2" x:Name="ArtistBox" Classes="val"/>
+
+              <TextBlock Grid.Row="2" Grid.Column="1" Text="Album"  Classes="lbl" VerticalAlignment="Center"/>
+              <TextBox   Grid.Row="2" Grid.Column="2" x:Name="AlbumBox"  Classes="val"/>
             </Grid>
 
             <TextBlock Text="ALBUM" Classes="sectionHeader"/>

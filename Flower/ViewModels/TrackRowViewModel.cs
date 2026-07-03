@@ -1,11 +1,9 @@
 using System;
-using System.Collections.Concurrent;
-using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Flower.Models;
+using Flower.Services;
 
 namespace Flower.ViewModels;
 
@@ -14,12 +12,6 @@ public class TrackRowViewModel : ViewModelBase
     public const double RowHeight      = 28.0;
     public const double ArtColumnWidth = 80.0;
     public const double ArtMaxSize     = 76.0; // ArtColumnWidth - 2px margin each side
-
-    private static readonly string[] ImageExtensions =
-        [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"];
-
-    // Key: directory path.  WeakReference so GC can reclaim bitmaps under memory pressure.
-    private static readonly ConcurrentDictionary<string, WeakReference<Bitmap>> ArtCache = new();
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
@@ -83,62 +75,8 @@ public class TrackRowViewModel : ViewModelBase
 
     private async Task LoadArtAsync()
     {
-        var key = Path.GetDirectoryName(Track.Path ?? "") ?? "";
-
-        if (ArtCache.TryGetValue(key, out var weak) && weak.TryGetTarget(out var cached))
-        {
-            Interlocked.Exchange(ref _artState, 2);
-            AlbumArt = cached;
-            return;
-        }
-
-        var bmp = await Task.Run(LoadBitmap);
+        var bmp = await AlbumArtLoader.LoadAsync(Track);
         Interlocked.Exchange(ref _artState, 2);
-
-        if (bmp != null)
-            ArtCache[key] = new WeakReference<Bitmap>(bmp);
-
         AlbumArt = bmp;
-    }
-
-    private Bitmap? LoadBitmap()
-    {
-        // 1. Embedded tag art
-        if (Track.Path != null)
-        {
-            try
-            {
-                using var tagFile = TagLib.File.Create(Track.Path);
-                var pic = tagFile.Tag.Pictures.FirstOrDefault();
-                if (pic?.Data?.Data is { Length: > 0 } data)
-                {
-                    using var ms = new MemoryStream(data);
-                    return new Bitmap(ms);
-                }
-            }
-            catch { }
-
-            // 2. cover.*/folder.* in the same directory
-            try
-            {
-                var dir = Path.GetDirectoryName(Track.Path);
-                if (dir != null)
-                {
-                    var file = Directory.EnumerateFiles(dir).FirstOrDefault(f =>
-                    {
-                        var stem = Path.GetFileNameWithoutExtension(f);
-                        var ext  = Path.GetExtension(f).ToLowerInvariant();
-                        return (stem.Equals("cover",  StringComparison.OrdinalIgnoreCase) ||
-                                stem.Equals("folder", StringComparison.OrdinalIgnoreCase))
-                            && ImageExtensions.Contains(ext);
-                    });
-                    if (file != null)
-                        return new Bitmap(file);
-                }
-            }
-            catch { }
-        }
-
-        return null;
     }
 }
