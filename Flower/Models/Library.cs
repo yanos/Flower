@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Flower.Models
 {
@@ -21,8 +22,23 @@ namespace Flower.Models
             Tracks = new List<Track>(tracks);
         }
 
+        // A rescan (see Importer) produces brand-new Track instances read straight
+        // from file tags, each defaulting DateAdded to "now" - so without this,
+        // every track would look freshly added after every launch. Carry the
+        // original DateAdded forward for any track already known by Path.
         public void UpdateTracks(List<Track> tracks)
         {
+            var previousDateAddedByPath = Tracks
+                .Where(t => t.Path != null)
+                .GroupBy(t => t.Path!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().DateAdded, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var track in tracks)
+            {
+                if (track.Path != null && previousDateAddedByPath.TryGetValue(track.Path, out var dateAdded))
+                    track.DateAdded = dateAdded;
+            }
+
             Tracks = new List<Track>(tracks);
             TracksUpdated?.Invoke(this, EventArgs.Empty);
         }

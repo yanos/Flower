@@ -5,7 +5,7 @@ using Material.Icons;
 
 namespace Flower.ViewModels;
 
-public enum SidebarItemKind { Header, Songs, Albums, Artists, Playlist, Device }
+public enum SidebarItemKind { Header, RecentlyAdded, Songs, Albums, Artists, Playlist, Device }
 
 public class SidebarItem : ViewModelBase
 {

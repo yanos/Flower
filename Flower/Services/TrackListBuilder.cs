@@ -46,6 +46,7 @@ public static class TrackListBuilder
             "Album"       => tracks.OrderBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
             "Year"        => tracks.OrderBy(t => SortKey(t.Year)),
             "Genre"       => tracks.OrderBy(t => SortKey(t.Genre)),
+            "DateAdded"   => tracks.OrderBy(t => t.DateAdded),
             "Duration"    => tracks.OrderBy(t => t.Duration),
             "PlayCount"   => tracks.OrderBy(t => t.PlayCount),
             _             => tracks.OrderBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),

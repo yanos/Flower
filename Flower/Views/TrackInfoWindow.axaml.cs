@@ -183,6 +183,7 @@ public partial class TrackInfoWindow : Window
         ChannelsValue.Text   = UniformOrMixed(t => t.Channels switch { 1 => "Mono", 2 => "Stereo", > 2 => $"{t.Channels} channels", _ => "—" });
         BitDepthValue.Text   = UniformOrMixed(t => t.BitsPerSample > 0 ? $"{t.BitsPerSample}-bit" : "—");
         PathValue.Text       = UniformOrMixed(t => t.Path ?? "—");
+        DateAddedValue.Text  = UniformOrMixed(t => t.DateAdded.LocalDateTime.ToString("MMM d, yyyy"));
 
         _ = LoadAlbumArtAsync();
     }

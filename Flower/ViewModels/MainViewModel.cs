@@ -165,17 +165,17 @@ public partial class MainViewModel : ViewModelBase
     private string _sortColumn    = "TrackNumber";
     private bool   _sortAscending = true;
 
-    public string SortColumn
-    {
-        get => _sortColumn;
-        private set { _sortColumn = value; OnPropertyChanged(); }
-    }
+    // Recently Added has its own independent sort state (defaulting to newest-first)
+    // rather than sharing Songs/Albums/Artists' single sort column - so clicking a
+    // header there doesn't change what Songs is sorted by, and vice versa.
+    private string _recentlyAddedSortColumn    = "DateAdded";
+    private bool   _recentlyAddedSortAscending = false;
 
-    public bool SortAscending
-    {
-        get => _sortAscending;
-        private set { _sortAscending = value; OnPropertyChanged(); }
-    }
+    private bool IsViewingRecentlyAdded => _selectedSidebarItem?.Kind == SidebarItemKind.RecentlyAdded;
+
+    public string SortColumn => IsViewingRecentlyAdded ? _recentlyAddedSortColumn : _sortColumn;
+
+    public bool SortAscending => IsViewingRecentlyAdded ? _recentlyAddedSortAscending : _sortAscending;
 
     private bool _sortArtistAlbumsByYear;
 
@@ -253,10 +253,11 @@ public partial class MainViewModel : ViewModelBase
         // just the primary item - otherwise two different multi-selections that
         // happen to share the same first-selected item would collide and
         // incorrectly share saved scroll/selection state in ApplyRows.
-        SidebarItemKind.Albums   => $"album:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
-        SidebarItemKind.Artists  => $"artist:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
-        SidebarItemKind.Playlist => $"playlist:{_selectedSidebarItem.Playlist?.Name}",
-        _                        => "songs"
+        SidebarItemKind.Albums        => $"album:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
+        SidebarItemKind.Artists       => $"artist:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
+        SidebarItemKind.Playlist      => $"playlist:{_selectedSidebarItem.Playlist?.Name}",
+        SidebarItemKind.RecentlyAdded => "recently-added",
+        _                             => "songs"
     };
 
     private ObservableCollection<string> _subListItems = new();
@@ -431,15 +432,33 @@ public partial class MainViewModel : ViewModelBase
     {
         if (columnId == null)
             return;
-        if (SortColumn == columnId)
-            SortAscending = !SortAscending;
+
+        if (IsViewingRecentlyAdded)
+        {
+            if (_recentlyAddedSortColumn == columnId)
+                _recentlyAddedSortAscending = !_recentlyAddedSortAscending;
+            else
+            {
+                _recentlyAddedSortColumn    = columnId;
+                _recentlyAddedSortAscending = true;
+            }
+            OnPropertyChanged(nameof(SortColumn));
+            OnPropertyChanged(nameof(SortAscending));
+            ScheduleFilter();
+            return;
+        }
+
+        if (_sortColumn == columnId)
+            _sortAscending = !_sortAscending;
         else
         {
-            SortColumn    = columnId;
-            SortAscending = true;
+            _sortColumn    = columnId;
+            _sortAscending = true;
         }
+        OnPropertyChanged(nameof(SortColumn));
+        OnPropertyChanged(nameof(SortAscending));
         ScheduleFilter();
-        _ = _columnVisibilityStore.SaveSortStateAsync(SortColumn, SortAscending);
+        _ = _columnVisibilityStore.SaveSortStateAsync(_sortColumn, _sortAscending);
     }
 
     // ── Playing indicators ────────────────────────────────────────────────────
@@ -456,7 +475,8 @@ public partial class MainViewModel : ViewModelBase
     private void BuildSidebarItems()
     {
         _sidebarItems.Clear();
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header,  "Library"));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header,        "Library"));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.RecentlyAdded, "Recently Added", MaterialIconKind.ClockPlusOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Songs,   "Songs",   MaterialIconKind.MusicNote));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Albums,  "Albums",  MaterialIconKind.Album));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Artists, "Artists", MaterialIconKind.AccountMusic));
@@ -656,6 +676,10 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSubListVisible));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(SelectedDevice));
+        // Recently Added carries its own independent sort state (see SortColumn),
+        // so switching to/from it changes what these computed properties report.
+        OnPropertyChanged(nameof(SortColumn));
+        OnPropertyChanged(nameof(SortAscending));
         RebuildSubListItems();
         _renamePlaylistCommand?.NotifyCanExecuteChanged();
         _deletePlaylistCommand?.NotifyCanExecuteChanged();
@@ -784,8 +808,9 @@ public partial class MainViewModel : ViewModelBase
         var text       = _filterText;
         // Playlists have a user-defined (drag-reorderable) track order rather
         // than a sortable one, so ignore the column sort while viewing one.
-        var sortCol    = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist ? "PlaylistOrder" : _sortColumn;
-        var sortAsc    = _sortAscending;
+        // Recently Added uses its own independent sort state (see SortColumn).
+        var sortCol    = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist ? "PlaylistOrder" : SortColumn;
+        var sortAsc    = SortAscending;
         var playing    = CurrentlyPlayingTrack;
         var baseTracks = GetBaseTracksForFilter();
 

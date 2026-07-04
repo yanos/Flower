@@ -51,6 +51,12 @@ namespace Flower.Models
         // Stats
         public int PlayCount { get; set; }
 
+        // When this track first appeared in the library. Defaults to "now" for a
+        // freshly-imported Track; Library.UpdateTracks carries the original value
+        // forward across rescans by matching Path, so it only reflects the first
+        // import, not the most recent one. Drives the "Recently Added" sidebar section.
+        public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
+
         // Cross-device identity for playlist sync (see PlaylistSyncService): Path is
         // a local filesystem path and never matches between two devices' libraries,
         // so playlist track membership is matched by this fingerprint instead. Not

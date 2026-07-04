@@ -30,6 +30,8 @@ public class TrackRowViewModel : ViewModelBase
 
     public string PlayCountDisplay => Track.PlayCount > 0 ? Track.PlayCount.ToString() : "";
 
+    public string DateAddedDisplay => Track.DateAdded.LocalDateTime.ToString("MMM d, yyyy");
+
     public string DurationDisplay
     {
         get
