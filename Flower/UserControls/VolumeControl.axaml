@@ -4,31 +4,84 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              xmlns:vm="using:Flower.ViewModels"
+             xmlns:conv="clr-namespace:Flower.Converters"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.UserControls.VolumeControl"
              x:DataType="vm:VolumeControlViewModel">
 
-  <Grid ColumnDefinitions="Auto,*,Auto">
+  <UserControl.Resources>
+    <conv:VolumeToStarWidthConverter x:Key="VolumeToStarWidthConverter"/>
+  </UserControl.Resources>
+
+  <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
 
     <!-- Plain speaker (no sound waves) - quiet end of the slider -->
     <materialIcons:MaterialIcon Grid.Column="0"
                                 Kind="VolumeOff"
-                                Width="14" Height="14"
+                                Width="10" Height="10"
                                 Opacity="0.65"
                                 VerticalAlignment="Center"
                                 Margin="0,0,4,0"/>
 
-    <Slider Grid.Column="1"
-            x:Name="slider"
-            Maximum="100"
-            Value="{Binding Volume, Mode=TwoWay}"
-            HorizontalAlignment="Stretch"
-            VerticalAlignment="Center"/>
+    <!-- The rail is drawn here directly from Volume via two star-weighted
+         columns, rather than through Slider's own Track.DecreaseButton/
+         IncreaseButton - repeated attempts at restyling those down to this
+         compact size (Style overrides, a re-templated Button, a plain
+         Border) all left the fill either mismatched with the thumb or not
+         rendering at all, since Track computes their Rects itself and
+         nothing here could reliably confirm what it was doing internally.
+         A star-sized Grid is simple, standard, and needs no pixel math - it
+         is driven by the exact same Volume binding as the slider below. -->
+    <Grid Grid.Column="1" VerticalAlignment="Center">
+      <Grid VerticalAlignment="Center">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="{Binding Volume, Converter={StaticResource VolumeToStarWidthConverter}}"/>
+          <ColumnDefinition Width="{Binding Volume, Converter={StaticResource VolumeToStarWidthConverter}, ConverterParameter=Remaining}"/>
+        </Grid.ColumnDefinitions>
+        <Border Grid.Column="0" Background="DodgerBlue" Height="3" CornerRadius="1.5"/>
+        <Border Grid.Column="1" Background="#40808080" Height="3" CornerRadius="1.5"/>
+      </Grid>
+
+      <!-- Real, fully interactive slider stacked on top for click/drag -
+           only its thumb is visible; the track buttons are transparent so
+           they do not double up with the rail drawn above. -->
+      <Slider x:Name="slider"
+              Maximum="100"
+              Height="16"
+              Value="{Binding Volume, Mode=TwoWay}"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Center">
+        <Slider.Template>
+          <ControlTemplate TargetType="Slider">
+            <Track Minimum="{TemplateBinding Minimum}"
+                   Maximum="{TemplateBinding Maximum}"
+                   Value="{TemplateBinding Value, Mode=TwoWay}"
+                   Orientation="Horizontal"
+                   HorizontalAlignment="Stretch"
+                   VerticalAlignment="Center">
+              <Track.DecreaseButton>
+                <Button Height="16" Background="Transparent" BorderThickness="0"/>
+              </Track.DecreaseButton>
+              <Track.IncreaseButton>
+                <Button Height="16" Background="Transparent" BorderThickness="0"/>
+              </Track.IncreaseButton>
+              <Thumb Width="10" Height="10">
+                <Thumb.Template>
+                  <ControlTemplate TargetType="Thumb">
+                    <Ellipse Fill="DodgerBlue" Width="10" Height="10"/>
+                  </ControlTemplate>
+                </Thumb.Template>
+              </Thumb>
+            </Track>
+          </ControlTemplate>
+        </Slider.Template>
+      </Slider>
+    </Grid>
 
     <!-- Speaker with sound waves - loud end of the slider -->
     <materialIcons:MaterialIcon Grid.Column="2"
                                 Kind="VolumeHigh"
-                                Width="14" Height="14"
+                                Width="10" Height="10"
                                 Opacity="0.65"
                                 VerticalAlignment="Center"
                                 Margin="4,0,0,0"/>
