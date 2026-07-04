@@ -38,6 +38,8 @@
         <NativeMenuItem.Menu>
           <NativeMenu>
             <NativeMenuItem Header="Select Columns…" Command="{Binding OpenColumnSelectorCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Zoom"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>

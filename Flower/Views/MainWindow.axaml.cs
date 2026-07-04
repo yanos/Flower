@@ -29,5 +29,15 @@ public partial class MainWindow : Window
         var selectColumnsItem = topLevelItems.FirstOrDefault(item => item.Header == "Select Columns…");
         if (selectColumnsItem != null)
             selectColumnsItem.Gesture = new KeyGesture(Key.J, PlatformShortcuts.Primary);
+
+        // Mirrors the standard macOS Window > Zoom behavior: resizes/repositions
+        // the window to fill the available screen space, toggling back to its
+        // prior size/position on a second click. This is WindowState.Maximized,
+        // not WindowState.FullScreen - the latter animates into its own macOS
+        // Space and hides the menu bar, which isn't what "Zoom" does.
+        var zoomItem = topLevelItems.FirstOrDefault(item => item.Header == "Zoom");
+        if (zoomItem != null)
+            zoomItem.Click += (_, _) =>
+                WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     }
 }
