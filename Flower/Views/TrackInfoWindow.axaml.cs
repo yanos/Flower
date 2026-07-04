@@ -195,13 +195,13 @@ public partial class TrackInfoWindow : Window
     private async Task LoadAlbumArtAsync()
     {
         var requestId = ++_artRequestId;
-        AlbumArtImage.Source = null;
+        AlbumArtView.AlbumArt = null;
         if (_editTracks.Count == 0)
             return;
 
         var bmp = await AlbumArtLoader.LoadAsync(_editTracks[0]);
         if (requestId == _artRequestId)
-            AlbumArtImage.Source = bmp;
+            AlbumArtView.AlbumArt = bmp;
     }
 
     private string UniformOrMixed(Func<Track, string> display)

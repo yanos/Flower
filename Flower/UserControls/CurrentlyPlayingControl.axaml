@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Flower.ViewModels"
+             xmlns:controls="using:Flower.Controls"
              mc:Ignorable="d"
              x:Class="Flower.UserControls.CurrentlyPlayingControl"
              x:DataType="vm:CurrentlyPlayingControlViewModel">
@@ -15,37 +16,12 @@
   <Grid ColumnDefinitions="Auto,*">
 
     <!-- Album art: negative margins counteract the outer padding so art sits 2px from edges -->
-    <Border Grid.Column="0"
+    <controls:AlbumArtView Grid.Column="0"
             x:CompileBindings="False"
             Width="{Binding $self.Bounds.Height}"
             Margin="-10,-4,10,-4"
-            CornerRadius="4"
-            BorderBrush="#80000000"
-            BorderThickness="1"
-            VerticalAlignment="Stretch">
-      <Border CornerRadius="3"
-              ClipToBounds="True">
-        <Panel>
-          <Border Background="#18FFFFFF"
-                  IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNull}}">
-            <TextBlock Text="♫"
-                       Foreground="#606060"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       FontSize="36"
-                       FontWeight="Bold"/>
-          </Border>
-          <Canvas IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}"
-                  HorizontalAlignment="Stretch"
-                  VerticalAlignment="Stretch">
-            <Image Source="{Binding AlbumArt}"
-                   Stretch="UniformToFill"
-                   Width="{Binding $parent.Bounds.Width}"
-                   Height="{Binding $parent.Bounds.Height}"/>
-          </Canvas>
-        </Panel>
-      </Border>
-    </Border>
+            VerticalAlignment="Stretch"
+            AlbumArt="{Binding AlbumArt}"/>
 
   <Grid Grid.Column="1">
     <Grid.RowDefinitions>
