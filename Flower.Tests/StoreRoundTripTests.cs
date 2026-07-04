@@ -128,6 +128,40 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task AppSettingsStore_round_trips_window_geometry()
+    {
+        var settings = new AppSettings
+        {
+            WindowWidth       = 1024,
+            WindowHeight      = 768,
+            WindowX           = 50,
+            WindowY           = 60,
+            WindowIsMaximized = true,
+        };
+
+        await new AppSettingsStore().SaveAsync(settings);
+        var loaded = new AppSettingsStore().Load();
+
+        Assert.Equal(1024, loaded.WindowWidth);
+        Assert.Equal(768,  loaded.WindowHeight);
+        Assert.Equal(50,   loaded.WindowX);
+        Assert.Equal(60,   loaded.WindowY);
+        Assert.True(loaded.WindowIsMaximized);
+    }
+
+    [Fact]
+    public void AppSettingsStore_Save_is_synchronous_and_round_trips_window_geometry()
+    {
+        var settings = new AppSettings { WindowWidth = 900, WindowHeight = 600 };
+
+        new AppSettingsStore().Save(settings);
+        var loaded = new AppSettingsStore().Load();
+
+        Assert.Equal(900, loaded.WindowWidth);
+        Assert.Equal(600, loaded.WindowHeight);
+    }
+
+    [Fact]
     public void PlaylistStore_Load_assigns_a_fresh_Id_to_pre_sync_records_missing_one()
     {
         // Simulates playlists.json written before Playlist.Id existed: the JSON
