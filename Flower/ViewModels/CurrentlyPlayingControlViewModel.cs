@@ -23,6 +23,10 @@ namespace Flower.ViewModels
 
         public Track? CurrentlyPlayingTrack => _playlistControlViewModel.CurrentlyPlayingTrack;
 
+        public bool IsRepeatEnabled => _playlistControlViewModel.IsRepeatEnabled;
+
+        public bool IsShuffleEnabled => _playlistControlViewModel.IsShuffleEnabled;
+
         // Always rendered (never IsVisible=false) so the control's height stays constant
         // whether or not a track is playing, instead of growing when playback starts.
         public string Subtitle => CurrentlyPlayingTrack is { } track
@@ -65,6 +69,16 @@ namespace Flower.ViewModels
                     return null;
                 return FormatDuration(ts);
             }
+        }
+
+        public void ToggleRepeat()
+        {
+            _playlistControlViewModel.ToggleRepeat();
+        }
+
+        public void ToggleShuffle()
+        {
+            _playlistControlViewModel.ToggleShuffle();
         }
 
         private static string FormatDuration(TimeSpan ts)
@@ -162,6 +176,14 @@ namespace Flower.ViewModels
                     OnPropertyChanged(nameof(Subtitle));
                     OnPropertyChanged(nameof(TotalTime));
                     LoadAlbumArt(_playlistControlViewModel.CurrentlyPlayingTrack);
+                }
+                else if (e.PropertyName == nameof(_playlistControlViewModel.IsRepeatEnabled))
+                {
+                    OnPropertyChanged(nameof(IsRepeatEnabled));
+                }
+                else if (e.PropertyName == nameof(_playlistControlViewModel.IsShuffleEnabled))
+                {
+                    OnPropertyChanged(nameof(IsShuffleEnabled));
                 }
             };
 

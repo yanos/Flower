@@ -4,9 +4,15 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Flower.ViewModels"
              xmlns:controls="using:Flower.Controls"
+             xmlns:conv="clr-namespace:Flower.Converters"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
              x:Class="Flower.UserControls.CurrentlyPlayingControl"
              x:DataType="vm:CurrentlyPlayingControlViewModel">
+
+  <UserControl.Resources>
+    <conv:BoolToActiveColorConverter x:Key="BoolToActiveColorConverter"/>
+  </UserControl.Resources>
 
   <Border Background="#F5EFC4"
           BorderBrush="#C8BB7A"
@@ -51,19 +57,34 @@
     <Grid Grid.Row="3" Margin="0,4,0,0">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
-      <TextBlock Grid.Column="0"
+      <Button Grid.Column="0"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="2"
+              VerticalContentAlignment="Center"
+              HorizontalContentAlignment="Center"
+              Click="Shuffle">
+        <materialIcons:MaterialIcon Kind="Shuffle"
+                                    Width="14" Height="14"
+                                    Foreground="{Binding IsShuffleEnabled, Converter={StaticResource BoolToActiveColorConverter}}"/>
+      </Button>
+
+      <TextBlock Grid.Column="1"
                  Text="{Binding ElapsedTime}"
                  FontSize="11"
                  Opacity="0.65"
                  HorizontalAlignment="Left"
                  VerticalAlignment="Center"
+                 Margin="4,0,0,0"
                  IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
-      <Slider Grid.Column="1" x:Name="slider"
+      <Slider Grid.Column="2" x:Name="slider"
               Margin="8,0,8,0"
               Minimum="0"
               Maximum="1"
@@ -71,13 +92,26 @@
               HorizontalAlignment="Stretch"
               VerticalAlignment="Center"/>
 
-      <TextBlock Grid.Column="2"
+      <TextBlock Grid.Column="3"
                  Text="{Binding TotalTime}"
                  FontSize="11"
                  Opacity="0.65"
                  HorizontalAlignment="Right"
                  VerticalAlignment="Center"
+                 Margin="0,0,4,0"
                  IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+      <Button Grid.Column="4"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="2"
+              VerticalContentAlignment="Center"
+              HorizontalContentAlignment="Center"
+              Click="Repeat">
+        <materialIcons:MaterialIcon Kind="Repeat"
+                                    Width="14" Height="14"
+                                    Foreground="{Binding IsRepeatEnabled, Converter={StaticResource BoolToActiveColorConverter}}"/>
+      </Button>
     </Grid>
   </Grid>
   </Grid>

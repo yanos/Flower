@@ -19,6 +19,10 @@ namespace Flower.Persistence
         public double? WindowX           { get; set; }
         public double? WindowY           { get; set; }
         public bool    WindowIsMaximized { get; set; }
+
+        // Repeat/shuffle toggles in the currently-playing control, remembered between launches.
+        public bool IsRepeatEnabled  { get; set; }
+        public bool IsShuffleEnabled { get; set; }
     }
 
     public class AppSettingsStore
