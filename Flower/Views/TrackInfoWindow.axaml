@@ -87,9 +87,9 @@
                 <Image x:Name="AlbumArtImage" Stretch="UniformToFill"/>
               </Border>
 
-              <TextBox Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val" FontSize="14"/>
-              <TextBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val"/>
-              <TextBox Grid.Row="2" Grid.Column="1" x:Name="AlbumBox"  Classes="val"/>
+              <TextBox Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val" FontSize="18"/>
+              <TextBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val" FontSize="14"/>
+              <TextBox Grid.Row="2" Grid.Column="1" x:Name="AlbumBox"  Classes="val" FontSize="14"/>
             </Grid>
 
             <TextBlock Text="ALBUM" Classes="sectionHeader"/>
