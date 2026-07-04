@@ -21,14 +21,15 @@
             HorizontalContentAlignment="Center"
             Click="Previous">
       <materialIcons:MaterialIcon Kind="Rewind"
-                                  Height="{Binding $parent[UserControl].Height}"
-                                  Width="{Binding $parent[UserControl].Height}"/>
+                                  Height="28"
+                                  Width="28"/>
     </Button>
 
     <Button Background="Transparent"
-            Width="{Binding $parent[UserControl].Height}"
-            Height="{Binding $parent[UserControl].Height}"
+            Width="48"
+            Height="48"
             Padding="0"
+            Margin="4,0,4,0"
             VerticalContentAlignment="Center"
             HorizontalContentAlignment="Center"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
@@ -36,8 +37,8 @@
             CornerRadius="9999"
             Click="PlayOrPause">
       <materialIcons:MaterialIcon Kind="{Binding IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                  Height="28"
-                                  Width="28"/>
+                                  Height="36"
+                                  Width="36"/>
     </Button>
 
     <Button Background="Transparent"
@@ -46,8 +47,8 @@
             HorizontalContentAlignment="Center"
             Click="Next">
       <materialIcons:MaterialIcon Kind="FastForward"
-                                  Height="{Binding $parent[UserControl].Height}"
-                                  Width="{Binding $parent[UserControl].Height}"/>
+                                  Height="28"
+                                  Width="28"/>
     </Button>
 
   </StackPanel>

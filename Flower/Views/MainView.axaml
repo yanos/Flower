@@ -36,7 +36,6 @@
           <usercontrols:PlaylistControls
             VerticalAlignment="Center"
             HorizontalAlignment="Left"
-            Height="36"
             Margin="8,0,4,0"/>
         </StackPanel>
 

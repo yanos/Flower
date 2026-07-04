@@ -27,23 +27,28 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
     <TextBlock Grid.Row="0"
                Text="{Binding CurrentlyPlayingTrack.Title}"
-               FontSize="14"
+               FontSize="16"
                FontWeight="SemiBold"
                HorizontalAlignment="Center" />
 
     <TextBlock Grid.Row="1"
                Text="{Binding Subtitle}"
                HorizontalAlignment="Center"
-               FontSize="12"
+               FontSize="13"
                Opacity="0.65"
                Margin="0,2,0,0" />
 
-    <Grid Grid.Row="2" Margin="0,4,0,0">
+    <!-- Row 2 is an empty "*" spacer, so the transport row below always sits
+         flush against the bottom of the control instead of floating up under
+         the title/subtitle when there's extra vertical space. -->
+
+    <Grid Grid.Row="3" Margin="0,4,0,0">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="*"/>
