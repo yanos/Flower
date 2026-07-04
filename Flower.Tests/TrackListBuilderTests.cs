@@ -165,7 +165,7 @@ public class TrackListBuilderTests
     }
 
     [Fact]
-    public void Sort_by_column_other_than_album_or_tracknumber_does_not_group()
+    public void Sort_by_column_other_than_album_or_tracknumber_still_groups_contiguous_same_album_tracks()
     {
         var tracks = new List<Track>
         {
@@ -175,12 +175,14 @@ public class TrackListBuilderTests
 
         var rows = TrackListBuilder.Build(tracks, null, "Title", true);
 
-        Assert.All(rows, r => Assert.True(r.IsFirstInAlbumGroup));
-        Assert.All(rows, r => Assert.Equal(1, r.AlbumGroupSize));
+        Assert.True(rows[0].IsFirstInAlbumGroup);
+        Assert.Equal(2, rows[0].AlbumGroupSize);
+        Assert.False(rows[1].IsFirstInAlbumGroup);
+        Assert.Equal(2, rows[1].AlbumGroupSize);
     }
 
     [Fact]
-    public void PlaylistOrder_preserves_input_order_and_does_not_group()
+    public void PlaylistOrder_preserves_input_order_and_still_groups_contiguous_same_album_tracks()
     {
         var tracks = new List<Track>
         {
@@ -192,7 +194,10 @@ public class TrackListBuilderTests
         var rows = TrackListBuilder.Build(tracks, null, "PlaylistOrder", true);
 
         Assert.Equal(new[] { "Third", "First", "Second" }, rows.ConvertAll(r => r.Track.Title));
-        Assert.All(rows, r => Assert.True(r.IsFirstInAlbumGroup));
+        Assert.True(rows[0].IsFirstInAlbumGroup);
+        Assert.Equal(3, rows[0].AlbumGroupSize);
+        Assert.False(rows[1].IsFirstInAlbumGroup);
+        Assert.False(rows[2].IsFirstInAlbumGroup);
     }
 
     [Fact]
