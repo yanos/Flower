@@ -4,13 +4,34 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              xmlns:vm="using:Flower.ViewModels"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.UserControls.VolumeControl"
              x:DataType="vm:VolumeControlViewModel">
 
-  <Slider x:Name="slider"
-          Maximum="100"
-          Value="{Binding Volume, Mode=TwoWay}"
-          HorizontalAlignment="Stretch"
-          VerticalAlignment="Center"/>
+  <Grid ColumnDefinitions="Auto,*,Auto">
+
+    <!-- Plain speaker (no sound waves) - quiet end of the slider -->
+    <materialIcons:MaterialIcon Grid.Column="0"
+                                Kind="VolumeOff"
+                                Width="14" Height="14"
+                                Opacity="0.65"
+                                VerticalAlignment="Center"
+                                Margin="0,0,4,0"/>
+
+    <Slider Grid.Column="1"
+            x:Name="slider"
+            Maximum="100"
+            Value="{Binding Volume, Mode=TwoWay}"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Center"/>
+
+    <!-- Speaker with sound waves - loud end of the slider -->
+    <materialIcons:MaterialIcon Grid.Column="2"
+                                Kind="VolumeHigh"
+                                Width="14" Height="14"
+                                Opacity="0.65"
+                                VerticalAlignment="Center"
+                                Margin="4,0,0,0"/>
+  </Grid>
 
 </UserControl>

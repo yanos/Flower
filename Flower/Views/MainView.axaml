@@ -38,11 +38,6 @@
             HorizontalAlignment="Left"
             Height="36"
             Margin="8,0,4,0"/>
-          <usercontrols:VolumeControl
-            VerticalAlignment="Center"
-            HorizontalAlignment="Left"
-            Margin="4,0,8,0"
-            Width="120" />
         </StackPanel>
 
         <usercontrols:CurrentlyPlayingControl
@@ -51,13 +46,19 @@
           VerticalAlignment="Center"
           HorizontalAlignment="Stretch" />
 
-        <usercontrols:FilterControl
-          Grid.Column="2"
-          Margin="8,0,8,0"
-          VerticalAlignment="Center"
-          HorizontalAlignment="Right"
-          MinWidth="180"
-          FilterText="{Binding FilterText}"/>
+        <StackPanel Grid.Column="2" Orientation="Vertical" VerticalAlignment="Center">
+          <usercontrols:VolumeControl
+            VerticalAlignment="Center"
+            HorizontalAlignment="Stretch"
+            Margin="8,0,8,2"
+            Width="180" />
+          <usercontrols:FilterControl
+            VerticalAlignment="Center"
+            HorizontalAlignment="Stretch"
+            Margin="8,2,8,0"
+            Width="180"
+            FilterText="{Binding FilterText}"/>
+        </StackPanel>
       </Grid>
     </Border>
 
