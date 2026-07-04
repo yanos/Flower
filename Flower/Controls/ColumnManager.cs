@@ -103,5 +103,6 @@ public class ColumnManager
         new("Genre",       "Genre",   100,  60, true, 5),
         new("Duration",    "Duration", 80,  50, true, 6),
         new("PlayCount",   "Plays",    55,  40, true, 7),
+        new("DateAdded",   "Added",   100,  70, true, 8),
     ];
 }

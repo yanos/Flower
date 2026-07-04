@@ -82,6 +82,7 @@ public partial class TrackInfoView : UserControl
         BitDepthValue.Text   = track.BitsPerSample > 0 ? $"{track.BitsPerSample}-bit" : "—";
 
         PathValue.Text = track.Path ?? "—";
+        DateAddedValue.Text = track.DateAdded.LocalDateTime.ToString("MMM d, yyyy");
     }
 
     private void Cancel_Click(object? sender, RoutedEventArgs e)

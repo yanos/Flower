@@ -154,6 +154,9 @@
         <TextBlock Text="File" Classes="lbl" />
         <TextBlock x:Name="PathValue" Classes="val" FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
 
+        <TextBlock Text="Date Added" Classes="lbl" />
+        <TextBlock x:Name="DateAddedValue" Classes="val" />
+
       </StackPanel>
     </ScrollViewer>
   </Grid>
