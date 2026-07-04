@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Flower.Models;
@@ -37,6 +38,48 @@ public class LibraryTests
         source.Add(new Track { Title = "B" });
 
         Assert.Single(library.Tracks);
+    }
+
+    [Fact]
+    public void UpdateTracks_preserves_DateAdded_for_a_track_matched_by_path()
+    {
+        var originalDate = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var library = new Library(new List<Track>
+        {
+            new Track { Title = "Old", Path = "/music/a.mp3", DateAdded = originalDate }
+        });
+
+        // Simulates a rescan: Importer builds a brand-new Track for the same file
+        // (tags re-read from disk), defaulting DateAdded to "now" like a genuinely
+        // new file would - UpdateTracks must recognize it's the same file by Path
+        // and keep the original date instead.
+        var rescanned = new Track { Title = "Old (retagged)", Path = "/music/a.mp3" };
+
+        library.UpdateTracks(new List<Track> { rescanned });
+
+        Assert.Equal(originalDate, library.Tracks.Single().DateAdded);
+    }
+
+    [Fact]
+    public void UpdateTracks_matches_paths_case_insensitively()
+    {
+        var originalDate = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var library = new Library(new List<Track> { new Track { Path = "/Music/A.mp3", DateAdded = originalDate } });
+
+        library.UpdateTracks(new List<Track> { new Track { Path = "/music/a.mp3" } });
+
+        Assert.Equal(originalDate, library.Tracks.Single().DateAdded);
+    }
+
+    [Fact]
+    public void UpdateTracks_leaves_DateAdded_alone_for_a_track_with_no_previous_match()
+    {
+        var freshDate = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var library = new Library(new List<Track> { new Track { Path = "/music/other.mp3" } });
+
+        library.UpdateTracks(new List<Track> { new Track { Path = "/music/new.mp3", DateAdded = freshDate } });
+
+        Assert.Equal(freshDate, library.Tracks.Single().DateAdded);
     }
 
     [Fact]

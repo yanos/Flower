@@ -150,6 +150,18 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task AppSettingsStore_round_trips_repeat_and_shuffle_toggles()
+    {
+        var settings = new AppSettings { IsRepeatEnabled = true, IsShuffleEnabled = true };
+
+        await new AppSettingsStore().SaveAsync(settings);
+        var loaded = new AppSettingsStore().Load();
+
+        Assert.True(loaded.IsRepeatEnabled);
+        Assert.True(loaded.IsShuffleEnabled);
+    }
+
+    [Fact]
     public void AppSettingsStore_Save_is_synchronous_and_round_trips_window_geometry()
     {
         var settings = new AppSettings { WindowWidth = 900, WindowHeight = 600 };
