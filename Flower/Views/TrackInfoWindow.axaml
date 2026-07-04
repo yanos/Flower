@@ -72,7 +72,7 @@
         <ScrollViewer>
           <StackPanel Margin="24,16,24,8" Spacing="0">
 
-            <Grid ColumnDefinitions="Auto,80,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,18">
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,18">
               <!-- Fixed size, deliberately not bound to the text fields' own
                    measured height: an Image with no explicit size measures
                    itself against the embedded art's native pixel resolution
@@ -87,14 +87,9 @@
                 <Image x:Name="AlbumArtImage" Stretch="UniformToFill"/>
               </Border>
 
-              <TextBlock Grid.Row="0" Grid.Column="1" Text="Title"  Classes="lbl" VerticalAlignment="Center"/>
-              <TextBox   Grid.Row="0" Grid.Column="2" x:Name="TitleBox"  Classes="val"/>
-
-              <TextBlock Grid.Row="1" Grid.Column="1" Text="Artist" Classes="lbl" VerticalAlignment="Center"/>
-              <TextBox   Grid.Row="1" Grid.Column="2" x:Name="ArtistBox" Classes="val"/>
-
-              <TextBlock Grid.Row="2" Grid.Column="1" Text="Album"  Classes="lbl" VerticalAlignment="Center"/>
-              <TextBox   Grid.Row="2" Grid.Column="2" x:Name="AlbumBox"  Classes="val"/>
+              <TextBox Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val" FontSize="14"/>
+              <TextBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val"/>
+              <TextBox Grid.Row="2" Grid.Column="1" x:Name="AlbumBox"  Classes="val"/>
             </Grid>
 
             <TextBlock Text="ALBUM" Classes="sectionHeader"/>
