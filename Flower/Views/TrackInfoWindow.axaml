@@ -68,9 +68,11 @@
       </Grid>
     </Border>
 
-    <!-- ── Persistent header: art + title/artist/album, shown above the tabs
-         so it stays visible regardless of which tab is selected ── -->
-    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="24,16,24,0">
+    <!-- ── Persistent header: art + read-only title/artist/album display,
+         shown above the tabs so it stays visible regardless of which tab is
+         selected. This is display-only - the actual editable Title/Artist/
+         Album fields live in the Info tab below, alongside everything else. ── -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="24,16,24,0">
       <!-- Fixed size, deliberately not bound to the text fields' own
            measured height: an Image with no explicit size measures
            itself against the embedded art's native pixel resolution
@@ -78,16 +80,18 @@
            height here fed that back into the Grid's own auto-row
            sizing - producing an occasionally huge box that visibly
            snapped to a different size once layout re-settled. -->
-      <Border Grid.Column="0" Grid.RowSpan="3"
+      <Border Grid.Column="0"
               Width="76" Height="76" Margin="0,0,16,0"
               CornerRadius="4" ClipToBounds="True"
               Background="#30808080">
         <Image x:Name="AlbumArtImage" Stretch="UniformToFill"/>
       </Border>
 
-      <TextBox Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val" FontSize="18"/>
-      <TextBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val" FontSize="14"/>
-      <TextBox Grid.Row="2" Grid.Column="1" x:Name="AlbumBox"  Classes="val" FontSize="14"/>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+        <SelectableTextBlock x:Name="TitleDisplay"  FontSize="18" TextWrapping="Wrap"/>
+        <SelectableTextBlock x:Name="ArtistDisplay" FontSize="14" Opacity="0.7" TextWrapping="Wrap"/>
+        <SelectableTextBlock x:Name="AlbumDisplay"  FontSize="14" Opacity="0.7" TextWrapping="Wrap"/>
+      </StackPanel>
     </Grid>
 
     <TabControl Margin="0,8,0,0">
@@ -96,6 +100,18 @@
       <TabItem Header="Info">
         <ScrollViewer>
           <StackPanel Margin="24,16,24,8" Spacing="0">
+
+            <TextBlock Text="GENERAL" Classes="sectionHeader"/>
+            <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,14">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="Title"  Classes="lbl"/>
+              <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val"/>
+
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="Artist" Classes="lbl"/>
+              <TextBox   Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val"/>
+
+              <TextBlock Grid.Row="2" Grid.Column="0" Text="Album"  Classes="lbl"/>
+              <TextBox   Grid.Row="2" Grid.Column="1" x:Name="AlbumBox"  Classes="val"/>
+            </Grid>
 
             <TextBlock Text="ALBUM" Classes="sectionHeader"/>
             <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,14">

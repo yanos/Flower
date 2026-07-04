@@ -169,6 +169,12 @@ public partial class TrackInfoWindow : Window
             }
         }
 
+        // Persistent header display (read-only - editing happens via the
+        // Title/Artist/Album fields under the Info tab, part of _fields above).
+        TitleDisplay.Text  = UniformOrMixed(t => t.Title   ?? "");
+        ArtistDisplay.Text = UniformOrMixed(t => t.Artists ?? "");
+        AlbumDisplay.Text  = UniformOrMixed(t => t.Album   ?? "");
+
         // Technical (read-only)
         DurationValue.Text   = UniformOrMixed(t => _durationConverter.Convert(t.Duration, typeof(string), null, CultureInfo.CurrentCulture) as string ?? "—");
         CodecValue.Text      = UniformOrMixed(t => t.Codec ?? "—");
