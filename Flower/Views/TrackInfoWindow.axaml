@@ -73,11 +73,18 @@
          selected. This is display-only - the actual editable Title/Artist/
          Album fields live in the Info tab below, alongside everything else. ── -->
     <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="24,16,24,0">
+      <!-- Only Height is fixed - Width is left to size off the Image's own
+           aspect ratio (via Stretch="Uniform") so non-square art is not
+           forced into a square crop. MinWidth is a floor for when there's no
+           image yet (still loading, or the track has no art at all) - an
+           empty Image has no intrinsic size, so without it this Border (and
+           its placeholder background) would collapse to zero width instead
+           of showing a visible square placeholder. -->
       <Border Grid.Column="0"
-              Width="256" Height="256" Margin="0,0,16,0"
+              Height="200" MinWidth="200" Margin="0,0,16,0"
               CornerRadius="4" ClipToBounds="True"
               Background="#30808080">
-        <Image x:Name="AlbumArtImage" Stretch="UniformToFill"/>
+        <Image x:Name="AlbumArtImage" Stretch="Uniform"/>
       </Border>
 
       <StackPanel x:Name="TitleStack" Grid.Column="1" VerticalAlignment="Top" Spacing="4">
