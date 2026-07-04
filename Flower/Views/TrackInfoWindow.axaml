@@ -76,13 +76,11 @@
          selected. This is display-only - the actual editable Title/Artist/
          Album fields live in the Info tab below, alongside everything else. ── -->
     <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="24,16,24,0">
-      <!-- Only Height is fixed - Width is left to size off the art's own
-           aspect ratio (via Stretch="Uniform") so non-square art is not
-           forced into a square crop. MinWidth is a floor for when there's no
-           image yet (still loading, or the track has no art at all) - an
-           empty Image has no intrinsic size, so without it this control
-           would collapse to zero width instead of showing a visible square
-           placeholder. -->
+      <!-- Fixed 200×200 box; Stretch="Uniform" letterboxes non-square art
+           inside it rather than cropping it (AlbumArtView's default
+           UniformToFill would crop). MinWidth is a floor for when there's no
+           image yet (still loading, or the track has no art at all) so the
+           box doesn't collapse to zero width before art loads. -->
       <controls:AlbumArtView x:Name="AlbumArtView"
               Grid.Column="0"
               Height="200" MinWidth="200" Margin="0,0,16,0"
