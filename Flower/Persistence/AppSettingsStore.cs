@@ -10,6 +10,15 @@ namespace Flower.Persistence
     public class AppSettings
     {
         public List<string> LibraryPaths { get; set; } = new();
+
+        // Main window geometry, saved on close and restored on the next
+        // launch. Null until the window has been closed at least once (first
+        // run falls back to Avalonia's own default size/placement).
+        public double? WindowWidth       { get; set; }
+        public double? WindowHeight      { get; set; }
+        public double? WindowX           { get; set; }
+        public double? WindowY           { get; set; }
+        public bool    WindowIsMaximized { get; set; }
     }
 
     public class AppSettingsStore
@@ -60,6 +69,15 @@ namespace Flower.Persistence
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var json = JsonSerializer.Serialize(settings, Options);
             await File.WriteAllTextAsync(path, json);
+        }
+
+        // Synchronous counterpart for the Window.Closing handler, where the
+        // process may exit before an async save completes.
+        public void Save(AppSettings settings)
+        {
+            var path = StorePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(settings, Options));
         }
     }
 }

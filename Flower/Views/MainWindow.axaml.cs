@@ -1,17 +1,52 @@
 using System.Linq;
 
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 
+using CommunityToolkit.Mvvm.DependencyInjection;
+
+using Flower.Persistence;
 using Flower.Services;
 
 namespace Flower.Views;
 
 public partial class MainWindow : Window
 {
+    private readonly AppSettings _appSettings;
+
+    // Tracks the window's bounds while in WindowState.Normal, since that's
+    // what should be restored on the next launch - saving the bounds reported
+    // while maximized/minimized would lose the size the user actually set.
+    private double     _normalWidth;
+    private double     _normalHeight;
+    private PixelPoint _normalPosition;
+
     public MainWindow()
     {
         InitializeComponent();
+
+        _appSettings  = Ioc.Default.GetService<AppSettings>()!;
+        _normalWidth  = Width;
+        _normalHeight = Height;
+        _normalPosition = Position;
+
+        RestoreWindowGeometry();
+
+        PositionChanged += (_, e) =>
+        {
+            if (WindowState == WindowState.Normal)
+                _normalPosition = e.Point;
+        };
+        Resized += (_, e) =>
+        {
+            if (WindowState == WindowState.Normal)
+            {
+                _normalWidth  = e.ClientSize.Width;
+                _normalHeight = e.ClientSize.Height;
+            }
+        };
+        Closing += (_, _) => SaveWindowGeometry();
 
         // The gestures shown in the native menu bar must match MainView's actual
         // key handling (Cmd on macOS, Ctrl elsewhere), so set them here instead
@@ -39,5 +74,54 @@ public partial class MainWindow : Window
         if (zoomItem != null)
             zoomItem.Click += (_, _) =>
                 WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    }
+
+    private void RestoreWindowGeometry()
+    {
+        if (_appSettings.WindowWidth is double w && _appSettings.WindowHeight is double h)
+        {
+            Width         = w;
+            Height        = h;
+            _normalWidth  = w;
+            _normalHeight = h;
+        }
+
+        // Only restore the saved position if it still lands on a currently
+        // connected screen - otherwise (e.g. an external monitor got
+        // unplugged) the window would open off-screen and be unreachable.
+        if (_appSettings.WindowX is double x && _appSettings.WindowY is double y)
+        {
+            var candidate = new PixelPoint((int)x, (int)y);
+            if (Screens.All.Any(s => s.Bounds.Contains(candidate)))
+            {
+                Position        = candidate;
+                _normalPosition = candidate;
+            }
+        }
+
+        if (_appSettings.WindowIsMaximized)
+            WindowState = WindowState.Maximized;
+    }
+
+    private void SaveWindowGeometry()
+    {
+        // _normalWidth/_normalHeight are seeded from Width/Height at
+        // construction time, which read as NaN until the first layout pass
+        // resolves a real size - if the window closes before any Resized
+        // event ever fires (e.g. closed within the first instant), they'd
+        // still be NaN here. NaN/Infinity can't be written as JSON, so only
+        // persist them if they ended up finite; otherwise leave whatever was
+        // already saved (or nothing, on a first run) rather than crashing.
+        if (double.IsFinite(_normalWidth) && double.IsFinite(_normalHeight))
+        {
+            _appSettings.WindowWidth  = _normalWidth;
+            _appSettings.WindowHeight = _normalHeight;
+        }
+
+        _appSettings.WindowX           = _normalPosition.X;
+        _appSettings.WindowY           = _normalPosition.Y;
+        _appSettings.WindowIsMaximized = WindowState == WindowState.Maximized;
+
+        new AppSettingsStore().Save(_appSettings);
     }
 }
