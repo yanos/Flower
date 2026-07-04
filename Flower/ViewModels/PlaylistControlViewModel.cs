@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 
 using Avalonia.Threading;
 
@@ -13,10 +14,38 @@ namespace Flower.ViewModels
         private Playlist _currentPlaylist;
         private Track? _currentlyPlayingTrack;
         private Track? _selectedTrack;
+        private bool _isRepeatEnabled;
+        private bool _isShuffleEnabled;
+        private readonly Random _random = new();
         private readonly Library _library;
+        private readonly AppSettings _appSettings;
 
         private IAudioManager _audioManager { get; }
-        
+
+        // Loops the currently playing track instead of advancing when it ends.
+        // Only applies to natural end-of-track auto-advance; manual Next()/Previous() still move.
+        public bool IsRepeatEnabled
+        {
+            get => _isRepeatEnabled;
+            set
+            {
+                _isRepeatEnabled = value;
+                OnPropertyChanged();
+            }
+        }
+
+        // Picks a random track (instead of the next one in order) whenever the
+        // queue advances, whether that's auto-advance on end-of-track or a manual Next().
+        public bool IsShuffleEnabled
+        {
+            get => _isShuffleEnabled;
+            set
+            {
+                _isShuffleEnabled = value;
+                OnPropertyChanged();
+            }
+        }
+
         public Track? SelectedTrack
         { 
             get => _selectedTrack;
@@ -44,11 +73,15 @@ namespace Flower.ViewModels
         public PlaylistControlViewModel(
             IAudioManager audioManager,
             MainPlaylist playlist,
-            Library library)
+            Library library,
+            AppSettings appSettings)
         {
             _audioManager = audioManager;
             _currentPlaylist = playlist;
             _library = library;
+            _appSettings = appSettings;
+            _isRepeatEnabled = appSettings.IsRepeatEnabled;
+            _isShuffleEnabled = appSettings.IsShuffleEnabled;
 
             _audioManager.Playing += (s, e) =>
             {
@@ -75,7 +108,7 @@ namespace Flower.ViewModels
                     _library.UpdateTracks(_library.Tracks);
                     await new LibraryStore().SaveAsync(_library.Tracks);
 
-                    var nextTrack = _currentPlaylist.GetNextTrack(finishedTrack);
+                    var nextTrack = IsRepeatEnabled ? finishedTrack : GetNextTrack(finishedTrack);
                     if (nextTrack != null)
                     {
                         Dispatcher.UIThread.Post(() => Play(nextTrack));
@@ -87,6 +120,35 @@ namespace Flower.ViewModels
         public void SetCurrentPlaylist(Playlist playlist)
         {
             _currentPlaylist = playlist;
+        }
+
+        public void ToggleRepeat()
+        {
+            IsRepeatEnabled = !IsRepeatEnabled;
+            _appSettings.IsRepeatEnabled = IsRepeatEnabled;
+            _ = new AppSettingsStore().SaveAsync(_appSettings);
+        }
+
+        public void ToggleShuffle()
+        {
+            IsShuffleEnabled = !IsShuffleEnabled;
+            _appSettings.IsShuffleEnabled = IsShuffleEnabled;
+            _ = new AppSettingsStore().SaveAsync(_appSettings);
+        }
+
+        private Track? GetNextTrack(Track currentTrack)
+        {
+            if (IsShuffleEnabled && _currentPlaylist.Tracks.Count > 1)
+            {
+                Track candidate;
+                do
+                {
+                    candidate = _currentPlaylist.Tracks[_random.Next(_currentPlaylist.Tracks.Count)];
+                } while (candidate == currentTrack);
+                return candidate;
+            }
+
+            return _currentPlaylist.GetNextTrack(currentTrack);
         }
 
         public void PlayOrPause()
@@ -129,7 +191,7 @@ namespace Flower.ViewModels
         {
             if (CurrentlyPlayingTrack != null)
             {
-                var nextTrack = _currentPlaylist.GetNextTrack(CurrentlyPlayingTrack);
+                var nextTrack = GetNextTrack(CurrentlyPlayingTrack);
                 if (nextTrack != null)
                 {
                     Play(nextTrack);
