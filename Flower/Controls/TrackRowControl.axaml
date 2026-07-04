@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Flower.ViewModels"
+             xmlns:controls="clr-namespace:Flower.Controls"
              x:Class="Flower.Controls.TrackRowControl"
              x:DataType="vm:TrackRowViewModel"
              x:CompileBindings="True"
@@ -41,24 +42,13 @@
            ClipToBounds="False"
            IsVisible="{Binding IsFirstInAlbumGroup}">
 
-      <!-- Placeholder shown while art is loading or absent -->
-      <Border Background="#30808080"
-              CornerRadius="2"
-              IsHitTestVisible="False"
-              IsVisible="{Binding AlbumArt, Converter={x:Static ObjectConverters.IsNull}}"
+      <!-- Album art (or placeholder); height = min(groupSize × rowHeight, maxArt) — spans multiple rows visually -->
+      <controls:AlbumArtView IsHitTestVisible="False"
               Width="{Binding AlbumArtDisplaySize}"
               Height="{Binding AlbumArtDisplaySize}"
               VerticalAlignment="Top"
-              HorizontalAlignment="Center"/>
-
-      <!-- Album art; height = min(groupSize × rowHeight, maxArt) — spans multiple rows visually -->
-      <Image x:Name="ArtImage"
-             Width="{Binding AlbumArtDisplaySize}"
-             Height="{Binding AlbumArtDisplaySize}"
-             VerticalAlignment="Top"
-             HorizontalAlignment="Center"
-             Stretch="UniformToFill"
-             Source="{Binding AlbumArt}"/>
+              HorizontalAlignment="Center"
+              AlbumArt="{Binding AlbumArt}"/>
     </Panel>
 
     <!-- ── Data cells (built in code-behind from ColumnManager) ──────────── -->

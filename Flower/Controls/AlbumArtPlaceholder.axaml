@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Flower.Controls.AlbumArtPlaceholder"
+             x:Name="Root"
+             x:CompileBindings="False">
+
+  <!-- Shown wherever a track/album has no cover art (loading or absent). The
+       note glyph is drawn at a fixed size inside a fixed-size Grid, then a
+       Viewbox scales that whole template uniformly to fill whatever size the
+       caller gives this control - so the glyph is always the same proportion
+       of the box, no matter whether it's a 28px row thumbnail or a 200px
+       Track Info header. -->
+  <Border Background="#18FFFFFF"
+          CornerRadius="{Binding #Root.CornerRadius}">
+    <Viewbox Stretch="Uniform">
+      <Grid Width="100" Height="100">
+        <TextBlock Text="♫"
+                   FontSize="50"
+                   FontWeight="Bold"
+                   Foreground="#606060"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"/>
+      </Grid>
+    </Viewbox>
+  </Border>
+</UserControl>

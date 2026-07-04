@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             x:Class="Flower.Controls.AlbumArtView"
+             x:Name="Root"
+             x:CompileBindings="False">
+
+  <!-- Single shared "cover art" presentation: a rounded black outline around
+       either the track's art or the AlbumArtPlaceholder note glyph when
+       there is none. Used by the main track list rows, the currently
+       playing control, and the Track Info window, so the outline/placeholder
+       look only ever needs to change in one place. Stretch defaults to
+       UniformToFill (crop to fill a square cell); Track Info sets it to
+       Uniform instead so non-square art isn't cropped. -->
+  <Border BorderBrush="#80000000"
+          BorderThickness="1"
+          CornerRadius="4">
+    <Border CornerRadius="3"
+            ClipToBounds="True">
+      <Panel>
+        <controls:AlbumArtPlaceholder HorizontalAlignment="Stretch"
+                                       VerticalAlignment="Stretch"
+                                       IsVisible="{Binding #Root.AlbumArt, Converter={x:Static ObjectConverters.IsNull}}"/>
+        <Image Source="{Binding #Root.AlbumArt}"
+               Stretch="{Binding #Root.Stretch}"
+               IsVisible="{Binding #Root.AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+      </Panel>
+    </Border>
+  </Border>
+</UserControl>
