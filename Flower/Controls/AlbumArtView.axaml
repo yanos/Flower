@@ -15,15 +15,32 @@
   <Border BorderBrush="#80000000"
           BorderThickness="1"
           CornerRadius="4">
-    <Border CornerRadius="3"
+    <Border x:Name="ClipBorder"
+            CornerRadius="3"
             ClipToBounds="True">
       <Panel>
         <controls:AlbumArtPlaceholder HorizontalAlignment="Stretch"
                                        VerticalAlignment="Stretch"
                                        IsVisible="{Binding #Root.AlbumArt, Converter={x:Static ObjectConverters.IsNull}}"/>
-        <Image Source="{Binding #Root.AlbumArt}"
-               Stretch="{Binding #Root.Stretch}"
-               IsVisible="{Binding #Root.AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+        <!-- Image lives inside a Canvas, and its size is bound explicitly to
+             ClipBorder's own rendered bounds rather than left to flow
+             normally. A bare Image measures to its source bitmap's own
+             pixel size when given room to do so, and some embedded covers
+             are far larger than this control's display size - without this,
+             that intrinsic size bubbles up through Measure (ClipToBounds
+             only affects painting, not layout) and can inflate an ancestor
+             Auto-sized Grid row/column to match, ballooning the whole
+             window. A Canvas never reports its children's size to its own
+             parent, so wiring the Image's size to ClipBorder.Bounds here
+             keeps it exactly cell-sized no matter how large the source is. -->
+        <Canvas IsVisible="{Binding #Root.AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch">
+          <Image Source="{Binding #Root.AlbumArt}"
+                 Stretch="{Binding #Root.Stretch}"
+                 Width="{Binding #ClipBorder.Bounds.Width}"
+                 Height="{Binding #ClipBorder.Bounds.Height}"/>
+        </Canvas>
       </Panel>
     </Border>
   </Border>
