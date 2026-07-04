@@ -4,7 +4,7 @@
         x:Class="Flower.Views.TrackInfoWindow"
         Title="Track Info"
         Width="460"
-        Height="790"
+        SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
