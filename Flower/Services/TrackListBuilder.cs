@@ -19,10 +19,7 @@ public static class TrackListBuilder
         var filtered = Filter(tracks, filterText).ToList();
         var sorted   = Sort(filtered, sortColumn, sortAscending, sortArtistAlbumsByYear).ToList();
 
-        bool groupByAlbum = string.Equals(sortColumn, "Album", StringComparison.OrdinalIgnoreCase)
-                         || string.Equals(sortColumn, "TrackNumber", StringComparison.OrdinalIgnoreCase);
-
-        return BuildRows(sorted, groupByAlbum, currentlyPlayingTrack);
+        return BuildRows(sorted, currentlyPlayingTrack);
     }
 
     private static IEnumerable<Track> Filter(IEnumerable<Track> tracks, string? text)
@@ -65,48 +62,35 @@ public static class TrackListBuilder
             ? tracks.OrderBy(t => t.Artists ?? "").ThenBy(t => t.Year ?? "").ThenBy(t => t.Album ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber)
             : tracks.OrderBy(t => t.Artists ?? "").ThenBy(t => t.Album ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber);
 
+    // Groups runs of consecutive tracks that share an album so the row list can
+    // render a single spanning album-art cell for the whole run, no matter what
+    // produced the adjacency (an explicit album sort, or another sort/column
+    // whose secondary keys happen to keep an album's tracks together).
     private static List<TrackRowViewModel> BuildRows(
         List<Track> tracks,
-        bool groupByAlbum,
         Track? currentlyPlaying)
     {
         var result = new List<TrackRowViewModel>(tracks.Count);
 
-        if (groupByAlbum)
+        int i = 0;
+        while (i < tracks.Count)
         {
-            int i = 0;
-            while (i < tracks.Count)
-            {
-                var albumKey = tracks[i].Album ?? "";
-                int j = i;
-                while (j < tracks.Count && (tracks[j].Album ?? "") == albumKey) j++;
-                int groupSize = j - i;
+            var albumKey = tracks[i].Album ?? "";
+            int j = i;
+            while (j < tracks.Count && (tracks[j].Album ?? "") == albumKey) j++;
+            int groupSize = j - i;
 
-                for (int k = i; k < j; k++)
-                {
-                    result.Add(new TrackRowViewModel
-                    {
-                        Track              = tracks[k],
-                        IsFirstInAlbumGroup = k == i,
-                        AlbumGroupSize     = groupSize,
-                        IsCurrentlyPlaying = tracks[k].Path == currentlyPlaying?.Path,
-                    });
-                }
-                i = j;
-            }
-        }
-        else
-        {
-            foreach (var track in tracks)
+            for (int k = i; k < j; k++)
             {
                 result.Add(new TrackRowViewModel
                 {
-                    Track              = track,
-                    IsFirstInAlbumGroup = true,
-                    AlbumGroupSize     = 1,
-                    IsCurrentlyPlaying = track.Path == currentlyPlaying?.Path,
+                    Track              = tracks[k],
+                    IsFirstInAlbumGroup = k == i,
+                    AlbumGroupSize     = groupSize,
+                    IsCurrentlyPlaying = tracks[k].Path == currentlyPlaying?.Path,
                 });
             }
+            i = j;
         }
 
         return result;
