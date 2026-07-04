@@ -61,6 +61,21 @@ public class TrackListBuilderTests
     }
 
     [Fact]
+    public void Sort_by_title_ignores_non_alphanumeric_characters()
+    {
+        var tracks = new List<Track>
+        {
+            T("Bravo!"),
+            T("(Alpha)"),
+            T("Char-lie"),
+        };
+
+        var rows = TrackListBuilder.Build(tracks, null, "Title", true);
+
+        Assert.Equal(new[] { "(Alpha)", "Bravo!", "Char-lie" }, rows.ConvertAll(r => r.Track.Title));
+    }
+
+    [Fact]
     public void Sort_by_tracknumber_orders_by_album_then_disc_then_track_number()
     {
         var tracks = new List<Track>

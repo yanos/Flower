@@ -40,15 +40,15 @@ public static class TrackListBuilder
 
         IEnumerable<Track> ordered = col switch
         {
-            "TrackNumber" => tracks.OrderBy(t => t.Album ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
-            "Title"       => tracks.OrderBy(t => t.Title   ?? ""),
+            "TrackNumber" => tracks.OrderBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
+            "Title"       => tracks.OrderBy(t => SortKey(t.Title)),
             "Artist"      => SortByArtist(tracks, sortArtistAlbumsByYear),
-            "Album"       => tracks.OrderBy(t => t.Album   ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
-            "Year"        => tracks.OrderBy(t => t.Year    ?? ""),
-            "Genre"       => tracks.OrderBy(t => t.Genre   ?? ""),
+            "Album"       => tracks.OrderBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
+            "Year"        => tracks.OrderBy(t => SortKey(t.Year)),
+            "Genre"       => tracks.OrderBy(t => SortKey(t.Genre)),
             "Duration"    => tracks.OrderBy(t => t.Duration),
             "PlayCount"   => tracks.OrderBy(t => t.PlayCount),
-            _             => tracks.OrderBy(t => t.Album   ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
+            _             => tracks.OrderBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
         };
         return asc ? ordered : ordered.Reverse();
     }
@@ -59,8 +59,18 @@ public static class TrackListBuilder
     // within an album.
     private static IOrderedEnumerable<Track> SortByArtist(IEnumerable<Track> tracks, bool sortAlbumsByYear) =>
         sortAlbumsByYear
-            ? tracks.OrderBy(t => t.Artists ?? "").ThenBy(t => t.Year ?? "").ThenBy(t => t.Album ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber)
-            : tracks.OrderBy(t => t.Artists ?? "").ThenBy(t => t.Album ?? "").ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber);
+            ? tracks.OrderBy(t => SortKey(t.Artists)).ThenBy(t => SortKey(t.Year)).ThenBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber)
+            : tracks.OrderBy(t => SortKey(t.Artists)).ThenBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber);
+
+    // Strips everything but letters/digits before comparing, so punctuation,
+    // symbols, and spacing differences (leading quotes/brackets, "&" vs
+    // "and", double vs. no space, etc.) don't affect sort order.
+    private static string SortKey(string? s)
+    {
+        if (string.IsNullOrEmpty(s))
+            return "";
+        return new string(s.Where(char.IsLetterOrDigit).ToArray());
+    }
 
     // Groups runs of consecutive tracks that share an album so the row list can
     // render a single spanning album-art cell for the whole run, no matter what
