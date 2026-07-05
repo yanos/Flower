@@ -29,7 +29,23 @@ public class ColumnManager
             ApplySaved(saved);
 
         foreach (var col in Columns)
-            col.PropertyChanged += (_, _) => { ColumnsChanged?.Invoke(this, EventArgs.Empty); ScheduleSave(); };
+            col.PropertyChanged += (_, e) =>
+            {
+                // Width changes are already reflected live via each header
+                // cell's own binding (see MusicListView.MakeHeaderCell) and each
+                // row cell's direct width-sync subscription (see
+                // TrackRowControl.BuildCells) - firing ColumnsChanged here too
+                // would make MusicListView's ColumnsChanged handler rebuild the
+                // whole header on every pixel of a resize drag, destroying and
+                // replacing the very header cell (and its resize handle) whose
+                // pointer capture is driving that drag, killing the gesture
+                // after its first tiny movement. IsVisible/Order changes still
+                // need the rebuild since those change which cells exist or
+                // their sequence.
+                if (e.PropertyName != nameof(MusicColumnDefinition.Width))
+                    ColumnsChanged?.Invoke(this, EventArgs.Empty);
+                ScheduleSave();
+            };
     }
 
     // Moves `column` so it becomes the `newVisibleIndex`-th visible column
