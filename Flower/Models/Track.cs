@@ -48,8 +48,15 @@ namespace Flower.Models
         // File
         public string? Path { get; set; }
 
-        // Stats
+        // Stats. PlayCount is Flower's own count, incremented on natural
+        // end-of-track (see PlaylistControlViewModel); ImportedPlayCount comes
+        // from iTunes/Music.app's library export when that sync is enabled
+        // (see ITunesPlayCountImporter) - kept as separate fields so re-running
+        // (or disabling) the import can never clobber plays Flower itself
+        // recorded. TrackRowViewModel.PlayCountDisplay is what sums the two
+        // for display.
         public int PlayCount { get; set; }
+        public int ImportedPlayCount { get; set; }
 
         // When this track first appeared in the library. Defaults to "now" for a
         // freshly-imported Track; Library.UpdateTracks carries the original value

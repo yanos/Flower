@@ -61,6 +61,19 @@ namespace Flower.Persistence
             await File.WriteAllTextAsync(path, json);
         }
 
+        // Synchronous counterpart for the Window.Closing handler, where the
+        // process may exit before an async save completes - see AppSettingsStore.Save
+        // and ColumnManager.Flush for the same pattern. Without this, quitting
+        // shortly after a track naturally ends (PlaylistControlViewModel.EndReached
+        // increments PlayCount and kicks off a fire-and-forget SaveAsync) can exit
+        // before that write lands, so the increment is silently lost on next launch.
+        public void Save(IEnumerable<Track> tracks)
+        {
+            var path = StorePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(tracks, Options));
+        }
+
         private sealed class TimeSpanTicksConverter : JsonConverter<TimeSpan>
         {
             public override TimeSpan Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

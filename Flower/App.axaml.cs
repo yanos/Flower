@@ -110,7 +110,13 @@ public partial class App : Application
             mainPlaylist.ReplaceAll(freshTracks);
             library.UpdateTracks(freshTracks);
 
-            await libraryStore.SaveAsync(freshTracks);
+            await libraryStore.SaveAsync(library.Tracks);
+
+            // SyncITunesPlayCountAsync does its own save (it may run again
+            // later via the Settings checkbox, independent of this startup
+            // rescan) and drives the status bar spinner via BeginBusy.
+            if (appSettings.SyncPlayCountFromITunes)
+                await mainViewModel.SyncITunesPlayCountAsync();
         });
     }
 

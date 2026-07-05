@@ -33,6 +33,12 @@ namespace Flower.Persistence
         // When sorting by Artist, order each artist's albums by year instead of
         // however they happened to appear - see MainViewModel.SortArtistAlbumsByYear.
         public bool SortArtistAlbumsByYear { get; set; }
+
+        // Whether to import per-track play counts from iTunes/Music.app's
+        // optional library XML export on every launch - see
+        // ITunesPlayCountImporter and Track.ImportedPlayCount. On by default;
+        // it's a harmless no-op when no such export exists on disk.
+        public bool SyncPlayCountFromITunes { get; set; } = true;
     }
 
     public class ColumnState

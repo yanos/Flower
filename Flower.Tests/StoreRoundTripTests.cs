@@ -4,8 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Flower.Controls;
+using Flower.Importer;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.ViewModels;
 
 namespace Flower.Tests;
 
@@ -56,6 +58,87 @@ public class StoreRoundTripTests : IDisposable
     {
         var loaded = await new LibraryStore().LoadAsync();
         Assert.Empty(loaded);
+    }
+
+    // Save (synchronous) is the Window.Closing counterpart to SaveAsync - see
+    // its doc comment - so a track that just finished (incrementing PlayCount
+    // via a fire-and-forget SaveAsync) isn't lost if the app quits before that
+    // write lands. Must round-trip identically to the async path.
+    [Fact]
+    public void LibraryStore_Save_round_trips_tracks_synchronously()
+    {
+        var tracks = new List<Track>
+        {
+            new Track { Title = "A", Artists = "X", PlayCount = 1, Duration = TimeSpan.FromSeconds(125), Path = "/music/a.mp3" },
+        };
+
+        new LibraryStore().Save(tracks);
+        var loaded = new LibraryStore().Load();
+
+        Assert.Single(loaded);
+        Assert.Equal("A", loaded[0].Title);
+        Assert.Equal(1, loaded[0].PlayCount);
+    }
+
+    // Minimal stand-in for VlcAudioManager, just for raising EndReached below -
+    // see PlaylistControlViewModelTests.FakeAudioManager for why that test
+    // class never raises EndReached itself (needs a live Avalonia dispatcher).
+    // This test avoids that by giving PlaylistControlViewModel an empty
+    // current playlist, so GetNextTrack returns null and the handler never
+    // reaches its Dispatcher.UIThread.Post call - this test lives here (not
+    // there) because it does touch LibraryStore for real and needs this
+    // class's HOME redirection.
+    private sealed class FakeAudioManager : Flower.Manager.IAudioManager
+    {
+        public bool IsPlaying { get; set; }
+        public int Volume { get; set; }
+        public float Position { get; set; }
+        public long Time { get; set; }
+        public long Length { get; set; }
+        public void Play(Track track) { }
+        public void Resume() { }
+        public void Pause() { }
+        public void Stop() { }
+        public void RaiseEndReached() => EndReached?.Invoke(this, EventArgs.Empty);
+#pragma warning disable CS0067
+        public event EventHandler? Paused;
+        public event EventHandler? Stopped;
+        public event EventHandler? Playing;
+        public event EventHandler? PositionChanged;
+        public event EventHandler? VolumeChanged;
+        public event EventHandler? EndReached;
+#pragma warning restore CS0067
+    }
+
+    // Regression test for the reported bug: play a track, it counts, but a
+    // restart reverts it to 0. Root cause - every launch kicks off a
+    // background rescan (App.axaml.cs) that replaces Library.Tracks with
+    // brand-new Track instances for every file, even unchanged ones. If that
+    // rescan lands while a track is still playing (plenty of time if e.g. the
+    // user alt-tabs to Music.app and back), CurrentlyPlayingTrack is left
+    // pointing at the old, now-discarded instance. Incrementing PlayCount on
+    // that orphaned object used to be silently lost, since it's no longer in
+    // Library.Tracks and never gets saved.
+    [Fact]
+    public void EndReached_increments_PlayCount_on_the_current_library_track_even_if_a_rescan_replaced_it_mid_playback()
+    {
+        var oldTrack = new Track { Title = "A", Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { oldTrack });
+        var emptyPlaylist = new MainPlaylist(new List<Track>());
+        var audio = new FakeAudioManager();
+        var vm = new PlaylistControlViewModel(audio, emptyPlaylist, library, new AppSettings());
+
+        vm.Play(oldTrack);
+
+        // Simulate a rescan landing while oldTrack is still "playing": a
+        // brand-new Track instance for the same file replaces it in the library.
+        var newTrack = new Track { Title = "A", Path = "/music/a.mp3" };
+        library.UpdateTracks(new List<Track> { newTrack });
+
+        audio.RaiseEndReached();
+
+        Assert.Equal(1, newTrack.PlayCount);
+        Assert.Equal(0, oldTrack.PlayCount);
     }
 
     [Fact]
@@ -231,4 +314,135 @@ public class StoreRoundTripTests : IDisposable
         var only = Assert.Single(loaded);
         Assert.NotEqual(Guid.Empty, only.Id);
     }
+
+    // These test ApplyFromXmlFile directly, against an explicit synthetic XML
+    // path, rather than the full Apply(tracks) entry point - Apply() always
+    // tries a *live* AppleScript export from Music.app first (see
+    // ITunesPlayCountImporter's class comment) and wins on any machine that
+    // actually has Music.app installed, including the one this was developed
+    // on, which would make these tests see real library data instead of the
+    // synthetic fixture below.
+
+    [Fact]
+    public void ITunesPlayCountImporter_applies_play_count_from_a_library_export()
+    {
+        var xmlPath = Path.Combine(_tempHome, "sample-library.xml");
+        File.WriteAllText(xmlPath, SampleLibraryXml(17));
+
+        // Deliberately a completely different path than anything in the XML -
+        // matching is by Track.SyncKey (title/artist/album/duration), not
+        // path, precisely because a real classic-iTunes export's paths don't
+        // survive Apple's later iTunes-to-Music.app migration (confirmed
+        // against a real library: the export still pointed at
+        // ~/Music/iTunes/iTunes Music/..., while the actual files had long
+        // since moved to ~/Music/Music/Media.localized/...).
+        var track = new Track
+        {
+            Title = "Test Song", Artists = "Test Artist", Album = "Test Album",
+            Duration = TimeSpan.FromSeconds(200),
+            Path = "/completely/different/path/song.mp3",
+        };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(17, track.ImportedPlayCount);
+    }
+
+    [Fact]
+    public void ITunesPlayCountImporter_does_not_match_a_track_with_a_different_duration()
+    {
+        var xmlPath = Path.Combine(_tempHome, "sample-library.xml");
+        File.WriteAllText(xmlPath, SampleLibraryXml(17));
+
+        // Same title/artist/album as the XML entry, but a different length -
+        // a genuinely different recording (e.g. a remix or live version),
+        // which SyncKey correctly treats as not the same track.
+        var track = new Track
+        {
+            Title = "Test Song", Artists = "Test Artist", Album = "Test Album",
+            Duration = TimeSpan.FromSeconds(45),
+            Path = "/music/song.mp3",
+        };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(0, track.ImportedPlayCount);
+    }
+
+    [Fact]
+    public void ITunesPlayCountImporter_leaves_ImportedPlayCount_alone_for_a_nonexistent_file()
+    {
+        var track = new Track { Title = "Test Song", Path = "/music/song.mp3", ImportedPlayCount = 3 };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, Path.Combine(_tempHome, "does-not-exist.xml"));
+
+        Assert.Equal(3, track.ImportedPlayCount);
+    }
+
+    // ResolveLibraryXmlPath is the fallback used when Apply()'s live export
+    // isn't available - tested directly here (rather than through Apply)
+    // since it's a pure, deterministic function of what's on disk.
+
+    [Fact]
+    public void ResolveLibraryXmlPath_prefers_the_Music_app_export_when_both_exist()
+    {
+        if (!OperatingSystem.IsMacOS())
+            return; // the resolver itself is macOS-only - nothing to exercise elsewhere
+
+        // A machine that migrated from classic iTunes to Music.app can easily
+        // have both files sitting on disk - the Music.app one is the actively
+        // maintained one and must win, not whichever happens to be checked first.
+        var musicLibraryDir = Path.Combine(_tempHome, "Music", "Music");
+        Directory.CreateDirectory(musicLibraryDir);
+        var musicAppPath = Path.Combine(musicLibraryDir, "Music Library.xml");
+        File.WriteAllText(musicAppPath, SampleLibraryXml(99));
+
+        var iTunesDir = Path.Combine(_tempHome, "Music", "iTunes");
+        Directory.CreateDirectory(iTunesDir);
+        File.WriteAllText(Path.Combine(iTunesDir, "iTunes Music Library.xml"), SampleLibraryXml(4));
+
+        Assert.Equal(musicAppPath, ITunesPlayCountImporter.ResolveLibraryXmlPath());
+    }
+
+    [Fact]
+    public void ResolveLibraryXmlPath_finds_a_classic_iTunes_export_when_thats_all_that_exists()
+    {
+        if (!OperatingSystem.IsMacOS())
+            return;
+
+        // Regression coverage for the actual bug: a real classic-iTunes export
+        // lives at "~/Music/iTunes/iTunes Music Library.xml" - a different
+        // folder ("iTunes", not "Music") AND filename ("iTunes Music Library.xml",
+        // not "iTunes Library.xml") than originally guessed, so this silently
+        // found nothing on a real machine that actually had one.
+        var iTunesDir = Path.Combine(_tempHome, "Music", "iTunes");
+        Directory.CreateDirectory(iTunesDir);
+        var iTunesPath = Path.Combine(iTunesDir, "iTunes Music Library.xml");
+        File.WriteAllText(iTunesPath, SampleLibraryXml(4));
+
+        Assert.Equal(iTunesPath, ITunesPlayCountImporter.ResolveLibraryXmlPath());
+    }
+
+    // 200 seconds (200000 ms) - matches Track.BuildSyncKey's (int)Duration.TotalSeconds
+    // truncation on the Flower side for a Duration of exactly 200 seconds.
+    private static string SampleLibraryXml(int playCount) => $"""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>Tracks</key>
+            <dict>
+                <key>1001</key>
+                <dict>
+                    <key>Name</key><string>Test Song</string>
+                    <key>Artist</key><string>Test Artist</string>
+                    <key>Album</key><string>Test Album</string>
+                    <key>Total Time</key><integer>200000</integer>
+                    <key>Play Count</key><integer>{playCount}</integer>
+                    <key>Location</key><string>file:///Users/someone/Music/iTunes/iTunes%20Music/Test%20Artist/song.mp3</string>
+                </dict>
+            </dict>
+        </dict>
+        </plist>
+        """;
 }

@@ -4,10 +4,10 @@
         xmlns:views="clr-namespace:Flower.Views"
         x:Class="Flower.Views.SettingsWindow"
         Title="Settings"
-        Width="480" Height="396"
+        Width="480" Height="456"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
-  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16">
+  <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="16">
     <TextBlock Grid.Row="0"
                Text="Library Folders"
                FontWeight="SemiBold"
@@ -43,7 +43,20 @@
       </ListBox>
     </Border>
 
-    <StackPanel Grid.Row="2"
+    <CheckBox Grid.Row="2"
+              x:Name="SyncPlayCountCheckBox"
+              Content="Sync play count from iTunes/Music.app"
+              Margin="0,12,0,0"
+              IsCheckedChanged="SyncPlayCountCheckBox_IsCheckedChanged"/>
+
+    <TextBlock Grid.Row="3"
+               x:Name="ITunesLibraryPathText"
+               Margin="20,2,0,0"
+               FontSize="11"
+               Opacity="0.6"
+               TextTrimming="CharacterEllipsis"/>
+
+    <StackPanel Grid.Row="4"
                 Orientation="Horizontal"
                 Margin="0,12,0,0"
                 Spacing="8">
@@ -51,7 +64,7 @@
       <Button x:Name="OpenAppDataLocationButton" Content="Open App Data Location" Click="OpenAppDataLocationButton_Click"/>
     </StackPanel>
 
-    <StackPanel Grid.Row="3"
+    <StackPanel Grid.Row="5"
                 Orientation="Horizontal"
                 Margin="0,12,0,0"
                 HorizontalAlignment="Right"
