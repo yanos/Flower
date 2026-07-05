@@ -37,7 +37,6 @@ public sealed class DeletePlaylistConfirmationEventArgs : EventArgs
 public partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistControlViewModel _playlistControlViewModel;
-    private readonly ColumnVisibilityStore    _columnVisibilityStore;
     private AppSettings? _appSettings;
     private IMusicImporter? _importer;
     private MainPlaylist?      _mainPlaylist;
@@ -192,7 +191,9 @@ public partial class MainViewModel : ViewModelBase
                 return;
             _sortArtistAlbumsByYear = value;
             OnPropertyChanged();
-            _ = _columnVisibilityStore.SaveSortArtistAlbumsByYearAsync(value);
+            _appSettings ??= new AppSettings();
+            _appSettings.SortArtistAlbumsByYear = value;
+            _ = new AppSettingsStore().SaveAsync(_appSettings);
             if (SortColumn == "Artist")
                 ScheduleFilter();
         }
@@ -315,7 +316,6 @@ public partial class MainViewModel : ViewModelBase
     public MainViewModel(
         PlaylistControlViewModel playlistControlViewModel,
         Library library,
-        ColumnVisibilityStore columnVisibilityStore,
         AppSettings appSettings,
         IMusicImporter importer,
         MainPlaylist mainPlaylist,
@@ -324,18 +324,17 @@ public partial class MainViewModel : ViewModelBase
     {
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
-        _columnVisibilityStore = columnVisibilityStore;
         _appSettings           = appSettings;
         _importer              = importer;
         _mainPlaylist          = mainPlaylist;
         _playlistSyncService   = playlistSyncService;
 
-        if (columnVisibilityStore.LoadSortState() is { } savedSort)
+        if (appSettings.SortColumn is { } savedSortColumn)
         {
-            _sortColumn    = savedSort.SortColumn;
-            _sortAscending = savedSort.SortAscending;
+            _sortColumn    = savedSortColumn;
+            _sortAscending = appSettings.SortAscending;
         }
-        _sortArtistAlbumsByYear = columnVisibilityStore.LoadSortArtistAlbumsByYear();
+        _sortArtistAlbumsByYear = appSettings.SortArtistAlbumsByYear;
 
         OpenDatabaseLocationCommand = new RelayCommand(OpenDatabaseLocation);
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
@@ -458,7 +457,10 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SortColumn));
         OnPropertyChanged(nameof(SortAscending));
         ScheduleFilter();
-        _ = _columnVisibilityStore.SaveSortStateAsync(_sortColumn, _sortAscending);
+        _appSettings ??= new AppSettings();
+        _appSettings.SortColumn    = _sortColumn;
+        _appSettings.SortAscending = _sortAscending;
+        _ = new AppSettingsStore().SaveAsync(_appSettings);
     }
 
     // ── Playing indicators ────────────────────────────────────────────────────
@@ -769,12 +771,15 @@ public partial class MainViewModel : ViewModelBase
         await new LibraryStore().SaveAsync(freshTracks);
     }
 
-    public async Task UpdateLibraryPathsAsync(List<string> paths)
+    // Persists the path list only - deliberately doesn't also rescan, so
+    // SettingsWindow can close its dialog immediately on Save & Rescan instead
+    // of blocking on however long the (potentially large) library scan takes;
+    // it calls RescanLibraryAsync separately, unawaited, after closing.
+    public async Task SaveLibraryPathsAsync(List<string> paths)
     {
         _appSettings ??= new AppSettings();
         _appSettings.LibraryPaths = paths;
         await new AppSettingsStore().SaveAsync(_appSettings);
-        await RebuildDatabaseAsync();
     }
 
     // Mobile has no library-paths UI to rescan as a side effect of (desktop's

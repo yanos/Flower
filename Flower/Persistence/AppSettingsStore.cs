@@ -23,6 +23,24 @@ namespace Flower.Persistence
         // Repeat/shuffle toggles in the currently-playing control, remembered between launches.
         public bool IsRepeatEnabled  { get; set; }
         public bool IsShuffleEnabled { get; set; }
+
+        // Track list column state (width/visibility/order - see ColumnManager)
+        // and sort state (see MainViewModel).
+        public List<ColumnState>? ColumnStates { get; set; }
+        public string? SortColumn    { get; set; }
+        public bool    SortAscending { get; set; } = true;
+
+        // When sorting by Artist, order each artist's albums by year instead of
+        // however they happened to appear - see MainViewModel.SortArtistAlbumsByYear.
+        public bool SortArtistAlbumsByYear { get; set; }
+    }
+
+    public class ColumnState
+    {
+        public string Id        { get; set; } = "";
+        public bool   IsVisible { get; set; } = true;
+        public double Width     { get; set; } = 100;
+        public int    Order     { get; set; } = 0;
     }
 
     public class AppSettingsStore

@@ -62,7 +62,6 @@ public partial class App : Application
                 .AddSingleton(library)
                 .AddSingleton(mainPlaylist)
                 .AddSingleton(appSettings)
-                .AddSingleton<ColumnVisibilityStore>()
                 .AddSingleton<ColumnManager>()
                 .AddSingleton(importer)
                 .AddSingleton(networkDiscovery)

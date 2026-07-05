@@ -1,5 +1,9 @@
-using System.Collections.ObjectModel;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -10,18 +14,39 @@ using Flower.ViewModels;
 
 namespace Flower.Views;
 
+// One row in SettingsWindow's library-paths list - SongCountDisplay is how
+// many of the library's current tracks live under Path, so a user can tell
+// at a glance whether a folder actually contributed anything to the scan.
+public sealed record LibraryPathRow(string Path, int SongCount)
+{
+    public string SongCountDisplay => SongCount == 1 ? "1 song" : $"{SongCount:N0} songs";
+}
+
 public partial class SettingsWindow : Window
 {
     private readonly MainViewModel _viewModel;
-    private readonly ObservableCollection<string> _paths;
+    private readonly List<string> _paths;
 
     public SettingsWindow(MainViewModel viewModel)
     {
         InitializeComponent();
         _viewModel = viewModel;
-        _paths = new ObservableCollection<string>(viewModel.LibraryPaths);
-        PathsList.ItemsSource = _paths;
+        _paths = new List<string>(viewModel.LibraryPaths);
+        RefreshPathRows();
         NativeMenuHelper.InheritFromMainWindow(this);
+    }
+
+    private void RefreshPathRows()
+    {
+        PathsList.ItemsSource = _paths
+            .Select(path => new LibraryPathRow(path, CountSongsUnder(path)))
+            .ToList();
+    }
+
+    private int CountSongsUnder(string folder)
+    {
+        var prefix = folder.TrimEnd('/', '\\') + Path.DirectorySeparatorChar;
+        return _viewModel.Library.Tracks.Count(t => t.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
     private async void AddButton_Click(object? sender, RoutedEventArgs e)
@@ -36,20 +61,48 @@ public partial class SettingsWindow : Window
         });
 
         if (folders.FirstOrDefault()?.TryGetLocalPath() is string path && !_paths.Contains(path))
+        {
             _paths.Add(path);
+            RefreshPathRows();
+        }
     }
 
     private void RemoveButton_Click(object? sender, RoutedEventArgs e)
     {
-        if (PathsList.SelectedItem is string path)
-            _paths.Remove(path);
+        if (PathsList.SelectedItem is LibraryPathRow row)
+        {
+            _paths.Remove(row.Path);
+            RefreshPathRows();
+        }
+    }
+
+    // Mirrors MainViewModel.OpenDatabaseLocation's per-OS reveal-in-file-manager
+    // logic - opens the folder itself rather than selecting it within its
+    // parent, since these are the library folders themselves, not files.
+    private void RevealFolderButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.DataContext is not LibraryPathRow row)
+            return;
+        var path = row.Path;
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            Process.Start(new ProcessStartInfo { FileName = "open", ArgumentList = { path } });
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            Process.Start(new ProcessStartInfo { FileName = "explorer.exe", ArgumentList = { path } });
+        else
+            Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { path } });
     }
 
     private void CancelButton_Click(object? sender, RoutedEventArgs e) => Close();
 
+    // Closes as soon as the (fast) path list is saved rather than waiting for
+    // the (potentially long) library rescan - RescanLibraryAsync runs
+    // unawaited afterward, with progress shown via MainView's existing busy
+    // spinner (see MainViewModel.RebuildDatabaseAsync's BeginBusy).
     private async void SaveButton_Click(object? sender, RoutedEventArgs e)
     {
-        await _viewModel.UpdateLibraryPathsAsync(_paths.ToList());
+        await _viewModel.SaveLibraryPathsAsync(_paths.ToList());
         Close();
+        _ = _viewModel.RescanLibraryAsync();
     }
 }
