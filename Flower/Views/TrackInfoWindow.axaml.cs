@@ -44,6 +44,7 @@ public partial class TrackInfoWindow : Window
         _editTracks = [_track];
         Populate();
         UpdateNavButtons();
+        NativeMenuHelper.InheritFromMainWindow(this);
     }
 
     // Batch mode: edit this exact set of tracks together. No Prev/Next - there's
@@ -59,6 +60,7 @@ public partial class TrackInfoWindow : Window
         NextButton.IsVisible = false;
         if (editTracks.Count > 1)
             Title = $"Track Info ({editTracks.Count} tracks)";
+        NativeMenuHelper.InheritFromMainWindow(this);
     }
 
     private async void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Navigate(-1);

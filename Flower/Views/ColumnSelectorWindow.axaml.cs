@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 
 using Flower.Controls;
+using Flower.Services;
 using Flower.ViewModels;
 
 namespace Flower.Views;
@@ -24,6 +25,7 @@ public partial class ColumnSelectorWindow : Window
         InitializeComponent();
         ColumnsList.ItemsSource = columnManager.Columns.OrderBy(c => c.Order).ToList();
         DataContext = viewModel;
+        NativeMenuHelper.InheritFromMainWindow(this);
     }
 
     private void CloseButton_Click(object? sender, RoutedEventArgs e) => Close();
