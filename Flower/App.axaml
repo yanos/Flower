@@ -5,6 +5,22 @@
              RequestedThemeVariant="Default"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
 
+    <!-- Defines just the native macOS app menu (the bold "Flower" title's own
+         dropdown - About/Hide/Quit), replacing Avalonia's default "About
+         Avalonia" item with our own. Deliberately separate from MainWindow's
+         own NativeMenu.Menu (Settings/Playlist/View, the rest of the menu
+         bar) - Application-level here only governs the app menu itself, not
+         a whole extra top-level menu (that was the mistake in an earlier,
+         reverted attempt). Plain Click handlers, not {Binding} Commands, so
+         this has no DataContext-readiness dependency on when
+         OnFrameworkInitializationCompleted actually runs. Avalonia auto-
+         appends the standard separator + "Quit Flower" (⌘Q) after our item. -->
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="About Flower" Click="AboutMenuItem_OnClick"/>
+        </NativeMenu>
+    </NativeMenu.Menu>
+
     <Application.Styles>
         <FluentTheme />
         <materialIcons:MaterialIconStyles />

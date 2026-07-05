@@ -13,13 +13,9 @@
         MinHeight="200">
   <NativeMenu.Menu>
     <NativeMenu>
-      <NativeMenuItem Header="Library">
+      <NativeMenuItem Header="Settings">
         <NativeMenuItem.Menu>
           <NativeMenu>
-            <NativeMenuItem Header="Open Database Location" Command="{Binding OpenDatabaseLocationCommand}"/>
-            <NativeMenuItemSeparator/>
-            <NativeMenuItem Header="Rebuild Database" Command="{Binding RebuildDatabaseCommand}"/>
-            <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Settings…" Command="{Binding OpenSettingsCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>

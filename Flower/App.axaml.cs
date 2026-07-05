@@ -29,6 +29,8 @@ public partial class App : Application
         AvaloniaXamlLoader.Load(this);
     }
 
+    private void AboutMenuItem_OnClick(object? sender, System.EventArgs e) => new AboutWindow().Show();
+
     public override void OnFrameworkInitializationCompleted()
     {
         BindingPlugins.DataValidators.RemoveAt(0);

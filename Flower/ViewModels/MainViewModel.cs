@@ -50,7 +50,7 @@ public partial class MainViewModel : ViewModelBase
     // because discovery events aren't guaranteed to arrive on one fixed thread.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _syncedDeviceFingerprints = new();
 
-    public ICommand? OpenDatabaseLocationCommand { get; private set; }
+    public ICommand? OpenAppDataLocationCommand  { get; private set; }
     public ICommand? RebuildDatabaseCommand      { get; private set; }
     public ICommand? SortByColumnCommand         { get; private set; }
     public ICommand? OpenSettingsCommand         { get; private set; }
@@ -336,7 +336,7 @@ public partial class MainViewModel : ViewModelBase
         }
         _sortArtistAlbumsByYear = appSettings.SortArtistAlbumsByYear;
 
-        OpenDatabaseLocationCommand = new RelayCommand(OpenDatabaseLocation);
+        OpenAppDataLocationCommand  = new RelayCommand(OpenAppDataLocation);
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
         SortByColumnCommand         = new RelayCommand<string>(SortByColumn);
         OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
@@ -747,7 +747,7 @@ public partial class MainViewModel : ViewModelBase
 
     // ── Database ops ──────────────────────────────────────────────────────────
 
-    private void OpenDatabaseLocation()
+    private void OpenAppDataLocation()
     {
         var dir = Path.GetDirectoryName(LibraryStore.StorePath)!;
         Directory.CreateDirectory(dir);

@@ -76,7 +76,7 @@ public partial class SettingsWindow : Window
         }
     }
 
-    // Mirrors MainViewModel.OpenDatabaseLocation's per-OS reveal-in-file-manager
+    // Mirrors MainViewModel.OpenAppDataLocation's per-OS reveal-in-file-manager
     // logic - opens the folder itself rather than selecting it within its
     // parent, since these are the library folders themselves, not files.
     private void RevealFolderButton_Click(object? sender, RoutedEventArgs e)
@@ -92,6 +92,15 @@ public partial class SettingsWindow : Window
         else
             Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { path } });
     }
+
+    // Formerly a native-menu-only action; relocated here (and Open App Data
+    // Location below) since neither is specific to any one library folder -
+    // both just reuse MainViewModel's existing commands unchanged.
+    private void RebuildButton_Click(object? sender, RoutedEventArgs e) =>
+        _viewModel.RebuildDatabaseCommand?.Execute(null);
+
+    private void OpenAppDataLocationButton_Click(object? sender, RoutedEventArgs e) =>
+        _viewModel.OpenAppDataLocationCommand?.Execute(null);
 
     private void CancelButton_Click(object? sender, RoutedEventArgs e) => Close();
 
