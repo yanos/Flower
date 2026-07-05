@@ -6,6 +6,15 @@ namespace Flower.Models
 {
     public class Library
     {
+        // Guards every read-modify-write of Tracks. EndReached fires on a LibVLC
+        // callback thread (see CLAUDE.md's Binding Notes) while the startup/rescan
+        // Task.Run (App.axaml.cs) runs on a threadpool thread - both touch this
+        // field, and without a lock a play-count increment applied between a
+        // concurrent UpdateTracks' previousByPath snapshot and its Tracks swap
+        // is silently discarded: the snapshot predates the increment, and the
+        // swapped-in list is built from that stale snapshot. See IncrementPlayCount.
+        private readonly object _lock = new();
+
         public List<Track> Tracks { get; private set; }
         public List<Playlist> Playlists { get; private set; } = new List<Playlist>();
 
@@ -23,24 +32,53 @@ namespace Flower.Models
         }
 
         // A rescan (see Importer) produces brand-new Track instances read straight
-        // from file tags, each defaulting DateAdded to "now" - so without this,
-        // every track would look freshly added after every launch. Carry the
-        // original DateAdded forward for any track already known by Path.
+        // from file tags, each defaulting DateAdded to "now" and PlayCount/
+        // ImportedPlayCount to 0 - so without this, every track would look
+        // freshly added, and all play counts would silently reset, on every
+        // launch/rescan. Carry these forward for any track already known by Path.
         public void UpdateTracks(List<Track> tracks)
         {
-            var previousDateAddedByPath = Tracks
-                .Where(t => t.Path != null)
-                .GroupBy(t => t.Path!, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First().DateAdded, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var track in tracks)
+            lock (_lock)
             {
-                if (track.Path != null && previousDateAddedByPath.TryGetValue(track.Path, out var dateAdded))
-                    track.DateAdded = dateAdded;
+                var previousByPath = Tracks
+                    .Where(t => t.Path != null)
+                    .GroupBy(t => t.Path!, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+                foreach (var track in tracks)
+                {
+                    if (track.Path != null && previousByPath.TryGetValue(track.Path, out var previous))
+                    {
+                        track.DateAdded         = previous.DateAdded;
+                        track.PlayCount         = previous.PlayCount;
+                        track.ImportedPlayCount = previous.ImportedPlayCount;
+                    }
+                }
+
+                Tracks = new List<Track>(tracks);
             }
 
-            Tracks = new List<Track>(tracks);
             TracksUpdated?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Atomically resolves whichever Track object currently represents
+        // playedTrack.Path in the library and increments its PlayCount, under the
+        // same lock UpdateTracks uses - so this can never race a concurrent rescan
+        // the way a plain "find in Tracks, then increment" from the caller could
+        // (see the comment on _lock above). playedTrack itself is the fallback for
+        // tracks with no Path. Returns the object that was actually incremented,
+        // since it may not be playedTrack.
+        public Track IncrementPlayCount(Track playedTrack)
+        {
+            lock (_lock)
+            {
+                var current = playedTrack.Path != null
+                    ? Tracks.FirstOrDefault(t => string.Equals(t.Path, playedTrack.Path, StringComparison.OrdinalIgnoreCase))
+                      ?? playedTrack
+                    : playedTrack;
+                current.PlayCount++;
+                return current;
+            }
         }
 
         public void AddPlaylist(Playlist playlist)

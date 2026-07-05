@@ -194,6 +194,23 @@ public class TrackListBuilderTests
     }
 
     [Fact]
+    public void Sort_by_playcount_combines_Flower_and_imported_counts()
+    {
+        // "Imported" has more plays overall once its iTunes-imported count (see
+        // Track.ImportedPlayCount/ITunesPlayCountImporter) is added to Flower's
+        // own - sorting must reflect that combined total, matching what
+        // TrackRowViewModel.PlayCountDisplay actually shows.
+        var tracks = new List<Track>
+        {
+            T("FlowerOnly", album: "A") with { PlayCount = 10, ImportedPlayCount = 0 },
+            T("Imported",   album: "B") with { PlayCount = 2,  ImportedPlayCount = 20 },
+        };
+
+        var asc = TrackListBuilder.Build(tracks, null, "PlayCount", true);
+        Assert.Equal(new[] { "FlowerOnly", "Imported" }, asc.ConvertAll(r => r.Track.Title));
+    }
+
+    [Fact]
     public void Sort_by_column_other_than_album_or_tracknumber_still_groups_contiguous_same_album_tracks()
     {
         var tracks = new List<Track>

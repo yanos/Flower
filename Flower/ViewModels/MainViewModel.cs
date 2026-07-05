@@ -84,6 +84,46 @@ public partial class MainViewModel : ViewModelBase
 
     public IReadOnlyList<string> LibraryPaths => _appSettings?.LibraryPaths ?? [];
 
+    // Whether to import per-track play counts from iTunes/Music.app on every
+    // launch - see ITunesPlayCountImporter. Persisted immediately on change,
+    // like SortArtistAlbumsByYear below, rather than gated behind Settings'
+    // Save & Rescan (which is specifically about the library-paths list).
+    public bool SyncPlayCountFromITunes
+    {
+        get => _appSettings?.SyncPlayCountFromITunes ?? false;
+        set
+        {
+            _appSettings ??= new AppSettings();
+            if (_appSettings.SyncPlayCountFromITunes == value)
+                return;
+            _appSettings.SyncPlayCountFromITunes = value;
+            _ = new AppSettingsStore().SaveAsync(_appSettings);
+
+            // Apply right away rather than only at the next launch, so turning
+            // this on gives visible feedback immediately instead of looking
+            // like it silently did nothing until the app is restarted.
+            if (value)
+                _ = SyncITunesPlayCountAsync();
+        }
+    }
+
+    // Exports a fresh XML snapshot from Music.app (via AppleScript - see
+    // ITunesPlayCountImporter) and applies its play counts to
+    // Track.ImportedPlayCount. Shared by the SyncPlayCountFromITunes setter
+    // above (apply-immediately-on-toggle) and App.axaml.cs's startup rescan
+    // (apply-on-every-launch), both of which run this off the UI thread
+    // already - BeginBusy drives the status bar spinner either way.
+    public async Task SyncITunesPlayCountAsync()
+    {
+        using var _ = BeginBusy("Syncing play counts from Music.app…");
+        await Task.Run(() => ITunesPlayCountImporter.Apply(Library.Tracks));
+        // Same list, same Track instances - this call's only real purpose
+        // here is firing TracksUpdated so the Plays column reflects the new
+        // ImportedPlayCount values immediately.
+        Library.UpdateTracks(Library.Tracks);
+        await new LibraryStore().SaveAsync(Library.Tracks);
+    }
+
     // ── Selection ─────────────────────────────────────────────────────────────
 
     public Track? SelectedTrack
@@ -134,12 +174,25 @@ public partial class MainViewModel : ViewModelBase
     public bool    IsBusy      => _busyCount > 0;
     public string? BusyMessage => _busyMessage;
 
+    // The count itself is bumped synchronously (needed immediately regardless
+    // of caller thread, to correctly track overlapping scopes), but the
+    // notifications are dispatched - every prior caller happened to already be
+    // on the UI thread (button-click commands, where AsyncRelayCommand runs
+    // synchronously up to its first await), so this was never actually
+    // exercised off it until SyncITunesPlayCountAsync started calling this
+    // from within a background Task.Run: IsBusy's IsVisible binding "worked"
+    // anyway (something else happened to force a UI-thread re-evaluation
+    // around the same time), but BusyMessage's TextBlock silently never
+    // updated - a real cross-thread notification bug, not just this one caller.
     private IDisposable BeginBusy(string? message = null)
     {
-        _busyMessage = message;
         Interlocked.Increment(ref _busyCount);
-        OnPropertyChanged(nameof(IsBusy));
-        OnPropertyChanged(nameof(BusyMessage));
+        Dispatcher.UIThread.Post(() =>
+        {
+            _busyMessage = message;
+            OnPropertyChanged(nameof(IsBusy));
+            OnPropertyChanged(nameof(BusyMessage));
+        });
         return new BusyScope(this);
     }
 

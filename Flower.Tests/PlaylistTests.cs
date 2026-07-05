@@ -8,6 +8,28 @@ public class PlaylistTests
 {
     private static Track T(string title) => new Track { Title = title, Path = $"/music/{title}.mp3" };
 
+    // Regression test: App.axaml.cs constructs MainPlaylist directly from
+    // Library.Tracks (new MainPlaylist(library.Tracks)) and, on every rescan,
+    // calls mainPlaylist.ReplaceAll(freshTracks) immediately before
+    // library.UpdateTracks(freshTracks) - see App.axaml.cs and
+    // MainViewModel.RebuildDatabaseAsync. If the Playlist constructor aliased
+    // the passed-in list instead of copying it, ReplaceAll's Clear()+AddRange()
+    // would mutate Library.Tracks itself (the same underlying list object) in
+    // place *before* UpdateTracks got a chance to read it as "previous" state -
+    // silently discarding PlayCount/DateAdded/ImportedPlayCount on every single
+    // rescan, confirmed against the real reported bug.
+    [Fact]
+    public void Constructor_copies_the_track_list_so_a_caller_holding_the_same_reference_is_unaffected_by_ReplaceAll()
+    {
+        var source = new List<Track> { T("A") };
+        var playlist = new Playlist("Main", source);
+
+        playlist.ReplaceAll(new List<Track> { T("B") });
+
+        Assert.Single(source);
+        Assert.Equal("A", source[0].Title);
+    }
+
     [Fact]
     public void AppendTrack_adds_to_the_end()
     {

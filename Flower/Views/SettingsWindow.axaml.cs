@@ -9,6 +9,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
+using Flower.Importer;
 using Flower.Services;
 using Flower.ViewModels;
 
@@ -33,7 +34,23 @@ public partial class SettingsWindow : Window
         _viewModel = viewModel;
         _paths = new List<string>(viewModel.LibraryPaths);
         RefreshPathRows();
+        SyncPlayCountCheckBox.IsChecked = viewModel.SyncPlayCountFromITunes;
+        ITunesLibraryPathText.Text = DescribeITunesLibrarySource();
         NativeMenuHelper.InheritFromMainWindow(this);
+    }
+
+    // Describes where play counts will actually come from without doing any
+    // slow work itself (the live export - see ITunesPlayCountImporter - isn't
+    // triggered just to populate this label; only checking whether Music.app
+    // is installed at all, and whether a fallback file exists).
+    private static string DescribeITunesLibrarySource()
+    {
+        if (Directory.Exists("/System/Applications/Music.app") || Directory.Exists("/Applications/Music.app"))
+            return "Exports a fresh copy from Music.app each launch";
+
+        return ITunesPlayCountImporter.ResolveLibraryXmlPath() is string fallbackPath
+            ? $"Music.app not found - using {fallbackPath}"
+            : "No iTunes/Music library data available";
     }
 
     private void RefreshPathRows()
@@ -101,6 +118,9 @@ public partial class SettingsWindow : Window
 
     private void OpenAppDataLocationButton_Click(object? sender, RoutedEventArgs e) =>
         _viewModel.OpenAppDataLocationCommand?.Execute(null);
+
+    private void SyncPlayCountCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
+        _viewModel.SyncPlayCountFromITunes = SyncPlayCountCheckBox.IsChecked ?? false;
 
     private void CancelButton_Click(object? sender, RoutedEventArgs e) => Close();
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Flower.Models;
 
 namespace Flower.Tests;
@@ -80,6 +81,82 @@ public class LibraryTests
         library.UpdateTracks(new List<Track> { new Track { Path = "/music/new.mp3", DateAdded = freshDate } });
 
         Assert.Equal(freshDate, library.Tracks.Single().DateAdded);
+    }
+
+    [Fact]
+    public void UpdateTracks_preserves_PlayCount_and_ImportedPlayCount_for_a_track_matched_by_path()
+    {
+        var library = new Library(new List<Track>
+        {
+            new Track { Path = "/music/a.mp3", PlayCount = 5, ImportedPlayCount = 42 }
+        });
+
+        // Simulates a rescan: Importer builds a brand-new Track for the same file,
+        // defaulting both play counts to 0 like a genuinely new file would -
+        // UpdateTracks must recognize it's the same file by Path and carry the
+        // originals forward instead, exactly like it already does for DateAdded.
+        var rescanned = new Track { Path = "/music/a.mp3" };
+
+        library.UpdateTracks(new List<Track> { rescanned });
+
+        Assert.Equal(5, library.Tracks.Single().PlayCount);
+        Assert.Equal(42, library.Tracks.Single().ImportedPlayCount);
+    }
+
+    [Fact]
+    public void IncrementPlayCount_resolves_the_current_track_by_path_and_increments_it()
+    {
+        var oldTrack = new Track { Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { oldTrack });
+
+        // A rescan swapped in a brand-new Track instance for the same file -
+        // like the Track a caller still holding a reference to oldTrack (e.g.
+        // PlaylistControlViewModel.CurrentlyPlayingTrack) would now be stale
+        // against.
+        var newTrack = new Track { Path = "/music/a.mp3" };
+        library.UpdateTracks(new List<Track> { newTrack });
+
+        var incremented = library.IncrementPlayCount(oldTrack);
+
+        Assert.Same(newTrack, incremented);
+        Assert.Equal(1, newTrack.PlayCount);
+        Assert.Equal(0, oldTrack.PlayCount);
+    }
+
+    // Without Library's internal lock, concurrent int++ from multiple threads on
+    // the same object is a classic lost-update race - some increments overwrite
+    // each other instead of accumulating, so this would be flaky (occasionally
+    // land below concurrentPlays) if the locking were removed.
+    [Fact]
+    public void IncrementPlayCount_is_thread_safe_under_concurrent_calls()
+    {
+        var track = new Track { Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { track });
+        const int concurrentPlays = 200;
+
+        Parallel.For(0, concurrentPlays, _ => library.IncrementPlayCount(track));
+
+        Assert.Equal(concurrentPlays, library.Tracks.Single().PlayCount);
+    }
+
+    // The actual reported bug's mechanism: EndReached (fires on a LibVLC
+    // callback thread) racing the startup rescan's UpdateTracks (runs on a
+    // threadpool Task.Run - see App.axaml.cs) used to let the rescan's swap
+    // land between "resolve the current track" and "increment it", discarding
+    // the play. Library's lock makes the two operations mutually exclusive, so
+    // regardless of which one the scheduler runs first, the increment always
+    // ends up reflected in the post-rescan track - never silently dropped.
+    [Fact]
+    public async Task IncrementPlayCount_racing_a_concurrent_rescan_never_loses_the_increment()
+    {
+        var oldTrack = new Track { Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { oldTrack });
+
+        var incrementTask = Task.Run(() => library.IncrementPlayCount(oldTrack));
+        var rescanTask = Task.Run(() => library.UpdateTracks(new List<Track> { new Track { Path = "/music/a.mp3" } }));
+        await Task.WhenAll(incrementTask, rescanTask);
+
+        Assert.Equal(1, library.Tracks.Single().PlayCount);
     }
 
     [Fact]

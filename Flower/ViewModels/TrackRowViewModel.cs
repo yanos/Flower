@@ -28,7 +28,12 @@ public class TrackRowViewModel : ViewModelBase
 
     public string TrackNumberDisplay => Track.TrackNumber > 0 ? Track.TrackNumber.ToString() : "";
 
-    public string PlayCountDisplay => Track.PlayCount > 0 ? Track.PlayCount.ToString() : "";
+    // Sum of Flower's own play count and whatever was imported from iTunes/
+    // Music.app (see Track.ImportedPlayCount) - the two are tracked separately
+    // but always shown as one combined total.
+    public string PlayCountDisplay => TotalPlayCount > 0 ? TotalPlayCount.ToString() : "";
+
+    private int TotalPlayCount => Track.PlayCount + Track.ImportedPlayCount;
 
     public string DateAddedDisplay => Track.DateAdded.LocalDateTime.ToString("MMM d, yyyy");
 

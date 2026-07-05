@@ -39,7 +39,16 @@ namespace Flower.Models
         {
             Id = id;
             _name = name;
-            Tracks = tracks;
+            // Defensive copy, matching Library's own constructor - callers can pass a
+            // list they keep their own reference to (App.axaml.cs constructs
+            // MainPlaylist directly from library.Tracks). Without this, ReplaceAll's
+            // Clear()+AddRange() mutates that same underlying list in place, and
+            // since ReplaceAll always runs immediately before Library.UpdateTracks
+            // (both here and in RebuildDatabaseAsync), UpdateTracks would read its
+            // own "previous" snapshot from a list that had *already* been overwritten
+            // with the fresh (PlayCount/DateAdded/ImportedPlayCount-defaulted) data -
+            // silently discarding whatever was actually there, every single rescan.
+            Tracks = new List<Track>(tracks);
             UpdatedAt = updatedAt;
         }
 

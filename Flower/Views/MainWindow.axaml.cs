@@ -7,6 +7,7 @@ using Avalonia.Input;
 using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Flower.Controls;
+using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
 
@@ -16,6 +17,7 @@ public partial class MainWindow : Window
 {
     private readonly AppSettings _appSettings;
     private readonly ColumnManager _columnManager;
+    private readonly Library _library;
 
     // Tracks the window's bounds while in WindowState.Normal, since that's
     // what should be restored on the next launch - saving the bounds reported
@@ -30,6 +32,7 @@ public partial class MainWindow : Window
 
         _appSettings    = Ioc.Default.GetService<AppSettings>()!;
         _columnManager  = Ioc.Default.GetService<ColumnManager>()!;
+        _library        = Ioc.Default.GetService<Library>()!;
         _normalWidth    = Width;
         _normalHeight   = Height;
         _normalPosition = Position;
@@ -53,6 +56,12 @@ public partial class MainWindow : Window
         {
             SaveWindowGeometry();
             _columnManager.Flush();
+
+            // A track that just naturally finished (PlaylistControlViewModel.EndReached
+            // increments PlayCount and kicks off a fire-and-forget SaveAsync) may not
+            // have hit disk yet - flush the in-memory state synchronously so quitting
+            // right after a play doesn't silently lose that increment. See LibraryStore.Save.
+            new LibraryStore().Save(_library.Tracks);
         };
 
         // The gestures shown in the native menu bar must match MainView's actual
