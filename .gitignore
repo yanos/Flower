@@ -13,6 +13,9 @@
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
+# Machine-specific Android SDK path picked up by Gradle/Xamarin.Android/Rider tooling
+local.properties
+
 # Mono auto generated files
 mono_crash.*
 
@@ -447,8 +450,9 @@ $RECYCLE.BIN/
 ##
 ## Visual Studio Code
 ##
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+.vscode/
+
+##
+## Claude Code
+##
+.claude/
