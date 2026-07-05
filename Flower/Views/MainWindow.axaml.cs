@@ -6,6 +6,7 @@ using Avalonia.Input;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
+using Flower.Controls;
 using Flower.Persistence;
 using Flower.Services;
 
@@ -14,6 +15,7 @@ namespace Flower.Views;
 public partial class MainWindow : Window
 {
     private readonly AppSettings _appSettings;
+    private readonly ColumnManager _columnManager;
 
     // Tracks the window's bounds while in WindowState.Normal, since that's
     // what should be restored on the next launch - saving the bounds reported
@@ -26,9 +28,10 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        _appSettings  = Ioc.Default.GetService<AppSettings>()!;
-        _normalWidth  = Width;
-        _normalHeight = Height;
+        _appSettings    = Ioc.Default.GetService<AppSettings>()!;
+        _columnManager  = Ioc.Default.GetService<ColumnManager>()!;
+        _normalWidth    = Width;
+        _normalHeight   = Height;
         _normalPosition = Position;
 
         RestoreWindowGeometry();
@@ -46,7 +49,11 @@ public partial class MainWindow : Window
                 _normalHeight = e.ClientSize.Height;
             }
         };
-        Closing += (_, _) => SaveWindowGeometry();
+        Closing += (_, _) =>
+        {
+            SaveWindowGeometry();
+            _columnManager.Flush();
+        };
 
         // The gestures shown in the native menu bar must match MainView's actual
         // key handling (Cmd on macOS, Ctrl elsewhere), so set them here instead
