@@ -6,9 +6,12 @@
 
   <Grid RowDefinitions="28,*">
 
-    <!-- Column header bar -->
+    <!-- Column header bar. ClipToBounds so the header content - which is
+         translated horizontally in code-behind to track Scroller's horizontal
+         offset (see MusicListView.axaml.cs) - doesn't spill past this row. -->
     <Border x:Name="HeaderBorder"
             Grid.Row="0"
+            ClipToBounds="True"
             BorderThickness="0,0,0,1"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
       <!-- populated in code-behind -->
@@ -17,7 +20,7 @@
     <!-- Virtualized track list -->
     <ScrollViewer x:Name="Scroller"
                   Grid.Row="1"
-                  HorizontalScrollBarVisibility="Disabled"
+                  HorizontalScrollBarVisibility="Auto"
                   VerticalScrollBarVisibility="Auto">
       <!-- MusicListPanel added in code-behind -->
     </ScrollViewer>

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using CommunityToolkit.Mvvm.DependencyInjection;
 using Flower.ViewModels;
 
 namespace Flower.Controls;
@@ -13,12 +15,34 @@ namespace Flower.Controls;
 /// </summary>
 public class MusicListPanel : Panel
 {
+    private readonly ColumnManager _columnManager;
+
     private IReadOnlyList<TrackRowViewModel> _items = Array.Empty<TrackRowViewModel>();
     private double _scrollOffset;
     private double _viewportHeight = 600; // reasonable default before first layout
+    private double _viewportWidth  = 800; // reasonable default before first layout
 
     // Index of each active child's source row; parallel to Children.
     private readonly List<int> _activeIndex = new();
+
+    public MusicListPanel()
+    {
+        _columnManager = Ioc.Default.GetService<ColumnManager>()!;
+
+        // Column reorder/hide-show changes the set of visible columns (and
+        // hence total content width); resize changes width directly. Either
+        // one can turn a horizontal scrollbar on/off, so both must re-measure.
+        _columnManager.ColumnsChanged += (_, _) => InvalidateMeasure();
+        foreach (var col in _columnManager.Columns)
+            col.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(MusicColumnDefinition.Width))
+                    InvalidateMeasure();
+            };
+    }
+
+    private double ContentWidth =>
+        TrackRowViewModel.ArtColumnWidth + _columnManager.VisibleColumns.Sum(c => c.Width);
 
     public void SetItems(IReadOnlyList<TrackRowViewModel> items)
     {
@@ -31,16 +55,19 @@ public class MusicListPanel : Panel
         InvalidateMeasure();
     }
 
-    public void SetViewport(double scrollOffset, double viewportHeight)
+    public void SetViewport(double scrollOffset, double viewportHeight, double viewportWidth)
     {
         bool changed = Math.Abs(_scrollOffset - scrollOffset) > 0.5
-                    || Math.Abs(_viewportHeight - viewportHeight) > 0.5;
-        _scrollOffset  = scrollOffset;
+                    || Math.Abs(_viewportHeight - viewportHeight) > 0.5
+                    || Math.Abs(_viewportWidth - viewportWidth) > 0.5;
+        _scrollOffset   = scrollOffset;
         _viewportHeight = viewportHeight;
+        _viewportWidth  = viewportWidth;
         if (changed)
         {
             RefreshActiveSet();
             InvalidateArrange();
+            InvalidateMeasure(); // content narrower than viewport still needs to fill it
         }
     }
 
@@ -111,7 +138,13 @@ public class MusicListPanel : Panel
 
     protected override Size MeasureOverride(Size availableSize)
     {
-        double w = double.IsInfinity(availableSize.Width) ? 800 : availableSize.Width;
+        // Hosted in a ScrollViewer with HorizontalScrollBarVisibility="Auto", so
+        // availableSize.Width arrives as infinity - report our true desired width
+        // (the sum of all column widths) so the ScrollViewer knows to show a
+        // horizontal scrollbar once that exceeds the viewport, falling back to
+        // the viewport's own width so rows/selection highlight still fill it
+        // when there are few enough columns to fit.
+        double w = Math.Max(ContentWidth, _viewportWidth);
 
         foreach (Control child in Children)
         {
