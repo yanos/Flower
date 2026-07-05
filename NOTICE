@@ -1,0 +1,54 @@
+Flower
+Copyright (c) the Flower contributors
+
+This product is licensed under the Apache License, Version 2.0 (see the
+LICENSE file). It depends on the following third-party components, which
+remain under their own licenses:
+
+--------------------------------------------------------------------------
+LGPL-2.1-or-later
+--------------------------------------------------------------------------
+- LibVLCSharp / LibVLCSharp.Avalonia (videolan.org)
+- VideoLAN.LibVLC.Windows / .Android / .iOS / .Mac (videolan.org) —
+  redistributable native LibVLC binaries for the respective platform.
+
+Full license text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+Source: https://code.videolan.org/videolan/vlc / https://code.videolan.org/videolan/LibVLCSharp
+
+Note (macOS desktop specifically): on macOS, Flower does not bundle VLC's
+native libraries — at runtime it loads libvlccore and plugins directly from
+a separately, user-installed copy of VLC.app (see
+Flower/Manager/VlcNativeSetup.cs). Flower does not distribute that
+installation; the end user obtains it independently from videolan.org under
+VLC's own licensing (predominantly LGPL-2.1-or-later, with a subset of
+individual plugin modules — e.g. MP3/AAC decoding, libsamplerate-based
+resampling — that are GPL-2-or-later as compiled, per upstream VLC's own
+module headers). This NOTICE covers what Flower itself packages and
+distributes, not software the user separately installs.
+
+--------------------------------------------------------------------------
+LGPL-2.1-only
+--------------------------------------------------------------------------
+- TagLib# (github.com/mono/taglib-sharp)
+
+Full license text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+Source: https://github.com/mono/taglib-sharp
+
+--------------------------------------------------------------------------
+MIT
+--------------------------------------------------------------------------
+- Avalonia, Avalonia.Controls.DataGrid, Avalonia.Themes.Fluent,
+  Avalonia.Fonts.Inter, Avalonia.Diagnostics (avaloniaui.net)
+- CommunityToolkit.Mvvm (Microsoft / .NET Foundation)
+- Microsoft.Extensions.DependencyInjection (Microsoft)
+- Material.Icons.Avalonia
+- Makaretu.Dns.Multicast.New
+- plist-cil
+
+Full license text: https://opensource.org/license/mit/
+
+--------------------------------------------------------------------------
+
+This NOTICE file is provided for informational purposes and does not modify
+the terms of the Apache License, Version 2.0 under which Flower itself is
+licensed.
