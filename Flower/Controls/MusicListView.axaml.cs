@@ -255,13 +255,12 @@ public partial class MusicListView : UserControl
 
         _columnManager.ColumnsChanged += (_, _) => BuildHeader();
 
-        Scroller.ScrollChanged += (_, _) =>
-            _panel.SetViewport(Scroller.Offset.Y, Scroller.Viewport.Height);
+        Scroller.ScrollChanged += (_, _) => SyncScroll();
 
         Scroller.PropertyChanged += (_, e) =>
         {
             if (e.Property == ScrollViewer.ViewportProperty)
-                _panel.SetViewport(Scroller.Offset.Y, Scroller.Viewport.Height);
+                SyncScroll();
         };
 
         // Handle pointer / keyboard on the panel
@@ -286,7 +285,22 @@ public partial class MusicListView : UserControl
 
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
 
+        _headerHost.RenderTransform = _headerScrollTransform;
+
         BuildHeader();
+    }
+
+    // Keeps the (otherwise unscrolled) header bar's horizontal position in sync
+    // with Scroller's horizontal offset, and tells the panel how wide the
+    // viewport currently is so it knows when content is narrower than that
+    // (still fill it) versus wider (report a bigger desired width so Scroller
+    // shows a horizontal scrollbar) - see MusicListPanel.MeasureOverride.
+    private readonly TranslateTransform _headerScrollTransform = new();
+
+    private void SyncScroll()
+    {
+        _panel.SetViewport(Scroller.Offset.Y, Scroller.Viewport.Height, Scroller.Viewport.Width);
+        _headerScrollTransform.X = -Scroller.Offset.X;
     }
 
     // ── Scroll position ───────────────────────────────────────────────────────
