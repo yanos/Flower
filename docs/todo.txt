@@ -1,7 +1,11 @@
+global exception handler
+auto update
+readme
+versioning
+logger
 improve cli
 import play count
 icon
-side bar
 album mode
 sync database, playlist
 download songs on phone
@@ -20,4 +24,3 @@ export playlist with actual songs
 import itunes play count and date of library add. 
 sync library database, songs greyed out in the mobile app with a download icon to transfer them.
 media keys support
-colum resizing
