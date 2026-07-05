@@ -16,6 +16,7 @@ public partial class PlaylistConflictWindow : Window
         RemoteHeaderText.Text = conflict.RemoteAlias;
         RemoteSummaryText.Text = Summarize(conflict.Remote.Name, conflict.Remote.Tracks.Count, conflict.Remote.UpdatedAt);
         KeepRemoteButton.Content = $"Keep {conflict.RemoteAlias}'s Version";
+        NativeMenuHelper.InheritFromMainWindow(this);
     }
 
     private static string Summarize(string name, int trackCount, System.DateTimeOffset updatedAt) =>

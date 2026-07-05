@@ -3,6 +3,8 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 
+using Flower.Services;
+
 namespace Flower.Views;
 
 // Generic Yes/No confirmation dialog. Cancel is the default/Escape action
@@ -18,6 +20,7 @@ public partial class ConfirmDialogWindow : Window
         HeadlineText.Text = title;
         MessageText.Text = message;
         ConfirmButton.Content = confirmText;
+        NativeMenuHelper.InheritFromMainWindow(this);
     }
 
     public static Task<bool> ShowAsync(Window owner, string title, string message, string confirmText)

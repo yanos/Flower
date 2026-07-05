@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
+using Flower.Services;
 using Flower.ViewModels;
 
 namespace Flower.Views;
@@ -20,6 +21,7 @@ public partial class SettingsWindow : Window
         _viewModel = viewModel;
         _paths = new ObservableCollection<string>(viewModel.LibraryPaths);
         PathsList.ItemsSource = _paths;
+        NativeMenuHelper.InheritFromMainWindow(this);
     }
 
     private async void AddButton_Click(object? sender, RoutedEventArgs e)
