@@ -4,10 +4,10 @@
         xmlns:views="clr-namespace:Flower.Views"
         x:Class="Flower.Views.SettingsWindow"
         Title="Settings"
-        Width="480" Height="360"
+        Width="480" Height="396"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
-  <Grid RowDefinitions="Auto,*,Auto" Margin="16">
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16">
     <TextBlock Grid.Row="0"
                Text="Library Folders"
                FontWeight="SemiBold"
@@ -44,6 +44,14 @@
     </Border>
 
     <StackPanel Grid.Row="2"
+                Orientation="Horizontal"
+                Margin="0,12,0,0"
+                Spacing="8">
+      <Button x:Name="RebuildButton" Content="Rebuild Database" Click="RebuildButton_Click"/>
+      <Button x:Name="OpenAppDataLocationButton" Content="Open App Data Location" Click="OpenAppDataLocationButton_Click"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="3"
                 Orientation="Horizontal"
                 Margin="0,12,0,0"
                 HorizontalAlignment="Right"
