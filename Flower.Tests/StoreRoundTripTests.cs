@@ -175,16 +175,19 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
-    public async Task ColumnVisibilityStore_round_trips_column_states()
+    public async Task AppSettingsStore_round_trips_column_states()
     {
-        var states = new List<ColumnState>
+        var settings = new AppSettings
         {
-            new() { Id = "Title", IsVisible = true, Width = 197.5, Order = 0 },
-            new() { Id = "Artist", IsVisible = false, Width = 150, Order = 1 },
+            ColumnStates = new List<ColumnState>
+            {
+                new() { Id = "Title", IsVisible = true, Width = 197.5, Order = 0 },
+                new() { Id = "Artist", IsVisible = false, Width = 150, Order = 1 },
+            },
         };
 
-        await new ColumnVisibilityStore().SaveColumnStatesAsync(states);
-        var loaded = new ColumnVisibilityStore().LoadColumnStates();
+        await new AppSettingsStore().SaveAsync(settings);
+        var loaded = new AppSettingsStore().Load().ColumnStates;
 
         Assert.NotNull(loaded);
         Assert.Equal(2, loaded!.Count);
@@ -202,14 +205,14 @@ public class StoreRoundTripTests : IDisposable
         // on disk without waiting for the normal 500ms debounce (see
         // ColumnManager.ScheduleSave), which the process might not survive long
         // enough to complete.
-        var first = new ColumnManager(new ColumnVisibilityStore());
+        var first = new ColumnManager(new AppSettings());
         var title = first.Columns.Single(c => c.Id == "Title");
         title.Width = 321;
         first.Flush();
 
-        // A brand-new ColumnManager reading the same (temp-HOME) store simulates
-        // the next app launch.
-        var second = new ColumnManager(new ColumnVisibilityStore());
+        // A brand-new ColumnManager reading the just-persisted settings.json
+        // simulates the next app launch.
+        var second = new ColumnManager(new AppSettingsStore().Load());
         Assert.Equal(321, second.Columns.Single(c => c.Id == "Title").Width);
     }
 
