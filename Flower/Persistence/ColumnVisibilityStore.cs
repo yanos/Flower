@@ -81,6 +81,20 @@ namespace Flower.Persistence
             await SaveAsync(settings);
         }
 
+        // Synchronous counterpart for the Window.Closing handler (see
+        // AppSettingsStore.Save), where the process may exit before the
+        // debounced SaveColumnStatesAsync's Task.Delay completes - a resize
+        // (or hide/reorder) made shortly before quitting would otherwise never
+        // reach disk.
+        public void SaveColumnStates(List<ColumnState> states)
+        {
+            var settings = Load();
+            settings.ColumnStates = states;
+            var path = StorePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(settings, Options));
+        }
+
         public async Task SaveSortStateAsync(string sortColumn, bool sortAscending)
         {
             var settings = Load();

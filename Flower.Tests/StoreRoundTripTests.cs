@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Flower.Controls;
 using Flower.Models;
 using Flower.Persistence;
 
@@ -171,6 +172,45 @@ public class StoreRoundTripTests : IDisposable
 
         Assert.Equal(900, loaded.WindowWidth);
         Assert.Equal(600, loaded.WindowHeight);
+    }
+
+    [Fact]
+    public async Task ColumnVisibilityStore_round_trips_column_states()
+    {
+        var states = new List<ColumnState>
+        {
+            new() { Id = "Title", IsVisible = true, Width = 197.5, Order = 0 },
+            new() { Id = "Artist", IsVisible = false, Width = 150, Order = 1 },
+        };
+
+        await new ColumnVisibilityStore().SaveColumnStatesAsync(states);
+        var loaded = new ColumnVisibilityStore().LoadColumnStates();
+
+        Assert.NotNull(loaded);
+        Assert.Equal(2, loaded!.Count);
+        var title = loaded.Single(s => s.Id == "Title");
+        Assert.Equal(197.5, title.Width);
+        Assert.True(title.IsVisible);
+        var artist = loaded.Single(s => s.Id == "Artist");
+        Assert.False(artist.IsVisible);
+    }
+
+    [Fact]
+    public void ColumnManager_Flush_synchronously_persists_widths_for_the_next_launch()
+    {
+        // Simulates a resize followed immediately by quitting: Flush() must land
+        // on disk without waiting for the normal 500ms debounce (see
+        // ColumnManager.ScheduleSave), which the process might not survive long
+        // enough to complete.
+        var first = new ColumnManager(new ColumnVisibilityStore());
+        var title = first.Columns.Single(c => c.Id == "Title");
+        title.Width = 321;
+        first.Flush();
+
+        // A brand-new ColumnManager reading the same (temp-HOME) store simulates
+        // the next app launch.
+        var second = new ColumnManager(new ColumnVisibilityStore());
+        Assert.Equal(321, second.Columns.Single(c => c.Id == "Title").Width);
     }
 
     [Fact]

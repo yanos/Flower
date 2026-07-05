@@ -103,11 +103,22 @@ public class ColumnManager
     private async Task SaveAsync()
     {
         await Task.Delay(500);
-        var states = Columns
+        await _store.SaveColumnStatesAsync(BuildStates());
+    }
+
+    // Synchronous, immediate counterpart to the debounced SaveAsync above - for
+    // the Window.Closing handler, where the process may exit before a pending
+    // debounced save's Task.Delay(500) completes, silently losing a resize (or
+    // reorder/hide) made shortly before quitting.
+    public void Flush()
+    {
+        _store.SaveColumnStates(BuildStates());
+    }
+
+    private List<ColumnState> BuildStates() =>
+        Columns
             .Select(c => new ColumnState { Id = c.Id, IsVisible = c.IsVisible, Width = c.Width, Order = c.Order })
             .ToList();
-        await _store.SaveColumnStatesAsync(states);
-    }
 
     private static List<MusicColumnDefinition> BuildDefaults() =>
     [
