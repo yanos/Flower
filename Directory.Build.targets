@@ -1,0 +1,16 @@
+<Project>
+  <!-- ApplicationDisplayVersion on Android/iOS is a plain property, evaluated
+       once at project-parse time - long before MinVer's own target runs
+       during the actual build. Assigning it to "$(Version)" directly in the
+       csproj would just freeze it at the SDK's static default (1.0.0), never
+       MinVer's computed value. This target re-assigns it dynamically, after
+       MinVer has run, so it picks up the real computed version -->
+  <Target Name="_SetMobileApplicationDisplayVersion"
+          DependsOnTargets="MinVer"
+          BeforeTargets="_GetAndroidPackageName;_CompileAppManifest"
+          Condition="'$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS'">
+    <PropertyGroup>
+      <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
+    </PropertyGroup>
+  </Target>
+</Project>
