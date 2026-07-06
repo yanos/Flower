@@ -20,6 +20,7 @@
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Rebuild Database" Command="{Binding RebuildDatabaseCommand}"/>
             <NativeMenuItem Header="Open App Data Location" Command="{Binding OpenAppDataLocationCommand}"/>
+            <NativeMenuItem Header="Trusted Devices…" Command="{Binding OpenTrustedDevicesCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>

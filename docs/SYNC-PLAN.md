@@ -66,7 +66,18 @@ run or can spin up in one Docker container.
   ~10-15 endpoints (browse, stream, playlist CRUD, search, cover art, star,
   scrobble), DTOs for the JSON envelope. **Small-medium effort, days not
   weeks**, and it's the same client code on desktop and mobile since it's
-  just HTTP.
+  just HTTP. **Done**: `OpenSubsonicClient`/`OpenSubsonicContracts.cs`
+  (`Flower/Services/`) — classic `token=md5(password+salt)` auth, the
+  ID3-tag-based browsing endpoints (`getArtists`/`getArtist`/
+  `getAlbumList2`/`getAlbum`/`getSong`, not the older folder-based
+  `getIndexes`), `search3`, playlist CRUD, `star`/`unstar`, `scrobble`, and
+  URL builders for the binary `stream`/`download`/`getCoverArt` endpoints
+  (callers fetch bytes themselves rather than the client buffering audio into
+  memory). Unit tested against a fake `HttpMessageHandler` (request
+  construction, response parsing, the `status:"failed"` error path) — no
+  live server needed. Not yet wired into any UI, Settings, or an
+  `IMusicImporter` backend — that's step 8 below, once Phase 3's trust gate
+  and embedded host exist to actually point it at.
 
 **The insight that reshapes both halves of this doc:** once Flower speaks
 OpenSubsonic as a *client*, it doesn't matter whether the server on the
@@ -435,6 +446,30 @@ on request is not - add a pairing gate before this phase ships, not after:
   this WiFi", not a hostile network path. Revisit if Flower ever syncs over
   anything other than a local network.
 
+**Done**: `TrustedPeerStore` (`Flower/Persistence/`) persists approved
+`(Fingerprint, Alias, ApprovedAt)` entries; denials are never persisted, so
+an ignored/denied peer is simply re-prompted on its next request rather than
+being remembered as blocked. `SyncHttpServer.AuthorizeAsync` gates every
+`/api/flower/v1/*` path (`/api/localsend/v2/info` stays open, since a peer
+has to learn our fingerprint via it before trust can even be evaluated);
+the caller identifies itself via `X-Flower-Fingerprint`/`X-Flower-Alias`
+headers, which `PlaylistSyncService` now sends on both the manifest GET and
+the `/apply` POST. An unrecognized fingerprint raises
+`PeerApprovalRequested`, forwarded through `MainViewModel` to `MainView`,
+which reuses the existing generic `ConfirmDialogWindow` (Cancel - its
+default/Escape action - doubles as deny) rather than a bespoke dialog.
+Concurrent requests from the same not-yet-decided fingerprint share one
+prompt; an unanswered prompt denies by default after 60s; no UI listening
+(e.g. no `MainView` attached) also fails closed - unlike the playlist
+conflict prompt's "keep local" default, granting sync access is a security
+decision with no safe implicit default. Revoking is `TrustedDevicesWindow`
+("Trusted Devices…" in the app menu, next to Rebuild Database/Open App Data
+Location - kept out of the already-decluttered Settings dialog rather than
+added back into it). Unit tested: `TrustedPeerStore` approve/revoke/replace
+round-trips (`StoreRoundTripTests.cs`). Not yet built: the actual library
+sync/merge logic and mobile download UI below - this was just the gate they
+sit behind.
+
 ### Merge behavior
 
 On receiving a peer's OpenSubsonic-shaped catalog response
@@ -763,7 +798,7 @@ Don't conflate these — they behave differently on iOS:
    no `Flower.Core` split yet** (browse, stream, playlist CRUD, search,
    cover art, star, scrobble) — small effort, unlocks self-hosting against
    Navidrome/Gonic/Airsonic-Advanced/Ampache immediately with no server
-   work and no project restructuring.
+   work and no project restructuring. **Done.**
 7. Phase 3 above (full library sync + on-demand audio download): the
    trust/pairing gate first (it retroactively closes a gap in the
    already-shipped playlist endpoints too, so it's worth doing even in

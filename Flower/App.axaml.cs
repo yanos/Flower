@@ -81,7 +81,8 @@ public partial class App : Application
         // comment) without a second dependency between the two services.
         var ownFingerprint = new DeviceIdentityStore().Load().Fingerprint;
         var syncHttpServer = new SyncHttpServer(networkDiscovery.OwnInstanceName, library);
-        var playlistSyncService = new PlaylistSyncService(library, ownFingerprint);
+        var playlistSyncService = new PlaylistSyncService(library, ownFingerprint, networkDiscovery.OwnInstanceName);
+        var librarySyncService = new LibrarySyncService(library, ownFingerprint, networkDiscovery.OwnInstanceName);
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
@@ -93,7 +94,9 @@ public partial class App : Application
                 .AddSingleton<ColumnManager>()
                 .AddSingleton(importer)
                 .AddSingleton(networkDiscovery)
+                .AddSingleton(syncHttpServer)
                 .AddSingleton(playlistSyncService)
+                .AddSingleton(librarySyncService)
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()

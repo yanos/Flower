@@ -107,8 +107,10 @@ public partial class MainView : UserControl
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.SettingsRequested -= OnSettingsRequested;
             _viewModel.ColumnSelectorRequested -= OnColumnSelectorRequested;
+            _viewModel.TrustedDevicesRequested -= OnTrustedDevicesRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
+            _viewModel.PeerApprovalRequested -= OnPeerApprovalRequested;
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
             StopSpinner();
@@ -121,8 +123,10 @@ public partial class MainView : UserControl
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.ColumnSelectorRequested += OnColumnSelectorRequested;
+            _viewModel.TrustedDevicesRequested += OnTrustedDevicesRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
+            _viewModel.PeerApprovalRequested += OnPeerApprovalRequested;
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
             BuildColumnMenu();
@@ -712,6 +716,33 @@ public partial class MainView : UserControl
 
         var choice = await new PlaylistConflictWindow(e).ShowDialog<PlaylistConflictChoice>(owner);
         e.Resolution.TrySetResult(choice);
+    }
+
+    // Raised by MainViewModel (forwarding SyncHttpServer.PeerApprovalRequested)
+    // the first time an unrecognized peer fingerprint calls a gated sync endpoint
+    // - see SYNC-PLAN.md Phase 3's trust gate. Reuses the generic confirm dialog
+    // rather than a bespoke window - Cancel is that dialog's default/Escape
+    // action, which conveniently doubles as "deny" here too.
+    private async void OnPeerApprovalRequested(object? sender, PeerApprovalRequestedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            e.Resolution.TrySetResult(false);
+            return;
+        }
+
+        var allowed = await ConfirmDialogWindow.ShowAsync(
+            owner,
+            "Allow This Device to Sync?",
+            $"\"{e.Alias}\" wants to sync playlists and library data with this device. Only allow devices you recognize - it will not be asked again.",
+            "Allow");
+        e.Resolution.TrySetResult(allowed);
+    }
+
+    private void OnTrustedDevicesRequested(object? sender, EventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            new TrustedDevicesWindow().ShowDialog(owner);
     }
 
     private async void OnDeletePlaylistConfirmationRequested(object? sender, DeletePlaylistConfirmationEventArgs e)

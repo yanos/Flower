@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -12,24 +13,54 @@ using Flower.Persistence;
 
 namespace Flower.Services;
 
+// Raised the first time an unrecognized peer fingerprint calls a gated
+// endpoint - see SyncHttpServer.AuthorizeAsync. The UI is expected to show an
+// AirDrop-style "Allow this device?" prompt and report back via Resolution;
+// the HTTP request stays pending (all concurrent requests from the same
+// not-yet-decided fingerprint share this one prompt/Resolution) until it does,
+// or until the approval timeout denies by default.
+public sealed class PeerApprovalRequestedEventArgs : EventArgs
+{
+    public required string Fingerprint { get; init; }
+    public required string Alias { get; init; }
+    public required TaskCompletionSource<bool> Resolution { get; init; }
+}
+
 // Plain-HTTP sync endpoints (see SYNC-PLAN.md):
 //   GET  /api/localsend/v2/info        - device identity (phase 1)
 //   GET  /api/flower/v1/playlists      - this device's current playlist manifest
 //   POST /api/flower/v1/playlists/apply - adopt a peer-merged manifest wholesale
-// (phase 2, playlist metadata sync). Deliberately plain HTTP for now, not HTTPS -
-// see the plan doc for why. No audio file transfer yet; playlists can only
-// reference tracks already present on both sides (see PlaylistSyncMapper).
+// (phase 2, playlist metadata sync), plus an embedded OpenSubsonic host (phase 3,
+// see LibraryOpenSubsonicMapper/LibrarySyncService):
+//   GET  /rest/getAlbumList2 - this device's own real tracks, grouped by album
+//   GET  /rest/getAlbum      - one album's song list
+// Deliberately plain HTTP for now, not HTTPS - see the plan doc for why. No audio
+// file transfer yet; playlists can only reference tracks already present on both
+// sides (see PlaylistSyncMapper), and getAlbum/getAlbumList2 carry metadata only.
+//
+// Trust gate (phase 3): every /api/flower/v1/* endpoint requires the caller to
+// identify itself via X-Flower-Fingerprint/X-Flower-Alias headers (see
+// PlaylistSyncService, which sends both). An unrecognized fingerprint raises
+// PeerApprovalRequested and blocks that request until the user approves/denies
+// (or the request times out and is denied by default) - see AuthorizeAsync.
+// /api/localsend/v2/info stays ungated: a peer has to learn our fingerprint (and
+// we, its) via that endpoint before either side can evaluate trust at all.
 public class SyncHttpServer : IDisposable
 {
     public const int DefaultPort = 53317;
     private const int MaxPortAttempts = 10;
+    private static readonly TimeSpan ApprovalTimeout = TimeSpan.FromSeconds(60);
 
     private HttpListener? _listener;
     private readonly string _alias;
     private readonly string _fingerprint;
     private readonly Library _library;
     private readonly PlaylistStore _playlistStore = new();
+    private readonly TrustedPeerStore _trustedPeerStore = new();
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingApprovals = new();
     private CancellationTokenSource? _cts;
+
+    public event EventHandler<PeerApprovalRequestedEventArgs>? PeerApprovalRequested;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -107,12 +138,22 @@ public class SyncHttpServer : IDisposable
             var path = context.Request.Url?.AbsolutePath;
             var method = context.Request.HttpMethod;
 
+            if (path != null && RequiresTrust(path) && !await AuthorizeAsync(context))
+            {
+                context.Response.StatusCode = 403;
+                return;
+            }
+
             if (path == "/api/localsend/v2/info" && method == "GET")
                 await HandleInfoAsync(context);
             else if (path == "/api/flower/v1/playlists" && method == "GET")
                 await HandleGetPlaylistsAsync(context);
             else if (path == "/api/flower/v1/playlists/apply" && method == "POST")
                 await HandleApplyPlaylistsAsync(context);
+            else if (path == "/rest/getAlbumList2" && method == "GET")
+                await HandleGetAlbumList2Async(context);
+            else if (path == "/rest/getAlbum" && method == "GET")
+                await HandleGetAlbumAsync(context);
             else
                 context.Response.StatusCode = 404;
         }
@@ -124,6 +165,59 @@ public class SyncHttpServer : IDisposable
         {
             context.Response.Close();
         }
+    }
+
+    private static bool RequiresTrust(string path) =>
+        path.StartsWith("/api/flower/v1/", StringComparison.Ordinal) ||
+        path.StartsWith("/rest/", StringComparison.Ordinal);
+
+    private async Task<bool> AuthorizeAsync(HttpListenerContext context)
+    {
+        var fingerprint = context.Request.Headers["X-Flower-Fingerprint"];
+        if (string.IsNullOrEmpty(fingerprint))
+            return false; // Can't evaluate trust without a claimed identity - deny outright.
+
+        if (_trustedPeerStore.IsTrusted(fingerprint))
+            return true;
+
+        var alias = context.Request.Headers["X-Flower-Alias"];
+        if (string.IsNullOrEmpty(alias))
+            alias = fingerprint;
+
+        var approved = await RequestApprovalAsync(fingerprint, alias);
+        if (approved)
+            await _trustedPeerStore.ApproveAsync(fingerprint, alias);
+
+        return approved;
+    }
+
+    // Concurrent requests from the same not-yet-decided fingerprint (e.g. a
+    // playlist GET immediately followed by its POST /apply in one sync session)
+    // share a single prompt/TaskCompletionSource rather than surfacing the
+    // approve/deny dialog twice. Only the caller that actually creates the
+    // pending entry raises the event and starts the timeout; every other
+    // concurrent caller just awaits the same task.
+    private async Task<bool> RequestApprovalAsync(string fingerprint, string alias)
+    {
+        var newTcs = new TaskCompletionSource<bool>();
+        var tcs = _pendingApprovals.GetOrAdd(fingerprint, newTcs);
+
+        if (ReferenceEquals(tcs, newTcs))
+        {
+            var handler = PeerApprovalRequested;
+            if (handler == null)
+                tcs.TrySetResult(false); // No UI listening - fail closed rather than trusting a stranger.
+            else
+                handler.Invoke(this, new PeerApprovalRequestedEventArgs { Fingerprint = fingerprint, Alias = alias, Resolution = tcs });
+
+            _ = Task.Delay(ApprovalTimeout).ContinueWith(_ =>
+            {
+                tcs.TrySetResult(false); // Ignored/unanswered prompt - deny by default.
+                _pendingApprovals.TryRemove(fingerprint, out TaskCompletionSource<bool>? _);
+            });
+        }
+
+        return await tcs.Task;
     }
 
     private async Task HandleInfoAsync(HttpListenerContext context)
@@ -168,6 +262,46 @@ public class SyncHttpServer : IDisposable
         await _playlistStore.SaveAsync(playlists);
 
         context.Response.StatusCode = 204;
+    }
+
+    // Embedded OpenSubsonic host (SYNC-PLAN.md Phase 3's "one client, three
+    // interchangeable servers"): serves this device's own real (Path != null)
+    // tracks for LibrarySyncService to pull from a peer. Only getAlbumList2/
+    // getAlbum are implemented - nothing else calls getArtists/getSong/stream yet
+    // (the mobile download-button UI, which needs stream, is a later piece).
+    private async Task HandleGetAlbumList2Async(HttpListenerContext context)
+    {
+        var query = context.Request.QueryString;
+        var size = int.TryParse(query["size"], out var s) ? s : 500;
+        var offset = int.TryParse(query["offset"], out var o) ? o : 0;
+
+        var albums = LibraryOpenSubsonicMapper.BuildAlbumList(_library.Tracks)
+            .Skip(offset)
+            .Take(size)
+            .ToList();
+
+        var body = JsonSerializer.Serialize(new SubsonicEnvelope
+        {
+            Response = new SubsonicResponse { Status = "ok", Version = "1.16.1", AlbumList2 = new AlbumList2(albums) },
+        }, JsonOptions);
+        await WriteJsonAsync(context, body);
+    }
+
+    private async Task HandleGetAlbumAsync(HttpListenerContext context)
+    {
+        var id = context.Request.QueryString["id"];
+        var album = id != null ? LibraryOpenSubsonicMapper.FindAlbum(_library.Tracks, id) : null;
+        if (album == null)
+        {
+            context.Response.StatusCode = 404;
+            return;
+        }
+
+        var body = JsonSerializer.Serialize(new SubsonicEnvelope
+        {
+            Response = new SubsonicResponse { Status = "ok", Version = "1.16.1", Album = album },
+        }, JsonOptions);
+        await WriteJsonAsync(context, body);
     }
 
     private static async Task WriteJsonAsync(HttpListenerContext context, string body)
