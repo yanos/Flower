@@ -101,11 +101,17 @@ public class TrackRowViewModel : ViewModelBase
     private Bitmap? _albumArt;
     private int     _artState; // 0=idle, 1=loading, 2=done
 
+    // Loads regardless of IsFirstInAlbumGroup - desktop's MusicListView only
+    // ever shows this for the group leader (IsVisible="{Binding
+    // IsFirstInAlbumGroup}" in TrackRowControl.axaml gates that independently),
+    // but mobile's flat row-per-track list (no spanning) wants every row to
+    // show its own thumbnail. AlbumArtLoader caches by directory, so repeat
+    // loads within one album are cheap regardless of platform.
     public Bitmap? AlbumArt
     {
         get
         {
-            if (IsFirstInAlbumGroup && Interlocked.CompareExchange(ref _artState, 1, 0) == 0)
+            if (Interlocked.CompareExchange(ref _artState, 1, 0) == 0)
                 _ = LoadArtAsync();
             return _albumArt;
         }
