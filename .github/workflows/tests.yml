@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Flower.csproj (the shared library Flower.Tests references) multi-targets
+      # net10.0;net9.0, but a project reference resolves to whichever TFM
+      # matches the referencing project - Flower.Tests only targets net10.0,
+      # so only that flavor of Flower.csproj actually gets built here.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower/Flower.csproj
+            Flower.Tests/Flower.Tests.csproj
+
+      - name: Run tests
+        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release
