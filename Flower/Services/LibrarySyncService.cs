@@ -1,18 +1,26 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
+using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 using Flower.Models;
 
 namespace Flower.Services;
 
-// Pulls a peer's full track catalog and merges anything this device doesn't
-// already have as Path == null placeholders - see SYNC-PLAN.md Phase 3. Reuses
-// OpenSubsonicClient (the same client Flower will use to talk to a real
-// Navidrome/Jellyfin server) against the peer's own embedded SyncHttpServer
-// host, authenticated via the trust-gate identity headers rather than real
-// Subsonic credentials (see SyncHttpServer.AuthorizeAsync).
+// Pulls a peer's full track catalog in one request (GET /api/flower/v1/library
+// - see LibrarySyncContracts) and merges anything this device doesn't already
+// have as Path == null placeholders - see SYNC-PLAN.md Phase 3. Talks to the
+// peer's embedded SyncHttpServer host directly (same plain-HTTP identity
+// headers as PlaylistSyncService, not real OpenSubsonic credentials - see
+// SyncHttpServer.AuthorizeAsync) rather than through OpenSubsonicClient: an
+// earlier version used the OpenSubsonic-shaped getAlbumList2/getAlbum pair,
+// one request per album, which for a library of hundreds/thousands of albums
+// meant hundreds/thousands of individual connections in a burst - observed in
+// practice as heavy iOS nw_connection log churn. OpenSubsonicClient itself is
+// unaffected and still used for the OpenSubsonic-shaped endpoints (stream/
+// download, and real third-party server support later).
 //
 // Unlike PlaylistSyncService, both sides of a discovered pair run this
 // independently rather than electing one initiator: there's no write-back to
@@ -21,8 +29,8 @@ namespace Flower.Services;
 // other's exclusive tracks, which a one-sided pull would miss entirely.
 public class LibrarySyncService
 {
-    private const int PageSize = 500;
-    private const int MaxConcurrentAlbumFetches = 8;
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly Library _library;
     private readonly string _ownFingerprint;
@@ -40,77 +48,33 @@ public class LibrarySyncService
         if (string.IsNullOrEmpty(device.Fingerprint))
             return;
 
-        var client = new OpenSubsonicClient(
-            $"http://{device.EndPoint}",
-            username: "", password: "",
-            extraHeaders:
-            [
-                ("X-Flower-Fingerprint", _ownFingerprint),
-                ("X-Flower-Alias", _ownAlias),
-            ]);
-
-        List<AlbumID3> albums;
+        List<Child> songs;
         try
         {
-            albums = await FetchAllAlbumsAsync(client);
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}/api/flower/v1/library");
+            request.Headers.Add("X-Flower-Fingerprint", _ownFingerprint);
+            request.Headers.Add("X-Flower-Alias", _ownAlias);
+            // Fresh connection per request rather than pooling one - see
+            // PlaylistSyncService.AddIdentityHeaders for why (avoids reusing a
+            // keep-alive connection the server/OS already tore down).
+            request.Headers.ConnectionClose = true;
+
+            using var response = await Http.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync();
+            var manifest = JsonSerializer.Deserialize<LibrarySyncManifestDto>(json, JsonOptions);
+            songs = manifest?.Songs ?? [];
         }
         catch
         {
             return; // Peer unreachable, not running this endpoint yet, or not (yet) trusted.
         }
 
-        var placeholders = await FetchPlaceholdersAsync(client, albums, device.Fingerprint);
+        var placeholders = songs
+            .Select(song => LibrarySyncMapper.ToPlaceholderTrack(song, device.Fingerprint))
+            .ToList();
+
         if (placeholders.Count > 0)
             _library.MergeSyncedTracks(placeholders);
-    }
-
-    private static async Task<List<AlbumID3>> FetchAllAlbumsAsync(OpenSubsonicClient client)
-    {
-        var all = new List<AlbumID3>();
-        var offset = 0;
-        while (true)
-        {
-            var page = await client.GetAlbumList2Async(size: PageSize, offset: offset);
-            all.AddRange(page);
-            if (page.Count < PageSize)
-                break;
-            offset += PageSize;
-        }
-
-        return all;
-    }
-
-    // One request per album (getAlbumList2 alone doesn't carry per-song detail),
-    // bounded to a modest concurrency so a library of hundreds of albums doesn't
-    // serialize into hundreds of sequential LAN round-trips, without hammering
-    // the peer's single HttpListener with everything at once either. A peer that
-    // goes away mid-fetch just yields fewer placeholders this round - it
-    // converges next time both devices are up.
-    private static async Task<List<Track>> FetchPlaceholdersAsync(OpenSubsonicClient client, List<AlbumID3> albums, string peerFingerprint)
-    {
-        using var semaphore = new SemaphoreSlim(MaxConcurrentAlbumFetches);
-
-        var albumResults = await Task.WhenAll(albums.Select(async album =>
-        {
-            await semaphore.WaitAsync();
-            try
-            {
-                return await client.GetAlbumAsync(album.Id);
-            }
-            catch
-            {
-                return null;
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        }));
-
-        return albumResults
-            .Where(a => a?.Song != null)
-            .SelectMany(a => a!.Song!)
-            .Select(song => LibrarySyncMapper.ToPlaceholderTrack(song, peerFingerprint))
-            .ToList();
     }
 }

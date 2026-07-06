@@ -124,11 +124,19 @@ public class PlaylistSyncService
     }
 
     // See SyncHttpServer.AuthorizeAsync - every /api/flower/v1/* endpoint requires
-    // these to evaluate (and, on first contact, prompt for) trust.
+    // these to evaluate (and, on first contact, prompt for) trust. ConnectionClose
+    // forces a fresh connection per request rather than pooling/reusing one -
+    // sync sessions are now just a couple of requests each (see LibrarySyncService's
+    // own history of this), so the extra handshake is negligible, and it avoids
+    // HttpClient trying to reuse a keep-alive connection SyncHttpServer's
+    // HttpListener (or the OS, e.g. after iOS backgrounds the app - see
+    // SYNC-PLAN.md's foreground-only note) has already torn down - observed in
+    // practice as "Connection reset by peer" / "Socket is not connected" on iOS.
     private void AddIdentityHeaders(HttpRequestMessage request)
     {
         request.Headers.Add("X-Flower-Fingerprint", _ownFingerprint);
         request.Headers.Add("X-Flower-Alias", _ownAlias);
+        request.Headers.ConnectionClose = true;
     }
 
     private async Task<Playlist> ResolveConflictAsync(PlaylistSyncDecision decision, string remoteAlias)

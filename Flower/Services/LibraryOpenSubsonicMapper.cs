@@ -21,6 +21,14 @@ public static class LibraryOpenSubsonicMapper
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+    // Flat song list across every album, for the bespoke bulk sync endpoint
+    // (GET /api/flower/v1/library - see LibrarySyncContracts/LibrarySyncService)
+    // rather than the OpenSubsonic-shaped one-request-per-album pair above.
+    public static List<Child> BuildAllSongs(IReadOnlyList<Track> tracks) =>
+        GroupByAlbum(tracks)
+            .SelectMany(g => g.Select(t => ToChild(t, g.Key)))
+            .ToList();
+
     public static AlbumWithSongsID3? FindAlbum(IReadOnlyList<Track> tracks, string albumId)
     {
         var group = GroupByAlbum(tracks).FirstOrDefault(g => g.Key == albumId);

@@ -32,9 +32,15 @@ public sealed class PeerApprovalRequestedEventArgs : EventArgs
 //   POST /api/flower/v1/playlists/apply - adopt a peer-merged manifest wholesale
 // (phase 2, playlist metadata sync), plus an embedded OpenSubsonic host (phase 3,
 // see LibraryOpenSubsonicMapper/LibrarySyncService/LibraryDownloadService):
-//   GET  /rest/getAlbumList2 - this device's own real tracks, grouped by album
-//   GET  /rest/getAlbum      - one album's song list
-//   GET  /rest/stream        - one song's actual file bytes, by SyncKey
+//   GET  /api/flower/v1/library - every real track in one response (bespoke,
+//                                 not OpenSubsonic - see LibrarySyncContracts;
+//                                 this is what LibrarySyncService actually uses)
+//   GET  /rest/getAlbumList2    - this device's own real tracks, grouped by album
+//   GET  /rest/getAlbum         - one album's song list (OpenSubsonic-shaped
+//                                 browsing, kept for real third-party interop -
+//                                 not used by Flower's own sync, which would mean
+//                                 one request per album)
+//   GET  /rest/stream           - one song's actual file bytes, by SyncKey
 // Deliberately plain HTTP for now, not HTTPS - see the plan doc for why.
 //
 // Trust gate (phase 3): every /api/flower/v1/* endpoint requires the caller to
@@ -134,6 +140,13 @@ public class SyncHttpServer : IDisposable
     {
         try
         {
+            // Matches the client's own ConnectionClose (see PlaylistSyncService/
+            // LibrarySyncService/OpenSubsonicClient): both ends agree every sync
+            // connection is one-shot, rather than a client later trying to reuse
+            // a pooled connection this listener (or the OS) has already torn
+            // down - observed in practice as "Connection reset by peer" on iOS.
+            context.Response.KeepAlive = false;
+
             var path = context.Request.Url?.AbsolutePath;
             var method = context.Request.HttpMethod;
 
@@ -149,6 +162,8 @@ public class SyncHttpServer : IDisposable
                 await HandleGetPlaylistsAsync(context);
             else if (path == "/api/flower/v1/playlists/apply" && method == "POST")
                 await HandleApplyPlaylistsAsync(context);
+            else if (path == "/api/flower/v1/library" && method == "GET")
+                await HandleGetLibraryAsync(context);
             else if (path == "/rest/getAlbumList2" && method == "GET")
                 await HandleGetAlbumList2Async(context);
             else if (path == "/rest/getAlbum" && method == "GET")
@@ -239,6 +254,15 @@ public class SyncHttpServer : IDisposable
     private async Task HandleGetPlaylistsAsync(HttpListenerContext context)
     {
         var manifest = PlaylistSyncMapper.ToManifest(_fingerprint, _library.Playlists);
+        await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
+    }
+
+    // Bulk, non-OpenSubsonic endpoint for LibrarySyncService - see
+    // LibrarySyncContracts for why this exists alongside (not instead of)
+    // /rest/getAlbumList2+getAlbum.
+    private async Task HandleGetLibraryAsync(HttpListenerContext context)
+    {
+        var manifest = new LibrarySyncManifestDto(_fingerprint, LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks));
         await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
     }
 

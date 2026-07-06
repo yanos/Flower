@@ -62,6 +62,23 @@ public class LibraryOpenSubsonicMapperTests
     }
 
     [Fact]
+    public void BuildAllSongs_returns_every_real_track_across_every_album_in_one_flat_list()
+    {
+        var tracks = new List<Track>
+        {
+            RealTrack("Track1", "Beatles", "Abbey Road"),
+            RealTrack("Track2", "Beatles", "Abbey Road"),
+            RealTrack("Track3", "Miles Davis", "Kind of Blue"),
+        };
+        var placeholder = new Track { Title = "Not Downloaded", Artists = "X", Album = "Y", Path = null, OriginDeviceFingerprint = "peer-1" };
+
+        var songs = LibraryOpenSubsonicMapper.BuildAllSongs(tracks.Append(placeholder).ToList());
+
+        Assert.Equal(3, songs.Count);
+        Assert.DoesNotContain(songs, s => s.Title == "Not Downloaded");
+    }
+
+    [Fact]
     public void FindAlbum_returns_null_for_an_unknown_id()
     {
         Assert.Null(LibraryOpenSubsonicMapper.FindAlbum(new List<Track>(), "al:nope|nope"));
