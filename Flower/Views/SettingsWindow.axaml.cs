@@ -27,12 +27,14 @@ public partial class SettingsWindow : Window
 {
     private readonly MainViewModel _viewModel;
     private readonly List<string> _paths;
+    private readonly List<string> _originalPaths;
 
     public SettingsWindow(MainViewModel viewModel)
     {
         InitializeComponent();
         _viewModel = viewModel;
         _paths = new List<string>(viewModel.LibraryPaths);
+        _originalPaths = new List<string>(_paths);
         RefreshPathRows();
         SyncPlayCountCheckBox.IsChecked = viewModel.SyncPlayCountFromITunes;
         ITunesLibraryPathText.Text = DescribeITunesLibrarySource();
@@ -118,11 +120,19 @@ public partial class SettingsWindow : Window
     // Closes as soon as the (fast) path list is saved rather than waiting for
     // the (potentially long) library rescan - RescanLibraryAsync runs
     // unawaited afterward, with progress shown via MainView's existing busy
-    // spinner (see MainViewModel.RebuildDatabaseAsync's BeginBusy).
+    // spinner (see MainViewModel.RebuildDatabaseAsync's BeginBusy). Only
+    // actually saves/rescans if a folder was added or removed - reordering
+    // never happens (Add always appends, Remove just removes), so a plain
+    // set comparison against the paths this dialog opened with is enough.
     private async void SaveButton_Click(object? sender, RoutedEventArgs e)
     {
-        await _viewModel.SaveLibraryPathsAsync(_paths.ToList());
+        var pathsChanged = !_paths.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(_originalPaths);
+        if (pathsChanged)
+            await _viewModel.SaveLibraryPathsAsync(_paths.ToList());
+
         Close();
-        _ = _viewModel.RescanLibraryAsync();
+
+        if (pathsChanged)
+            _ = _viewModel.RescanLibraryAsync();
     }
 }
