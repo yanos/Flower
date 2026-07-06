@@ -5,12 +5,17 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.Persistence
 {
     public class PlaylistStore
     {
+        private static readonly ILogger Logger = AppLogging.CreateLogger<PlaylistStore>();
+
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "playlists.json");
 
         private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
@@ -45,8 +50,9 @@ namespace Flower.Persistence
                         r.UpdatedAt == default ? DateTimeOffset.UtcNow : r.UpdatedAt))
                     .ToList();
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.LogWarning(ex, "Failed to load playlists from {Path}; starting with no playlists", path);
                 return new List<Playlist>();
             }
         }

@@ -1,4 +1,6 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -8,6 +10,7 @@ using Avalonia.Markup.Xaml;
 using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Flower.Controls;
+using Flower.Logging;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
@@ -18,7 +21,9 @@ using Flower.Views;
 using Flower.Views.Mobile;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
+using Serilog;
 
 namespace Flower;
 
@@ -33,6 +38,27 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Must run before anything below can log to a real file - classes with
+        // a static logger field (Library, the *Store classes, etc.) resolve it
+        // to whatever AppLogging.Initialize has configured *the first time that
+        // class is touched*, so this needs to be the very first thing that happens.
+        var logPath = AppLogging.Initialize();
+        var logger = AppLogging.CreateLogger<App>();
+
+        // Anything that throws without a handler further up would otherwise
+        // just vanish (a console nobody's watching, or on some platforms
+        // nothing at all) - log it before the process potentially dies so a
+        // bug report has something to go on.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            logger.LogCritical(e.ExceptionObject as Exception, "Unhandled exception (IsTerminating={IsTerminating})", e.IsTerminating);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            logger.LogError(e.Exception, "Unobserved task exception");
+            e.SetObserved();
+        };
+
+        logger.LogInformation("Flower starting. Log file: {LogPath}", logPath);
+
         BindingPlugins.DataValidators.RemoveAt(0);
 
         var libraryStore = new LibraryStore();
@@ -72,6 +98,7 @@ public partial class App : Application
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
                 .AddSingleton<MobileMainViewModel>()
+                .AddLogging(builder => builder.AddSerilog())
                 .BuildServiceProvider());
 
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
@@ -104,19 +131,36 @@ public partial class App : Application
         // Rescan the music folder in the background while the UI is already showing
         _ = Task.Run(async () =>
         {
-            var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
+            var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");
+            try
+            {
+                rescanLogger.LogInformation("Startup rescan starting for paths: {LibraryPaths}", string.Join(", ", appSettings.LibraryPaths));
+                var stopwatch = Stopwatch.StartNew();
+                var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
+                rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
 
-            // Update the playlist first so navigation is consistent when TracksUpdated fires
-            mainPlaylist.ReplaceAll(freshTracks);
-            library.UpdateTracks(freshTracks);
+                // Update the playlist first so navigation is consistent when TracksUpdated fires
+                mainPlaylist.ReplaceAll(freshTracks);
+                library.UpdateTracks(freshTracks);
 
-            await libraryStore.SaveAsync(library.Tracks);
+                await libraryStore.SaveAsync(library.Tracks);
+                rescanLogger.LogInformation("Library saved ({TrackCount} tracks)", library.Tracks.Count);
 
-            // SyncITunesPlayCountAsync does its own save (it may run again
-            // later via the Settings checkbox, independent of this startup
-            // rescan) and drives the status bar spinner via BeginBusy.
-            if (appSettings.SyncPlayCountFromITunes)
-                await mainViewModel.SyncITunesPlayCountAsync();
+                // SyncITunesPlayCountAsync does its own save (it may run again
+                // later via the Settings checkbox, independent of this startup
+                // rescan) and drives the status bar spinner via BeginBusy.
+                if (appSettings.SyncPlayCountFromITunes)
+                    await mainViewModel.SyncITunesPlayCountAsync();
+            }
+            catch (Exception ex)
+            {
+                // Without this, a failure here (e.g. a library path became
+                // unreadable) would just be an unobserved task fault - logged
+                // above via TaskScheduler.UnobservedTaskException, eventually,
+                // but only once the GC finalizes the task; log it immediately
+                // here instead.
+                rescanLogger.LogError(ex, "Startup rescan failed");
+            }
         });
     }
 

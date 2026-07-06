@@ -7,6 +7,7 @@ using Avalonia.Input;
 using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Flower.Controls;
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
@@ -62,6 +63,11 @@ public partial class MainWindow : Window
             // have hit disk yet - flush the in-memory state synchronously so quitting
             // right after a play doesn't silently lose that increment. See LibraryStore.Save.
             new LibraryStore().Save(_library.Tracks);
+
+            // Serilog buffers writes - flush them so the last few lines of this
+            // session (often the most useful ones, if something just went wrong)
+            // aren't lost the same way library.json saves used to be.
+            AppLogging.Shutdown();
         };
 
         // The gestures shown in the native menu bar must match MainView's actual

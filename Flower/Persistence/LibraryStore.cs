@@ -5,12 +5,17 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.Persistence
 {
     public class LibraryStore
     {
+        private static readonly ILogger Logger = AppLogging.CreateLogger<LibraryStore>();
+
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "library.json");
 
         private static readonly JsonSerializerOptions Options = new()
@@ -30,8 +35,12 @@ namespace Flower.Persistence
                 var json = File.ReadAllText(path);
                 return JsonSerializer.Deserialize<List<Track>>(json, Options) ?? new List<Track>();
             }
-            catch
+            catch (Exception ex)
             {
+                // Corrupt/unreadable library.json would otherwise silently look
+                // like "empty library" with no clue why - this is exactly the
+                // kind of thing you need in a bug report.
+                Logger.LogWarning(ex, "Failed to load library from {Path}; starting with an empty library", path);
                 return new List<Track>();
             }
         }
@@ -47,8 +56,9 @@ namespace Flower.Persistence
                 var json = await File.ReadAllTextAsync(path);
                 return JsonSerializer.Deserialize<List<Track>>(json, Options) ?? new List<Track>();
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.LogWarning(ex, "Failed to load library from {Path}; starting with an empty library", path);
                 return new List<Track>();
             }
         }

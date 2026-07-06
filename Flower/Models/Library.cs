@@ -2,10 +2,16 @@
 using System.Collections.Generic;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
+
 namespace Flower.Models
 {
     public class Library
     {
+        private static readonly ILogger Logger = AppLogging.CreateLogger<Library>();
+
         // Guards every read-modify-write of Tracks. EndReached fires on a LibVLC
         // callback thread (see CLAUDE.md's Binding Notes) while the startup/rescan
         // Task.Run (App.axaml.cs) runs on a threadpool thread - both touch this
@@ -77,6 +83,7 @@ namespace Flower.Models
                       ?? playedTrack
                     : playedTrack;
                 current.PlayCount++;
+                Logger.LogDebug("PlayCount incremented to {NewCount} for {Title} ({Path})", current.PlayCount, current.Title, current.Path);
                 return current;
             }
         }

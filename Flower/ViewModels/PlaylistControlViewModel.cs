@@ -3,6 +3,9 @@ using System.Linq;
 
 using Avalonia.Threading;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
@@ -11,6 +14,8 @@ namespace Flower.ViewModels
 {
     public class PlaylistControlViewModel : ViewModelBase
     {
+        private static readonly ILogger Logger = AppLogging.CreateLogger<PlaylistControlViewModel>();
+
         private Playlist _currentPlaylist;
         private Track? _currentlyPlayingTrack;
         private Track? _selectedTrack;
@@ -104,6 +109,7 @@ namespace Flower.ViewModels
                 if (CurrentlyPlayingTrack != null)
                 {
                     var finishedTrack = CurrentlyPlayingTrack;
+                    Logger.LogDebug("EndReached: {Title} ({Path})", finishedTrack.Title, finishedTrack.Path);
 
                     // finishedTrack can be a stale reference: every launch kicks off a
                     // background rescan (see App.axaml.cs) that replaces _library.Tracks
@@ -124,6 +130,7 @@ namespace Flower.ViewModels
                     var nextTrack = IsRepeatEnabled ? finishedTrack : GetNextTrack(finishedTrack);
                     if (nextTrack != null)
                     {
+                        Logger.LogDebug("Auto-advancing to {Title} (repeat={Repeat}, shuffle={Shuffle})", nextTrack.Title, IsRepeatEnabled, IsShuffleEnabled);
                         Dispatcher.UIThread.Post(() => Play(nextTrack));
                     }
                 }
@@ -176,6 +183,7 @@ namespace Flower.ViewModels
 
         public void Play(Track track)
         {
+            Logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, track.Path);
             SelectedTrack = track;
             CurrentlyPlayingTrack = track;
             _audioManager.Play(track);
