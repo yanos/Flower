@@ -118,6 +118,23 @@ and nothing stamps a version into the built binaries themselves.
    `vpk pack` can then just read `$(Version)` from the build output instead
    of needing it passed in separately.
 
+**Verified against this actual repo** (via the `minver-cli` global tool,
+`minver --tag-prefix v`, no changes left behind):
+
+| Situation | Computed version |
+|---|---|
+| No tags exist yet (repo's current state) | `0.0.0-alpha.0.121` — `121` is the commit count from the root commit |
+| Built exactly on a tagged commit `v1.0.0` | `1.0.0` — the tag, verbatim |
+| One commit past `v1.0.0`, untagged (ordinary local dev) | `1.0.1-alpha.0.1` — next patch, auto-marked `-alpha.0.<height>` |
+| Built exactly on a beta tag `v1.1.0-beta.1` | `1.1.0-beta.1` — used as-is |
+
+The rule that matters day to day: **exactly on a tag → that tag's version,
+verbatim; anything else → the next patch, auto-suffixed
+`-alpha.0.<commits since the tag>`.** That auto-suffixed form is itself a
+valid SemVer pre-release that always sorts below the release it's heading
+toward, so an ordinary local dev build is never ambiguous with — or
+mistakeable for — a real tagged release.
+
 **Effort:** Small. **Risk:** Low.
 
 ---
