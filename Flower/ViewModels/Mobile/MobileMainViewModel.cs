@@ -49,6 +49,7 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand OpenAppSettingsCommand { get; }
     public ICommand AllowPeerCommand { get; }
     public ICommand DenyPeerCommand { get; }
+    public ICommand DownloadTrackCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.Songs;
     public MobileTab SelectedTab
@@ -254,7 +255,10 @@ public class MobileMainViewModel : ViewModelBase
             // (MainView.axaml.cs calls Play, not PlayOrPause, on Enter/double-click).
             // PlayOrPause ignores its track argument whenever something is already
             // playing, so reusing it here paused instead of switching tracks.
-            if (track != null)
+            // Path == null means not yet downloaded (see SYNC-PLAN.md Phase 3) -
+            // tapping such a row does nothing in v1; only the row's own download
+            // icon (DownloadTrackCommand) is actionable for it.
+            if (track is { Path: not null })
                 PlaylistControl.Play(track);
         });
         ToggleMiniPlayerCommand = new RelayCommand(() =>
@@ -309,6 +313,17 @@ public class MobileMainViewModel : ViewModelBase
         OpenAppSettingsCommand = new RelayCommand(() => PlatformPermissions.Current?.OpenAppSettings());
         AllowPeerCommand = new RelayCommand(() => ResolvePeerApproval(true));
         DenyPeerCommand = new RelayCommand(() => ResolvePeerApproval(false));
+        DownloadTrackCommand = new RelayCommand<TrackRowViewModel>(async row =>
+        {
+            if (row == null || row.IsDownloading)
+                return;
+
+            row.IsDownloadUnavailable = false;
+            row.IsDownloading = true;
+            var result = await Main.DownloadTrackAsync(row.Track);
+            row.IsDownloading = false;
+            row.IsDownloadUnavailable = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
+        });
     }
 
     private void ResolvePeerApproval(bool allowed)

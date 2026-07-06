@@ -61,17 +61,24 @@ namespace Flower.Models
                     }
                 }
 
-                // Sync placeholders (Path == null, OriginDeviceFingerprint set - see
-                // LibrarySyncService/MergeSyncedTracks) are never produced by a disk
-                // scan at all, so they'd otherwise vanish every time this runs. A
-                // rescan only concerns local files; it has no opinion on tracks known
-                // only via sync, so carry them forward untouched. Keyed on
-                // OriginDeviceFingerprint rather than just Path == null so an
-                // otherwise-incomplete Track (no path set for some other reason) isn't
-                // mistaken for one.
-                var placeholders = Tracks.Where(t => t.Path == null && t.OriginDeviceFingerprint != null);
+                // Tracks known via sync (OriginDeviceFingerprint set - see
+                // LibrarySyncService/MergeSyncedTracks), placeholder or already
+                // downloaded, aren't necessarily rediscoverable by a disk/MediaStore
+                // scan at all - a downloaded file can live in platform-private
+                // storage a scan never looks at (see LibraryDownloadService, Android
+                // in particular) - so a scan finding nothing there is not evidence
+                // the track should be forgotten. Excluded here if the fresh scan
+                // *did* also find the same path (e.g. iOS's Documents-folder scan
+                // legitimately re-discovering a file this device downloaded earlier)
+                // to avoid a duplicate row - that fresh-scanned instance already
+                // carried its DateAdded/PlayCount forward above.
+                var freshPaths = new HashSet<string>(
+                    tracks.Where(t => t.Path != null).Select(t => t.Path!),
+                    StringComparer.OrdinalIgnoreCase);
+                var carriedForwardSyncTracks = Tracks.Where(t =>
+                    t.OriginDeviceFingerprint != null && (t.Path == null || !freshPaths.Contains(t.Path)));
 
-                Tracks = tracks.Concat(placeholders).ToList();
+                Tracks = tracks.Concat(carriedForwardSyncTracks).ToList();
             }
 
             TracksUpdated?.Invoke(this, EventArgs.Empty);
@@ -99,7 +106,10 @@ namespace Flower.Models
                     if (byKey.TryGetValue(remote.SyncKey, out var existing))
                     {
                         if (existing.Path == null)
+                        {
                             existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
+                            existing.OriginFileExtension = remote.OriginFileExtension;
+                        }
                         continue; // Already a real local file - the peer having it too isn't news.
                     }
 
@@ -133,6 +143,12 @@ namespace Flower.Models
                 return current;
             }
         }
+
+        // Notifies listeners that a Track already in Tracks was mutated in place -
+        // e.g. a placeholder's Path being set after a successful download (see
+        // LibraryDownloadService) - without a list replacement, since the same
+        // Track reference is still current and nothing was added or removed.
+        public void NotifyTrackChanged() => TracksUpdated?.Invoke(this, EventArgs.Empty);
 
         public void AddPlaylist(Playlist playlist)
         {

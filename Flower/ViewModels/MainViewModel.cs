@@ -42,6 +42,7 @@ public partial class MainViewModel : ViewModelBase
     private MainPlaylist?      _mainPlaylist;
     private PlaylistSyncService? _playlistSyncService;
     private LibrarySyncService? _librarySyncService;
+    private LibraryDownloadService? _libraryDownloadService;
 
     // Fingerprints of devices already sync'd (or currently syncing) this app
     // session, so DeviceDiscovered re-firing for the same peer (e.g. once with the
@@ -379,6 +380,7 @@ public partial class MainViewModel : ViewModelBase
         NetworkDiscoveryService networkDiscovery,
         PlaylistSyncService playlistSyncService,
         LibrarySyncService librarySyncService,
+        LibraryDownloadService libraryDownloadService,
         SyncHttpServer syncHttpServer)
     {
         Library                = library;
@@ -388,6 +390,7 @@ public partial class MainViewModel : ViewModelBase
         _mainPlaylist          = mainPlaylist;
         _playlistSyncService   = playlistSyncService;
         _librarySyncService    = librarySyncService;
+        _libraryDownloadService = libraryDownloadService;
 
         if (appSettings.SortColumn is { } savedSortColumn)
         {
@@ -611,6 +614,21 @@ public partial class MainViewModel : ViewModelBase
             if (header != null)
                 _sidebarItems.Remove(header);
         }
+    }
+
+    // Downloads one placeholder track's audio from whichever peer currently holds
+    // it - see LibraryDownloadService, SYNC-PLAN.md Phase 3's mobile download
+    // button. Resolves the peer against currently-discovered devices (the same
+    // Devices sidebar list Cmd/Ctrl-independent code above already maintains) -
+    // a peer that's gone offline/out of range since it was last seen results in
+    // TrackDownloadResult.PeerUnavailable rather than guessing an address.
+    public Task<TrackDownloadResult> DownloadTrackAsync(Track track)
+    {
+        var peer = track.OriginDeviceFingerprint is { } fingerprint
+            ? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == fingerprint)?.Device
+            : null;
+
+        return _libraryDownloadService?.DownloadAsync(track, peer) ?? Task.FromResult(TrackDownloadResult.Failed);
     }
 
     // Runs a playlist sync session (Phase 2) and a library sync session (Phase 3 -

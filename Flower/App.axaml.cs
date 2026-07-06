@@ -83,6 +83,7 @@ public partial class App : Application
         var syncHttpServer = new SyncHttpServer(networkDiscovery.OwnInstanceName, library);
         var playlistSyncService = new PlaylistSyncService(library, ownFingerprint, networkDiscovery.OwnInstanceName);
         var librarySyncService = new LibrarySyncService(library, ownFingerprint, networkDiscovery.OwnInstanceName);
+        var libraryDownloadService = new LibraryDownloadService(library, ownFingerprint, networkDiscovery.OwnInstanceName);
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
@@ -97,6 +98,7 @@ public partial class App : Application
                 .AddSingleton(syncHttpServer)
                 .AddSingleton(playlistSyncService)
                 .AddSingleton(librarySyncService)
+                .AddSingleton(libraryDownloadService)
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()

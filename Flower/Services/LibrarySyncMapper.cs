@@ -21,5 +21,6 @@ public static class LibrarySyncMapper
         Year = song.Year?.ToString(),
         Path = null,
         OriginDeviceFingerprint = originDeviceFingerprint,
+        OriginFileExtension = song.Suffix,
     };
 }

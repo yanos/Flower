@@ -31,12 +31,11 @@ public sealed class PeerApprovalRequestedEventArgs : EventArgs
 //   GET  /api/flower/v1/playlists      - this device's current playlist manifest
 //   POST /api/flower/v1/playlists/apply - adopt a peer-merged manifest wholesale
 // (phase 2, playlist metadata sync), plus an embedded OpenSubsonic host (phase 3,
-// see LibraryOpenSubsonicMapper/LibrarySyncService):
+// see LibraryOpenSubsonicMapper/LibrarySyncService/LibraryDownloadService):
 //   GET  /rest/getAlbumList2 - this device's own real tracks, grouped by album
 //   GET  /rest/getAlbum      - one album's song list
-// Deliberately plain HTTP for now, not HTTPS - see the plan doc for why. No audio
-// file transfer yet; playlists can only reference tracks already present on both
-// sides (see PlaylistSyncMapper), and getAlbum/getAlbumList2 carry metadata only.
+//   GET  /rest/stream        - one song's actual file bytes, by SyncKey
+// Deliberately plain HTTP for now, not HTTPS - see the plan doc for why.
 //
 // Trust gate (phase 3): every /api/flower/v1/* endpoint requires the caller to
 // identify itself via X-Flower-Fingerprint/X-Flower-Alias headers (see
@@ -154,6 +153,8 @@ public class SyncHttpServer : IDisposable
                 await HandleGetAlbumList2Async(context);
             else if (path == "/rest/getAlbum" && method == "GET")
                 await HandleGetAlbumAsync(context);
+            else if (path == "/rest/stream" && method == "GET")
+                await HandleStreamAsync(context);
             else
                 context.Response.StatusCode = 404;
         }
@@ -302,6 +303,29 @@ public class SyncHttpServer : IDisposable
             Response = new SubsonicResponse { Status = "ok", Version = "1.16.1", Album = album },
         }, JsonOptions);
         await WriteJsonAsync(context, body);
+    }
+
+    // Serves this device's own real file bytes for one song, looked up by SyncKey
+    // (the same id LibraryOpenSubsonicMapper.ToChild hands out - see
+    // LibraryDownloadService, SYNC-PLAN.md Phase 3's download button). Never
+    // serves a placeholder - only a track this device actually has a file for.
+    private async Task HandleStreamAsync(HttpListenerContext context)
+    {
+        var id = context.Request.QueryString["id"];
+        var track = id != null
+            ? _library.Tracks.FirstOrDefault(t => t.Path != null && t.SyncKey == id)
+            : null;
+
+        if (track?.Path == null || !File.Exists(track.Path))
+        {
+            context.Response.StatusCode = 404;
+            return;
+        }
+
+        context.Response.ContentType = "application/octet-stream";
+        using var fileStream = File.OpenRead(track.Path);
+        context.Response.ContentLength64 = fileStream.Length;
+        await fileStream.CopyToAsync(context.Response.OutputStream);
     }
 
     private static async Task WriteJsonAsync(HttpListenerContext context, string body)

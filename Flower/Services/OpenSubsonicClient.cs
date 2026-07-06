@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -248,5 +249,24 @@ public class OpenSubsonicClient
             parameters.Add(("size", size.Value.ToString()));
 
         return BuildUrl("getCoverArt", parameters);
+    }
+
+    // Streams stream?id=... straight to a file rather than buffering the whole
+    // track in memory - see LibraryDownloadService (SYNC-PLAN.md Phase 3's
+    // download button). Uses the same identity headers as every other request
+    // (see the constructor's extraHeaders), so this also goes through a peer's
+    // trust gate like any other /rest/* call.
+    public async Task DownloadTrackAsync(string id, string destinationPath)
+    {
+        var url = BuildUrl("stream", [("id", id)]);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        foreach (var header in _extraHeaders)
+            request.Headers.Add(header.Key, header.Value);
+
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+
+        await using var fileStream = File.Create(destinationPath);
+        await response.Content.CopyToAsync(fileStream);
     }
 }

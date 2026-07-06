@@ -71,7 +71,11 @@ public static class LibraryOpenSubsonicMapper
         Genre: track.Genre,
         Size: null,
         ContentType: null,
-        Suffix: null,
+        // The downloading side needs a real file extension to save with (Path is
+        // null until then - see LibrarySyncMapper/LibraryDownloadService); Path
+        // itself never crosses the wire (SYNC-PLAN.md's Path-can't-cross-the-wire
+        // rule), but its extension alone leaks nothing about this device's layout.
+        Suffix: track.Path != null ? System.IO.Path.GetExtension(track.Path).TrimStart('.') : null,
         Duration: (int)track.Duration.TotalSeconds,
         BitRate: track.Bitrate > 0 ? track.Bitrate : null,
         CoverArt: null);
