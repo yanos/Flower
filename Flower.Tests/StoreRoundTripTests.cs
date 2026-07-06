@@ -228,6 +228,51 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task TrustedPeerStore_Approve_then_IsTrusted_round_trips()
+    {
+        var store = new TrustedPeerStore();
+        Assert.False(store.IsTrusted("fp-1"));
+
+        await store.ApproveAsync("fp-1", "Yanos's iPhone");
+
+        Assert.True(store.IsTrusted("fp-1"));
+        var peer = Assert.Single(store.Load());
+        Assert.Equal("fp-1", peer.Fingerprint);
+        Assert.Equal("Yanos's iPhone", peer.Alias);
+    }
+
+    [Fact]
+    public async Task TrustedPeerStore_Revoke_removes_a_previously_approved_peer()
+    {
+        var store = new TrustedPeerStore();
+        await store.ApproveAsync("fp-1", "Desktop");
+        await store.ApproveAsync("fp-2", "iPad");
+
+        await store.RevokeAsync("fp-1");
+
+        Assert.False(store.IsTrusted("fp-1"));
+        Assert.True(store.IsTrusted("fp-2"));
+    }
+
+    [Fact]
+    public async Task TrustedPeerStore_Approve_replaces_rather_than_duplicates_an_existing_fingerprint()
+    {
+        var store = new TrustedPeerStore();
+        await store.ApproveAsync("fp-1", "Old Alias");
+
+        await store.ApproveAsync("fp-1", "New Alias");
+
+        var peer = Assert.Single(store.Load());
+        Assert.Equal("New Alias", peer.Alias);
+    }
+
+    [Fact]
+    public void TrustedPeerStore_IsTrusted_is_false_when_no_file_exists()
+    {
+        Assert.False(new TrustedPeerStore().IsTrusted("anything"));
+    }
+
+    [Fact]
     public async Task AppSettingsStore_round_trips_window_geometry()
     {
         var settings = new AppSettings

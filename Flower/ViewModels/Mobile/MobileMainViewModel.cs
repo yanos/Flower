@@ -13,7 +13,7 @@ public enum MobileTab { Songs, Albums, Artists, Playlists }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings }
+public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings, PeerApproval }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -47,6 +47,8 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand OpenSettingsCommand { get; }
     public ICommand RescanCommand { get; }
     public ICommand OpenAppSettingsCommand { get; }
+    public ICommand AllowPeerCommand { get; }
+    public ICommand DenyPeerCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.Songs;
     public MobileTab SelectedTab
@@ -122,6 +124,7 @@ public class MobileMainViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsShowingTrackInfo));
             OnPropertyChanged(nameof(IsShowingAddToPlaylist));
             OnPropertyChanged(nameof(IsShowingSettings));
+            OnPropertyChanged(nameof(IsShowingPeerApproval));
         }
     }
 
@@ -130,6 +133,18 @@ public class MobileMainViewModel : ViewModelBase
     public bool IsShowingTrackInfo => ActiveSheet == MobileSheet.TrackInfo;
     public bool IsShowingAddToPlaylist => ActiveSheet == MobileSheet.AddToPlaylist;
     public bool IsShowingSettings => ActiveSheet == MobileSheet.Settings;
+    public bool IsShowingPeerApproval => ActiveSheet == MobileSheet.PeerApproval;
+
+    // Set when Main.PeerApprovalRequested fires (see SyncHttpServer's trust gate,
+    // SYNC-PLAN.md Phase 3) and cleared once Allow/Deny resolves it - see
+    // ResolvePeerApproval. Without a subscriber here, MainViewModel's own fallback
+    // denies every peer outright (fails closed, matching desktop's behavior when no
+    // MainView is attached), which - since mobile never had a MainView to begin
+    // with - would otherwise silently block every sync request.
+    private PeerApprovalRequestedEventArgs? _pendingPeerApproval;
+    public string PeerApprovalAlias => _pendingPeerApproval?.Alias ?? "";
+    public string PeerApprovalMessage =>
+        $"\"{PeerApprovalAlias}\" wants to sync playlists and library data with this device. Only allow devices you recognize - it will not be asked again.";
 
     // Android's media-access permission can be permanently denied, in which case the
     // only way back in is the system app-settings screen; desktop/iOS have nothing
@@ -205,6 +220,14 @@ public class MobileMainViewModel : ViewModelBase
             if (e.PropertyName == nameof(PlaylistControlViewModel.CurrentlyPlayingTrack) &&
                 PlaylistControl.CurrentlyPlayingTrack == null)
                 ActiveSheet = MobileSheet.None;
+        };
+
+        Main.PeerApprovalRequested += (_, e) =>
+        {
+            _pendingPeerApproval = e;
+            OnPropertyChanged(nameof(PeerApprovalAlias));
+            OnPropertyChanged(nameof(PeerApprovalMessage));
+            ActiveSheet = MobileSheet.PeerApproval;
         };
 
         Main.SidebarItems.CollectionChanged += (_, _) => RebuildPlaylistPicker();
@@ -284,6 +307,15 @@ public class MobileMainViewModel : ViewModelBase
         });
         RescanCommand = new RelayCommand(async () => await Main.RescanLibraryAsync());
         OpenAppSettingsCommand = new RelayCommand(() => PlatformPermissions.Current?.OpenAppSettings());
+        AllowPeerCommand = new RelayCommand(() => ResolvePeerApproval(true));
+        DenyPeerCommand = new RelayCommand(() => ResolvePeerApproval(false));
+    }
+
+    private void ResolvePeerApproval(bool allowed)
+    {
+        _pendingPeerApproval?.Resolution.TrySetResult(allowed);
+        _pendingPeerApproval = null;
+        ActiveSheet = MobileSheet.None;
     }
 
     private void RebuildPlaylistPicker()

@@ -48,6 +48,13 @@ namespace Flower.Models
         // File
         public string? Path { get; set; }
 
+        // Set only for a placeholder track (Path == null) known via library sync
+        // but not yet downloaded (see LibrarySyncService, SYNC-PLAN.md Phase 3) -
+        // which peer currently holds the real file, so a later download request
+        // goes to that device instead of guessing. Meaningless once Path is set,
+        // and never set on a track this device actually imported itself.
+        public string? OriginDeviceFingerprint { get; set; }
+
         // Stats. PlayCount is Flower's own count, incremented on natural
         // end-of-track (see PlaylistControlViewModel); ImportedPlayCount comes
         // from iTunes/Music.app's library export when that sync is enabled

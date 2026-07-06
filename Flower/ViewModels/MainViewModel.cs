@@ -41,6 +41,7 @@ public partial class MainViewModel : ViewModelBase
     private IMusicImporter? _importer;
     private MainPlaylist?      _mainPlaylist;
     private PlaylistSyncService? _playlistSyncService;
+    private LibrarySyncService? _librarySyncService;
 
     // Fingerprints of devices already sync'd (or currently syncing) this app
     // session, so DeviceDiscovered re-firing for the same peer (e.g. once with the
@@ -52,6 +53,7 @@ public partial class MainViewModel : ViewModelBase
 
     public ICommand? OpenAppDataLocationCommand  { get; private set; }
     public ICommand? RebuildDatabaseCommand      { get; private set; }
+    public ICommand? OpenTrustedDevicesCommand   { get; private set; }
     public ICommand? SortByColumnCommand         { get; private set; }
     public ICommand? OpenSettingsCommand         { get; private set; }
     public ICommand? OpenColumnSelectorCommand   { get; private set; }
@@ -68,8 +70,10 @@ public partial class MainViewModel : ViewModelBase
 
     public event EventHandler? SettingsRequested;
     public event EventHandler? ColumnSelectorRequested;
+    public event EventHandler? TrustedDevicesRequested;
     public event EventHandler<Track>? NavigateToTrackRequested;
     public event EventHandler<PlaylistConflictEventArgs>? PlaylistConflictRequested;
+    public event EventHandler<PeerApprovalRequestedEventArgs>? PeerApprovalRequested;
 
     // Raised by the "Playlist > Rename Playlist" main-menu command - unlike
     // deleting, renaming needs the sidebar's own inline-rename textbox (see
@@ -373,7 +377,9 @@ public partial class MainViewModel : ViewModelBase
         IMusicImporter importer,
         MainPlaylist mainPlaylist,
         NetworkDiscoveryService networkDiscovery,
-        PlaylistSyncService playlistSyncService)
+        PlaylistSyncService playlistSyncService,
+        LibrarySyncService librarySyncService,
+        SyncHttpServer syncHttpServer)
     {
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
@@ -381,6 +387,7 @@ public partial class MainViewModel : ViewModelBase
         _importer              = importer;
         _mainPlaylist          = mainPlaylist;
         _playlistSyncService   = playlistSyncService;
+        _librarySyncService    = librarySyncService;
 
         if (appSettings.SortColumn is { } savedSortColumn)
         {
@@ -394,6 +401,7 @@ public partial class MainViewModel : ViewModelBase
         SortByColumnCommand         = new RelayCommand<string>(SortByColumn);
         OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         OpenColumnSelectorCommand   = new RelayCommand(() => ColumnSelectorRequested?.Invoke(this, EventArgs.Empty));
+        OpenTrustedDevicesCommand   = new RelayCommand(() => TrustedDevicesRequested?.Invoke(this, EventArgs.Empty));
         NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));
 
         _renamePlaylistCommand = new RelayCommand(
@@ -415,7 +423,7 @@ public partial class MainViewModel : ViewModelBase
         networkDiscovery.DeviceDiscovered += (_, device) =>
         {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
-            TriggerPlaylistSyncIfReady(device);
+            TriggerSyncIfReady(device);
         };
         networkDiscovery.DeviceLost += (_, instanceName) =>
             Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
@@ -434,6 +442,21 @@ public partial class MainViewModel : ViewModelBase
                 return;
             }
             Dispatcher.UIThread.Post(() => PlaylistConflictRequested?.Invoke(this, e));
+        };
+
+        // Same no-UI-listening fallback shape as ConflictDetected above, but fails
+        // *closed* (deny) rather than defaulting to "keep local" - granting a
+        // stranger access to this device's playlists/library is a security
+        // decision, not a content merge, so an unattended device shouldn't ever
+        // silently trust an unrecognized peer. See SyncHttpServer.AuthorizeAsync.
+        syncHttpServer.PeerApprovalRequested += (_, e) =>
+        {
+            if (PeerApprovalRequested == null)
+            {
+                e.Resolution.TrySetResult(false);
+                return;
+            }
+            Dispatcher.UIThread.Post(() => PeerApprovalRequested?.Invoke(this, e));
         };
 
         _playlistControlViewModel.PropertyChanged += (_, e) =>
@@ -590,11 +613,15 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    // Runs a playlist sync session with a newly (re-)discovered device once - see
-    // SYNC-PLAN.md Phase 2. DeviceDiscovered fires more than once per peer (mDNS
-    // fallback alias, then the resolved /info alias+fingerprint), so this only
-    // fires once the fingerprint is known and only the first time per session.
-    private void TriggerPlaylistSyncIfReady(DiscoveredDevice device)
+    // Runs a playlist sync session (Phase 2) and a library sync session (Phase 3 -
+    // see LibrarySyncService) with a newly (re-)discovered device once each.
+    // DeviceDiscovered fires more than once per peer (mDNS fallback alias, then
+    // the resolved /info alias+fingerprint), so this only fires once the
+    // fingerprint is known and only the first time per session. Both share this
+    // one dedup gate/trigger even though library sync itself has no initiator
+    // election (see LibrarySyncService) - there's still only one "first contact"
+    // per peer per session worth reacting to.
+    private void TriggerSyncIfReady(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
             return;
@@ -602,6 +629,7 @@ public partial class MainViewModel : ViewModelBase
             return;
 
         _ = _playlistSyncService?.SyncWithAsync(device);
+        _ = _librarySyncService?.SyncWithAsync(device);
     }
 
     // Rebuilds just the "Playlists" section in place, preserving the current

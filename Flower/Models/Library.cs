@@ -61,7 +61,53 @@ namespace Flower.Models
                     }
                 }
 
-                Tracks = new List<Track>(tracks);
+                // Sync placeholders (Path == null, OriginDeviceFingerprint set - see
+                // LibrarySyncService/MergeSyncedTracks) are never produced by a disk
+                // scan at all, so they'd otherwise vanish every time this runs. A
+                // rescan only concerns local files; it has no opinion on tracks known
+                // only via sync, so carry them forward untouched. Keyed on
+                // OriginDeviceFingerprint rather than just Path == null so an
+                // otherwise-incomplete Track (no path set for some other reason) isn't
+                // mistaken for one.
+                var placeholders = Tracks.Where(t => t.Path == null && t.OriginDeviceFingerprint != null);
+
+                Tracks = tracks.Concat(placeholders).ToList();
+            }
+
+            TracksUpdated?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Applies a peer's known-songs catalog (see LibrarySyncService,
+        // SYNC-PLAN.md Phase 3): each incoming track becomes a new Path == null
+        // placeholder if this device has nothing matching it by SyncKey, or - if
+        // it already has a placeholder for the same track - just updates which
+        // peer currently holds the real file (OriginDeviceFingerprint). Never
+        // touches a track this device already has a real, Path-backed copy of,
+        // and never removes anything just because a peer doesn't mention it -
+        // purely additive/updating, unlike UpdateTracks' full replace.
+        public void MergeSyncedTracks(IReadOnlyList<Track> incoming)
+        {
+            lock (_lock)
+            {
+                var byKey = Tracks
+                    .GroupBy(t => t.SyncKey)
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                var merged = new List<Track>(Tracks);
+                foreach (var remote in incoming)
+                {
+                    if (byKey.TryGetValue(remote.SyncKey, out var existing))
+                    {
+                        if (existing.Path == null)
+                            existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
+                        continue; // Already a real local file - the peer having it too isn't news.
+                    }
+
+                    merged.Add(remote);
+                    byKey[remote.SyncKey] = remote; // Guards against duplicate SyncKeys within `incoming` itself.
+                }
+
+                Tracks = merged;
             }
 
             TracksUpdated?.Invoke(this, EventArgs.Empty);

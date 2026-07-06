@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:Flower.Views"
+        x:Class="Flower.Views.TrustedDevicesWindow"
+        Title="Trusted Devices"
+        Width="420" Height="360"
+        WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="16">
+    <TextBlock Grid.Row="0"
+               Text="Devices approved to sync playlists and library data with this one."
+               TextWrapping="Wrap"
+               Opacity="0.75"
+               FontSize="12"
+               Margin="0,0,0,12"/>
+
+    <Grid Grid.Row="1">
+      <TextBlock x:Name="EmptyStateText"
+                 Text="No devices have been approved yet."
+                 Opacity="0.6"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"/>
+      <Border BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+        <ListBox x:Name="DevicesList">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="views:TrustedPeerRow">
+              <Grid ColumnDefinitions="*,Auto" Margin="4">
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Alias}" FontWeight="SemiBold" FontSize="13"/>
+                  <TextBlock Text="{Binding ApprovedAtDisplay}" Opacity="0.6" FontSize="11"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Forget" Click="ForgetButton_Click" VerticalAlignment="Center"/>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+    </Grid>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+      <Button Content="Close" Click="CloseButton_Click" IsDefault="True"/>
+    </StackPanel>
+  </Grid>
+</Window>

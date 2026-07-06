@@ -35,15 +35,17 @@ public class PlaylistSyncService
 
     private readonly Library _library;
     private readonly string _ownFingerprint;
+    private readonly string _ownAlias;
     private readonly PlaylistStore _playlistStore = new();
     private readonly PlaylistSyncStateStore _syncStateStore = new();
 
     public event EventHandler<PlaylistConflictEventArgs>? ConflictDetected;
 
-    public PlaylistSyncService(Library library, string ownFingerprint)
+    public PlaylistSyncService(Library library, string ownFingerprint, string ownAlias)
     {
         _library = library;
         _ownFingerprint = ownFingerprint;
+        _ownAlias = ownAlias;
     }
 
     public async Task SyncWithAsync(DiscoveredDevice device)
@@ -63,13 +65,17 @@ public class PlaylistSyncService
         List<PlaylistSyncPlaylistDto> remotePlaylists;
         try
         {
-            var json = await Http.GetStringAsync($"http://{device.EndPoint}/api/flower/v1/playlists");
+            using var getRequest = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}/api/flower/v1/playlists");
+            AddIdentityHeaders(getRequest);
+            using var getResponse = await Http.SendAsync(getRequest);
+            getResponse.EnsureSuccessStatusCode(); // Throws on a 403 from an unapproved trust gate - handled below like any other unreachable peer.
+            var json = await getResponse.Content.ReadAsStringAsync();
             var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(json, JsonOptions);
             remotePlaylists = manifest?.Playlists ?? new List<PlaylistSyncPlaylistDto>();
         }
         catch
         {
-            return; // Peer unreachable or not running this endpoint yet.
+            return; // Peer unreachable, not running this endpoint yet, or not (yet) trusted.
         }
 
         var baselines = _syncStateStore.LoadBaselines(device.Fingerprint);
@@ -105,13 +111,24 @@ public class PlaylistSyncService
             var manifest = PlaylistSyncMapper.ToManifest(_ownFingerprint, finalPlaylists);
             var body = JsonSerializer.Serialize(manifest, JsonOptions);
             using var content = new StringContent(body, Encoding.UTF8, "application/json");
-            await Http.PostAsync($"http://{device.EndPoint}/api/flower/v1/playlists/apply", content);
+            using var postRequest = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}/api/flower/v1/playlists/apply") { Content = content };
+            AddIdentityHeaders(postRequest);
+            await Http.SendAsync(postRequest);
         }
         catch
         {
-            // Peer went away mid-session - our own state is already fully merged
-            // and saved; it converges next time these two devices are both up.
+            // Peer went away mid-session, or hasn't approved us via the trust gate
+            // yet - our own state is already fully merged and saved either way; it
+            // converges next time these two devices are both up (and trusted).
         }
+    }
+
+    // See SyncHttpServer.AuthorizeAsync - every /api/flower/v1/* endpoint requires
+    // these to evaluate (and, on first contact, prompt for) trust.
+    private void AddIdentityHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Add("X-Flower-Fingerprint", _ownFingerprint);
+        request.Headers.Add("X-Flower-Alias", _ownAlias);
     }
 
     private async Task<Playlist> ResolveConflictAsync(PlaylistSyncDecision decision, string remoteAlias)
