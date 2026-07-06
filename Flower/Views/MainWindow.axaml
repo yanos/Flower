@@ -17,6 +17,9 @@
         <NativeMenuItem.Menu>
           <NativeMenu>
             <NativeMenuItem Header="Settings…" Command="{Binding OpenSettingsCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Rebuild Database" Command="{Binding RebuildDatabaseCommand}"/>
+            <NativeMenuItem Header="Open App Data Location" Command="{Binding OpenAppDataLocationCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
