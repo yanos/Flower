@@ -87,7 +87,7 @@ public partial class MainViewModel : ViewModelBase
     // Whether to import per-track play counts from iTunes/Music.app on every
     // launch - see ITunesPlayCountImporter. Persisted immediately on change,
     // like SortArtistAlbumsByYear below, rather than gated behind Settings'
-    // Save & Rescan (which is specifically about the library-paths list).
+    // OK button (which is specifically about the library-paths list).
     public bool SyncPlayCountFromITunes
     {
         get => _appSettings?.SyncPlayCountFromITunes ?? false;
@@ -825,8 +825,8 @@ public partial class MainViewModel : ViewModelBase
     }
 
     // Persists the path list only - deliberately doesn't also rescan, so
-    // SettingsWindow can close its dialog immediately on Save & Rescan instead
-    // of blocking on however long the (potentially large) library scan takes;
+    // SettingsWindow can close its dialog immediately on OK instead of
+    // blocking on however long the (potentially large) library scan takes;
     // it calls RescanLibraryAsync separately, unawaited, after closing.
     public async Task SaveLibraryPathsAsync(List<string> paths)
     {
@@ -836,7 +836,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     // Mobile has no library-paths UI to rescan as a side effect of (desktop's
-    // SettingsWindow "Save & Rescan" button) — it needs to trigger a rescan directly,
+    // SettingsWindow OK button) — it needs to trigger a rescan directly,
     // e.g. after granting a previously-denied Android media permission.
     public Task RescanLibraryAsync() => RebuildDatabaseAsync();
 

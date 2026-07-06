@@ -7,7 +7,7 @@
         Width="480" Height="456"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
-  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="16">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="16">
     <CheckBox Grid.Row="0"
               x:Name="SyncPlayCountCheckBox"
               Content="Sync play count from iTunes/Music.app"
@@ -58,12 +58,19 @@
     <StackPanel Grid.Row="4"
                 Orientation="Horizontal"
                 Margin="0,12,0,0"
-                HorizontalAlignment="Right"
+                HorizontalAlignment="Left"
                 Spacing="8">
       <Button x:Name="AddButton" Content="Add Folder…" Click="AddButton_Click"/>
       <Button x:Name="RemoveButton" Content="Remove Selected" Click="RemoveButton_Click"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="5"
+                Orientation="Horizontal"
+                Margin="0,12,0,0"
+                HorizontalAlignment="Right"
+                Spacing="8">
       <Button x:Name="CancelButton" Content="Cancel" Click="CancelButton_Click"/>
-      <Button x:Name="SaveButton" Content="Save &amp; Rescan" Click="SaveButton_Click" IsDefault="True"/>
+      <Button x:Name="SaveButton" Content="OK" Click="SaveButton_Click" IsDefault="True"/>
     </StackPanel>
   </Grid>
 </Window>
