@@ -110,15 +110,6 @@ public partial class SettingsWindow : Window
             Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { path } });
     }
 
-    // Formerly a native-menu-only action; relocated here (and Open App Data
-    // Location below) since neither is specific to any one library folder -
-    // both just reuse MainViewModel's existing commands unchanged.
-    private void RebuildButton_Click(object? sender, RoutedEventArgs e) =>
-        _viewModel.RebuildDatabaseCommand?.Execute(null);
-
-    private void OpenAppDataLocationButton_Click(object? sender, RoutedEventArgs e) =>
-        _viewModel.OpenAppDataLocationCommand?.Execute(null);
-
     private void SyncPlayCountCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
         _viewModel.SyncPlayCountFromITunes = SyncPlayCountCheckBox.IsChecked ?? false;
 
