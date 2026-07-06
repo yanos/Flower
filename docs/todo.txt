@@ -1,10 +1,12 @@
+crash report
+make an issue link
+repo link
+performance tracking
 global exception handler
 auto update
 readme
 versioning
-logger
 improve cli
-import play count
 icon
 album mode
 sync database, playlist
