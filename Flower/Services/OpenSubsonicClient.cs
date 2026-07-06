@@ -77,6 +77,21 @@ public class OpenSubsonicClient
         ];
     }
 
+    // Only forces a fresh connection per request (rather than pooling/reusing
+    // one) when talking to a peer Flower device (extraHeaders non-empty, i.e.
+    // the trust-gate identity headers are set) - a real third-party Subsonic
+    // server browsing session can have many requests where connection reuse
+    // is actually worth keeping. Peer-to-peer sync sessions are only ever a
+    // couple of requests each, so the extra handshake is negligible, and it
+    // avoids reusing a keep-alive connection the peer's HttpListener (or the
+    // OS, e.g. after iOS backgrounds the app) already tore down - observed in
+    // practice as "Connection reset by peer" on iOS.
+    private void SetConnectionCloseForPeerRequests(HttpRequestMessage request)
+    {
+        if (_extraHeaders.Count > 0)
+            request.Headers.ConnectionClose = true;
+    }
+
     public string BuildUrl(string endpoint, IEnumerable<(string Key, string Value)>? extraParams = null)
     {
         var parameters = AuthParams();
@@ -93,6 +108,7 @@ public class OpenSubsonicClient
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         foreach (var header in _extraHeaders)
             request.Headers.Add(header.Key, header.Value);
+        SetConnectionCloseForPeerRequests(request);
 
         using var httpResponse = await _http.SendAsync(request);
         httpResponse.EnsureSuccessStatusCode(); // e.g. a 403 from a peer's trust gate - surfaces as a plain HttpRequestException.
@@ -262,6 +278,7 @@ public class OpenSubsonicClient
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         foreach (var header in _extraHeaders)
             request.Headers.Add(header.Key, header.Value);
+        SetConnectionCloseForPeerRequests(request);
 
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();

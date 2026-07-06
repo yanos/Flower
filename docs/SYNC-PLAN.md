@@ -417,6 +417,23 @@ Navidrome server would answer with, just served by today's
   fields - an OpenSubsonic song id is only stable within one peer's own
   scan, so it can't be used as the cross-device identity by itself.
 
+**Confirmed a real problem in practice, changed after real-world testing:**
+the catalog-fetch step above was originally built as literally described -
+paginated `getAlbumList2` then one `getAlbum` call per album, matching real
+OpenSubsonic browsing semantics. Against an actual library (1,397 albums)
+this meant well over a thousand individual HTTP connections in a single
+sync burst, which surfaced as heavy `nw_connection` log churn on iOS (and,
+more to the point, real unnecessary network/battery cost) - not a
+theoretical concern, an actual user-reported symptom. `LibrarySyncService`
+now calls a new bespoke, non-OpenSubsonic endpoint instead -
+`GET /api/flower/v1/library` (`LibrarySyncContracts.LibrarySyncManifestDto`)
+- returning every real track in one response, the same way
+`/api/flower/v1/playlists` already returns its whole manifest in one shot.
+`/rest/getAlbumList2`/`/rest/getAlbum` are unchanged and still there for
+real OpenSubsonic-protocol interop (a third-party client browsing a
+Flower-hosted library, or Flower's own client browsing a real Navidrome
+server later) - only Flower-to-Flower bulk sync moved off them.
+
 ### Trust: this is where plain-HTTP-with-no-auth stops being acceptable
 
 Phase 1/2 deliberately deferred trust ("plain HTTP for now... defers TLS +
