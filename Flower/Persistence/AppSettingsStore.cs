@@ -5,6 +5,10 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
+
 namespace Flower.Persistence
 {
     public class AppSettings
@@ -51,6 +55,8 @@ namespace Flower.Persistence
 
     public class AppSettingsStore
     {
+        private static readonly ILogger Logger = AppLogging.CreateLogger<AppSettingsStore>();
+
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "settings.json");
 
         private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
@@ -85,8 +91,9 @@ namespace Flower.Persistence
                 var json = File.ReadAllText(path);
                 return JsonSerializer.Deserialize<AppSettings>(json, Options) ?? new AppSettings();
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.LogWarning(ex, "Failed to load settings from {Path}; using defaults", path);
                 return new AppSettings();
             }
         }

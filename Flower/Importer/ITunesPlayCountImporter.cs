@@ -5,6 +5,9 @@ using System.IO;
 
 using Claunia.PropertyList;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 
@@ -39,6 +42,8 @@ namespace Flower.Importer;
 // alone silently matched nothing for anyone in that (very common) situation.
 public static class ITunesPlayCountImporter
 {
+    private static readonly ILogger Logger = AppLogging.CreateLogger(typeof(ITunesPlayCountImporter).FullName!);
+
     private static string LiveExportPath => Path.Combine(AppDataDirectory.Path, "itunes-library-export.xml");
 
     public static void Apply(IEnumerable<Track> tracks)
@@ -46,10 +51,15 @@ public static class ITunesPlayCountImporter
         if (!OperatingSystem.IsMacOS())
             return;
 
-        var xmlPath = TryExportFreshLibraryXml() ? LiveExportPath : ResolveLibraryXmlPath();
+        var usedLiveExport = TryExportFreshLibraryXml();
+        var xmlPath = usedLiveExport ? LiveExportPath : ResolveLibraryXmlPath();
         if (xmlPath == null)
+        {
+            Logger.LogInformation("iTunes play count sync skipped: no library export available (Music.app not installed, automation denied, or no static export found)");
             return;
+        }
 
+        Logger.LogInformation("Syncing play counts from {Source}: {XmlPath}", usedLiveExport ? "live Music.app export" : "static library export", xmlPath);
         ApplyFromXmlFile(tracks, xmlPath);
     }
 
@@ -65,7 +75,10 @@ public static class ITunesPlayCountImporter
             if (PropertyListParser.Parse(xmlPath) is not NSDictionary root ||
                 !root.TryGetValue("Tracks", out var tracksNode) ||
                 tracksNode is not NSDictionary iTunesTracks)
+            {
+                Logger.LogWarning("iTunes library export at {XmlPath} did not have the expected shape (missing/malformed Tracks dictionary)", xmlPath);
                 return;
+            }
 
             var playCountBySyncKey = new Dictionary<string, int>();
             foreach (var entry in iTunesTracks.Values)
@@ -100,16 +113,23 @@ public static class ITunesPlayCountImporter
                 }
             }
 
+            var matchedCount = 0;
             foreach (var track in tracks)
             {
                 if (playCountBySyncKey.TryGetValue(track.SyncKey, out var count))
+                {
                     track.ImportedPlayCount = count;
+                    matchedCount++;
+                }
             }
+
+            Logger.LogInformation("iTunes play count sync matched {MatchedCount} of {ExportedCount} exported tracks", matchedCount, playCountBySyncKey.Count);
         }
-        catch
+        catch (Exception ex)
         {
             // Corrupt/unreadable/unexpected-shape XML - leave ImportedPlayCount
             // as-is rather than blocking startup over an optional enrichment step.
+            Logger.LogWarning(ex, "Failed to parse iTunes library export at {XmlPath}; play counts left unchanged", xmlPath);
         }
     }
 
@@ -135,8 +155,12 @@ public static class ITunesPlayCountImporter
                 return false;
             return process.WaitForExit(60_000) && process.ExitCode == 0 && File.Exists(LiveExportPath);
         }
-        catch
+        catch (Exception ex)
         {
+            // Expected/handled - Apply() falls back to a static export if one
+            // exists. Debug rather than Warning since this is routine on a
+            // machine without Music.app or without automation permission granted.
+            Logger.LogDebug(ex, "Live Music.app export failed; will fall back to a static export if one exists");
             return false;
         }
     }
