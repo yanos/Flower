@@ -1,6 +1,9 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
+
+using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.Input;
 
@@ -9,7 +12,10 @@ using Flower.Services;
 
 namespace Flower.ViewModels.Mobile;
 
-public enum MobileTab { Songs, Albums, Artists, Playlists }
+// RecentlyAdded is first/default (see MobileMainViewModel's _selectedTab) - an
+// album grid ordered by recency, the app's home screen. The other four mirror
+// desktop's Songs/Albums/Artists/Playlists sidebar sections.
+public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
@@ -26,9 +32,11 @@ public class MobileMainViewModel : ViewModelBase
     public CurrentlyPlayingControlViewModel CurrentlyPlaying { get; }
 
     public ObservableCollection<SidebarItem> PlaylistPickerItems { get; } = new();
+    public ObservableCollection<RecentlyAddedAlbumViewModel> RecentlyAddedAlbums { get; } = new();
 
     public ICommand SelectTabCommand { get; }
     public ICommand SelectAlbumOrArtistCommand { get; }
+    public ICommand SelectRecentlyAddedAlbumCommand { get; }
     public ICommand SelectPlaylistCommand { get; }
     public ICommand BackCommand { get; }
     public ICommand PlayTrackCommand { get; }
@@ -51,7 +59,7 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand DenyPeerCommand { get; }
     public ICommand DownloadTrackCommand { get; }
 
-    private MobileTab _selectedTab = MobileTab.Songs;
+    private MobileTab _selectedTab = MobileTab.RecentlyAdded;
     public MobileTab SelectedTab
     {
         get => _selectedTab;
@@ -75,12 +83,13 @@ public class MobileMainViewModel : ViewModelBase
 
     public bool IsShowingAlbumArtistPicker => (SelectedTab is MobileTab.Albums or MobileTab.Artists) && !_hasDrilledIn;
     public bool IsShowingPlaylistPicker => SelectedTab == MobileTab.Playlists && !_hasDrilledIn;
-    public bool IsShowingTrackList => !IsShowingAlbumArtistPicker && !IsShowingPlaylistPicker;
+    public bool IsShowingRecentlyAddedAlbums => SelectedTab == MobileTab.RecentlyAdded && !_hasDrilledIn;
+    public bool IsShowingTrackList => !IsShowingAlbumArtistPicker && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums;
     public bool CanGoBack => _hasDrilledIn;
 
     public string ScreenTitle => _hasDrilledIn
         ? (Main.SelectedSidebarItem?.Name ?? SelectedTab.ToString())
-        : SelectedTab.ToString();
+        : SelectedTab == MobileTab.RecentlyAdded ? "Recently Added" : SelectedTab.ToString();
 
     // Non-null only while drilled into a specific playlist's track list, which is the
     // one place mobile allows reordering (Songs/Albums/Artists have no persisted order).
@@ -166,6 +175,7 @@ public class MobileMainViewModel : ViewModelBase
     public bool IsContentEmpty =>
         (IsShowingAlbumArtistPicker && Main.SubListItems.Count == 0) ||
         (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0) ||
+        (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbums.Count == 0) ||
         (IsShowingTrackList && Main.Rows.Count == 0);
 
     public string EmptyStateTitle
@@ -232,6 +242,7 @@ public class MobileMainViewModel : ViewModelBase
         };
 
         Main.SidebarItems.CollectionChanged += (_, _) => RebuildPlaylistPicker();
+        Main.Library.TracksUpdated += (_, _) => Dispatcher.UIThread.Post(RebuildRecentlyAddedAlbums);
         Main.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems)
@@ -239,6 +250,7 @@ public class MobileMainViewModel : ViewModelBase
                 RaiseEmptyStateChanged();
         };
         RebuildPlaylistPicker();
+        RebuildRecentlyAddedAlbums();
         ApplyTabSelection();
 
         SelectTabCommand = new RelayCommand<string>(name =>
@@ -247,6 +259,7 @@ public class MobileMainViewModel : ViewModelBase
                 SelectedTab = tab;
         });
         SelectAlbumOrArtistCommand = new RelayCommand<string>(SelectAlbumOrArtist);
+        SelectRecentlyAddedAlbumCommand = new RelayCommand<string>(SelectRecentlyAddedAlbum);
         SelectPlaylistCommand = new RelayCommand<SidebarItem>(SelectPlaylist);
         BackCommand = new RelayCommand(GoBack);
         PlayTrackCommand = new RelayCommand<Track>(track =>
@@ -341,6 +354,15 @@ public class MobileMainViewModel : ViewModelBase
         RaiseEmptyStateChanged();
     }
 
+    private void RebuildRecentlyAddedAlbums()
+    {
+        RecentlyAddedAlbums.Clear();
+        foreach (var album in RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks))
+            RecentlyAddedAlbums.Add(album);
+
+        RaiseEmptyStateChanged();
+    }
+
     private void ApplyTabSelection()
     {
         var kind = SelectedTab switch
@@ -360,6 +382,23 @@ public class MobileMainViewModel : ViewModelBase
         if (name == null)
             return;
         Main.SelectedSubItem = name;
+        _hasDrilledIn = true;
+        RaiseNavigationChanged();
+    }
+
+    // Tapping a tile in the Recently Added grid drills into that album's
+    // tracks by reusing the Albums tab's own filtering (Main.SelectedSidebarItem
+    // set to the Albums sidebar item, then SelectedSubItem to the album name) -
+    // ApplyTabSelection does not do this for MobileTab.RecentlyAdded itself
+    // (the un-drilled-in grid renders its own RecentlyAddedAlbums collection,
+    // not Main.Rows), so it is set explicitly here instead. SelectedTab stays
+    // RecentlyAdded so Back returns to this grid, not to the Albums picker.
+    private void SelectRecentlyAddedAlbum(string? albumName)
+    {
+        if (albumName == null)
+            return;
+        Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
+        Main.SelectedSubItem = albumName;
         _hasDrilledIn = true;
         RaiseNavigationChanged();
     }
@@ -387,6 +426,7 @@ public class MobileMainViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(IsShowingAlbumArtistPicker));
         OnPropertyChanged(nameof(IsShowingPlaylistPicker));
+        OnPropertyChanged(nameof(IsShowingRecentlyAddedAlbums));
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(ScreenTitle));

@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:views="clr-namespace:Flower.Views.Mobile"
+             xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:conv="clr-namespace:Flower.Converters"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
@@ -104,6 +105,41 @@
     <!-- Content -->
     <Grid Grid.Row="1" x:Name="ContentGrid">
 
+      <!-- Recently Added: album art grid, ordered by recency - the app's
+           default/home view (see MobileMainViewModel._selectedTab). Tapping a
+           tile drills into that album's tracks via the same underlying
+           Albums-tab filtering (SelectRecentlyAddedAlbumCommand). -->
+      <ScrollViewer IsVisible="{Binding IsShowingRecentlyAddedAlbums}">
+        <ItemsControl ItemsSource="{Binding RecentlyAddedAlbums}" Margin="12">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Classes="pickerRow"
+                      Width="152"
+                      Padding="6"
+                      HorizontalAlignment="Left"
+                      HorizontalContentAlignment="Left"
+                      Command="{Binding $parent[UserControl].DataContext.SelectRecentlyAddedAlbumCommand}"
+                      CommandParameter="{Binding Name}">
+                <StackPanel Spacing="6">
+                  <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="140" Height="140" />
+                  <TextBlock Text="{Binding Name}"
+                             FontSize="13" FontWeight="Medium"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Artist}"
+                             FontSize="11" Opacity="0.6"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
       <!-- Album/Artist name picker -->
       <ListBox Background="Transparent"
                 ItemsSource="{Binding Main.SubListItems}"
@@ -152,7 +188,7 @@
                     Classes.placeholder="{Binding IsPlaceholder}"
                     Command="{Binding $parent[UserControl].DataContext.PlayTrackCommand}"
                     CommandParameter="{Binding Track}">
-              <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
                 <Border Grid.Column="0"
                         Classes="dragHandle"
                         IsVisible="{Binding $parent[UserControl].DataContext.IsShowingPlaylistTracks}"
@@ -166,7 +202,11 @@
                         PointerCaptureLost="DragHandle_PointerCaptureLost">
                   <materialIcons:MaterialIcon Kind="DragHorizontalVariant" Width="20" Height="20" Opacity="0.5" />
                 </Border>
-                <StackPanel Grid.Column="1" Spacing="2">
+                <controls:AlbumArtView Grid.Column="1"
+                                        AlbumArt="{Binding AlbumArt}"
+                                        Width="40" Height="40"
+                                        Margin="0,0,10,0" />
+                <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
                   <TextBlock Text="{Binding Track.Title}"
                              FontSize="16"
                              TextTrimming="CharacterEllipsis" />
@@ -177,7 +217,7 @@
                 </StackPanel>
 
                 <!-- Normal (downloaded) row: duration + "..." actions menu -->
-                <StackPanel Grid.Column="2" Grid.ColumnSpan="2"
+                <StackPanel Grid.Column="3" Grid.ColumnSpan="2"
                             Orientation="Horizontal" Spacing="0"
                             IsVisible="{Binding !IsPlaceholder}">
                   <TextBlock Text="{Binding DurationDisplay}"
@@ -201,7 +241,7 @@
                      is a no-op for a placeholder track. Three mutually exclusive
                      icon states (idle / in-flight / just-failed-or-unavailable) -
                      see TrackRowViewModel.IsDownloadIdle. -->
-                <Button Grid.Column="2" Grid.ColumnSpan="2"
+                <Button Grid.Column="3" Grid.ColumnSpan="2"
                         IsVisible="{Binding IsPlaceholder}"
                         Command="{Binding $parent[UserControl].DataContext.DownloadTrackCommand}"
                         CommandParameter="{Binding}"
@@ -293,12 +333,22 @@
       </Grid>
     </Border>
 
-    <!-- Bottom tab bar -->
+    <!-- Bottom tab bar - Recently Added first/leftmost, matching it being the
+         app's default/home tab (see MobileMainViewModel._selectedTab). -->
     <Grid Grid.Row="3"
-          ColumnDefinitions="*,*,*,*"
+          ColumnDefinitions="*,*,*,*,*"
           Height="60"
           Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
       <Button Grid.Column="0" Classes="tab"
+              Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=RecentlyAdded}"
+              Command="{Binding SelectTabCommand}" CommandParameter="RecentlyAdded"
+              Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
+        <StackPanel HorizontalAlignment="Center" Spacing="2">
+          <materialIcons:MaterialIcon Kind="ClockPlusOutline" Width="22" Height="22" HorizontalAlignment="Center" />
+          <TextBlock Text="Recent" FontSize="11" HorizontalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <Button Grid.Column="1" Classes="tab"
               Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Songs}"
               Command="{Binding SelectTabCommand}" CommandParameter="Songs"
               Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
@@ -307,7 +357,7 @@
           <TextBlock Text="Songs" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
-      <Button Grid.Column="1" Classes="tab"
+      <Button Grid.Column="2" Classes="tab"
               Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Albums}"
               Command="{Binding SelectTabCommand}" CommandParameter="Albums"
               Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
@@ -316,7 +366,7 @@
           <TextBlock Text="Albums" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
-      <Button Grid.Column="2" Classes="tab"
+      <Button Grid.Column="3" Classes="tab"
               Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Artists}"
               Command="{Binding SelectTabCommand}" CommandParameter="Artists"
               Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
@@ -325,7 +375,7 @@
           <TextBlock Text="Artists" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
-      <Button Grid.Column="3" Classes="tab"
+      <Button Grid.Column="4" Classes="tab"
               Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Playlists}"
               Command="{Binding SelectTabCommand}" CommandParameter="Playlists"
               Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
