@@ -5,8 +5,14 @@
     <SupportedOSPlatformVersion>21</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
     <ApplicationId>com.yanos.flower</ApplicationId>
+    <!-- ApplicationVersion (versionCode) is a plain, strictly-increasing
+         integer that a store release overrides via /p:ApplicationVersion=<n>
+         at build time - see VERSIONING-PLAN.md Phase 3. ApplicationDisplayVersion
+         (versionName) is set dynamically from MinVer's $(Version) by the
+         target in Directory.Build.targets, not here - a plain property
+         assignment here would freeze at the SDK's static default instead of
+         MinVer's computed value. -->
     <ApplicationVersion>1</ApplicationVersion>
-    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <AndroidEnableProfiledAot>False</AndroidEnableProfiledAot>
   </PropertyGroup>
