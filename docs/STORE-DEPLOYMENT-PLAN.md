@@ -23,6 +23,12 @@ onto Apple's and Google's completeness/quality review criteria.
     already on net10.0. The fix is a TFM bump to `net10.0-ios26.2` (current
     canonical .NET 10 + iOS 26 TFM), which requires Xcode 26.x on the build
     machine.
+- **Neither mobile project has a real version number yet, and both stores
+  will reject a submission over it** — Android's `versionCode` / iOS's
+  `CFBundleVersion` must be a plain integer that strictly increases with
+  every submission; `Flower.Android.csproj` hardcodes a `1` that nothing
+  updates, and `Flower.iOS.csproj` sets nothing at all. This is
+  `VERSIONING-PLAN.md`'s Phase 3 to fix, not scoped further here.
 - **Android target API level is already compliant, no action needed.** Play
   Console requires targeting API 36 (Android 16) by August 31, 2026; a clean
   build's merged manifest already shows `targetSdkVersion="36"` — `net10.0-android`'s
