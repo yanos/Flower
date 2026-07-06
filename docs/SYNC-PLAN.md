@@ -534,6 +534,43 @@ not a new mechanism.)
   placeholder - no gating needed there; it just shows greyed-out in that
   playlist too until downloaded, same as in Songs.
 
+**Done.** `SyncHttpServer` gained a third embedded-host endpoint,
+`GET /rest/stream` (alongside `getAlbumList2`/`getAlbum`), serving a local
+track's real file bytes looked up by `SyncKey` - never a placeholder.
+`LibraryDownloadService` resolves the peer (via `MainViewModel`'s existing
+Devices-sidebar tracking of currently-discovered devices, matched against
+`Track.OriginDeviceFingerprint`), downloads through `OpenSubsonicClient`'s new
+`DownloadTrackAsync` (same trust-gate identity headers as everything else,
+streamed straight to disk rather than buffered in memory), sets `Track.Path`,
+saves via `LibraryStore`, and calls the new `Library.NotifyTrackChanged()` -
+a lighter notification than `UpdateTracks`, since the same `Track` reference
+is still current and nothing was added or removed. A new `Track.
+OriginFileExtension` field (same lifetime as `OriginDeviceFingerprint`) carries
+the origin file's extension across the wire (via `Child.Suffix`), since `Path`
+itself never crosses it and the destination file needs a real extension before
+`Path` exists.
+
+Mobile UI: `TrackRowViewModel` gained `IsPlaceholder`/`IsDownloading`/
+`IsDownloadUnavailable`/`IsDownloadIdle`; `MobileMainView`'s row template dims
+a placeholder row and swaps its duration/"..." actions area for a three-state
+download icon (idle/in-flight/unavailable - a static icon swap rather than a
+spinner animation, a deliberate v1 simplification). Tapping the row itself
+(`PlayTrackCommand`) is a no-op for a placeholder track.
+
+**Known gap, deliberately accepted rather than solved now:** on Android, a
+downloaded file goes to app-private storage rather than anywhere the system
+MediaStore would index (`AndroidMediaStoreImporter` only reads MediaStore, it
+has no write path) - `Library.UpdateTracks`'s carry-forward was widened so a
+downloaded (not just still-placeholder) sync-origin track survives a rescan
+that doesn't independently find it, so this doesn't regress, but it means the
+file is only ever "known" via `library.json`, not rediscoverable by Android's
+own normal scan. **Not yet verified on a real Android device.** iOS doesn't have this specific
+gap (a Documents-folder download lands exactly where `Importer` already
+scans, so it's independently rediscoverable too) but the download flow itself
+is unit-tested only so far (`LibraryOpenSubsonicMapperTests`/
+`LibrarySyncMapperTests`/`LibraryTests`), not yet exercised end-to-end against
+a real peer on either platform.
+
 ### Deliberately deferred, not designed now
 
 - **Resumable/partial downloads.** A dropped WiFi connection mid-transfer

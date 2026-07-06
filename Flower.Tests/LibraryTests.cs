@@ -177,6 +177,42 @@ public class LibraryTests
         Assert.Contains(library.Tracks, t => t.Title == "Remote Song" && t.OriginDeviceFingerprint == "peer-1");
     }
 
+    // A track downloaded via LibraryDownloadService (Path now set, but still
+    // carrying OriginDeviceFingerprint) must also survive a rescan that doesn't
+    // happen to find it - e.g. Android, where a downloaded file lives in
+    // app-private storage the system MediaStore scan never indexes. Without
+    // this, such a track would vanish the very next time the app rescans.
+    [Fact]
+    public void UpdateTracks_preserves_a_downloaded_sync_track_the_fresh_scan_does_not_find()
+    {
+        var downloaded = new Track { Title = "Downloaded Song", Path = "/private/app/downloads/abc.mp3", OriginDeviceFingerprint = "peer-1" };
+        var library = new Library(new List<Track> { downloaded });
+
+        // Simulates an Android MediaStore rescan that only ever sees system-indexed
+        // files - it has no way to find something written to app-private storage.
+        library.UpdateTracks(new List<Track> { new Track { Title = "Local", Path = "/music/local.mp3" } });
+
+        Assert.Equal(2, library.Tracks.Count);
+        Assert.Contains(library.Tracks, t => t.Title == "Downloaded Song" && t.Path == "/private/app/downloads/abc.mp3");
+    }
+
+    // The flip side: if the fresh scan *does* independently find the same file
+    // (e.g. iOS's Documents-folder scan re-discovering a track this device
+    // downloaded earlier), the old sync-tracked instance must NOT also be carried
+    // forward - otherwise the same file would show up as two rows.
+    [Fact]
+    public void UpdateTracks_does_not_duplicate_a_downloaded_sync_track_the_fresh_scan_also_finds()
+    {
+        var downloaded = new Track { Title = "Downloaded Song", Path = "/private/app/Documents/abc.mp3", OriginDeviceFingerprint = "peer-1" };
+        var library = new Library(new List<Track> { downloaded });
+
+        var rescanned = new Track { Title = "Downloaded Song (retagged)", Path = "/private/app/Documents/abc.mp3" };
+        library.UpdateTracks(new List<Track> { rescanned });
+
+        var only = Assert.Single(library.Tracks);
+        Assert.Same(rescanned, only);
+    }
+
     [Fact]
     public void MergeSyncedTracks_inserts_a_new_placeholder_for_a_track_not_already_known()
     {

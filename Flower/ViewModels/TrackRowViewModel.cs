@@ -37,6 +37,38 @@ public class TrackRowViewModel : ViewModelBase
 
     public string DateAddedDisplay => Track.DateAdded.LocalDateTime.ToString("MMM d, yyyy");
 
+    // Not yet downloaded (see LibrarySyncService/LibraryDownloadService,
+    // SYNC-PLAN.md Phase 3) - mobile-only for v1, see MobileMainView's row
+    // template. Track itself isn't INotifyPropertyChanged, but that's fine here:
+    // a successful download fires Library.TracksUpdated, which rebuilds Rows
+    // entirely (see MainViewModel.PopulateTracks), so the placeholder row this
+    // property was read from is simply replaced by a fresh non-placeholder one -
+    // this value never needs to change out from under a still-alive instance.
+    public bool IsPlaceholder => Track.Path == null;
+
+    // Transient UI state for an in-flight/failed download attempt on this row -
+    // set directly by MobileMainViewModel's download command, not derived from
+    // Track. See the comment above for why a stale value here is harmless: any
+    // instance holding it gets discarded once the download actually succeeds.
+    private bool _isDownloading;
+    public bool IsDownloading
+    {
+        get => _isDownloading;
+        set { _isDownloading = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsDownloadIdle)); }
+    }
+
+    private bool _isDownloadUnavailable;
+    public bool IsDownloadUnavailable
+    {
+        get => _isDownloadUnavailable;
+        set { _isDownloadUnavailable = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsDownloadIdle)); }
+    }
+
+    // Neither in flight nor just-failed - the default "tap to download" icon
+    // state. A plain computed property (not stored) kept in sync via the two
+    // setters above rather than a converter, since it depends on both.
+    public bool IsDownloadIdle => !_isDownloading && !_isDownloadUnavailable;
+
     public string DurationDisplay
     {
         get

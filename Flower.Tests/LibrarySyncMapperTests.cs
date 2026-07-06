@@ -12,7 +12,7 @@ public class LibrarySyncMapperTests
         var song = new Child(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
-            Size: null, ContentType: null, Suffix: null, Duration: 259, BitRate: null, CoverArt: null);
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);
 
         var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1");
 
@@ -25,6 +25,7 @@ public class LibrarySyncMapperTests
         Assert.Equal(1u, track.TrackNumber);
         Assert.Null(track.Path);
         Assert.Equal("peer-1", track.OriginDeviceFingerprint);
+        Assert.Equal("mp3", track.OriginFileExtension);
     }
 
     [Fact]

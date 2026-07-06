@@ -87,6 +87,16 @@ public class LibraryOpenSubsonicMapperTests
     }
 
     [Fact]
+    public void ToChild_Suffix_is_the_local_file_extension_without_a_leading_dot()
+    {
+        var track = RealTrack("Come Together", "Beatles", "Abbey Road");
+
+        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, LibraryOpenSubsonicMapper.AlbumId("Abbey Road", "Beatles"));
+
+        Assert.Equal("mp3", album!.Song!.Single().Suffix);
+    }
+
+    [Fact]
     public void ToChild_song_id_matches_the_track_SyncKey_so_the_client_can_independently_recompute_it()
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road", durationSeconds: 259);

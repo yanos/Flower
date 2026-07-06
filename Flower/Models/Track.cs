@@ -55,6 +55,12 @@ namespace Flower.Models
         // and never set on a track this device actually imported itself.
         public string? OriginDeviceFingerprint { get; set; }
 
+        // The origin peer's file extension (no leading dot - see
+        // LibraryOpenSubsonicMapper.ToChild's Suffix field), needed at download
+        // time to give the saved file a real extension since Path is null until
+        // then. Same lifetime/meaning as OriginDeviceFingerprint.
+        public string? OriginFileExtension { get; set; }
+
         // Stats. PlayCount is Flower's own count, incremented on natural
         // end-of-track (see PlaylistControlViewModel); ImportedPlayCount comes
         // from iTunes/Music.app's library export when that sync is enabled
