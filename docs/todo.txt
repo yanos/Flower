@@ -1,9 +1,6 @@
-crash report
 make an issue link
 repo link
-performance tracking
 global exception handler
-auto update
 readme
 versioning
 improve cli

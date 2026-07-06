@@ -22,6 +22,32 @@ would likely violate store policy.
   from the repo (`new GithubSource(repoUrl, accessToken, prerelease)` — pass
   `prerelease: false` to only ever pick up full releases, never drafts/pre-releases,
   as Flower's stable channel).
+- **Beta releases: Velopack's own *channel* system, not just `GithubSource`'s
+  `prerelease` flag.** `vpk pack --channel beta` produces its own
+  `releases.beta.json` manifest, fully separate from the default channel's
+  (which defaults to the OS name — `win`/`osx`/`linux` — unless overridden).
+  The client is channel-aware automatically: an app packaged with `--channel
+  beta` only ever checks `releases.beta.json`, no channel argument needed on
+  `UpdateManager` itself. This is more precise than `GithubSource`'s
+  `prerelease: bool`, which just filters GitHub's own prerelease flag on one
+  shared release list — channels give two genuinely independent update
+  tracks, so a stable user can never silently land on a beta build.
+- **Versioning/build stamping: [MinVer](https://www.nuget.org/packages/minver),
+  not `Nerdbank.GitVersioning`** (correcting this doc's earlier suggestion).
+  MinVer computes the assembly version purely from git tags — no config file
+  to maintain, unlike NBGV's `version.json` + git-height model, which is
+  actually the *more* complex option here, not an upgrade path. Setup is a
+  `PackageReference` (`PrivateAssets="all"`, so it's build-time only, never a
+  runtime dependency) plus `<MinVerTagPrefix>v</MinVerTagPrefix>` to match
+  the `v1.2.0` tag convention already adopted above. It automatically sets
+  `AssemblyVersion`/`AssemblyFileVersion`/`AssemblyInformationalVersion` —
+  exactly "binaries stamped with the current version at build time," and it
+  works identically for local `dotnet build` and CI, not just CI. A
+  SemVer pre-release tag (`v1.3.0-beta.1`) is used as-is for the version
+  string; a commit that isn't exactly on a tag gets an automatic
+  height-based pre-release version (e.g. `1.0.1-alpha.0.1`), so local/dev
+  builds are never silently unversioned or numerically ambiguous with a
+  real release.
 - **Client integration is a single required line, but ordering matters.**
   `VelopackApp.Build().Run()` must be the literal first statement in
   `Main()` — before `BuildAvaloniaApp().StartWithClassicDesktopLifetime(args)`
@@ -59,15 +85,38 @@ would likely violate store policy.
 
 ## Phase 1: Versioning foundation
 
-**Problem:** no version exists anywhere in the repo to hand to `vpk pack -v`.
+**Problem:** no version exists anywhere in the repo to hand to `vpk pack -v`,
+and nothing stamps a version into the built binaries themselves.
 
 **Plan:**
-1. Adopt semver git tags (`v1.0.0`, `v1.1.0`, ...) as the single source of
-   truth for release versions.
-2. Stamp `Flower.Desktop.csproj`'s `<Version>` from that tag at build time
-   (a GitHub Actions step extracting the tag name is enough to start —
-   `Nerdbank.GitVersioning` is a reasonable upgrade later if version needs
-   grow beyond "matches the tag").
+1. Adopt semver git tags as the single source of truth for release
+   versions: `v1.0.0`, `v1.1.0`, ... for stable, `v1.3.0-beta.1`,
+   `v1.3.0-beta.2`, ... for betas (SemVer's own pre-release syntax —
+   universally recognized, including by GitHub's own "mark as prerelease"
+   default and Velopack's channel/version handling).
+2. Add [MinVer](https://www.nuget.org/packages/minver) to every shipped
+   entry-point project (`Flower.Desktop.csproj`, `Flower.Android.csproj`,
+   `Flower.iOS.csproj`, `Flower.CLI.csproj` — not `Flower.Tests.csproj`, no
+   need to version a test assembly). Simplest way to apply it once rather
+   than repeating the block in each: a `Directory.Build.props` at the repo
+   root with
+   ```xml
+   <ItemGroup>
+     <PackageReference Include="MinVer" Version="7.*">
+       <PrivateAssets>all</PrivateAssets>
+       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+     </PackageReference>
+   </ItemGroup>
+   <PropertyGroup>
+     <MinVerTagPrefix>v</MinVerTagPrefix>
+   </PropertyGroup>
+   ```
+   This computes `Version`/`AssemblyVersion`/`AssemblyFileVersion`/
+   `AssemblyInformationalVersion` from the nearest git tag automatically, on
+   every build — local `dotnet build` included, not just CI — and needs no
+   custom version-extraction script in the GitHub Actions workflow at all.
+   `vpk pack` can then just read `$(Version)` from the build output instead
+   of needing it passed in separately.
 
 **Effort:** Small. **Risk:** Low.
 
@@ -83,11 +132,14 @@ something a user installs or Velopack can manage updates for.
 2. Add `VelopackApp.Build().Run()` as the first line of `Main()` in
    `Flower.Desktop/Program.cs`, before the existing
    `BuildAvaloniaApp().StartWithClassicDesktopLifetime(args)` call.
-3. Locally: `dotnet publish` self-contained for the current RID, install the
-   `vpk` CLI (`dotnet tool install -g vpk`), run `vpk pack -u Flower -v 1.0.0
-   -p <publish-dir>`, then a manual `vpk upload github --repoUrl
-   https://github.com/yanos/Flower --publish` as a one-time dry run to
-   confirm the whole flow before automating it in CI.
+3. Locally: `dotnet publish` self-contained for the current RID (MinVer from
+   Phase 1 stamps `$(Version)` automatically, so `vpk pack -u Flower -v
+   $(Version) -p <publish-dir>` needs no separate manual version input),
+   install the `vpk` CLI (`dotnet tool install -g vpk`), then a manual
+   `vpk upload github --repoUrl https://github.com/yanos/Flower --publish`
+   as a one-time dry run to confirm the whole flow before automating it in
+   CI. For a beta build, add `--channel beta` to both `vpk pack` and the
+   corresponding tag (`v1.0.0-beta.1`) — see the channel note above.
 4. macOS: decide up front whether to invest in Developer ID signing +
    notarization now (needed for a clean auto-update UX) or ship unsigned
    initially and accept that users must right-click → Open the first time,
@@ -106,9 +158,13 @@ Apple account) outside the codebase itself.
 
 **Plan:**
 1. `var mgr = new UpdateManager(new GithubSource("https://github.com/yanos/Flower", null, false));`
-   — reuse the exact background-task pattern already established for the
-   startup rescan in `App.axaml.cs` (`_ = Task.Run(async () => { ... })`),
-   and log through the same `ILogger` infrastructure just added
+   — the `false` here just controls whether GitHub-flagged prereleases are
+   considered at all; which *channel* (`stable` vs `beta`) this check runs
+   against is determined automatically by which channel the running app
+   itself was packaged with (Phase 2's `--channel` flag), not by anything
+   passed here. Reuse the exact background-task pattern already established
+   for the startup rescan in `App.axaml.cs` (`_ = Task.Run(async () => { ...
+   })`), and log through the same `ILogger` infrastructure just added
    (`AppLogging.CreateLogger(...)`) so a failed/skipped check shows up in the
    run's log file exactly like the iTunes sync does today.
 2. `CheckForUpdatesAsync()` → if non-null, `DownloadUpdatesAsync(...)` →
