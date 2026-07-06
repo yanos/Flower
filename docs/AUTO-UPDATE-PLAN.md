@@ -32,22 +32,14 @@ would likely violate store policy.
   `prerelease: bool`, which just filters GitHub's own prerelease flag on one
   shared release list — channels give two genuinely independent update
   tracks, so a stable user can never silently land on a beta build.
-- **Versioning/build stamping: [MinVer](https://www.nuget.org/packages/minver),
-  not `Nerdbank.GitVersioning`** (correcting this doc's earlier suggestion).
-  MinVer computes the assembly version purely from git tags — no config file
-  to maintain, unlike NBGV's `version.json` + git-height model, which is
-  actually the *more* complex option here, not an upgrade path. Setup is a
-  `PackageReference` (`PrivateAssets="all"`, so it's build-time only, never a
-  runtime dependency) plus `<MinVerTagPrefix>v</MinVerTagPrefix>` to match
-  the `v1.2.0` tag convention already adopted above. It automatically sets
-  `AssemblyVersion`/`AssemblyFileVersion`/`AssemblyInformationalVersion` —
-  exactly "binaries stamped with the current version at build time," and it
-  works identically for local `dotnet build` and CI, not just CI. A
-  SemVer pre-release tag (`v1.3.0-beta.1`) is used as-is for the version
-  string; a commit that isn't exactly on a tag gets an automatic
-  height-based pre-release version (e.g. `1.0.1-alpha.0.1`), so local/dev
-  builds are never silently unversioned or numerically ambiguous with a
-  real release.
+- **Versioning/build stamping is its own plan: `VERSIONING-PLAN.md`.** In
+  short, [MinVer](https://www.nuget.org/packages/minver) (not
+  `Nerdbank.GitVersioning` — correcting this doc's earlier suggestion)
+  computes the assembly version purely from git tags, works identically for
+  local `dotnet build` and CI, and needs no config file. That plan also
+  covers the mobile-specific build-number handling (`ApplicationVersion` /
+  `versionCode` / `CFBundleVersion`) that this doc's Desktop-only scope
+  doesn't need but `STORE-DEPLOYMENT-PLAN.md` does.
 - **Client integration is a single required line, but ordering matters.**
   `VelopackApp.Build().Run()` must be the literal first statement in
   `Main()` — before `BuildAvaloniaApp().StartWithClassicDesktopLifetime(args)`
@@ -85,55 +77,12 @@ would likely violate store policy.
 
 ## Phase 1: Versioning foundation
 
-**Problem:** no version exists anywhere in the repo to hand to `vpk pack -v`,
-and nothing stamps a version into the built binaries themselves.
-
-**Plan:**
-1. Adopt semver git tags as the single source of truth for release
-   versions: `v1.0.0`, `v1.1.0`, ... for stable, `v1.3.0-beta.1`,
-   `v1.3.0-beta.2`, ... for betas (SemVer's own pre-release syntax —
-   universally recognized, including by GitHub's own "mark as prerelease"
-   default and Velopack's channel/version handling).
-2. Add [MinVer](https://www.nuget.org/packages/minver) to every shipped
-   entry-point project (`Flower.Desktop.csproj`, `Flower.Android.csproj`,
-   `Flower.iOS.csproj`, `Flower.CLI.csproj` — not `Flower.Tests.csproj`, no
-   need to version a test assembly). Simplest way to apply it once rather
-   than repeating the block in each: a `Directory.Build.props` at the repo
-   root with
-   ```xml
-   <ItemGroup>
-     <PackageReference Include="MinVer" Version="7.*">
-       <PrivateAssets>all</PrivateAssets>
-       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-     </PackageReference>
-   </ItemGroup>
-   <PropertyGroup>
-     <MinVerTagPrefix>v</MinVerTagPrefix>
-   </PropertyGroup>
-   ```
-   This computes `Version`/`AssemblyVersion`/`AssemblyFileVersion`/
-   `AssemblyInformationalVersion` from the nearest git tag automatically, on
-   every build — local `dotnet build` included, not just CI — and needs no
-   custom version-extraction script in the GitHub Actions workflow at all.
-   `vpk pack` can then just read `$(Version)` from the build output instead
-   of needing it passed in separately.
-
-**Verified against this actual repo** (via the `minver-cli` global tool,
-`minver --tag-prefix v`, no changes left behind):
-
-| Situation | Computed version |
-|---|---|
-| No tags exist yet (repo's current state) | `0.0.0-alpha.0.121` — `121` is the commit count from the root commit |
-| Built exactly on a tagged commit `v1.0.0` | `1.0.0` — the tag, verbatim |
-| One commit past `v1.0.0`, untagged (ordinary local dev) | `1.0.1-alpha.0.1` — next patch, auto-marked `-alpha.0.<height>` |
-| Built exactly on a beta tag `v1.1.0-beta.1` | `1.1.0-beta.1` — used as-is |
-
-The rule that matters day to day: **exactly on a tag → that tag's version,
-verbatim; anything else → the next patch, auto-suffixed
-`-alpha.0.<commits since the tag>`.** That auto-suffixed form is itself a
-valid SemVer pre-release that always sorts below the release it's heading
-toward, so an ordinary local dev build is never ambiguous with — or
-mistakeable for — a real tagged release.
+**Superseded by `VERSIONING-PLAN.md`.** That plan's Phase 1 is the exact
+prerequisite this doc originally specified here (MinVer via
+`Directory.Build.props`, applied to all four shipped entry-point projects,
+verified against this repo's actual git history) — see it directly rather
+than duplicating the detail. Nothing here needs to happen differently for
+Desktop specifically; `vpk pack` just reads the resulting `$(Version)`.
 
 **Effort:** Small. **Risk:** Low.
 
@@ -210,6 +159,11 @@ get wrong by hand.
    runner — matrix over `windows-latest` / `macos-latest` / `ubuntu-latest`,
    each publishing + `vpk pack`-ing + `vpk upload github --publish`-ing its
    own platform asset into the same tagged release.
+3. This is also the natural home for `VERSIONING-PLAN.md` Phase 3's mobile
+   build-number step (computing `git tag --list 'v*' | wc -l` and passing it
+   as `/p:ApplicationVersion=<n>`) once mobile submissions
+   (`STORE-DEPLOYMENT-PLAN.md`) are actually being prepared — same
+   tag-triggered workflow, not a separate one.
 
 **Effort:** Medium (mostly a straightforward, well-documented CI recipe).
 **Risk:** Low.
