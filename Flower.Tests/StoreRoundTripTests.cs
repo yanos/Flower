@@ -11,13 +11,27 @@ using Flower.ViewModels;
 
 namespace Flower.Tests;
 
-// LibraryStore/PlaylistStore resolve their file path from the OS user-data
-// folder (via HOME on macOS/Linux). These tests redirect HOME to an isolated
-// temp directory for the lifetime of each test so they never read or write
-// the real developer's library.json/playlists.json. All such tests live in
-// this one class because xUnit runs test methods within a class sequentially
-// — spreading this across classes would risk two tests mutating the
-// process-wide HOME variable at the same time under parallel execution.
+// LibraryStore/PlaylistStore/AppSettingsStore resolve their file path via
+// AppDataDirectory, which checks PlatformDataDirectory.Current first and
+// only falls back to HOME-derived OS folders if that's unset - see
+// AppDataDirectory.Path. These tests pin PlatformDataDirectory.Current to an
+// isolated temp directory for the lifetime of each test so they never read
+// or write the real developer's library.json/playlists.json.
+//
+// HOME is *also* redirected, for ResolveLibraryXmlPath's Music-folder lookup
+// (SpecialFolder.UserProfile-based, not AppDataDirectory) - but HOME alone
+// used to be the only guard here, and that was insufficient on GitHub
+// Actions' ubuntu runners: AppDataDirectory's non-macOS branch resolves via
+// Environment.GetFolderPath(SpecialFolder.LocalApplicationData), which
+// checks the XDG_DATA_HOME environment variable *before* falling back to
+// $HOME/.local/share - and that runner image has XDG_DATA_HOME pinned to a
+// fixed path regardless of HOME, so every test silently shared and polluted
+// that one real directory instead of getting its own temp one.
+//
+// All such tests live in this one class because xUnit runs test methods
+// within a class sequentially - spreading this across classes would risk
+// two tests mutating these process-wide settings at the same time under
+// parallel execution.
 public class StoreRoundTripTests : IDisposable
 {
     private readonly string? _originalHome;
@@ -29,11 +43,13 @@ public class StoreRoundTripTests : IDisposable
         _tempHome = Path.Combine(Path.GetTempPath(), "flower-tests-" + Guid.NewGuid());
         Directory.CreateDirectory(_tempHome);
         Environment.SetEnvironmentVariable("HOME", _tempHome);
+        PlatformDataDirectory.Current = _tempHome;
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("HOME", _originalHome);
+        PlatformDataDirectory.Current = null;
         try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
     }
 
