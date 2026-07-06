@@ -111,22 +111,23 @@
            Albums-tab filtering (SelectRecentlyAddedAlbumCommand). -->
       <ScrollViewer IsVisible="{Binding IsShowingRecentlyAddedAlbums}">
         <ItemsControl ItemsSource="{Binding RecentlyAddedAlbums}" Margin="12">
+          <!-- UniformGrid (fixed 2 columns) rather than WrapPanel: WrapPanel
+               packs each row from the left, leaving all the slack space on the
+               right - a fixed-column grid gives each tile an equal-width cell
+               to center itself within instead. -->
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
-              <WrapPanel />
+              <UniformGrid Columns="2" />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate>
               <Button Classes="pickerRow"
-                      Width="152"
-                      Padding="6"
-                      HorizontalAlignment="Left"
-                      HorizontalContentAlignment="Left"
+                      Padding="10"
                       Command="{Binding $parent[UserControl].DataContext.SelectRecentlyAddedAlbumCommand}"
                       CommandParameter="{Binding Name}">
-                <StackPanel Spacing="6">
-                  <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="140" Height="140" />
+                <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
+                  <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="170" Height="170" />
                   <TextBlock Text="{Binding Name}"
                              FontSize="13" FontWeight="Medium"
                              TextTrimming="CharacterEllipsis" />
