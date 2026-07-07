@@ -32,8 +32,11 @@ public class MobileMainViewModel : ViewModelBase
     public CurrentlyPlayingControlViewModel CurrentlyPlaying { get; }
 
     public ObservableCollection<SidebarItem> PlaylistPickerItems { get; } = new();
-    public ObservableCollection<AlbumTileViewModel> RecentlyAddedAlbums { get; } = new();
-    public ObservableCollection<AlbumTileViewModel> AlbumGridItems { get; } = new();
+
+    // Rows of two tiles rather than a flat tile list - see AlbumGridRow for why
+    // (virtualization).
+    public ObservableCollection<AlbumGridRow> RecentlyAddedAlbumRows { get; } = new();
+    public ObservableCollection<AlbumGridRow> AlbumGridRows { get; } = new();
 
     public ICommand SelectTabCommand { get; }
     public ICommand SelectAlbumOrArtistCommand { get; }
@@ -179,10 +182,10 @@ public class MobileMainViewModel : ViewModelBase
     // Whichever list is currently on screen (picker or track list) has nothing in it.
     // Without this, an empty library or an empty search just renders a blank screen.
     public bool IsContentEmpty =>
-        (IsShowingAlbumGrid && AlbumGridItems.Count == 0) ||
+        (IsShowingAlbumGrid && AlbumGridRows.Count == 0) ||
         (IsShowingArtistPicker && Main.SubListItems.Count == 0) ||
         (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0) ||
-        (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbums.Count == 0) ||
+        (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbumRows.Count == 0) ||
         (IsShowingTrackList && Main.Rows.Count == 0);
 
     public string EmptyStateTitle
@@ -368,18 +371,18 @@ public class MobileMainViewModel : ViewModelBase
 
     private void RebuildRecentlyAddedAlbums()
     {
-        RecentlyAddedAlbums.Clear();
-        foreach (var album in RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks))
-            RecentlyAddedAlbums.Add(album);
+        RecentlyAddedAlbumRows.Clear();
+        foreach (var row in AlbumGridRow.Chunk(RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks)))
+            RecentlyAddedAlbumRows.Add(row);
 
         RaiseEmptyStateChanged();
     }
 
     private void RebuildAlbumGrid()
     {
-        AlbumGridItems.Clear();
-        foreach (var album in AlbumGridBuilder.Build(Main.Library.Tracks))
-            AlbumGridItems.Add(album);
+        AlbumGridRows.Clear();
+        foreach (var row in AlbumGridRow.Chunk(AlbumGridBuilder.Build(Main.Library.Tracks)))
+            AlbumGridRows.Add(row);
 
         RaiseEmptyStateChanged();
     }
@@ -411,7 +414,7 @@ public class MobileMainViewModel : ViewModelBase
     // tracks by reusing the Albums tab's own filtering (Main.SelectedSidebarItem
     // set to the Albums sidebar item, then SelectedSubItem to the album name) -
     // ApplyTabSelection does not do this for MobileTab.RecentlyAdded itself
-    // (the un-drilled-in grid renders its own RecentlyAddedAlbums collection,
+    // (the un-drilled-in grid renders its own RecentlyAddedAlbumRows collection,
     // not Main.Rows), so it is set explicitly here instead. SelectedTab stays
     // RecentlyAdded so Back returns to this grid, not to the Albums picker.
     private void SelectRecentlyAddedAlbum(string? albumName)

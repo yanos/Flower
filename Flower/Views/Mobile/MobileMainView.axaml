@@ -121,70 +121,91 @@
       <!-- Recently Added: album art grid, ordered by recency - the app's
            default/home view (see MobileMainViewModel._selectedTab). Tapping a
            tile drills into that album's tracks via the same underlying
-           Albums-tab filtering (SelectRecentlyAddedAlbumCommand). -->
-      <ScrollViewer IsVisible="{Binding IsShowingRecentlyAddedAlbums}">
-        <ItemsControl ItemsSource="{Binding RecentlyAddedAlbums}" Margin="12">
-          <!-- UniformGrid (fixed 2 columns) rather than WrapPanel: WrapPanel
-               packs each row from the left, leaving all the slack space on the
-               right - a fixed-column grid gives each tile an equal-width cell
-               to center itself within instead. -->
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <UniformGrid Columns="2" />
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Button Classes="pickerRow"
-                      Padding="10"
-                      Command="{Binding $parent[UserControl].DataContext.SelectRecentlyAddedAlbumCommand}"
-                      CommandParameter="{Binding Name}">
-                <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
-                  <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="170" Height="170" />
-                  <TextBlock Text="{Binding Name}"
-                             FontSize="13" FontWeight="Medium"
-                             TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{Binding Artist}"
-                             FontSize="11" Opacity="0.6"
-                             TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-              </Button>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
+           Albums-tab filtering (SelectRecentlyAddedAlbumCommand).
 
-      <!-- Albums: same art-tile grid presentation as Recently Added (see above),
-           just alphabetical rather than by-recency - AlbumGridBuilder groups by
-           Album name alone to match desktop's existing Albums sidebar logic.
-           Tapping a tile reuses the plain-text picker's own SelectAlbumOrArtistCommand. -->
-      <ScrollViewer IsVisible="{Binding IsShowingAlbumGrid}">
-        <ItemsControl ItemsSource="{Binding AlbumGridItems}" Margin="12">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <UniformGrid Columns="2" />
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Button Classes="pickerRow"
-                      Padding="10"
-                      Command="{Binding $parent[UserControl].DataContext.SelectAlbumOrArtistCommand}"
-                      CommandParameter="{Binding Name}">
+           Bound to rows of two tiles (AlbumGridRow), not a flat tile list, with
+           a VirtualizingStackPanel rather than a UniformGrid - a flat list in a
+           UniformGrid isn't virtualizable (no viewport awareness), so it had to
+           realize/measure/template-expand every tile in the whole library the
+           first time the grid became visible - a multi-second stall on a library
+           with ~1,400 albums. No outer ScrollViewer here (unlike the plain
+           ListBoxes below) - wrapping a virtualizing ItemsControl in one gives it
+           unconstrained height, which defeats virtualization by making every row
+           look "on screen"; ItemsControl's own default template already scrolls. -->
+      <ItemsControl ItemsSource="{Binding RecentlyAddedAlbumRows}"
+                    IsVisible="{Binding IsShowingRecentlyAddedAlbums}"
+                    Margin="12">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel Orientation="Vertical" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnDefinitions="*,*">
+              <Button Grid.Column="0" Classes="pickerRow" Padding="10"
+                      Command="{Binding $parent[UserControl].DataContext.SelectRecentlyAddedAlbumCommand}"
+                      CommandParameter="{Binding First.Name}">
                 <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
-                  <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="170" Height="170" />
-                  <TextBlock Text="{Binding Name}"
-                             FontSize="13" FontWeight="Medium"
-                             TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{Binding Artist}"
-                             FontSize="11" Opacity="0.6"
-                             TextTrimming="CharacterEllipsis" />
+                  <controls:AlbumArtView AlbumArt="{Binding First.AlbumArt}" Width="170" Height="170" />
+                  <TextBlock Text="{Binding First.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding First.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
               </Button>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
+              <Button Grid.Column="1" Classes="pickerRow" Padding="10"
+                      IsVisible="{Binding Second, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                      Command="{Binding $parent[UserControl].DataContext.SelectRecentlyAddedAlbumCommand}"
+                      CommandParameter="{Binding Second.Name}">
+                <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
+                  <controls:AlbumArtView AlbumArt="{Binding Second.AlbumArt}" Width="170" Height="170" />
+                  <TextBlock Text="{Binding Second.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Second.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Button>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- Albums: same art-tile grid presentation and virtualization approach as
+           Recently Added (see above), just alphabetical rather than by-recency -
+           AlbumGridBuilder groups by Album name alone to match desktop's existing
+           Albums sidebar logic. Tapping a tile reuses the plain-text picker's own
+           SelectAlbumOrArtistCommand. -->
+      <ItemsControl ItemsSource="{Binding AlbumGridRows}"
+                    IsVisible="{Binding IsShowingAlbumGrid}"
+                    Margin="12">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel Orientation="Vertical" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnDefinitions="*,*">
+              <Button Grid.Column="0" Classes="pickerRow" Padding="10"
+                      Command="{Binding $parent[UserControl].DataContext.SelectAlbumOrArtistCommand}"
+                      CommandParameter="{Binding First.Name}">
+                <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
+                  <controls:AlbumArtView AlbumArt="{Binding First.AlbumArt}" Width="170" Height="170" />
+                  <TextBlock Text="{Binding First.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding First.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Button>
+              <Button Grid.Column="1" Classes="pickerRow" Padding="10"
+                      IsVisible="{Binding Second, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                      Command="{Binding $parent[UserControl].DataContext.SelectAlbumOrArtistCommand}"
+                      CommandParameter="{Binding Second.Name}">
+                <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
+                  <controls:AlbumArtView AlbumArt="{Binding Second.AlbumArt}" Width="170" Height="170" />
+                  <TextBlock Text="{Binding Second.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Second.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Button>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
 
       <!-- Artist name picker -->
       <ListBox Background="Transparent"
