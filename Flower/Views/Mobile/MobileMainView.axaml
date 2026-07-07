@@ -19,6 +19,16 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
+    <!-- The ListBoxItem container FluentTheme generates around each row has its
+         own default Padding/MinHeight independent of the row Button's - showing
+         up as a second, differently-colored selection box wrapped around the
+         row's own pressed-state box, and doubling the visual vertical spacing.
+         Zeroing it here makes the row Button's own Padding the only source of
+         row height/spacing. -->
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
     <Style Selector="Button.tab">
       <Setter Property="Opacity" Value="0.55" />
     </Style>
@@ -31,6 +41,9 @@
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="Padding" Value="16,10" />
+    </Style>
+    <Style Selector="Button.trackRow">
+      <Setter Property="Padding" Value="16,5" />
     </Style>
     <Style Selector="Button.trackRow.playing TextBlock">
       <Setter Property="FontWeight" Value="Bold" />
@@ -141,10 +154,42 @@
         </ItemsControl>
       </ScrollViewer>
 
-      <!-- Album/Artist name picker -->
+      <!-- Albums: same art-tile grid presentation as Recently Added (see above),
+           just alphabetical rather than by-recency - AlbumGridBuilder groups by
+           Album name alone to match desktop's existing Albums sidebar logic.
+           Tapping a tile reuses the plain-text picker's own SelectAlbumOrArtistCommand. -->
+      <ScrollViewer IsVisible="{Binding IsShowingAlbumGrid}">
+        <ItemsControl ItemsSource="{Binding AlbumGridItems}" Margin="12">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Columns="2" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Classes="pickerRow"
+                      Padding="10"
+                      Command="{Binding $parent[UserControl].DataContext.SelectAlbumOrArtistCommand}"
+                      CommandParameter="{Binding Name}">
+                <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
+                  <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="170" Height="170" />
+                  <TextBlock Text="{Binding Name}"
+                             FontSize="13" FontWeight="Medium"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Artist}"
+                             FontSize="11" Opacity="0.6"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- Artist name picker -->
       <ListBox Background="Transparent"
                 ItemsSource="{Binding Main.SubListItems}"
-                IsVisible="{Binding IsShowingAlbumArtistPicker}"
+                IsVisible="{Binding IsShowingArtistPicker}"
                 SelectionMode="Single">
         <ListBox.ItemTemplate>
           <DataTemplate>

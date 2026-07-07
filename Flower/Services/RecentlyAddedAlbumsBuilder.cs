@@ -16,14 +16,14 @@ namespace Flower.Services;
 // legitimately known to this device already, just not downloaded yet.
 public static class RecentlyAddedAlbumsBuilder
 {
-    public static List<RecentlyAddedAlbumViewModel> Build(IEnumerable<Track> tracks) =>
+    public static List<AlbumTileViewModel> Build(IEnumerable<Track> tracks) =>
         tracks
             .Where(t => !string.IsNullOrEmpty(t.Album))
             .GroupBy(t => (Album: t.Album!, Artist: t.Artists ?? ""))
             .Select(g =>
             {
                 var mostRecent = g.OrderByDescending(t => t.DateAdded).First();
-                return new RecentlyAddedAlbumViewModel
+                return new AlbumTileViewModel
                 {
                     Name = g.Key.Album,
                     Artist = mostRecent.Artists,

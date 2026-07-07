@@ -9,12 +9,14 @@ using Flower.Services;
 
 namespace Flower.ViewModels.Mobile;
 
-// One tile in mobile's "Recently Added" album grid (the app's default view -
-// see MobileMainViewModel). Groups this device's tracks by (Album, Artist);
-// MostRecentlyAdded is the max DateAdded among them, which is what the grid is
-// ordered by. RepresentativeTrack is whichever of the album's tracks was added
-// most recently - its embedded art is what the tile shows.
-public sealed class RecentlyAddedAlbumViewModel : ViewModelBase
+// One tile in mobile's album grids - both the "Recently Added" grid (grouped
+// by (Album, Artist), ordered by recency - see RecentlyAddedAlbumsBuilder) and
+// the Albums tab's own grid (grouped by Album name alone to match desktop's
+// existing Albums sidebar logic, ordered alphabetically - see AlbumGridBuilder).
+// MostRecentlyAdded is the max DateAdded among an album's tracks.
+// RepresentativeTrack is whichever of the album's tracks was added most
+// recently - its embedded art is what the tile shows.
+public sealed class AlbumTileViewModel : ViewModelBase
 {
     public required string Name { get; init; }
     public string? Artist { get; init; }
