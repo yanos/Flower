@@ -8,6 +8,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Models;
 using Flower.Persistence;
 
@@ -59,6 +61,7 @@ public class SyncHttpServer : IDisposable
     private HttpListener? _listener;
     private readonly DeviceIdentity _deviceIdentity;
     private readonly Library _library;
+    private readonly ILogger _logger;
     private readonly PlaylistStore _playlistStore = new();
     private readonly TrustedPeerStore _trustedPeerStore = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingApprovals = new();
@@ -72,10 +75,11 @@ public class SyncHttpServer : IDisposable
     // see Start(). Null if binding failed on every port tried (sync unavailable).
     public int? BoundPort { get; private set; }
 
-    public SyncHttpServer(DeviceIdentity deviceIdentity, Library library)
+    public SyncHttpServer(DeviceIdentity deviceIdentity, Library library, ILogger<SyncHttpServer> logger)
     {
         _deviceIdentity = deviceIdentity;
         _library = library;
+        _logger = logger;
     }
 
     // Tries DefaultPort first, then a handful of ports after it. Covers testing
@@ -108,12 +112,13 @@ public class SyncHttpServer : IDisposable
 
             _listener = listener;
             BoundPort = port;
+            _logger.LogInformation("Sync HTTP server listening on port {Port}", port);
             _ = ListenLoopAsync(_cts.Token);
             return;
         }
 
-        Console.WriteLine(
-            $"[SyncHttpServer] Could not bind any port in {DefaultPort}..{DefaultPort + MaxPortAttempts - 1}, sync endpoint disabled.");
+        _logger.LogError("Could not bind any port in {StartPort}..{EndPort}, sync endpoint disabled",
+            DefaultPort, DefaultPort + MaxPortAttempts - 1);
     }
 
     private async Task ListenLoopAsync(CancellationToken token)
@@ -151,6 +156,8 @@ public class SyncHttpServer : IDisposable
             if (path != null && RequiresTrust(path) && !await AuthorizeAsync(context))
             {
                 context.Response.StatusCode = 403;
+                _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: not authorized",
+                    method, path, context.Request.RemoteEndPoint);
                 return;
             }
 
@@ -171,9 +178,10 @@ public class SyncHttpServer : IDisposable
             else
                 context.Response.StatusCode = 404;
         }
-        catch
+        catch (Exception ex)
         {
             // Client disconnected mid-response or similar - nothing to recover.
+            _logger.LogDebug(ex, "Request handling failed (client likely disconnected)");
         }
         finally
         {
@@ -189,7 +197,10 @@ public class SyncHttpServer : IDisposable
     {
         var fingerprint = context.Request.Headers["X-Flower-Fingerprint"];
         if (string.IsNullOrEmpty(fingerprint))
+        {
+            _logger.LogWarning("Denying request with no X-Flower-Fingerprint header");
             return false; // Can't evaluate trust without a claimed identity - deny outright.
+        }
 
         if (_trustedPeerStore.IsTrusted(fingerprint))
             return true;
@@ -198,7 +209,9 @@ public class SyncHttpServer : IDisposable
         if (string.IsNullOrEmpty(alias))
             alias = fingerprint;
 
+        _logger.LogInformation("Untrusted peer {Alias} ({Fingerprint}) requesting approval", alias, fingerprint);
         var approved = await RequestApprovalAsync(fingerprint, alias);
+        _logger.LogInformation("Peer {Alias} ({Fingerprint}) approval result: {Approved}", alias, fingerprint, approved);
         if (approved)
             await _trustedPeerStore.ApproveAsync(fingerprint, alias);
 
@@ -283,6 +296,8 @@ public class SyncHttpServer : IDisposable
             .ToList();
         _library.ReplacePlaylists(playlists);
         await _playlistStore.SaveAsync(playlists);
+
+        _logger.LogInformation("Received and applied {Count} playlist(s) pushed from a peer", playlists.Count);
 
         context.Response.StatusCode = 204;
     }
