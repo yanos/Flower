@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Serilog;
@@ -47,6 +48,12 @@ namespace Flower.Logging
                 .Enrich.FromLogContext()
                 .WriteTo.File(path, outputTemplate:
                     "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+                // Same content as the file sink, just live in the terminal - added
+                // specifically so sync activity (discovery, playlist/library sync
+                // decisions, trust gate) can be watched in real time while testing,
+                // rather than only readable after the fact from the log file.
+                .WriteTo.Console(outputTemplate:
+                    "{Timestamp:HH:mm:ss.fff} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
                 .CreateLogger();
 
             _factory = new SerilogLoggerFactory(Log.Logger, dispose: false);
@@ -71,6 +78,14 @@ namespace Flower.Logging
 
         public static ILogger CreateLogger(string categoryName) =>
             _factory?.CreateLogger(categoryName) ?? NullLogger.Instance;
+
+        // For classes constructed at the composition root (App.axaml.cs) before
+        // the DI container exists, but whose constructor still wants a proper
+        // ILogger<T> - the same generic type the container would inject
+        // automatically for a class it constructs itself (see MainViewModel) -
+        // rather than the untyped ILogger CreateLogger<T>() above.
+        public static ILogger<T> CreateTypedLogger<T>() =>
+            _factory != null ? new Logger<T>(_factory) : NullLogger<T>.Instance;
 
         // Flushes buffered log entries to disk - call on shutdown (see
         // MainWindow's Closing handler) so the last few lines of a session

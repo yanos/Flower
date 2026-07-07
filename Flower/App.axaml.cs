@@ -82,9 +82,9 @@ public partial class App : Application
         // the same instance, so the new name takes effect immediately without
         // needing to reconstruct or restart anything.
         var deviceIdentity = new DeviceIdentityStore().Load();
-        var syncHttpServer = new SyncHttpServer(deviceIdentity, library);
+        var syncHttpServer = new SyncHttpServer(deviceIdentity, library, AppLogging.CreateTypedLogger<SyncHttpServer>());
         var playlistSyncService = new PlaylistSyncService(library, deviceIdentity);
-        var librarySyncService = new LibrarySyncService(library, deviceIdentity);
+        var librarySyncService = new LibrarySyncService(library, deviceIdentity, AppLogging.CreateTypedLogger<LibrarySyncService>());
         var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity);
 
         Ioc.Default.ConfigureServices(
