@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 
 using Flower.Models;
+using Flower.Persistence;
 
 namespace Flower.Services;
 
@@ -74,7 +75,16 @@ public class LibrarySyncService
             .Select(song => LibrarySyncMapper.ToPlaceholderTrack(song, device.Fingerprint))
             .ToList();
 
-        if (placeholders.Count > 0)
-            _library.MergeSyncedTracks(placeholders);
+        if (placeholders.Count == 0)
+            return;
+
+        _library.MergeSyncedTracks(placeholders);
+
+        // Without this, a merge only lives in memory - a killed/relaunched app
+        // (mobile has no always-on background process) would lose every
+        // not-yet-downloaded placeholder learned this way until the next
+        // successful sync. PlaylistSyncService and LibraryDownloadService both
+        // already persist after their own mutations; this one previously did not.
+        await new LibraryStore().SaveAsync(_library.Tracks);
     }
 }
