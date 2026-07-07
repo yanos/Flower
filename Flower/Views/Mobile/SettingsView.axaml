@@ -38,6 +38,13 @@
 
     <StackPanel Grid.Row="1" Margin="0,8,0,0">
 
+      <StackPanel Margin="20,4,20,16" Spacing="6">
+        <TextBlock Text="Device Name" FontSize="13" Opacity="0.6"/>
+        <TextBox Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"/>
+        <TextBlock Text="Shown to other Flower devices when syncing over Wi-Fi"
+                   FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+      </StackPanel>
+
       <Button Classes="action" Command="{Binding RescanCommand}">
         <StackPanel Orientation="Horizontal" Spacing="14">
           <materialIcons:MaterialIcon Kind="Autorenew" Width="22" Height="22" />

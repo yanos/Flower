@@ -34,14 +34,12 @@ public class LibrarySyncService
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly Library _library;
-    private readonly string _ownFingerprint;
-    private readonly string _ownAlias;
+    private readonly DeviceIdentity _deviceIdentity;
 
-    public LibrarySyncService(Library library, string ownFingerprint, string ownAlias)
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity)
     {
         _library = library;
-        _ownFingerprint = ownFingerprint;
-        _ownAlias = ownAlias;
+        _deviceIdentity = deviceIdentity;
     }
 
     public async Task SyncWithAsync(DiscoveredDevice device)
@@ -53,8 +51,8 @@ public class LibrarySyncService
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}/api/flower/v1/library");
-            request.Headers.Add("X-Flower-Fingerprint", _ownFingerprint);
-            request.Headers.Add("X-Flower-Alias", _ownAlias);
+            request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
+            request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
             // Fresh connection per request rather than pooling one - see
             // PlaylistSyncService.AddIdentityHeaders for why (avoids reusing a
             // keep-alive connection the server/OS already tore down).

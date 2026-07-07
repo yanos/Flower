@@ -1,12 +1,23 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace Flower.Persistence
 {
     public class DeviceIdentity
     {
         public string Fingerprint { get; set; } = "";
+
+        // What this device calls itself to peers (the /info "alias" field and
+        // X-Flower-Alias header - see SyncHttpServer/PlaylistSyncService/
+        // LibrarySyncService/LibraryDownloadService) and what the desktop
+        // sidebar shows for a discovered device. User-editable via Settings
+        // (MainViewModel.DeviceAlias) since there is no reliable, permission-
+        // prompt-free way to read a device's real user-assigned name on iOS
+        // (UIDevice.name has returned a generic placeholder to third-party apps
+        // since iOS 16) or a "your Apple ID name" equivalent on any platform.
+        public string Alias { get; set; } = "";
     }
 
     // Persists a random per-install identifier used as the "fingerprint" field in
@@ -28,7 +39,16 @@ namespace Flower.Persistence
                 {
                     var json = File.ReadAllText(path);
                     if (JsonSerializer.Deserialize<DeviceIdentity>(json, Options) is { Fingerprint.Length: > 0 } identity)
+                    {
+                        // Alias didn't exist before this field was added - backfill
+                        // an existing device.json rather than showing a blank name.
+                        if (string.IsNullOrEmpty(identity.Alias))
+                        {
+                            identity.Alias = DefaultAlias();
+                            Save(identity);
+                        }
                         return identity;
+                    }
                 }
                 catch
                 {
@@ -36,10 +56,35 @@ namespace Flower.Persistence
                 }
             }
 
-            var fresh = new DeviceIdentity { Fingerprint = Guid.NewGuid().ToString("N") };
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(fresh, Options));
+            var fresh = new DeviceIdentity { Fingerprint = Guid.NewGuid().ToString("N"), Alias = DefaultAlias() };
+            Save(fresh);
             return fresh;
+        }
+
+        // Seed value shown until the user renames it in Settings - not meant to be
+        // a great name on its own (mobile in particular has no free, permission-
+        // prompt-free API for the user's real device name - see DeviceIdentity.Alias).
+        private static string DefaultAlias()
+        {
+            if (OperatingSystem.IsIOS())
+                return "iPhone";
+            if (OperatingSystem.IsAndroid())
+                return "Android Device";
+            return Environment.MachineName;
+        }
+
+        public void Save(DeviceIdentity identity)
+        {
+            var path = StorePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(identity, Options));
+        }
+
+        public async Task SaveAsync(DeviceIdentity identity)
+        {
+            var path = StorePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(identity, Options));
         }
     }
 }

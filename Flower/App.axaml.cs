@@ -75,15 +75,17 @@ public partial class App : Application
 
         var networkDiscovery = new NetworkDiscoveryService();
 
-        // SyncHttpServer loads/generates this device's identity itself (see
-        // DeviceIdentityStore) - read it once here too so PlaylistSyncService can
-        // use the same fingerprint for initiator election (see its ordinal-compare
-        // comment) without a second dependency between the two services.
-        var ownFingerprint = new DeviceIdentityStore().Load().Fingerprint;
-        var syncHttpServer = new SyncHttpServer(networkDiscovery.OwnInstanceName, library);
-        var playlistSyncService = new PlaylistSyncService(library, ownFingerprint, networkDiscovery.OwnInstanceName);
-        var librarySyncService = new LibrarySyncService(library, ownFingerprint, networkDiscovery.OwnInstanceName);
-        var libraryDownloadService = new LibraryDownloadService(library, ownFingerprint, networkDiscovery.OwnInstanceName);
+        // One shared, mutable identity object rather than separate fingerprint/
+        // alias strings handed to each service - MainViewModel.DeviceAlias edits
+        // it in place (and persists via DeviceIdentityStore) when the user renames
+        // this device in Settings, and every service below reads .Alias live off
+        // the same instance, so the new name takes effect immediately without
+        // needing to reconstruct or restart anything.
+        var deviceIdentity = new DeviceIdentityStore().Load();
+        var syncHttpServer = new SyncHttpServer(deviceIdentity, library);
+        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity);
+        var librarySyncService = new LibrarySyncService(library, deviceIdentity);
+        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity);
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
@@ -92,6 +94,7 @@ public partial class App : Application
                 .AddSingleton(library)
                 .AddSingleton(mainPlaylist)
                 .AddSingleton(appSettings)
+                .AddSingleton(deviceIdentity)
                 .AddSingleton<ColumnManager>()
                 .AddSingleton(importer)
                 .AddSingleton(networkDiscovery)

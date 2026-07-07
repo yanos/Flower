@@ -210,9 +210,13 @@
                    SelectionChanged="SubList_SelectionChanged"/>
         </Border>
 
-        <!-- Custom track list -->
+        <!-- Custom track list. Hidden (not just covered) when showing device
+             detail - MusicListView draws its own column-header row internally,
+             and the device-detail panel below only insets by its own Margin,
+             leaving that header row visible peeking above it otherwise. -->
         <controls:MusicListView Grid.Column="1"
                                 x:Name="MusicList"
+                                IsVisible="{Binding !IsShowingDeviceDetail}"
                                 SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
 
         <!-- Device detail: shown instead of the track list when a Devices sidebar row is selected -->
@@ -222,7 +226,11 @@
                     Margin="24" Spacing="8" VerticalAlignment="Top">
           <StackPanel Orientation="Horizontal" Spacing="10">
             <materialIcons:MaterialIcon Kind="Laptop" Width="28" Height="28" />
-            <TextBlock Text="{Binding SelectedDevice.Alias}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <!-- SelectedSidebarItem.Name, not SelectedDevice.Alias - the sidebar
+                 row already resolves a local nickname override (DeviceNicknameStore)
+                 over the peer's raw self-reported alias and keeps it live-updated
+                 on rename; SelectedDevice.Alias is that raw, unresolved value. -->
+            <TextBlock Text="{Binding SelectedSidebarItem.Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
           </StackPanel>
           <TextBlock Text="{Binding SelectedDevice.EndPoint}" Opacity="0.6" FontSize="13"/>
           <TextBlock Text="Found on your local network via Flower's sync discovery. File sync is not built yet."

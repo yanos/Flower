@@ -57,8 +57,7 @@ public class SyncHttpServer : IDisposable
     private static readonly TimeSpan ApprovalTimeout = TimeSpan.FromSeconds(60);
 
     private HttpListener? _listener;
-    private readonly string _alias;
-    private readonly string _fingerprint;
+    private readonly DeviceIdentity _deviceIdentity;
     private readonly Library _library;
     private readonly PlaylistStore _playlistStore = new();
     private readonly TrustedPeerStore _trustedPeerStore = new();
@@ -73,11 +72,10 @@ public class SyncHttpServer : IDisposable
     // see Start(). Null if binding failed on every port tried (sync unavailable).
     public int? BoundPort { get; private set; }
 
-    public SyncHttpServer(string alias, Library library)
+    public SyncHttpServer(DeviceIdentity deviceIdentity, Library library)
     {
-        _alias = alias;
+        _deviceIdentity = deviceIdentity;
         _library = library;
-        _fingerprint = new DeviceIdentityStore().Load().Fingerprint;
     }
 
     // Tries DefaultPort first, then a handful of ports after it. Covers testing
@@ -241,11 +239,11 @@ public class SyncHttpServer : IDisposable
         var deviceType = OperatingSystem.IsIOS() || OperatingSystem.IsAndroid() ? "mobile" : "desktop";
         var body = JsonSerializer.Serialize(new
         {
-            alias = _alias,
+            alias = _deviceIdentity.Alias,
             version = "2.0",
             deviceModel = (string?)null,
             deviceType,
-            fingerprint = _fingerprint,
+            fingerprint = _deviceIdentity.Fingerprint,
             download = false
         });
         await WriteJsonAsync(context, body);
@@ -253,7 +251,7 @@ public class SyncHttpServer : IDisposable
 
     private async Task HandleGetPlaylistsAsync(HttpListenerContext context)
     {
-        var manifest = PlaylistSyncMapper.ToManifest(_fingerprint, _library.Playlists);
+        var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, _library.Playlists);
         await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
     }
 
@@ -262,7 +260,7 @@ public class SyncHttpServer : IDisposable
     // /rest/getAlbumList2+getAlbum.
     private async Task HandleGetLibraryAsync(HttpListenerContext context)
     {
-        var manifest = new LibrarySyncManifestDto(_fingerprint, LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks));
+        var manifest = new LibrarySyncManifestDto(_deviceIdentity.Fingerprint, LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks));
         await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
     }
 

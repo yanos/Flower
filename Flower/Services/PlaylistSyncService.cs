@@ -34,18 +34,16 @@ public class PlaylistSyncService
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly Library _library;
-    private readonly string _ownFingerprint;
-    private readonly string _ownAlias;
+    private readonly DeviceIdentity _deviceIdentity;
     private readonly PlaylistStore _playlistStore = new();
     private readonly PlaylistSyncStateStore _syncStateStore = new();
 
     public event EventHandler<PlaylistConflictEventArgs>? ConflictDetected;
 
-    public PlaylistSyncService(Library library, string ownFingerprint, string ownAlias)
+    public PlaylistSyncService(Library library, DeviceIdentity deviceIdentity)
     {
         _library = library;
-        _ownFingerprint = ownFingerprint;
-        _ownAlias = ownAlias;
+        _deviceIdentity = deviceIdentity;
     }
 
     public async Task SyncWithAsync(DiscoveredDevice device)
@@ -59,8 +57,15 @@ public class PlaylistSyncService
         // devices (each compares its own fingerprint against the other's), so a
         // pair never both initiate (double conflict prompts, racing writes) or
         // both stay silent.
-        if (string.CompareOrdinal(_ownFingerprint, device.Fingerprint) >= 0)
+        if (string.CompareOrdinal(_deviceIdentity.Fingerprint, device.Fingerprint) >= 0)
             return;
+
+        // A local nickname (see DeviceNicknameStore - the same override the
+        // sidebar's "Rename Device" and Trusted Devices window use) wins over
+        // the peer's own raw self-reported alias here too, so the conflict
+        // dialog's "Keep X's Version" matches what this device is actually
+        // called elsewhere in the UI.
+        var remoteDisplayName = new DeviceNicknameStore().Get(device.Fingerprint) ?? device.Alias;
 
         List<PlaylistSyncPlaylistDto> remotePlaylists;
         try
@@ -94,7 +99,7 @@ public class PlaylistSyncService
                 PlaylistSyncDecisionKind.NoChange  => decision.Local!,
                 PlaylistSyncDecisionKind.KeepLocal => decision.Local!,
                 PlaylistSyncDecisionKind.AdoptRemote => PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks),
-                PlaylistSyncDecisionKind.Conflict => await ResolveConflictAsync(decision, device.Alias),
+                PlaylistSyncDecisionKind.Conflict => await ResolveConflictAsync(decision, remoteDisplayName),
                 _ => throw new ArgumentOutOfRangeException(),
             };
 
@@ -108,7 +113,7 @@ public class PlaylistSyncService
 
         try
         {
-            var manifest = PlaylistSyncMapper.ToManifest(_ownFingerprint, finalPlaylists);
+            var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, finalPlaylists);
             var body = JsonSerializer.Serialize(manifest, JsonOptions);
             using var content = new StringContent(body, Encoding.UTF8, "application/json");
             using var postRequest = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}/api/flower/v1/playlists/apply") { Content = content };
@@ -134,8 +139,8 @@ public class PlaylistSyncService
     // practice as "Connection reset by peer" / "Socket is not connected" on iOS.
     private void AddIdentityHeaders(HttpRequestMessage request)
     {
-        request.Headers.Add("X-Flower-Fingerprint", _ownFingerprint);
-        request.Headers.Add("X-Flower-Alias", _ownAlias);
+        request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
+        request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
         request.Headers.ConnectionClose = true;
     }
 

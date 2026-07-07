@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:Flower.Views"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="Flower.Views.TrustedDevicesWindow"
         Title="Trusted Devices"
         Width="420" Height="360"
@@ -23,12 +24,53 @@
         <ListBox x:Name="DevicesList">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="views:TrustedPeerRow">
-              <Grid ColumnDefinitions="*,Auto" Margin="4">
-                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Alias}" FontWeight="SemiBold" FontSize="13"/>
-                  <TextBlock Text="{Binding ApprovedAtDisplay}" Opacity="0.6" FontSize="11"/>
-                </StackPanel>
-                <Button Grid.Column="1" Content="Forget" Click="ForgetButton_Click" VerticalAlignment="Center"/>
+              <!-- Forget/edit-pencil live in the same row as the name field
+                   specifically (not spanning both rows via an enclosing
+                   StackPanel, which left them vertically centered across the
+                   name+date block instead of aligned with the name field itself). -->
+              <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" Margin="4">
+                <TextBlock Grid.Row="0" Grid.Column="0"
+                           Text="{Binding Alias}"
+                           IsVisible="{Binding !IsEditing}"
+                           FontWeight="SemiBold"
+                           FontSize="13"
+                           VerticalAlignment="Center"
+                           Margin="4,2"/>
+                <TextBox Grid.Row="0" Grid.Column="0"
+                         x:Name="AliasTextBox"
+                         Text="{Binding Alias}"
+                         IsVisible="{Binding IsEditing}"
+                         FontWeight="SemiBold"
+                         FontSize="13"
+                         Height="24"
+                         MinHeight="0"
+                         Padding="4,2"
+                         VerticalContentAlignment="Center"
+                         KeyDown="AliasTextBox_KeyDown"
+                         LostFocus="AliasTextBox_LostFocus"/>
+                <TextBlock Grid.Row="1" Grid.Column="0"
+                           Text="{Binding ApprovedAtDisplay}"
+                           Opacity="0.6" FontSize="11"
+                           Margin="4,4,0,0"/>
+                <Button Grid.Row="0" Grid.Column="1"
+                        Click="EditAliasButton_Click"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="6"
+                        VerticalAlignment="Center"
+                        ToolTip.Tip="Rename">
+                  <Panel>
+                    <materialIcons:MaterialIcon Kind="Pencil" Width="16" Height="16" Opacity="0.7"
+                                                 IsVisible="{Binding !IsEditing}"/>
+                    <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" Opacity="0.7"
+                                                 IsVisible="{Binding IsEditing}"/>
+                  </Panel>
+                </Button>
+                <Button Grid.Row="0" Grid.Column="2"
+                        Content="Forget"
+                        Click="ForgetButton_Click"
+                        VerticalAlignment="Center"
+                        Margin="8,0,0,0"/>
               </Grid>
             </DataTemplate>
           </ListBox.ItemTemplate>

@@ -4,28 +4,40 @@
         xmlns:views="clr-namespace:Flower.Views"
         x:Class="Flower.Views.SettingsWindow"
         Title="Settings"
-        Width="480" Height="456"
+        Width="480" Height="512"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
-  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="16">
-    <CheckBox Grid.Row="0"
-              x:Name="SyncPlayCountCheckBox"
-              Content="Sync play count from iTunes/Music.app"
-              IsCheckedChanged="SyncPlayCountCheckBox_IsCheckedChanged"/>
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="16">
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*">
+      <TextBlock Grid.Column="0" Text="Device Name" VerticalAlignment="Center" Margin="0,0,10,0"/>
+      <TextBox Grid.Column="1" x:Name="DeviceAliasTextBox" LostFocus="DeviceAliasTextBox_LostFocus"/>
+    </Grid>
 
     <TextBlock Grid.Row="1"
+               Text="Shown to other Flower devices when syncing over Wi-Fi"
+               Margin="0,2,0,0"
+               FontSize="11"
+               Opacity="0.6"/>
+
+    <CheckBox Grid.Row="2"
+              x:Name="SyncPlayCountCheckBox"
+              Content="Sync play count from iTunes/Music.app"
+              Margin="0,16,0,0"
+              IsCheckedChanged="SyncPlayCountCheckBox_IsCheckedChanged"/>
+
+    <TextBlock Grid.Row="3"
                x:Name="ITunesLibraryPathText"
                Margin="20,2,0,0"
                FontSize="11"
                Opacity="0.6"
                TextTrimming="CharacterEllipsis"/>
 
-    <TextBlock Grid.Row="2"
+    <TextBlock Grid.Row="4"
                Text="Library Folders"
                FontWeight="SemiBold"
                Margin="0,16,0,8"/>
 
-    <Border Grid.Row="3"
+    <Border Grid.Row="5"
             BorderThickness="1"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
       <ListBox x:Name="PathsList">
@@ -55,7 +67,7 @@
       </ListBox>
     </Border>
 
-    <StackPanel Grid.Row="4"
+    <StackPanel Grid.Row="6"
                 Orientation="Horizontal"
                 Margin="0,12,0,0"
                 HorizontalAlignment="Left"
@@ -64,7 +76,7 @@
       <Button x:Name="RemoveButton" Content="Remove Selected" Click="RemoveButton_Click"/>
     </StackPanel>
 
-    <StackPanel Grid.Row="5"
+    <StackPanel Grid.Row="7"
                 Orientation="Horizontal"
                 Margin="0,12,0,0"
                 HorizontalAlignment="Right"
