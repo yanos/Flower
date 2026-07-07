@@ -36,6 +36,7 @@ public partial class SettingsWindow : Window
         _paths = new List<string>(viewModel.LibraryPaths);
         _originalPaths = new List<string>(_paths);
         RefreshPathRows();
+        DeviceAliasTextBox.Text = viewModel.DeviceAlias;
         SyncPlayCountCheckBox.IsChecked = viewModel.SyncPlayCountFromITunes;
         ITunesLibraryPathText.Text = DescribeITunesLibrarySource();
         NativeMenuHelper.InheritFromMainWindow(this);
@@ -114,6 +115,22 @@ public partial class SettingsWindow : Window
 
     private void SyncPlayCountCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
         _viewModel.SyncPlayCountFromITunes = SyncPlayCountCheckBox.IsChecked ?? false;
+
+    // Applied on LostFocus (tabbing/clicking away), not per-keystroke - matches
+    // the checkbox above's apply-immediately-on-change behavior without writing
+    // to disk on every character typed. An empty entry is never persisted (would
+    // show a blank name to peers); the textbox just reverts to the last real value.
+    private void DeviceAliasTextBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        var trimmed = DeviceAliasTextBox.Text?.Trim() ?? "";
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            DeviceAliasTextBox.Text = _viewModel.DeviceAlias;
+            return;
+        }
+
+        _viewModel.DeviceAlias = trimmed;
+    }
 
     private void CancelButton_Click(object? sender, RoutedEventArgs e) => Close();
 

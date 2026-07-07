@@ -273,6 +273,70 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
+    public void DeviceIdentityStore_Load_backfills_a_default_alias_for_a_pre_existing_identity_missing_one()
+    {
+        // Simulates device.json written before Alias existed - Fingerprint only.
+        Directory.CreateDirectory(Path.GetDirectoryName(DeviceIdentityStore.StorePath)!);
+        File.WriteAllText(DeviceIdentityStore.StorePath, """{"Fingerprint":"fp-legacy"}""");
+
+        var identity = new DeviceIdentityStore().Load();
+
+        Assert.Equal("fp-legacy", identity.Fingerprint);
+        Assert.False(string.IsNullOrEmpty(identity.Alias));
+    }
+
+    [Fact]
+    public async Task DeviceIdentityStore_SaveAsync_round_trips_a_renamed_alias()
+    {
+        var identity = new DeviceIdentityStore().Load();
+        identity.Alias = "Yanos's iPhone";
+
+        await new DeviceIdentityStore().SaveAsync(identity);
+        var reloaded = new DeviceIdentityStore().Load();
+
+        Assert.Equal("Yanos's iPhone", reloaded.Alias);
+        Assert.Equal(identity.Fingerprint, reloaded.Fingerprint);
+    }
+
+    [Fact]
+    public void DeviceNicknameStore_Get_returns_null_when_no_nickname_is_set()
+    {
+        Assert.Null(new DeviceNicknameStore().Get("fp-1"));
+    }
+
+    [Fact]
+    public async Task DeviceNicknameStore_SetAsync_then_Get_round_trips_a_nickname()
+    {
+        var store = new DeviceNicknameStore();
+        await store.SetAsync("fp-1", "Yanos's iPhone");
+
+        Assert.Equal("Yanos's iPhone", store.Get("fp-1"));
+    }
+
+    [Fact]
+    public async Task DeviceNicknameStore_SetAsync_replaces_rather_than_duplicates_an_existing_fingerprint()
+    {
+        var store = new DeviceNicknameStore();
+        await store.SetAsync("fp-1", "Old Name");
+
+        await store.SetAsync("fp-1", "New Name");
+
+        Assert.Equal("New Name", store.Get("fp-1"));
+        Assert.Single(store.Load());
+    }
+
+    [Fact]
+    public async Task DeviceNicknameStore_SetAsync_with_an_empty_nickname_clears_the_override()
+    {
+        var store = new DeviceNicknameStore();
+        await store.SetAsync("fp-1", "A Name");
+
+        await store.SetAsync("fp-1", "");
+
+        Assert.Null(store.Get("fp-1"));
+    }
+
+    [Fact]
     public async Task AppSettingsStore_round_trips_window_geometry()
     {
         var settings = new AppSettings

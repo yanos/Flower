@@ -35,7 +35,7 @@ public partial class MainView : UserControl
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
     private MenuItem    _addToPlaylistItem = new();
-    private readonly ContextMenu _playlistMenu = new();
+    private readonly ContextMenu _sidebarItemMenu = new();
     private SidebarItem? _dropTargetPlaylistItem;
 
     // Drag album/artist names from SubList onto a sidebar playlist - mirrors
@@ -279,33 +279,50 @@ public partial class MainView : UserControl
     private void OnSortRequested(object? sender, string columnId)
         => _viewModel?.SortByColumnCommand?.Execute(columnId);
 
-    // Right-click on a Playlist row in the sidebar. SidebarList is a stock ListBox
-    // (unlike MusicList's hand-rolled hit-testing), so the target row is found by
-    // walking up from the routed event's Source to its containing ListBoxItem.
+    // Right-click on a Playlist or Device row in the sidebar. SidebarList is a
+    // stock ListBox (unlike MusicList's hand-rolled hit-testing), so the target
+    // row is found by walking up from the routed event's Source to its
+    // containing ListBoxItem.
     private void SidebarList_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         if (e.Source is not Visual visual)
             return;
-        if (visual.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not
-            SidebarItem { Kind: SidebarItemKind.Playlist, Playlist: { } playlist } item)
+        if (visual.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not SidebarItem item)
             return;
         if (_viewModel is not MainViewModel vm)
             return;
 
-        _playlistMenu.Items.Clear();
+        _sidebarItemMenu.Items.Clear();
 
-        // Reuses the same IsEditing/RenameBox flow CreatePlaylistWithTrack already
-        // drops a freshly-created playlist into - see RenameBox_Loaded/KeyDown/
-        // LostFocus and CommitRename below.
-        var renameItem = new MenuItem { Header = "Rename Playlist" };
-        renameItem.Click += (_, _) => BeginRename(item);
-        _playlistMenu.Items.Add(renameItem);
+        if (item is { Kind: SidebarItemKind.Playlist, Playlist: { } playlist })
+        {
+            // Reuses the same IsEditing/RenameBox flow CreatePlaylistWithTrack
+            // already drops a freshly-created playlist into - see
+            // RenameBox_Loaded/KeyDown/LostFocus and CommitRename below.
+            var renameItem = new MenuItem { Header = "Rename Playlist" };
+            renameItem.Click += (_, _) => BeginRename(item);
+            _sidebarItemMenu.Items.Add(renameItem);
 
-        var deleteItem = new MenuItem { Header = "Delete Playlist" };
-        deleteItem.Click += async (_, _) => await vm.DeletePlaylistAsync(playlist);
-        _playlistMenu.Items.Add(deleteItem);
+            var deleteItem = new MenuItem { Header = "Delete Playlist" };
+            deleteItem.Click += async (_, _) => await vm.DeletePlaylistAsync(playlist);
+            _sidebarItemMenu.Items.Add(deleteItem);
+        }
+        // A rename can only persist against a resolved fingerprint (see
+        // DeviceNicknameStore, keyed by fingerprint rather than the mDNS
+        // instance name) - not yet available in the brief window before a
+        // freshly-discovered device's /info handshake resolves it.
+        else if (item is { Kind: SidebarItemKind.Device, Device.Fingerprint.Length: > 0 })
+        {
+            var renameItem = new MenuItem { Header = "Rename Device" };
+            renameItem.Click += (_, _) => BeginRename(item);
+            _sidebarItemMenu.Items.Add(renameItem);
+        }
+        else
+        {
+            return;
+        }
 
-        _playlistMenu.Open(SidebarList);
+        _sidebarItemMenu.Open(SidebarList);
         e.Handled = true;
     }
 
@@ -741,8 +758,8 @@ public partial class MainView : UserControl
 
     private void OnTrustedDevicesRequested(object? sender, EventArgs e)
     {
-        if (TopLevel.GetTopLevel(this) is Window owner)
-            new TrustedDevicesWindow().ShowDialog(owner);
+        if (TopLevel.GetTopLevel(this) is Window owner && _viewModel is { } vm)
+            new TrustedDevicesWindow(vm).ShowDialog(owner);
     }
 
     private async void OnDeletePlaylistConfirmationRequested(object? sender, DeletePlaylistConfirmationEventArgs e)
@@ -956,6 +973,20 @@ public partial class MainView : UserControl
             return;
 
         var name = item.Name?.Trim();
+
+        if (item.Device is { Fingerprint.Length: > 0 } device)
+        {
+            item.IsEditing = false;
+            await new DeviceNicknameStore().SetAsync(device.Fingerprint, name ?? "");
+
+            // Re-derives item.Name (and every other Device row's) from
+            // MainViewModel.ResolveDeviceDisplayName - the one place that
+            // decides what a device is called - rather than duplicating its
+            // empty-falls-back-to-device.Alias logic here too.
+            _viewModel?.RefreshDeviceDisplayNames();
+            return;
+        }
+
         item.Name = string.IsNullOrEmpty(name) ? "New Playlist" : name;
         item.IsEditing = false;
 

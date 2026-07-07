@@ -18,14 +18,12 @@ public enum TrackDownloadResult { AlreadyDownloaded, PeerUnavailable, Downloaded
 public class LibraryDownloadService
 {
     private readonly Library _library;
-    private readonly string _ownFingerprint;
-    private readonly string _ownAlias;
+    private readonly DeviceIdentity _deviceIdentity;
 
-    public LibraryDownloadService(Library library, string ownFingerprint, string ownAlias)
+    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity)
     {
         _library = library;
-        _ownFingerprint = ownFingerprint;
-        _ownAlias = ownAlias;
+        _deviceIdentity = deviceIdentity;
     }
 
     public async Task<TrackDownloadResult> DownloadAsync(Track track, DiscoveredDevice? peer)
@@ -41,8 +39,8 @@ public class LibraryDownloadService
                 $"http://{peer.EndPoint}", username: "", password: "",
                 extraHeaders:
                 [
-                    ("X-Flower-Fingerprint", _ownFingerprint),
-                    ("X-Flower-Alias", _ownAlias),
+                    ("X-Flower-Fingerprint", _deviceIdentity.Fingerprint),
+                    ("X-Flower-Alias", _deviceIdentity.Alias),
                 ]);
 
             var folder = ResolveDownloadFolder();

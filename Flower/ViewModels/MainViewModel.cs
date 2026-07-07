@@ -43,6 +43,7 @@ public partial class MainViewModel : ViewModelBase
     private PlaylistSyncService? _playlistSyncService;
     private LibrarySyncService? _librarySyncService;
     private LibraryDownloadService? _libraryDownloadService;
+    private DeviceIdentity? _deviceIdentity;
 
     // Fingerprints of devices already sync'd (or currently syncing) this app
     // session, so DeviceDiscovered re-firing for the same peer (e.g. once with the
@@ -88,6 +89,26 @@ public partial class MainViewModel : ViewModelBase
     public Library Library { get; private set; }
 
     public IReadOnlyList<string> LibraryPaths => _appSettings?.LibraryPaths ?? [];
+
+    // What this device calls itself to peers (shown in the sidebar's Devices
+    // section on the other end, and in the trust-gate approval prompt) - see
+    // DeviceIdentity.Alias for why this has to be user-editable rather than
+    // read from the OS. The same DeviceIdentity instance is shared with
+    // SyncHttpServer/PlaylistSyncService/LibrarySyncService/LibraryDownloadService
+    // (see App.axaml.cs), so mutating it here takes effect immediately - no
+    // restart needed for a rename to reach the next peer that asks.
+    public string DeviceAlias
+    {
+        get => _deviceIdentity?.Alias ?? "";
+        set
+        {
+            var trimmed = value.Trim();
+            if (_deviceIdentity == null || string.IsNullOrEmpty(trimmed) || _deviceIdentity.Alias == trimmed)
+                return;
+            _deviceIdentity.Alias = trimmed;
+            _ = new DeviceIdentityStore().SaveAsync(_deviceIdentity);
+        }
+    }
 
     // Whether to import per-track play counts from iTunes/Music.app on every
     // launch - see ITunesPlayCountImporter. Persisted immediately on change,
@@ -381,7 +402,8 @@ public partial class MainViewModel : ViewModelBase
         PlaylistSyncService playlistSyncService,
         LibrarySyncService librarySyncService,
         LibraryDownloadService libraryDownloadService,
-        SyncHttpServer syncHttpServer)
+        SyncHttpServer syncHttpServer,
+        DeviceIdentity deviceIdentity)
     {
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
@@ -391,6 +413,7 @@ public partial class MainViewModel : ViewModelBase
         _playlistSyncService   = playlistSyncService;
         _librarySyncService    = librarySyncService;
         _libraryDownloadService = libraryDownloadService;
+        _deviceIdentity        = deviceIdentity;
 
         if (appSettings.SortColumn is { } savedSortColumn)
         {
@@ -578,18 +601,45 @@ public partial class MainViewModel : ViewModelBase
     // section is built up live rather than as part of BuildSidebarItems().
     private void AddOrUpdateDeviceSidebarItem(DiscoveredDevice device)
     {
+        var displayName = ResolveDeviceDisplayName(device);
+
         var existing = _sidebarItems.FirstOrDefault(i =>
             i.Kind == SidebarItemKind.Device && i.Device?.InstanceName == device.InstanceName);
         if (existing != null)
         {
-            existing.Name = device.Alias;
+            existing.Name = displayName;
             return;
         }
 
         if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Device))
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Devices"));
 
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, device.Alias, MaterialIconKind.Laptop, device: device));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, displayName, MaterialIconKind.Laptop, device: device));
+    }
+
+    // A user-set local nickname (see DeviceNicknameStore, MainView.axaml.cs's
+    // Rename Device context-menu item, TrustedDevicesWindow) always wins over
+    // whatever the peer itself reports - otherwise the next DeviceDiscovered
+    // re-fire (e.g. once /info resolves, or on periodic rediscovery) would
+    // silently clobber a rename back to the peer's own alias.
+    private static string ResolveDeviceDisplayName(DiscoveredDevice device) =>
+        !string.IsNullOrEmpty(device.Fingerprint) && new DeviceNicknameStore().Get(device.Fingerprint) is { Length: > 0 } nickname
+            ? nickname
+            : device.Alias;
+
+    // The single place that re-derives a Device sidebar item's displayed name
+    // from ResolveDeviceDisplayName - every place a device's nickname can
+    // change (this sidebar's own "Rename Device" context menu, and
+    // TrustedDevicesWindow's pencil-icon rename) calls this afterward, so
+    // there is exactly one code path computing "what do we call this device"
+    // and every UI surface (the sidebar row, and the device-detail pane, which
+    // binds to SelectedSidebarItem.Name - the same SidebarItem instance)
+    // reflects it immediately rather than waiting for the next mDNS
+    // rediscovery to happen to notice.
+    public void RefreshDeviceDisplayNames()
+    {
+        foreach (var item in _sidebarItems.Where(i => i.Kind == SidebarItemKind.Device && i.Device != null))
+            item.Name = ResolveDeviceDisplayName(item.Device!);
     }
 
     private void RemoveDeviceSidebarItem(string instanceName)
