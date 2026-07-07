@@ -32,7 +32,8 @@ public class MobileMainViewModel : ViewModelBase
     public CurrentlyPlayingControlViewModel CurrentlyPlaying { get; }
 
     public ObservableCollection<SidebarItem> PlaylistPickerItems { get; } = new();
-    public ObservableCollection<RecentlyAddedAlbumViewModel> RecentlyAddedAlbums { get; } = new();
+    public ObservableCollection<AlbumTileViewModel> RecentlyAddedAlbums { get; } = new();
+    public ObservableCollection<AlbumTileViewModel> AlbumGridItems { get; } = new();
 
     public ICommand SelectTabCommand { get; }
     public ICommand SelectAlbumOrArtistCommand { get; }
@@ -81,10 +82,15 @@ public class MobileMainViewModel : ViewModelBase
     // from Main.SelectedSubItem being non-null — it's tracked here instead.
     private bool _hasDrilledIn;
 
-    public bool IsShowingAlbumArtistPicker => (SelectedTab is MobileTab.Albums or MobileTab.Artists) && !_hasDrilledIn;
+    // Albums gets its own art-tile grid (same presentation as Recently Added,
+    // see AlbumGridBuilder); Artists stays a plain name list - there is no
+    // single representative image for an artist the way there is for an album.
+    public bool IsShowingAlbumGrid => SelectedTab == MobileTab.Albums && !_hasDrilledIn;
+    public bool IsShowingArtistPicker => SelectedTab == MobileTab.Artists && !_hasDrilledIn;
     public bool IsShowingPlaylistPicker => SelectedTab == MobileTab.Playlists && !_hasDrilledIn;
     public bool IsShowingRecentlyAddedAlbums => SelectedTab == MobileTab.RecentlyAdded && !_hasDrilledIn;
-    public bool IsShowingTrackList => !IsShowingAlbumArtistPicker && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums;
+    public bool IsShowingTrackList =>
+        !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums;
     public bool CanGoBack => _hasDrilledIn;
 
     public string ScreenTitle => _hasDrilledIn
@@ -173,7 +179,8 @@ public class MobileMainViewModel : ViewModelBase
     // Whichever list is currently on screen (picker or track list) has nothing in it.
     // Without this, an empty library or an empty search just renders a blank screen.
     public bool IsContentEmpty =>
-        (IsShowingAlbumArtistPicker && Main.SubListItems.Count == 0) ||
+        (IsShowingAlbumGrid && AlbumGridItems.Count == 0) ||
+        (IsShowingArtistPicker && Main.SubListItems.Count == 0) ||
         (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0) ||
         (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbums.Count == 0) ||
         (IsShowingTrackList && Main.Rows.Count == 0);
@@ -242,7 +249,11 @@ public class MobileMainViewModel : ViewModelBase
         };
 
         Main.SidebarItems.CollectionChanged += (_, _) => RebuildPlaylistPicker();
-        Main.Library.TracksUpdated += (_, _) => Dispatcher.UIThread.Post(RebuildRecentlyAddedAlbums);
+        Main.Library.TracksUpdated += (_, _) => Dispatcher.UIThread.Post(() =>
+        {
+            RebuildRecentlyAddedAlbums();
+            RebuildAlbumGrid();
+        });
         Main.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems)
@@ -251,6 +262,7 @@ public class MobileMainViewModel : ViewModelBase
         };
         RebuildPlaylistPicker();
         RebuildRecentlyAddedAlbums();
+        RebuildAlbumGrid();
         ApplyTabSelection();
 
         SelectTabCommand = new RelayCommand<string>(name =>
@@ -363,6 +375,15 @@ public class MobileMainViewModel : ViewModelBase
         RaiseEmptyStateChanged();
     }
 
+    private void RebuildAlbumGrid()
+    {
+        AlbumGridItems.Clear();
+        foreach (var album in AlbumGridBuilder.Build(Main.Library.Tracks))
+            AlbumGridItems.Add(album);
+
+        RaiseEmptyStateChanged();
+    }
+
     private void ApplyTabSelection()
     {
         var kind = SelectedTab switch
@@ -424,7 +445,8 @@ public class MobileMainViewModel : ViewModelBase
         if (!IsShowingTrackList)
             IsSearchVisible = false;
 
-        OnPropertyChanged(nameof(IsShowingAlbumArtistPicker));
+        OnPropertyChanged(nameof(IsShowingAlbumGrid));
+        OnPropertyChanged(nameof(IsShowingArtistPicker));
         OnPropertyChanged(nameof(IsShowingPlaylistPicker));
         OnPropertyChanged(nameof(IsShowingRecentlyAddedAlbums));
         OnPropertyChanged(nameof(IsShowingTrackList));
