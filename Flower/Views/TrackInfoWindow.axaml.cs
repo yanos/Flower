@@ -249,8 +249,12 @@ public partial class TrackInfoWindow : Window
             }
         }
 
-        // Refresh views bound to the library and persist the change to disk
-        _library.UpdateTracks(_library.Tracks);
+        // Refresh views bound to the library and persist the change to disk.
+        // NotifyTrackChanged, not UpdateTracks(_library.Tracks) - see
+        // MainViewModel.SyncITunesPlayCountAsync's comment on why passing
+        // Tracks back into UpdateTracks as a "fresh scan" silently doubles
+        // every placeholder track.
+        _library.NotifyTrackChanged();
         await new LibraryStore().SaveAsync(_library.Tracks);
     }
 

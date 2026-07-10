@@ -161,7 +161,11 @@ public partial class TrackInfoView : UserControl
         _track.ISRC           = NullIfEmpty(ISRCBox.Text);
         _track.Lyrics         = NullIfEmpty(LyricsBox.Text);
 
-        vm.Main.Library.UpdateTracks(vm.Main.Library.Tracks);
+        // NotifyTrackChanged, not UpdateTracks(Library.Tracks) - see
+        // MainViewModel.SyncITunesPlayCountAsync's comment on why passing
+        // Tracks back into UpdateTracks as a "fresh scan" silently doubles
+        // every placeholder track.
+        vm.Main.Library.NotifyTrackChanged();
         await new LibraryStore().SaveAsync(vm.Main.Library.Tracks);
     }
 
