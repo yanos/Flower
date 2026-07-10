@@ -38,8 +38,15 @@ public class MobileMainViewModel : ViewModelBase
     public ObservableCollection<AlbumGridRow> RecentlyAddedAlbumRows { get; } = new();
     public ObservableCollection<AlbumGridRow> AlbumGridRows { get; } = new();
 
+    // One artist's own albums (Artists tab, one level in - see IsShowingArtistAlbumGrid),
+    // rebuilt by RebuildArtistAlbumGrid whenever _selectedArtistName changes or the
+    // library updates while it's set.
+    public ObservableCollection<AlbumGridRow> ArtistAlbumGridRows { get; } = new();
+
     public ICommand SelectTabCommand { get; }
     public ICommand SelectAlbumOrArtistCommand { get; }
+    public ICommand SelectArtistCommand { get; }
+    public ICommand SelectArtistAlbumCommand { get; }
     public ICommand SelectRecentlyAddedAlbumCommand { get; }
     public ICommand SelectPlaylistCommand { get; }
     public ICommand BackCommand { get; }
@@ -73,6 +80,8 @@ public class MobileMainViewModel : ViewModelBase
                 return;
             _selectedTab = value;
             _hasDrilledIn = false;
+            _selectedArtistName = null;
+            _hasDrilledIntoArtistAlbum = false;
             ApplyTabSelection();
             OnPropertyChanged();
             RaiseNavigationChanged();
@@ -85,20 +94,44 @@ public class MobileMainViewModel : ViewModelBase
     // from Main.SelectedSubItem being non-null — it's tracked here instead.
     private bool _hasDrilledIn;
 
+    // Artists gets an extra level Albums/Playlists/RecentlyAdded don't: name
+    // picker -> that artist's own album grid -> one album's tracks, rather than
+    // straight from the name picker into every song by that artist as one flat
+    // list. _selectedArtistName is non-null for both of the latter two screens;
+    // _hasDrilledIntoArtistAlbum distinguishes which of them.
+    private string? _selectedArtistName;
+    private bool _hasDrilledIntoArtistAlbum;
+
     // Albums gets its own art-tile grid (same presentation as Recently Added,
     // see AlbumGridBuilder); Artists stays a plain name list - there is no
     // single representative image for an artist the way there is for an album.
     public bool IsShowingAlbumGrid => SelectedTab == MobileTab.Albums && !_hasDrilledIn;
     public bool IsShowingArtistPicker => SelectedTab == MobileTab.Artists && !_hasDrilledIn;
+    public bool IsShowingArtistAlbumGrid => SelectedTab == MobileTab.Artists && _hasDrilledIn && !_hasDrilledIntoArtistAlbum;
     public bool IsShowingPlaylistPicker => SelectedTab == MobileTab.Playlists && !_hasDrilledIn;
     public bool IsShowingRecentlyAddedAlbums => SelectedTab == MobileTab.RecentlyAdded && !_hasDrilledIn;
     public bool IsShowingTrackList =>
-        !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums;
+        !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingArtistAlbumGrid
+        && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums;
     public bool CanGoBack => _hasDrilledIn;
 
-    public string ScreenTitle => _hasDrilledIn
-        ? (Main.SelectedSidebarItem?.Name ?? SelectedTab.ToString())
-        : SelectedTab == MobileTab.RecentlyAdded ? "Recently Added" : SelectedTab.ToString();
+    public string ScreenTitle
+    {
+        get
+        {
+            // Both artist sub-screens (that artist's own album grid, and one of
+            // its albums' tracks) show the artist's name, not Main.SelectedSidebarItem's
+            // ("Artists" while browsing the grid, "Albums" once SelectArtistAlbum
+            // has re-pointed it there - see that method) - _selectedArtistName is
+            // the one thing that's actually stable and meaningful across both.
+            if (SelectedTab == MobileTab.Artists && _selectedArtistName != null)
+                return _selectedArtistName;
+
+            return _hasDrilledIn
+                ? (Main.SelectedSidebarItem?.Name ?? SelectedTab.ToString())
+                : SelectedTab == MobileTab.RecentlyAdded ? "Recently Added" : SelectedTab.ToString();
+        }
+    }
 
     // Non-null only while drilled into a specific playlist's track list, which is the
     // one place mobile allows reordering (Songs/Albums/Artists have no persisted order).
@@ -184,6 +217,7 @@ public class MobileMainViewModel : ViewModelBase
     public bool IsContentEmpty =>
         (IsShowingAlbumGrid && AlbumGridRows.Count == 0) ||
         (IsShowingArtistPicker && Main.SubListItems.Count == 0) ||
+        (IsShowingArtistAlbumGrid && ArtistAlbumGridRows.Count == 0) ||
         (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0) ||
         (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbumRows.Count == 0) ||
         (IsShowingTrackList && Main.Rows.Count == 0);
@@ -256,6 +290,7 @@ public class MobileMainViewModel : ViewModelBase
         {
             RebuildRecentlyAddedAlbums();
             RebuildAlbumGrid();
+            RebuildArtistAlbumGrid();
         });
         Main.PropertyChanged += (_, e) =>
         {
@@ -266,6 +301,7 @@ public class MobileMainViewModel : ViewModelBase
         RebuildPlaylistPicker();
         RebuildRecentlyAddedAlbums();
         RebuildAlbumGrid();
+        RebuildArtistAlbumGrid();
         ApplyTabSelection();
 
         SelectTabCommand = new RelayCommand<string>(name =>
@@ -274,6 +310,8 @@ public class MobileMainViewModel : ViewModelBase
                 SelectedTab = tab;
         });
         SelectAlbumOrArtistCommand = new RelayCommand<string>(SelectAlbumOrArtist);
+        SelectArtistCommand = new RelayCommand<string>(SelectArtist);
+        SelectArtistAlbumCommand = new RelayCommand<string>(SelectArtistAlbum);
         SelectRecentlyAddedAlbumCommand = new RelayCommand<string>(SelectRecentlyAddedAlbum);
         SelectPlaylistCommand = new RelayCommand<SidebarItem>(SelectPlaylist);
         BackCommand = new RelayCommand(GoBack);
@@ -387,6 +425,24 @@ public class MobileMainViewModel : ViewModelBase
         RaiseEmptyStateChanged();
     }
 
+    // Every track by _selectedArtistName specifically - AlbumGridBuilder's own
+    // Album-name-alone grouping (see its doc comment) is safe here despite not
+    // also keying on Artist, since everything passed in already shares this one
+    // artist. No-ops (clears down to empty) when nothing is selected, so a stale
+    // grid never lingers if this fires while the picker itself is showing.
+    private void RebuildArtistAlbumGrid()
+    {
+        ArtistAlbumGridRows.Clear();
+        if (_selectedArtistName != null)
+        {
+            var tracks = Main.Library.Tracks.Where(t => t.Artists == _selectedArtistName);
+            foreach (var row in AlbumGridRow.Chunk(AlbumGridBuilder.Build(tracks)))
+                ArtistAlbumGridRows.Add(row);
+        }
+
+        RaiseEmptyStateChanged();
+    }
+
     private void ApplyTabSelection()
     {
         var kind = SelectedTab switch
@@ -401,12 +457,45 @@ public class MobileMainViewModel : ViewModelBase
             : null;
     }
 
+    // Albums tab grid tiles only now - Artists' own name picker uses
+    // SelectArtist below instead, so tapping an artist lands on that artist's
+    // album grid rather than straight into every one of their songs as one
+    // flat list.
     private void SelectAlbumOrArtist(string? name)
     {
         if (name == null)
             return;
         Main.SelectedSubItem = name;
         _hasDrilledIn = true;
+        RaiseNavigationChanged();
+    }
+
+    // Artists tab name picker -> that artist's own album grid (IsShowingArtistAlbumGrid).
+    // Deliberately does not touch Main.SelectedSidebarItem/SelectedSubItem - this
+    // level renders from ArtistAlbumGridRows, not Main.Rows, so there is nothing
+    // for MainViewModel's own filtering to do until a specific album is tapped
+    // (see SelectArtistAlbum).
+    private void SelectArtist(string? name)
+    {
+        if (name == null)
+            return;
+        _selectedArtistName = name;
+        _hasDrilledIntoArtistAlbum = false;
+        _hasDrilledIn = true;
+        RebuildArtistAlbumGrid();
+        RaiseNavigationChanged();
+    }
+
+    // A tile in that artist's album grid -> that album's tracks, reusing the
+    // Albums tab's own filtering the same way SelectRecentlyAddedAlbum does
+    // (see its comment) rather than a separate artist+album-scoped track list.
+    private void SelectArtistAlbum(string? albumName)
+    {
+        if (albumName == null)
+            return;
+        Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
+        Main.SelectedSubItem = albumName;
+        _hasDrilledIntoArtistAlbum = true;
         RaiseNavigationChanged();
     }
 
@@ -438,6 +527,27 @@ public class MobileMainViewModel : ViewModelBase
 
     private void GoBack()
     {
+        // Artists has two levels to unwind one at a time, unlike everything
+        // else's single level - see _selectedArtistName/_hasDrilledIntoArtistAlbum.
+        if (SelectedTab == MobileTab.Artists && _hasDrilledIntoArtistAlbum)
+        {
+            // Undo SelectArtistAlbum's temporary re-point of SelectedSidebarItem
+            // at Albums, back to the artist's own album grid - _selectedArtistName
+            // itself is untouched, so ArtistAlbumGridRows is still exactly as left.
+            _hasDrilledIntoArtistAlbum = false;
+            Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Artists);
+            RaiseNavigationChanged();
+            return;
+        }
+        if (SelectedTab == MobileTab.Artists && _selectedArtistName != null)
+        {
+            _selectedArtistName = null;
+            _hasDrilledIn = false;
+            ApplyTabSelection();
+            RaiseNavigationChanged();
+            return;
+        }
+
         _hasDrilledIn = false;
         ApplyTabSelection();
         RaiseNavigationChanged();
@@ -450,6 +560,7 @@ public class MobileMainViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(IsShowingAlbumGrid));
         OnPropertyChanged(nameof(IsShowingArtistPicker));
+        OnPropertyChanged(nameof(IsShowingArtistAlbumGrid));
         OnPropertyChanged(nameof(IsShowingPlaylistPicker));
         OnPropertyChanged(nameof(IsShowingRecentlyAddedAlbums));
         OnPropertyChanged(nameof(IsShowingTrackList));

@@ -224,13 +224,53 @@
         <ListBox.ItemTemplate>
           <DataTemplate>
             <Button Classes="pickerRow"
-                    Command="{Binding $parent[UserControl].DataContext.SelectAlbumOrArtistCommand}"
+                    Command="{Binding $parent[UserControl].DataContext.SelectArtistCommand}"
                     CommandParameter="{Binding}">
               <TextBlock Text="{Binding}" FontSize="16" TextTrimming="CharacterEllipsis" />
             </Button>
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
+
+      <!-- One artist's own albums (tapped from the name picker above) - same
+           tile-grid presentation/virtualization as Recently Added/Albums (see
+           that first ScrollViewer's comment); tapping a tile drills into that
+           album's tracks via SelectArtistAlbumCommand. -->
+      <ScrollViewer IsVisible="{Binding IsShowingArtistAlbumGrid}">
+        <ItemsControl ItemsSource="{Binding ArtistAlbumGridRows}"
+                      Margin="12">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <VirtualizingStackPanel Orientation="Vertical" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="*,*">
+                <Button Grid.Column="0" Classes="pickerRow" Padding="10"
+                        Command="{Binding $parent[UserControl].DataContext.SelectArtistAlbumCommand}"
+                        CommandParameter="{Binding First.Name}">
+                  <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
+                    <controls:AlbumArtView AlbumArt="{Binding First.AlbumArt}" Width="170" Height="170" />
+                    <TextBlock Text="{Binding First.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding First.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="1" Classes="pickerRow" Padding="10"
+                        IsVisible="{Binding Second, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                        Command="{Binding $parent[UserControl].DataContext.SelectArtistAlbumCommand}"
+                        CommandParameter="{Binding Second.Name}">
+                  <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
+                    <controls:AlbumArtView AlbumArt="{Binding Second.AlbumArt}" Width="170" Height="170" />
+                    <TextBlock Text="{Binding Second.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Second.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
 
       <!-- Playlist picker -->
       <ListBox Background="Transparent"
