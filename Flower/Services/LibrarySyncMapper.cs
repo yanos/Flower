@@ -22,5 +22,6 @@ public static class LibrarySyncMapper
         Path = null,
         OriginDeviceFingerprint = originDeviceFingerprint,
         OriginFileExtension = song.Suffix,
+        OriginAlbumArtHash = song.CoverArt,
     };
 }

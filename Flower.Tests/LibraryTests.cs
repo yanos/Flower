@@ -241,6 +241,18 @@ public class LibraryTests
     }
 
     [Fact]
+    public void MergeSyncedTracks_updates_OriginAlbumArtHash_for_an_existing_placeholder()
+    {
+        var placeholder = new Track { Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200), OriginDeviceFingerprint = "peer-1", OriginAlbumArtHash = "old-hash" };
+        var library = new Library(new List<Track> { placeholder });
+        var remoteAgain = new Track { Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200), OriginDeviceFingerprint = "peer-1", OriginAlbumArtHash = "new-hash" };
+
+        library.MergeSyncedTracks(new List<Track> { remoteAgain });
+
+        Assert.Equal("new-hash", library.Tracks.Single().OriginAlbumArtHash);
+    }
+
+    [Fact]
     public void MergeSyncedTracks_does_not_touch_a_track_already_backed_by_a_real_file()
     {
         var local = new Track { Title = "Same Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), Path = "/music/local.mp3" };

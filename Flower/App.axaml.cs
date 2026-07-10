@@ -73,7 +73,7 @@ public partial class App : Application
         foreach (var playlist in new PlaylistStore().Load(library.Tracks))
             library.AddPlaylist(playlist);
 
-        var networkDiscovery = new NetworkDiscoveryService();
+        var networkDiscovery = new NetworkDiscoveryService(AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
 
         // One shared, mutable identity object rather than separate fingerprint/
         // alias strings handed to each service - MainViewModel.DeviceAlias edits
@@ -83,7 +83,7 @@ public partial class App : Application
         // needing to reconstruct or restart anything.
         var deviceIdentity = new DeviceIdentityStore().Load();
         var syncHttpServer = new SyncHttpServer(deviceIdentity, library, AppLogging.CreateTypedLogger<SyncHttpServer>());
-        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity);
+        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, AppLogging.CreateTypedLogger<PlaylistSyncService>());
         var librarySyncService = new LibrarySyncService(library, deviceIdentity, AppLogging.CreateTypedLogger<LibrarySyncService>());
         var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity);
 

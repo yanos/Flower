@@ -5,8 +5,14 @@ readme
 improve cli
 icon
 album mode
-sync database, playlist
-download songs on phone
+artist / playlist icon instead of album art
+fire sync event when data on disk change.
+more logging
+remember allow sync
+duplicate entries in devices
+use dep inj for the logger
+download songs on phone => not permanent?
+esc to close settings
 lyric service
 song history
 folder in playlist		
@@ -18,4 +24,3 @@ localisation
 different flower species in dark mode
 intelligent playlist like favorite songs, recently played, etc. 
 export playlist with actual songs
-sync library database, songs greyed out in the mobile app with a download icon to transfer them.

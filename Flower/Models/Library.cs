@@ -88,7 +88,8 @@ namespace Flower.Models
         // SYNC-PLAN.md Phase 3): each incoming track becomes a new Path == null
         // placeholder if this device has nothing matching it by SyncKey, or - if
         // it already has a placeholder for the same track - just updates which
-        // peer currently holds the real file (OriginDeviceFingerprint). Never
+        // peer currently holds the real file (OriginDeviceFingerprint) and its
+        // latest known album art (OriginAlbumArtHash). Never
         // touches a track this device already has a real, Path-backed copy of,
         // and never removes anything just because a peer doesn't mention it -
         // purely additive/updating, unlike UpdateTracks' full replace.
@@ -109,6 +110,7 @@ namespace Flower.Models
                         {
                             existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
                             existing.OriginFileExtension = remote.OriginFileExtension;
+                            existing.OriginAlbumArtHash = remote.OriginAlbumArtHash;
                         }
                         continue; // Already a real local file - the peer having it too isn't news.
                     }

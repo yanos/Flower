@@ -29,6 +29,19 @@ public class LibrarySyncMapperTests
     }
 
     [Fact]
+    public void ToPlaceholderTrack_carries_the_origin_peers_album_art_hash()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: "abc123");
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1");
+
+        Assert.Equal("abc123", track.OriginAlbumArtHash);
+    }
+
+    [Fact]
     public void ToPlaceholderTrack_defaults_TrackNumber_to_zero_when_absent()
     {
         var song = new Child(

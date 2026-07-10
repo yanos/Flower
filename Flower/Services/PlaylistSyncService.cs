@@ -6,6 +6,8 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Models;
 using Flower.Persistence;
 
@@ -35,21 +37,26 @@ public class PlaylistSyncService
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly ILogger _logger;
     private readonly PlaylistStore _playlistStore = new();
     private readonly PlaylistSyncStateStore _syncStateStore = new();
 
     public event EventHandler<PlaylistConflictEventArgs>? ConflictDetected;
 
-    public PlaylistSyncService(Library library, DeviceIdentity deviceIdentity)
+    public PlaylistSyncService(Library library, DeviceIdentity deviceIdentity, ILogger<PlaylistSyncService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _logger = logger;
     }
 
     public async Task SyncWithAsync(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
+        {
+            _logger.LogDebug("Playlist sync skipped for {Alias}: no resolved fingerprint yet", device.Alias);
             return;
+        }
 
         // Exactly one side of a discovery pair initiates a sync session - the
         // other just waits to receive the initiator's /apply push once it's done.
@@ -58,7 +65,14 @@ public class PlaylistSyncService
         // pair never both initiate (double conflict prompts, racing writes) or
         // both stay silent.
         if (string.CompareOrdinal(_deviceIdentity.Fingerprint, device.Fingerprint) >= 0)
+        {
+            _logger.LogDebug("Playlist sync with {Alias} ({Fingerprint}): not the initiator, waiting for their push instead",
+                device.Alias, device.Fingerprint);
             return;
+        }
+
+        _logger.LogInformation("Playlist sync starting with {Alias} ({Fingerprint}) at {EndPoint}",
+            device.Alias, device.Fingerprint, device.EndPoint);
 
         // A local nickname (see DeviceNicknameStore - the same override the
         // sidebar's "Rename Device" and Trusted Devices window use) wins over
@@ -78,10 +92,16 @@ public class PlaylistSyncService
             var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(json, JsonOptions);
             remotePlaylists = manifest?.Playlists ?? new List<PlaylistSyncPlaylistDto>();
         }
-        catch
+        catch (Exception ex)
         {
-            return; // Peer unreachable, not running this endpoint yet, or not (yet) trusted.
+            // Peer unreachable, not running this endpoint yet, or not (yet) trusted.
+            _logger.LogWarning(ex, "Playlist sync with {Alias} ({Fingerprint}): GET /playlists failed, aborting this sync attempt",
+                device.Alias, device.Fingerprint);
+            return;
         }
+
+        _logger.LogInformation("Playlist sync with {Alias}: fetched {RemoteCount} remote playlist(s), have {LocalCount} local",
+            device.Alias, remotePlaylists.Count, _library.Playlists.Count);
 
         var baselines = _syncStateStore.LoadBaselines(device.Fingerprint);
         var decisions = PlaylistSyncPlanner.Plan(
@@ -94,6 +114,19 @@ public class PlaylistSyncService
 
         foreach (var decision in decisions)
         {
+            var name = decision.Local?.Name ?? decision.Remote?.Name ?? "?";
+            _logger.LogInformation("Playlist sync with {Alias}: \"{Name}\" ({PlaylistId}) -> {Decision}",
+                device.Alias, name, decision.PlaylistId, decision.Kind);
+
+            // Deleted on one side (see PlaylistSyncPlanner.Delete) - drop it from
+            // the merged result (and its baseline, since it no longer exists to
+            // have one) rather than resolving it to some Playlist to keep.
+            if (decision.Kind == PlaylistSyncDecisionKind.Delete)
+            {
+                newBaselines.Remove(decision.PlaylistId);
+                continue;
+            }
+
             var resolved = decision.Kind switch
             {
                 PlaylistSyncDecisionKind.NoChange  => decision.Local!,
@@ -118,13 +151,18 @@ public class PlaylistSyncService
             using var content = new StringContent(body, Encoding.UTF8, "application/json");
             using var postRequest = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}/api/flower/v1/playlists/apply") { Content = content };
             AddIdentityHeaders(postRequest);
-            await Http.SendAsync(postRequest);
+            using var postResponse = await Http.SendAsync(postRequest);
+            postResponse.EnsureSuccessStatusCode();
+            _logger.LogInformation("Playlist sync with {Alias}: pushed {Count} playlist(s) to their /apply successfully",
+                device.Alias, finalPlaylists.Count);
         }
-        catch
+        catch (Exception ex)
         {
             // Peer went away mid-session, or hasn't approved us via the trust gate
             // yet - our own state is already fully merged and saved either way; it
             // converges next time these two devices are both up (and trusted).
+            _logger.LogWarning(ex, "Playlist sync with {Alias}: POST /apply failed - our own merge is saved, but the peer did not receive it this time",
+                device.Alias);
         }
     }
 

@@ -13,6 +13,8 @@ using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.Input;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Controls;
 using Flower.Importer;
 using Flower.Models;
@@ -36,6 +38,11 @@ public sealed class DeletePlaylistConfirmationEventArgs : EventArgs
 
 public partial class MainViewModel : ViewModelBase
 {
+    // Defaults to a no-op logger for the parameterless design-time constructor
+    // below, which never receives one via DI - overwritten by the real
+    // constructor's injected ILogger<MainViewModel> otherwise.
+    private ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private AppSettings? _appSettings;
     private IMusicImporter? _importer;
@@ -52,6 +59,89 @@ public partial class MainViewModel : ViewModelBase
     // drops off and comes back later gets a fresh sync. Concurrent dictionary
     // because discovery events aren't guaranteed to arrive on one fixed thread.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _syncedDeviceFingerprints = new();
+
+    // Non-zero while at least one PlaylistSyncService/LibrarySyncService call
+    // is in flight (see RunTrackedSync) - both services' merges fire
+    // Library.TracksUpdated/PlaylistsUpdated unconditionally, even when
+    // nothing actually changed (e.g. every song a peer reports already exists
+    // locally). Without this guard, the debounced resync below (ScheduleContentSync)
+    // would treat a sync's own merge as "a local change just happened" and
+    // schedule another sync, which would merge again and reschedule again,
+    // forever - two devices perpetually re-triggering each other.
+    private int _activeSyncCount;
+
+    private void RunTrackedSync(Func<Task> syncCall)
+    {
+        Interlocked.Increment(ref _activeSyncCount);
+        _ = RunTrackedSyncAsync(syncCall);
+    }
+
+    private async Task RunTrackedSyncAsync(Func<Task> syncCall)
+    {
+        try
+        {
+            await syncCall();
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activeSyncCount);
+        }
+    }
+
+    private CancellationTokenSource? _contentSyncCts;
+
+    // "A few seconds" per the user request - long enough that a burst of rapid
+    // local edits (e.g. reordering a playlist track-by-track, or a rescan
+    // finding many files) settles into one sync instead of one per edit, short
+    // enough that a peer notices a real change reasonably promptly.
+    private static readonly TimeSpan ContentSyncCooldown = TimeSpan.FromSeconds(5);
+
+    // Called whenever a genuine local change happens to this device's library
+    // or playlists: a rescan or download completing (Library.TracksUpdated),
+    // or a playlist being created/renamed/deleted/reordered/added-to (called
+    // directly at each of those call sites - unlike TracksUpdated,
+    // Library.PlaylistsUpdated only fires for a *sync's own* ReplacePlaylists
+    // call, never for these ordinary local actions, per its own doc comment,
+    // so there is no single event to hook for playlists the way there is for
+    // tracks). Debounced: every call restarts the cooldown rather than queuing
+    // another, so only the last change in a burst actually triggers a sync.
+    public void ScheduleContentSync()
+    {
+        _logger.LogInformation("Content sync scheduled, cooldown restarted ({Cooldown}s)", ContentSyncCooldown.TotalSeconds);
+        _contentSyncCts?.Cancel();
+        _contentSyncCts = new CancellationTokenSource();
+        _ = DebouncedContentSyncAsync(_contentSyncCts.Token);
+    }
+
+    private async Task DebouncedContentSyncAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(ContentSyncCooldown, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // A newer change restarted the cooldown - that call's own delay will fire instead.
+        }
+
+        // Every currently-known, fingerprint-resolved peer - not gated by
+        // _syncedDeviceFingerprints (that dedup is specifically for "don't
+        // double-sync from DeviceDiscovered re-firing at first contact" - see
+        // TriggerSyncIfReady - and is orthogonal to resyncing on a later change).
+        var devices = _sidebarItems
+            .Where(i => i.Kind == SidebarItemKind.Device && i.Device is { Fingerprint.Length: > 0 })
+            .Select(i => i.Device!)
+            .ToList();
+
+        _logger.LogInformation("Content sync cooldown elapsed, syncing with {Count} known device(s): {Devices}",
+            devices.Count, string.Join(", ", devices.Select(d => d.Alias)));
+
+        foreach (var device in devices)
+        {
+            RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
+            RunTrackedSync(() => _librarySyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
+        }
+    }
 
     public ICommand? OpenAppDataLocationCommand  { get; private set; }
     public ICommand? RebuildDatabaseCommand      { get; private set; }
@@ -403,7 +493,8 @@ public partial class MainViewModel : ViewModelBase
         LibrarySyncService librarySyncService,
         LibraryDownloadService libraryDownloadService,
         SyncHttpServer syncHttpServer,
-        DeviceIdentity deviceIdentity)
+        DeviceIdentity deviceIdentity,
+        ILogger<MainViewModel> logger)
     {
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
@@ -414,6 +505,7 @@ public partial class MainViewModel : ViewModelBase
         _librarySyncService    = librarySyncService;
         _libraryDownloadService = libraryDownloadService;
         _deviceIdentity        = deviceIdentity;
+        _logger                = logger;
 
         if (appSettings.SortColumn is { } savedSortColumn)
         {
@@ -442,9 +534,24 @@ public partial class MainViewModel : ViewModelBase
         PopulateTracks();
 
         library.TracksUpdated += (_, _) =>
+        {
             Dispatcher.UIThread.Post(PopulateTracks);
+            // _activeSyncCount > 0 means this fired because one of our own
+            // syncs just merged something (see RunTrackedSync's doc comment) -
+            // not a genuine local change - so don't treat it as one.
+            if (_activeSyncCount == 0)
+                ScheduleContentSync();
+            else
+                _logger.LogDebug("TracksUpdated fired mid-sync ({ActiveSyncCount} active) - not scheduling a resync", _activeSyncCount);
+        };
         library.PlaylistsUpdated += (_, _) =>
+        {
             Dispatcher.UIThread.Post(RefreshPlaylistSidebarItems);
+            if (_activeSyncCount == 0)
+                ScheduleContentSync();
+            else
+                _logger.LogDebug("PlaylistsUpdated fired mid-sync ({ActiveSyncCount} active) - not scheduling a resync", _activeSyncCount);
+        };
 
         networkDiscovery.DeviceDiscovered += (_, device) =>
         {
@@ -601,20 +708,50 @@ public partial class MainViewModel : ViewModelBase
     // section is built up live rather than as part of BuildSidebarItems().
     private void AddOrUpdateDeviceSidebarItem(DiscoveredDevice device)
     {
-        var displayName = ResolveDeviceDisplayName(device);
-
-        var existing = _sidebarItems.FirstOrDefault(i =>
-            i.Kind == SidebarItemKind.Device && i.Device?.InstanceName == device.InstanceName);
+        var existing = FindDeviceSidebarItem(device);
         if (existing != null)
         {
-            existing.Name = displayName;
+            existing.Device = device;
+            RefreshDeviceDisplayNames();
             return;
         }
 
         if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Device))
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Devices"));
 
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, displayName, MaterialIconKind.Laptop, device: device));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, ResolveDeviceDisplayName(device), MaterialIconKind.Laptop, device: device));
+        RefreshDeviceDisplayNames();
+    }
+
+    // Matches primarily by Fingerprint - the peer's own stable per-install
+    // identity (see DeviceIdentityStore) - once its /info handshake has
+    // resolved one, since InstanceName alone ({MachineName}-{Platform} - see
+    // NetworkDiscoveryService.OwnInstanceName) can collide between two
+    // genuinely distinct devices that both happen to still have the same
+    // unrenamed default computer name. Matching on InstanceName regardless of
+    // that would silently conflate two different devices into one sidebar
+    // entry - whichever was discovered first would then keep this item's
+    // Device pinned to the wrong endpoint even after its displayed name
+    // updated to the second device's.
+    //
+    // Before a device's own Fingerprint resolves, InstanceName is the only
+    // thing to go on - but such a match is only trusted against another item
+    // that ALSO hasn't resolved a Fingerprint yet; an item that already has a
+    // different, resolved Fingerprint is treated as a distinct device that
+    // merely shares the same not-yet-renamed computer name, not the same one.
+    private SidebarItem? FindDeviceSidebarItem(DiscoveredDevice device)
+    {
+        var deviceItems = _sidebarItems.Where(i => i.Kind == SidebarItemKind.Device).ToList();
+
+        if (!string.IsNullOrEmpty(device.Fingerprint))
+        {
+            var byFingerprint = deviceItems.FirstOrDefault(i => i.Device?.Fingerprint == device.Fingerprint);
+            if (byFingerprint != null)
+                return byFingerprint;
+        }
+
+        return deviceItems.FirstOrDefault(i =>
+            i.Device?.InstanceName == device.InstanceName && string.IsNullOrEmpty(i.Device.Fingerprint));
     }
 
     // A user-set local nickname (see DeviceNicknameStore, MainView.axaml.cs's
@@ -638,16 +775,50 @@ public partial class MainViewModel : ViewModelBase
     // rediscovery to happen to notice.
     public void RefreshDeviceDisplayNames()
     {
-        foreach (var item in _sidebarItems.Where(i => i.Kind == SidebarItemKind.Device && i.Device != null))
+        var deviceItems = _sidebarItems.Where(i => i.Kind == SidebarItemKind.Device && i.Device != null).ToList();
+
+        foreach (var item in deviceItems)
             item.Name = ResolveDeviceDisplayName(item.Device!);
+
+        // A subtitle (this device's IP) only shows when its name collides
+        // with another currently-listed device - two distinct devices
+        // legitimately sharing a display name is purely cosmetic (sync/trust
+        // both key off Fingerprint, never name), but the user still needs
+        // some way to tell them apart in the sidebar itself.
+        foreach (var group in deviceItems.GroupBy(i => i.Name))
+        {
+            var showSubtitle = group.Count() > 1;
+            foreach (var item in group)
+                item.Subtitle = showSubtitle ? item.Device!.EndPoint.Address.ToString() : null;
+        }
+
+        // SidebarItem.Device can end up re-pointed at a different
+        // DiscoveredDevice instance than the one SelectedDevice last read
+        // (see FindDeviceSidebarItem) - DiscoveredDevice itself doesn't raise
+        // property-changed, so the device-detail pane's EndPoint binding
+        // needs an explicit nudge to notice.
+        OnPropertyChanged(nameof(SelectedDevice));
     }
 
     private void RemoveDeviceSidebarItem(string instanceName)
     {
-        var item = _sidebarItems.FirstOrDefault(i =>
-            i.Kind == SidebarItemKind.Device && i.Device?.InstanceName == instanceName);
-        if (item == null)
+        // mDNS's "goodbye" notification only ever carries the withdrawn
+        // record's raw instance name, never a Fingerprint - so if two
+        // genuinely distinct devices are colliding on InstanceName (see
+        // FindDeviceSidebarItem), there is no way to tell from this signal
+        // alone which of them actually went offline. Removing either
+        // unconditionally risks dropping the one that is still there just as
+        // easily as the one that isn't, so this deliberately does nothing
+        // rather than guess wrong in that rare case - it will get cleaned up
+        // for real the moment a Fingerprint-disambiguated event (a fresh
+        // DeviceDiscovered, or that peer eventually being forgotten) sorts it
+        // out instead.
+        var matches = _sidebarItems.Where(i =>
+            i.Kind == SidebarItemKind.Device && i.Device?.InstanceName == instanceName).ToList();
+        if (matches.Count != 1)
             return;
+
+        var item = matches[0];
 
         // Allow a fresh sync if this device is discovered again later this session.
         if (item.Device?.Fingerprint is { Length: > 0 } fingerprint)
@@ -663,6 +834,10 @@ public partial class MainViewModel : ViewModelBase
             var header = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
             if (header != null)
                 _sidebarItems.Remove(header);
+        }
+        else
+        {
+            RefreshDeviceDisplayNames();
         }
     }
 
@@ -696,8 +871,10 @@ public partial class MainViewModel : ViewModelBase
         if (!_syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0))
             return;
 
-        _ = _playlistSyncService?.SyncWithAsync(device);
-        _ = _librarySyncService?.SyncWithAsync(device);
+        _logger.LogInformation("First contact with {Alias} ({Fingerprint}) this session, triggering initial sync",
+            device.Alias, device.Fingerprint);
+        RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
+        RunTrackedSync(() => _librarySyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
     }
 
     // Rebuilds just the "Playlists" section in place, preserving the current
@@ -757,6 +934,7 @@ public partial class MainViewModel : ViewModelBase
         SelectedSidebarItem = sidebarItem;
 
         await new PlaylistStore().SaveAsync(Library.Playlists);
+        ScheduleContentSync();
     }
 
     public async Task DeletePlaylistAsync(Playlist playlist)
@@ -782,6 +960,7 @@ public partial class MainViewModel : ViewModelBase
         RefreshPlaylistSidebarItems();
 
         await new PlaylistStore().SaveAsync(Library.Playlists);
+        ScheduleContentSync();
     }
 
     // Backs the "Playlist" main-menu's Rename/Delete entries, which - unlike the
@@ -806,6 +985,7 @@ public partial class MainViewModel : ViewModelBase
             ScheduleFilter();
 
         await new PlaylistStore().SaveAsync(Library.Playlists);
+        ScheduleContentSync();
     }
 
     public async Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore)
@@ -820,6 +1000,7 @@ public partial class MainViewModel : ViewModelBase
             ScheduleFilter();
 
         await new PlaylistStore().SaveAsync(Library.Playlists);
+        ScheduleContentSync();
     }
 
     private void OnSidebarSelectionChanged()
