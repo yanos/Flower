@@ -124,7 +124,11 @@ namespace Flower.ViewModels
                     // between "resolve" and "increment" and silently discard it the way a
                     // plain find-then-increment here already proved it could.
                     _library.IncrementPlayCount(finishedTrack);
-                    _library.UpdateTracks(_library.Tracks);
+                    // NotifyTrackChanged, not UpdateTracks(_library.Tracks) - see
+                    // MainViewModel.SyncITunesPlayCountAsync's comment on why
+                    // passing Tracks back into UpdateTracks as a "fresh scan"
+                    // silently doubles every placeholder track.
+                    _library.NotifyTrackChanged();
                     await new LibraryStore().SaveAsync(_library.Tracks);
 
                     var nextTrack = IsRepeatEnabled ? finishedTrack : GetNextTrack(finishedTrack);

@@ -233,10 +233,15 @@ public partial class MainViewModel : ViewModelBase
     {
         using var _ = BeginBusy("Syncing play counts from Music.app…");
         await Task.Run(() => ITunesPlayCountImporter.Apply(Library.Tracks));
-        // Same list, same Track instances - this call's only real purpose
-        // here is firing TracksUpdated so the Plays column reflects the new
-        // ImportedPlayCount values immediately.
-        Library.UpdateTracks(Library.Tracks);
+        // Same list, same Track instances mutated in place - just need
+        // TracksUpdated to fire so the Plays column reflects the new
+        // ImportedPlayCount values immediately. NotifyTrackChanged (not
+        // UpdateTracks(Library.Tracks)) specifically - see its own doc
+        // comment: passing Tracks back into UpdateTracks as if it were a
+        // fresh scan result double-counts every placeholder (Path == null)
+        // track, since UpdateTracks' own carry-forward step re-adds them a
+        // second time on top of their copy already sitting in the argument.
+        Library.NotifyTrackChanged();
         await new LibraryStore().SaveAsync(Library.Tracks);
     }
 
