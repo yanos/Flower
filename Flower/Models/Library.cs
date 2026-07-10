@@ -89,8 +89,10 @@ namespace Flower.Models
         // placeholder if this device has nothing matching it by SyncKey, or - if
         // it already has a placeholder for the same track - just updates which
         // peer currently holds the real file (OriginDeviceFingerprint) and its
-        // latest known album art (OriginAlbumArtHash). Never
-        // touches a track this device already has a real, Path-backed copy of,
+        // latest known album art (OriginAlbumArtHash). Every other device's play
+        // count (RemotePlayCounts) is merged in either way, real file or
+        // placeholder - see MergeRemotePlayCounts. Never replaces a track this
+        // device already has a real, Path-backed copy of with the incoming one,
         // and never removes anything just because a peer doesn't mention it -
         // purely additive/updating, unlike UpdateTracks' full replace.
         public void MergeSyncedTracks(IReadOnlyList<Track> incoming)
@@ -112,7 +114,9 @@ namespace Flower.Models
                             existing.OriginFileExtension = remote.OriginFileExtension;
                             existing.OriginAlbumArtHash = remote.OriginAlbumArtHash;
                         }
-                        continue; // Already a real local file - the peer having it too isn't news.
+                        MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
+                        continue; // Already known locally, real file or placeholder - only
+                                  // the bookkeeping above needed updating, not a whole new Track.
                     }
 
                     merged.Add(remote);
@@ -123,6 +127,19 @@ namespace Flower.Models
             }
 
             TracksUpdated?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Per-key max, not overwrite - see Track.RemotePlayCounts' own doc
+        // comment: a device's own reported count only ever grows, so this is
+        // safe to apply repeatedly, in any order, including a report relayed
+        // through a third device rather than learned directly from its origin.
+        private static void MergeRemotePlayCounts(Track existing, Dictionary<string, int> incoming)
+        {
+            foreach (var (fingerprint, count) in incoming)
+            {
+                existing.RemotePlayCounts[fingerprint] =
+                    Math.Max(existing.RemotePlayCounts.GetValueOrDefault(fingerprint), count);
+            }
         }
 
         // Atomically resolves whichever Track object currently represents

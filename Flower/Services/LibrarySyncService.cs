@@ -83,7 +83,7 @@ public class LibrarySyncService
         }
 
         var placeholders = songs
-            .Select(song => LibrarySyncMapper.ToPlaceholderTrack(song, device.Fingerprint))
+            .Select(song => LibrarySyncMapper.ToPlaceholderTrack(song, device.Fingerprint, _deviceIdentity.Fingerprint))
             .ToList();
 
         _logger.LogInformation("Library sync with {Alias}: fetched {SongCount} song(s) from their catalog", device.Alias, songs.Count);

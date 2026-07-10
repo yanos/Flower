@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 using Flower.Models;
 
@@ -10,7 +12,13 @@ namespace Flower.Services;
 // which peer answered, so a later download request goes to the right device.
 public static class LibrarySyncMapper
 {
-    public static Track ToPlaceholderTrack(Child song, string originDeviceFingerprint) => new Track
+    // ownFingerprint is this device's own DeviceIdentity.Fingerprint - excluded
+    // from the incoming song.PlayCounts before it becomes RemotePlayCounts, since
+    // an entry under our own fingerprint would just be a peer echoing back what
+    // it previously learned about us; our own play count is always authoritative
+    // locally (Track.PlayCount, live-incremented) and must never be overwritten
+    // by something arriving over sync.
+    public static Track ToPlaceholderTrack(Child song, string originDeviceFingerprint, string ownFingerprint) => new Track
     {
         Title = song.Title,
         Artists = song.Artist,
@@ -23,5 +31,8 @@ public static class LibrarySyncMapper
         OriginDeviceFingerprint = originDeviceFingerprint,
         OriginFileExtension = song.Suffix,
         OriginAlbumArtHash = song.CoverArt,
+        RemotePlayCounts = (song.PlayCounts ?? new Dictionary<string, int>())
+            .Where(kv => kv.Key != ownFingerprint)
+            .ToDictionary(kv => kv.Key, kv => kv.Value),
     };
 }

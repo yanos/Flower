@@ -95,7 +95,13 @@ public sealed record Child(
     int? Duration,
     int? BitRate,
     string? CoverArt,
-    bool Starred = false);
+    bool Starred = false,
+    // Not part of the real OpenSubsonic spec - Flower-specific, ignored by any
+    // third-party server/client that doesn't know about it. Every device's
+    // latest known play count for this song, keyed by DeviceIdentity.Fingerprint
+    // - see LibraryOpenSubsonicMapper.ToChild and Track.RemotePlayCounts for how
+    // this propagates play counts between devices without a central server.
+    Dictionary<string, int>? PlayCounts = null);
 
 public sealed record SearchResult3(
     List<ArtistID3>? Artist,
