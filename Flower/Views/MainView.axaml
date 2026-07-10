@@ -6,6 +6,7 @@
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:usercontrols="clr-namespace:Flower.UserControls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              mc:Ignorable="d"
              x:Class="Flower.Views.MainView"
              x:DataType="vm:MainViewModel">
@@ -137,22 +138,30 @@
                                                Width="16" Height="16"
                                                Margin="0,0,8,0"
                                                VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding Name}"
-                               IsVisible="{Binding !IsEditing}"
-                               VerticalAlignment="Center"/>
-                    <TextBox Text="{Binding Name, Mode=TwoWay}"
-                             IsVisible="{Binding IsEditing}"
-                             VerticalAlignment="Center"
-                             VerticalContentAlignment="Center"
-                             Height="20"
-                             MinHeight="0"
-                             Padding="4,0"
-                             MinWidth="80"
-                             SelectionBrush="#B4D7FF"
-                             SelectionForegroundBrush="Black"
-                             Loaded="RenameBox_Loaded"
-                             KeyDown="RenameBox_KeyDown"
-                             LostFocus="RenameBox_LostFocus"/>
+                    <StackPanel VerticalAlignment="Center" Spacing="1">
+                      <TextBlock Text="{Binding Name}"
+                                 IsVisible="{Binding !IsEditing}"/>
+                      <TextBox Text="{Binding Name, Mode=TwoWay}"
+                               IsVisible="{Binding IsEditing}"
+                               VerticalContentAlignment="Center"
+                               Height="20"
+                               MinHeight="0"
+                               Padding="4,0"
+                               MinWidth="80"
+                               SelectionBrush="#B4D7FF"
+                               SelectionForegroundBrush="Black"
+                               Loaded="RenameBox_Loaded"
+                               KeyDown="RenameBox_KeyDown"
+                               LostFocus="RenameBox_LostFocus"/>
+                      <!-- Only ever set (see MainViewModel.RefreshDeviceDisplayNames)
+                           when this device's name collides with another
+                           currently-listed device - shows its IP so they can
+                           be told apart. -->
+                      <TextBlock Text="{Binding Subtitle}"
+                                 IsVisible="{Binding Subtitle, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                                 FontSize="10"
+                                 Opacity="0.55"/>
+                    </StackPanel>
                   </StackPanel>
                 </Panel>
               </DataTemplate>

@@ -43,6 +43,10 @@ public sealed class PeerApprovalRequestedEventArgs : EventArgs
 //                                 not used by Flower's own sync, which would mean
 //                                 one request per album)
 //   GET  /rest/stream           - one song's actual file bytes, by SyncKey
+//   GET  /rest/getCoverArt      - one album's art bytes, by album id (see
+//                                 LibraryOpenSubsonicMapper.AlbumId) - used by
+//                                 AlbumArtLoader's remote-fetch path for a
+//                                 placeholder track's art (SYNC-PLAN.md Phase 3)
 // Deliberately plain HTTP for now, not HTTPS - see the plan doc for why.
 //
 // Trust gate (phase 3): every /api/flower/v1/* endpoint requires the caller to
@@ -175,6 +179,8 @@ public class SyncHttpServer : IDisposable
                 await HandleGetAlbumAsync(context);
             else if (path == "/rest/stream" && method == "GET")
                 await HandleStreamAsync(context);
+            else if (path == "/rest/getCoverArt" && method == "GET")
+                await HandleGetCoverArtAsync(context);
             else
                 context.Response.StatusCode = 404;
         }
@@ -364,6 +370,35 @@ public class SyncHttpServer : IDisposable
         context.Response.ContentLength64 = fileStream.Length;
         await fileStream.CopyToAsync(context.Response.OutputStream);
     }
+
+    // Serves this device's own real album art bytes, looked up by album id (the
+    // same id LibraryOpenSubsonicMapper.AlbumId/ToChild's CoverArt is derived
+    // from) - see AlbumArtLoader's remote-fetch path, SYNC-PLAN.md Phase 3's
+    // synced art. Never serves art for an album with no local (Path != null)
+    // track at all, same "only what this device actually has" rule as /rest/stream.
+    private async Task HandleGetCoverArtAsync(HttpListenerContext context)
+    {
+        var id = context.Request.QueryString["id"];
+        var track = id != null
+            ? _library.Tracks.FirstOrDefault(t => t.Path != null && LibraryOpenSubsonicMapper.AlbumId(t.Album, t.Artists) == id)
+            : null;
+
+        var bytes = track != null ? AlbumArtLoader.TryGetLocalArtBytes(track) : null;
+        if (bytes == null)
+        {
+            context.Response.StatusCode = 404;
+            return;
+        }
+
+        context.Response.ContentType = SniffImageContentType(bytes);
+        context.Response.ContentLength64 = bytes.Length;
+        await context.Response.OutputStream.WriteAsync(bytes);
+    }
+
+    private static string SniffImageContentType(byte[] bytes) =>
+        bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47
+            ? "image/png"
+            : "image/jpeg"; // Overwhelmingly the common case for embedded/cover-file art either way.
 
     private static async Task WriteJsonAsync(HttpListenerContext context, string body)
     {

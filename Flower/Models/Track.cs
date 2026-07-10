@@ -61,6 +61,15 @@ namespace Flower.Models
         // then. Same lifetime/meaning as OriginDeviceFingerprint.
         public string? OriginFileExtension { get; set; }
 
+        // SHA256 hash (hex) of the origin peer's album art bytes at last sync -
+        // see LibraryOpenSubsonicMapper's CoverArt field and AlbumArtLoader's
+        // remote-fetch path. Used as the local disk cache key for synced art, so
+        // a changed hash (art replaced on the origin device) naturally produces a
+        // cache miss and re-fetch instead of needing separate invalidation logic.
+        // Null if the peer's album currently has no art. Same lifetime as
+        // OriginDeviceFingerprint.
+        public string? OriginAlbumArtHash { get; set; }
+
         // Stats. PlayCount is Flower's own count, incremented on natural
         // end-of-track (see PlaylistControlViewModel); ImportedPlayCount comes
         // from iTunes/Music.app's library export when that sync is enabled

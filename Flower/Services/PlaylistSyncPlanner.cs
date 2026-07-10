@@ -17,7 +17,13 @@ public enum PlaylistSyncDecisionKind
     // Both sides changed the same playlist since the last time these two devices
     // agreed on its state (or there's no record of ever agreeing and the content
     // differs) - can't pick a winner automatically, see PlaylistSyncService.
-    Conflict
+    Conflict,
+
+    // One side no longer has a playlist the two devices previously agreed
+    // existed (see Plan's baselineFor check) - it was deleted there, not just
+    // never created on this side, so it should be removed from the other side
+    // too rather than being treated as "adopt/keep the one side that still has it".
+    Delete
 }
 
 public sealed record PlaylistSyncDecision(
@@ -51,12 +57,18 @@ public static class PlaylistSyncPlanner
 
             if (r == null)
             {
-                decisions.Add(new PlaylistSyncDecision(id, PlaylistSyncDecisionKind.KeepLocal, l, null));
+                // A baseline for this id means the two devices previously agreed
+                // this playlist existed - if the remote no longer has it, that is
+                // a deletion to propagate, not "local is the only side that has
+                // ever known about this one".
+                var localOnlyKind = baselineFor(id) != null ? PlaylistSyncDecisionKind.Delete : PlaylistSyncDecisionKind.KeepLocal;
+                decisions.Add(new PlaylistSyncDecision(id, localOnlyKind, l, null));
                 continue;
             }
             if (l == null)
             {
-                decisions.Add(new PlaylistSyncDecision(id, PlaylistSyncDecisionKind.AdoptRemote, null, r));
+                var remoteOnlyKind = baselineFor(id) != null ? PlaylistSyncDecisionKind.Delete : PlaylistSyncDecisionKind.AdoptRemote;
+                decisions.Add(new PlaylistSyncDecision(id, remoteOnlyKind, null, r));
                 continue;
             }
 

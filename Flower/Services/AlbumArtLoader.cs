@@ -2,41 +2,80 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 using Avalonia.Media.Imaging;
 
+using CommunityToolkit.Mvvm.DependencyInjection;
+
 using Flower.Models;
+using Flower.Persistence;
 
 namespace Flower.Services;
 
 // Shared album-art lookup (embedded tag picture, falling back to a cover/folder
 // image file) used by both TrackRowViewModel (track list art column) and
 // TrackInfoWindow (header thumbnail) - extracted here so there's one cache and
-// one implementation instead of two copies drifting apart.
+// one implementation instead of two copies drifting apart. Also handles art for
+// a placeholder track known via library sync (Path == null, no local file to
+// read) by fetching it from the origin peer - see SYNC-PLAN.md Phase 3.
 public static class AlbumArtLoader
 {
     private static readonly string[] ImageExtensions =
         [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"];
 
-    // Key: directory path. WeakReference so GC can reclaim bitmaps under memory pressure.
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+
+    // Disk cache for art fetched from a peer, content-addressed by
+    // Track.OriginAlbumArtHash - see HandleGetCoverArtAsync/LibraryOpenSubsonicMapper
+    // for where that hash comes from. Local (Path != null) tracks never use this;
+    // reading straight off the file is already cheap and always current.
+    private static string CacheDirectory => Path.Combine(AppDataDirectory.Path, "AlbumArtCache");
+
+    // Key: directory path for a local track, or "remote:{hash}" for a synced one.
+    // WeakReference so GC can reclaim bitmaps under memory pressure.
     private static readonly ConcurrentDictionary<string, WeakReference<Bitmap>> Cache = new();
 
     public static async Task<Bitmap?> LoadAsync(Track track)
+    {
+        if (track.Path != null)
+            return await LoadLocalAsync(track);
+
+        return await LoadRemoteAsync(track);
+    }
+
+    private static async Task<Bitmap?> LoadLocalAsync(Track track)
     {
         var key = Path.GetDirectoryName(track.Path ?? "") ?? "";
 
         if (Cache.TryGetValue(key, out var weak) && weak.TryGetTarget(out var cached))
             return cached;
 
-        var bmp = await Task.Run(() => LoadBitmap(track));
+        var bmp = await Task.Run(() => LoadLocalBitmap(track));
         if (bmp != null)
             Cache[key] = new WeakReference<Bitmap>(bmp);
 
         return bmp;
     }
 
-    private static Bitmap? LoadBitmap(Track track)
+    private static Bitmap? LoadLocalBitmap(Track track)
+    {
+        var data = TryGetLocalArtBytes(track);
+        if (data == null)
+            return null;
+
+        using var ms = new MemoryStream(data);
+        return new Bitmap(ms);
+    }
+
+    // Raw art bytes for a track this device actually has a file for - embedded
+    // tag picture first, falling back to a cover.*/folder.* file in the same
+    // directory. Shared with LibraryOpenSubsonicMapper (to hash for CoverArt) and
+    // SyncHttpServer (to serve /rest/getCoverArt), not just this loader's own
+    // Bitmap decoding, so all three agree on exactly what "this album's art" means.
+    public static byte[]? TryGetLocalArtBytes(Track track)
     {
         if (track.Path == null)
             return null;
@@ -47,10 +86,7 @@ public static class AlbumArtLoader
             using var tagFile = TagLib.File.Create(track.Path);
             var pic = tagFile.Tag.Pictures.FirstOrDefault();
             if (pic?.Data?.Data is { Length: > 0 } data)
-            {
-                using var ms = new MemoryStream(data);
-                return new Bitmap(ms);
-            }
+                return data;
         }
         catch { }
 
@@ -69,11 +105,116 @@ public static class AlbumArtLoader
                         && ImageExtensions.Contains(ext);
                 });
                 if (file != null)
-                    return new Bitmap(file);
+                    return File.ReadAllBytes(file);
             }
         }
         catch { }
 
         return null;
     }
+
+    // Fetches a placeholder track's album art from its origin peer, content-
+    // addressed on disk by OriginAlbumArtHash so a restart (or the peer going
+    // offline) doesn't mean re-fetching - and so an album's art changing on the
+    // origin device is picked up automatically (new hash -> cache miss -> re-fetch)
+    // without any separate invalidation logic.
+    private static async Task<Bitmap?> LoadRemoteAsync(Track track)
+    {
+        var hash = track.OriginAlbumArtHash;
+        if (string.IsNullOrEmpty(hash) || string.IsNullOrEmpty(track.OriginDeviceFingerprint))
+            return null;
+
+        var cacheKey = $"remote:{hash}";
+        if (Cache.TryGetValue(cacheKey, out var weak) && weak.TryGetTarget(out var cached))
+            return cached;
+
+        var cachePath = Path.Combine(CacheDirectory, $"{hash}.art");
+        if (File.Exists(cachePath))
+        {
+            var bmp = await Task.Run(() => TryDecodeFile(cachePath));
+            if (bmp != null)
+            {
+                Cache[cacheKey] = new WeakReference<Bitmap>(bmp);
+                return bmp;
+            }
+        }
+
+        // Ioc.Default is used as a service locator elsewhere in this codebase
+        // (Views/Controls resolving their ViewModels) - the same pattern here
+        // keeps LoadAsync(track) a simple static call for its three existing
+        // callers rather than threading a peer-resolution dependency through
+        // TrackRowViewModel/AlbumTileViewModel/TrackInfoWindow.
+        var networkDiscovery = Ioc.Default.GetService<NetworkDiscoveryService>();
+        var deviceIdentity = Ioc.Default.GetService<DeviceIdentity>();
+        var peer = networkDiscovery?.FindByFingerprint(track.OriginDeviceFingerprint);
+        if (peer == null || deviceIdentity == null)
+            return null;
+
+        try
+        {
+            var albumId = LibraryOpenSubsonicMapper.AlbumId(track.Album, track.Artists);
+            using var request = new HttpRequestMessage(HttpMethod.Get,
+                $"http://{peer.EndPoint}/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}");
+            request.Headers.Add("X-Flower-Fingerprint", deviceIdentity.Fingerprint);
+            request.Headers.Add("X-Flower-Alias", deviceIdentity.Alias);
+            request.Headers.ConnectionClose = true;
+
+            using var response = await Http.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+
+            Directory.CreateDirectory(CacheDirectory);
+            await File.WriteAllBytesAsync(cachePath, bytes);
+
+            // Decode off the UI thread - same reason LoadLocalAsync/the cached-file
+            // path above both use Task.Run: this runs on whatever thread called
+            // LoadAsync (typically the UI thread, via TrackRowViewModel.AlbumArt's
+            // getter), and decoding a full-size image inline there stalls scrolling
+            // every time a placeholder row's art finishes downloading.
+            var bmp = await Task.Run(() => TryDecodeBytes(bytes));
+            if (bmp == null)
+                return null;
+
+            Cache[cacheKey] = new WeakReference<Bitmap>(bmp);
+            return bmp;
+        }
+        catch
+        {
+            // Peer unreachable/offline, or not (yet) trusted - fall back to the
+            // placeholder icon, same as any other art-miss.
+            return null;
+        }
+    }
+
+    private static Bitmap? TryDecodeBytes(byte[] bytes)
+    {
+        try
+        {
+            using var ms = new MemoryStream(bytes);
+            return new Bitmap(ms);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Bitmap? TryDecodeFile(string path)
+    {
+        try
+        {
+            return new Bitmap(path);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Shared with LibraryOpenSubsonicMapper, which stamps this same hash onto
+    // CoverArt server-side - one hashing implementation, not two that could drift.
+    public static string ComputeArtHash(byte[] bytes) =>
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 }

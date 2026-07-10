@@ -124,6 +124,47 @@ public class PlaylistSyncPlannerTests
     }
 
     [Fact]
+    public void Playlist_deleted_remotely_since_a_prior_baseline_is_deleted_not_kept()
+    {
+        // Regression test for the reported bug: deleting a playlist on one
+        // device never removed it from the other, even after a restart -
+        // Plan previously had no way to distinguish "remote never had this"
+        // from "remote deleted this", and treated both as KeepLocal.
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var local = new Playlist(id, "Road Trip", new List<Track> { T("A") }, baseline);
+
+        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
+    }
+
+    [Fact]
+    public void Playlist_deleted_locally_since_a_prior_baseline_is_deleted_not_adopted()
+    {
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var remote = new PlaylistSyncPlaylistDto(id, "Road Trip", baseline, new List<PlaylistSyncTrackDto> { Dto("A") });
+
+        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist>(), new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
+    }
+
+    [Fact]
+    public void Playlist_only_on_remote_with_no_baseline_is_still_adopted_not_deleted()
+    {
+        // A genuinely new playlist (never agreed upon before) must not be
+        // mistaken for a deletion just because one side lacks it.
+        var id = Guid.NewGuid();
+        var remote = new PlaylistSyncPlaylistDto(id, "Road Trip", DateTimeOffset.UtcNow, new List<PlaylistSyncTrackDto> { Dto("A") });
+
+        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist>(), new List<PlaylistSyncPlaylistDto> { remote }, NoBaseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
+    }
+
+    [Fact]
     public void Plan_produces_one_decision_per_distinct_playlist_id_across_both_sides()
     {
         var sharedId   = Guid.NewGuid();

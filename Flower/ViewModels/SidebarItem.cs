@@ -19,9 +19,31 @@ public class SidebarItem : ViewModelBase
     public SidebarItemKind Kind { get; }
     public MaterialIconKind Icon { get; }
     public Playlist? Playlist { get; }
-    public DiscoveredDevice? Device { get; }
+
+    // Settable (not just init) - see MainViewModel.FindDeviceSidebarItem: a
+    // device row can end up re-pointed at a different DiscoveredDevice
+    // instance than the one it was created with, once a Fingerprint collision
+    // with an already-resolved device is ruled out.
+    private DiscoveredDevice? _device;
+    public DiscoveredDevice? Device
+    {
+        get => _device;
+        set { _device = value; OnPropertyChanged(); }
+    }
+
     public bool IsHeader => Kind == SidebarItemKind.Header;
     public bool IsSelectable => !IsHeader;
+
+    // Second line shown under Name in the sidebar - currently only used for a
+    // Device row whose display name collides with another device's (see
+    // MainViewModel.RefreshDeviceDisplayNames), showing that device's IP to
+    // tell them apart; null everywhere else.
+    private string? _subtitle;
+    public string? Subtitle
+    {
+        get => _subtitle;
+        set { _subtitle = value; OnPropertyChanged(); }
+    }
 
     private bool _isEditing;
     public bool IsEditing

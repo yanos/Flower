@@ -994,6 +994,7 @@ public partial class MainView : UserControl
             return;
         item.Playlist.Name = item.Name;
         await new PlaylistStore().SaveAsync(_viewModel.Library.Playlists);
+        _viewModel.ScheduleContentSync();
     }
 
     // ── Drag-to-reorder (playlist view only) ────────────────────────────────────

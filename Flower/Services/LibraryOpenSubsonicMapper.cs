@@ -17,7 +17,7 @@ public static class LibraryOpenSubsonicMapper
 {
     public static List<AlbumID3> BuildAlbumList(IReadOnlyList<Track> tracks) =>
         GroupByAlbum(tracks)
-            .Select(g => ToAlbumID3(g.Key, g.ToList()))
+            .Select(g => { var list = g.ToList(); return ToAlbumID3(g.Key, list, ComputeAlbumArtHash(list)); })
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -26,7 +26,12 @@ public static class LibraryOpenSubsonicMapper
     // rather than the OpenSubsonic-shaped one-request-per-album pair above.
     public static List<Child> BuildAllSongs(IReadOnlyList<Track> tracks) =>
         GroupByAlbum(tracks)
-            .SelectMany(g => g.Select(t => ToChild(t, g.Key)))
+            .SelectMany(g =>
+            {
+                var list = g.ToList();
+                var artHash = ComputeAlbumArtHash(list);
+                return list.Select(t => ToChild(t, g.Key, artHash));
+            })
             .ToList();
 
     public static AlbumWithSongsID3? FindAlbum(IReadOnlyList<Track> tracks, string albumId)
@@ -35,11 +40,26 @@ public static class LibraryOpenSubsonicMapper
         if (group == null)
             return null;
 
-        var songs = group.Select(t => ToChild(t, albumId)).ToList();
-        var summary = ToAlbumID3(albumId, group.ToList());
+        var list = group.ToList();
+        var artHash = ComputeAlbumArtHash(list);
+        var songs = list.Select(t => ToChild(t, albumId, artHash)).ToList();
+        var summary = ToAlbumID3(albumId, list, artHash);
         return new AlbumWithSongsID3(
             summary.Id, summary.Name, summary.Artist, summary.ArtistId, summary.CoverArt,
             summary.SongCount, summary.Duration, summary.Year, summary.Genre, songs);
+    }
+
+    // Content hash of the album's own art bytes (see AlbumArtLoader.TryGetLocalArtBytes/
+    // ComputeArtHash), read off whichever local track in the group actually has a file -
+    // stamped onto CoverArt below so a peer receiving this in a sync manifest can tell
+    // "art changed since I last cached it" apart from "same art as before" without
+    // transferring the bytes themselves every time (see AlbumArtLoader's remote-fetch
+    // path, SYNC-PLAN.md Phase 3). Null if no track in the group has any art at all.
+    private static string? ComputeAlbumArtHash(List<Track> tracks)
+    {
+        var track = tracks.FirstOrDefault(t => t.Path != null);
+        var bytes = track != null ? AlbumArtLoader.TryGetLocalArtBytes(track) : null;
+        return bytes != null ? AlbumArtLoader.ComputeArtHash(bytes) : null;
     }
 
     // Grouped by (Album, Artist) rather than Album alone, so two different
@@ -52,7 +72,7 @@ public static class LibraryOpenSubsonicMapper
 
     private static string Normalize(string? value) => value?.Trim().ToLowerInvariant() ?? "";
 
-    private static AlbumID3 ToAlbumID3(string albumId, List<Track> tracks)
+    private static AlbumID3 ToAlbumID3(string albumId, List<Track> tracks, string? artHash)
     {
         var first = tracks[0];
         return new AlbumID3(
@@ -60,14 +80,14 @@ public static class LibraryOpenSubsonicMapper
             Name: first.Album ?? "",
             Artist: first.Artists,
             ArtistId: ArtistId(first.Artists),
-            CoverArt: null,
+            CoverArt: artHash,
             SongCount: tracks.Count,
             Duration: (long)tracks.Sum(t => t.Duration.TotalSeconds),
             Year: ParseYear(first.Year),
             Genre: first.Genre);
     }
 
-    private static Child ToChild(Track track, string albumId) => new(
+    private static Child ToChild(Track track, string albumId, string? artHash) => new(
         Id: track.SyncKey,
         Title: track.Title ?? "",
         Album: track.Album,
@@ -86,7 +106,10 @@ public static class LibraryOpenSubsonicMapper
         Suffix: track.Path != null ? System.IO.Path.GetExtension(track.Path).TrimStart('.') : null,
         Duration: (int)track.Duration.TotalSeconds,
         BitRate: track.Bitrate > 0 ? track.Bitrate : null,
-        CoverArt: null);
+        // See AlbumId's own CoverArt above - a content hash of the album's art
+        // bytes, not an opaque id, so a peer syncing this manifest can tell
+        // whether it needs to (re-)fetch art without a round trip just to ask.
+        CoverArt: artHash);
 
     private static int? ParseYear(string? year) => int.TryParse(year, out var y) ? y : null;
 }
