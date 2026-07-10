@@ -268,6 +268,59 @@ public class LibraryTests
     }
 
     [Fact]
+    public void MergeSyncedTracks_merges_remote_play_counts_into_a_track_already_backed_by_a_real_file()
+    {
+        // Unlike OriginDeviceFingerprint/Path (see the test above), play counts
+        // ARE news even for a track this device already has for real - a peer
+        // may have played its own copy of the same song, and that should still
+        // count toward the total shown here.
+        var local = new Track { Title = "Same Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), Path = "/music/local.mp3", PlayCount = 3 };
+        var library = new Library(new List<Track> { local });
+        var remote = new Track
+        {
+            Title = "Same Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100),
+            OriginDeviceFingerprint = "peer-1",
+            RemotePlayCounts = new Dictionary<string, int> { ["peer-1"] = 6 },
+        };
+
+        library.MergeSyncedTracks(new List<Track> { remote });
+
+        var merged = library.Tracks.Single();
+        Assert.Same(local, merged);
+        Assert.Equal(3, merged.PlayCount); // Local's own count is untouched, not overwritten.
+        Assert.Equal(6, merged.RemotePlayCounts["peer-1"]);
+        Assert.Equal(9, merged.TotalPlayCount);
+    }
+
+    [Fact]
+    public void MergeSyncedTracks_merges_remote_play_counts_into_an_existing_placeholder_by_max()
+    {
+        var placeholder = new Track
+        {
+            Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200),
+            OriginDeviceFingerprint = "peer-1",
+            RemotePlayCounts = new Dictionary<string, int> { ["peer-1"] = 5, ["peer-2"] = 10 },
+        };
+        var library = new Library(new List<Track> { placeholder });
+        var remoteAgain = new Track
+        {
+            Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200),
+            OriginDeviceFingerprint = "peer-1",
+            // peer-1 played it twice more since the last sync (5 -> 7); peer-2's
+            // count reported here is stale/lower than what's already known (10 ->
+            // 8, e.g. a report relayed through a third device with older
+            // information) and must not regress the existing higher value.
+            RemotePlayCounts = new Dictionary<string, int> { ["peer-1"] = 7, ["peer-2"] = 8 },
+        };
+
+        library.MergeSyncedTracks(new List<Track> { remoteAgain });
+
+        var merged = library.Tracks.Single();
+        Assert.Equal(7, merged.RemotePlayCounts["peer-1"]);
+        Assert.Equal(10, merged.RemotePlayCounts["peer-2"]);
+    }
+
+    [Fact]
     public void MergeSyncedTracks_never_removes_a_track_the_peer_did_not_mention()
     {
         var local = new Track { Title = "Local Only", Path = "/music/local.mp3" };

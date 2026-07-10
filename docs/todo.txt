@@ -17,7 +17,6 @@ lyric service
 song history
 folder in playlist		
 checksum + to prevent corruption if partial transfer
-sync play count between device
 spinner aside the device name when syncing
 auto complete while editing
 localisation

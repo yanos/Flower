@@ -279,7 +279,7 @@ public class SyncHttpServer : IDisposable
     // /rest/getAlbumList2+getAlbum.
     private async Task HandleGetLibraryAsync(HttpListenerContext context)
     {
-        var manifest = new LibrarySyncManifestDto(_deviceIdentity.Fingerprint, LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks));
+        var manifest = new LibrarySyncManifestDto(_deviceIdentity.Fingerprint, LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks, _deviceIdentity.Fingerprint));
         await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
     }
 
@@ -334,7 +334,7 @@ public class SyncHttpServer : IDisposable
     private async Task HandleGetAlbumAsync(HttpListenerContext context)
     {
         var id = context.Request.QueryString["id"];
-        var album = id != null ? LibraryOpenSubsonicMapper.FindAlbum(_library.Tracks, id) : null;
+        var album = id != null ? LibraryOpenSubsonicMapper.FindAlbum(_library.Tracks, id, _deviceIdentity.Fingerprint) : null;
         if (album == null)
         {
             context.Response.StatusCode = 404;

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace Flower.Models
@@ -79,6 +81,25 @@ namespace Flower.Models
         // for display.
         public int PlayCount { get; set; }
         public int ImportedPlayCount { get; set; }
+
+        // Latest known play count reported by each OTHER device, keyed by
+        // DeviceIdentity.Fingerprint - see LibraryOpenSubsonicMapper.ToChild's
+        // PlayCounts field and Library.MergeSyncedTracks. Never contains this
+        // device's own fingerprint: this device's own contribution always lives
+        // in PlayCount/ImportedPlayCount above, live-incremented locally, never
+        // written here via a sync merge (LibrarySyncMapper.ToPlaceholderTrack
+        // strips it out of an incoming report before it gets this far). Merged
+        // per-key by max - a device's own reported count only ever grows, so
+        // applying the same (or a relayed, multi-hop) report more than once, in
+        // any order, converges instead of double-counting or regressing.
+        public Dictionary<string, int> RemotePlayCounts { get; set; } = new();
+
+        // The combined total across every device this track's play count is
+        // known for. One shared computation so TrackRowViewModel.PlayCountDisplay
+        // and TrackListBuilder's PlayCount sort can't independently drift on the
+        // formula the way two copies of it eventually would.
+        [JsonIgnore]
+        public int TotalPlayCount => PlayCount + ImportedPlayCount + RemotePlayCounts.Values.Sum();
 
         // When this track first appeared in the library. Defaults to "now" for a
         // freshly-imported Track; Library.UpdateTracks carries the original value

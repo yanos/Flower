@@ -49,8 +49,9 @@ public static class TrackListBuilder
             "DateAdded"   => tracks.OrderBy(t => t.DateAdded),
             "Duration"    => tracks.OrderBy(t => t.Duration),
             // Sort by the same combined total the column displays (see
-            // TrackRowViewModel.PlayCountDisplay), not just Flower's own count.
-            "PlayCount"   => tracks.OrderBy(t => t.PlayCount + t.ImportedPlayCount),
+            // Track.TotalPlayCount/TrackRowViewModel.PlayCountDisplay), not just
+            // Flower's own count.
+            "PlayCount"   => tracks.OrderBy(t => t.TotalPlayCount),
             _             => tracks.OrderBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
         };
         return asc ? ordered : ordered.Reverse();

@@ -24,17 +24,19 @@ public static class LibraryOpenSubsonicMapper
     // Flat song list across every album, for the bespoke bulk sync endpoint
     // (GET /api/flower/v1/library - see LibrarySyncContracts/LibrarySyncService)
     // rather than the OpenSubsonic-shaped one-request-per-album pair above.
-    public static List<Child> BuildAllSongs(IReadOnlyList<Track> tracks) =>
+    // selfFingerprint is this device's own DeviceIdentity.Fingerprint - see
+    // ToChild's PlayCounts field.
+    public static List<Child> BuildAllSongs(IReadOnlyList<Track> tracks, string selfFingerprint) =>
         GroupByAlbum(tracks)
             .SelectMany(g =>
             {
                 var list = g.ToList();
                 var artHash = ComputeAlbumArtHash(list);
-                return list.Select(t => ToChild(t, g.Key, artHash));
+                return list.Select(t => ToChild(t, g.Key, artHash, selfFingerprint));
             })
             .ToList();
 
-    public static AlbumWithSongsID3? FindAlbum(IReadOnlyList<Track> tracks, string albumId)
+    public static AlbumWithSongsID3? FindAlbum(IReadOnlyList<Track> tracks, string albumId, string selfFingerprint)
     {
         var group = GroupByAlbum(tracks).FirstOrDefault(g => g.Key == albumId);
         if (group == null)
@@ -42,7 +44,7 @@ public static class LibraryOpenSubsonicMapper
 
         var list = group.ToList();
         var artHash = ComputeAlbumArtHash(list);
-        var songs = list.Select(t => ToChild(t, albumId, artHash)).ToList();
+        var songs = list.Select(t => ToChild(t, albumId, artHash, selfFingerprint)).ToList();
         var summary = ToAlbumID3(albumId, list, artHash);
         return new AlbumWithSongsID3(
             summary.Id, summary.Name, summary.Artist, summary.ArtistId, summary.CoverArt,
@@ -87,7 +89,7 @@ public static class LibraryOpenSubsonicMapper
             Genre: first.Genre);
     }
 
-    private static Child ToChild(Track track, string albumId, string? artHash) => new(
+    private static Child ToChild(Track track, string albumId, string? artHash, string selfFingerprint) => new(
         Id: track.SyncKey,
         Title: track.Title ?? "",
         Album: track.Album,
@@ -109,7 +111,18 @@ public static class LibraryOpenSubsonicMapper
         // See AlbumId's own CoverArt above - a content hash of the album's art
         // bytes, not an opaque id, so a peer syncing this manifest can tell
         // whether it needs to (re-)fetch art without a round trip just to ask.
-        CoverArt: artHash);
+        CoverArt: artHash,
+        // This device's own tally (PlayCount + ImportedPlayCount - see
+        // Track.TotalPlayCount's doc comment on why the two are combined for
+        // anything leaving this device) plus every other device's count already
+        // learned via a previous sync (RemotePlayCounts) - a snapshot of
+        // everything this device currently knows, so a receiving peer converges
+        // even for a device it never discovers directly, as long as some other
+        // device it does talk to has synced with that one at some point.
+        PlayCounts: new Dictionary<string, int>(track.RemotePlayCounts)
+        {
+            [selfFingerprint] = track.PlayCount + track.ImportedPlayCount,
+        });
 
     private static int? ParseYear(string? year) => int.TryParse(year, out var y) ? y : null;
 }
