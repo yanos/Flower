@@ -36,6 +36,13 @@ public partial class App : Application
 
     private void AboutMenuItem_OnClick(object? sender, System.EventArgs e) => new AboutWindow().Show();
 
+    // OpenSettingsCommand just raises MainViewModel.SettingsRequested, which
+    // MainView.axaml.cs is already subscribed to (the same path Cmd/Ctrl+,
+    // uses) - reusing it here rather than constructing a SettingsWindow
+    // directly keeps there being exactly one place that knows how to open it.
+    private void SettingsMenuItem_OnClick(object? sender, System.EventArgs e) =>
+        Ioc.Default.GetRequiredService<MainViewModel>().OpenSettingsCommand?.Execute(null);
+
     public override void OnFrameworkInitializationCompleted()
     {
         // Must run before anything below can log to a real file - classes with
