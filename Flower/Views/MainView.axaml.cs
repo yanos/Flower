@@ -31,6 +31,7 @@ public partial class MainView : UserControl
 {
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private MainViewModel? _viewModel;
+    private readonly PlaylistStore _playlistStore = Ioc.Default.GetService<PlaylistStore>()!;
 
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
@@ -993,7 +994,7 @@ public partial class MainView : UserControl
         if (item.Playlist == null || _viewModel == null)
             return;
         item.Playlist.Name = item.Name;
-        await new PlaylistStore().SaveAsync(_viewModel.Library.Playlists);
+        await _playlistStore.SaveAsync(_viewModel.Library.Playlists);
         _viewModel.ScheduleContentSync();
     }
 

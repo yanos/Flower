@@ -6,8 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
-
-using Flower.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Flower.Persistence
 {
@@ -55,7 +54,18 @@ namespace Flower.Persistence
 
     public class AppSettingsStore
     {
-        private static readonly ILogger Logger = AppLogging.CreateLogger<AppSettingsStore>();
+        private readonly ILogger<AppSettingsStore> _logger;
+
+        // Convenience overload for the many call sites (mostly tests) that don't
+        // care about log output - production code always goes through the other
+        // constructor instead (see App.axaml.cs), which gets a real, properly
+        // DI-configured ILogger<AppSettingsStore>.
+        public AppSettingsStore() : this(NullLogger<AppSettingsStore>.Instance) { }
+
+        public AppSettingsStore(ILogger<AppSettingsStore> logger)
+        {
+            _logger = logger;
+        }
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "settings.json");
 
@@ -80,7 +90,7 @@ namespace Flower.Persistence
             return settings;
         }
 
-        private static AppSettings LoadFromDisk()
+        private AppSettings LoadFromDisk()
         {
             var path = StorePath;
             if (!File.Exists(path))
@@ -93,7 +103,7 @@ namespace Flower.Persistence
             }
             catch (Exception ex)
             {
-                Logger.LogWarning(ex, "Failed to load settings from {Path}; using defaults", path);
+                _logger.LogWarning(ex, "Failed to load settings from {Path}; using defaults", path);
                 return new AppSettings();
             }
         }

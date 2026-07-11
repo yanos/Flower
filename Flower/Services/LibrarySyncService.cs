@@ -37,12 +37,14 @@ public class LibrarySyncService
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly LibraryStore _libraryStore;
     private readonly ILogger _logger;
 
-    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, ILogger<LibrarySyncService> logger)
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, LibraryStore libraryStore, ILogger<LibrarySyncService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _libraryStore = libraryStore;
         _logger = logger;
     }
 
@@ -102,6 +104,6 @@ public class LibrarySyncService
         // not-yet-downloaded placeholder learned this way until the next
         // successful sync. PlaylistSyncService and LibraryDownloadService both
         // already persist after their own mutations; this one previously did not.
-        await new LibraryStore().SaveAsync(_library.Tracks);
+        await _libraryStore.SaveAsync(_library.Tracks);
     }
 }

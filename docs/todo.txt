@@ -8,9 +8,6 @@ album mode
 artist / playlist icon instead of album art
 fire sync event when data on disk change.
 more logging
-remember allow sync
-duplicate entries in devices
-use dep inj for the logger
 download songs on phone => not permanent?
 esc to close settings
 lyric service

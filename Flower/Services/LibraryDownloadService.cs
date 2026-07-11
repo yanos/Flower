@@ -19,11 +19,13 @@ public class LibraryDownloadService
 {
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly LibraryStore _libraryStore;
 
-    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity)
+    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, LibraryStore libraryStore)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _libraryStore = libraryStore;
     }
 
     public async Task<TrackDownloadResult> DownloadAsync(Track track, DiscoveredDevice? peer)
@@ -51,7 +53,7 @@ public class LibraryDownloadService
             await client.DownloadTrackAsync(track.SyncKey, destination);
 
             track.Path = destination;
-            await new LibraryStore().SaveAsync(_library.Tracks);
+            await _libraryStore.SaveAsync(_library.Tracks);
             _library.NotifyTrackChanged();
 
             return TrackDownloadResult.Downloaded;

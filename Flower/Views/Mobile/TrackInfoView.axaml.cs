@@ -5,6 +5,8 @@ using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 
+using CommunityToolkit.Mvvm.DependencyInjection;
+
 using Flower.Converters;
 using Flower.Models;
 using Flower.Persistence;
@@ -19,6 +21,9 @@ namespace Flower.Views.Mobile;
 public partial class TrackInfoView : UserControl
 {
     private static readonly DurationConverter _durationConverter = new();
+    // Resolved via the service locator - see desktop TrackInfoWindow's own
+    // field for the same pattern.
+    private readonly LibraryStore _libraryStore = Ioc.Default.GetService<LibraryStore>()!;
     private Track? _track;
 
     public TrackInfoView()
@@ -166,7 +171,7 @@ public partial class TrackInfoView : UserControl
         // Tracks back into UpdateTracks as a "fresh scan" silently doubles
         // every placeholder track.
         vm.Main.Library.NotifyTrackChanged();
-        await new LibraryStore().SaveAsync(vm.Main.Library.Tracks);
+        await _libraryStore.SaveAsync(vm.Main.Library.Tracks);
     }
 
     private static string? NullIfEmpty(string? s) =>

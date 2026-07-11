@@ -19,6 +19,8 @@ public partial class MainWindow : Window
     private readonly AppSettings _appSettings;
     private readonly ColumnManager _columnManager;
     private readonly Library _library;
+    private readonly LibraryStore _libraryStore;
+    private readonly AppSettingsStore _appSettingsStore;
 
     // Tracks the window's bounds while in WindowState.Normal, since that's
     // what should be restored on the next launch - saving the bounds reported
@@ -34,6 +36,8 @@ public partial class MainWindow : Window
         _appSettings    = Ioc.Default.GetService<AppSettings>()!;
         _columnManager  = Ioc.Default.GetService<ColumnManager>()!;
         _library        = Ioc.Default.GetService<Library>()!;
+        _libraryStore   = Ioc.Default.GetService<LibraryStore>()!;
+        _appSettingsStore = Ioc.Default.GetService<AppSettingsStore>()!;
         _normalWidth    = Width;
         _normalHeight   = Height;
         _normalPosition = Position;
@@ -62,7 +66,7 @@ public partial class MainWindow : Window
             // increments PlayCount and kicks off a fire-and-forget SaveAsync) may not
             // have hit disk yet - flush the in-memory state synchronously so quitting
             // right after a play doesn't silently lose that increment. See LibraryStore.Save.
-            new LibraryStore().Save(_library.Tracks);
+            _libraryStore.Save(_library.Tracks);
 
             // Serilog buffers writes - flush them so the last few lines of this
             // session (often the most useful ones, if something just went wrong)
@@ -144,6 +148,6 @@ public partial class MainWindow : Window
         _appSettings.WindowY           = _normalPosition.Y;
         _appSettings.WindowIsMaximized = WindowState == WindowState.Maximized;
 
-        new AppSettingsStore().Save(_appSettings);
+        _appSettingsStore.Save(_appSettings);
     }
 }

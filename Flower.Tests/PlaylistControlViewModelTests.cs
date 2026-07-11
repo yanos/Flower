@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.Logging.Abstractions;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
@@ -50,7 +51,11 @@ public class PlaylistControlViewModelTests
         audio = new FakeAudioManager();
         var library = new Library(tracks);
         var playlist = new MainPlaylist(tracks);
-        return new PlaylistControlViewModel(audio, playlist, library, appSettings ?? new AppSettings());
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        return new PlaylistControlViewModel(
+            audio, playlist, library, appSettings ?? new AppSettings(), libraryStore, appSettingsStore,
+            NullLogger<PlaylistControlViewModel>.Instance);
     }
 
     [Fact]

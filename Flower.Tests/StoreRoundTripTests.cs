@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using Flower.Controls;
 using Flower.Importer;
 using Flower.Models;
@@ -61,8 +62,8 @@ public class StoreRoundTripTests : IDisposable
             new Track { Title = "A", Artists = "X", Duration = TimeSpan.FromSeconds(125), Path = "/music/a.mp3" },
         };
 
-        await new LibraryStore().SaveAsync(tracks);
-        var loaded = await new LibraryStore().LoadAsync();
+        await new LibraryStore(NullLogger<LibraryStore>.Instance).SaveAsync(tracks);
+        var loaded = await new LibraryStore(NullLogger<LibraryStore>.Instance).LoadAsync();
 
         Assert.Single(loaded);
         Assert.Equal("A", loaded[0].Title);
@@ -72,7 +73,7 @@ public class StoreRoundTripTests : IDisposable
     [Fact]
     public async Task LibraryStore_Load_returns_empty_list_when_no_file_exists()
     {
-        var loaded = await new LibraryStore().LoadAsync();
+        var loaded = await new LibraryStore(NullLogger<LibraryStore>.Instance).LoadAsync();
         Assert.Empty(loaded);
     }
 
@@ -88,8 +89,8 @@ public class StoreRoundTripTests : IDisposable
             new Track { Title = "A", Artists = "X", PlayCount = 1, Duration = TimeSpan.FromSeconds(125), Path = "/music/a.mp3" },
         };
 
-        new LibraryStore().Save(tracks);
-        var loaded = new LibraryStore().Load();
+        new LibraryStore(NullLogger<LibraryStore>.Instance).Save(tracks);
+        var loaded = new LibraryStore(NullLogger<LibraryStore>.Instance).Load();
 
         Assert.Single(loaded);
         Assert.Equal("A", loaded[0].Title);
@@ -142,7 +143,9 @@ public class StoreRoundTripTests : IDisposable
         var library = new Library(new List<Track> { oldTrack });
         var emptyPlaylist = new MainPlaylist(new List<Track>());
         var audio = new FakeAudioManager();
-        var vm = new PlaylistControlViewModel(audio, emptyPlaylist, library, new AppSettings());
+        var vm = new PlaylistControlViewModel(
+            audio, emptyPlaylist, library, new AppSettings(), new LibraryStore(NullLogger<LibraryStore>.Instance),
+            new AppSettingsStore(NullLogger<AppSettingsStore>.Instance), NullLogger<PlaylistControlViewModel>.Instance);
 
         vm.Play(oldTrack);
 
@@ -413,14 +416,15 @@ public class StoreRoundTripTests : IDisposable
         // on disk without waiting for the normal 500ms debounce (see
         // ColumnManager.ScheduleSave), which the process might not survive long
         // enough to complete.
-        var first = new ColumnManager(new AppSettings());
+        var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        var first = new ColumnManager(new AppSettings(), appSettingsStore);
         var title = first.Columns.Single(c => c.Id == "Title");
         title.Width = 321;
         first.Flush();
 
         // A brand-new ColumnManager reading the just-persisted settings.json
         // simulates the next app launch.
-        var second = new ColumnManager(new AppSettingsStore().Load());
+        var second = new ColumnManager(appSettingsStore.Load(), appSettingsStore);
         Assert.Equal(321, second.Columns.Single(c => c.Id == "Title").Width);
     }
 
