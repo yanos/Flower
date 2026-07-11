@@ -4,18 +4,26 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Flower.ViewModels"
              xmlns:controls="using:Flower.Controls"
-             xmlns:conv="clr-namespace:Flower.Converters"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
              x:Class="Flower.UserControls.CurrentlyPlayingControl"
              x:DataType="vm:CurrentlyPlayingControlViewModel">
 
-  <UserControl.Resources>
-    <conv:BoolToActiveColorConverter x:Key="BoolToActiveColorConverter"/>
-  </UserControl.Resources>
+  <UserControl.Styles>
+    <!-- Repeat/shuffle icon color, theme-aware (was a hardcoded Brushes.Black/
+         Brushes.Gray IValueConverter - invisible against a dark background).
+         Classes.active mirrors the same pattern MobileMainView.axaml already
+         uses for its own "currently playing" row highlight. -->
+    <Style Selector="materialIcons|MaterialIcon.transportToggle">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+    </Style>
+    <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+    </Style>
+  </UserControl.Styles>
 
-  <Border Background="#F5EFC4"
-          BorderBrush="#C8BB7A"
+  <Border Background="{DynamicResource AppElevatedSurfaceBrush}"
+          BorderBrush="{DynamicResource AppBorderBrush}"
           BorderThickness="1"
           CornerRadius="6"
           Padding="12,6,12,6">
@@ -72,7 +80,8 @@
               Click="Shuffle">
         <materialIcons:MaterialIcon Kind="Shuffle"
                                     Width="14" Height="14"
-                                    Foreground="{Binding IsShuffleEnabled, Converter={StaticResource BoolToActiveColorConverter}}"/>
+                                    Classes="transportToggle"
+                                    Classes.active="{Binding IsShuffleEnabled}"/>
       </Button>
 
       <TextBlock Grid.Column="1"
@@ -110,7 +119,8 @@
               Click="Repeat">
         <materialIcons:MaterialIcon Kind="Repeat"
                                     Width="14" Height="14"
-                                    Foreground="{Binding IsRepeatEnabled, Converter={StaticResource BoolToActiveColorConverter}}"/>
+                                    Classes="transportToggle"
+                                    Classes.active="{Binding IsRepeatEnabled}"/>
       </Button>
     </Grid>
   </Grid>

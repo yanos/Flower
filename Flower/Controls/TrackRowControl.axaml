@@ -26,9 +26,9 @@
     <!-- Selection background (column 1 only). Matches the sidebar's playlist
          drop-target highlight (see MainView.axaml's IsDropTarget Border) rather
          than the theme's own accent-tinted selection brush, which renders too
-         dark for this app's unchanged-on-selection black row text. -->
+         dark for this app's unchanged-on-selection row text. -->
     <Border Grid.Column="1"
-            Background="DodgerBlue"
+            Background="{DynamicResource AppAccentBrush}"
             Opacity="0.25"
             CornerRadius="4"
             IsVisible="{Binding IsSelected}"

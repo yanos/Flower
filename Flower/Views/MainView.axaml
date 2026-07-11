@@ -119,7 +119,7 @@
                 <Panel>
                   <!-- Highlighted while a dragged track hovers this playlist row -->
                   <Border IsVisible="{Binding IsDropTarget}"
-                          Background="DodgerBlue"
+                          Background="{DynamicResource AppAccentBrush}"
                           Opacity="0.25"
                           CornerRadius="4"
                           Margin="4,1"
@@ -148,8 +148,8 @@
                                MinHeight="0"
                                Padding="4,0"
                                MinWidth="80"
-                               SelectionBrush="#B4D7FF"
-                               SelectionForegroundBrush="Black"
+                               SelectionBrush="{DynamicResource AppAccentMutedBrush}"
+                               SelectionForegroundBrush="{DynamicResource AppTextPrimaryBrush}"
                                Loaded="RenameBox_Loaded"
                                KeyDown="RenameBox_KeyDown"
                                LostFocus="RenameBox_LostFocus"/>
@@ -179,8 +179,8 @@
                   IsVisible="False"
                   IsHitTestVisible="False"
                   ClipToBounds="True"
-                  Background="#401E90FF"
-                  BorderBrush="#901E90FF"
+                  Background="{DynamicResource AppAccentSoftBrush}"
+                  BorderBrush="{DynamicResource AppAccentBrush}"
                   BorderThickness="1"
                   CornerRadius="4"
                   VerticalAlignment="Top"

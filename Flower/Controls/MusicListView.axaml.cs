@@ -184,7 +184,7 @@ public partial class MusicListView : UserControl
     private readonly Border _dropIndicator = new()
     {
         Height              = 2,
-        Background          = Brushes.DodgerBlue,
+        Background          = GetAccentBrush(),
         IsVisible           = false,
         IsHitTestVisible    = false,
         HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -200,7 +200,7 @@ public partial class MusicListView : UserControl
     private readonly Border _columnDropIndicator = new()
     {
         Width               = 2,
-        Background          = Brushes.DodgerBlue,
+        Background          = GetAccentBrush(),
         IsVisible           = false,
         IsHitTestVisible    = false,
         HorizontalAlignment = HorizontalAlignment.Left,
@@ -509,6 +509,18 @@ public partial class MusicListView : UserControl
             res is IBrush brush)
             return brush;
         return Brushes.Gray;
+    }
+
+    // Field initializers (see _dropIndicator/_columnDropIndicator above) run
+    // once per MusicListView instance, well after app startup, so
+    // Application.Current is always available here - same one-time (not live-
+    // reactive to a theme change) resolution GetSeparatorBrush already uses.
+    private static IBrush GetAccentBrush()
+    {
+        if (Application.Current?.TryFindResource("AppAccentBrush", out var res) == true &&
+            res is IBrush brush)
+            return brush;
+        return Brushes.DodgerBlue;
     }
 
     private Control MakeHeaderCell(MusicColumnDefinition col, IBrush separatorBrush)

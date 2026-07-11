@@ -38,7 +38,7 @@
           <ColumnDefinition Width="{Binding Volume, Converter={StaticResource VolumeToStarWidthConverter}}"/>
           <ColumnDefinition Width="{Binding Volume, Converter={StaticResource VolumeToStarWidthConverter}, ConverterParameter=Remaining}"/>
         </Grid.ColumnDefinitions>
-        <Border Grid.Column="0" Background="DodgerBlue" Height="3" CornerRadius="1.5"/>
+        <Border Grid.Column="0" Background="{DynamicResource AppAccentBrush}" Height="3" CornerRadius="1.5"/>
         <Border Grid.Column="1" Background="#40808080" Height="3" CornerRadius="1.5"/>
       </Grid>
 
@@ -68,7 +68,7 @@
               <Thumb Width="10" Height="10">
                 <Thumb.Template>
                   <ControlTemplate TargetType="Thumb">
-                    <Ellipse Fill="DodgerBlue" Width="10" Height="10"/>
+                    <Ellipse Fill="{DynamicResource AppAccentBrush}" Width="10" Height="10"/>
                   </ControlTemplate>
                 </Thumb.Template>
               </Thumb>

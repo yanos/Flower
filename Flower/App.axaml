@@ -21,6 +21,21 @@
         </NativeMenu>
     </NativeMenu.Menu>
 
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Soft, muted app-wide palette - see Theme.axaml for the full
+                     rationale (default FluentTheme dark is near-black/near-white,
+                     which reads harshly; this is a Nord-inspired dark-grey +
+                     pastel-accent scheme instead, closer to a terminal color
+                     theme). Every control below reads these instead of a raw hex
+                     color, and instead of FluentTheme's own System* keys, so the
+                     whole app repaints from editing one file. -->
+                <ResourceInclude Source="avares://Flower/Theme.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
         <materialIcons:MaterialIconStyles />
@@ -30,6 +45,20 @@
              ListBoxItem - see TrackRowControl.axaml for its matching radius. -->
         <Style Selector="ListBoxItem">
             <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <!-- FluentTheme's own Window/TextBox default backgrounds aren't driven
+             by the System*Color palette Theme.axaml overrides (confirmed by
+             MainWindow and FilterControl's search box both still rendering
+             near-black under that override alone) - applied directly here
+             instead, app-wide in one place, rather than repeating a Background
+             setter on every dialog Window (Settings, Track Info, About,
+             Confirm, Playlist Conflict, Column Selector, Trusted Devices) and
+             every TextBox (filter box, sidebar rename box, Settings' inputs). -->
+        <Style Selector="Window">
+            <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}"/>
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
         </Style>
     </Application.Styles>
 </Application>
