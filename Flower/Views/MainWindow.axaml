@@ -13,11 +13,13 @@
         MinHeight="200">
   <NativeMenu.Menu>
     <NativeMenu>
-      <NativeMenuItem Header="Settings">
+      <!-- "Settings…" itself now lives in the app menu (App.axaml, the bold
+           "Flower" title dropdown) matching macOS convention - this menu keeps
+           just the maintenance/device actions that were never really
+           "settings" in that sense. -->
+      <NativeMenuItem Header="Library">
         <NativeMenuItem.Menu>
           <NativeMenu>
-            <NativeMenuItem Header="Settings…" Command="{Binding OpenSettingsCommand}"/>
-            <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Rebuild Database" Command="{Binding RebuildDatabaseCommand}"/>
             <NativeMenuItem Header="Open App Data Location" Command="{Binding OpenAppDataLocationCommand}"/>
             <NativeMenuItem Header="Trusted Devices…" Command="{Binding OpenTrustedDevicesCommand}"/>
