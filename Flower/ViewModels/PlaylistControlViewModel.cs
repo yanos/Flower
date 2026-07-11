@@ -5,7 +5,6 @@ using Avalonia.Threading;
 
 using Microsoft.Extensions.Logging;
 
-using Flower.Logging;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
@@ -14,7 +13,7 @@ namespace Flower.ViewModels
 {
     public class PlaylistControlViewModel : ViewModelBase
     {
-        private static readonly ILogger Logger = AppLogging.CreateLogger<PlaylistControlViewModel>();
+        private readonly ILogger<PlaylistControlViewModel> _logger;
 
         private Playlist _currentPlaylist;
         private Track? _currentlyPlayingTrack;
@@ -24,6 +23,8 @@ namespace Flower.ViewModels
         private readonly Random _random = new();
         private readonly Library _library;
         private readonly AppSettings _appSettings;
+        private readonly LibraryStore _libraryStore;
+        private readonly AppSettingsStore _appSettingsStore;
 
         private IAudioManager _audioManager { get; }
 
@@ -79,12 +80,18 @@ namespace Flower.ViewModels
             IAudioManager audioManager,
             MainPlaylist playlist,
             Library library,
-            AppSettings appSettings)
+            AppSettings appSettings,
+            LibraryStore libraryStore,
+            AppSettingsStore appSettingsStore,
+            ILogger<PlaylistControlViewModel> logger)
         {
             _audioManager = audioManager;
             _currentPlaylist = playlist;
             _library = library;
             _appSettings = appSettings;
+            _libraryStore = libraryStore;
+            _appSettingsStore = appSettingsStore;
+            _logger = logger;
             _isRepeatEnabled = appSettings.IsRepeatEnabled;
             _isShuffleEnabled = appSettings.IsShuffleEnabled;
 
@@ -109,7 +116,7 @@ namespace Flower.ViewModels
                 if (CurrentlyPlayingTrack != null)
                 {
                     var finishedTrack = CurrentlyPlayingTrack;
-                    Logger.LogDebug("EndReached: {Title} ({Path})", finishedTrack.Title, finishedTrack.Path);
+                    _logger.LogDebug("EndReached: {Title} ({Path})", finishedTrack.Title, finishedTrack.Path);
 
                     // finishedTrack can be a stale reference: every launch kicks off a
                     // background rescan (see App.axaml.cs) that replaces _library.Tracks
@@ -129,12 +136,12 @@ namespace Flower.ViewModels
                     // passing Tracks back into UpdateTracks as a "fresh scan"
                     // silently doubles every placeholder track.
                     _library.NotifyTrackChanged();
-                    await new LibraryStore().SaveAsync(_library.Tracks);
+                    await _libraryStore.SaveAsync(_library.Tracks);
 
                     var nextTrack = IsRepeatEnabled ? finishedTrack : GetNextTrack(finishedTrack);
                     if (nextTrack != null)
                     {
-                        Logger.LogDebug("Auto-advancing to {Title} (repeat={Repeat}, shuffle={Shuffle})", nextTrack.Title, IsRepeatEnabled, IsShuffleEnabled);
+                        _logger.LogDebug("Auto-advancing to {Title} (repeat={Repeat}, shuffle={Shuffle})", nextTrack.Title, IsRepeatEnabled, IsShuffleEnabled);
                         Dispatcher.UIThread.Post(() => Play(nextTrack));
                     }
                 }
@@ -150,14 +157,14 @@ namespace Flower.ViewModels
         {
             IsRepeatEnabled = !IsRepeatEnabled;
             _appSettings.IsRepeatEnabled = IsRepeatEnabled;
-            _ = new AppSettingsStore().SaveAsync(_appSettings);
+            _ = _appSettingsStore.SaveAsync(_appSettings);
         }
 
         public void ToggleShuffle()
         {
             IsShuffleEnabled = !IsShuffleEnabled;
             _appSettings.IsShuffleEnabled = IsShuffleEnabled;
-            _ = new AppSettingsStore().SaveAsync(_appSettings);
+            _ = _appSettingsStore.SaveAsync(_appSettings);
         }
 
         private Track? GetNextTrack(Track currentTrack)
@@ -187,7 +194,7 @@ namespace Flower.ViewModels
 
         public void Play(Track track)
         {
-            Logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, track.Path);
+            _logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, track.Path);
             SelectedTrack = track;
             CurrentlyPlayingTrack = track;
             _audioManager.Play(track);

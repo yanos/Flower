@@ -61,16 +61,18 @@ public partial class App : Application
 
         BindingPlugins.DataValidators.RemoveAt(0);
 
-        var libraryStore = new LibraryStore();
-        var appSettings = new AppSettingsStore().Load();
+        var libraryStore = new LibraryStore(AppLogging.CreateTypedLogger<LibraryStore>());
+        var appSettingsStore = new AppSettingsStore(AppLogging.CreateTypedLogger<AppSettingsStore>());
+        var appSettings = appSettingsStore.Load();
         var importer = Importer.PlatformMusicImporter.Current ?? new Importer.Importer();
 
         // Load cached library synchronously so the UI shows immediately with data
         var cachedTracks = libraryStore.Load();
-        var library = new Library(cachedTracks);
+        var library = new Library(cachedTracks, AppLogging.CreateTypedLogger<Library>());
         var mainPlaylist = new MainPlaylist(library.Tracks);
 
-        foreach (var playlist in new PlaylistStore().Load(library.Tracks))
+        var playlistStore = new PlaylistStore(AppLogging.CreateTypedLogger<PlaylistStore>());
+        foreach (var playlist in playlistStore.Load(library.Tracks))
             library.AddPlaylist(playlist);
 
         var networkDiscovery = new NetworkDiscoveryService(AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
@@ -84,8 +86,8 @@ public partial class App : Application
         var deviceIdentity = new DeviceIdentityStore().Load();
         var syncHttpServer = new SyncHttpServer(deviceIdentity, library, AppLogging.CreateTypedLogger<SyncHttpServer>());
         var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, AppLogging.CreateTypedLogger<PlaylistSyncService>());
-        var librarySyncService = new LibrarySyncService(library, deviceIdentity, AppLogging.CreateTypedLogger<LibrarySyncService>());
-        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity);
+        var librarySyncService = new LibrarySyncService(library, deviceIdentity, libraryStore, AppLogging.CreateTypedLogger<LibrarySyncService>());
+        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, libraryStore);
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
@@ -102,6 +104,9 @@ public partial class App : Application
                 .AddSingleton(playlistSyncService)
                 .AddSingleton(librarySyncService)
                 .AddSingleton(libraryDownloadService)
+                .AddSingleton(libraryStore)
+                .AddSingleton(appSettingsStore)
+                .AddSingleton(playlistStore)
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()

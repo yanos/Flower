@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 
 using Avalonia.Controls;
 
+using CommunityToolkit.Mvvm.DependencyInjection;
+
 using Flower.Converters;
 using Flower.Models;
 using Flower.Persistence;
@@ -20,6 +22,10 @@ public partial class TrackInfoWindow : Window
     // Only meaningful in single-track/navigable mode (see the two constructors below).
     private readonly IReadOnlyList<Track> _tracks = Array.Empty<Track>();
     private readonly Library _library;
+    // Resolved via the service locator (see MainWindow.axaml.cs for the same
+    // pattern) rather than threaded through both constructors below as an
+    // explicit parameter, same as every existing caller of them.
+    private readonly LibraryStore _libraryStore = Ioc.Default.GetService<LibraryStore>()!;
     private int _index;
 
     // The set of tracks being edited: exactly one in navigable mode (re-seeded
@@ -255,7 +261,7 @@ public partial class TrackInfoWindow : Window
         // Tracks back into UpdateTracks as a "fresh scan" silently doubles
         // every placeholder track.
         _library.NotifyTrackChanged();
-        await new LibraryStore().SaveAsync(_library.Tracks);
+        await _libraryStore.SaveAsync(_library.Tracks);
     }
 
     private static string? NullIfEmpty(string? s) =>

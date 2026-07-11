@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Flower.Importer;
+using Flower.Logging;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
@@ -30,7 +31,7 @@ if (fileMode)
 else
 {
     Console.Write("Loading library...");
-    var store = new LibraryStore();
+    var store = new LibraryStore(AppLogging.CreateTypedLogger<LibraryStore>());
     var tracks = await store.LoadAsync();
 
     if (tracks.Count == 0)

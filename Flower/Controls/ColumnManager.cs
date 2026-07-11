@@ -10,6 +10,7 @@ namespace Flower.Controls;
 public class ColumnManager
 {
     private readonly AppSettings _appSettings;
+    private readonly AppSettingsStore _appSettingsStore;
     private Task? _pendingSave;
 
     public List<MusicColumnDefinition> Columns { get; }
@@ -19,9 +20,10 @@ public class ColumnManager
     public IEnumerable<MusicColumnDefinition> VisibleColumns =>
         Columns.Where(c => c.IsVisible).OrderBy(c => c.Order);
 
-    public ColumnManager(AppSettings appSettings)
+    public ColumnManager(AppSettings appSettings, AppSettingsStore appSettingsStore)
     {
         _appSettings = appSettings;
+        _appSettingsStore = appSettingsStore;
         Columns = BuildDefaults();
 
         var saved = appSettings.ColumnStates;
@@ -104,7 +106,7 @@ public class ColumnManager
     {
         await Task.Delay(500);
         _appSettings.ColumnStates = BuildStates();
-        await new AppSettingsStore().SaveAsync(_appSettings);
+        await _appSettingsStore.SaveAsync(_appSettings);
     }
 
     // Synchronous, immediate counterpart to the debounced SaveAsync above - for
@@ -114,7 +116,7 @@ public class ColumnManager
     public void Flush()
     {
         _appSettings.ColumnStates = BuildStates();
-        new AppSettingsStore().Save(_appSettings);
+        _appSettingsStore.Save(_appSettings);
     }
 
     private List<ColumnState> BuildStates() =>

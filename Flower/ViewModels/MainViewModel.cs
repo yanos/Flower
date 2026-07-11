@@ -51,6 +51,9 @@ public partial class MainViewModel : ViewModelBase
     private LibrarySyncService? _librarySyncService;
     private LibraryDownloadService? _libraryDownloadService;
     private DeviceIdentity? _deviceIdentity;
+    private LibraryStore? _libraryStore;
+    private AppSettingsStore? _appSettingsStore;
+    private PlaylistStore? _playlistStore;
 
     // Fingerprints of devices already sync'd (or currently syncing) this app
     // session, so DeviceDiscovered re-firing for the same peer (e.g. once with the
@@ -213,7 +216,7 @@ public partial class MainViewModel : ViewModelBase
             if (_appSettings.SyncPlayCountFromITunes == value)
                 return;
             _appSettings.SyncPlayCountFromITunes = value;
-            _ = new AppSettingsStore().SaveAsync(_appSettings);
+            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
 
             // Apply right away rather than only at the next launch, so turning
             // this on gives visible feedback immediately instead of looking
@@ -232,7 +235,7 @@ public partial class MainViewModel : ViewModelBase
     public async Task SyncITunesPlayCountAsync()
     {
         using var _ = BeginBusy("Syncing play counts from Music.app…");
-        await Task.Run(() => ITunesPlayCountImporter.Apply(Library.Tracks));
+        await Task.Run(() => ITunesPlayCountImporter.Apply(Library.Tracks, _logger));
         // Same list, same Track instances mutated in place - just need
         // TracksUpdated to fire so the Plays column reflects the new
         // ImportedPlayCount values immediately. NotifyTrackChanged (not
@@ -242,7 +245,7 @@ public partial class MainViewModel : ViewModelBase
         // track, since UpdateTracks' own carry-forward step re-adds them a
         // second time on top of their copy already sitting in the argument.
         Library.NotifyTrackChanged();
-        await new LibraryStore().SaveAsync(Library.Tracks);
+        await (_libraryStore?.SaveAsync(Library.Tracks) ?? Task.CompletedTask);
     }
 
     // ── Selection ─────────────────────────────────────────────────────────────
@@ -367,7 +370,7 @@ public partial class MainViewModel : ViewModelBase
             OnPropertyChanged();
             _appSettings ??= new AppSettings();
             _appSettings.SortArtistAlbumsByYear = value;
-            _ = new AppSettingsStore().SaveAsync(_appSettings);
+            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
             if (SortColumn == "Artist")
                 ScheduleFilter();
         }
@@ -499,6 +502,9 @@ public partial class MainViewModel : ViewModelBase
         LibraryDownloadService libraryDownloadService,
         SyncHttpServer syncHttpServer,
         DeviceIdentity deviceIdentity,
+        LibraryStore libraryStore,
+        AppSettingsStore appSettingsStore,
+        PlaylistStore playlistStore,
         ILogger<MainViewModel> logger)
     {
         Library                = library;
@@ -510,6 +516,9 @@ public partial class MainViewModel : ViewModelBase
         _librarySyncService    = librarySyncService;
         _libraryDownloadService = libraryDownloadService;
         _deviceIdentity        = deviceIdentity;
+        _libraryStore          = libraryStore;
+        _appSettingsStore      = appSettingsStore;
+        _playlistStore         = playlistStore;
         _logger                = logger;
 
         if (appSettings.SortColumn is { } savedSortColumn)
@@ -674,7 +683,7 @@ public partial class MainViewModel : ViewModelBase
         _appSettings ??= new AppSettings();
         _appSettings.SortColumn    = _sortColumn;
         _appSettings.SortAscending = _sortAscending;
-        _ = new AppSettingsStore().SaveAsync(_appSettings);
+        _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
     }
 
     // ── Playing indicators ────────────────────────────────────────────────────
@@ -938,7 +947,7 @@ public partial class MainViewModel : ViewModelBase
 
         SelectedSidebarItem = sidebarItem;
 
-        await new PlaylistStore().SaveAsync(Library.Playlists);
+        await (_playlistStore?.SaveAsync(Library.Playlists) ?? Task.CompletedTask);
         ScheduleContentSync();
     }
 
@@ -964,7 +973,7 @@ public partial class MainViewModel : ViewModelBase
         // falling back to Songs if the deleted playlist was selected.
         RefreshPlaylistSidebarItems();
 
-        await new PlaylistStore().SaveAsync(Library.Playlists);
+        await (_playlistStore?.SaveAsync(Library.Playlists) ?? Task.CompletedTask);
         ScheduleContentSync();
     }
 
@@ -989,7 +998,7 @@ public partial class MainViewModel : ViewModelBase
         if (_selectedSidebarItem?.Playlist == playlist)
             ScheduleFilter();
 
-        await new PlaylistStore().SaveAsync(Library.Playlists);
+        await (_playlistStore?.SaveAsync(Library.Playlists) ?? Task.CompletedTask);
         ScheduleContentSync();
     }
 
@@ -1004,7 +1013,7 @@ public partial class MainViewModel : ViewModelBase
         if (_selectedSidebarItem?.Playlist == playlist)
             ScheduleFilter();
 
-        await new PlaylistStore().SaveAsync(Library.Playlists);
+        await (_playlistStore?.SaveAsync(Library.Playlists) ?? Task.CompletedTask);
         ScheduleContentSync();
     }
 
@@ -1096,14 +1105,14 @@ public partial class MainViewModel : ViewModelBase
 
     private async Task RebuildDatabaseAsync()
     {
-        if (_importer == null || _mainPlaylist == null)
+        if (_importer == null || _mainPlaylist == null || _libraryStore == null)
             return;
         using var _ = BeginBusy("Rebuilding library…");
         var libraryPaths = _appSettings?.LibraryPaths;
         var freshTracks = await _importer.ImportAsync(libraryPaths);
         _mainPlaylist.ReplaceAll(freshTracks);
         Library.UpdateTracks(freshTracks);
-        await new LibraryStore().SaveAsync(freshTracks);
+        await _libraryStore.SaveAsync(freshTracks);
     }
 
     // Persists the path list only - deliberately doesn't also rescan, so
@@ -1114,7 +1123,7 @@ public partial class MainViewModel : ViewModelBase
     {
         _appSettings ??= new AppSettings();
         _appSettings.LibraryPaths = paths;
-        await new AppSettingsStore().SaveAsync(_appSettings);
+        await (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
     }
 
     // Mobile has no library-paths UI to rescan as a side effect of (desktop's

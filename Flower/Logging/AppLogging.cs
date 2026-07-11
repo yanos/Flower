@@ -61,16 +61,18 @@ namespace Flower.Logging
             return path;
         }
 
-        // For classes constructed ad-hoc (new LibraryStore(), etc.) rather than
-        // through the DI container - DI-resolved classes can just take
-        // ILogger<T> as a constructor parameter instead once AddLogging is wired
-        // up (see App.axaml.cs), and will get the same underlying factory.
+        // For classes constructed ad-hoc (new PlaylistStore(), etc.) rather than
+        // through the DI container - DI-resolved classes, and ad-hoc-constructed
+        // ones with a real constructor to put an ILogger<T> parameter on (see
+        // LibraryStore, CreateTypedLogger below), can just take ILogger<T>
+        // directly instead once AddLogging is wired up (see App.axaml.cs), and
+        // will get the same underlying factory either way.
         //
         // Falls back to a no-op logger if called before Initialize() rather than
-        // throwing: many of these classes (Library, PlaylistControlViewModel,
-        // the *Store classes) have a static logger field, evaluated the first
-        // time the class is touched - in the real app that's always after
-        // Initialize() (the first line of App.OnFrameworkInitializationCompleted),
+        // throwing: some of these classes (Library, PlaylistControlViewModel,
+        // PlaylistStore/AppSettingsStore) have a static logger field, evaluated
+        // the first time the class is touched - in the real app that's always
+        // after Initialize() (the first line of App.OnFrameworkInitializationCompleted),
         // but unit tests construct these classes directly without ever running
         // app startup, so silently discarding log output there is the right
         // behavior rather than crashing every test that touches a logged class.

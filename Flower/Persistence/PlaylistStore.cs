@@ -6,15 +6,26 @@ using System.Text.Json;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
-using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.Persistence
 {
     public class PlaylistStore
     {
-        private static readonly ILogger Logger = AppLogging.CreateLogger<PlaylistStore>();
+        private readonly ILogger<PlaylistStore> _logger;
+
+        // Convenience overload for the many call sites (mostly tests) that don't
+        // care about log output - production code always goes through the other
+        // constructor instead (see App.axaml.cs), which gets a real, properly
+        // DI-configured ILogger<PlaylistStore>.
+        public PlaylistStore() : this(NullLogger<PlaylistStore>.Instance) { }
+
+        public PlaylistStore(ILogger<PlaylistStore> logger)
+        {
+            _logger = logger;
+        }
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "playlists.json");
 
@@ -52,7 +63,7 @@ namespace Flower.Persistence
             }
             catch (Exception ex)
             {
-                Logger.LogWarning(ex, "Failed to load playlists from {Path}; starting with no playlists", path);
+                _logger.LogWarning(ex, "Failed to load playlists from {Path}; starting with no playlists", path);
                 return new List<Playlist>();
             }
         }

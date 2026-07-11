@@ -3,14 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 
 using Microsoft.Extensions.Logging;
-
-using Flower.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Flower.Models
 {
     public class Library
     {
-        private static readonly ILogger Logger = AppLogging.CreateLogger<Library>();
+        private readonly ILogger<Library> _logger;
 
         // Guards every read-modify-write of Tracks. EndReached fires on a LibVLC
         // callback thread (see CLAUDE.md's Binding Notes) while the startup/rescan
@@ -32,9 +31,16 @@ namespace Flower.Models
         // relying on this event, so this only needs to cover the sync path.
         public event EventHandler? PlaylistsUpdated;
 
-        public Library(List<Track> tracks)
+        // Convenience overload for the many call sites (mostly tests) that don't
+        // care about log output - production code always goes through the other
+        // constructor instead (see App.axaml.cs), which gets a real, properly
+        // DI-configured ILogger<Library>.
+        public Library(List<Track> tracks) : this(tracks, NullLogger<Library>.Instance) { }
+
+        public Library(List<Track> tracks, ILogger<Library> logger)
         {
             Tracks = new List<Track>(tracks);
+            _logger = logger;
         }
 
         // A rescan (see Importer) produces brand-new Track instances read straight
@@ -158,7 +164,7 @@ namespace Flower.Models
                       ?? playedTrack
                     : playedTrack;
                 current.PlayCount++;
-                Logger.LogDebug("PlayCount incremented to {NewCount} for {Title} ({Path})", current.PlayCount, current.Title, current.Path);
+                _logger.LogDebug("PlayCount incremented to {NewCount} for {Title} ({Path})", current.PlayCount, current.Title, current.Path);
                 return current;
             }
         }
