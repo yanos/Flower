@@ -1,12 +1,10 @@
 make an issue link
 repo link
-global exception handler
 readme
 improve cli
 icon
 album mode
 artist / playlist icon instead of album art
-fire sync event when data on disk change.
 more logging
 download songs on phone => not permanent?
 esc to close settings

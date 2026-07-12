@@ -63,23 +63,25 @@ onto Apple's and Google's completeness/quality review criteria.
   exactly what the `VideoLAN.LibVLC.iOS`/`LibVLCSharp` packages Flower
   already uses provide. Practical requirement: ship the LGPL license text +
   a notice that source is available (VideoLAN's own upstream repo satisfies
-  "source available"), which is very likely why `LICENSE`/`NOTICE` already
-  exist untracked in this repo from earlier work — finally committing those
-  belongs in this plan, not left as a loose end.
+  "source available"). **Done**: `LICENSE` (Apache 2.0, Flower's own) and
+  `NOTICE` (per-dependency third-party license/source breakdown, correctly
+  naming LibVLCSharp/VideoLAN.LibVLC.* under LGPL-2.1-or-later with source
+  links, plus TagLib# and the MIT-licensed set) are committed at the repo
+  root.
 - **Both stores require a privacy policy URL**, even for an app that
   collects no data and phones home to nowhere (Flower's only "network"
   activity today is local mDNS sync between a user's own devices — see
   `SYNC-PLAN.md` — and the file logging added this session never leaves the
   device). A one-page static privacy policy is enough; GitHub Pages off this
   same repo is a natural, zero-extra-infrastructure host for it.
-- **Completeness risk carried over from `MOBILE-PLAN.md`'s open items:**
-  Apple's App Review Guideline 2.1 ("Incomplete App Information"/apps that
-  feel unfinished) is a common real rejection reason — an empty library
-  currently renders a blank white screen (`MOBILE-PLAN.md`), and there's no
-  way to see/retry a denied Android permission or trigger a rescan from
-  mobile at all. These read as "broken," not "minimal," to a reviewer
-  clicking around for two minutes, and should be closed before the first
-  submission attempt, not treated as backlog.
+- **Completeness risk carried over from `MOBILE-PLAN.md`'s open items — now
+  resolved.** Apple's App Review Guideline 2.1 ("Incomplete App
+  Information"/apps that feel unfinished) is a common real rejection reason;
+  the specific gaps this plan flagged (blank empty-library screen, no
+  permission-retry/rescan path, and — beyond what was originally
+  review-blocking — the now-playing sheet/playlist management/search/track-info
+  page too) are all built now. See `MOBILE-PLAN.md`'s Phase 3 status and
+  Phase 3 below.
 
 ---
 
@@ -95,9 +97,9 @@ onto Apple's and Google's completeness/quality review criteria.
    not new project config.
 3. Android: let Play App Signing manage the app signing key (Google's
    recommended default) and keep your own upload key separately.
-4. Commit the existing untracked `LICENSE`/`NOTICE` files (LGPL notice for
-   LibVLC) — verify their content actually names LibVLC/VideoLAN and points
-   at VideoLAN's source, since that's the specific compliance need.
+4. ~~Commit the existing untracked `LICENSE`/`NOTICE` files~~ — **done**,
+   both committed at the repo root and confirmed to correctly name
+   LibVLC/VideoLAN with source links (see Research summary above).
 5. Write and host a one-page privacy policy (GitHub Pages off this repo is
    the natural host) — content is simple given Flower collects nothing that
    leaves the device today.
@@ -147,23 +149,14 @@ rejection, not a warning — do not treat as optional.
 
 ---
 
-## Phase 3: Close the completeness gaps carried over from `MOBILE-PLAN.md`
+## Phase 3: Close the completeness gaps carried over from `MOBILE-PLAN.md` — done
 
-**Plan:** promote these specific items from `MOBILE-PLAN.md`'s "What's left
-in Phase 3" to release blockers, since they're what a reviewer (or a real
-user in the first five minutes) hits immediately:
-1. Empty-library state: replace the blank white screen with a real "add
-   music" empty state.
-2. Some way to see/retry a denied Android media permission from the mobile
-   UI, and trigger a rescan — right now there's no recovery path if the
-   permission prompt is dismissed once.
-3. Everything else in that list (now-playing sheet, playlist management,
-   search/filter, track info as a page) is real-usability work, not
-   necessarily review-blocking, but should be triaged against how minimal a
-   v1 the first submission is allowed to be.
-
-**Effort:** Medium. **Risk:** Low technically — this is finishing already-scoped
-work, not new design.
+All of it: empty-library state (a real "add music" empty state, not a blank
+screen), a way to see/retry a denied Android media permission and trigger a
+rescan from the mobile UI, and the rest of `MOBILE-PLAN.md`'s former
+"What's left in Phase 3" list (now-playing sheet, playlist management,
+search/filter, track info as a page) — see `MOBILE-PLAN.md`'s Phase 3 status
+for what shipped. Nothing left in this phase.
 
 ---
 
@@ -219,8 +212,8 @@ wall-clock time that doesn't compress no matter how fast the code is ready.
    end-to-end until these land.
 3. **Phase 2** (iOS privacy manifest) — small, do right after Phase 1's iOS
    SDK bump while already in that project.
-4. **Phase 3** (completeness gaps) — needed before either store submission
-   looks credible.
+4. ~~**Phase 3** (completeness gaps) — needed before either store submission
+   looks credible.~~ — **done**, nothing left to sequence here.
 5. **Phase 4** (Android background playback) — can run in parallel with
    Phase 3; different codepath.
 6. **Kick off Android's 12-tester/14-day closed test as soon as Phases

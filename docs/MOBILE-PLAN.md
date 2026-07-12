@@ -23,11 +23,29 @@ platform-specific.
   permission flow wired through `MainActivity`; persistence paths
   (`AppSettingsStore`/`LibraryStore`/`PlaylistStore`/`ColumnVisibilityStore`)
   resolve correctly on both via a shared `AppDataDirectory` resolver.
-- **Phase 3** (mobile UI) — first pass done: `Flower/Views/Mobile/MobileMainView`
-  + `Flower/ViewModels/Mobile/MobileMainViewModel`, wired into
-  `App.axaml.cs`'s single-view branch. Tab/bottom-nav (Songs/Albums/Artists/
-  Playlists), touch-sized rows, mini-player bar. Verified at runtime on both
-  an Android emulator and iOS simulator.
+- **Phase 3** (mobile UI) — **done**, including everything originally listed
+  under "What's left" below (now folded into this status block; see git
+  history for that section if the original wording is ever needed).
+  `Flower/Views/Mobile/MobileMainView` + `Flower/ViewModels/Mobile/MobileMainViewModel`,
+  wired into `App.axaml.cs`'s single-view branch. Tab/bottom-nav (Recently
+  Added/Songs/Albums/Artists/Playlists), touch-sized rows, mini-player bar,
+  plus: a full-screen now-playing sheet (`NowPlayingView`, seek slider +
+  large art); Track Info as a sheet (`TrackInfoView`, the mobile counterpart
+  to desktop's `TrackInfoWindow`); touch drag-to-reorder for playlist tracks
+  (`MobileMainView.axaml.cs`'s `DragHandle_Pointer*` handlers); search/filter
+  (a toggleable filter box bound to the same `MainViewModel.FilterText` desktop
+  uses); playlist management (`AddToPlaylistView`, `TrackActionsView`'s "..."
+  row menu, create/add-to-playlist commands); mobile Settings access
+  (`SettingsView` — rescan, Android permission retry via
+  `OpenAppSettingsCommand`, and by now also Appearance/Device Name, tabbed the
+  same way desktop's Settings window is — see `SettingsWindow.axaml`); and
+  empty-state messaging (`IsContentEmpty`/`EmptyStateTitle`/`EmptyStateMessage`)
+  instead of a blank screen. Verified at runtime on an Android emulator and
+  both the iOS simulator and a real iPhone.
+- Artist drill-down was reworked mid-session too: tapping an artist now shows
+  that artist's own album-tile grid (reusing the Albums tab's presentation)
+  before the flat song list, instead of dumping every song by that artist
+  into one list straight away.
 
 **Validated against real music.** 5 albums (33 tracks) from different
 artists copied onto both an Android emulator (`adb push` to `/sdcard/Music`
@@ -47,19 +65,16 @@ The 5 albums used for this (pulled from a real Apple Music library, not
 committed) are placeholders — swap for royalty-free tracks once picked, to
 commit a small fixture set for repeatable testing.
 
-## What's left in Phase 3
+## What's left
 
-- **Full-screen now-playing sheet** — tapping the mini-player does nothing
-  beyond play/pause right now; no expanded view with seek slider/larger art.
-- **Track Info as a page/sheet** — `TrackInfoWindow` is still a desktop-only
-  `Window`; no way to view track details on mobile.
-- **Touch-aware drag-to-reorder for playlists** — the desktop mouse-drag-
-  threshold model isn't touch-friendly and isn't implemented on mobile.
-- **Search/filter UI** — `MainViewModel.FilterText` exists but nothing in
-  `MobileMainView` exposes it.
-- **Playlist management** — no way to create a playlist or add a track to
-  one from mobile (desktop does this via right-click context menus).
-- **Settings access** — no way to see/retry the Android MediaStore
-  permission if denied, or trigger a rescan, from mobile.
-- **Empty-state messaging** — an empty library currently just renders a
-  blank white screen.
+Phase 3 itself is done in full (see "## Status" above). What's still open
+for mobile overall:
+- Real-device verification of album art rendering on Android (confirmed
+  working on iOS simulator/device and Android emulator; Android album art on
+  a physical device is untested — see "Not yet tested" note above).
+- Swapping the placeholder 5-album test set (pulled from a real Apple Music
+  library, not committed) for a small royalty-free fixture set that can
+  actually be committed for repeatable testing.
+- Store-submission-level polish (permission-retry UX beyond the basic
+  Settings entry point, background playback on Android) is tracked in
+  `STORE-DEPLOYMENT-PLAN.md`, not here.
