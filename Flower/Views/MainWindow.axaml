@@ -16,13 +16,33 @@
       <!-- "Settings…" itself now lives in the app menu (App.axaml, the bold
            "Flower" title dropdown) matching macOS convention - this menu keeps
            just the maintenance/device actions that were never really
-           "settings" in that sense. -->
+           "settings" in that sense. Open App Data Location moved into the
+           Settings window itself (see SettingsWindow.axaml) - it is squarely
+           a "where does my data live" settings-adjacent action, not really a
+           library-maintenance one like the two left here. -->
       <NativeMenuItem Header="Library">
         <NativeMenuItem.Menu>
           <NativeMenu>
             <NativeMenuItem Header="Rebuild Database" Command="{Binding RebuildDatabaseCommand}"/>
-            <NativeMenuItem Header="Open App Data Location" Command="{Binding OpenAppDataLocationCommand}"/>
             <NativeMenuItem Header="Trusted Devices…" Command="{Binding OpenTrustedDevicesCommand}"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
+      <!-- Playback transport, mirroring PlaylistControls' own three buttons
+           (prev/play-pause/next - see UserControls/PlaylistControls.axaml) but
+           reachable without the mouse. No Gesture on any of these: unlike
+           Cmd+comma (App.axaml's Settings item), Space is already the
+           play/pause shortcut (tunneled specifically to the track list, see
+           MainView.axaml.cs) and giving a native menu item that same key
+           equivalent would swallow every literal space keystroke app-wide,
+           including in the filter box and every other text field, not just
+           when a Space keystroke was actually meant as "play/pause". -->
+      <NativeMenuItem Header="Controls">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Play/Pause" Command="{Binding PlayOrPauseCommand}"/>
+            <NativeMenuItem Header="Next Track" Command="{Binding NextTrackCommand}"/>
+            <NativeMenuItem Header="Previous Track" Command="{Binding PreviousTrackCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
