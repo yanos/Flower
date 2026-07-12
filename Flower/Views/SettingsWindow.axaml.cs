@@ -10,6 +10,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
 using Flower.Importer;
+using Flower.Persistence;
 using Flower.Services;
 using Flower.ViewModels;
 
@@ -39,6 +40,12 @@ public partial class SettingsWindow : Window
         DeviceAliasTextBox.Text = viewModel.DeviceAlias;
         SyncPlayCountCheckBox.IsChecked = viewModel.SyncPlayCountFromITunes;
         ITunesLibraryPathText.Text = DescribeITunesLibrarySource();
+        ThemeComboBox.SelectedIndex = viewModel.ThemePreference switch
+        {
+            AppThemePreference.Light => 1,
+            AppThemePreference.Dark => 2,
+            _ => 0,
+        };
         NativeMenuHelper.InheritFromMainWindow(this);
     }
 
@@ -115,6 +122,17 @@ public partial class SettingsWindow : Window
 
     private void SyncPlayCountCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
         _viewModel.SyncPlayCountFromITunes = SyncPlayCountCheckBox.IsChecked ?? false;
+
+    // Fires once during the constructor's own initial SelectedIndex set too -
+    // harmless, since MainViewModel.ThemePreference's setter already no-ops
+    // when the value hasn't actually changed.
+    private void ThemeComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e) =>
+        _viewModel.ThemePreference = ThemeComboBox.SelectedIndex switch
+        {
+            1 => AppThemePreference.Light,
+            2 => AppThemePreference.Dark,
+            _ => AppThemePreference.System,
+        };
 
     // Applied on LostFocus (tabbing/clicking away), not per-keystroke - matches
     // the checkbox above's apply-immediately-on-change behavior without writing

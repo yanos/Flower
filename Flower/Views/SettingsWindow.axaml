@@ -4,10 +4,10 @@
         xmlns:views="clr-namespace:Flower.Views"
         x:Class="Flower.Views.SettingsWindow"
         Title="Settings"
-        Width="480" Height="512"
+        Width="480" Height="572"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
-  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="16">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="16">
     <Grid Grid.Row="0" ColumnDefinitions="Auto,*">
       <TextBlock Grid.Column="0" Text="Device Name" VerticalAlignment="Center" Margin="0,0,10,0"/>
       <TextBox Grid.Column="1" x:Name="DeviceAliasTextBox" LostFocus="DeviceAliasTextBox_LostFocus"/>
@@ -33,11 +33,25 @@
                TextTrimming="CharacterEllipsis"/>
 
     <TextBlock Grid.Row="4"
+               Text="Appearance"
+               FontWeight="SemiBold"
+               Margin="0,16,0,8"/>
+
+    <ComboBox Grid.Row="5"
+              x:Name="ThemeComboBox"
+              HorizontalAlignment="Stretch"
+              SelectionChanged="ThemeComboBox_SelectionChanged">
+      <ComboBoxItem Content="Follow System"/>
+      <ComboBoxItem Content="Light"/>
+      <ComboBoxItem Content="Dark"/>
+    </ComboBox>
+
+    <TextBlock Grid.Row="6"
                Text="Library Folders"
                FontWeight="SemiBold"
                Margin="0,16,0,8"/>
 
-    <Border Grid.Row="5"
+    <Border Grid.Row="7"
             BorderThickness="1"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
       <ListBox x:Name="PathsList">
@@ -67,7 +81,7 @@
       </ListBox>
     </Border>
 
-    <StackPanel Grid.Row="6"
+    <StackPanel Grid.Row="8"
                 Orientation="Horizontal"
                 Margin="0,12,0,0"
                 HorizontalAlignment="Left"
@@ -76,7 +90,7 @@
       <Button x:Name="RemoveButton" Content="Remove Selected" Click="RemoveButton_Click"/>
     </StackPanel>
 
-    <StackPanel Grid.Row="7"
+    <StackPanel Grid.Row="9"
                 Orientation="Horizontal"
                 Margin="0,12,0,0"
                 HorizontalAlignment="Right"

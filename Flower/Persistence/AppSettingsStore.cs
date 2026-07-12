@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Flower.Persistence
 {
+    // Settings > Appearance - see Flower.Services.AppTheme for how this
+    // translates into Avalonia's own ThemeVariant.
+    public enum AppThemePreference
+    {
+        System,
+        Light,
+        Dark,
+    }
+
     public class AppSettings
     {
         public List<string> LibraryPaths { get; set; } = new();
@@ -42,6 +52,11 @@ namespace Flower.Persistence
         // ITunesPlayCountImporter and Track.ImportedPlayCount. On by default;
         // it's a harmless no-op when no such export exists on disk.
         public bool SyncPlayCountFromITunes { get; set; } = true;
+
+        // Follows the OS light/dark setting by default; Light/Dark force that
+        // variant regardless of the OS - see Settings' Appearance picker and
+        // Flower.Services.AppTheme.
+        public AppThemePreference ThemePreference { get; set; } = AppThemePreference.System;
     }
 
     public class ColumnState
@@ -69,7 +84,13 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "settings.json");
 
-        private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
+        // Converters: ThemePreference round-trips as "System"/"Light"/"Dark" in
+        // settings.json rather than an opaque integer.
+        private static readonly JsonSerializerOptions Options = new()
+        {
+            WriteIndented = true,
+            Converters = { new JsonStringEnumConverter() },
+        };
 
         public AppSettings Load()
         {

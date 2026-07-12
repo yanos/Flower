@@ -226,6 +226,24 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    // Settings' Appearance picker (Follow System / Light / Dark) - see
+    // Flower.Services.AppTheme for how this becomes an actual Avalonia
+    // ThemeVariant. Same apply-immediately, persist-immediately pattern as
+    // SyncPlayCountFromITunes above.
+    public AppThemePreference ThemePreference
+    {
+        get => _appSettings?.ThemePreference ?? AppThemePreference.System;
+        set
+        {
+            _appSettings ??= new AppSettings();
+            if (_appSettings.ThemePreference == value)
+                return;
+            _appSettings.ThemePreference = value;
+            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+            AppTheme.Apply(value);
+        }
+    }
+
     // Exports a fresh XML snapshot from Music.app (via AppleScript - see
     // ITunesPlayCountImporter) and applies its play counts to
     // Track.ImportedPlayCount. Shared by the SyncPlayCountFromITunes setter

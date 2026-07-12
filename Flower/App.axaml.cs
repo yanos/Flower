@@ -71,6 +71,10 @@ public partial class App : Application
         var libraryStore = new LibraryStore(AppLogging.CreateTypedLogger<LibraryStore>());
         var appSettingsStore = new AppSettingsStore(AppLogging.CreateTypedLogger<AppSettingsStore>());
         var appSettings = appSettingsStore.Load();
+        // Before any window is created, so the very first frame already
+        // renders in the saved variant instead of flashing OS-default then
+        // switching.
+        AppTheme.Apply(appSettings.ThemePreference);
         var importer = Importer.PlatformMusicImporter.Current ?? new Importer.Importer();
 
         // Load cached library synchronously so the UI shows immediately with data
