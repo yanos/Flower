@@ -43,6 +43,15 @@
             <NativeMenuItem Header="Play/Pause" Command="{Binding PlayOrPauseCommand}"/>
             <NativeMenuItem Header="Next Track" Command="{Binding NextTrackCommand}"/>
             <NativeMenuItem Header="Previous Track" Command="{Binding PreviousTrackCommand}"/>
+            <NativeMenuItemSeparator/>
+            <!-- IsChecked is one-way (both properties are getter-only
+                 passthroughs to PlaylistControlViewModel - see MainViewModel) -
+                 Command flips the underlying state, which flows back through
+                 PropertyChanged forwarding to update the checkmark, the same
+                 way CurrentlyPlayingControl's own repeat/shuffle icons and
+                 this menu never disagree regardless of which one was used. -->
+            <NativeMenuItem Header="Repeat" ToggleType="CheckBox" IsChecked="{Binding IsRepeatEnabled}" Command="{Binding ToggleRepeatCommand}"/>
+            <NativeMenuItem Header="Shuffle" ToggleType="CheckBox" IsChecked="{Binding IsShuffleEnabled}" Command="{Binding ToggleShuffleCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>

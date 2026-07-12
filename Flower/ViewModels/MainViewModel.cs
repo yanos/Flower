@@ -165,6 +165,8 @@ public partial class MainViewModel : ViewModelBase
     public ICommand? PlayOrPauseCommand          { get; private set; }
     public ICommand? NextTrackCommand            { get; private set; }
     public ICommand? PreviousTrackCommand        { get; private set; }
+    public ICommand? ToggleRepeatCommand         { get; private set; }
+    public ICommand? ToggleShuffleCommand        { get; private set; }
 
     // Concrete-typed twins of RenamePlaylistCommand/DeletePlaylistCommand, kept
     // alongside the public ICommand? properties above (same pattern as the rest
@@ -285,6 +287,14 @@ public partial class MainViewModel : ViewModelBase
     }
 
     public Track? CurrentlyPlayingTrack => _playlistControlViewModel.CurrentlyPlayingTrack;
+
+    // Backing the Controls menu's checkable Repeat/Shuffle items (MainWindow.axaml)
+    // - same read-only passthrough + PropertyChanged-forwarding pattern
+    // CurrentlyPlayingControlViewModel already uses for its own repeat/shuffle
+    // icon buttons, so the menu's checkmarks and those icons never disagree
+    // regardless of which one was used to toggle it.
+    public bool IsRepeatEnabled => _playlistControlViewModel.IsRepeatEnabled;
+    public bool IsShuffleEnabled => _playlistControlViewModel.IsShuffleEnabled;
 
     // ── Rows (flat list for MusicListView) ────────────────────────────────────
 
@@ -566,6 +576,8 @@ public partial class MainViewModel : ViewModelBase
         PlayOrPauseCommand          = new RelayCommand(PlayOrPauseFromCurrentView);
         NextTrackCommand            = new RelayCommand(_playlistControlViewModel.Next);
         PreviousTrackCommand        = new RelayCommand(_playlistControlViewModel.Previous);
+        ToggleRepeatCommand         = new RelayCommand(_playlistControlViewModel.ToggleRepeat);
+        ToggleShuffleCommand        = new RelayCommand(_playlistControlViewModel.ToggleShuffle);
 
         _renamePlaylistCommand = new RelayCommand(
             () => RenamePlaylistRequested?.Invoke(this, EventArgs.Empty),
@@ -646,6 +658,10 @@ public partial class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(CurrentlyPlayingTrack));
                 UpdatePlayingIndicators();
             }
+            if (e.PropertyName == nameof(PlaylistControlViewModel.IsRepeatEnabled))
+                OnPropertyChanged(nameof(IsRepeatEnabled));
+            if (e.PropertyName == nameof(PlaylistControlViewModel.IsShuffleEnabled))
+                OnPropertyChanged(nameof(IsShuffleEnabled));
         };
     }
 
