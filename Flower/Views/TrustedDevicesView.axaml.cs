@@ -8,6 +8,8 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
+using CommunityToolkit.Mvvm.DependencyInjection;
+
 using Flower.Persistence;
 using Flower.Services;
 using Flower.ViewModels;
@@ -42,21 +44,20 @@ public sealed class TrustedPeerRow : ViewModelBase
 
 // Lists peers approved via the trust gate (see SyncHttpServer.AuthorizeAsync,
 // SYNC-PLAN.md Phase 3) and lets the user revoke one - the "forget this
-// device" action the plan calls for. Opened from the app menu
-// (MainWindow.axaml), alongside Rebuild Database/Open App Data Location -
-// infrequent/administrative actions kept out of the already-decluttered
-// Settings dialog rather than added back into it.
-public partial class TrustedDevicesWindow : Window
+// device" action the plan calls for. Embedded directly in Settings' Devices
+// tab (SettingsWindow.axaml) rather than its own separate window - resolving
+// MainViewModel itself via the service locator (see PlaylistControls.axaml.cs
+// for the same pattern) means SettingsWindow doesn't need to wire anything up
+// to host it, just place the control.
+public partial class TrustedDevicesView : UserControl
 {
     private readonly TrustedPeerStore _store = new();
-    private readonly MainViewModel _mainViewModel;
+    private readonly MainViewModel _mainViewModel = Ioc.Default.GetService<MainViewModel>()!;
 
-    public TrustedDevicesWindow(MainViewModel mainViewModel)
+    public TrustedDevicesView()
     {
         InitializeComponent();
-        _mainViewModel = mainViewModel;
         Refresh();
-        NativeMenuHelper.InheritFromMainWindow(this);
     }
 
     private void Refresh()
@@ -118,12 +119,13 @@ public partial class TrustedDevicesWindow : Window
         _ = CommitAliasEdit(row);
     }
 
-    // Also commits on LostFocus, not just Enter/the checkmark click - this is a
-    // standalone dialog a user can plausibly edit-then-immediately-close
-    // (native red traffic-light button, Cmd+W, etc.) without either of those
-    // firing first, which is exactly what silently discarded a rename before
-    // (looked applied for the rest of the session, but was never actually
-    // written to disk, so it reverted to the old name on next launch).
+    // Also commits on LostFocus, not just Enter/the checkmark click - this
+    // control can plausibly be edited then immediately dismissed (closing
+    // Settings via Cancel/OK, Cmd+W, the native red traffic-light button)
+    // without either of those firing first, which is exactly what silently
+    // discarded a rename before (looked applied for the rest of the session,
+    // but was never actually written to disk, so it reverted to the old name
+    // on next launch).
     private void AliasTextBox_LostFocus(object? sender, RoutedEventArgs e)
     {
         if (sender is TextBox { DataContext: TrustedPeerRow row })
@@ -158,9 +160,11 @@ public partial class TrustedDevicesWindow : Window
     {
         if (sender is not Button { DataContext: TrustedPeerRow row })
             return;
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+            return;
 
         var confirmed = await ConfirmDialogWindow.ShowAsync(
-            this,
+            owner,
             "Forget This Device?",
             $"\"{row.Alias}\" will need to be approved again before it can sync with this device.",
             "Forget");
@@ -170,6 +174,4 @@ public partial class TrustedDevicesWindow : Window
         await _store.RevokeAsync(row.Fingerprint);
         Refresh();
     }
-
-    private void CloseButton_Click(object? sender, RoutedEventArgs e) => Close();
 }

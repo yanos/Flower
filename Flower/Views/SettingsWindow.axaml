@@ -9,10 +9,11 @@
         CanResize="False">
   <Grid RowDefinitions="*,Auto" Margin="16">
 
-    <!-- Three tabs, grouping what used to be one long stacked list (plus the
-         two items that lived in the old top-level "Library" menu, Rebuild
-         Database and Trusted Devices - see MainWindow.axaml) by what they're
-         actually about, rather than one ever-growing column. -->
+    <!-- Three tabs, grouping what used to be one long stacked list (plus what
+         used to be a separate top-level "Library" menu and a separate
+         Trusted Devices window - see MainWindow.axaml/TrustedDevicesView.axaml)
+         by what they're actually about, rather than one ever-growing column
+         or a maze of separate windows. -->
     <TabControl Grid.Row="0">
 
       <TabItem Header="General">
@@ -36,6 +37,13 @@
             <ComboBoxItem Content="Light"/>
             <ComboBoxItem Content="Dark"/>
           </ComboBox>
+
+          <!-- "Where does my data live" is a general, not library-specific,
+               question - moved here from the Library tab. -->
+          <Button Content="Open App Data Location"
+                  Margin="0,20,0,0"
+                  HorizontalAlignment="Left"
+                  Click="OpenAppDataLocationButton_Click"/>
         </StackPanel>
       </TabItem>
 
@@ -97,27 +105,22 @@
             <Button x:Name="RemoveButton" Content="Remove Selected" Click="RemoveButton_Click"/>
           </StackPanel>
 
-          <StackPanel Grid.Row="5"
-                      Orientation="Horizontal"
-                      Margin="0,8,0,0"
-                      HorizontalAlignment="Left"
-                      Spacing="8">
-            <Button Content="Rebuild Database" Click="RebuildDatabaseButton_Click"/>
-            <Button Content="Open App Data Location" Click="OpenAppDataLocationButton_Click"/>
-          </StackPanel>
+          <Button Grid.Row="5"
+                  Content="Rebuild Database"
+                  Margin="0,8,0,0"
+                  HorizontalAlignment="Left"
+                  Click="RebuildDatabaseButton_Click"/>
         </Grid>
       </TabItem>
 
+      <!-- Peers approved via the trust gate (SyncHttpServer.AuthorizeAsync,
+           SYNC-PLAN.md Phase 3) - embedded directly rather than a button that
+           opens yet another window (that's what this used to be, and what
+           Rebuild Database/Open App Data Location above used to be too, back
+           when they were all a separate top-level "Library" menu instead -
+           see MainWindow.axaml). -->
       <TabItem Header="Devices">
-        <StackPanel Margin="0,12,0,0" Spacing="8">
-          <TextBlock Text="Trusted devices can sync playlists and library data with this one over Wi-Fi."
-                     FontSize="12"
-                     Opacity="0.6"
-                     TextWrapping="Wrap"/>
-          <Button Content="Trusted Devices…"
-                  HorizontalAlignment="Left"
-                  Click="TrustedDevicesButton_Click"/>
-        </StackPanel>
+        <views:TrustedDevicesView/>
       </TabItem>
 
     </TabControl>

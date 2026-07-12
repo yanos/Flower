@@ -148,7 +148,6 @@ public partial class MainViewModel : ViewModelBase
 
     public ICommand? OpenAppDataLocationCommand  { get; private set; }
     public ICommand? RebuildDatabaseCommand      { get; private set; }
-    public ICommand? OpenTrustedDevicesCommand   { get; private set; }
     public ICommand? SortByColumnCommand         { get; private set; }
     public ICommand? OpenSettingsCommand         { get; private set; }
     public ICommand? OpenColumnSelectorCommand   { get; private set; }
@@ -177,7 +176,6 @@ public partial class MainViewModel : ViewModelBase
 
     public event EventHandler? SettingsRequested;
     public event EventHandler? ColumnSelectorRequested;
-    public event EventHandler? TrustedDevicesRequested;
     public event EventHandler<Track>? NavigateToTrackRequested;
     public event EventHandler<PlaylistConflictEventArgs>? PlaylistConflictRequested;
     public event EventHandler<PeerApprovalRequestedEventArgs>? PeerApprovalRequested;
@@ -571,7 +569,6 @@ public partial class MainViewModel : ViewModelBase
         SortByColumnCommand         = new RelayCommand<string>(SortByColumn);
         OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         OpenColumnSelectorCommand   = new RelayCommand(() => ColumnSelectorRequested?.Invoke(this, EventArgs.Empty));
-        OpenTrustedDevicesCommand   = new RelayCommand(() => TrustedDevicesRequested?.Invoke(this, EventArgs.Empty));
         NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));
         PlayOrPauseCommand          = new RelayCommand(PlayOrPauseFromCurrentView);
         NextTrackCommand            = new RelayCommand(_playlistControlViewModel.Next);
@@ -816,7 +813,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     // A user-set local nickname (see DeviceNicknameStore, MainView.axaml.cs's
-    // Rename Device context-menu item, TrustedDevicesWindow) always wins over
+    // Rename Device context-menu item, TrustedDevicesView) always wins over
     // whatever the peer itself reports - otherwise the next DeviceDiscovered
     // re-fire (e.g. once /info resolves, or on periodic rediscovery) would
     // silently clobber a rename back to the peer's own alias.
@@ -828,7 +825,7 @@ public partial class MainViewModel : ViewModelBase
     // The single place that re-derives a Device sidebar item's displayed name
     // from ResolveDeviceDisplayName - every place a device's nickname can
     // change (this sidebar's own "Rename Device" context menu, and
-    // TrustedDevicesWindow's pencil-icon rename) calls this afterward, so
+    // TrustedDevicesView's pencil-icon rename) calls this afterward, so
     // there is exactly one code path computing "what do we call this device"
     // and every UI surface (the sidebar row, and the device-detail pane, which
     // binds to SelectedSidebarItem.Name - the same SidebarItem instance)

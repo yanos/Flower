@@ -14,7 +14,7 @@ namespace Flower.Persistence
     // one-time "Allow" prompt per unrecognized fingerprint - same interaction
     // shape as Bluetooth pairing/AirDrop's "Accept" - after which that peer is
     // never prompted again. Revoking is the manual "forget this device" action
-    // in TrustedDevicesWindow. Deliberately does not persist denials: a
+    // in TrustedDevicesView. Deliberately does not persist denials: a
     // denied/ignored peer is simply prompted again on its next request rather
     // than being remembered as blocked.
     public class TrustedPeerStore
