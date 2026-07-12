@@ -108,7 +108,6 @@ public partial class MainView : UserControl
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.SettingsRequested -= OnSettingsRequested;
             _viewModel.ColumnSelectorRequested -= OnColumnSelectorRequested;
-            _viewModel.TrustedDevicesRequested -= OnTrustedDevicesRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.PeerApprovalRequested -= OnPeerApprovalRequested;
@@ -124,7 +123,6 @@ public partial class MainView : UserControl
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.ColumnSelectorRequested += OnColumnSelectorRequested;
-            _viewModel.TrustedDevicesRequested += OnTrustedDevicesRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.PeerApprovalRequested += OnPeerApprovalRequested;
@@ -764,12 +762,6 @@ public partial class MainView : UserControl
             $"\"{e.Alias}\" wants to sync playlists and library data with this device. Only allow devices you recognize - it will not be asked again.",
             "Allow");
         e.Resolution.TrySetResult(allowed);
-    }
-
-    private void OnTrustedDevicesRequested(object? sender, EventArgs e)
-    {
-        if (TopLevel.GetTopLevel(this) is Window owner && _viewModel is { } vm)
-            new TrustedDevicesWindow(vm).ShowDialog(owner);
     }
 
     private async void OnDeletePlaylistConfirmationRequested(object? sender, DeletePlaylistConfirmationEventArgs e)
