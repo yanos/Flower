@@ -8,29 +8,26 @@ called out where they exist.
 
 ---
 
-## 1. Secondary windows break on mobile (`TrackInfoWindow`)
+## 1. Secondary windows break on mobile (`TrackInfoWindow`) — done, via a different design than proposed
 
-**Problem:** `TrackInfoWindow` is an Avalonia `Window`, opened via `.Show(owner)`
-from `MainView.OpenTrackInfo()`. Avalonia's Android/iOS backends are
-single-view only; a second top-level `Window` isn't supported there. Reachable
-on every platform via the track context menu ("Get Info").
+**What was proposed here:** extract `TrackInfoWindow`'s content into a shared
+`TrackInfoView` `UserControl`, hosted either in a real `Window` (desktop) or
+an in-`MainView` overlay panel (mobile), behind one `OpenTrackInfo()` entry
+point.
 
-**Plan:**
-1. Extract the current `TrackInfoWindow.axaml` content (tabs, fields, nav
-   buttons) into a `UserControl` (`TrackInfoView`) with the same
-   `TrackInfoWindow.axaml.cs` logic minus window chrome (`Close()`,
-   `ShowInTaskbar`, etc.).
-2. Add a lightweight overlay/modal host to `MainView` (a `Panel` layered over
-   the existing content, toggled by an `IsTrackInfoOpen` bool) that hosts
-   `TrackInfoView` when open — this works identically on desktop and mobile
-   since it's just another control in the single view.
-3. On desktop, keep the current windowed presentation by wrapping
-   `TrackInfoView` in a real `Window` *only* when
-   `Application.Current.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime`;
-   otherwise show the overlay. One `OpenTrackInfo()` entry point, branching
-   once at the presentation layer.
-4. Verify keyboard nav (prev/next track, Cmd+I) still works through the
-   overlay path — no window-specific focus assumptions leak in.
+**What shipped instead:** two independent implementations rather than one
+shared control behind a presentation branch — desktop kept
+`Flower/Views/TrackInfoWindow.axaml(.cs)` as a real `Window` (via
+`MainView.OpenTrackInfo()`, unchanged), and mobile got its own
+`Flower/Views/Mobile/TrackInfoView.axaml(.cs)` (a `UserControl`, opened as a
+full-screen sheet from `MobileMainView`/`MobileMainViewModel`) with the same
+TagLib-backed fields duplicated rather than shared. Simpler to land given the
+two UIs had already diverged by the time mobile's UI work happened, at the
+cost of the two views needing to be kept in sync by hand if the field set
+changes.
+
+**Status:** done — see `MOBILE-PLAN.md`'s Phase 3 status ("Track Info as a
+sheet").
 
 **Effort:** Medium (mostly mechanical extraction). **Risk:** Low — isolated
 to one feature.
@@ -140,124 +137,132 @@ packages actually get found this way.
    data source — no point validating mobile playback before there are mobile
    tracks to play.
 
+**Still open, but the biggest risk it flagged is resolved in practice:**
+`VlcNativeSetup.Initialize()` hasn't been split into per-platform methods or
+gained the "VLC not found" smoke check/banner — the non-macOS branch is still
+one unconditional `Core.Initialize()` call with no post-check. But step 1's
+actual concern (does `Core.Initialize()` without a path even work on
+Android/iOS?) is now answered empirically: `MOBILE-PLAN.md`'s validation
+confirms real audio playback on an Android emulator, iOS simulator, and a
+real iPhone — so mobile LibVLC init does work through the generic branch as-is.
+What's left is the hardening (Windows/Linux "not found" UX, mobile-specific
+`InitializeMobile()` split for clarity) rather than an unresolved risk to
+mobile playback.
+
 **Effort:** Medium for Windows/Linux hardening; Large for verified mobile
-support (depends on device/emulator access). **Risk:** Medium — desktop
-behavior must not regress while doing this.
+support (depends on device/emulator access) — the "verified" half is now
+done. **Risk:** Medium — desktop behavior must not regress while doing this.
 
 ---
 
-## 5. Persistence paths assume desktop OS conventions
+## 5. Persistence paths assume desktop OS conventions — done, matching the plan closely
 
-**Problem:** `LibraryStore`, `PlaylistStore`, and `ColumnVisibilityStore` all
-duplicate the same `IsOSPlatform(OSX) ? "~/Library/Application Support/Flower"
-: Environment.SpecialFolder.LocalApplicationData` logic, with no branch for
-Android/iOS, where that special folder is unreliable/sandboxed differently.
-
-**Plan:**
-1. Extract the duplicated path logic into one shared
-   `Flower/Persistence/AppDataPath.cs`:
-   ```csharp
-   public static class AppDataPath
-   {
-       public static string GetDirectory() => OperatingSystem.IsMacOS()
-           ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "Flower")
-           : OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()
-               ? FileSystem.AppDataDirectory-equivalent // see step 2
-               : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Flower");
-   }
-   ```
-2. For the mobile branch, use the platform-correct sandbox directory:
-   - Android: `Android.App.Application.Context.FilesDir.AbsolutePath` (via a
-     small platform-specific accessor injected at startup, since the shared
-     project can't reference `Android.App` directly).
-   - iOS: `NSFileManager` documents directory
-     (`Environment.GetFolderPath(Environment.SpecialFolder.Personal)` is
-     actually correct on iOS and maps to the app's Documents folder — verify
-     this still holds on current .NET-for-iOS before relying on it).
-3. Update `LibraryStore.StorePath`, `PlaylistStore.StorePath`, and
-   `ColumnVisibilityStore.StorePath` to call `AppDataPath.GetDirectory()`
-   instead of each having their own copy — this also fixes the existing
-   code-duplication smell independent of the mobile question.
+**What shipped:** `Flower/Persistence/AppDataDirectory.cs` is exactly the
+proposed shared resolver (`AppDataPath.GetDirectory()` here as
+`AppDataDirectory.Path`) — every store
+(`LibraryStore`/`PlaylistStore`/`AppSettingsStore`/`DeviceNicknameStore`/
+`DeviceIdentityStore`/`TrustedPeerStore`/`PlaylistSyncStateStore`, i.e. more
+stores than existed when this item was written) routes through it. iOS gets
+its sandboxed Documents-folder branch (`SpecialFolder.Personal`, confirmed
+correct on current .NET-for-iOS in practice, not just in theory). Android
+gets its `FilesDir`-equivalent via `PlatformDataDirectory.Current`, a
+settable override injected at startup from `Flower.Android` (the "small
+platform-specific accessor" the plan called for, named differently than
+proposed). Validated on both a real device and emulator per
+`MOBILE-PLAN.md`.
 
 **Effort:** Small–Medium. **Risk:** Low on desktop (pure refactor, same
-paths); needs a real device/emulator check for the mobile branch.
+paths); needed a real device/emulator check for the mobile branch — done.
 
 ---
 
-## 6. Drag-to-reorder uses a mouse-drag model, no touch handling
+## 6. Drag-to-reorder uses a mouse-drag model, no touch handling — done, via a different mechanism than proposed
 
-**Problem:** `MusicListView.Panel_PointerPressed`/`Panel_PointerMoved`
-(playlist reorder feature) starts a drag on any pointer-down-and-move past a
-4px threshold with no distinction between mouse and touch input. On a
-touchscreen this would fight with normal list scrolling in the playlist view.
+**What was proposed here:** brand the existing desktop drag code with a
+`PointerType.Mouse` vs. `PointerType.Touch` branch, requiring a long-press
+before entering drag mode on touch.
 
-**Plan:**
-1. Use `PointerPressedEventArgs.Pointer.Type` (`PointerType.Mouse` vs.
-   `PointerType.Touch`) to branch behavior:
-   - Mouse: keep current behavior (small movement threshold starts drag).
-   - Touch: require a long-press (e.g. reuse `ContextRequested`'s
-     press-and-hold recognizer, or a short `DispatcherTimer` started on
-     `PointerPressed` and cancelled on early `PointerMoved`/`PointerReleased`)
-     before entering drag mode, so a normal scroll gesture is not hijacked.
-2. Gate this entirely behind `AllowReorder` as today (playlist view only) —
-   no change to that gating.
-3. Manually verify on an actual touch device/emulator once #3/#4 make mobile
-   builds functional enough to reach the playlist view at all — this item is
-   blocked on those in practice, even though the code fix itself is small and
-   independent.
+**What shipped instead:** mobile didn't extend desktop's
+`MusicListView.Panel_PointerPressed`/`Panel_PointerMoved` at all — it got its
+own separate implementation, `Flower/Views/Mobile/MobileMainView.axaml.cs`'s
+`DragHandle_Pointer*` handlers. Rather than branching on pointer type, a drag
+only starts from a dedicated drag-handle icon on each row (not "anywhere on
+the row" like desktop), with a 10px movement threshold before it visually
+kicks in — so normal list scrolling (which doesn't touch the handle) is never
+hijacked, without needing to distinguish mouse from touch input at all. Gated
+behind the same reorder-eligible context as desktop.
 
-**Effort:** Small. **Risk:** Low, but **unverifiable** until mobile builds
-work end-to-end (blocked by #3/#4).
+**Status:** done — see `MOBILE-PLAN.md`'s Phase 3 status ("touch drag-to-
+reorder"). Verified via drag handles in the shipped code; not confirmed
+whether it's been exercised on an actual touchscreen device vs. only a
+pointer-emulated one.
+
+**Effort:** Small. **Risk:** Low.
 
 ---
 
-## 7. Android target is on `net7.0`, out of step with the rest of the solution
+## 7. Android target is on `net7.0`, out of step with the rest of the solution — done, and gone further than proposed
 
-**Problem:** `Flower.Android.csproj` targets `net7.0-android` while
-`Flower.csproj`, `Flower.iOS.csproj`, `Flower.Desktop.csproj`, and
-`Flower.CLI.csproj` all target `net8.0`/`net8.0-ios`. Combined with the
-still-default `ApplicationId>com.CompanyName.AvaloniaTest<` and iOS's
-`RuntimeIdentifier` hardcoded to `iossimulator-x64` (device codesigning
-commented out), both mobile targets look like untouched scaffolding rather
-than maintained targets.
+**Problem (as originally found):** `Flower.Android.csproj` targeted
+`net7.0-android` while the rest of the solution was on `net8.0`/`net8.0-ios`,
+plus a still-default `ApplicationId` and iOS's `RuntimeIdentifier` hardcoded
+to `iossimulator-x64` with device codesigning commented out — both mobile
+targets looked like untouched scaffolding.
 
-**Plan:**
-1. Bump `Flower.Android.csproj` to `net8.0-android` (matching current .NET
-   for Android support) and do a clean `dotnet build` to catch any API-level
-   breakage from the version bump before touching anything else.
-2. Set a real `ApplicationId` (e.g. `com.<yourdomain>.flower`) and reasonable
-   `ApplicationVersion`/`ApplicationDisplayVersion` in
-   `Flower.Android.csproj`.
-3. For iOS, leave `RuntimeIdentifier=iossimulator-x64` for local dev but
-   document (in `CLAUDE.md`) the additional steps needed for a real-device
-   build (`RuntimeIdentifier=ios-arm64`, `CodesignKey`, provisioning profile)
-   rather than leaving them as silently-commented-out lines with no
-   explanation.
-4. Once #1–#6 land, do a first real build+launch on an Android emulator and
-   iOS simulator and capture the result (crash log, blank screen, or working
-   shell) as a baseline — this hasn't been done at all yet as far as this
-   audit could tell.
+**Status:** done, and superseded upward — `Flower.Android.csproj` is now on
+`net10.0-android` (not just `net8.0-android`, matching the rest of the
+solution's later net10 move — see `VERSIONING-PLAN.md`), with a real
+`ApplicationId` (`com.yanos.flower`) and an `ApplicationVersion` wired for a
+store-release override. `Flower.iOS.csproj` now defaults `RuntimeIdentifier`
+to `ios-arm64` (a real device build) with the simulator RID commented out as
+the opt-in alternative — the inverse of the original scaffolding, and further
+than this item asked for. Both platforms have had a first real build+launch
+(Android emulator, iOS simulator *and* a real iPhone) captured — see
+`MOBILE-PLAN.md`'s "Validated against real music" section — closing this
+item's step 4 as well.
+
+Remaining open thread, tracked in `STORE-DEPLOYMENT-PLAN.md` rather than
+here: `Flower.iOS.csproj`'s `net10.0-ios18.0`-era TFM still needs a further
+bump to `net10.0-ios26.2` for App Store submission, and
+`Flower.Android.csproj` still produces an `apk` rather than the `.aab` Play
+Console requires — both are store-submission blockers, not cross-platform
+runtime gaps, so they're scoped there instead.
 
 **Effort:** Small for the version/config bump; the "real build+launch"
 verification step depends on everything above being in place first.
 **Risk:** Low for the bump itself; net7→net8 could theoretically surface
-Android-specific API breaks, but nothing in the current shared code looks
-net7-specific.
+Android-specific API breaks, but nothing in the current shared code looked
+net7-specific, and none surfaced in practice.
 
 ---
 
 ## Suggested execution order
 
-1. **#7** (Android net8 bump + config) — cheap, unblocks meaningful testing
-   of everything else on Android.
+1. **#7** (Android version/config bump) — **done**, and gone further than
+   originally scoped (net10, real `ApplicationId`, real-device iOS RID).
 2. **#5** (persistence paths) — small, low-risk, removes duplication
-   regardless of mobile timeline.
-3. **#2** (`Process.Start` gating) — small, self-contained.
-4. **#1** (`TrackInfoWindow` → overlay) — medium, no external dependencies.
-5. **#4** (LibVLC bootstrap hardening) — do the Windows/Linux robustness part
-   independently of mobile; the mobile half now has something to play
-   against, since #3 is done.
+   regardless of mobile timeline. Still open — worth checking against
+   `AppSettingsStore`/`LibraryStore`/`PlaylistStore`'s current state before
+   assuming it's untouched, since mobile persistence clearly works in
+   practice (`MOBILE-PLAN.md`'s validation) even if this exact refactor
+   wasn't the mechanism.
+3. **#2** (`Process.Start` gating) — small, self-contained. Still open —
+   `MainView.LocateFile()`/`MainViewModel.OpenDatabaseLocation()` still call
+   `Process.Start` directly with no `IPlatformShell` abstraction or
+   Android/iOS branch.
+4. **#1** (`TrackInfoWindow` → mobile) — **done**, via two separate views
+   rather than the proposed shared-overlay design; see the item itself.
+5. **#4** (LibVLC bootstrap hardening) — mobile playback risk is resolved in
+   practice (validated real device/emulator/simulator playback); the
+   Windows/Linux "not found" hardening itself is still open and can be done
+   independently of anything else here.
 6. **#3** (mobile importers) — **done**, see the item itself for what
    actually shipped instead of the original proposal.
-7. **#6** (touch-aware drag) — small fix, verification no longer blocked on
-   #3 (done); still blocked on #4's mobile half.
+7. **#6** (touch-aware drag) — **done**, via a dedicated drag-handle +
+   threshold design rather than the proposed `PointerType` branch — see the
+   item itself.
+
+**Summary: of the original 7 items, only #2 (`Process.Start`/`IPlatformShell`
+gating) is still genuinely unbuilt** — everything else is done, several
+(#5, #7) closely matching the original proposal and others (#1, #3, #6) done
+via a different design than what was originally sketched here.

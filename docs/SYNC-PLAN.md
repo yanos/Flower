@@ -217,11 +217,17 @@ OS-vendor device protocol and no native interop.
      the peer adopts the same result without re-running its own conflict
      logic (avoids two independent, possibly-contradictory resolutions for
      one sync session).
-   - Known gaps, deliberately deferred rather than half-built: no playlist
-     *deletion* sync (there's no delete-playlist UI at all yet); no retry if
+   - Known gaps, deliberately deferred rather than half-built: no retry if
      the peer drops mid-session (each side's own state is still internally
-     consistent, so it just converges next time both are up); sync only
-     triggers on discovery, not on a later local edit while still connected.
+     consistent, so it just converges next time both are up).
+   - **Done since**: playlist *deletion* sync — `PlaylistSyncPlanner` gained a
+     `Delete` decision kind (alongside `KeepLocal`/`AdoptRemote`/`Conflict`):
+     if a baseline says the two devices previously agreed a playlist existed
+     and one side no longer has it, that's a deletion to propagate, not "the
+     side that still has it wins." Resync-on-local-edit while still
+     connected also shipped — see `MainViewModel.ScheduleContentSync` under
+     "Additional Phase 3 work" below, which supersedes "sync only triggers on
+     discovery" for both playlists and library content.
 3. **Server** — ~~embed a small Kestrel or `HttpListener` endpoint~~
    **`HttpListener`, not Kestrel**: Kestrel/ASP.NET Core hosting is not
    available on iOS/Android targets at all ("no runtime pack for
@@ -588,6 +594,66 @@ is unit-tested only so far (`LibraryOpenSubsonicMapperTests`/
 `LibrarySyncMapperTests`/`LibraryTests`), not yet exercised end-to-end against
 a real peer on either platform.
 
+### Additional Phase 3 work, beyond what this doc originally scoped
+
+Three things that came up once Phase 3 was actually in daily use, not
+foreseen when the plan above was written:
+
+- **Album art sync — done.** A placeholder track's art shows up before the
+  audio itself is downloaded: `Track.OriginAlbumArtHash` (a SHA-256 of the
+  origin peer's art bytes, carried alongside the rest of a synced track's
+  metadata) is the content-addressed cache key `AlbumArtLoader`'s new
+  remote-fetch path uses to `GET /rest/getCoverArt?id=<albumId>` from the
+  origin peer and cache the result to disk - a changed hash (art replaced on
+  the origin device) is a plain cache miss, no separate invalidation needed.
+  Confirmed the naive version of this (decoding the downloaded image inline
+  on whatever thread called it, unlike the local-file path) stalled UI
+  scrolling while art was actively transferring - fixed by decoding on a
+  background thread like the other two art-loading paths already did.
+- **Play count sync — done, and not part of the original plan at all.**
+  `Track.RemotePlayCounts` (`Dictionary<fingerprint, count>`) is a small
+  G-Counter-style CRDT: each device's own contribution
+  (`PlayCount + ImportedPlayCount`) is stamped onto the wire under its own
+  fingerprint (`LibraryOpenSubsonicMapper.ToChild`'s `PlayCounts` field,
+  alongside `RemotePlayCounts` it already knows about other devices), and a
+  receiver merges incoming entries by per-key max - safe to apply repeatedly,
+  out of order, or via a report relayed through a third device, without
+  double-counting or regressing. A device's own key is always excluded from
+  what it *accepts* from a peer (its own count stays authoritative, live-
+  incremented locally) - only ever contributed outward. Rides the same
+  bulk-catalog sync as everything else in this phase; no new endpoint.
+- **Resync on local change — done**, closing the "sync only triggers on
+  discovery" gap noted above. `MainViewModel.ScheduleContentSync` debounces
+  (5s cooldown, restarts on every call) and re-syncs with every currently-
+  known device whenever `Library.TracksUpdated`/`PlaylistsUpdated` fires from
+  a genuine local change (a rescan, a download completing, a playlist
+  edit) - guarded by an in-flight-sync counter so a sync's *own* merge firing
+  those same events doesn't trigger an infinite resync loop between two
+  devices.
+- **A real data-corruption bug, found and fixed.** `Library.UpdateTracks`
+  is meant for "here's a fresh disk rescan, merge it in," and separately
+  carries forward any existing sync placeholder from the pre-call state.
+  Four unrelated call sites (play-count-on-track-end, ID3 tag edits on
+  desktop/mobile, iTunes play-count import) were calling
+  `UpdateTracks(Library.Tracks)` - passing the library's own current list
+  back into itself - purely to fire the `TracksUpdated` refresh event after
+  an in-place mutation. Since that argument already contained every
+  placeholder once, and the carry-forward step added them again, every
+  synced-but-undownloaded track *doubled* on each such call - a clean
+  power-of-two bug that, given enough track-end/tag-edit events, produced a
+  multi-million-row, multi-gigabyte `library.json` in practice on a real
+  device. Fixed by switching those four call sites to the already-existing
+  `Library.NotifyTrackChanged()` (fire the event, don't touch the list) -
+  the tool that existed for exactly this and should have been used from the
+  start.
+- **Device sidebar dedup by fingerprint.** `MainViewModel` matched a
+  discovered device by raw mDNS instance name, which collides when two
+  distinct devices share an unrenamed default computer name (e.g. two Macs
+  both still called "MacBook Pro"). Now matches by `Fingerprint` once
+  resolved (falling back to instance-name matching only pre-resolution, and
+  only against another item that also hasn't resolved one yet), closing the
+  "duplicate entries in devices" gap.
+
 ### Deliberately deferred, not designed now
 
 - **Resumable/partial downloads.** A dropped WiFi connection mid-transfer
@@ -840,13 +906,16 @@ Don't conflate these — they behave differently on iOS:
 
 1. Update `CROSS-PLATFORM-PLAN.md` item #3 to drop `MPMediaLibrary` in favor
    of the private-file-library iOS importer (prerequisite for everything
-   else here, and already blocking mobile import generally).
+   else here, and already blocking mobile import generally). **Done** —
+   `CROSS-PLATFORM-PLAN.md` item #3 documents the shipped design.
 2. Build WiFi/LAN sync (mDNS discovery + LocalSend-protocol-style HTTP
    transfer) — the one genuinely new feature. **Done.**
 3. Enable `UIFileSharingEnabled` on iOS and document the manual Finder/
    Explorer/GNOME drag-and-drop flow for USB — no new code beyond the
-   Info.plist entry.
+   Info.plist entry. **Done** — `Flower.iOS/Info.plist` has
+   `UIFileSharingEnabled`/`LSSupportsOpeningDocumentsInPlace` set.
 4. Do not build Bluetooth support or a programmatic USB transfer library.
+   Held — no Bluetooth/USB-library code exists.
 5. Playlist metadata sync (Phase 2 above). **Done.**
 6. Build the OpenSubsonic client + wire contracts **directly in `Flower`,
    no `Flower.Core` split yet** (browse, stream, playlist CRUD, search,
@@ -860,7 +929,15 @@ Don't conflate these — they behave differently on iOS:
    contracts in-process, backed directly by its already-loaded `Library`
    (no database), then the merge logic, then the mobile download-button UI
    last (it's the only piece with nothing to build against until the rest
-   exists).
+   exists). **Done in full** — trust gate (`TrustedPeerStore`/
+   `SyncHttpServer.AuthorizeAsync`), embedded OpenSubsonic host, merge logic,
+   and the mobile download-button UI (`LibraryDownloadService`,
+   `TrackRowViewModel`'s placeholder/downloading/unavailable states) have all
+   shipped — see "Additional Phase 3 work" above and the "Mobile UI: the
+   download button" section. What remains is narrower verification work
+   (real-device Android download-path testing, end-to-end testing against a
+   real peer beyond unit tests), not unbuilt features — see "Known gap"
+   under that section.
 8. Fold the client into the `IMusicImporter` abstraction alongside local
    import, so switching between "local library," "another Flower app on
    this network," and "a self-hosted server" is a settings choice, not a
