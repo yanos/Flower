@@ -103,6 +103,12 @@ public partial class SettingsWindow : Window
         }
     }
 
+    // Moved here from the Library menu (MainWindow.axaml) - squarely a "where
+    // does my data live" settings-adjacent action, not really a library-
+    // maintenance one like Rebuild Database/Trusted Devices, which stayed there.
+    private void OpenAppDataLocationButton_Click(object? sender, RoutedEventArgs e) =>
+        _viewModel.OpenAppDataLocationCommand?.Execute(null);
+
     // Mirrors MainViewModel.OpenAppDataLocation's per-OS reveal-in-file-manager
     // logic - opens the folder itself rather than selecting it within its
     // parent, since these are the library folders themselves, not files.

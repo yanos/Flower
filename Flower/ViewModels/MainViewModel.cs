@@ -156,6 +156,16 @@ public partial class MainViewModel : ViewModelBase
     public ICommand? RenamePlaylistCommand       { get; private set; }
     public ICommand? DeletePlaylistCommand       { get; private set; }
 
+    // Backing the "Controls" menu (MainWindow.axaml) - PlaylistControls' own
+    // transport buttons call these same three operations directly on
+    // _playlistControlViewModel (or, for play/pause, PlayOrPauseFromCurrentView
+    // itself) rather than through an ICommand at all, since a plain UserControl
+    // doesn't need one; a NativeMenuItem does, and MainWindow's DataContext is
+    // this ViewModel, not PlaylistControlViewModel, so these just forward.
+    public ICommand? PlayOrPauseCommand          { get; private set; }
+    public ICommand? NextTrackCommand            { get; private set; }
+    public ICommand? PreviousTrackCommand        { get; private set; }
+
     // Concrete-typed twins of RenamePlaylistCommand/DeletePlaylistCommand, kept
     // alongside the public ICommand? properties above (same pattern as the rest
     // of this class) purely so OnSidebarSelectionChanged can re-query CanExecute
@@ -553,6 +563,9 @@ public partial class MainViewModel : ViewModelBase
         OpenColumnSelectorCommand   = new RelayCommand(() => ColumnSelectorRequested?.Invoke(this, EventArgs.Empty));
         OpenTrustedDevicesCommand   = new RelayCommand(() => TrustedDevicesRequested?.Invoke(this, EventArgs.Empty));
         NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));
+        PlayOrPauseCommand          = new RelayCommand(PlayOrPauseFromCurrentView);
+        NextTrackCommand            = new RelayCommand(_playlistControlViewModel.Next);
+        PreviousTrackCommand        = new RelayCommand(_playlistControlViewModel.Previous);
 
         _renamePlaylistCommand = new RelayCommand(
             () => RenamePlaylistRequested?.Invoke(this, EventArgs.Empty),
