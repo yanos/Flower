@@ -103,11 +103,23 @@ public partial class SettingsWindow : Window
         }
     }
 
-    // Moved here from the Library menu (MainWindow.axaml) - squarely a "where
-    // does my data live" settings-adjacent action, not really a library-
-    // maintenance one like Rebuild Database/Trusted Devices, which stayed there.
+    // Moved here from the old top-level "Library" menu (MainWindow.axaml),
+    // along with Rebuild Database (same tab) and Trusted Devices (its own
+    // Devices tab, below) - that menu is gone now that Settings is where all
+    // three live instead.
     private void OpenAppDataLocationButton_Click(object? sender, RoutedEventArgs e) =>
         _viewModel.OpenAppDataLocationCommand?.Execute(null);
+
+    private void RebuildDatabaseButton_Click(object? sender, RoutedEventArgs e) =>
+        _viewModel.RebuildDatabaseCommand?.Execute(null);
+
+    // Opens TrustedDevicesWindow owned by MainWindow (see MainView.axaml.cs's
+    // OnTrustedDevicesRequested), not by this Settings window - it and
+    // Settings end up as two independent windows open at once rather than a
+    // strict parent/child pair, but nothing about that command cares which
+    // window triggered it, so reusing it as-is here is simplest.
+    private void TrustedDevicesButton_Click(object? sender, RoutedEventArgs e) =>
+        _viewModel.OpenTrustedDevicesCommand?.Execute(null);
 
     // Mirrors MainViewModel.OpenAppDataLocation's per-OS reveal-in-file-manager
     // logic - opens the folder itself rather than selecting it within its

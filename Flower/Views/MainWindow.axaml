@@ -13,21 +13,12 @@
         MinHeight="200">
   <NativeMenu.Menu>
     <NativeMenu>
-      <!-- "Settings…" itself now lives in the app menu (App.axaml, the bold
-           "Flower" title dropdown) matching macOS convention - this menu keeps
-           just the maintenance/device actions that were never really
-           "settings" in that sense. Open App Data Location moved into the
-           Settings window itself (see SettingsWindow.axaml) - it is squarely
-           a "where does my data live" settings-adjacent action, not really a
-           library-maintenance one like the two left here. -->
-      <NativeMenuItem Header="Library">
-        <NativeMenuItem.Menu>
-          <NativeMenu>
-            <NativeMenuItem Header="Rebuild Database" Command="{Binding RebuildDatabaseCommand}"/>
-            <NativeMenuItem Header="Trusted Devices…" Command="{Binding OpenTrustedDevicesCommand}"/>
-          </NativeMenu>
-        </NativeMenuItem.Menu>
-      </NativeMenuItem>
+      <!-- No top-level "Library" menu anymore - Settings… (App.axaml, the
+           bold "Flower" title dropdown, matching macOS convention) is where
+           all of Device Name/Appearance/Sync Play Count/Library Folders/
+           Rebuild Database/Open App Data Location/Trusted Devices live now,
+           organized into General/Library/Devices tabs (see
+           SettingsWindow.axaml) rather than split across a menu and a dialog. -->
       <!-- Playback transport, mirroring PlaylistControls' own three buttons
            (prev/play-pause/next - see UserControls/PlaylistControls.axaml) but
            reachable without the mouse. No Gesture on any of these: unlike
