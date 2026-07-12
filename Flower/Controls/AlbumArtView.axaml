@@ -5,14 +5,17 @@
              x:Name="Root"
              x:CompileBindings="False">
 
-  <!-- Single shared "cover art" presentation: a rounded black outline around
-       either the track's art or the AlbumArtPlaceholder note glyph when
-       there is none. Used by the main track list rows, the currently
-       playing control, and the Track Info window, so the outline/placeholder
-       look only ever needs to change in one place. Stretch defaults to
-       UniformToFill (crop to fill a square cell); Track Info sets it to
-       Uniform instead so non-square art isn't cropped. -->
-  <Border BorderBrush="#80000000"
+  <!-- Single shared "cover art" presentation: a rounded outline around either
+       the track's art or the AlbumArtPlaceholder note glyph when there is
+       none. Used by the main track list rows, the currently playing control,
+       and the Track Info window, so the outline/placeholder look only ever
+       needs to change in one place. Stretch defaults to UniformToFill (crop
+       to fill a square cell); Track Info sets it to Uniform instead so
+       non-square art isn't cropped. Theme-aware AppBorderBrush, not a
+       hardcoded black - a 50%-opacity black outline (the old value) all but
+       disappeared against dark art or the dark theme's own near-black
+       background, leaving art edges with no visible definition at all. -->
+  <Border BorderBrush="{DynamicResource AppBorderBrush}"
           BorderThickness="1"
           CornerRadius="4">
     <Border x:Name="ClipBorder"

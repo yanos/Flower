@@ -15,18 +15,19 @@
          Commands, so this has no DataContext-readiness dependency on when
          OnFrameworkInitializationCompleted actually runs - SettingsMenuItem_OnClick
          resolves MainViewModel from the DI container itself rather than
-         relying on one being bound here. No Gesture on the Settings item: ⌘,
-         is already handled independently by MainView's own PreviewKeyDown
-         tunnel (see MainView.axaml.cs), and a NativeMenuItem Gesture is
-         resolved by the OS before that handler would ever see the key press -
-         adding one here risks silently taking over the shortcut instead of
-         just mirroring it. Avalonia auto-appends the standard separator +
-         "Quit Flower" (⌘Q) after our items. -->
+         relying on one being bound here. Gesture="Cmd+OemComma" makes this
+         item itself the one and only owner of ⌘, - the OS resolves a native
+         menu item's key equivalent before any key event reaches Avalonia's
+         own input pipeline, so once this item existed at all, ⌘, stopped
+         reaching MainView's own PreviewKeyDown tunnel regardless of whether
+         a Gesture was set here - that manual case (see MainView.axaml.cs) is
+         removed now that this is the sole handler. Avalonia auto-appends the
+         standard separator + "Quit Flower" (⌘Q) after our items. -->
     <NativeMenu.Menu>
         <NativeMenu>
             <NativeMenuItem Header="About Flower" Click="AboutMenuItem_OnClick"/>
             <NativeMenuItemSeparator/>
-            <NativeMenuItem Header="Settings…" Click="SettingsMenuItem_OnClick"/>
+            <NativeMenuItem Header="Settings…" Gesture="Cmd+OemComma" Click="SettingsMenuItem_OnClick"/>
         </NativeMenu>
     </NativeMenu.Menu>
 
