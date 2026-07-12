@@ -696,6 +696,15 @@ public partial class MainView : UserControl
 
     private void MainView_PreviewKeyDown(object? sender, KeyEventArgs e)
     {
+        // Still needed here for Windows/Linux, which have no native app menu
+        // at all (App.axaml's NativeMenu.Menu is macOS-only - see its own
+        // comment). On macOS specifically this case is unreachable dead code,
+        // not incorrect: the app menu's own Settings… item (Gesture="Cmd+OemComma")
+        // is resolved by the OS before a Cmd+, key event ever reaches
+        // Avalonia's input pipeline at all - that resolution happens whether
+        // or not this case exists, which is exactly why leaving it in without
+        // also giving the menu item its own Gesture silently broke the
+        // shortcut on macOS rather than merely duplicating it.
         if (e.Key == Key.OemComma && e.KeyModifiers == PlatformShortcuts.Primary)
         {
             _viewModel?.OpenSettingsCommand?.Execute(null);
