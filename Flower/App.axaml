@@ -8,7 +8,7 @@
     <!-- Defines just the native macOS app menu (the bold "Flower" title's own
          dropdown - About/Settings/Hide/Quit), replacing Avalonia's default
          "About Avalonia" item with our own. Deliberately separate from
-         MainWindow's own NativeMenu.Menu (Library/Playlist/View, the rest of
+         MainWindow's own NativeMenu.Menu (Controls/Playlist/View, the rest of
          the menu bar) - Application-level here only governs the app menu
          itself, not a whole extra top-level menu (that was the mistake in an
          earlier, reverted attempt). Plain Click handlers, not {Binding}
@@ -69,6 +69,15 @@
         </Style>
         <Style Selector="TextBox">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+        </Style>
+        <!-- Compact tab headers app-wide (Settings, Track Info) - FluentTheme's
+             own default TabItem is sized for a handful of wide tabs, not the
+             several compact one-word ones these dialogs use. Was previously
+             just TrackInfoWindow's own local Window.Styles override; moved
+             here once Settings grew tabs too, so both stay in sync from one
+             definition instead of two copies that could drift. -->
+        <Style Selector="TabItem">
+            <Setter Property="FontSize" Value="12"/>
         </Style>
     </Application.Styles>
 </Application>
