@@ -149,6 +149,30 @@ What's left is the hardening (Windows/Linux "not found" UX, mobile-specific
 `InitializeMobile()` split for clarity) rather than an unresolved risk to
 mobile playback.
 
+**Linux update (July 2026):** the problem statement above had one wrong
+premise — there is no `VideoLAN.LibVLC.Linux` NuGet package (VideoLAN has
+never published one; official LibVLCSharp guidance is to install VLC from the
+distro's package manager). So on Linux `Core.Initialize()` P/Invokes the
+*system* `libvlc` — and that crashed the app on startup
+(`DllNotFoundException` → SIGABRT), because .NET's probing looks for the
+unversioned `libvlc.so`, which only the `libvlc-dev` package ships as a
+symlink; the runtime packages (`libvlc5`) install only the versioned soname
+`libvlc.so.5`. Fixed in `VlcNativeSetup.Initialize()`: on Linux a
+`NativeLibrary.SetDllImportResolver` on the LibVLCSharp assembly resolves
+`libvlc` → `libvlc.so.5` (soname stable across all of VLC 3.x), so the plain
+distro `vlc` package is sufficient. Linux users still need VLC installed —
+bundling libvlc+plugins is deliberately deferred to the packaging phase
+(`AUTO-UPDATE-PLAN.md`'s AppImage/Velopack work, or a `.deb` with
+`Depends: libvlc5, vlc-plugin-base`), since doing it outside a container
+format means hand-collecting the plugin tree's dependency tail. With that
+fix in, a missing/undiscoverable VLC is the only remaining Linux failure
+mode, which is exactly what the still-open "VLC not found" UX (step 1's
+post-check) should catch. Windows needs none of this: the maintained
+`VideoLAN.LibVLC.Windows` package deploys `libvlc.dll` + the full plugin
+tree into the app output and `Core.Initialize()` finds them — though a
+one-time smoke test on a real Windows machine is still pending (x86/x64
+only; Windows-on-ARM runs under x64 emulation).
+
 **Effort:** Medium for Windows/Linux hardening; Large for verified mobile
 support (depends on device/emulator access) — the "verified" half is now
 done. **Risk:** Medium — desktop behavior must not regress while doing this.
@@ -236,6 +260,67 @@ net7-specific, and none surfaced in practice.
 
 ---
 
+## 8. Bundle libvlc natives ourselves — drop the "VLC must be installed" requirement (macOS first)
+
+**Problem:** Windows/Android/iOS are self-contained (maintained
+`VideoLAN.LibVLC.*` NuGets deploy the native libs), but macOS and Linux
+require a user-installed VLC. On macOS that's because the official
+`VideoLAN.LibVLC.Mac` NuGet is abandoned (3.1.3.1, ~2019) — hence the
+`/Applications/VLC.app` + `VLC_PLUGIN_PATH` workaround in `VlcNativeSetup`,
+our ugliest platform hack. On Linux no `VideoLAN.LibVLC.Linux` package has
+ever existed; we depend on the distro `vlc` package (workable since item
+#4's soname resolver, but still an install prerequisite).
+
+**Decision (July 2026):** package the natives ourselves **only where the
+official binaries already exist to extract** — i.e. macOS. Explicitly do
+NOT touch Windows/Android/iOS (their packages are maintained; a homemade
+replacement is pure maintenance burden for zero gain), and do NOT build a
+Linux package (VideoLAN ships no portable Linux build; a genuinely
+distro-agnostic libvlc means compiling VLC + its contribs against an old
+glibc baseline and re-owning that build for every VLC security release —
+disproportionate when the eventual Linux distribution formats already solve
+this: AppImage/Flatpak bundle at packaging time with tooling that collects
+the dependency tail, and a `.deb` just declares
+`Depends: libvlc5, vlc-plugin-base`. Tracked as part of
+`AUTO-UPDATE-PLAN.md`'s packaging phase, not here).
+
+**Plan (macOS):**
+1. Extract `lib/` (`libvlc.dylib`, `libvlccore.dylib`) + `plugins/` from the
+   official VLC 3.0.x dmgs. Two RIDs — VideoLAN ships separate Intel and
+   Apple Silicon dmgs — laid out as `runtimes/osx-x64/native` and
+   `runtimes/osx-arm64/native` (or `lipo`'d into universal binaries).
+2. **Prune the plugin tree** to what an audio player needs: demux, audio
+   codecs (incl. the FFmpeg plugin), audio output (`auhal`), meta/art
+   readers, and the `http`/`access` modules (the OpenSubsonic sync client
+   streams over HTTP). Full tree is hundreds of files / ~100 MB per arch;
+   pruned should land ~30–50 MB.
+3. **License audit on the pruned set**: libvlc + most plugins are LGPL 2.1
+   (already covered by the repo-root `NOTICE`), but a few stock plugins are
+   GPL — verify none survive pruning, or accept them knowingly.
+4. Delivery mechanism, simplest first: an MSBuild copy target in
+   `Flower.Desktop.csproj` over a checked-in or CI-downloaded native folder
+   is enough — a real NuGet (GitHub Packages) only pays off if
+   `Flower.Server`/CLI later need the same artifacts. Decide when building.
+5. Simplify `VlcNativeSetup`'s macOS branch to load from the app directory
+   (same shape as Windows), keeping `/Applications/VLC.app` as a fallback
+   during transition.
+6. Re-sign the bundled dylibs under our own identity at app-signing time —
+   folds into the notarization work `AUTO-UPDATE-PLAN.md` already commits
+   to for auto-updated macOS builds.
+
+**Interaction with item #4:** once macOS is self-contained, Linux is the
+only platform left where "VLC not found" is a reachable user-facing state,
+which shrinks the still-open not-found-UX work to one platform (plus a
+sanity check that the bundle itself loaded).
+
+**Effort:** Medium (macOS extraction/pruning/signing; no compilation from
+source anywhere). **Risk:** Low-Medium — desktop macOS playback must not
+regress; keeping the VLC.app fallback during transition mitigates.
+
+Not yet started.
+
+---
+
 ## Suggested execution order
 
 1. **#7** (Android version/config bump) — **done**, and gone further than
@@ -261,8 +346,14 @@ net7-specific, and none surfaced in practice.
 7. **#6** (touch-aware drag) — **done**, via a dedicated drag-handle +
    threshold design rather than the proposed `PointerType` branch — see the
    item itself.
+8. **#8** (self-bundled libvlc natives, macOS first) — added July 2026, not
+   yet started. Independent of everything above; its signing step naturally
+   pairs with `AUTO-UPDATE-PLAN.md`'s macOS notarization work, so
+   sequencing it alongside that is sensible.
 
 **Summary: of the original 7 items, only #2 (`Process.Start`/`IPlatformShell`
 gating) is still genuinely unbuilt** — everything else is done, several
 (#5, #7) closely matching the original proposal and others (#1, #3, #6) done
-via a different design than what was originally sketched here.
+via a different design than what was originally sketched here. Item #8
+(bundling libvlc natives to drop the macOS installed-VLC requirement) was
+added later and is not yet started.
