@@ -1,8 +1,13 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
 
 namespace Flower.Persistence
 {
@@ -19,6 +24,11 @@ namespace Flower.Persistence
     // is not itself a trust decision.
     public class DeviceNicknameStore
     {
+        // Ad-hoc constructed at many call sites - see TrustedPeerStore's
+        // identical field for why AppLogging.CreateLogger<T>() rather than a
+        // constructor parameter.
+        private static readonly ILogger Logger = AppLogging.CreateLogger<DeviceNicknameStore>();
+
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "device-nicknames.json");
 
         private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
@@ -34,8 +44,9 @@ namespace Flower.Persistence
                 var json = File.ReadAllText(path);
                 return JsonSerializer.Deserialize<List<DeviceNickname>>(json, Options) ?? new List<DeviceNickname>();
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.LogWarning(ex, "Failed to load device nicknames from {Path}; starting with none set", path);
                 return new List<DeviceNickname>();
             }
         }

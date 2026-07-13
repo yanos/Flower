@@ -98,7 +98,7 @@ public partial class App : Application
         var syncHttpServer = new SyncHttpServer(deviceIdentity, library, AppLogging.CreateTypedLogger<SyncHttpServer>());
         var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, AppLogging.CreateTypedLogger<PlaylistSyncService>());
         var librarySyncService = new LibrarySyncService(library, deviceIdentity, libraryStore, AppLogging.CreateTypedLogger<LibrarySyncService>());
-        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, libraryStore);
+        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()

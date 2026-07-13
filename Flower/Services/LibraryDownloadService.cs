@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Models;
 using Flower.Persistence;
 
@@ -20,12 +22,14 @@ public class LibraryDownloadService
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
     private readonly LibraryStore _libraryStore;
+    private readonly ILogger<LibraryDownloadService> _logger;
 
-    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, LibraryStore libraryStore)
+    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, LibraryStore libraryStore, ILogger<LibraryDownloadService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
         _libraryStore = libraryStore;
+        _logger = logger;
     }
 
     public async Task<TrackDownloadResult> DownloadAsync(Track track, DiscoveredDevice? peer)
@@ -58,8 +62,10 @@ public class LibraryDownloadService
 
             return TrackDownloadResult.Downloaded;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Download failed for {Title} ({SyncKey}) from {Alias} ({Fingerprint}) at {EndPoint}",
+                track.Title, track.SyncKey, peer.Alias, track.OriginDeviceFingerprint, peer.EndPoint);
             return TrackDownloadResult.Failed;
         }
     }

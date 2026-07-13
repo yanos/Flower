@@ -7,6 +7,8 @@ using Avalonia.Interactivity;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Converters;
 using Flower.Models;
 using Flower.Persistence;
@@ -24,6 +26,7 @@ public partial class TrackInfoView : UserControl
     // Resolved via the service locator - see desktop TrackInfoWindow's own
     // field for the same pattern.
     private readonly LibraryStore _libraryStore = Ioc.Default.GetService<LibraryStore>()!;
+    private readonly ILogger<TrackInfoView> _logger = Ioc.Default.GetService<ILogger<TrackInfoView>>()!;
     private Track? _track;
 
     public TrackInfoView()
@@ -137,8 +140,13 @@ public partial class TrackInfoView : UserControl
 
             tagFile.Save();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            // Unlike the desktop TrackInfoWindow's SaveChanges, _track itself
+            // is only mutated below, after this try/catch - so a failed save
+            // here correctly leaves nothing to un-drift, just an edit the user
+            // otherwise has zero indication silently didn't stick.
+            _logger.LogWarning(ex, "Could not save tag edits to {Path}; this track's changes were not applied", path);
             return;
         }
 

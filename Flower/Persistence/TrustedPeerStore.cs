@@ -5,6 +5,10 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
+
 namespace Flower.Persistence
 {
     public sealed record TrustedPeer(string Fingerprint, string Alias, DateTimeOffset ApprovedAt);
@@ -19,6 +23,11 @@ namespace Flower.Persistence
     // than being remembered as blocked.
     public class TrustedPeerStore
     {
+        // Ad-hoc constructed at many call sites (SyncHttpServer, TrustedDevicesView,
+        // etc.) - AppLogging.CreateLogger<T>() rather than threading a constructor
+        // parameter through all of them, same reasoning as AlbumArtLoader.
+        private static readonly ILogger Logger = AppLogging.CreateLogger<TrustedPeerStore>();
+
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "trusted-peers.json");
 
         private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
@@ -34,8 +43,13 @@ namespace Flower.Persistence
                 var json = File.ReadAllText(path);
                 return JsonSerializer.Deserialize<List<TrustedPeer>>(json, Options) ?? new List<TrustedPeer>();
             }
-            catch
+            catch (Exception ex)
             {
+                // A corrupt/unreadable trusted-peers.json silently means "0
+                // trusted peers" - every previously-approved device would start
+                // getting denied by SyncHttpServer.AuthorizeAsync with no clue
+                // why, exactly the kind of thing worth a warning for.
+                Logger.LogWarning(ex, "Failed to load trusted peers from {Path}; starting with none trusted", path);
                 return new List<TrustedPeer>();
             }
         }

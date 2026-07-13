@@ -4,6 +4,10 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
+
 namespace Flower.Persistence
 {
     // Remembers, per remote device (keyed by its DeviceIdentityStore fingerprint) and
@@ -14,6 +18,11 @@ namespace Flower.Persistence
     // look identical to one where only one side genuinely changed.
     public class PlaylistSyncStateStore
     {
+        // Ad-hoc constructed at many call sites - see TrustedPeerStore's
+        // identical field for why AppLogging.CreateLogger<T>() rather than a
+        // constructor parameter.
+        private static readonly ILogger Logger = AppLogging.CreateLogger<PlaylistSyncStateStore>();
+
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "sync-state.json");
 
         private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
@@ -51,8 +60,13 @@ namespace Flower.Persistence
                 return JsonSerializer.Deserialize<SyncStateRecord>(json, Options)
                        ?? new SyncStateRecord(new Dictionary<string, Dictionary<Guid, DateTimeOffset>>());
             }
-            catch
+            catch (Exception ex)
             {
+                // A corrupt/unreadable sync-state.json just means the next sync
+                // treats every playlist as a first-ever sync (no baseline to
+                // three-way-merge against) rather than failing - but that's a
+                // meaningfully different sync behavior worth being able to spot.
+                Logger.LogWarning(ex, "Failed to load playlist sync state from {Path}; treating every playlist as never synced", path);
                 return new SyncStateRecord(new Dictionary<string, Dictionary<Guid, DateTimeOffset>>());
             }
         }

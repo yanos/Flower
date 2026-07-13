@@ -10,6 +10,9 @@ using Avalonia.Media.Imaging;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 
@@ -23,6 +26,11 @@ namespace Flower.Services;
 // read) by fetching it from the origin peer - see SYNC-PLAN.md Phase 3.
 public static class AlbumArtLoader
 {
+    // A static class (called directly, not DI-resolved) uses AppLogging.CreateLogger
+    // rather than constructor injection - see AppLogging's own doc comment on the
+    // two loggers-for-non-DI-classes patterns it offers.
+    private static readonly ILogger Logger = AppLogging.CreateLogger("Flower.Services.AlbumArtLoader");
+
     private static readonly string[] ImageExtensions =
         [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"];
 
@@ -77,8 +85,10 @@ public static class AlbumArtLoader
             using var ms = new MemoryStream(data);
             return new Bitmap(ms);
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Could not decode embedded album art for {Title} ({Path}); showing the placeholder icon instead",
+                track.Title, track.Path);
             return null;
         }
     }
@@ -101,7 +111,13 @@ public static class AlbumArtLoader
             if (pic?.Data?.Data is { Length: > 0 } data)
                 return data;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // Debug, not Warning - TagLib failing to open a file's tags entirely
+            // is routine for oddball/corrupt files scattered through a large real
+            // library, not something worth a warning on its own for every one.
+            Logger.LogDebug(ex, "Could not read embedded art tag for {Path}", track.Path);
+        }
 
         // 2. cover.*/folder.* in the same directory
         try
@@ -121,7 +137,10 @@ public static class AlbumArtLoader
                     return File.ReadAllBytes(file);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Could not read a cover/folder image next to {Path}", track.Path);
+        }
 
         return null;
     }
@@ -193,10 +212,13 @@ public static class AlbumArtLoader
             Cache[cacheKey] = new WeakReference<Bitmap>(bmp);
             return bmp;
         }
-        catch
+        catch (Exception ex)
         {
-            // Peer unreachable/offline, or not (yet) trusted - fall back to the
-            // placeholder icon, same as any other art-miss.
+            // Debug, not Warning - peer unreachable/offline or not (yet) trusted
+            // is routine, not a real error (SyncHttpServer/NetworkDiscoveryService
+            // log the actual trust/reachability decisions themselves already).
+            Logger.LogDebug(ex, "Could not fetch remote album art for {Album} from {Fingerprint}; showing the placeholder icon instead",
+                track.Album, track.OriginDeviceFingerprint);
             return null;
         }
     }
@@ -208,8 +230,9 @@ public static class AlbumArtLoader
             using var ms = new MemoryStream(bytes);
             return new Bitmap(ms);
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Could not decode {ByteCount} bytes of downloaded remote album art; showing the placeholder icon instead", bytes.Length);
             return null;
         }
     }
@@ -220,8 +243,9 @@ public static class AlbumArtLoader
         {
             return new Bitmap(path);
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Could not decode cached remote album art at {Path}; showing the placeholder icon instead", path);
             return null;
         }
     }
