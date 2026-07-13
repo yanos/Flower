@@ -26,15 +26,6 @@
             IsVisible="False"
             Background="{DynamicResource SystemControlBackgroundListLowBrush}"
             CornerRadius="6"/>
-    <!-- Ring around the one tile whose album is currently expanded below -
-         paired with the caret+tinted card in AlbumGridRowControl so the art
-         and its track list below read as one connected shape rather than two
-         unrelated pieces. -->
-    <Border x:Name="ExpandedBorder"
-            IsVisible="{Binding IsExpanded}"
-            BorderBrush="{DynamicResource AppAccentBrush}"
-            BorderThickness="2"
-            CornerRadius="6"/>
     <!-- Bottom margin is 16 (not the 8 on every other side) - the extra 8px
          is reserved unconditionally (not just when expanded) so the caret
          below always has real room to sit fully inside this control's own
@@ -52,12 +43,13 @@
          layout (HorizontalAlignment=Center) regardless of which column this
          tile sits in, rather than a hand-computed pixel offset (which
          previously got the math wrong and only ever pointed at one column).
-         Sits within the reserved bottom margin above, not past it. -->
+         Sits within the reserved bottom margin above, flush with this
+         control's own bottom edge (no bottom margin of its own) so its tip
+         touches ExpansionCard below with no gap. -->
     <Polygon IsVisible="{Binding IsExpanded}"
              Points="0,8 16,8 8,0"
              Fill="{DynamicResource AppAccentSoftBrush}"
              HorizontalAlignment="Center"
-             VerticalAlignment="Bottom"
-             Margin="0,0,0,4"/>
+             VerticalAlignment="Bottom"/>
   </Panel>
 </UserControl>
