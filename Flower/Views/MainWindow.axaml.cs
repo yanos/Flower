@@ -107,6 +107,36 @@ public partial class MainWindow : Window
         if (zoomItem != null)
             zoomItem.Click += (_, _) =>
                 WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+        // On macOS "About Flower" and "Settings…" live in the application menu
+        // (App.axaml's NativeMenu, shown under the bold app-name title). The
+        // in-window NativeMenuBar that Windows/Linux get only renders this
+        // window's menu, so without these two extra menus About/Settings would
+        // be unreachable from any menu there.
+        if (!System.OperatingSystem.IsMacOS())
+        {
+            var windowMenu = NativeMenu.GetMenu(this);
+            if (windowMenu != null)
+            {
+                var settingsMenuItem = new NativeMenuItem("Settings…")
+                {
+                    Gesture = new KeyGesture(Key.OemComma, PlatformShortcuts.Primary),
+                };
+                settingsMenuItem.Click += (_, _) =>
+                    Ioc.Default.GetRequiredService<ViewModels.MainViewModel>().OpenSettingsCommand?.Execute(null);
+
+                var fileMenu = new NativeMenuItem("File") { Menu = new NativeMenu() };
+                fileMenu.Menu.Items.Add(settingsMenuItem);
+                windowMenu.Items.Insert(0, fileMenu);
+
+                var aboutItem = new NativeMenuItem("About Flower");
+                aboutItem.Click += (_, _) => new AboutWindow().Show();
+
+                var helpMenu = new NativeMenuItem("Help") { Menu = new NativeMenu() };
+                helpMenu.Menu.Items.Add(aboutItem);
+                windowMenu.Items.Add(helpMenu);
+            }
+        }
     }
 
     private void RestoreWindowGeometry()
