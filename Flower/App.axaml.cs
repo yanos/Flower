@@ -142,6 +142,23 @@ public partial class App : Application
             {
                 DataContext = mainViewModel
             };
+
+            // Avalonia's DBus integration can tear down after the dispatcher
+            // has already stopped, and its observers then throw an unhandled
+            // TaskCanceledException on a thread-pool thread, crashing the
+            // process on an otherwise clean quit (AvaloniaUI/Avalonia#19523,
+            // open as of 11.3.x). By the time Exit is raised every save has
+            // already run (MainWindow.Closing flushes settings, columns, the
+            // library, and the log), so end the process here before the DBus
+            // teardown can race the dead dispatcher.
+            if (OperatingSystem.IsLinux())
+            {
+                desktop.Exit += (_, _) =>
+                {
+                    AppLogging.Shutdown();
+                    Environment.Exit(0);
+                };
+            }
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewPlatform)
         {
