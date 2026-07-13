@@ -156,6 +156,12 @@ public partial class App : Application
         _ = Task.Run(async () =>
         {
             var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");
+            // Covers the whole sequence below, not just the two iTunes syncs'
+            // own brief individual scopes - the rescan itself is the longest
+            // part (~9s against a large real library) and previously had no
+            // busy-spinner coverage of its own at all, which is why the
+            // spinner was so easy to miss at startup.
+            using var busy = mainViewModel.BeginBusyScope("Refreshing Library");
             try
             {
                 rescanLogger.LogInformation("Startup rescan starting for paths: {LibraryPaths}", string.Join(", ", appSettings.LibraryPaths));
@@ -172,8 +178,8 @@ public partial class App : Application
 
                 // SyncITunesPlayCountAsync/SyncITunesDateAddedAsync each do their
                 // own save (either may run again later via its own Settings
-                // checkbox, independent of this startup rescan) and drive the
-                // status bar spinner via BeginBusy.
+                // checkbox, independent of this startup rescan) and layer their
+                // own more specific BusyMessage on top of this outer scope's.
                 if (appSettings.SyncPlayCountFromITunes)
                     await mainViewModel.SyncITunesPlayCountAsync();
                 if (appSettings.SyncDateAddedFromITunes)
