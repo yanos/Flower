@@ -7,8 +7,6 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
-using Flower.Logging;
-
 namespace Flower.Persistence
 {
     public sealed record TrustedPeer(string Fingerprint, string Alias, DateTimeOffset ApprovedAt);
@@ -23,10 +21,12 @@ namespace Flower.Persistence
     // than being remembered as blocked.
     public class TrustedPeerStore
     {
-        // Ad-hoc constructed at many call sites (SyncHttpServer, TrustedDevicesView,
-        // etc.) - AppLogging.CreateLogger<T>() rather than threading a constructor
-        // parameter through all of them, same reasoning as AlbumArtLoader.
-        private static readonly ILogger Logger = AppLogging.CreateLogger<TrustedPeerStore>();
+        private readonly ILogger<TrustedPeerStore> _logger;
+
+        public TrustedPeerStore(ILogger<TrustedPeerStore> logger)
+        {
+            _logger = logger;
+        }
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "trusted-peers.json");
 
@@ -49,7 +49,7 @@ namespace Flower.Persistence
                 // trusted peers" - every previously-approved device would start
                 // getting denied by SyncHttpServer.AuthorizeAsync with no clue
                 // why, exactly the kind of thing worth a warning for.
-                Logger.LogWarning(ex, "Failed to load trusted peers from {Path}; starting with none trusted", path);
+                _logger.LogWarning(ex, "Failed to load trusted peers from {Path}; starting with none trusted", path);
                 return new List<TrustedPeer>();
             }
         }

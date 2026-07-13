@@ -38,15 +38,25 @@ public class PlaylistSyncService
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
     private readonly ILogger _logger;
-    private readonly PlaylistStore _playlistStore = new();
-    private readonly PlaylistSyncStateStore _syncStateStore = new();
+    private readonly PlaylistStore _playlistStore;
+    private readonly PlaylistSyncStateStore _syncStateStore;
+    private readonly DeviceNicknameStore _deviceNicknameStore;
 
     public event EventHandler<PlaylistConflictEventArgs>? ConflictDetected;
 
-    public PlaylistSyncService(Library library, DeviceIdentity deviceIdentity, ILogger<PlaylistSyncService> logger)
+    public PlaylistSyncService(
+        Library library,
+        DeviceIdentity deviceIdentity,
+        PlaylistStore playlistStore,
+        PlaylistSyncStateStore syncStateStore,
+        DeviceNicknameStore deviceNicknameStore,
+        ILogger<PlaylistSyncService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _playlistStore = playlistStore;
+        _syncStateStore = syncStateStore;
+        _deviceNicknameStore = deviceNicknameStore;
         _logger = logger;
     }
 
@@ -79,7 +89,7 @@ public class PlaylistSyncService
         // the peer's own raw self-reported alias here too, so the conflict
         // dialog's "Keep X's Version" matches what this device is actually
         // called elsewhere in the UI.
-        var remoteDisplayName = new DeviceNicknameStore().Get(device.Fingerprint) ?? device.Alias;
+        var remoteDisplayName = _deviceNicknameStore.Get(device.Fingerprint) ?? device.Alias;
 
         List<PlaylistSyncPlaylistDto> remotePlaylists;
         try

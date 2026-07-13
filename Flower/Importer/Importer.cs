@@ -15,14 +15,13 @@ namespace Flower.Importer
 {
     public class Importer : IMusicImporter
     {
-        // Constructed once, ad-hoc, at App.axaml.cs's composition root, with no
-        // other call sites - AppLogging.CreateLogger<T>() rather than a
-        // constructor parameter, same reasoning as AlbumArtLoader.
-        private static readonly ILogger Logger = AppLogging.CreateLogger<Importer>();
-
+        private readonly ILogger<Importer> _logger;
         private readonly HashSet<string> _validExtensions = [".mp3", ".m4a", ".wav", ".flac", ".alac"];
 
-        public Importer() { }
+        public Importer(ILogger<Importer> logger)
+        {
+            _logger = logger;
+        }
 
         public Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null)
             => Task.Run(() => Import(libraryPaths));
@@ -119,7 +118,7 @@ namespace Flower.Importer
                     // not something worth a warning per file, but still worth
                     // being able to find in the log when "why isn't track X
                     // showing up" comes up.
-                    Logger.LogDebug(ex, "Skipping unreadable file during import: {Path}", file);
+                    _logger.LogDebug(ex, "Skipping unreadable file during import: {Path}", file);
                 }
             }
         }
@@ -138,7 +137,12 @@ namespace Flower.Importer
         // Reads the media folder Apple Music is configured to use, straight from its
         // preferences plist. Public so it can also be used to auto-populate the
         // configured library paths (see AppSettingsStore) rather than only as a silent
-        // fallback when nothing is configured.
+        // fallback when nothing is configured - called from there before any Importer
+        // instance necessarily exists, so this one spot still needs a static logger
+        // rather than the instance one every other method here now takes via the
+        // constructor.
+        private static readonly ILogger StaticLogger = AppLogging.CreateLogger<Importer>();
+
         public static string? TryResolveAppleMusicFolder()
         {
             if (!OperatingSystem.IsMacOS())
@@ -162,7 +166,7 @@ namespace Flower.Importer
             }
             catch (Exception ex)
             {
-                Logger.LogDebug(ex, "Could not read Apple Music's configured media folder from its preferences plist");
+                StaticLogger.LogDebug(ex, "Could not read Apple Music's configured media folder from its preferences plist");
             }
 
             return null;

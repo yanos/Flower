@@ -5,8 +5,6 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
-using Flower.Logging;
-
 namespace Flower.Persistence
 {
     public class DeviceIdentity
@@ -30,10 +28,12 @@ namespace Flower.Persistence
     // run; not yet used for trust/pairing (deferred to when TLS is added).
     public class DeviceIdentityStore
     {
-        // Ad-hoc constructed at many call sites - see TrustedPeerStore's
-        // identical field for why AppLogging.CreateLogger<T>() rather than a
-        // constructor parameter.
-        private static readonly ILogger Logger = AppLogging.CreateLogger<DeviceIdentityStore>();
+        private readonly ILogger<DeviceIdentityStore> _logger;
+
+        public DeviceIdentityStore(ILogger<DeviceIdentityStore> logger)
+        {
+            _logger = logger;
+        }
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "device.json");
 
@@ -66,7 +66,7 @@ namespace Flower.Persistence
                     // trusted (TrustedPeerStore keys by fingerprint) would stop
                     // recognizing it, a real enough consequence to warrant a
                     // warning rather than silently regenerating.
-                    Logger.LogWarning(ex, "Failed to load device identity from {Path}; generating a new one (previously-trusted peers will need to re-approve this device)", path);
+                    _logger.LogWarning(ex, "Failed to load device identity from {Path}; generating a new one (previously-trusted peers will need to re-approve this device)", path);
                 }
             }
 
