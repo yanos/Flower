@@ -20,6 +20,7 @@ using Flower.Importer;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
+using Flower.ViewModels.Mobile;
 
 using Material.Icons;
 
@@ -156,6 +157,8 @@ public partial class MainViewModel : ViewModelBase
     public ICommand? NewPlaylistCommand          { get; private set; }
     public ICommand? RenamePlaylistCommand       { get; private set; }
     public ICommand? DeletePlaylistCommand       { get; private set; }
+    public ICommand? SelectAlbumTileCommand      { get; private set; }
+    public ICommand? BackToAlbumGridCommand      { get; private set; }
 
     // Backing the "Controls" menu (MainWindow.axaml) - PlaylistControls' own
     // transport buttons call these same three operations directly on
@@ -524,12 +527,103 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    public bool IsSubListVisible =>
-        _selectedSidebarItem?.Kind == SidebarItemKind.Albums ||
-        _selectedSidebarItem?.Kind == SidebarItemKind.Artists;
+    // Artists still uses the plain-text picker; Albums was replaced by
+    // AlbumGridTiles below (see IsShowingAlbumGrid) - same underlying
+    // SelectedSubItem/_selectedSubItems mechanism either way, just a
+    // different picker UI in front of it for Albums now.
+    public bool IsSubListVisible => _selectedSidebarItem?.Kind == SidebarItemKind.Artists;
+
+    // Album art tile grid - shown instead of the track list while on Albums/
+    // Recently Added with nothing drilled into yet, mirroring mobile's own
+    // Albums/Recently Added tabs (see MobileMainViewModel.AlbumGridRows/
+    // RecentlyAddedAlbumRows). Recently Added never shows a track list of its
+    // own on desktop any more than it does on mobile - tapping one of its
+    // tiles hands off to the Albums view for that one album instead (see
+    // SelectAlbumTile) rather than having its own separate drill-down state.
+    // Distinct from "how many albums are selected" - Ctrl/Shift-clicking
+    // tiles on the grid (see MainView.axaml.cs's AlbumGrid_PointerPressed)
+    // multi-selects for a drag-to-playlist gesture without leaving the grid,
+    // so _selectedSubItems.Count alone can't tell "browsing/multi-selecting
+    // the grid" apart from "drilled into one album's track list" - only a
+    // plain click (SelectAlbumTile) sets this.
+    private bool _isAlbumGridDrilledIn;
+
+    public bool IsShowingAlbumGrid =>
+        _selectedSidebarItem?.Kind == SidebarItemKind.Albums && !_isAlbumGridDrilledIn;
+    public bool IsShowingRecentlyAddedGrid => _selectedSidebarItem?.Kind == SidebarItemKind.RecentlyAdded;
+
+    // Shown above the track list only while viewing one album drilled into
+    // from the grid - the grid replaced Albums' old always-visible SubList,
+    // so this is the only way back to it now.
+    public bool IsShowingAlbumBackButton =>
+        _selectedSidebarItem?.Kind == SidebarItemKind.Albums && _isAlbumGridDrilledIn;
+
+    public bool IsShowingTrackList => !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingRecentlyAddedGrid;
 
     public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
     public DiscoveredDevice? SelectedDevice => _selectedSidebarItem?.Device;
+
+    // Rebuilt in PopulateTracks (every TracksUpdated) - see AlbumGridBuilder/
+    // RecentlyAddedAlbumsBuilder, the same shared builders mobile's own grids
+    // use. Alphabetical for Albums, by-recency for Recently Added. Reassigned
+    // wholesale rather than Clear()+Add() in a loop - same reasoning as
+    // SubListItems below: one PropertyChanged per rebuild instead of one per
+    // item, which matters on a library with a thousand-plus albums.
+    private ObservableCollection<AlbumTileViewModel> _albumGridTiles = new();
+    public ObservableCollection<AlbumTileViewModel> AlbumGridTiles
+    {
+        get => _albumGridTiles;
+        private set { _albumGridTiles = value; OnPropertyChanged(); }
+    }
+
+    private ObservableCollection<AlbumTileViewModel> _recentlyAddedGridTiles = new();
+    public ObservableCollection<AlbumTileViewModel> RecentlyAddedGridTiles
+    {
+        get => _recentlyAddedGridTiles;
+        private set { _recentlyAddedGridTiles = value; OnPropertyChanged(); }
+    }
+
+    private void RebuildAlbumGrids()
+    {
+        AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(AlbumGridBuilder.Build(_allTracks));
+        RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(RecentlyAddedAlbumsBuilder.Build(_allTracks));
+    }
+
+    // Tile click on either grid - Recently Added's own tiles route here too
+    // (see IsShowingRecentlyAddedGrid's doc comment), switching the sidebar
+    // selection to Albums first if it wasn't already there. Commands
+    // themselves are assigned in the main constructor (see SelectAlbumTileCommand/
+    // BackToAlbumGridCommand near the other ICommand? properties). Ctrl/Shift-
+    // click multi-select (MainView.axaml.cs) deliberately does NOT go through
+    // here - it calls SetSelectedSubItems directly, which updates the
+    // selection without setting _isAlbumGridDrilledIn, so the grid stays
+    // visible for a drag instead of jumping to the track list.
+    private void SelectAlbumTile(string? albumName)
+    {
+        if (string.IsNullOrEmpty(albumName))
+            return;
+
+        var albumsItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
+        if (albumsItem != null && !ReferenceEquals(_selectedSidebarItem, albumsItem))
+            SelectedSidebarItem = albumsItem;
+
+        _isAlbumGridDrilledIn = true;
+        OnPropertyChanged(nameof(IsShowingAlbumGrid));
+        OnPropertyChanged(nameof(IsShowingAlbumBackButton));
+        OnPropertyChanged(nameof(IsShowingTrackList));
+        ApplySubItemSelection(new[] { albumName });
+    }
+
+    // The only way back to the grid from a drilled-into album - see
+    // IsShowingAlbumBackButton.
+    private void BackToAlbumGrid()
+    {
+        _isAlbumGridDrilledIn = false;
+        OnPropertyChanged(nameof(IsShowingAlbumGrid));
+        OnPropertyChanged(nameof(IsShowingAlbumBackButton));
+        OnPropertyChanged(nameof(IsShowingTrackList));
+        ApplySubItemSelection(Array.Empty<string>());
+    }
 
     // Identifies the currently displayed track list (Songs / a given album / artist / playlist)
     // so the view can remember a separate scroll position and selection for each one.
@@ -554,7 +648,6 @@ public partial class MainViewModel : ViewModelBase
     }
 
     private string? _selectedSubItem;
-    private string? _lastSelectedAlbum;
     private string? _lastSelectedArtist;
     private HashSet<string> _selectedSubItems = new();
 
@@ -580,6 +673,12 @@ public partial class MainViewModel : ViewModelBase
         RememberSubItemSelection(_selectedSubItem);
         OnPropertyChanged(nameof(SelectedSubItem));
         OnPropertyChanged(nameof(SelectedSubItems));
+        // Only Albums' own grid/back-button/track-list visibility depends on
+        // _selectedSubItems.Count - Artists' picker stays visible regardless
+        // of how many artists are selected.
+        OnPropertyChanged(nameof(IsShowingAlbumGrid));
+        OnPropertyChanged(nameof(IsShowingAlbumBackButton));
+        OnPropertyChanged(nameof(IsShowingTrackList));
         ScheduleFilter();
     }
 
@@ -587,11 +686,8 @@ public partial class MainViewModel : ViewModelBase
     {
         if (value == null)
             return;
-        switch (_selectedSidebarItem?.Kind)
-        {
-            case SidebarItemKind.Albums:  _lastSelectedAlbum  = value; break;
-            case SidebarItemKind.Artists: _lastSelectedArtist = value; break;
-        }
+        if (_selectedSidebarItem?.Kind == SidebarItemKind.Artists)
+            _lastSelectedArtist = value;
     }
 
     // ── Constructors ──────────────────────────────────────────────────────────
@@ -659,6 +755,9 @@ public partial class MainViewModel : ViewModelBase
 
         _deletePlaylistCommand = new AsyncRelayCommand(DeleteSelectedPlaylistAsync, CanRenameOrDeleteSelectedPlaylist);
         DeletePlaylistCommand = _deletePlaylistCommand;
+
+        SelectAlbumTileCommand = new RelayCommand<string>(SelectAlbumTile);
+        BackToAlbumGridCommand = new RelayCommand(BackToAlbumGrid);
 
         BuildSidebarItems();
         PopulateTracks();
@@ -1139,7 +1238,17 @@ public partial class MainViewModel : ViewModelBase
 
     private void OnSidebarSelectionChanged()
     {
+        // Every fresh visit to Albums starts at the grid, never a remembered
+        // drill-down - see SelectAlbumTile's own doc comment for why this is
+        // safe to reset unconditionally even when this fires as a side effect
+        // of that same method switching sidebar selection to Albums.
+        _isAlbumGridDrilledIn = false;
+
         OnPropertyChanged(nameof(IsSubListVisible));
+        OnPropertyChanged(nameof(IsShowingAlbumGrid));
+        OnPropertyChanged(nameof(IsShowingRecentlyAddedGrid));
+        OnPropertyChanged(nameof(IsShowingAlbumBackButton));
+        OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(SelectedDevice));
         // Recently Added carries its own independent sort state (see SortColumn),
@@ -1150,15 +1259,15 @@ public partial class MainViewModel : ViewModelBase
         _renamePlaylistCommand?.NotifyCanExecuteChanged();
         _deletePlaylistCommand?.NotifyCanExecuteChanged();
 
-        var lastSelected = _selectedSidebarItem?.Kind switch
-        {
-            SidebarItemKind.Albums  => _lastSelectedAlbum,
-            SidebarItemKind.Artists => _lastSelectedArtist,
-            _ => null
-        };
-        var initial = lastSelected != null && _subListItems.Contains(lastSelected)
-            ? lastSelected
-            : _subListItems.FirstOrDefault();
+        // Albums no longer auto-selects an album on a fresh visit - it starts
+        // at the grid instead (see IsShowingAlbumGrid), matching mobile's
+        // Albums tab. Only Artists keeps the old auto-select-first/remembered
+        // behavior, since its plain-text picker is unchanged.
+        var initial = _selectedSidebarItem?.Kind == SidebarItemKind.Artists
+            ? (_lastSelectedArtist != null && _subListItems.Contains(_lastSelectedArtist)
+                ? _lastSelectedArtist
+                : _subListItems.FirstOrDefault())
+            : null;
         ApplySubItemSelection(initial != null ? new[] { initial } : Array.Empty<string>());
     }
 
@@ -1183,7 +1292,13 @@ public partial class MainViewModel : ViewModelBase
         var set = new HashSet<string>(items);
         return _selectedSidebarItem?.Kind switch
         {
-            SidebarItemKind.Albums  => _allTracks.Where(t => t.Album != null && set.Contains(t.Album)),
+            // RecentlyAdded here too, not just Albums - dragging a
+            // multi-selection straight off the Recently Added grid (without
+            // a plain click ever switching the sidebar to Albums first - see
+            // SelectAlbumTile) still needs to resolve to real tracks by album
+            // name, same as Albums' own grid does.
+            SidebarItemKind.Albums or SidebarItemKind.RecentlyAdded
+                => _allTracks.Where(t => t.Album != null && set.Contains(t.Album)),
             SidebarItemKind.Artists => _allTracks.Where(t => t.Artists != null && set.Contains(t.Artists)),
             _ => Enumerable.Empty<Track>()
         };
@@ -1255,6 +1370,7 @@ public partial class MainViewModel : ViewModelBase
     {
         _allTracks = new List<Track>(Library.Tracks);
         RebuildSubListItems();
+        RebuildAlbumGrids();
         ScheduleFilter();
     }
 

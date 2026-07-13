@@ -94,6 +94,21 @@ public partial class MainView : UserControl
         SubList.PointerReleased += SubList_PointerReleased;
         SubList.PointerCaptureLost += SubList_PointerCaptureLost;
 
+        // Same gesture as SubList above (click/Ctrl-toggle/Shift-range select,
+        // drag onto a sidebar playlist), retargeted at the tile grids - see
+        // AlbumGrid_PointerPressed. Both AlbumGrid and RecentlyAddedGrid share
+        // this exact handler set (they're the same gesture over two different
+        // tile orderings, not two different features - see that method's own
+        // doc comment); neither is a stock control with native selection to
+        // suppress, so plain Bubble wiring is enough, no Tunnel trick needed.
+        foreach (var grid in new[] { AlbumGrid, RecentlyAddedGrid })
+        {
+            grid.PointerPressed += AlbumGrid_PointerPressed;
+            grid.PointerMoved += AlbumGrid_PointerMoved;
+            grid.PointerReleased += AlbumGrid_PointerReleased;
+            grid.PointerCaptureLost += AlbumGrid_PointerCaptureLost;
+        }
+
         // Cmd/Ctrl+, (Settings) must work regardless of which control currently
         // has focus, so it's handled at the MainView root rather than scoped to MusicList.
         AddHandler(KeyDownEvent, MainView_PreviewKeyDown, RoutingStrategies.Tunnel);
@@ -193,6 +208,169 @@ public partial class MainView : UserControl
         if (_syncingSubListSelection || _viewModel == null)
             return;
         _viewModel.SetSelectedSubItems(SubList.SelectedItems!.Cast<string>().ToList());
+    }
+
+    // ── Album grid: select / multi-select / drag-to-playlist ────────────────────
+    // Same gesture and reasoning as SubList's own handlers above - see
+    // SubList_PointerPressed's doc comment - just hit-testing AlbumGrid.Panel's
+    // tiles (HitTestTile) instead of a ListBoxItem, and resolving the final
+    // drag payload through the same MainViewModel.GetTracksForSubListItems
+    // both share.
+
+    // Shared by both AlbumGrid and RecentlyAddedGrid - they're the same
+    // gesture (see SubList_PointerPressed's doc comment for the base
+    // rationale) over two different tile orderings, not two different
+    // features. Both instances are wired to this same handler set (see the
+    // constructor), and `sender`/pointer capture tell them apart - a plain
+    // click on either activates via the same MainViewModel.SelectAlbumTileCommand,
+    // which already handles switching the sidebar to Albums first if the
+    // click came from Recently Added.
+
+    private string? _albumGridAnchor; // Shift+click range-select anchor
+    private string? _albumGridDragHitItem;
+    private IReadOnlyList<string>? _albumGridDragItems;
+    private Point _albumGridDragStartPoint;
+    private bool _isAlbumGridDragging;
+    // A plain (unmodified) press on a not-yet-selected tile might still turn
+    // into a drag - see AlbumGrid_PointerMoved/Released. Selecting AND
+    // drilling in immediately on press (what this used to do) hid the grid
+    // the instant you pressed down, before a drag gesture ever had a chance
+    // to start, since the drilled-into track list replaces the grid
+    // entirely. The drill-in itself is deferred to release, and only
+    // actually happens if no drag occurred.
+    private bool _albumGridPendingActivate;
+
+    // The grid ordering to range-select against depends on which of the two
+    // instances is mid-gesture - Albums is alphabetical, Recently Added is
+    // by-recency (see MainViewModel.AlbumGridTiles/RecentlyAddedGridTiles).
+    private List<string> TileNamesFor(AlbumGridView grid) =>
+        _viewModel == null
+            ? new List<string>()
+            : (ReferenceEquals(grid, AlbumGrid) ? _viewModel.AlbumGridTiles : _viewModel.RecentlyAddedGridTiles)
+                .Select(t => t.Name).ToList();
+
+    private void AlbumGrid_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not AlbumGridView grid || _viewModel is not { } vm)
+            return;
+        if (!e.GetCurrentPoint(grid).Properties.IsLeftButtonPressed)
+            return;
+        var tile = grid.Panel.HitTestTile(e.GetPosition(grid.Panel));
+        if (tile == null)
+            return;
+
+        bool alreadySelected = vm.SelectedSubItems.Contains(tile.Name);
+        bool shift  = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        bool toggle = e.KeyModifiers.HasFlag(PlatformShortcuts.Primary);
+
+        if (shift)
+            SelectAlbumGridRange(grid, tile.Name);
+        else if (toggle)
+            ToggleAlbumGridItem(tile.Name);
+        // else: leave selection/view alone for now - AlbumGrid_PointerMoved's
+        // drag-threshold check already falls back to just this one tile if
+        // it turns out not to be part of the current selection, so nothing
+        // here needs to pre-select it for that to work correctly.
+
+        e.Handled = true;
+
+        _albumGridPendingActivate = !shift && !toggle && !alreadySelected;
+        _albumGridDragHitItem = tile.Name;
+        _albumGridDragStartPoint = e.GetPosition(grid);
+        e.Pointer.Capture(grid);
+    }
+
+    private void ToggleAlbumGridItem(string name)
+    {
+        if (_viewModel is not { } vm)
+            return;
+        var current = vm.SelectedSubItems.ToList();
+        if (!current.Remove(name))
+            current.Add(name);
+        vm.SetSelectedSubItems(current);
+        _albumGridAnchor = name;
+    }
+
+    private void SelectAlbumGridRange(AlbumGridView grid, string name)
+    {
+        if (_viewModel is not { } vm)
+            return;
+        var items = TileNamesFor(grid);
+        int anchorIdx = _albumGridAnchor != null ? items.IndexOf(_albumGridAnchor) : -1;
+        int clickIdx  = items.IndexOf(name);
+        if (anchorIdx < 0)
+            anchorIdx = clickIdx;
+        int lo = Math.Min(anchorIdx, clickIdx);
+        int hi = Math.Max(anchorIdx, clickIdx);
+
+        var range = new List<string>();
+        for (int i = lo; i <= hi; i++)
+            range.Add(items[i]);
+        // Anchor deliberately left untouched so repeated Shift+clicks keep
+        // extending/shrinking the range from the same starting point.
+        vm.SetSelectedSubItems(range);
+    }
+
+    private void AlbumGrid_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (sender is not AlbumGridView grid || _albumGridDragHitItem == null)
+            return;
+
+        var pt = e.GetPosition(grid);
+        if (!_isAlbumGridDragging)
+        {
+            var dx = pt.X - _albumGridDragStartPoint.X;
+            var dy = pt.Y - _albumGridDragStartPoint.Y;
+            if (dx * dx + dy * dy < SubListDragThreshold * SubListDragThreshold)
+                return;
+            _isAlbumGridDragging = true;
+            // Selection is final by now (AlbumGrid_PointerPressed above already
+            // resolved it for this press).
+            _albumGridDragItems = _viewModel?.SelectedSubItems.Contains(_albumGridDragHitItem) == true
+                ? _viewModel.SelectedSubItems.ToList()
+                : new List<string> { _albumGridDragHitItem };
+        }
+
+        ShowDragGhost(grid, pt, DragGhostLabel(_albumGridDragItems!));
+        SetSidebarDropHighlight(HitTestSidebarDrop(grid, pt));
+    }
+
+    private void AlbumGrid_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (sender is not AlbumGridView grid)
+            return;
+
+        if (_isAlbumGridDragging && _albumGridDragItems is { } items)
+        {
+            var target = HitTestSidebarDrop(grid, e.GetPosition(grid));
+            var tracks = _viewModel?.GetTracksForSubListItems(items) ?? Enumerable.Empty<Track>();
+
+            if (target?.PlaylistItem?.Playlist is { } playlist)
+                _ = _viewModel?.AddTracksToPlaylist(tracks, playlist);
+            else if (target?.CreateNew == true)
+                _ = _viewModel?.CreatePlaylistWithTracks(tracks);
+        }
+        else if (_albumGridPendingActivate && _albumGridDragHitItem is { } name)
+        {
+            // No drag happened - a genuine plain click, now safe to select +
+            // drill in (see _albumGridPendingActivate's doc comment).
+            _viewModel?.SelectAlbumTileCommand?.Execute(name);
+        }
+
+        e.Pointer.Capture(null);
+        EndAlbumGridDrag();
+    }
+
+    private void AlbumGrid_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+        => EndAlbumGridDrag();
+
+    private void EndAlbumGridDrag()
+    {
+        _albumGridDragHitItem = null;
+        _albumGridDragItems = null;
+        _isAlbumGridDragging = false;
+        _albumGridPendingActivate = false;
+        ResetDragVisuals();
     }
 
     // ── Per-view scroll position + selection ────────────────────────────────────
