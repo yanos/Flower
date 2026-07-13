@@ -157,8 +157,7 @@ public partial class MainViewModel : ViewModelBase
     public ICommand? NewPlaylistCommand          { get; private set; }
     public ICommand? RenamePlaylistCommand       { get; private set; }
     public ICommand? DeletePlaylistCommand       { get; private set; }
-    public ICommand? SelectAlbumTileCommand      { get; private set; }
-    public ICommand? BackToAlbumGridCommand      { get; private set; }
+    public ICommand? ToggleAlbumExpandedCommand  { get; private set; }
 
     // Backing the "Controls" menu (MainWindow.axaml) - PlaylistControls' own
     // transport buttons call these same three operations directly on
@@ -534,31 +533,62 @@ public partial class MainViewModel : ViewModelBase
     public bool IsSubListVisible => _selectedSidebarItem?.Kind == SidebarItemKind.Artists;
 
     // Album art tile grid - shown instead of the track list while on Albums/
-    // Recently Added with nothing drilled into yet, mirroring mobile's own
-    // Albums/Recently Added tabs (see MobileMainViewModel.AlbumGridRows/
-    // RecentlyAddedAlbumRows). Recently Added never shows a track list of its
-    // own on desktop any more than it does on mobile - tapping one of its
-    // tiles hands off to the Albums view for that one album instead (see
-    // SelectAlbumTile) rather than having its own separate drill-down state.
-    // Distinct from "how many albums are selected" - Ctrl/Shift-clicking
-    // tiles on the grid (see MainView.axaml.cs's AlbumGrid_PointerPressed)
-    // multi-selects for a drag-to-playlist gesture without leaving the grid,
-    // so _selectedSubItems.Count alone can't tell "browsing/multi-selecting
-    // the grid" apart from "drilled into one album's track list" - only a
-    // plain click (SelectAlbumTile) sets this.
-    private bool _isAlbumGridDrilledIn;
-
-    public bool IsShowingAlbumGrid =>
-        _selectedSidebarItem?.Kind == SidebarItemKind.Albums && !_isAlbumGridDrilledIn;
+    // Recently Added, mirroring mobile's own Albums/Recently Added tabs (see
+    // MobileMainViewModel.AlbumGridRows/RecentlyAddedAlbumRows). Unlike the
+    // old plain-text SubList this replaced, an album's songs are shown
+    // in-place (see ExpandedAlbumName below) rather than by navigating to a
+    // separate track-list view, so both of these are unconditional - always
+    // true while on their respective sidebar item.
+    public bool IsShowingAlbumGrid => _selectedSidebarItem?.Kind == SidebarItemKind.Albums;
     public bool IsShowingRecentlyAddedGrid => _selectedSidebarItem?.Kind == SidebarItemKind.RecentlyAdded;
 
-    // Shown above the track list only while viewing one album drilled into
-    // from the grid - the grid replaced Albums' old always-visible SubList,
-    // so this is the only way back to it now.
-    public bool IsShowingAlbumBackButton =>
-        _selectedSidebarItem?.Kind == SidebarItemKind.Albums && _isAlbumGridDrilledIn;
-
     public bool IsShowingTrackList => !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingRecentlyAddedGrid;
+
+    // The one album (if any) currently expanded inline within whichever grid
+    // is showing - see AlbumGridView/AlbumGridRowControl for the actual
+    // expand/collapse rendering+animation. Deliberately independent of
+    // _selectedSubItems (Ctrl/Shift multi-select for drag-to-playlist, see
+    // MainView.axaml.cs's AlbumGrid_PointerPressed) - a plain click toggles
+    // this and never touches multi-select; Ctrl/Shift-click never touches this.
+    private string? _expandedAlbumName;
+    public string? ExpandedAlbumName
+    {
+        get => _expandedAlbumName;
+        private set { _expandedAlbumName = value; OnPropertyChanged(); }
+    }
+
+    private ObservableCollection<Track> _expandedAlbumTracks = new();
+    public ObservableCollection<Track> ExpandedAlbumTracks
+    {
+        get => _expandedAlbumTracks;
+        private set { _expandedAlbumTracks = value; OnPropertyChanged(); }
+    }
+
+    // Accordion behavior - clicking the already-expanded album collapses it;
+    // clicking a different one switches straight to it. Both Albums' and
+    // Recently Added's tiles route through here (see AlbumGrid_PointerPressed),
+    // independent of which grid the click came from - the same album showing
+    // up in both is exactly the same album either way.
+    private void ToggleAlbumExpanded(string? albumName)
+    {
+        if (string.IsNullOrEmpty(albumName))
+            return;
+
+        if (_expandedAlbumName == albumName)
+        {
+            ExpandedAlbumName = null;
+            ExpandedAlbumTracks = new ObservableCollection<Track>();
+            return;
+        }
+
+        ExpandedAlbumName = albumName;
+        ExpandedAlbumTracks = BuildExpandedAlbumTracks(albumName);
+    }
+
+    private ObservableCollection<Track> BuildExpandedAlbumTracks(string albumName) =>
+        new(_allTracks.Where(t => t.Album == albumName)
+            .OrderBy(t => t.DiscNumber)
+            .ThenBy(t => t.TrackNumber));
 
     public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
     public DiscoveredDevice? SelectedDevice => _selectedSidebarItem?.Device;
@@ -587,42 +617,13 @@ public partial class MainViewModel : ViewModelBase
     {
         AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(AlbumGridBuilder.Build(_allTracks));
         RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(RecentlyAddedAlbumsBuilder.Build(_allTracks));
-    }
 
-    // Tile click on either grid - Recently Added's own tiles route here too
-    // (see IsShowingRecentlyAddedGrid's doc comment), switching the sidebar
-    // selection to Albums first if it wasn't already there. Commands
-    // themselves are assigned in the main constructor (see SelectAlbumTileCommand/
-    // BackToAlbumGridCommand near the other ICommand? properties). Ctrl/Shift-
-    // click multi-select (MainView.axaml.cs) deliberately does NOT go through
-    // here - it calls SetSelectedSubItems directly, which updates the
-    // selection without setting _isAlbumGridDrilledIn, so the grid stays
-    // visible for a drag instead of jumping to the track list.
-    private void SelectAlbumTile(string? albumName)
-    {
-        if (string.IsNullOrEmpty(albumName))
-            return;
-
-        var albumsItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
-        if (albumsItem != null && !ReferenceEquals(_selectedSidebarItem, albumsItem))
-            SelectedSidebarItem = albumsItem;
-
-        _isAlbumGridDrilledIn = true;
-        OnPropertyChanged(nameof(IsShowingAlbumGrid));
-        OnPropertyChanged(nameof(IsShowingAlbumBackButton));
-        OnPropertyChanged(nameof(IsShowingTrackList));
-        ApplySubItemSelection(new[] { albumName });
-    }
-
-    // The only way back to the grid from a drilled-into album - see
-    // IsShowingAlbumBackButton.
-    private void BackToAlbumGrid()
-    {
-        _isAlbumGridDrilledIn = false;
-        OnPropertyChanged(nameof(IsShowingAlbumGrid));
-        OnPropertyChanged(nameof(IsShowingAlbumBackButton));
-        OnPropertyChanged(nameof(IsShowingTrackList));
-        ApplySubItemSelection(Array.Empty<string>());
+        // An expanded album's tracks were resolved against the previous
+        // _allTracks snapshot - refresh them so a library change (a rescan,
+        // a download completing, a tag edit) while expanded doesn't leave it
+        // showing stale Track references.
+        if (_expandedAlbumName != null)
+            ExpandedAlbumTracks = BuildExpandedAlbumTracks(_expandedAlbumName);
     }
 
     // Identifies the currently displayed track list (Songs / a given album / artist / playlist)
@@ -673,12 +674,6 @@ public partial class MainViewModel : ViewModelBase
         RememberSubItemSelection(_selectedSubItem);
         OnPropertyChanged(nameof(SelectedSubItem));
         OnPropertyChanged(nameof(SelectedSubItems));
-        // Only Albums' own grid/back-button/track-list visibility depends on
-        // _selectedSubItems.Count - Artists' picker stays visible regardless
-        // of how many artists are selected.
-        OnPropertyChanged(nameof(IsShowingAlbumGrid));
-        OnPropertyChanged(nameof(IsShowingAlbumBackButton));
-        OnPropertyChanged(nameof(IsShowingTrackList));
         ScheduleFilter();
     }
 
@@ -756,8 +751,7 @@ public partial class MainViewModel : ViewModelBase
         _deletePlaylistCommand = new AsyncRelayCommand(DeleteSelectedPlaylistAsync, CanRenameOrDeleteSelectedPlaylist);
         DeletePlaylistCommand = _deletePlaylistCommand;
 
-        SelectAlbumTileCommand = new RelayCommand<string>(SelectAlbumTile);
-        BackToAlbumGridCommand = new RelayCommand(BackToAlbumGrid);
+        ToggleAlbumExpandedCommand = new RelayCommand<string>(ToggleAlbumExpanded);
 
         BuildSidebarItems();
         PopulateTracks();
@@ -848,6 +842,24 @@ public partial class MainViewModel : ViewModelBase
     {
         SyncPlayQueueToCurrentView();
         _playlistControlViewModel.Play(track);
+    }
+
+    // Double-click on an album tile in the Albums/Recently Added grid (see
+    // MainView.axaml.cs's AlbumGrid_PointerPressed) - queues the whole album
+    // in track order and starts playing from the first track, and makes sure
+    // it ends up expanded rather than toggling closed (unlike a plain click's
+    // ToggleAlbumExpandedCommand).
+    public void PlayAlbum(string albumName)
+    {
+        var tracks = BuildExpandedAlbumTracks(albumName);
+        if (tracks.Count == 0)
+            return;
+
+        ExpandedAlbumName = albumName;
+        ExpandedAlbumTracks = tracks;
+
+        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
+        _playlistControlViewModel.Play(tracks[0]);
     }
 
     // Space bar / toolbar play-pause button. Only snapshots a fresh queue when
@@ -1238,16 +1250,15 @@ public partial class MainViewModel : ViewModelBase
 
     private void OnSidebarSelectionChanged()
     {
-        // Every fresh visit to Albums starts at the grid, never a remembered
-        // drill-down - see SelectAlbumTile's own doc comment for why this is
-        // safe to reset unconditionally even when this fires as a side effect
-        // of that same method switching sidebar selection to Albums.
-        _isAlbumGridDrilledIn = false;
+        // Every fresh visit to Albums/Recently Added starts with nothing
+        // expanded, never a remembered one - matches mobile, where switching
+        // tabs and back always starts at the flat grid too.
+        ExpandedAlbumName = null;
+        ExpandedAlbumTracks = new ObservableCollection<Track>();
 
         OnPropertyChanged(nameof(IsSubListVisible));
         OnPropertyChanged(nameof(IsShowingAlbumGrid));
         OnPropertyChanged(nameof(IsShowingRecentlyAddedGrid));
-        OnPropertyChanged(nameof(IsShowingAlbumBackButton));
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(SelectedDevice));

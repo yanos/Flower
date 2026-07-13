@@ -23,16 +23,27 @@ public sealed class AlbumTileViewModel : ViewModelBase
     public required Track RepresentativeTrack { get; init; }
     public DateTimeOffset MostRecentlyAdded { get; init; }
 
-    // Desktop-only for now (multi-select + drag-to-playlist on the Albums
-    // grid - see AlbumGridPanel/MainView.axaml.cs) - unused, always false, on
-    // mobile, same as TrackRowViewModel.IsSelected is a plain mutable
-    // property on a per-rebuild-fresh instance, not something tracked
-    // separately by the view.
+    // Desktop-only for now (multi-select + drag-to-playlist on the Albums/
+    // Recently Added grids - see AlbumGridView/MainView.axaml.cs) - unused,
+    // always false, on mobile, same as TrackRowViewModel.IsSelected is a
+    // plain mutable property on a per-rebuild-fresh instance, not something
+    // tracked separately by the view.
     private bool _isSelected;
     public bool IsSelected
     {
         get => _isSelected;
         set { if (_isSelected != value) { _isSelected = value; OnPropertyChanged(); } }
+    }
+
+    // Desktop-only - drives AlbumTileControl's expanded-state visual cue.
+    // The actual expanded content (that album's tracks) lives on the
+    // AlbumGridRowViewModel containing this tile, not here - see
+    // AlbumGridView.ApplyExpansion.
+    private bool _isExpanded;
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set { if (_isExpanded != value) { _isExpanded = value; OnPropertyChanged(); } }
     }
 
     // Same lazy-load-on-first-bind pattern as TrackRowViewModel.AlbumArt, kept

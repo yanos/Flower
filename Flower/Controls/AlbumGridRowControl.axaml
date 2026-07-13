@@ -1,0 +1,88 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:converters="clr-namespace:Flower.Converters"
+             xmlns:vm="clr-namespace:Flower.ViewModels"
+             xmlns:mobileVm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:models="clr-namespace:Flower.Models"
+             x:Class="Flower.Controls.AlbumGridRowControl"
+             x:DataType="vm:AlbumGridRowViewModel"
+             x:CompileBindings="True">
+
+  <UserControl.Resources>
+    <converters:DurationConverter x:Key="DurationConverter"/>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <Style Selector="Border.expandedTrack:pointerover">
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Margin="0,0,0,16">
+    <ItemsControl ItemsSource="{Binding Tiles}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Orientation="Horizontal" Spacing="16"/>
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="mobileVm:AlbumTileViewModel">
+          <controls:AlbumTileControl DataContext="{Binding}"/>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <!-- Expanded track list - Height animates 0<->TargetHeight (set by
+         AlbumGridRowControl.axaml.cs whenever IsExpanded/ExpandedTracks
+         change) via the Transition below, rather than animating to/from
+         "Auto" (not natively supported - see this control's code-behind for
+         why the target height is precomputed instead). ClipToBounds hides
+         the two-column content while collapsed/mid-animation. -->
+    <Border x:Name="ExpansionBorder"
+            ClipToBounds="True"
+            Height="0">
+      <Border.Transitions>
+        <Transitions>
+          <DoubleTransition Property="Height" Duration="0:0:0.22" Easing="CubicEaseOut"/>
+        </Transitions>
+      </Border.Transitions>
+
+      <Border x:Name="ExpansionCard"
+              Background="{DynamicResource AppAccentSoftBrush}"
+              CornerRadius="8"
+              Padding="12,10"
+              VerticalAlignment="Top">
+        <Grid ColumnDefinitions="*,*">
+          <ItemsControl Grid.Column="0" ItemsSource="{Binding Column1Tracks}" Margin="0,0,12,0">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="models:Track">
+                <Border Classes="expandedTrack" Padding="6,4" DoubleTapped="TrackRow_DoubleTapped">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Duration, Converter={StaticResource DurationConverter}}"
+                               FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <ItemsControl Grid.Column="1" ItemsSource="{Binding Column2Tracks}" Margin="12,0,0,0">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="models:Track">
+                <Border Classes="expandedTrack" Padding="6,4" DoubleTapped="TrackRow_DoubleTapped">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Duration, Converter={StaticResource DurationConverter}}"
+                               FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Grid>
+      </Border>
+    </Border>
+  </StackPanel>
+</UserControl>

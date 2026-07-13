@@ -1,13 +1,29 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="Flower.Controls.AlbumGridView">
+             xmlns:controls="clr-namespace:Flower.Controls"
+             x:Class="Flower.Controls.AlbumGridView"
+             x:CompileBindings="False">
 
-  <!-- Virtualized album art grid (Albums/Recently Added) - same ScrollViewer +
-       custom Panel wiring as MusicListView, see AlbumGridPanel and this
-       control's code-behind. -->
-  <ScrollViewer x:Name="Scroller"
-                HorizontalScrollBarVisibility="Disabled"
+  <!-- Row-chunked album art grid - same VirtualizingStackPanel-of-rows
+       approach mobile's own Albums/Recently Added grids use (see
+       MobileMainView.axaml), generalized here to a computed tiles-per-row
+       (AlbumGridView.axaml.cs's RebuildRows) instead of mobile's fixed 2,
+       plus per-row inline expansion (AlbumGridRowControl). Wrapped in an
+       explicit ScrollViewer for the same reason mobile's grids are: a plain
+       ItemsControl has no ScrollViewer in its own default template. -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
-    <!-- AlbumGridPanel added in code-behind -->
+    <ItemsControl x:Name="RowsList" Margin="16">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <VirtualizingStackPanel Orientation="Vertical"/>
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <controls:AlbumGridRowControl DataContext="{Binding}"/>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
   </ScrollViewer>
 </UserControl>
