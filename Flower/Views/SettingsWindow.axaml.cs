@@ -39,6 +39,7 @@ public partial class SettingsWindow : Window
         RefreshPathRows();
         DeviceAliasTextBox.Text = viewModel.DeviceAlias;
         SyncPlayCountCheckBox.IsChecked = viewModel.SyncPlayCountFromITunes;
+        SyncDateAddedCheckBox.IsChecked = viewModel.SyncDateAddedFromITunes;
         ITunesLibraryPathText.Text = DescribeITunesLibrarySource();
         ThemeComboBox.SelectedIndex = viewModel.ThemePreference switch
         {
@@ -132,6 +133,9 @@ public partial class SettingsWindow : Window
 
     private void SyncPlayCountCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
         _viewModel.SyncPlayCountFromITunes = SyncPlayCountCheckBox.IsChecked ?? false;
+
+    private void SyncDateAddedCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
+        _viewModel.SyncDateAddedFromITunes = SyncDateAddedCheckBox.IsChecked ?? false;
 
     // Fires once during the constructor's own initial SelectedIndex set too -
     // harmless, since MainViewModel.ThemePreference's setter already no-ops
