@@ -27,7 +27,7 @@
                      FontSize="11"
                      Opacity="0.6"/>
 
-          <TextBlock Text="Appearance"
+          <TextBlock Text="Theme"
                      FontWeight="SemiBold"
                      Margin="0,20,0,8"/>
           <ComboBox x:Name="ThemeComboBox"
