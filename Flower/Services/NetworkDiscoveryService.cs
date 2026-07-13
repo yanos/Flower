@@ -28,9 +28,63 @@ public class DiscoveredDevice
     public string Fingerprint { get; set; } = "";
 }
 
-// See SYNC-PLAN.md: mDNS discovery (proven working macOS <-> iOS Simulator) plus
-// the start of the real sync protocol - device identity exchange over plain HTTP
-// (see SyncHttpServer). File transfer itself is a later phase.
+// Default IMdnsBackend (see PlatformMdns.cs): raw multicast via
+// Makaretu.Dns.Multicast. Works everywhere except real iOS hardware - see
+// PlatformMdns's own doc comment for why - where Flower.iOS overrides
+// PlatformMdns.Current with a Bonjour-API-backed implementation instead.
+internal sealed class MakaretuMdnsBackend : IMdnsBackend
+{
+    private readonly MulticastService _mdns = new();
+    private readonly ServiceDiscovery _serviceDiscovery;
+
+    public event EventHandler<MdnsInstanceFound>? InstanceFound;
+    public event EventHandler<string>? InstanceLost;
+
+    public MakaretuMdnsBackend()
+    {
+        _serviceDiscovery = new ServiceDiscovery(_mdns);
+        _serviceDiscovery.ServiceInstanceDiscovered += (_, e) =>
+        {
+            var name = e.ServiceInstanceName.ToString();
+
+            // No separate resolve round-trip needed: the discovery answer already
+            // carries the sender's real address (RemoteEndPoint) and, per DNS-SD
+            // convention, the SRV record with the service port in AdditionalRecords.
+            var srv = e.Message.AdditionalRecords.OfType<SRVRecord>().FirstOrDefault();
+            var port = srv?.Port ?? (ushort)SyncHttpServer.DefaultPort;
+            var endpoint = new IPEndPoint(e.RemoteEndPoint.Address, port);
+            InstanceFound?.Invoke(this, new MdnsInstanceFound { InstanceName = name, EndPoint = endpoint });
+        };
+        _serviceDiscovery.ServiceInstanceShutdown += (_, e) =>
+            InstanceLost?.Invoke(this, e.ServiceInstanceName.ToString());
+    }
+
+    public void Advertise(string instanceName, string serviceType, int port)
+    {
+        _serviceDiscovery.Advertise(new ServiceProfile(instanceName, serviceType, (ushort)port));
+        _mdns.Start();
+    }
+
+    public void Browse(string serviceType) => _serviceDiscovery.QueryServiceInstances(serviceType);
+
+    public void Stop()
+    {
+        _serviceDiscovery.Unadvertise();
+        _mdns.Stop();
+    }
+
+    public void Dispose()
+    {
+        Stop();
+        _serviceDiscovery.Dispose();
+        _mdns.Dispose();
+    }
+}
+
+// See SYNC-PLAN.md: mDNS discovery (proven working macOS <-> iOS Simulator, and -
+// via Flower.iOS's Bonjour-API backend, see PlatformMdns.cs - real iOS hardware
+// too) plus the start of the real sync protocol - device identity exchange over
+// plain HTTP (see SyncHttpServer). File transfer itself is a later phase.
 public class NetworkDiscoveryService : IDisposable
 {
     private const string ServiceType = "_flowersync._tcp";
@@ -47,8 +101,7 @@ public class NetworkDiscoveryService : IDisposable
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
 
-    private readonly MulticastService _mdns = new();
-    private readonly ServiceDiscovery _serviceDiscovery;
+    private readonly IMdnsBackend _backend;
 
     // Every peer currently known on the LAN, keyed by its raw mDNS instance
     // name - see PollKnownDevicesAsync. Not the same identity key
@@ -73,14 +126,13 @@ public class NetworkDiscoveryService : IDisposable
     public NetworkDiscoveryService(ILogger<NetworkDiscoveryService> logger)
     {
         _logger = logger;
-        _serviceDiscovery = new ServiceDiscovery(_mdns);
-        _serviceDiscovery.ServiceInstanceDiscovered += OnServiceInstanceDiscovered;
-        _serviceDiscovery.ServiceInstanceShutdown += (_, e) =>
+        _backend = PlatformMdns.Current ?? new MakaretuMdnsBackend();
+        _backend.InstanceFound += OnInstanceFound;
+        _backend.InstanceLost += (_, name) =>
         {
-            if (!IsOurServiceType(e.ServiceInstanceName))
+            if (!IsOurServiceType(name))
                 return;
 
-            var name = e.ServiceInstanceName.ToString();
             _knownDevices.TryRemove(name, out DiscoveredDevice? _);
             _logger.LogInformation("Peer {InstanceName} went away", name);
             DeviceLost?.Invoke(this, name);
@@ -91,13 +143,11 @@ public class NetworkDiscoveryService : IDisposable
     // necessarily SyncHttpServer.DefaultPort, since that can be taken by another
     // Flower instance on the same machine (e.g. the iOS Simulator). Advertising the
     // real port means peers never need to assume a fixed one; they read it from the
-    // SRV record in the discovery answer instead (see OnServiceInstanceDiscovered).
+    // SRV record in the discovery answer instead (see OnInstanceFound).
     public void Start(int port)
     {
-        var profile = new ServiceProfile(OwnInstanceName, ServiceType, (ushort)port);
-        _serviceDiscovery.Advertise(profile);
-        _mdns.Start();
-        _serviceDiscovery.QueryServiceInstances(ServiceType);
+        _backend.Advertise(OwnInstanceName, ServiceType, port);
+        _backend.Browse(ServiceType);
 
         _pollCts = new CancellationTokenSource();
         _ = PollKnownDevicesAsync(_pollCts.Token);
@@ -124,29 +174,21 @@ public class NetworkDiscoveryService : IDisposable
         }
     }
 
-    private void OnServiceInstanceDiscovered(object? sender, ServiceInstanceDiscoveryEventArgs e)
+    private void OnInstanceFound(object? sender, MdnsInstanceFound found)
     {
-        // ServiceInstanceDiscovered fires for any service instance seen on the LAN,
-        // not just ones matching what we queried for (mDNS is a shared multicast
-        // channel) - e.g. printers, Chromecasts, or Apple's own device-pairing
-        // traffic show up here too. Filter to our own service type.
-        if (!IsOurServiceType(e.ServiceInstanceName))
+        // The backend reports any service instance seen on the LAN matching what
+        // we asked it to browse for - filter to our own service type in case a
+        // platform backend (or a stray non-Flower responder on the same type,
+        // unlikely but cheap to guard) reports something else.
+        if (!IsOurServiceType(found.InstanceName))
             return;
 
-        var name = e.ServiceInstanceName.ToString();
-        if (name.StartsWith(OwnInstanceName + ".", StringComparison.OrdinalIgnoreCase))
+        if (found.InstanceName.StartsWith(OwnInstanceName + ".", StringComparison.OrdinalIgnoreCase))
             return; // mDNS reflects our own advertisement back to us - not a peer.
 
-        // No separate resolve round-trip needed: the discovery answer already
-        // carries the sender's real address (RemoteEndPoint) and, per DNS-SD
-        // convention, the SRV record with the service port in AdditionalRecords.
-        var srv = e.Message.AdditionalRecords.OfType<SRVRecord>().FirstOrDefault();
-        var port = srv?.Port ?? (ushort)SyncHttpServer.DefaultPort;
-        var endpoint = new IPEndPoint(e.RemoteEndPoint.Address, port);
-
-        var device = new DiscoveredDevice { InstanceName = name, EndPoint = endpoint, Alias = name };
-        _knownDevices[name] = device;
-        _logger.LogInformation("Discovered peer {InstanceName} at {EndPoint}", name, endpoint);
+        var device = new DiscoveredDevice { InstanceName = found.InstanceName, EndPoint = found.EndPoint, Alias = found.InstanceName };
+        _knownDevices[found.InstanceName] = device;
+        _logger.LogInformation("Discovered peer {InstanceName} at {EndPoint}", found.InstanceName, found.EndPoint);
         DeviceDiscovered?.Invoke(this, device);
 
         _ = ResolveAliasAsync(device);
@@ -202,8 +244,8 @@ public class NetworkDiscoveryService : IDisposable
     public DiscoveredDevice? FindByFingerprint(string fingerprint) =>
         _knownDevices.Values.FirstOrDefault(d => d.Fingerprint == fingerprint);
 
-    private static bool IsOurServiceType(DomainName name) =>
-        name.ToString().EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);
+    private static bool IsOurServiceType(string instanceName) =>
+        instanceName.EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);
 
     private static string PlatformTag()
     {
@@ -224,14 +266,12 @@ public class NetworkDiscoveryService : IDisposable
     {
         _pollCts?.Cancel();
         _pollCts = null;
-        _serviceDiscovery.Unadvertise();
-        _mdns.Stop();
+        _backend.Stop();
     }
 
     public void Dispose()
     {
         Stop();
-        _serviceDiscovery.Dispose();
-        _mdns.Dispose();
+        _backend.Dispose();
     }
 }
