@@ -216,7 +216,11 @@ public partial class MainViewModel : ViewModelBase
     // Whether to import per-track play counts from iTunes/Music.app on every
     // launch - see ITunesPlayCountImporter. Persisted immediately on change,
     // like SortArtistAlbumsByYear below, rather than gated behind Settings'
-    // OK button (which is specifically about the library-paths list).
+    // OK button (which is specifically about the library-paths list). The
+    // sync itself, though, *is* OK-gated - see SettingsWindow.SaveButton_Click
+    // - so checking the box mid-dialog doesn't kick off a multi-second
+    // AppleScript export before the user has finished deciding what else to
+    // change in Settings.
     public bool SyncPlayCountFromITunes
     {
         get => _appSettings?.SyncPlayCountFromITunes ?? false;
@@ -227,18 +231,12 @@ public partial class MainViewModel : ViewModelBase
                 return;
             _appSettings.SyncPlayCountFromITunes = value;
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
-
-            // Apply right away rather than only at the next launch, so turning
-            // this on gives visible feedback immediately instead of looking
-            // like it silently did nothing until the app is restarted.
-            if (value)
-                _ = SyncITunesPlayCountAsync();
         }
     }
 
     // Whether to import per-track "Date Added" from iTunes/Music.app on every
-    // launch - see ITunesDateAddedImporter. Same apply-immediately,
-    // persist-immediately pattern as SyncPlayCountFromITunes above.
+    // launch - see ITunesDateAddedImporter. Same persist-immediately-but-
+    // OK-gated-sync pattern as SyncPlayCountFromITunes above.
     public bool SyncDateAddedFromITunes
     {
         get => _appSettings?.SyncDateAddedFromITunes ?? false;
@@ -249,9 +247,6 @@ public partial class MainViewModel : ViewModelBase
                 return;
             _appSettings.SyncDateAddedFromITunes = value;
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
-
-            if (value)
-                _ = SyncITunesDateAddedAsync();
         }
     }
 
@@ -279,8 +274,28 @@ public partial class MainViewModel : ViewModelBase
     // above (apply-immediately-on-toggle) and App.axaml.cs's startup rescan
     // (apply-on-every-launch), both of which run this off the UI thread
     // already - BeginBusy drives the status bar spinner either way.
+    //
+    // Both this and SyncITunesDateAddedAsync below can be triggered from more
+    // than one place in close succession - the startup rescan (App.axaml.cs)
+    // and Settings' OK button both fire unconditionally based on "is the
+    // checkbox currently checked," not "did it just run" - so opening Settings
+    // and clicking OK shortly after launch would otherwise re-run the same
+    // ~1-2s AppleScript export twice back to back. ITunesSyncCooldown skips a
+    // call that lands within a minute of the previous one finishing.
+    private static readonly TimeSpan ITunesSyncCooldown = TimeSpan.FromMinutes(1);
+    private DateTimeOffset? _lastPlayCountSyncAt;
+    private DateTimeOffset? _lastDateAddedSyncAt;
+
     public async Task SyncITunesPlayCountAsync()
     {
+        if (_lastPlayCountSyncAt is { } last && DateTimeOffset.UtcNow - last < ITunesSyncCooldown)
+        {
+            _logger.LogDebug("Skipping iTunes play count sync - ran {ElapsedSeconds:F0}s ago, inside the {CooldownSeconds:F0}s cooldown",
+                (DateTimeOffset.UtcNow - last).TotalSeconds, ITunesSyncCooldown.TotalSeconds);
+            return;
+        }
+        _lastPlayCountSyncAt = DateTimeOffset.UtcNow;
+
         using var _ = BeginBusy("Syncing play counts from Music.app…");
         await Task.Run(() => ITunesPlayCountImporter.Apply(Library.Tracks, _logger));
         // Same list, same Track instances mutated in place - just need
@@ -299,6 +314,14 @@ public partial class MainViewModel : ViewModelBase
     // ITunesDateAddedImporter - see that class for the oldest-wins conflict rule.
     public async Task SyncITunesDateAddedAsync()
     {
+        if (_lastDateAddedSyncAt is { } last && DateTimeOffset.UtcNow - last < ITunesSyncCooldown)
+        {
+            _logger.LogDebug("Skipping iTunes date added sync - ran {ElapsedSeconds:F0}s ago, inside the {CooldownSeconds:F0}s cooldown",
+                (DateTimeOffset.UtcNow - last).TotalSeconds, ITunesSyncCooldown.TotalSeconds);
+            return;
+        }
+        _lastDateAddedSyncAt = DateTimeOffset.UtcNow;
+
         using var _ = BeginBusy("Syncing date added from Music.app…");
         await Task.Run(() => ITunesDateAddedImporter.Apply(Library.Tracks, _logger));
         Library.NotifyTrackChanged();
@@ -363,26 +386,49 @@ public partial class MainViewModel : ViewModelBase
     public bool    IsBusy      => _busyCount > 0;
     public string? BusyMessage => _busyMessage;
 
+    // Public entry point for App.axaml.cs's startup sequence, which needs to
+    // keep the spinner up across the whole rescan + both iTunes syncs as one
+    // continuous scope (nesting further BeginBusy calls inside it just updates
+    // BusyMessage as each step starts - see NotifyBusyChanged) rather than
+    // relying on each step's own brief individual scope, since the rescan
+    // itself - the longest part by far, ~9s against a large real library - had
+    // no busy coverage of its own at all.
+    public IDisposable BeginBusyScope(string? message = null) => BeginBusy(message);
+
     // The count itself is bumped synchronously (needed immediately regardless
-    // of caller thread, to correctly track overlapping scopes), but the
-    // notifications are dispatched - every prior caller happened to already be
-    // on the UI thread (button-click commands, where AsyncRelayCommand runs
-    // synchronously up to its first await), so this was never actually
-    // exercised off it until SyncITunesPlayCountAsync started calling this
-    // from within a background Task.Run: IsBusy's IsVisible binding "worked"
-    // anyway (something else happened to force a UI-thread re-evaluation
-    // around the same time), but BusyMessage's TextBlock silently never
-    // updated - a real cross-thread notification bug, not just this one caller.
+    // of caller thread, to correctly track overlapping scopes). The
+    // notifications used to always go through Dispatcher.UIThread.Post, even
+    // when the caller was already on the UI thread (the common case - every
+    // button-click command runs synchronously up to its first await) - a real
+    // bug once SyncITunesPlayCountAsync started also calling this from a
+    // background Task.Run (App.axaml.cs's startup rescan): IsBusy's IsVisible
+    // binding "worked" anyway (something else happened to force a UI-thread
+    // re-evaluation around the same time), but BusyMessage's TextBlock
+    // silently never updated. NotifyBusyChanged below fires the notification
+    // immediately when already on the UI thread instead of unconditionally
+    // deferring it, so the spinner/message show up as soon as this method
+    // returns rather than depending on something else happening to pump the
+    // dispatcher queue first.
     private IDisposable BeginBusy(string? message = null)
     {
         Interlocked.Increment(ref _busyCount);
-        Dispatcher.UIThread.Post(() =>
+        NotifyBusyChanged(message);
+        return new BusyScope(this);
+    }
+
+    private void NotifyBusyChanged(string? message)
+    {
+        void Notify()
         {
             _busyMessage = message;
             OnPropertyChanged(nameof(IsBusy));
             OnPropertyChanged(nameof(BusyMessage));
-        });
-        return new BusyScope(this);
+        }
+
+        if (Dispatcher.UIThread.CheckAccess())
+            Notify();
+        else
+            Dispatcher.UIThread.Post(Notify);
     }
 
     private sealed class BusyScope : IDisposable
@@ -392,12 +438,7 @@ public partial class MainViewModel : ViewModelBase
         public void Dispose()
         {
             if (Interlocked.Decrement(ref _vm._busyCount) == 0)
-                Dispatcher.UIThread.Post(() =>
-                {
-                    _vm._busyMessage = null;
-                    _vm.OnPropertyChanged(nameof(IsBusy));
-                    _vm.OnPropertyChanged(nameof(BusyMessage));
-                });
+                _vm.NotifyBusyChanged(null);
         }
     }
 

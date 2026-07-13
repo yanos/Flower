@@ -173,15 +173,28 @@ public partial class SettingsWindow : Window
     // actually saves/rescans if a folder was added or removed - reordering
     // never happens (Add always appends, Remove just removes), so a plain
     // set comparison against the paths this dialog opened with is enough.
+    //
+    // The two iTunes syncs below run the same way - fired unawaited right
+    // after Close(), whenever their checkbox is checked when OK is clicked
+    // (not gated on whether it was actually toggled this session), so the
+    // busy spinner shows up on the now-visible MainView rather than behind
+    // this still-modal window.
     private async void SaveButton_Click(object? sender, RoutedEventArgs e)
     {
         var pathsChanged = !_paths.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(_originalPaths);
         if (pathsChanged)
             await _viewModel.SaveLibraryPathsAsync(_paths.ToList());
 
+        var syncPlayCount = SyncPlayCountCheckBox.IsChecked ?? false;
+        var syncDateAdded = SyncDateAddedCheckBox.IsChecked ?? false;
+
         Close();
 
         if (pathsChanged)
             _ = _viewModel.RescanLibraryAsync();
+        if (syncPlayCount)
+            _ = _viewModel.SyncITunesPlayCountAsync();
+        if (syncDateAdded)
+            _ = _viewModel.SyncITunesDateAddedAsync();
     }
 }
