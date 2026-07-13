@@ -6,25 +6,28 @@ using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Layout;
+using Avalonia.VisualTree;
 
+using Flower.Models;
+using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 
 namespace Flower.Controls;
 
-// Thin wrapper hosting AlbumGridPanel inside a ScrollViewer, same shape as
-// MusicListView hosting MusicListPanel - see that control for the reasoning
-// behind driving the panel's virtualization off the ScrollViewer's own
-// Offset/Viewport rather than relying on ambient scroll virtualization.
-// Click/multi-select/drag interaction is handled externally (MainView.axaml.cs)
-// via the exposed Panel, same split as MusicListView keeps with its own panel
-// internally - see MainView.axaml.cs's AlbumGrid_Pointer* handlers.
+// Hosts a row-chunked, virtualized album art grid - see AlbumGridRowControl/
+// AlbumGridRowViewModel for the actual row+tile+inline-expansion rendering.
+// Click/multi-select/drag interaction is handled externally (MainView.axaml.cs),
+// via HitTestTile - same split MusicListView keeps with its own panel.
 public partial class AlbumGridView : UserControl
 {
-    private readonly AlbumGridPanel _panel;
-    private IReadOnlyList<AlbumTileViewModel> _items = Array.Empty<AlbumTileViewModel>();
+    // Matches AlbumTileControl's own hardcoded tile width (180) plus the row
+    // template's inter-tile Spacing (16) - used only to estimate how many
+    // tiles fit per row; not load-bearing for the tiles' own actual layout.
+    private const double CellWidth = 180 + 16;
 
-    public AlbumGridPanel Panel => _panel;
+    private IReadOnlyList<AlbumTileViewModel> _tiles = Array.Empty<AlbumTileViewModel>();
+    private readonly List<AlbumGridRowViewModel> _rows = new();
+    private int _columns = 1;
 
     public static readonly StyledProperty<IEnumerable?> ItemsSourceProperty =
         AvaloniaProperty.Register<AlbumGridView, IEnumerable?>(nameof(ItemsSource));
@@ -36,9 +39,8 @@ public partial class AlbumGridView : UserControl
     }
 
     // Album names currently selected (see MainViewModel.SelectedSubItems) -
-    // drives which tiles render as selected. Not TwoWay: selection changes
-    // flow the other direction, through MainViewModel.SetSelectedSubItems/
-    // SelectAlbumTileCommand called from MainView.axaml.cs's pointer handlers.
+    // drives which tiles render as selected (drag/multi-select), independent
+    // of ExpandedName below.
     public static readonly StyledProperty<IEnumerable?> SelectedNamesProperty =
         AvaloniaProperty.Register<AlbumGridView, IEnumerable?>(nameof(SelectedNames));
 
@@ -48,54 +50,119 @@ public partial class AlbumGridView : UserControl
         set => SetValue(SelectedNamesProperty, value);
     }
 
+    // The one album (if any) currently expanded inline - see
+    // MainViewModel.ExpandedAlbumName.
+    public static readonly StyledProperty<string?> ExpandedNameProperty =
+        AvaloniaProperty.Register<AlbumGridView, string?>(nameof(ExpandedName));
+
+    public string? ExpandedName
+    {
+        get => GetValue(ExpandedNameProperty);
+        set => SetValue(ExpandedNameProperty, value);
+    }
+
+    public static readonly StyledProperty<IEnumerable?> ExpandedTracksProperty =
+        AvaloniaProperty.Register<AlbumGridView, IEnumerable?>(nameof(ExpandedTracks));
+
+    public IEnumerable? ExpandedTracks
+    {
+        get => GetValue(ExpandedTracksProperty);
+        set => SetValue(ExpandedTracksProperty, value);
+    }
+
     public AlbumGridView()
     {
         InitializeComponent();
-
-        _panel = new AlbumGridPanel { VerticalAlignment = VerticalAlignment.Top };
-        Scroller.Content = _panel;
-
-        Scroller.ScrollChanged += (_, _) => SyncScroll();
-        Scroller.PropertyChanged += (_, e) =>
+        RowsList.ItemsSource = _rows;
+        SizeChanged += (_, e) =>
         {
-            if (e.Property == ScrollViewer.ViewportProperty)
-                SyncScroll();
+            if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) > 1)
+                RebuildRows();
         };
     }
 
-    private INotifyCollectionChanged? _observedCollection;
+    private INotifyCollectionChanged? _observedItemsSource;
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+
         if (change.Property == ItemsSourceProperty)
         {
-            if (_observedCollection != null)
-                _observedCollection.CollectionChanged -= OnCollectionChanged;
+            if (_observedItemsSource != null)
+                _observedItemsSource.CollectionChanged -= OnItemsSourceCollectionChanged;
+            _observedItemsSource = ItemsSource as INotifyCollectionChanged;
+            if (_observedItemsSource != null)
+                _observedItemsSource.CollectionChanged += OnItemsSourceCollectionChanged;
 
-            _observedCollection = ItemsSource as INotifyCollectionChanged;
-            if (_observedCollection != null)
-                _observedCollection.CollectionChanged += OnCollectionChanged;
-
-            RefreshItems();
+            _tiles = ItemsSource?.Cast<AlbumTileViewModel>().ToList() ?? new List<AlbumTileViewModel>();
+            RebuildRows();
         }
         else if (change.Property == SelectedNamesProperty)
         {
-            _panel.SetSelectedNames(SelectedNames?.Cast<string>().ToList() ?? new List<string>());
+            ApplySelection();
+        }
+        else if (change.Property == ExpandedNameProperty || change.Property == ExpandedTracksProperty)
+        {
+            ApplyExpansion();
         }
     }
 
-    private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => RefreshItems();
-
-    private void RefreshItems()
+    private void OnItemsSourceCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        _items = ItemsSource?.Cast<AlbumTileViewModel>().ToList() ?? new List<AlbumTileViewModel>();
-        _panel.SetItems(_items);
-        // A changed item count can change the total content height at the
-        // same column count - re-sync so the ScrollViewer's extent updates.
-        SyncScroll();
+        _tiles = ItemsSource?.Cast<AlbumTileViewModel>().ToList() ?? new List<AlbumTileViewModel>();
+        RebuildRows();
     }
 
-    private void SyncScroll() =>
-        _panel.SetViewport(Scroller.Offset.Y, Scroller.Viewport.Height, Scroller.Viewport.Width);
+    // Recomputes tiles-per-row from the current width and re-chunks _tiles
+    // into fresh AlbumGridRowViewModel wrappers - the tiles themselves are
+    // the same instances either way (same cache/art), only which row wraps
+    // which tiles changes. Selection/expansion are re-applied afterward since
+    // a rebuild produces brand new row objects.
+    private void RebuildRows()
+    {
+        var width = Bounds.Width > 0 ? Bounds.Width : 800; // reasonable default before first layout
+        _columns = Math.Max(1, (int)(width / CellWidth));
+
+        _rows.Clear();
+        for (int i = 0; i < _tiles.Count; i += _columns)
+            _rows.Add(new AlbumGridRowViewModel { Tiles = _tiles.Skip(i).Take(_columns).ToList() });
+
+        RowsList.ItemsSource = null;
+        RowsList.ItemsSource = _rows;
+
+        ApplySelection();
+        ApplyExpansion();
+    }
+
+    private void ApplySelection()
+    {
+        var selected = new HashSet<string>(SelectedNames?.Cast<string>() ?? Enumerable.Empty<string>());
+        foreach (var tile in _tiles)
+            tile.IsSelected = selected.Contains(tile.Name);
+    }
+
+    private void ApplyExpansion()
+    {
+        var expandedName = ExpandedName;
+        var tracks = ExpandedTracks?.Cast<Track>().ToList() ?? new List<Track>();
+
+        foreach (var tile in _tiles)
+            tile.IsExpanded = expandedName != null && tile.Name == expandedName;
+
+        foreach (var row in _rows)
+        {
+            var isMatch = expandedName != null && row.Tiles.Any(t => t.Name == expandedName);
+            row.IsExpanded = isMatch;
+            row.ExpandedTracks = isMatch ? tracks : Array.Empty<Track>();
+        }
+    }
+
+    // Resolves whichever AlbumTileControl (if any) a raw pointer event's
+    // original source landed on, by walking up the visual tree - used by
+    // MainView.axaml.cs's pointer handlers instead of coordinate math, since
+    // tiles are now real, individually-templated controls (VirtualizingStackPanel
+    // of rows) rather than manually arranged by a custom Panel.
+    public AlbumTileViewModel? HitTestTile(object? eventSource) =>
+        (eventSource as Visual)?.FindAncestorOfType<AlbumTileControl>(includeSelf: true)?.DataContext as AlbumTileViewModel;
 }

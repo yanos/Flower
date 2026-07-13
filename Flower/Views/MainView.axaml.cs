@@ -222,9 +222,9 @@ public partial class MainView : UserControl
     // rationale) over two different tile orderings, not two different
     // features. Both instances are wired to this same handler set (see the
     // constructor), and `sender`/pointer capture tell them apart - a plain
-    // click on either activates via the same MainViewModel.SelectAlbumTileCommand,
-    // which already handles switching the sidebar to Albums first if the
-    // click came from Recently Added.
+    // click on either activates via the same MainViewModel.ToggleAlbumExpandedCommand,
+    // which is shared by both grids too (only one album can be expanded at a
+    // time, regardless of which grid it was clicked in).
 
     private string? _albumGridAnchor; // Shift+click range-select anchor
     private string? _albumGridDragHitItem;
@@ -232,12 +232,12 @@ public partial class MainView : UserControl
     private Point _albumGridDragStartPoint;
     private bool _isAlbumGridDragging;
     // A plain (unmodified) press on a not-yet-selected tile might still turn
-    // into a drag - see AlbumGrid_PointerMoved/Released. Selecting AND
-    // drilling in immediately on press (what this used to do) hid the grid
-    // the instant you pressed down, before a drag gesture ever had a chance
-    // to start, since the drilled-into track list replaces the grid
-    // entirely. The drill-in itself is deferred to release, and only
-    // actually happens if no drag occurred.
+    // into a drag - see AlbumGrid_PointerMoved/Released. Toggling the
+    // expansion immediately on press (what this used to do, back when a
+    // plain click drilled into a whole separate track-list view rather than
+    // expanding in place) hid the grid the instant you pressed down, before
+    // a drag gesture ever had a chance to start. Deferred to release, and
+    // only actually toggles if no drag occurred.
     private bool _albumGridPendingActivate;
 
     // The grid ordering to range-select against depends on which of the two
@@ -255,13 +255,27 @@ public partial class MainView : UserControl
             return;
         if (!e.GetCurrentPoint(grid).Properties.IsLeftButtonPressed)
             return;
-        var tile = grid.Panel.HitTestTile(e.GetPosition(grid.Panel));
+        var tile = grid.HitTestTile(e.Source);
         if (tile == null)
             return;
 
-        bool alreadySelected = vm.SelectedSubItems.Contains(tile.Name);
         bool shift  = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         bool toggle = e.KeyModifiers.HasFlag(PlatformShortcuts.Primary);
+
+        // Double-click plays the album and (unlike a plain click's toggle)
+        // always leaves it expanded, rather than the two plain clicks the OS
+        // reports this as each toggling ToggleAlbumExpandedCommand in turn -
+        // which would otherwise expand then immediately re-collapse it.
+        if (e.ClickCount >= 2 && !shift && !toggle)
+        {
+            vm.PlayAlbum(tile.Name);
+            e.Handled = true;
+            e.Pointer.Capture(null);
+            EndAlbumGridDrag();
+            return;
+        }
+
+        bool alreadySelected = vm.SelectedSubItems.Contains(tile.Name);
 
         if (shift)
             SelectAlbumGridRange(grid, tile.Name);
@@ -352,9 +366,9 @@ public partial class MainView : UserControl
         }
         else if (_albumGridPendingActivate && _albumGridDragHitItem is { } name)
         {
-            // No drag happened - a genuine plain click, now safe to select +
-            // drill in (see _albumGridPendingActivate's doc comment).
-            _viewModel?.SelectAlbumTileCommand?.Execute(name);
+            // No drag happened - a genuine plain click, now safe to
+            // expand/collapse (see _albumGridPendingActivate's doc comment).
+            _viewModel?.ToggleAlbumExpandedCommand?.Execute(name);
         }
 
         e.Pointer.Capture(null);
