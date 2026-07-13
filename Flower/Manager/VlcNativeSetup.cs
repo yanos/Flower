@@ -21,6 +21,14 @@ namespace Flower.Manager
 
                 if (!OperatingSystem.IsMacOS())
                 {
+                    if (OperatingSystem.IsLinux())
+                    {
+                        // Distro runtime packages only ship versioned sonames (libvlc.so.5);
+                        // the unversioned libvlc.so requires libvlc-dev, so fall back to the
+                        // versioned name when the default probe fails.
+                        NativeLibrary.SetDllImportResolver(typeof(LibVLC).Assembly, ResolveLinuxLibVlc);
+                    }
+
                     Core.Initialize();
                     return;
                 }
@@ -35,6 +43,14 @@ namespace Flower.Manager
 
                 Core.Initialize(Directory.Exists(vlcLib) ? vlcLib : null);
             }
+        }
+
+        private static IntPtr ResolveLinuxLibVlc(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
+        {
+            if (libraryName == "libvlc" && NativeLibrary.TryLoad("libvlc.so.5", assembly, searchPath, out var handle))
+                return handle;
+
+            return IntPtr.Zero;
         }
 
         [DllImport("libc")]
