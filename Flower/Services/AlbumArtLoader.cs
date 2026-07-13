@@ -66,8 +66,21 @@ public static class AlbumArtLoader
         if (data == null)
             return null;
 
-        using var ms = new MemoryStream(data);
-        return new Bitmap(ms);
+        // Unlike TryDecodeBytes/TryDecodeFile below (the remote-art paths), this
+        // one wasn't guarded - a track whose embedded picture data Skia can't
+        // decode (corrupt, truncated, or an unsupported encoding like a CMYK
+        // JPEG) threw ArgumentException straight out of Task.Run in
+        // LoadLocalAsync, an unobserved fault rather than just falling back to
+        // the placeholder icon like every other art-miss in this file does.
+        try
+        {
+            using var ms = new MemoryStream(data);
+            return new Bitmap(ms);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // Raw art bytes for a track this device actually has a file for - embedded
