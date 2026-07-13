@@ -206,7 +206,10 @@
           <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Album / Artist sub-list -->
+        <!-- Artist sub-list. Albums used to share this (plain album-name text
+             list) but was replaced by the art-tile grid below, matching
+             mobile's own Albums/Recently Added tabs - see MainViewModel's
+             IsSubListVisible/IsShowingAlbumGrid doc comments. -->
         <Border Grid.Column="0"
                 IsVisible="{Binding IsSubListVisible}"
                 Width="200"
@@ -219,14 +222,54 @@
                    SelectionChanged="SubList_SelectionChanged"/>
         </Border>
 
-        <!-- Custom track list. Hidden (not just covered) when showing device
-             detail - MusicListView draws its own column-header row internally,
-             and the device-detail panel below only insets by its own Margin,
-             leaving that header row visible peeking above it otherwise. -->
-        <controls:MusicListView Grid.Column="1"
-                                x:Name="MusicList"
-                                IsVisible="{Binding !IsShowingDeviceDetail}"
-                                SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
+        <!-- Album art tile grid - Albums (nothing drilled into yet) and
+             Recently Added both use this, alphabetical vs. by-recency (see
+             MainViewModel.AlbumGridTiles/RecentlyAddedGridTiles). Spans both
+             columns - unlike the track list, this view never has a sub-list
+             pane alongside it. Both instances get the full gesture set
+             (multi-select + drag-to-playlist, the old SubList's own gesture,
+             restored here) - see MainView.axaml.cs's AlbumGrid_Pointer*
+             handlers, which are shared by both rather than being an
+             Albums-only feature. A plain click on either activates the same
+             way (MainViewModel.SelectAlbumTileCommand), which already
+             switches the sidebar to Albums first if the click came from
+             Recently Added. -->
+        <controls:AlbumGridView x:Name="AlbumGrid"
+                                Grid.Column="0" Grid.ColumnSpan="2"
+                                IsVisible="{Binding IsShowingAlbumGrid}"
+                                ItemsSource="{Binding AlbumGridTiles}"
+                                SelectedNames="{Binding SelectedSubItems}"/>
+        <controls:AlbumGridView x:Name="RecentlyAddedGrid"
+                                Grid.Column="0" Grid.ColumnSpan="2"
+                                IsVisible="{Binding IsShowingRecentlyAddedGrid}"
+                                ItemsSource="{Binding RecentlyAddedGridTiles}"
+                                SelectedNames="{Binding SelectedSubItems}"/>
+
+        <!-- Track list column: an optional "back to grid" bar above the list,
+             only shown for an album drilled into from the grid (the grid
+             replaced Albums' old always-visible SubList, so this is the only
+             way back to it now - see IsShowingAlbumBackButton). -->
+        <Grid Grid.Column="1" RowDefinitions="Auto,*">
+          <Button Grid.Row="0"
+                  IsVisible="{Binding IsShowingAlbumBackButton}"
+                  Command="{Binding BackToAlbumGridCommand}"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="10,6"
+                  HorizontalAlignment="Left"
+                  Opacity="0.75"
+                  Content="‹ Albums"/>
+
+          <!-- Custom track list. Hidden (not just covered) when showing device
+               detail or one of the grids above - MusicListView draws its own
+               column-header row internally, and the panels that replace it
+               only inset by their own Margin, leaving that header row visible
+               peeking above it otherwise. -->
+          <controls:MusicListView Grid.Row="1"
+                                  x:Name="MusicList"
+                                  IsVisible="{Binding IsShowingTrackList}"
+                                  SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
+        </Grid>
 
         <!-- Device detail: shown instead of the track list when a Devices sidebar row is selected -->
         <StackPanel Grid.Column="0" Grid.ColumnSpan="2"

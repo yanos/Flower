@@ -23,6 +23,18 @@ public sealed class AlbumTileViewModel : ViewModelBase
     public required Track RepresentativeTrack { get; init; }
     public DateTimeOffset MostRecentlyAdded { get; init; }
 
+    // Desktop-only for now (multi-select + drag-to-playlist on the Albums
+    // grid - see AlbumGridPanel/MainView.axaml.cs) - unused, always false, on
+    // mobile, same as TrackRowViewModel.IsSelected is a plain mutable
+    // property on a per-rebuild-fresh instance, not something tracked
+    // separately by the view.
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { if (_isSelected != value) { _isSelected = value; OnPropertyChanged(); } }
+    }
+
     // Same lazy-load-on-first-bind pattern as TrackRowViewModel.AlbumArt, kept
     // as a separate small copy rather than a shared base: the concurrency-safe
     // gate (Interlocked + one bool field) is only a few lines, and the two

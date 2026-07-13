@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Flower.Controls.AlbumGridView">
+
+  <!-- Virtualized album art grid (Albums/Recently Added) - same ScrollViewer +
+       custom Panel wiring as MusicListView, see AlbumGridPanel and this
+       control's code-behind. -->
+  <ScrollViewer x:Name="Scroller"
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto">
+    <!-- AlbumGridPanel added in code-behind -->
+  </ScrollViewer>
+</UserControl>

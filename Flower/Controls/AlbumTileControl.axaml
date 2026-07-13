@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             x:Class="Flower.Controls.AlbumTileControl"
+             x:DataType="vm:AlbumTileViewModel"
+             x:CompileBindings="True"
+             Background="Transparent">
+
+  <!-- Selection/hover are plain overlay Borders, same pattern as
+       TrackRowControl's HoverBorder - pointer/selection handling itself
+       lives one level up, in AlbumGridPanel (mirrors MusicListPanel /
+       MusicListView.axaml.cs's Panel_PointerPressed), not here. -->
+  <UserControl.Styles>
+    <Style Selector="UserControl:pointerover Border#HoverBorder">
+      <Setter Property="IsVisible" Value="True"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <Border x:Name="SelectionBorder"
+            IsVisible="{Binding IsSelected}"
+            Background="{DynamicResource AppAccentSoftBrush}"
+            CornerRadius="6"/>
+    <Border x:Name="HoverBorder"
+            IsVisible="False"
+            Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+            CornerRadius="6"/>
+    <StackPanel Spacing="6" Width="180" Margin="8">
+      <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="180" Height="180"/>
+      <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
+      <TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis"/>
+    </StackPanel>
+  </Panel>
+</UserControl>
