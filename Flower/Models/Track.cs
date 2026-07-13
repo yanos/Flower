@@ -112,14 +112,38 @@ namespace Flower.Models
         // so playlist track membership is matched by this fingerprint instead. Not
         // persisted - computed on demand, ignored by both library.json and the sync
         // wire DTOs (which carry the same fields directly).
+        //
+        // Rounded, not truncated - confirmed against a real Music.app export where
+        // TagLib's own parse of a file's duration (172.01s) and iTunes's recorded
+        // Total Time for the same file (171.96s) straddled a whole-second boundary;
+        // truncating both put them on opposite sides (172 vs 171), so the sync key
+        // never matched and that track's "Date Added"/play count silently never
+        // synced. Rounding both to the nearest second still isn't foolproof against
+        // every possible boundary case, but it fixes the one actually observed and
+        // narrows the remaining risk window to values within ~5ms of an exact .5s.
         [JsonIgnore]
-        public string SyncKey => BuildSyncKey(Title, Artists, Album, (int)Duration.TotalSeconds);
+        public string SyncKey => BuildSyncKey(Title, Artists, Album, (int)Math.Round(Duration.TotalSeconds));
 
         // Shared with PlaylistSyncPlanner, which builds the same key from the wire
         // DTO (PlaylistSyncTrackDto) on the other side of a sync - both must
         // normalize identically or every cross-device track match silently fails.
         public static string BuildSyncKey(string? title, string? artists, string? album, int durationSeconds) =>
             $"{Normalize(title)}|{Normalize(artists)}|{Normalize(album)}|{durationSeconds}";
+
+        // Fallback identity for ITunesDateAddedImporter/ITunesPlayCountImporter,
+        // used only when BuildSyncKey finds no match and this resolves to exactly
+        // one candidate. Confirmed necessary against a real VBR-encoded MP3 where
+        // TagLib's parsed duration (1222.5s, matching file size/bitrate math) and
+        // Music.app's own recorded Total Time (631.9s - almost exactly half, a
+        // known old-iTunes VBR-header mis-parse) disagreed by ~10 minutes, not a
+        // rounding-boundary fraction of a second - no amount of rounding closes a
+        // gap that size, so duration has to be droppable entirely as a last
+        // resort. Title+Artist+Album alone is already unique for the overwhelming
+        // majority of a personal library; duration exists to disambiguate the
+        // rare case of two genuinely different same-titled tracks, so this is
+        // only safe when there is nothing left to disambiguate between.
+        public static string BuildLooseKey(string? title, string? artists, string? album) =>
+            $"{Normalize(title)}|{Normalize(artists)}|{Normalize(album)}";
 
         private static string Normalize(string? value) =>
             value?.Trim().ToLowerInvariant() ?? "";

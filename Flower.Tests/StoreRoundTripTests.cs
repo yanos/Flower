@@ -478,14 +478,67 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
-    public void ITunesPlayCountImporter_does_not_match_a_track_with_a_different_duration()
+    public void ITunesPlayCountImporter_falls_back_to_title_artist_album_when_duration_disagrees_but_is_unambiguous()
     {
         var xmlPath = Path.Combine(_tempHome, "sample-library.xml");
         File.WriteAllText(xmlPath, SampleLibraryXml(17));
 
-        // Same title/artist/album as the XML entry, but a different length -
-        // a genuinely different recording (e.g. a remix or live version),
-        // which SyncKey correctly treats as not the same track.
+        // Same title/artist/album as the XML entry, but a very different
+        // length - confirmed against a real VBR-encoded MP3 where TagLib's
+        // parsed duration and Music.app's own recorded Total Time disagreed
+        // by ~10 minutes (a known old-iTunes VBR-header mis-parse), not a
+        // rounding-boundary fraction of a second. There's only one candidate
+        // in the XML at this title/artist/album, so Track.BuildLooseKey's
+        // fallback (see its own doc comment) still matches it.
+        var track = new Track
+        {
+            Title = "Test Song", Artists = "Test Artist", Album = "Test Album",
+            Duration = TimeSpan.FromSeconds(45),
+            Path = "/music/song.mp3",
+        };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(17, track.ImportedPlayCount);
+    }
+
+    [Fact]
+    public void ITunesPlayCountImporter_does_not_guess_between_two_entries_with_different_durations()
+    {
+        var xmlPath = Path.Combine(_tempHome, "sample-library.xml");
+        // Two distinct XML entries share the same title/artist/album but have
+        // different durations from each other (and from the local track below)
+        // - genuinely ambiguous (could be, say, a studio cut and a live version
+        // sharing sloppy tags), so neither the exact key nor the loose-key
+        // fallback should guess which one the local track corresponds to.
+        File.WriteAllText(xmlPath, """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>Tracks</key>
+                <dict>
+                    <key>1001</key>
+                    <dict>
+                        <key>Name</key><string>Test Song</string>
+                        <key>Artist</key><string>Test Artist</string>
+                        <key>Album</key><string>Test Album</string>
+                        <key>Total Time</key><integer>200000</integer>
+                        <key>Play Count</key><integer>17</integer>
+                    </dict>
+                    <key>1002</key>
+                    <dict>
+                        <key>Name</key><string>Test Song</string>
+                        <key>Artist</key><string>Test Artist</string>
+                        <key>Album</key><string>Test Album</string>
+                        <key>Total Time</key><integer>300000</integer>
+                        <key>Play Count</key><integer>9</integer>
+                    </dict>
+                </dict>
+            </dict>
+            </plist>
+            """);
+
         var track = new Track
         {
             Title = "Test Song", Artists = "Test Artist", Album = "Test Album",
@@ -496,6 +549,49 @@ public class StoreRoundTripTests : IDisposable
         ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
 
         Assert.Equal(0, track.ImportedPlayCount);
+    }
+
+    [Fact]
+    public void ITunesPlayCountImporter_matches_by_path_when_metadata_disagrees()
+    {
+        // Confirmed against a real track whose Artist tag had been edited to
+        // add a native-language name ("Takashi Kokubo (小久保隆)") after
+        // Music.app last indexed it, leaving Music.app's own record at plain
+        // "Takashi Kokubo" - metadata-based matching (exact or loose) can
+        // never bridge a genuine content difference like this, but Location
+        // still points at the exact same file, so path match (tried first)
+        // does.
+        var xmlPath = Path.Combine(_tempHome, "sample-library.xml");
+        File.WriteAllText(xmlPath, """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>Tracks</key>
+                <dict>
+                    <key>1001</key>
+                    <dict>
+                        <key>Name</key><string>Song</string>
+                        <key>Artist</key><string>Old Artist Name</string>
+                        <key>Album</key><string>Album</string>
+                        <key>Total Time</key><integer>75023</integer>
+                        <key>Play Count</key><integer>17</integer>
+                        <key>Location</key><string>file:///Users/test/Music/Music/Media.localized/Music/Artist/Album/01%20Song.mp3</string>
+                    </dict>
+                </dict>
+            </dict>
+            </plist>
+            """);
+
+        var track = new Track
+        {
+            Title = "Song", Artists = "New Artist Name (Native Name)", Album = "Album", Duration = TimeSpan.FromSeconds(75.031),
+            Path = "/Users/test/Music/Music/Media.localized/Music/Artist/Album/01 Song.mp3",
+        };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(17, track.ImportedPlayCount);
     }
 
     [Fact]
