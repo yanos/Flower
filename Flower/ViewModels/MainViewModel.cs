@@ -236,6 +236,25 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    // Whether to import per-track "Date Added" from iTunes/Music.app on every
+    // launch - see ITunesDateAddedImporter. Same apply-immediately,
+    // persist-immediately pattern as SyncPlayCountFromITunes above.
+    public bool SyncDateAddedFromITunes
+    {
+        get => _appSettings?.SyncDateAddedFromITunes ?? false;
+        set
+        {
+            _appSettings ??= new AppSettings();
+            if (_appSettings.SyncDateAddedFromITunes == value)
+                return;
+            _appSettings.SyncDateAddedFromITunes = value;
+            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+
+            if (value)
+                _ = SyncITunesDateAddedAsync();
+        }
+    }
+
     // Settings' Appearance picker (Follow System / Light / Dark) - see
     // Flower.Services.AppTheme for how this becomes an actual Avalonia
     // ThemeVariant. Same apply-immediately, persist-immediately pattern as
@@ -272,6 +291,16 @@ public partial class MainViewModel : ViewModelBase
         // fresh scan result double-counts every placeholder (Path == null)
         // track, since UpdateTracks' own carry-forward step re-adds them a
         // second time on top of their copy already sitting in the argument.
+        Library.NotifyTrackChanged();
+        await (_libraryStore?.SaveAsync(Library.Tracks) ?? Task.CompletedTask);
+    }
+
+    // Same shape as SyncITunesPlayCountAsync above, but for Track.DateAdded via
+    // ITunesDateAddedImporter - see that class for the oldest-wins conflict rule.
+    public async Task SyncITunesDateAddedAsync()
+    {
+        using var _ = BeginBusy("Syncing date added from Music.app…");
+        await Task.Run(() => ITunesDateAddedImporter.Apply(Library.Tracks, _logger));
         Library.NotifyTrackChanged();
         await (_libraryStore?.SaveAsync(Library.Tracks) ?? Task.CompletedTask);
     }

@@ -53,6 +53,14 @@ namespace Flower.Persistence
         // it's a harmless no-op when no such export exists on disk.
         public bool SyncPlayCountFromITunes { get; set; } = true;
 
+        // Same export, but for Track.DateAdded instead of play counts - see
+        // ITunesDateAddedImporter. Off by default, unlike SyncPlayCountFromITunes:
+        // this can visibly reorder Recently Added (the older of the two dates
+        // always wins - see ITunesDateAddedImporter's own doc comment), so it is
+        // opt-in rather than silently changing sort order for everyone the first
+        // time they update.
+        public bool SyncDateAddedFromITunes { get; set; } = false;
+
         // Follows the OS light/dark setting by default; Light/Dark force that
         // variant regardless of the OS - see Settings' Appearance picker and
         // Flower.Services.AppTheme.

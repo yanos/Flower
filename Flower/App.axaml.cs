@@ -170,11 +170,14 @@ public partial class App : Application
                 await libraryStore.SaveAsync(library.Tracks);
                 rescanLogger.LogInformation("Library saved ({TrackCount} tracks)", library.Tracks.Count);
 
-                // SyncITunesPlayCountAsync does its own save (it may run again
-                // later via the Settings checkbox, independent of this startup
-                // rescan) and drives the status bar spinner via BeginBusy.
+                // SyncITunesPlayCountAsync/SyncITunesDateAddedAsync each do their
+                // own save (either may run again later via its own Settings
+                // checkbox, independent of this startup rescan) and drive the
+                // status bar spinner via BeginBusy.
                 if (appSettings.SyncPlayCountFromITunes)
                     await mainViewModel.SyncITunesPlayCountAsync();
+                if (appSettings.SyncDateAddedFromITunes)
+                    await mainViewModel.SyncITunesDateAddedAsync();
             }
             catch (Exception ex)
             {
