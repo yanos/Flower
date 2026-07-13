@@ -67,5 +67,12 @@
       </NativeMenuItem>
     </NativeMenu>
   </NativeMenu.Menu>
-  <views:MainView />
+  <DockPanel>
+    <!-- On macOS the window's NativeMenu is exported into the global menu
+         bar and this control renders nothing; on Windows/Linux (no global
+         menu bar) it renders that same NativeMenu as a regular in-window
+         menu bar. Without it those platforms have no menu at all. -->
+    <NativeMenuBar DockPanel.Dock="Top" HorizontalAlignment="Left"/>
+    <views:MainView />
+  </DockPanel>
 </Window>
