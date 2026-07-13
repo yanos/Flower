@@ -28,9 +28,10 @@ public class ITunesDateAddedImporterTests
         return path;
     }
 
-    private static string TrackEntry(int id, string name, string artist, string? album, int totalTimeMs, string dateAddedIso)
+    private static string TrackEntry(int id, string name, string artist, string? album, int totalTimeMs, string dateAddedIso, string? location = null)
     {
         var albumXml = album == null ? "" : $"<key>Album</key><string>{album}</string>";
+        var locationXml = location == null ? "" : $"<key>Location</key><string>{location}</string>";
         return $"""
             <key>{id}</key>
             <dict>
@@ -40,6 +41,7 @@ public class ITunesDateAddedImporterTests
                 {albumXml}
                 <key>Total Time</key><integer>{totalTimeMs}</integer>
                 <key>Date Added</key><date>{dateAddedIso}</date>
+                {locationXml}
             </dict>
             """;
     }
@@ -94,6 +96,76 @@ public class ITunesDateAddedImporterTests
         ITunesDateAddedImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
 
         Assert.Equal(new DateTimeOffset(2012, 2, 14, 0, 0, 0, TimeSpan.Zero), track.DateAdded);
+    }
+
+    [Fact]
+    public void ApplyFromXmlFile_matches_by_path_when_metadata_disagrees()
+    {
+        // Confirmed against a real track whose Artist tag had been edited to
+        // add a native-language name ("Takashi Kokubo (小久保隆)") after
+        // Music.app last indexed it, leaving Music.app's own record at plain
+        // "Takashi Kokubo" - metadata-based matching (exact or loose) can
+        // never bridge a genuine content difference like this, but Location
+        // still points at the exact same file, so path match (tried first)
+        // does.
+        var xmlPath = WriteLibraryXml(TrackEntry(
+            1, "Song", "Old Artist Name", "Album", 75023, "2010-01-01T00:00:00Z",
+            location: "file:///Users/test/Music/Music/Media.localized/Music/Artist/Album/01%20Song.mp3"));
+        var track = new Track
+        {
+            Title = "Song", Artists = "New Artist Name (Native Name)", Album = "Album", Duration = TimeSpan.FromSeconds(75.031),
+            Path = "/Users/test/Music/Music/Media.localized/Music/Artist/Album/01 Song.mp3",
+            DateAdded = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+
+        ITunesDateAddedImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(new DateTimeOffset(2010, 1, 1, 0, 0, 0, TimeSpan.Zero), track.DateAdded);
+    }
+
+    [Fact]
+    public void ApplyFromXmlFile_falls_back_to_title_artist_album_when_duration_disagrees_but_is_unambiguous()
+    {
+        // Same title/artist/album as the XML entry, but a very different
+        // length - confirmed against a real VBR-encoded MP3 where TagLib's
+        // parsed duration and Music.app's own recorded Total Time disagreed
+        // by ~10 minutes (a known old-iTunes VBR-header mis-parse), not a
+        // rounding-boundary fraction of a second. There's only one candidate
+        // in the XML at this title/artist/album, so Track.BuildLooseKey's
+        // fallback (see its own doc comment) still matches it.
+        var xmlPath = WriteLibraryXml(TrackEntry(1, "The Little Drummer Boy", "Deerhoof", null, 75023, "2010-01-01T00:00:00Z"));
+        var track = new Track
+        {
+            Title = "The Little Drummer Boy", Artists = "Deerhoof", Album = null, Duration = TimeSpan.FromMinutes(20),
+            DateAdded = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+
+        ITunesDateAddedImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(new DateTimeOffset(2010, 1, 1, 0, 0, 0, TimeSpan.Zero), track.DateAdded);
+    }
+
+    [Fact]
+    public void ApplyFromXmlFile_does_not_guess_between_two_entries_with_different_durations()
+    {
+        // Two distinct XML entries share the same title/artist/album but have
+        // different durations from each other (and from the local track below)
+        // - genuinely ambiguous (could be, say, a studio cut and a live version
+        // sharing sloppy tags), so neither the exact key nor the loose-key
+        // fallback should guess which one the local track corresponds to.
+        var xmlPath = WriteLibraryXml(
+            TrackEntry(1, "The Little Drummer Boy", "Deerhoof", null, 75023, "2010-01-01T00:00:00Z") +
+            TrackEntry(2, "The Little Drummer Boy", "Deerhoof", null, 120000, "2005-01-01T00:00:00Z"));
+        var original = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var track = new Track
+        {
+            Title = "The Little Drummer Boy", Artists = "Deerhoof", Album = null, Duration = TimeSpan.FromMinutes(20),
+            DateAdded = original,
+        };
+
+        ITunesDateAddedImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(original, track.DateAdded);
     }
 
     [Fact]

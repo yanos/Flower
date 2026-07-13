@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 using Claunia.PropertyList;
 
@@ -90,6 +91,17 @@ public static class ITunesPlayCountImporter
             }
 
             var playCountBySyncKey = new Dictionary<string, int>();
+            // Highest-priority match - see TryDecodeLocationPath's own doc
+            // comment for why a path match, when available, beats metadata
+            // entirely.
+            var playCountByPath = new Dictionary<string, int>();
+            // Fallback for when BuildSyncKey finds nothing - see Track.
+            // BuildLooseKey's own doc comment. Tracks how many *distinct* full
+            // sync keys (i.e. distinct durations) share a loose key - two raw
+            // XML entries for the same file at the same duration (already
+            // summed above) don't make a loose key ambiguous, only two
+            // genuinely different durations do.
+            var looseSyncKeys = new Dictionary<string, HashSet<string>>();
             foreach (var entry in iTunesTracks.Values)
             {
                 if (entry is not NSDictionary iTunesTrack)
@@ -103,11 +115,15 @@ public static class ITunesPlayCountImporter
                     iTunesTrack.TryGetValue("Artist", out var artistNode);
                     iTunesTrack.TryGetValue("Album", out var albumNode);
 
+                    // Rounded, not truncated - see Track.SyncKey's own doc comment
+                    // for the real-world boundary case (171.96s vs 172.01s) this
+                    // fixes; both sides of the match must round the same way.
                     var syncKey = Track.BuildSyncKey(
                         nameNode.ToString(),
                         artistNode?.ToString(),
                         albumNode?.ToString(),
-                        totalTimeMs.ToInt() / 1000);
+                        (int)Math.Round(totalTimeMs.ToInt() / 1000.0));
+                    var looseKey = Track.BuildLooseKey(nameNode.ToString(), artistNode?.ToString(), albumNode?.ToString());
 
                     // Sum rather than overwrite: a library that's been through a
                     // merge/duplicate-import can have more than one Music.app
@@ -119,15 +135,31 @@ public static class ITunesPlayCountImporter
                     // count didn't happen to be enumerated last.
                     playCountBySyncKey[syncKey] =
                         playCountBySyncKey.GetValueOrDefault(syncKey) + playCount.ToInt();
+
+                    if (!looseSyncKeys.TryGetValue(looseKey, out var syncKeys))
+                        looseSyncKeys[looseKey] = syncKeys = new HashSet<string>();
+                    syncKeys.Add(syncKey);
+
+                    iTunesTrack.TryGetValue("Location", out var locationNode);
+                    if (TryDecodeLocationPath(locationNode?.ToString()) is { } path)
+                        playCountByPath[path] = playCountByPath.GetValueOrDefault(path) + playCount.ToInt();
                 }
             }
 
             var matchedCount = 0;
             foreach (var track in tracks)
             {
-                if (playCountBySyncKey.TryGetValue(track.SyncKey, out var count))
+                int? count = null;
+                if (!string.IsNullOrEmpty(track.Path) && playCountByPath.TryGetValue(track.Path, out var byPath))
+                    count = byPath;
+                else if (playCountBySyncKey.TryGetValue(track.SyncKey, out var exact))
+                    count = exact;
+                else if (looseSyncKeys.TryGetValue(Track.BuildLooseKey(track.Title, track.Artists, track.Album), out var syncKeys) && syncKeys.Count == 1)
+                    count = playCountBySyncKey[syncKeys.Single()];
+
+                if (count is { } value)
                 {
-                    track.ImportedPlayCount = count;
+                    track.ImportedPlayCount = value;
                     matchedCount++;
                 }
             }
@@ -139,6 +171,32 @@ public static class ITunesPlayCountImporter
             // Corrupt/unreadable/unexpected-shape XML - leave ImportedPlayCount
             // as-is rather than blocking startup over an optional enrichment step.
             logger.LogWarning(ex, "Failed to parse iTunes library export at {XmlPath}; play counts left unchanged", xmlPath);
+        }
+    }
+
+    // An iTunes entry's own file path, when it resolves and matches a local
+    // Track.Path exactly, is a stronger identity signal than any tag-derived
+    // key: metadata (title/artist/album/duration) can drift after Music.app
+    // last indexed a file - confirmed against a real track whose Artist tag
+    // had been edited ("Takashi Kokubo (小久保隆)" locally vs "Takashi Kokubo"
+    // in Music.app's stale record) where Location still pointed at the exact
+    // same file - or, per this class's own doc comment, a *static* export's
+    // paths can predate an iTunes-to-Music.app migration and no longer
+    // resolve at all. Either way this fallback degrades safely: a stale/non-
+    // matching path here just means the metadata-based keys below get tried
+    // instead, exactly as if this dictionary had never been built.
+    private static string? TryDecodeLocationPath(string? location)
+    {
+        if (string.IsNullOrEmpty(location))
+            return null;
+        try
+        {
+            var uri = new Uri(location);
+            return uri.IsFile ? uri.LocalPath : null;
+        }
+        catch (UriFormatException)
+        {
+            return null;
         }
     }
 
