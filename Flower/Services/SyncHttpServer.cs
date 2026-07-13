@@ -66,8 +66,8 @@ public class SyncHttpServer : IDisposable
     private readonly DeviceIdentity _deviceIdentity;
     private readonly Library _library;
     private readonly ILogger _logger;
-    private readonly PlaylistStore _playlistStore = new();
-    private readonly TrustedPeerStore _trustedPeerStore = new();
+    private readonly PlaylistStore _playlistStore;
+    private readonly TrustedPeerStore _trustedPeerStore;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingApprovals = new();
     private CancellationTokenSource? _cts;
 
@@ -79,10 +79,17 @@ public class SyncHttpServer : IDisposable
     // see Start(). Null if binding failed on every port tried (sync unavailable).
     public int? BoundPort { get; private set; }
 
-    public SyncHttpServer(DeviceIdentity deviceIdentity, Library library, ILogger<SyncHttpServer> logger)
+    public SyncHttpServer(
+        DeviceIdentity deviceIdentity,
+        Library library,
+        PlaylistStore playlistStore,
+        TrustedPeerStore trustedPeerStore,
+        ILogger<SyncHttpServer> logger)
     {
         _deviceIdentity = deviceIdentity;
         _library = library;
+        _playlistStore = playlistStore;
+        _trustedPeerStore = trustedPeerStore;
         _logger = logger;
     }
 

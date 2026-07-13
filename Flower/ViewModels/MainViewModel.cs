@@ -54,6 +54,8 @@ public partial class MainViewModel : ViewModelBase
     private LibraryStore? _libraryStore;
     private AppSettingsStore? _appSettingsStore;
     private PlaylistStore? _playlistStore;
+    private DeviceIdentityStore? _deviceIdentityStore;
+    private DeviceNicknameStore? _deviceNicknameStore;
 
     // Fingerprints of devices already sync'd (or currently syncing) this app
     // session, so DeviceDiscovered re-firing for the same peer (e.g. once with the
@@ -209,7 +211,7 @@ public partial class MainViewModel : ViewModelBase
             if (_deviceIdentity == null || string.IsNullOrEmpty(trimmed) || _deviceIdentity.Alias == trimmed)
                 return;
             _deviceIdentity.Alias = trimmed;
-            _ = new DeviceIdentityStore().SaveAsync(_deviceIdentity);
+            _ = (_deviceIdentityStore?.SaveAsync(_deviceIdentity) ?? Task.CompletedTask);
         }
     }
 
@@ -611,6 +613,8 @@ public partial class MainViewModel : ViewModelBase
         LibraryStore libraryStore,
         AppSettingsStore appSettingsStore,
         PlaylistStore playlistStore,
+        DeviceIdentityStore deviceIdentityStore,
+        DeviceNicknameStore deviceNicknameStore,
         ILogger<MainViewModel> logger)
     {
         Library                = library;
@@ -625,6 +629,8 @@ public partial class MainViewModel : ViewModelBase
         _libraryStore          = libraryStore;
         _appSettingsStore      = appSettingsStore;
         _playlistStore         = playlistStore;
+        _deviceIdentityStore   = deviceIdentityStore;
+        _deviceNicknameStore   = deviceNicknameStore;
         _logger                = logger;
 
         if (appSettings.SortColumn is { } savedSortColumn)
@@ -887,8 +893,8 @@ public partial class MainViewModel : ViewModelBase
     // whatever the peer itself reports - otherwise the next DeviceDiscovered
     // re-fire (e.g. once /info resolves, or on periodic rediscovery) would
     // silently clobber a rename back to the peer's own alias.
-    private static string ResolveDeviceDisplayName(DiscoveredDevice device) =>
-        !string.IsNullOrEmpty(device.Fingerprint) && new DeviceNicknameStore().Get(device.Fingerprint) is { Length: > 0 } nickname
+    private string ResolveDeviceDisplayName(DiscoveredDevice device) =>
+        !string.IsNullOrEmpty(device.Fingerprint) && _deviceNicknameStore?.Get(device.Fingerprint) is { Length: > 0 } nickname
             ? nickname
             : device.Alias;
 

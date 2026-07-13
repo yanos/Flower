@@ -75,7 +75,7 @@ public partial class App : Application
         // renders in the saved variant instead of flashing OS-default then
         // switching.
         AppTheme.Apply(appSettings.ThemePreference);
-        var importer = Importer.PlatformMusicImporter.Current ?? new Importer.Importer();
+        var importer = Importer.PlatformMusicImporter.Current ?? new Importer.Importer(AppLogging.CreateTypedLogger<Importer.Importer>());
 
         // Load cached library synchronously so the UI shows immediately with data
         var cachedTracks = libraryStore.Load();
@@ -88,15 +88,20 @@ public partial class App : Application
 
         var networkDiscovery = new NetworkDiscoveryService(AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
 
+        var deviceIdentityStore = new DeviceIdentityStore(AppLogging.CreateTypedLogger<DeviceIdentityStore>());
+        var deviceNicknameStore = new DeviceNicknameStore(AppLogging.CreateTypedLogger<DeviceNicknameStore>());
+        var trustedPeerStore = new TrustedPeerStore(AppLogging.CreateTypedLogger<TrustedPeerStore>());
+        var playlistSyncStateStore = new PlaylistSyncStateStore(AppLogging.CreateTypedLogger<PlaylistSyncStateStore>());
+
         // One shared, mutable identity object rather than separate fingerprint/
         // alias strings handed to each service - MainViewModel.DeviceAlias edits
         // it in place (and persists via DeviceIdentityStore) when the user renames
         // this device in Settings, and every service below reads .Alias live off
         // the same instance, so the new name takes effect immediately without
         // needing to reconstruct or restart anything.
-        var deviceIdentity = new DeviceIdentityStore().Load();
-        var syncHttpServer = new SyncHttpServer(deviceIdentity, library, AppLogging.CreateTypedLogger<SyncHttpServer>());
-        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, AppLogging.CreateTypedLogger<PlaylistSyncService>());
+        var deviceIdentity = deviceIdentityStore.Load();
+        var syncHttpServer = new SyncHttpServer(deviceIdentity, library, playlistStore, trustedPeerStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
+        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
         var librarySyncService = new LibrarySyncService(library, deviceIdentity, libraryStore, AppLogging.CreateTypedLogger<LibrarySyncService>());
         var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
 
@@ -118,6 +123,10 @@ public partial class App : Application
                 .AddSingleton(libraryStore)
                 .AddSingleton(appSettingsStore)
                 .AddSingleton(playlistStore)
+                .AddSingleton(deviceIdentityStore)
+                .AddSingleton(deviceNicknameStore)
+                .AddSingleton(trustedPeerStore)
+                .AddSingleton(playlistSyncStateStore)
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()

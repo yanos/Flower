@@ -47,6 +47,8 @@ Prefer `rebase` over `merge` when bringing a branch up to date (e.g. reconciling
 
 Never run `git commit` without first showing the user the change and getting their explicit approval, even mid-task or between otherwise-approved steps. Approval only covers the change shown at that moment — it does not carry over to later, separate changes in the same session, even ones requested right after a "commit this." Ask again each time.
 
+Never commit before the user has personally tested the change, even after it's been shown to them and even after it builds and passes the test suite. Self-verification (build succeeding, `dotnet test` passing, a simulator screenshot) is not a substitute for the user actually trying it — finish the change, describe what was done and how it was self-verified, then stop and wait for the user to confirm it works before committing.
+
 Do not use git worktrees (e.g. `.claude/worktrees/...`) when working in this repo — they conflict with Rider's project indexing/build system on this machine. Edit `master` directly instead. If the tooling forces isolation for a background session and a worktree gets created anyway, keep its lifetime as short as possible and remove it immediately after merging into `master`.
 
 ## Code Style

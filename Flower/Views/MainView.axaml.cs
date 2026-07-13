@@ -32,6 +32,7 @@ public partial class MainView : UserControl
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private MainViewModel? _viewModel;
     private readonly PlaylistStore _playlistStore = Ioc.Default.GetService<PlaylistStore>()!;
+    private readonly DeviceNicknameStore _deviceNicknameStore = Ioc.Default.GetService<DeviceNicknameStore>()!;
 
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
@@ -979,7 +980,7 @@ public partial class MainView : UserControl
         if (item.Device is { Fingerprint.Length: > 0 } device)
         {
             item.IsEditing = false;
-            await new DeviceNicknameStore().SetAsync(device.Fingerprint, name ?? "");
+            await _deviceNicknameStore.SetAsync(device.Fingerprint, name ?? "");
 
             // Re-derives item.Name (and every other Device row's) from
             // MainViewModel.ResolveDeviceDisplayName - the one place that

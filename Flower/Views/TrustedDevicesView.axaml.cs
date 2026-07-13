@@ -51,7 +51,8 @@ public sealed class TrustedPeerRow : ViewModelBase
 // to host it, just place the control.
 public partial class TrustedDevicesView : UserControl
 {
-    private readonly TrustedPeerStore _store = new();
+    private readonly TrustedPeerStore _store = Ioc.Default.GetService<TrustedPeerStore>()!;
+    private readonly DeviceNicknameStore _nicknames = Ioc.Default.GetService<DeviceNicknameStore>()!;
     private readonly MainViewModel _mainViewModel = Ioc.Default.GetService<MainViewModel>()!;
 
     public TrustedDevicesView()
@@ -62,7 +63,6 @@ public partial class TrustedDevicesView : UserControl
 
     private void Refresh()
     {
-        var nicknames = new DeviceNicknameStore();
         var rows = _store.Load()
             .OrderByDescending(p => p.ApprovedAt)
             // A local nickname (see DeviceNicknameStore - also editable from the
@@ -71,7 +71,7 @@ public partial class TrustedDevicesView : UserControl
             .Select(p => new TrustedPeerRow
             {
                 Fingerprint = p.Fingerprint,
-                Alias = nicknames.Get(p.Fingerprint) ?? p.Alias,
+                Alias = _nicknames.Get(p.Fingerprint) ?? p.Alias,
                 ApprovedAt = p.ApprovedAt,
             })
             .ToList();
@@ -138,7 +138,7 @@ public partial class TrustedDevicesView : UserControl
             return;
 
         row.IsEditing = false;
-        await new DeviceNicknameStore().SetAsync(row.Fingerprint, row.Alias);
+        await _nicknames.SetAsync(row.Fingerprint, row.Alias);
 
         // Re-derives the displayed value from scratch - in particular, an
         // emptied-out field falls back to the peer's originally-approved

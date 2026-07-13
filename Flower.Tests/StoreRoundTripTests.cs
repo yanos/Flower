@@ -233,7 +233,7 @@ public class StoreRoundTripTests : IDisposable
     [Fact]
     public async Task TrustedPeerStore_Approve_then_IsTrusted_round_trips()
     {
-        var store = new TrustedPeerStore();
+        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
         Assert.False(store.IsTrusted("fp-1"));
 
         await store.ApproveAsync("fp-1", "Yanos's iPhone");
@@ -247,7 +247,7 @@ public class StoreRoundTripTests : IDisposable
     [Fact]
     public async Task TrustedPeerStore_Revoke_removes_a_previously_approved_peer()
     {
-        var store = new TrustedPeerStore();
+        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
         await store.ApproveAsync("fp-1", "Desktop");
         await store.ApproveAsync("fp-2", "iPad");
 
@@ -260,7 +260,7 @@ public class StoreRoundTripTests : IDisposable
     [Fact]
     public async Task TrustedPeerStore_Approve_replaces_rather_than_duplicates_an_existing_fingerprint()
     {
-        var store = new TrustedPeerStore();
+        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
         await store.ApproveAsync("fp-1", "Old Alias");
 
         await store.ApproveAsync("fp-1", "New Alias");
@@ -272,7 +272,7 @@ public class StoreRoundTripTests : IDisposable
     [Fact]
     public void TrustedPeerStore_IsTrusted_is_false_when_no_file_exists()
     {
-        Assert.False(new TrustedPeerStore().IsTrusted("anything"));
+        Assert.False(new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance).IsTrusted("anything"));
     }
 
     [Fact]
@@ -282,7 +282,7 @@ public class StoreRoundTripTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(DeviceIdentityStore.StorePath)!);
         File.WriteAllText(DeviceIdentityStore.StorePath, """{"Fingerprint":"fp-legacy"}""");
 
-        var identity = new DeviceIdentityStore().Load();
+        var identity = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load();
 
         Assert.Equal("fp-legacy", identity.Fingerprint);
         Assert.False(string.IsNullOrEmpty(identity.Alias));
@@ -291,11 +291,11 @@ public class StoreRoundTripTests : IDisposable
     [Fact]
     public async Task DeviceIdentityStore_SaveAsync_round_trips_a_renamed_alias()
     {
-        var identity = new DeviceIdentityStore().Load();
+        var identity = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load();
         identity.Alias = "Yanos's iPhone";
 
-        await new DeviceIdentityStore().SaveAsync(identity);
-        var reloaded = new DeviceIdentityStore().Load();
+        await new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).SaveAsync(identity);
+        var reloaded = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load();
 
         Assert.Equal("Yanos's iPhone", reloaded.Alias);
         Assert.Equal(identity.Fingerprint, reloaded.Fingerprint);
@@ -304,13 +304,13 @@ public class StoreRoundTripTests : IDisposable
     [Fact]
     public void DeviceNicknameStore_Get_returns_null_when_no_nickname_is_set()
     {
-        Assert.Null(new DeviceNicknameStore().Get("fp-1"));
+        Assert.Null(new DeviceNicknameStore(NullLogger<DeviceNicknameStore>.Instance).Get("fp-1"));
     }
 
     [Fact]
     public async Task DeviceNicknameStore_SetAsync_then_Get_round_trips_a_nickname()
     {
-        var store = new DeviceNicknameStore();
+        var store = new DeviceNicknameStore(NullLogger<DeviceNicknameStore>.Instance);
         await store.SetAsync("fp-1", "Yanos's iPhone");
 
         Assert.Equal("Yanos's iPhone", store.Get("fp-1"));
@@ -319,7 +319,7 @@ public class StoreRoundTripTests : IDisposable
     [Fact]
     public async Task DeviceNicknameStore_SetAsync_replaces_rather_than_duplicates_an_existing_fingerprint()
     {
-        var store = new DeviceNicknameStore();
+        var store = new DeviceNicknameStore(NullLogger<DeviceNicknameStore>.Instance);
         await store.SetAsync("fp-1", "Old Name");
 
         await store.SetAsync("fp-1", "New Name");
@@ -331,7 +331,7 @@ public class StoreRoundTripTests : IDisposable
     [Fact]
     public async Task DeviceNicknameStore_SetAsync_with_an_empty_nickname_clears_the_override()
     {
-        var store = new DeviceNicknameStore();
+        var store = new DeviceNicknameStore(NullLogger<DeviceNicknameStore>.Instance);
         await store.SetAsync("fp-1", "A Name");
 
         await store.SetAsync("fp-1", "");
