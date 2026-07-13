@@ -6,12 +6,20 @@ using System.Threading.Tasks;
 
 using Claunia.PropertyList;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.Importer
 {
     public class Importer : IMusicImporter
     {
+        // Constructed once, ad-hoc, at App.axaml.cs's composition root, with no
+        // other call sites - AppLogging.CreateLogger<T>() rather than a
+        // constructor parameter, same reasoning as AlbumArtLoader.
+        private static readonly ILogger Logger = AppLogging.CreateLogger<Importer>();
+
         private readonly HashSet<string> _validExtensions = [".mp3", ".m4a", ".wav", ".flac", ".alac"];
 
         public Importer() { }
@@ -104,7 +112,15 @@ namespace Flower.Importer
                         Path = file
                     });
                 }
-                catch { /* skip unreadable files */ }
+                catch (Exception ex)
+                {
+                    // Debug, not Warning - a handful of unreadable/DRM'd/corrupt
+                    // files scattered through a large real library is routine,
+                    // not something worth a warning per file, but still worth
+                    // being able to find in the log when "why isn't track X
+                    // showing up" comes up.
+                    Logger.LogDebug(ex, "Skipping unreadable file during import: {Path}", file);
+                }
             }
         }
 
@@ -144,7 +160,10 @@ namespace Flower.Importer
                         return mediaFolder;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Could not read Apple Music's configured media folder from its preferences plist");
+            }
 
             return null;
         }

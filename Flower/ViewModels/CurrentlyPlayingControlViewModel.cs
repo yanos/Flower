@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Manager;
 using Flower.Models;
 
@@ -16,6 +18,7 @@ namespace Flower.ViewModels
         private readonly PlaylistControlViewModel _playlistControlViewModel;
         private readonly IAudioManager _audioManager;
         private readonly Library _library;
+        private readonly ILogger<CurrentlyPlayingControlViewModel> _logger;
 
         private double _seekPosition;
         private bool _isUpdatingFromAudio;
@@ -106,7 +109,10 @@ namespace Flower.ViewModels
                         bitmap = new Bitmap(ms);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not read/decode embedded art for {Path}", track.Path);
+                }
 
                 // 2. cover.* / folder.* in the same directory
                 if (bitmap == null)
@@ -129,7 +135,10 @@ namespace Flower.ViewModels
                                 bitmap = new Bitmap(file);
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Could not read/decode a cover/folder image next to {Path}", track.Path);
+                    }
                 }
 
                 // 3. Embedded art from another track on the same album
@@ -151,7 +160,10 @@ namespace Flower.ViewModels
                                 break;
                             }
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug(ex, "Could not read/decode embedded art from album sibling {Path}", sibling.Path);
+                        }
                     }
                 }
 
@@ -162,11 +174,13 @@ namespace Flower.ViewModels
         public CurrentlyPlayingControlViewModel(
             PlaylistControlViewModel playlistControlViewModel,
             IAudioManager audioManager,
-            Library library)
+            Library library,
+            ILogger<CurrentlyPlayingControlViewModel> logger)
         {
             _playlistControlViewModel = playlistControlViewModel;
             _audioManager = audioManager;
             _library = library;
+            _logger = logger;
 
             _playlistControlViewModel.PropertyChanged += (s, e) =>
             {

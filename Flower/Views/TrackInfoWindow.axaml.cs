@@ -8,6 +8,8 @@ using Avalonia.Controls;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Converters;
 using Flower.Models;
 using Flower.Persistence;
@@ -26,6 +28,7 @@ public partial class TrackInfoWindow : Window
     // pattern) rather than threaded through both constructors below as an
     // explicit parameter, same as every existing caller of them.
     private readonly LibraryStore _libraryStore = Ioc.Default.GetService<LibraryStore>()!;
+    private readonly ILogger<TrackInfoWindow> _logger = Ioc.Default.GetService<ILogger<TrackInfoWindow>>()!;
     private int _index;
 
     // The set of tracks being edited: exactly one in navigable mode (re-seeded
@@ -249,8 +252,17 @@ public partial class TrackInfoWindow : Window
                     field.Apply(track, tag, field.Box.Text);
                 tagFile.Save();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                // field.Apply above already mutated the in-memory Track object
+                // itself (it's an Action<Track, TagLib.Tag, string?>, not just
+                // the TagLib tag) before this Save() was attempted - so a failed
+                // save here leaves the UI showing the edit as if it took, while
+                // the actual file on disk still has the old value. Not fixed
+                // here (would need reordering: apply to the tag only, save,
+                // *then* mutate the Track - a separate, real bug worth its own
+                // fix), but at least surfaced now instead of failing silently.
+                _logger.LogWarning(ex, "Could not save tag edits to {Path}; the in-memory track was updated but the file on disk was not", path);
                 continue;
             }
         }
