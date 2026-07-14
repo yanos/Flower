@@ -595,6 +595,48 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
+    public void ITunesPlayCountImporter_matches_by_path_despite_different_unicode_normalization()
+    {
+        // Confirmed against a real file whose name contains "é": iTunes'
+        // Location URL had it as the decomposed form ("e" + a combining
+        // acute accent, U+0301 - written here as "é") while the local
+        // Track.Path used the precomposed single-codepoint form ("é") -
+        // visually identical, but byte-for-byte different, so the path match
+        // silently found nothing until both sides were normalized the same way.
+        var xmlPath = Path.Combine(_tempHome, "sample-library.xml");
+        File.WriteAllText(xmlPath, """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>Tracks</key>
+                <dict>
+                    <key>1001</key>
+                    <dict>
+                        <key>Name</key><string>Song</string>
+                        <key>Artist</key><string>Artist</string>
+                        <key>Album</key><string>Album</string>
+                        <key>Total Time</key><integer>75023</integer>
+                        <key>Play Count</key><integer>17</integer>
+                        <key>Location</key><string>file:///Users/test/Music/Music/Media.localized/Music/Artist/Album/01%20De%CC%81ja.mp3</string>
+                    </dict>
+                </dict>
+            </dict>
+            </plist>
+            """);
+
+        var track = new Track
+        {
+            Title = "Song", Artists = "Artist", Album = "Album", Duration = TimeSpan.FromSeconds(75.031),
+            Path = "/Users/test/Music/Music/Media.localized/Music/Artist/Album/01 Déja.mp3",
+        };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(17, track.ImportedPlayCount);
+    }
+
+    [Fact]
     public void ITunesPlayCountImporter_leaves_ImportedPlayCount_alone_for_a_nonexistent_file()
     {
         var track = new Track { Title = "Test Song", Path = "/music/song.mp3", ImportedPlayCount = 3 };

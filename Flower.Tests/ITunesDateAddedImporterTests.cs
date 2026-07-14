@@ -124,6 +124,30 @@ public class ITunesDateAddedImporterTests
     }
 
     [Fact]
+    public void ApplyFromXmlFile_matches_by_path_despite_different_unicode_normalization()
+    {
+        // Confirmed against a real file whose name contains "é": iTunes'
+        // Location URL had it as the decomposed form ("e" + a combining
+        // acute accent, U+0301 - written here as "é") while the local
+        // Track.Path used the precomposed single-codepoint form ("é") -
+        // visually identical, but byte-for-byte different, so the path match
+        // silently found nothing until both sides were normalized the same way.
+        var xmlPath = WriteLibraryXml(TrackEntry(
+            1, "Song", "Artist", "Album", 75023, "2008-01-01T00:00:00Z",
+            location: "file:///Users/test/Music/Music/Media.localized/Music/Artist/Album/01%20De%CC%81ja.mp3"));
+        var track = new Track
+        {
+            Title = "Song", Artists = "Artist", Album = "Album", Duration = TimeSpan.FromSeconds(75.031),
+            Path = "/Users/test/Music/Music/Media.localized/Music/Artist/Album/01 Déja.mp3",
+            DateAdded = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+
+        ITunesDateAddedImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(new DateTimeOffset(2008, 1, 1, 0, 0, 0, TimeSpan.Zero), track.DateAdded);
+    }
+
+    [Fact]
     public void ApplyFromXmlFile_falls_back_to_title_artist_album_when_duration_disagrees_but_is_unambiguous()
     {
         // Same title/artist/album as the XML entry, but a very different

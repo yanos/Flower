@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 
 using Claunia.PropertyList;
 
@@ -150,7 +151,7 @@ public static class ITunesPlayCountImporter
             foreach (var track in tracks)
             {
                 int? count = null;
-                if (!string.IsNullOrEmpty(track.Path) && playCountByPath.TryGetValue(track.Path, out var byPath))
+                if (!string.IsNullOrEmpty(track.Path) && playCountByPath.TryGetValue(NormalizePath(track.Path), out var byPath))
                     count = byPath;
                 else if (playCountBySyncKey.TryGetValue(track.SyncKey, out var exact))
                     count = exact;
@@ -192,13 +193,24 @@ public static class ITunesPlayCountImporter
         try
         {
             var uri = new Uri(location);
-            return uri.IsFile ? uri.LocalPath : null;
+            return uri.IsFile ? NormalizePath(uri.LocalPath) : null;
         }
         catch (UriFormatException)
         {
             return null;
         }
     }
+
+    // Confirmed necessary against a real file whose name contains "é": iTunes'
+    // Location URL had it as the decomposed form ("e" + a combining acute
+    // accent, U+0301) while the same path read off disk elsewhere used the
+    // precomposed single-codepoint form (U+00E9) - visually identical, but a
+    // byte-for-byte dictionary lookup treated them as two different strings
+    // and the path match silently found nothing. Both sides of the path
+    // match (this dictionary's keys and the local Track.Path used to look
+    // them up) have to go through this same normalization or the mismatch
+    // just resurfaces in the opposite direction.
+    private static string NormalizePath(string path) => path.Normalize(NormalizationForm.FormC);
 
     // Runs synchronously (this is always called from a background Task.Run at
     // both its call sites - App.axaml.cs's startup rescan and
