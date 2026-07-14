@@ -74,7 +74,11 @@ public partial class SettingsWindow : Window
     private int CountSongsUnder(string folder)
     {
         var prefix = folder.TrimEnd('/', '\\') + Path.DirectorySeparatorChar;
-        return _viewModel.Library.Tracks.Count(t => t.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        // Path is null for a sync placeholder track (a peer's catalog entry
+        // not yet downloaded to this device - see LibraryDownloadService) -
+        // it can't be "under" any local folder, so it just doesn't count,
+        // rather than crashing the whole Settings window open.
+        return _viewModel.Library.Tracks.Count(t => t.Path?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true);
     }
 
     private async void AddButton_Click(object? sender, RoutedEventArgs e)
