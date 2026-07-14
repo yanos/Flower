@@ -233,6 +233,14 @@ public partial class MainViewModel : ViewModelBase
             _appSettings ??= new AppSettings();
             if (_appSettings.SyncPlayCountFromITunes == value)
                 return;
+            // Logged - the only writer of this flag is this setter, but a
+            // user report of it having silently flipped off without them
+            // touching the checkbox ("Settings > Library" is the only UI for
+            // it) turned up nothing conclusive in the code; this at least
+            // gives a timestamped trail (with a stack trace, to catch a
+            // programmatic caller vs. the checkbox's own click handler) if it
+            // happens again.
+            _logger.LogInformation("SyncPlayCountFromITunes changed {Old} -> {New}\n{StackTrace}", _appSettings.SyncPlayCountFromITunes, value, Environment.StackTrace);
             _appSettings.SyncPlayCountFromITunes = value;
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         }
@@ -249,6 +257,8 @@ public partial class MainViewModel : ViewModelBase
             _appSettings ??= new AppSettings();
             if (_appSettings.SyncDateAddedFromITunes == value)
                 return;
+            // See SyncPlayCountFromITunes's own comment on this same logging.
+            _logger.LogInformation("SyncDateAddedFromITunes changed {Old} -> {New}\n{StackTrace}", _appSettings.SyncDateAddedFromITunes, value, Environment.StackTrace);
             _appSettings.SyncDateAddedFromITunes = value;
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         }
