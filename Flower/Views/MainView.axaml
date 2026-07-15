@@ -242,14 +242,16 @@
                                 ItemsSource="{Binding AlbumGridTiles}"
                                 SelectedNames="{Binding SelectedSubItems}"
                                 ExpandedName="{Binding ExpandedAlbumName}"
-                                ExpandedTracks="{Binding ExpandedAlbumTracks}"/>
+                                ExpandedTracks="{Binding ExpandedAlbumTracks}"
+                                CurrentlyPlayingPath="{Binding CurrentlyPlayingTrack.Path}"/>
         <controls:AlbumGridView x:Name="RecentlyAddedGrid"
                                 Grid.Column="0" Grid.ColumnSpan="2"
                                 IsVisible="{Binding IsShowingRecentlyAddedGrid}"
                                 ItemsSource="{Binding RecentlyAddedGridTiles}"
                                 SelectedNames="{Binding SelectedSubItems}"
                                 ExpandedName="{Binding ExpandedAlbumName}"
-                                ExpandedTracks="{Binding ExpandedAlbumTracks}"/>
+                                ExpandedTracks="{Binding ExpandedAlbumTracks}"
+                                CurrentlyPlayingPath="{Binding CurrentlyPlayingTrack.Path}"/>
 
         <!-- Custom track list - Songs/Artists/Playlists only now; Albums/
              Recently Added show their songs inline via the grids above

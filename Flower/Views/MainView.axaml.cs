@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -911,6 +909,18 @@ public partial class MainView : UserControl
             _viewModel?.OpenColumnSelectorCommand?.Execute(null);
             e.Handled = true;
         }
+        // Cmd/Ctrl+I on Albums/Recently Added - MusicList's own tunnel handler
+        // (MusicList_KeyDown) can't fire here since MusicList is hidden and
+        // never has focus while a grid is showing, so it's only reachable at
+        // this root level. Deliberately scoped to just the grid views - the
+        // track-list case is left alone so MusicList_KeyDown still owns it,
+        // unchanged, exactly as before this handler existed.
+        else if (e.Key == Key.I && e.KeyModifiers == PlatformShortcuts.Primary &&
+                 _viewModel is { IsShowingAlbumGrid: true } or { IsShowingRecentlyAddedGrid: true })
+        {
+            OpenTrackInfoForSelectedAlbums();
+            e.Handled = true;
+        }
     }
 
     private void OnNavigateToTrackRequested(object? sender, Track track) => MusicList.ScrollToTrack(track);
@@ -1028,20 +1038,76 @@ public partial class MainView : UserControl
             infoWindow.Show();
     }
 
+    // Cmd/Ctrl+I on Albums/Recently Added (see MainView_PreviewKeyDown) - acts
+    // on the multi-selected album(s) (Ctrl/Shift-click, see AlbumGrid_
+    // PointerPressed) if there is one, otherwise falls back to whichever
+    // single album is currently expanded (the common case: a plain click
+    // expands without touching SelectedSubItems at all - see ToggleAlbumGrid
+    // Item's own doc comment). Always batch mode, even for one album's worth
+    // of tracks - there's no meaningful single-track Prev/Next context here
+    // the way there is for a MusicListView row.
+    private void OpenTrackInfoForSelectedAlbums()
+    {
+        if (_viewModel is not MainViewModel vm)
+            return;
+
+        // A specific song (or songs) selected within the currently-expanded
+        // album's own track list (click/Ctrl/Shift/arrow-keys - see
+        // AlbumGridRowControl) takes priority over album-tile-level
+        // selection below - otherwise this always fell back to "the whole
+        // expanded album," even with just one particular song selected.
+        var songSelection = AlbumGrid.GetExpandedRowSelectedTracks();
+        if (songSelection.Count == 0)
+            songSelection = RecentlyAddedGrid.GetExpandedRowSelectedTracks();
+
+        TrackInfoWindow infoWindow;
+        if (songSelection.Count == 1)
+        {
+            // Single-track mode, with Prev/Next through the expanded album's
+            // own track list - same as AlbumGridRowControl's own row context
+            // menu's "Get Info" gives a single selected track, for the same
+            // reason: there's a specific, coherent list to browse here that
+            // the "multiple albums selected" case below doesn't have.
+            var track = songSelection[0];
+            var albumTracks = vm.ExpandedAlbumTracks.ToList();
+            var index = albumTracks.IndexOf(track);
+            if (index < 0)
+                index = 0;
+            infoWindow = new TrackInfoWindow(albumTracks, index, vm.Library) { ShowInTaskbar = false };
+        }
+        else
+        {
+            var tracks = songSelection.Count > 0 ? songSelection : ResolveSelectedAlbumTracks(vm);
+            if (tracks.Count == 0)
+                return;
+            infoWindow = new TrackInfoWindow(tracks, vm.Library) { ShowInTaskbar = false };
+        }
+
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            infoWindow.Show(owner);
+        else
+            infoWindow.Show();
+    }
+
+    // Fallback for OpenTrackInfoForSelectedAlbums above when no specific song
+    // is selected within the expanded album's track list - the multi-selected
+    // album tile(s) (Ctrl/Shift-click, see AlbumGrid_PointerPressed) if there
+    // are any, otherwise whichever single album is currently expanded (the
+    // common case: a plain click expands without touching SelectedSubItems
+    // at all - see ToggleAlbumGridItem's own doc comment).
+    private static IReadOnlyList<Track> ResolveSelectedAlbumTracks(MainViewModel vm)
+    {
+        var albumNames = vm.SelectedSubItems.Count > 0
+            ? vm.SelectedSubItems
+            : vm.ExpandedAlbumName is { } expanded ? new[] { expanded } : Array.Empty<string>();
+        return albumNames.Count == 0 ? Array.Empty<Track>() : vm.GetTracksForSubListItems(albumNames).ToList();
+    }
+
     private void LocateFile()
     {
         if (MusicList.SelectedTrack is not Track track)
             return;
-        var path = track.Path;
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            return;
-
-        if (OperatingSystem.IsMacOS())
-            Process.Start("open", ["-R", path]);
-        else if (OperatingSystem.IsWindows())
-            Process.Start("explorer.exe", $"/select,\"{path}\"");
-        else
-            Process.Start("xdg-open", [Path.GetDirectoryName(path)!]);
+        FileLocator.Reveal(track.Path);
     }
 
     // ── Sidebar ───────────────────────────────────────────────────────────────

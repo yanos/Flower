@@ -22,7 +22,10 @@ public static class TrackListBuilder
         return BuildRows(sorted, currentlyPlayingTrack);
     }
 
-    private static IEnumerable<Track> Filter(IEnumerable<Track> tracks, string? text)
+    // Public so MainViewModel can also filter the Albums/Recently Added tile
+    // grids by the same text (see RebuildRowsAsync) - those aren't built from
+    // Rows/TrackRowViewModel at all, so they'd otherwise never see FilterText.
+    public static IEnumerable<Track> Filter(IEnumerable<Track> tracks, string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return tracks;

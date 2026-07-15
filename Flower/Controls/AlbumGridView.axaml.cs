@@ -70,6 +70,23 @@ public partial class AlbumGridView : UserControl
         set => SetValue(ExpandedTracksProperty, value);
     }
 
+    // The path of whichever track is currently playing, if any - see
+    // MainViewModel.CurrentlyPlayingTrack. Drives the little "now playing"
+    // arrow on the matching row inside an expanded album's track list (see
+    // AlbumGridRowViewModel.CurrentlyPlayingPath), the same indicator
+    // MusicListView's own rows already have (TrackRowViewModel.
+    // IsCurrentlyPlaying) - independent of ExpandedName/SelectedNames above,
+    // since a track can be playing whether or not its album happens to be
+    // the one currently expanded or selected.
+    public static readonly StyledProperty<string?> CurrentlyPlayingPathProperty =
+        AvaloniaProperty.Register<AlbumGridView, string?>(nameof(CurrentlyPlayingPath));
+
+    public string? CurrentlyPlayingPath
+    {
+        get => GetValue(CurrentlyPlayingPathProperty);
+        set => SetValue(CurrentlyPlayingPathProperty, value);
+    }
+
     public AlbumGridView()
     {
         InitializeComponent();
@@ -106,6 +123,10 @@ public partial class AlbumGridView : UserControl
         {
             ApplyExpansion();
         }
+        else if (change.Property == CurrentlyPlayingPathProperty)
+        {
+            ApplyPlayingIndicator();
+        }
     }
 
     private void OnItemsSourceCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -133,6 +154,7 @@ public partial class AlbumGridView : UserControl
 
         ApplySelection();
         ApplyExpansion();
+        ApplyPlayingIndicator();
     }
 
     private void ApplySelection()
@@ -158,6 +180,16 @@ public partial class AlbumGridView : UserControl
         }
     }
 
+    // Cheap even though it touches every row - only the one currently
+    // expanded row (if any) actually has a non-empty ExpandedTracks/
+    // _trackRows to iterate (see ApplyExpansion above), so this is a no-op
+    // pass over every other row.
+    private void ApplyPlayingIndicator()
+    {
+        foreach (var row in _rows)
+            row.CurrentlyPlayingPath = CurrentlyPlayingPath;
+    }
+
     // Resolves whichever AlbumTileControl (if any) a raw pointer event's
     // original source landed on, by walking up the visual tree - used by
     // MainView.axaml.cs's pointer handlers instead of coordinate math, since
@@ -165,4 +197,15 @@ public partial class AlbumGridView : UserControl
     // of rows) rather than manually arranged by a custom Panel.
     public AlbumTileViewModel? HitTestTile(object? eventSource) =>
         (eventSource as Visual)?.FindAncestorOfType<AlbumTileControl>(includeSelf: true)?.DataContext as AlbumTileViewModel;
+
+    // The song(s) selected (click/Ctrl/Shift/arrow-keys - see
+    // AlbumGridRowViewModel.SelectTrack/MoveSelection) within whichever row
+    // is currently expanded, if any - for Cmd/Ctrl+I (MainView.axaml.cs's
+    // OpenTrackInfoForSelectedAlbums), which otherwise has no way to know
+    // about this song-level selection at all and would fall back to treating
+    // the whole expanded album as selected instead of just the one song the
+    // user actually clicked. At most one row across either grid instance is
+    // ever expanded at a time (MainViewModel.ExpandedAlbumName is shared).
+    public IReadOnlyList<Track> GetExpandedRowSelectedTracks() =>
+        _rows.FirstOrDefault(r => r.IsExpanded)?.SelectedTracks ?? Array.Empty<Track>();
 }
