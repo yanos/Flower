@@ -1419,15 +1419,32 @@ public partial class MainViewModel : ViewModelBase
         var sortAsc    = SortAscending;
         var playing    = CurrentlyPlayingTrack;
         var baseTracks = GetBaseTracksForFilter();
+        var allTracks  = _allTracks;
 
-        var rows = await Task.Run(() =>
-            TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear), token);
+        // Albums/Recently Added show a tile grid instead of Rows (see
+        // IsShowingAlbumGrid) built straight from _allTracks, not from
+        // GetBaseTracksForFilter's (mostly Albums-view-irrelevant) result -
+        // so without this, FilterText had no effect on either grid at all.
+        // Rebuilt here, alongside Rows, on every filter/sort/view change
+        // rather than only on a rescan (see RebuildAlbumGrids), so typing in
+        // the search box while on Albums actually narrows the grid.
+        var (rows, albumTiles, recentTiles) = await Task.Run(() =>
+        {
+            var builtRows = TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear);
+            var filteredForGrids = TrackListBuilder.Filter(allTracks, text).ToList();
+            return (
+                builtRows,
+                AlbumGridBuilder.Build(filteredForGrids),
+                RecentlyAddedAlbumsBuilder.Build(filteredForGrids));
+        }, token);
 
         if (token.IsCancellationRequested)
             return;
 
         _currentFilteredTracks = rows.Select(r => r.Track).ToList();
         Rows = new ObservableCollection<TrackRowViewModel>(rows);
+        AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles);
+        RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(recentTiles);
         OnPropertyChanged(nameof(StatusBarText));
     }
 

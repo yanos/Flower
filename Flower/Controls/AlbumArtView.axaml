@@ -15,10 +15,19 @@
        hardcoded black - a 50%-opacity black outline (the old value) all but
        disappeared against dark art or the dark theme's own near-black
        background, leaving art edges with no visible definition at all. -->
-  <Border BorderBrush="{DynamicResource AppBorderBrush}"
+  <!-- Background="Transparent" on both Borders below isn't decorative - a
+       Border with neither Background nor a painted BorderBrush region under
+       the pointer doesn't hit-test at all in Avalonia, so without this,
+       clicking this control (e.g. an album tile in AlbumGridView) only
+       "worked" wherever the Image/placeholder itself happened to paint,
+       leaving the corner-radius margins and any unloaded-art gap dead to
+       clicks. -->
+  <Border Background="Transparent"
+          BorderBrush="{DynamicResource AppBorderBrush}"
           BorderThickness="1"
           CornerRadius="4">
     <Border x:Name="ClipBorder"
+            Background="Transparent"
             CornerRadius="3"
             ClipToBounds="True">
       <Panel>

@@ -4,20 +4,14 @@
              xmlns:converters="clr-namespace:Flower.Converters"
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:mobileVm="clr-namespace:Flower.ViewModels.Mobile"
-             xmlns:models="clr-namespace:Flower.Models"
              x:Class="Flower.Controls.AlbumGridRowControl"
              x:DataType="vm:AlbumGridRowViewModel"
-             x:CompileBindings="True">
+             x:CompileBindings="True"
+             Focusable="True">
 
   <UserControl.Resources>
     <converters:DurationConverter x:Key="DurationConverter"/>
   </UserControl.Resources>
-
-  <UserControl.Styles>
-    <Style Selector="Border.expandedTrack:pointerover">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}"/>
-    </Style>
-  </UserControl.Styles>
 
   <StackPanel Margin="0,0,0,16">
     <ItemsControl ItemsSource="{Binding Tiles}">
@@ -56,13 +50,56 @@
         <Grid ColumnDefinitions="*,*">
           <ItemsControl Grid.Column="0" ItemsSource="{Binding Column1Tracks}" Margin="0,0,12,0">
             <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="models:Track">
-                <Border Classes="expandedTrack" Padding="6,4" DoubleTapped="TrackRow_DoubleTapped">
-                  <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
-                    <TextBlock Grid.Column="1" Text="{Binding Duration, Converter={StaticResource DurationConverter}}"
-                               FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
-                  </Grid>
+              <DataTemplate x:DataType="vm:ExpandedTrackRowViewModel">
+                <!-- The colored highlight is the ExpansionCard-tinted Border
+                     inside the Panel below - and CRUCIALLY its size is driven
+                     by the Panel, which measures to the text Grid, so to make
+                     the box bigger than the text the Grid gets an inner Margin
+                     (grows the Panel -> grows the highlights filling it). This
+                     is why every earlier attempt at Margin/Padding on this
+                     outer Border did nothing to the box's SIZE: the highlight
+                     always filled the Panel = text extent, so outer spacing
+                     only shifted the box's position, never its dimensions.
+                     The Panel's own Margin then insets the whole box from the
+                     row's full extent on all four sides (the "margin in every
+                     direction" gap, and the separation between adjacent rows).
+                     This outer Border stays Background="Transparent" with no
+                     padding of its own so the entire row - including that
+                     margin gap - still hit-tests for clicks (an unpainted
+                     Border doesn't register pointer events in Avalonia), and
+                     carries the click/hover/context handlers. -->
+              <Border Classes="expandedTrack" Background="Transparent"
+                      PointerEntered="TrackRow_PointerEntered"
+                      PointerExited="TrackRow_PointerExited"
+                      PointerPressed="TrackRow_PointerPressed"
+                      DoubleTapped="TrackRow_DoubleTapped"
+                      ContextRequested="TrackRow_ContextRequested">
+                  <Panel Margin="4,3">
+                    <Border IsVisible="{Binding IsHovered}"
+                            IsHitTestVisible="False"
+                            Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                            CornerRadius="5"/>
+                    <Border IsVisible="{Binding IsSelected}"
+                            IsHitTestVisible="False"
+                            Background="{DynamicResource AppAccentSoftBrush}"
+                            CornerRadius="5"/>
+                    <!-- Margin here is what actually makes the highlight box
+                         larger than the text (see the outer Border's comment).
+                         Column 0 mirrors TrackRowControl's own "now playing"
+                         arrow (TrackRowViewModel.IsCurrentlyPlaying) - same
+                         glyph, same size, same dedicated 14px column ahead of
+                         the title, just wired through AlbumGridRowViewModel.
+                         CurrentlyPlayingPath instead (see ExpandedTrackRow
+                         ViewModel.IsCurrentlyPlaying's own comment). -->
+                    <Grid ColumnDefinitions="14,*,Auto" Margin="8,6">
+                      <TextBlock Grid.Column="0" Text="▶" FontSize="8"
+                                 VerticalAlignment="Center" HorizontalAlignment="Center"
+                                 IsVisible="{Binding IsCurrentlyPlaying}"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
+                      <TextBlock Grid.Column="2" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
+                                 FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
+                    </Grid>
+                  </Panel>
                 </Border>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
@@ -70,13 +107,56 @@
 
           <ItemsControl Grid.Column="1" ItemsSource="{Binding Column2Tracks}" Margin="12,0,0,0">
             <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="models:Track">
-                <Border Classes="expandedTrack" Padding="6,4" DoubleTapped="TrackRow_DoubleTapped">
-                  <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
-                    <TextBlock Grid.Column="1" Text="{Binding Duration, Converter={StaticResource DurationConverter}}"
-                               FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
-                  </Grid>
+              <DataTemplate x:DataType="vm:ExpandedTrackRowViewModel">
+                <!-- The colored highlight is the ExpansionCard-tinted Border
+                     inside the Panel below - and CRUCIALLY its size is driven
+                     by the Panel, which measures to the text Grid, so to make
+                     the box bigger than the text the Grid gets an inner Margin
+                     (grows the Panel -> grows the highlights filling it). This
+                     is why every earlier attempt at Margin/Padding on this
+                     outer Border did nothing to the box's SIZE: the highlight
+                     always filled the Panel = text extent, so outer spacing
+                     only shifted the box's position, never its dimensions.
+                     The Panel's own Margin then insets the whole box from the
+                     row's full extent on all four sides (the "margin in every
+                     direction" gap, and the separation between adjacent rows).
+                     This outer Border stays Background="Transparent" with no
+                     padding of its own so the entire row - including that
+                     margin gap - still hit-tests for clicks (an unpainted
+                     Border doesn't register pointer events in Avalonia), and
+                     carries the click/hover/context handlers. -->
+              <Border Classes="expandedTrack" Background="Transparent"
+                      PointerEntered="TrackRow_PointerEntered"
+                      PointerExited="TrackRow_PointerExited"
+                      PointerPressed="TrackRow_PointerPressed"
+                      DoubleTapped="TrackRow_DoubleTapped"
+                      ContextRequested="TrackRow_ContextRequested">
+                  <Panel Margin="4,3">
+                    <Border IsVisible="{Binding IsHovered}"
+                            IsHitTestVisible="False"
+                            Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                            CornerRadius="5"/>
+                    <Border IsVisible="{Binding IsSelected}"
+                            IsHitTestVisible="False"
+                            Background="{DynamicResource AppAccentSoftBrush}"
+                            CornerRadius="5"/>
+                    <!-- Margin here is what actually makes the highlight box
+                         larger than the text (see the outer Border's comment).
+                         Column 0 mirrors TrackRowControl's own "now playing"
+                         arrow (TrackRowViewModel.IsCurrentlyPlaying) - same
+                         glyph, same size, same dedicated 14px column ahead of
+                         the title, just wired through AlbumGridRowViewModel.
+                         CurrentlyPlayingPath instead (see ExpandedTrackRow
+                         ViewModel.IsCurrentlyPlaying's own comment). -->
+                    <Grid ColumnDefinitions="14,*,Auto" Margin="8,6">
+                      <TextBlock Grid.Column="0" Text="▶" FontSize="8"
+                                 VerticalAlignment="Center" HorizontalAlignment="Center"
+                                 IsVisible="{Binding IsCurrentlyPlaying}"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
+                      <TextBlock Grid.Column="2" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
+                                 FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
+                    </Grid>
+                  </Panel>
                 </Border>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
