@@ -26,4 +26,28 @@ public class TrackTests
 
         Assert.Equal(5, track.TotalPlayCount);
     }
+
+    [Fact]
+    public void EffectiveAlbumArtist_prefers_AlbumArtists_when_present()
+    {
+        var track = new Track { Artists = "Track Artist", AlbumArtists = "The Album Artist" };
+
+        Assert.Equal("The Album Artist", track.EffectiveAlbumArtist);
+    }
+
+    [Fact]
+    public void EffectiveAlbumArtist_falls_back_to_Various_Artists_for_a_compilation_with_no_AlbumArtists_tag()
+    {
+        var track = new Track { Artists = "Track Artist", AlbumArtists = "", IsCompilation = true };
+
+        Assert.Equal("Various Artists", track.EffectiveAlbumArtist);
+    }
+
+    [Fact]
+    public void EffectiveAlbumArtist_falls_back_to_Artists_for_an_ordinary_album_with_no_AlbumArtists_tag()
+    {
+        var track = new Track { Artists = "Track Artist", AlbumArtists = null, IsCompilation = false };
+
+        Assert.Equal("Track Artist", track.EffectiveAlbumArtist);
+    }
 }

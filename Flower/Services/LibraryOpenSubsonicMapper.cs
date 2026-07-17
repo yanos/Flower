@@ -64,10 +64,14 @@ public static class LibraryOpenSubsonicMapper
         return bytes != null ? AlbumArtLoader.ComputeArtHash(bytes) : null;
     }
 
-    // Grouped by (Album, Artist) rather than Album alone, so two different
-    // artists' same-named album ("Greatest Hits") don't collide into one entry.
+    // Grouped by (Album, EffectiveAlbumArtist) rather than Album alone, so two
+    // different artists' same-named album ("Greatest Hits") don't collide into
+    // one entry. EffectiveAlbumArtist rather than raw per-track Artists keeps a
+    // various-artists compilation - same Album, differing per-track Artists,
+    // but a consistent (or absent) AlbumArtists tag - as one entry instead of
+    // fragmenting into one per distinct track artist (see Track.EffectiveAlbumArtist).
     private static IEnumerable<IGrouping<string, Track>> GroupByAlbum(IReadOnlyList<Track> tracks) =>
-        tracks.Where(t => t.Path != null).GroupBy(t => AlbumId(t.Album, t.Artists));
+        tracks.Where(t => t.Path != null).GroupBy(t => AlbumId(t.Album, t.EffectiveAlbumArtist));
 
     public static string AlbumId(string? album, string? artist) => $"al:{Normalize(album)}|{Normalize(artist)}";
     public static string ArtistId(string? artist) => $"ar:{Normalize(artist)}";
@@ -80,8 +84,8 @@ public static class LibraryOpenSubsonicMapper
         return new AlbumID3(
             Id: albumId,
             Name: first.Album ?? "",
-            Artist: first.Artists,
-            ArtistId: ArtistId(first.Artists),
+            Artist: first.EffectiveAlbumArtist,
+            ArtistId: ArtistId(first.EffectiveAlbumArtist),
             CoverArt: artHash,
             SongCount: tracks.Count,
             Duration: (long)tracks.Sum(t => t.Duration.TotalSeconds),

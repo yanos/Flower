@@ -12,6 +12,32 @@ namespace Flower.Models
         public string? Subtitle { get; set; }
         public string? Artists { get; set; }
         public string? AlbumArtists { get; set; }
+
+        // The tag's own "part of a compilation" flag (ID3 TCMP / MP4 cpil) - the
+        // conventional signal tagging software uses for a various-artists album,
+        // independent of whether AlbumArtists was also filled in. See
+        // EffectiveAlbumArtist below: many real compilations in the wild have
+        // this flag set but AlbumArtists left blank, so the flag is needed as
+        // its own fallback rather than trusting AlbumArtists alone.
+        public bool IsCompilation { get; set; }
+
+        // The artist to group/display an album by. Prefers, in order: the tag's
+        // own AlbumArtists (conventionally consistent across every track on the
+        // album, e.g. "Various Artists"); then, if the compilation flag is set
+        // but AlbumArtists was left blank, a literal "Various Artists" so every
+        // track in the compilation still resolves to the same grouping key; then
+        // falls back to the per-track Artists for an ordinary single-artist
+        // album with neither tag populated. See RecentlyAddedAlbumsBuilder/
+        // AlbumGridBuilder/LibraryOpenSubsonicMapper, which all group or label
+        // albums by this rather than by Artists directly - otherwise a various-
+        // artists compilation (same Album, differing per-track Artists) would
+        // fragment into one tile/entry per distinct track artist.
+        [JsonIgnore]
+        public string EffectiveAlbumArtist =>
+            !string.IsNullOrWhiteSpace(AlbumArtists) ? AlbumArtists
+            : IsCompilation ? "Various Artists"
+            : Artists ?? "";
+
         public string? Album { get; set; }
         public string? AlbumSort { get; set; }
         public string? Year { get; set; }
