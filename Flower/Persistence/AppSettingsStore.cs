@@ -65,6 +65,19 @@ namespace Flower.Persistence
         // variant regardless of the OS - see Settings' Appearance picker and
         // Flower.Services.AppTheme.
         public AppThemePreference ThemePreference { get; set; } = AppThemePreference.System;
+
+        // Which sidebar view (and, for a Playlist, which one - by name, since
+        // Playlist objects themselves aren't stable across a relaunch) and how
+        // far scrolled into it the user was, saved on close (MainWindow.Closing,
+        // same synchronous-Save timing as the window geometry above) and
+        // restored on the next launch - see MainViewModel.BuildSidebarItems and
+        // MainView.axaml.cs's SaveCurrentViewState/RestoreInitialViewState.
+        // LastSidebarKind is SidebarItemKind's own name ("Songs", "Albums",
+        // "Playlist", etc.), not a raw int, so a future enum reorder can't
+        // silently restore the wrong view.
+        public string? LastSidebarKind    { get; set; }
+        public string? LastPlaylistName   { get; set; }
+        public double  LastScrollOffsetY  { get; set; }
     }
 
     public class ColumnState

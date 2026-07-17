@@ -153,9 +153,33 @@ public partial class MainView : UserControl
             // this handler was attached.
             MusicList.UpdateSortIndicators(_viewModel.SortColumn, _viewModel.SortAscending);
 
-            // Push initial rows to MusicListView
-            ApplyRows();
+            // Seeds _viewStates with whatever scroll position was persisted
+            // last session (see MainViewModel.SaveLastView) so the *first*
+            // real view-switch detection in ApplyRows below - which, at
+            // startup, is the background rescan's own Rows population, not
+            // this call (Rows is always still empty this early) - finds it
+            // and restores scroll instead of defaulting to 0.
+            SeedRestoredViewState();
+
+            // Push initial rows to MusicListView - a no-op in the normal
+            // startup case (Rows is empty here; the real initial push happens
+            // below, once Rows' own PropertyChanged fires after the
+            // background rescan actually populates it), but still needed for
+            // the rarer case for this DataContext already having Rows (e.g.
+            // MainView re-attaching to an already-initialized ViewModel).
+            if (_viewModel.Rows.Count > 0)
+                ApplyRows();
         }
+    }
+
+    // See OnDataContextChanged's own comment for why this only matters at
+    // startup, not on an in-session view switch (ApplyRows' _viewStates
+    // save/restore already covers that).
+    private void SeedRestoredViewState()
+    {
+        if (_viewModel is not { WasLastViewRestored: true } vm)
+            return;
+        _viewStates[vm.CurrentViewKey] = new ViewScrollState(vm.LastScrollOffsetY, null);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -404,23 +428,70 @@ public partial class MainView : UserControl
             return;
         }
 
+        // Keyed off the *old* key's own string shape (not the ViewModel's
+        // current IsShowingAlbumGrid/IsShowingRecentlyAddedGrid, which by
+        // this point already reflect the *new* selection) so the outgoing
+        // view's scroll is read from whichever control actually owned it.
         if (_currentViewKey != null)
-            _viewStates[_currentViewKey] = new ViewScrollState(MusicList.GetScrollOffsetY(), MusicList.SelectedRow?.Track.Path);
+            _viewStates[_currentViewKey] = new ViewScrollState(GetScrollOffsetYForKey(_currentViewKey), MusicList.SelectedRow?.Track.Path);
 
         MusicList.SetItems(_viewModel.Rows);
 
         if (_viewStates.TryGetValue(newKey, out var saved))
         {
             MusicList.SelectedRow = _viewModel.Rows.FirstOrDefault(r => r.Track.Path == saved.SelectedTrackPath);
-            MusicList.SetScrollOffsetY(saved.ScrollOffsetY);
+            RestoreScrollOffsetForKey(newKey, saved.ScrollOffsetY);
         }
         else
         {
             MusicList.SelectedRow = null;
-            MusicList.SetScrollOffsetY(0);
+            RestoreScrollOffsetForKey(newKey, 0);
         }
 
         _currentViewKey = newKey;
+    }
+
+    // CurrentViewKey's own prefix (see MainViewModel.CurrentViewKey) already
+    // unambiguously says which control owns a given view's scroll - "album:"
+    // for AlbumGrid, "recently-added" for RecentlyAddedGrid, anything else
+    // (Songs/Artists/a Playlist) for MusicList - so that string, not the
+    // ViewModel's current IsShowingAlbumGrid/IsShowingRecentlyAddedGrid
+    // (which can already reflect a *different*, newer selection by the time
+    // this runs - see ApplyRows above), is what these two switch on.
+    private double GetScrollOffsetYForKey(string key) =>
+        key.StartsWith("album:", StringComparison.Ordinal) ? AlbumGrid.GetScrollOffsetY()
+        : key == "recently-added" ? RecentlyAddedGrid.GetScrollOffsetY()
+        : MusicList.GetScrollOffsetY();
+
+    // Deferred a frame for the two grids, not called inline like MusicList's
+    // own SetScrollOffsetY - AlbumGridTiles/RecentlyAddedGridTiles (the
+    // grids' own ItemsSource) are reassigned a few lines *after* Rows in
+    // MainViewModel.RebuildRowsAsync, so at the exact moment this runs
+    // (triggered by Rows' own PropertyChanged) the grid's tiles are still the
+    // *previous* view's - setting scroll now would just be clobbered once
+    // the real ItemsSource change arrives and the grid rebuilds its rows.
+    // Posting past that (both are plain, synchronous property assignments
+    // within the same RebuildRowsAsync continuation) lets it land after.
+    private void RestoreScrollOffsetForKey(string key, double offsetY)
+    {
+        if (key.StartsWith("album:", StringComparison.Ordinal))
+            Dispatcher.UIThread.Post(() => AlbumGrid.SetScrollOffsetY(offsetY));
+        else if (key == "recently-added")
+            Dispatcher.UIThread.Post(() => RecentlyAddedGrid.SetScrollOffsetY(offsetY));
+        else
+            MusicList.SetScrollOffsetY(offsetY);
+    }
+
+    // MainWindow.Closing calls this alongside SaveWindowGeometry, capturing
+    // whichever view is showing *right now* (not the last-switched-away-from
+    // one _viewStates otherwise tracks) - the user may never have switched
+    // views at all this session, in which case _currentViewKey already holds
+    // the only view there ever was.
+    public void SaveCurrentViewState()
+    {
+        if (_viewModel == null || _currentViewKey == null)
+            return;
+        _viewModel.SaveLastView(GetScrollOffsetYForKey(_currentViewKey));
     }
 
     // ── Spinner ───────────────────────────────────────────────────────────────

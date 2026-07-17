@@ -59,6 +59,13 @@ public partial class MainWindow : Window
         };
         Closing += (_, _) =>
         {
+            // Captures whichever sidebar view + scroll position is showing
+            // right now, synchronously (MainViewModel.SaveLastView), same
+            // "must complete before the process actually exits" reasoning as
+            // SaveWindowGeometry below - restored on the next launch by
+            // MainViewModel.BuildSidebarItems/MainView.axaml.cs's own
+            // SeedRestoredViewState.
+            (Content as MainView)?.SaveCurrentViewState();
             SaveWindowGeometry();
             _columnManager.Flush();
 
