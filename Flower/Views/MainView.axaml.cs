@@ -105,6 +105,11 @@ public partial class MainView : UserControl
             grid.PointerMoved += AlbumGrid_PointerMoved;
             grid.PointerReleased += AlbumGrid_PointerReleased;
             grid.PointerCaptureLost += AlbumGrid_PointerCaptureLost;
+            // AlbumTileControl itself has no pointer handling of its own (see its
+            // own doc comment) - right-click bubbles up from whichever tile the
+            // pointer landed on the same way the four handlers above do, resolved
+            // the same way via HitTestTile.
+            grid.ContextRequested += AlbumGrid_ContextRequested;
         }
 
         // Cmd/Ctrl+, (Settings) must work regardless of which control currently
@@ -407,6 +412,29 @@ public partial class MainView : UserControl
         _isAlbumGridDragging = false;
         _albumGridPendingActivate = false;
         ResetDragVisuals();
+    }
+
+    // Right-click on an album tile's art/name/artist (anywhere in
+    // AlbumTileControl, which has no pointer handling of its own - see its own
+    // doc comment) - resolved via the same HitTestTile AlbumGrid_PointerPressed
+    // uses. Preserves the existing multi-selection if the right-clicked tile is
+    // already part of it, otherwise collapses to just this tile - same rule
+    // Panel_ContextRequested/TrackRow_ContextRequested already use for the
+    // track list, so a right-click can act on a whole multi-selection of albums.
+    private void AlbumGrid_ContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (sender is not AlbumGridView grid || _viewModel is not { } vm)
+            return;
+        var tile = grid.HitTestTile(e.Source);
+        if (tile == null)
+            return;
+
+        if (!vm.SelectedSubItems.Contains(tile.Name))
+            vm.SetSelectedSubItems(new List<string> { tile.Name });
+
+        var tracks = vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
+        BuildAlbumContextMenu(tracks, tile.Name).Open(grid);
+        e.Handled = true;
     }
 
     // ── Per-view scroll position + selection ────────────────────────────────────
@@ -907,27 +935,58 @@ public partial class MainView : UserControl
     }
 
     private void PopulateAddToPlaylistMenu(IReadOnlyList<Track> tracks)
+        => PopulateAddToPlaylistMenu(_addToPlaylistItem, tracks);
+
+    // Shared by the track list's own _trackMenu (via the overload above) and
+    // BuildAlbumContextMenu below - same New Playlist / existing-playlists
+    // submenu either way, just acting on a different set of tracks.
+    private void PopulateAddToPlaylistMenu(MenuItem addToPlaylistItem, IReadOnlyList<Track> tracks)
     {
         if (_viewModel is not MainViewModel vm)
             return;
 
-        _addToPlaylistItem.Items.Clear();
+        addToPlaylistItem.Items.Clear();
 
         var newPlaylistItem = new MenuItem { Header = "New Playlist" };
         newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTracks(tracks);
-        _addToPlaylistItem.Items.Add(newPlaylistItem);
+        addToPlaylistItem.Items.Add(newPlaylistItem);
 
         if (vm.Library.Playlists.Count > 0)
         {
-            _addToPlaylistItem.Items.Add(new Separator());
+            addToPlaylistItem.Items.Add(new Separator());
             foreach (var playlist in vm.Library.Playlists)
             {
                 var target = playlist; // capture
                 var item = new MenuItem { Header = target.Name };
                 item.Click += async (_, _) => await vm.AddTracksToPlaylist(tracks, target);
-                _addToPlaylistItem.Items.Add(item);
+                addToPlaylistItem.Items.Add(item);
             }
         }
+    }
+
+    // Play Album / Get Info / Add To Playlist for a right-clicked album tile -
+    // see AlbumGrid_ContextRequested. Built fresh per-request rather than a
+    // shared field, same as AlbumGridRowControl.BuildTrackContextMenu (its
+    // song-level equivalent) does for its own right-click menu. Play always
+    // targets just the tile actually clicked, same "not a coherent multi-target
+    // action" reasoning as that method's own Locate File; Get Info/Add To
+    // Playlist act on the full current album selection via tracks.
+    private ContextMenu BuildAlbumContextMenu(IReadOnlyList<Track> tracks, string clickedAlbumName)
+    {
+        var playItem = new MenuItem { Header = "Play Album" };
+        playItem.Click += (_, _) => _viewModel?.PlayAlbum(clickedAlbumName);
+
+        var getInfoItem = new MenuItem { Header = "Get Info" };
+        getInfoItem.Click += (_, _) => OpenTrackInfoForSelectedAlbums();
+
+        var addToPlaylistItem = new MenuItem { Header = "Add To Playlist" };
+        PopulateAddToPlaylistMenu(addToPlaylistItem, tracks);
+
+        var menu = new ContextMenu();
+        menu.Items.Add(playItem);
+        menu.Items.Add(getInfoItem);
+        menu.Items.Add(addToPlaylistItem);
+        return menu;
     }
 
     private static void SetCheckIcon(MenuItem item, bool visible)
