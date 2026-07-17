@@ -11,7 +11,8 @@
        plus per-row inline expansion (AlbumGridRowControl). Wrapped in an
        explicit ScrollViewer for the same reason mobile's grids are: a plain
        ItemsControl has no ScrollViewer in its own default template. -->
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+  <ScrollViewer x:Name="Scroller"
+                HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
     <ItemsControl x:Name="RowsList" Margin="16">
       <ItemsControl.ItemsPanel>

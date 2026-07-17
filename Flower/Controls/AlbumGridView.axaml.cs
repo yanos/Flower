@@ -208,4 +208,21 @@ public partial class AlbumGridView : UserControl
     // ever expanded at a time (MainViewModel.ExpandedAlbumName is shared).
     public IReadOnlyList<Track> GetExpandedRowSelectedTracks() =>
         _rows.FirstOrDefault(r => r.IsExpanded)?.SelectedTracks ?? Array.Empty<Track>();
+
+    // Per-view scroll position, persisted across launches - see
+    // MainView.axaml.cs's own GetScrollOffsetYForKey/SetScrollOffsetYForKey
+    // and MainViewModel.SaveLastView/ResolveLastSidebarItem. Same shape as
+    // MusicListView.GetScrollOffsetY/SetScrollOffsetY, just wrapping this
+    // control's own Scroller instead.
+    public double GetScrollOffsetY() => Scroller.Offset.Y;
+
+    public void SetScrollOffsetY(double y)
+    {
+        // Force a layout pass first so the ScrollViewer's extent reflects
+        // whatever ItemsSource was just assigned, otherwise the offset gets
+        // clamped against the stale (pre-update) extent - same reasoning as
+        // MusicListView.SetScrollOffsetY.
+        Scroller.UpdateLayout();
+        Scroller.Offset = new Vector(0, y);
+    }
 }

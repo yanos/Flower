@@ -374,6 +374,24 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task AppSettingsStore_round_trips_last_view_state()
+    {
+        var settings = new AppSettings
+        {
+            LastSidebarKind   = "Playlist",
+            LastPlaylistName  = "Favorites",
+            LastScrollOffsetY = 1234.5,
+        };
+
+        await new AppSettingsStore().SaveAsync(settings);
+        var loaded = new AppSettingsStore().Load();
+
+        Assert.Equal("Playlist",  loaded.LastSidebarKind);
+        Assert.Equal("Favorites", loaded.LastPlaylistName);
+        Assert.Equal(1234.5,      loaded.LastScrollOffsetY);
+    }
+
+    [Fact]
     public void AppSettingsStore_Save_is_synchronous_and_round_trips_window_geometry()
     {
         var settings = new AppSettings { WindowWidth = 900, WindowHeight = 600 };

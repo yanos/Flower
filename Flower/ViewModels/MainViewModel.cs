@@ -954,8 +954,63 @@ public partial class MainViewModel : ViewModelBase
                 _sidebarItems.Add(new SidebarItem(SidebarItemKind.Playlist, pl.Name, MaterialIconKind.PlaylistPlay, pl));
         }
 
-        _selectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
+        // Restores whichever view (see AppSettings.LastSidebarKind/
+        // LastPlaylistName's own doc comment) the user was on when the app
+        // last closed, falling back to Songs the same way this always did -
+        // on a genuine first run, when the saved view no longer exists (a
+        // deleted playlist), or when nothing was ever saved at all.
+        var restored = ResolveLastSidebarItem();
+        WasLastViewRestored = restored != null;
+        _selectedSidebarItem = restored ?? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
         OnPropertyChanged(nameof(SelectedSidebarItem));
+    }
+
+    // Whether BuildSidebarItems above actually found and restored the saved
+    // view, rather than falling back to Songs - consulted by MainView.axaml.cs
+    // (SeedRestoredViewState) to decide whether LastScrollOffsetY below is
+    // even meaningful for whatever SelectedSidebarItem ended up being: a
+    // scroll offset captured for a since-deleted playlist has nothing to do
+    // with the Songs view a failed restore falls back to.
+    public bool WasLastViewRestored { get; private set; }
+
+    public double LastScrollOffsetY => _appSettings?.LastScrollOffsetY ?? 0;
+
+    private SidebarItem? ResolveLastSidebarItem()
+    {
+        if (_appSettings?.LastSidebarKind is not { } kindText || !Enum.TryParse<SidebarItemKind>(kindText, out var kind))
+            return null;
+
+        if (kind == SidebarItemKind.Playlist)
+            return _appSettings.LastPlaylistName is { } name
+                ? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Playlist && i.Name == name)
+                : null;
+
+        // Header/Device are never a saved selection in practice (see
+        // SaveLastView below, which only ever writes one of these four), but
+        // guarded anyway since this reads straight back out of a JSON file a
+        // user could hand-edit.
+        return kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists or SidebarItemKind.RecentlyAdded
+            ? _sidebarItems.FirstOrDefault(i => i.Kind == kind)
+            : null;
+    }
+
+    // Called from MainView.axaml.cs (MainWindow.Closing, alongside the window
+    // geometry save) with whichever scroll offset is relevant to the view
+    // showing at that moment (MusicListView's or one of the album grids',
+    // depending on IsShowingAlbumGrid/IsShowingRecentlyAddedGrid) - this
+    // class has no visibility into either control's own scroll position
+    // itself. Synchronous Save, not SaveAsync, for the same reason
+    // MainWindow.SaveWindowGeometry uses it: the process may exit before an
+    // async write completes.
+    public void SaveLastView(double scrollOffsetY)
+    {
+        _appSettings ??= new AppSettings();
+        _appSettings.LastSidebarKind = _selectedSidebarItem?.Kind.ToString();
+        _appSettings.LastPlaylistName = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist
+            ? _selectedSidebarItem.Playlist?.Name
+            : null;
+        _appSettings.LastScrollOffsetY = scrollOffsetY;
+        _appSettingsStore?.Save(_appSettings);
     }
 
     // Mirrors CreatePlaylistWithTrack's incremental _sidebarItems.Add(...) pattern:
