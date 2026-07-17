@@ -62,6 +62,41 @@ public class LibraryOpenSubsonicMapperTests
     }
 
     [Fact]
+    public void BuildAlbumList_does_not_fragment_a_various_artists_compilation_by_per_track_artist()
+    {
+        var tracks = new List<Track>
+        {
+            RealTrack("Track1", "Artist A", "Compilation"),
+            RealTrack("Track2", "Artist B", "Compilation"),
+            RealTrack("Track3", "Artist C", "Compilation"),
+        };
+        foreach (var t in tracks)
+            t.AlbumArtists = "Various Artists";
+
+        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList(tracks));
+
+        Assert.Equal("Various Artists", album.Artist);
+        Assert.Equal(3, album.SongCount);
+    }
+
+    [Fact]
+    public void BuildAlbumList_does_not_fragment_a_compilation_flagged_track_with_no_AlbumArtists_tag()
+    {
+        var tracks = new List<Track>
+        {
+            RealTrack("Track1", "Artist A", "Compilation"),
+            RealTrack("Track2", "Artist B", "Compilation"),
+        };
+        foreach (var t in tracks)
+            t.IsCompilation = true;
+
+        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList(tracks));
+
+        Assert.Equal("Various Artists", album.Artist);
+        Assert.Equal(2, album.SongCount);
+    }
+
+    [Fact]
     public void BuildAllSongs_returns_every_real_track_across_every_album_in_one_flat_list()
     {
         var tracks = new List<Track>
