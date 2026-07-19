@@ -12,6 +12,13 @@ using Flower.Persistence;
 
 namespace Flower.Services;
 
+// Outcome of one SyncWithAsync call - lets a user-initiated caller (see
+// MainViewModel.ForceSyncNow) report something more useful than silence when
+// nothing visibly changes: "reached the peer but already up to date" and
+// "couldn't reach the peer at all" both merge zero new tracks, but they're
+// very different things to tell the user.
+public readonly record struct LibrarySyncResult(bool Success, int FetchedCount, int AddedCount);
+
 // Pulls a peer's full track catalog in one request (GET /api/flower/v1/library
 // - see LibrarySyncContracts) and merges anything this device doesn't already
 // have as Path == null placeholders - see SYNC-PLAN.md Phase 3. Talks to the
@@ -37,7 +44,12 @@ namespace Flower.Services;
 // change to this method itself.
 public class LibrarySyncService
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    // A real library's manifest can run into the tens of thousands of songs
+    // (observed: 16k+ tracks) - PlaylistSyncService's 10s timeout is fine for
+    // its much smaller payload, but this one needs enough headroom for a much
+    // bigger JSON response over a possibly-imperfect WiFi link without silently
+    // timing out and aborting the whole sync (see the catch below).
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(2) };
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly Library _library;
@@ -55,12 +67,12 @@ public class LibrarySyncService
         _logger = logger;
     }
 
-    public async Task SyncWithAsync(DiscoveredDevice device)
+    public async Task<LibrarySyncResult> SyncWithAsync(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
         {
             _logger.LogDebug("Library sync skipped for {Alias}: no resolved fingerprint yet", device.Alias);
-            return;
+            return new LibrarySyncResult(false, 0, 0);
         }
 
         _logger.LogInformation("Library sync starting with {Alias} ({Fingerprint}) at {EndPoint}",
@@ -89,7 +101,7 @@ public class LibrarySyncService
             // Peer unreachable, not running this endpoint yet, or not (yet) trusted.
             _logger.LogWarning(ex, "Library sync with {Alias} ({Fingerprint}): GET /library failed, aborting this sync attempt",
                 device.Alias, device.Fingerprint);
-            return;
+            return new LibrarySyncResult(false, 0, 0);
         }
 
         var placeholders = songs
@@ -99,7 +111,7 @@ public class LibrarySyncService
         _logger.LogInformation("Library sync with {Alias}: fetched {SongCount} song(s) from their catalog", device.Alias, songs.Count);
 
         if (placeholders.Count == 0)
-            return;
+            return new LibrarySyncResult(true, 0, 0);
 
         var beforeCount = _library.Tracks.Count;
         _library.MergeSyncedTracks(placeholders);
@@ -113,5 +125,7 @@ public class LibrarySyncService
         // successful sync. PlaylistSyncService and LibraryDownloadService both
         // already persist after their own mutations; this one previously did not.
         await _libraryStore.SaveAsync(_library.Tracks);
+
+        return new LibrarySyncResult(true, songs.Count, addedCount);
     }
 }

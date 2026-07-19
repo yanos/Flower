@@ -61,6 +61,16 @@ public class SidebarItem : ViewModelBase
         set { _isDropTarget = value; OnPropertyChanged(); }
     }
 
+    // Only ever true for the Device row matching MainViewModel's one paired
+    // Server, while a sync with it is in flight - see
+    // MainViewModel.NotifyIsSyncingChanged/AddOrUpdateDeviceSidebarItem.
+    private bool _isSyncing;
+    public bool IsSyncing
+    {
+        get => _isSyncing;
+        set { _isSyncing = value; OnPropertyChanged(); }
+    }
+
     public SidebarItem(SidebarItemKind kind, string name, MaterialIconKind icon = MaterialIconKind.MusicNote,
         Playlist? playlist = null, DiscoveredDevice? device = null)
     {

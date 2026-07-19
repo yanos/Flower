@@ -34,5 +34,10 @@ public static class LibrarySyncMapper
         RemotePlayCounts = (song.PlayCounts ?? new Dictionary<string, int>())
             .Where(kv => kv.Key != ownFingerprint)
             .ToDictionary(kv => kv.Key, kv => kv.Value),
+        // Falls back to the Track record's own "now" default (see Track.DateAdded)
+        // when talking to a third-party server that doesn't send this - see
+        // Child.DateAdded's own doc comment for why this matters for Recently
+        // Added parity between a Client and its paired Server.
+        DateAdded = song.DateAdded ?? DateTimeOffset.UtcNow,
     };
 }

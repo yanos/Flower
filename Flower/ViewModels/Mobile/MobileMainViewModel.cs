@@ -73,6 +73,7 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand UnpairServerCommand { get; }
     public ICommand ConfirmPairServerCommand { get; }
     public ICommand CancelPairServerCommand { get; }
+    public ICommand ForceSyncCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.RecentlyAdded;
     public MobileTab SelectedTab
@@ -472,6 +473,7 @@ public class MobileMainViewModel : ViewModelBase
             ActiveSheet = MobileSheet.ConfirmPairServer;
         });
         UnpairServerCommand = new RelayCommand(Main.UnpairServer);
+        ForceSyncCommand = new RelayCommand(Main.ForceSyncNow);
         ConfirmPairServerCommand = new RelayCommand(() =>
         {
             if (_pendingServerToPair is { } device)

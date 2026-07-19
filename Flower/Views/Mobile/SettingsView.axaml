@@ -19,6 +19,24 @@
       <Setter Property="HorizontalContentAlignment" Value="Left" />
       <Setter Property="Padding" Value="20,14" />
     </Style>
+    <!-- Continuous rotation while Main.IsSyncing is true - see the spinner
+         next to PairedServerAlias below. Same visual as desktop's
+         ServerPickerView spinner, done declaratively for the same reason. -->
+    <Style Selector="materialIcons|MaterialIcon.spinning">
+      <Setter Property="RenderTransform" Value="rotate(0deg)"/>
+    </Style>
+    <Style Selector="materialIcons|MaterialIcon.spinning">
+      <Style.Animations>
+        <Animation Duration="0:0:1" IterationCount="INFINITE">
+          <KeyFrame Cue="0%">
+            <Setter Property="RotateTransform.Angle" Value="0"/>
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="RotateTransform.Angle" Value="360"/>
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*">
@@ -66,8 +84,18 @@
         <StackPanel IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                     Orientation="Horizontal" Spacing="10">
           <TextBlock Text="{Binding Main.PairedServerAlias}" VerticalAlignment="Center" FontWeight="Medium"/>
+          <materialIcons:MaterialIcon Kind="Sync"
+                                       Classes="spinning"
+                                       Width="14" Height="14"
+                                       Opacity="0.6"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding Main.IsSyncing}"/>
+          <Button Content="Sync Now" Command="{Binding ForceSyncCommand}" IsEnabled="{Binding Main.CanForceSync}"/>
           <Button Content="Unpair" Command="{Binding UnpairServerCommand}"/>
         </StackPanel>
+        <TextBlock IsVisible="{Binding Main.LastForceSyncResult, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                   Text="{Binding Main.LastForceSyncResult}"
+                   Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
         <TextBlock IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"
                    Text="Not paired with a server" Opacity="0.5" FontSize="14"/>
 

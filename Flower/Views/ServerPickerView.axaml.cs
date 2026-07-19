@@ -24,6 +24,16 @@ public sealed class ServerRow : ViewModelBase
     public required string Alias { get; init; }
     public required bool IsPaired { get; init; }
 
+    // True only for the paired row while MainViewModel.IsSyncing is set - see
+    // ServerPickerView's PropertyChanged subscription, which re-runs Refresh()
+    // (rebuilding this snapshot) on every IsSyncing edge.
+    public required bool IsSyncing { get; init; }
+
+    // "Sync Now" is only ever shown on the paired row, and only enabled while
+    // that server is actually currently discovered - see
+    // MainViewModel.CanForceSync/ForceSyncNow.
+    public required bool CanForceSync { get; init; }
+
     // Set to the currently-paired server's alias only when a DIFFERENT
     // server is paired - null otherwise (nothing paired, or this row itself
     // is the paired one).
@@ -50,6 +60,19 @@ public partial class ServerPickerView : UserControl
         Refresh();
         _networkDiscovery.DeviceDiscovered += (_, _) => Dispatcher.UIThread.Post(Refresh);
         _networkDiscovery.DeviceLost += (_, _) => Dispatcher.UIThread.Post(Refresh);
+        _mainViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.IsSyncing))
+                Dispatcher.UIThread.Post(Refresh);
+            if (e.PropertyName == nameof(MainViewModel.LastForceSyncResult))
+                Dispatcher.UIThread.Post(RefreshSyncResultText);
+        };
+    }
+
+    private void RefreshSyncResultText()
+    {
+        SyncResultText.Text = _mainViewModel.LastForceSyncResult;
+        SyncResultText.IsVisible = !string.IsNullOrEmpty(_mainViewModel.LastForceSyncResult);
     }
 
     private void Refresh()
@@ -63,6 +86,8 @@ public partial class ServerPickerView : UserControl
                 Fingerprint = d.Fingerprint,
                 Alias = d.Alias,
                 IsPaired = d.Fingerprint == pairedFingerprint,
+                IsSyncing = d.Fingerprint == pairedFingerprint && _mainViewModel.IsSyncing,
+                CanForceSync = d.Fingerprint == pairedFingerprint && _mainViewModel.CanForceSync,
                 BlockedByAlias = pairedFingerprint != null && d.Fingerprint != pairedFingerprint ? pairedAlias : null,
             })
             .ToList();
@@ -77,6 +102,8 @@ public partial class ServerPickerView : UserControl
                 Fingerprint = pairedFingerprint,
                 Alias = pairedAlias ?? pairedFingerprint,
                 IsPaired = true,
+                IsSyncing = _mainViewModel.IsSyncing,
+                CanForceSync = _mainViewModel.CanForceSync,
                 BlockedByAlias = null,
             });
         }
@@ -133,4 +160,6 @@ public partial class ServerPickerView : UserControl
 
         Refresh();
     }
+
+    private void ForceSyncButton_Click(object? sender, RoutedEventArgs e) => _mainViewModel.ForceSyncNow();
 }

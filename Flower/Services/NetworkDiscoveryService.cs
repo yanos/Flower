@@ -99,12 +99,15 @@ public class NetworkDiscoveryService : IDisposable
     // How often an already-known peer's /info is re-fetched, independent of
     // any fresh mDNS announcement - see PollKnownDevicesAsync. A peer that
     // renames itself (DeviceIdentityStore.Alias, MainViewModel.DeviceAlias)
-    // while both apps are already running and connected would otherwise not
-    // be noticed here until something else naturally re-triggers discovery
-    // (that peer's app relaunching, dropping off and rejoining the network,
-    // etc.) - mDNS's own passive re-announcement cadence isn't something this
-    // codebase controls or can rely on for a timely update.
-    private static readonly TimeSpan AliasPollInterval = TimeSpan.FromSeconds(30);
+    // or changes role (AppSettings.IsServer) while both apps are already
+    // running and connected would otherwise not be noticed here until
+    // something else naturally re-triggers discovery (that peer's app
+    // relaunching, dropping off and rejoining the network, etc.) - mDNS's own
+    // passive re-announcement cadence isn't something this codebase controls
+    // or can rely on for a timely update. Only a tiny /info GET per known
+    // peer and only while the app is foregrounded (not a background
+    // service), so a short interval is cheap.
+    private static readonly TimeSpan AliasPollInterval = TimeSpan.FromSeconds(5);
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
 
@@ -126,7 +129,7 @@ public class NetworkDiscoveryService : IDisposable
     // that goes offline without a clean goodbye - backgrounding/locking on
     // iOS doesn't send one, and neither does a hard kill - would otherwise
     // sit in _knownDevices (and the sidebar) forever, unreachable but never
-    // removed. Three misses (~90s at AliasPollInterval's cadence) is
+    // removed. Three misses (~15s at AliasPollInterval's cadence) is
     // deliberately more forgiving than a single miss, since a transient
     // Wi-Fi hiccup or one slow response shouldn't drop a peer that's
     // actually still there.

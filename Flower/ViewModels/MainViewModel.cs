@@ -95,9 +95,21 @@ public partial class MainViewModel : ViewModelBase
     // forever - two devices perpetually re-triggering each other.
     private int _activeSyncCount;
 
+    // Drives the "syncing" spinner next to the paired server's name (desktop's
+    // ServerPickerView, mobile's SettingsView) and its sidebar device row
+    // (see NotifyIsSyncingChanged) - see RunTrackedSync. Only notifies on the
+    // 0-to-1/1-to-0 edges, not every increment/decrement, since a playlist
+    // sync and a library sync run concurrently per peer and the spinner
+    // should stay up for the whole overlapping span, not flicker between them.
+    public bool IsSyncing => _activeSyncCount > 0;
+
     private void RunTrackedSync(Func<Task> syncCall)
     {
-        Interlocked.Increment(ref _activeSyncCount);
+        // TriggerSyncIfReady/DebouncedContentSyncAsync can both run this from a
+        // background thread (mDNS callback, debounce timer) - see CLAUDE.md's
+        // Binding Notes on marshalling UI updates.
+        if (Interlocked.Increment(ref _activeSyncCount) == 1)
+            Dispatcher.UIThread.Post(NotifyIsSyncingChanged);
         _ = RunTrackedSyncAsync(syncCall);
     }
 
@@ -109,8 +121,29 @@ public partial class MainViewModel : ViewModelBase
         }
         finally
         {
-            Interlocked.Decrement(ref _activeSyncCount);
+            if (Interlocked.Decrement(ref _activeSyncCount) == 0)
+                Dispatcher.UIThread.Post(NotifyIsSyncingChanged);
         }
+    }
+
+    // Today there's only ever one sync target - the Client's one paired
+    // Server (see SyncRolePolicy) - so "is anything syncing" (IsSyncing) and
+    // "is the paired server's sidebar row syncing" are the same question;
+    // this just also pushes that same edge onto whichever SidebarItem
+    // currently represents it, for the sidebar's own spinner (see
+    // SidebarItem.IsSyncing, MainView.axaml's Device row template). Already
+    // running on the UI thread (see RunTrackedSync/RunTrackedSyncAsync's
+    // Dispatcher.UIThread.Post callers) so this can touch _sidebarItems and
+    // SidebarItem's bindable property directly.
+    private void NotifyIsSyncingChanged()
+    {
+        OnPropertyChanged(nameof(IsSyncing));
+        var pairedFingerprint = PairedServerFingerprint;
+        if (pairedFingerprint == null)
+            return;
+        var item = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == pairedFingerprint);
+        if (item != null)
+            item.IsSyncing = IsSyncing;
     }
 
     private CancellationTokenSource? _contentSyncCts;
@@ -324,6 +357,7 @@ public partial class MainViewModel : ViewModelBase
             OnPropertyChanged();
             OnPropertyChanged(nameof(PairedServerFingerprint));
             OnPropertyChanged(nameof(PairedServerAlias));
+            OnPropertyChanged(nameof(CanForceSync));
         }
     }
 
@@ -348,6 +382,7 @@ public partial class MainViewModel : ViewModelBase
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         OnPropertyChanged(nameof(PairedServerFingerprint));
         OnPropertyChanged(nameof(PairedServerAlias));
+        OnPropertyChanged(nameof(CanForceSync));
         TriggerSyncIfReady(device); // sync immediately rather than waiting for the next discovery event
     }
 
@@ -382,6 +417,74 @@ public partial class MainViewModel : ViewModelBase
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         OnPropertyChanged(nameof(PairedServerFingerprint));
         OnPropertyChanged(nameof(PairedServerAlias));
+        OnPropertyChanged(nameof(CanForceSync));
+    }
+
+    // "Sync Now" action (desktop's ServerPickerView, mobile's SettingsView) -
+    // bypasses both _syncedDeviceFingerprints (the once-per-session dedup
+    // TriggerSyncIfReady normally applies) and ScheduleContentSync's 5s
+    // debounce, so the user can immediately retry a sync that appears stuck
+    // or never completed (e.g. LibrarySyncService's own request timing out on
+    // a large library) without waiting for the next discovery event or
+    // relaunching the app. Requires the paired Server to be currently
+    // discovered - CanForceSync reflects that for the button's IsEnabled.
+    public bool CanForceSync =>
+        !string.IsNullOrEmpty(PairedServerFingerprint) &&
+        (_networkDiscovery?.KnownDevices.Any(d => d.Fingerprint == PairedServerFingerprint) ?? false);
+
+    // Set once ForceSyncNow's own awaited calls settle - unlike the automatic
+    // trigger paths (TriggerSyncIfReady/DebouncedContentSyncAsync, which fire
+    // RunTrackedSync and move on), this is a direct user action, so it's
+    // worth reporting something more useful than silence: whether the peer
+    // was actually reachable, and how many tracks changed, distinguishing
+    // "reached the server but already up to date" from "couldn't reach it at
+    // all" - both merge zero new tracks otherwise indistinguishably. Shown
+    // next to the "Sync Now" button (desktop ServerPickerView, mobile
+    // SettingsView).
+    private string? _lastForceSyncResult;
+    public string? LastForceSyncResult
+    {
+        get => _lastForceSyncResult;
+        private set { _lastForceSyncResult = value; OnPropertyChanged(); }
+    }
+
+    public async void ForceSyncNow()
+    {
+        var pairedFingerprint = PairedServerFingerprint;
+        if (string.IsNullOrEmpty(pairedFingerprint))
+            return;
+        var device = _networkDiscovery?.KnownDevices.FirstOrDefault(d => d.Fingerprint == pairedFingerprint);
+        if (device == null)
+        {
+            _logger.LogWarning("Force sync requested but paired server ({Fingerprint}) is not currently discovered", pairedFingerprint);
+            LastForceSyncResult = "Server not currently found on the network";
+            return;
+        }
+
+        _logger.LogInformation("Force sync requested with {Alias} ({Fingerprint})", device.Alias, device.Fingerprint);
+        LastForceSyncResult = null;
+
+        if (Interlocked.Increment(ref _activeSyncCount) == 1)
+            NotifyIsSyncingChanged();
+        try
+        {
+            var playlistTask = _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask;
+            var libraryTask = _librarySyncService?.SyncWithAsync(device) ?? Task.FromResult(new LibrarySyncResult(false, 0, 0));
+            await Task.WhenAll(playlistTask, libraryTask);
+
+            var libraryResult = await libraryTask;
+            LastForceSyncResult = !libraryResult.Success
+                ? $"Could not reach {device.Alias} - check it's still on the network and paired"
+                : libraryResult.AddedCount > 0
+                    ? $"Added {libraryResult.AddedCount} new track(s) from {device.Alias}"
+                    : $"Already up to date with {device.Alias} ({libraryResult.FetchedCount} track(s) checked)";
+            _logger.LogInformation("Force sync result: {Result}", LastForceSyncResult);
+        }
+        finally
+        {
+            if (Interlocked.Decrement(ref _activeSyncCount) == 0)
+                NotifyIsSyncingChanged();
+        }
     }
 
     // Settings' Appearance picker (Follow System / Light / Dark) - see
@@ -917,6 +1020,7 @@ public partial class MainViewModel : ViewModelBase
         {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
+            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(CanForceSync)));
             Dispatcher.UIThread.Post(() => CheckForNewPairableServer(device));
             TriggerSyncIfReady(device);
         };
@@ -924,6 +1028,7 @@ public partial class MainViewModel : ViewModelBase
         {
             Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
+            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(CanForceSync)));
         };
 
         // On mobile, MainViewModel is still constructed (App.axaml.cs resolves it
@@ -1154,6 +1259,12 @@ public partial class MainViewModel : ViewModelBase
         if (existing != null)
         {
             existing.Device = device;
+            // A device row can be re-created (RemoveDuplicateDeviceSidebarItems)
+            // or updated while a sync with it is already in flight - carry the
+            // current state forward rather than defaulting back to false, since
+            // NotifyIsSyncingChanged only fires on IsSyncing's own edges, not
+            // whenever a sidebar row happens to change.
+            existing.IsSyncing = device.Fingerprint == PairedServerFingerprint && IsSyncing;
             RemoveDuplicateDeviceSidebarItems(existing, device);
             RefreshDeviceDisplayNames();
             return;
@@ -1162,7 +1273,10 @@ public partial class MainViewModel : ViewModelBase
         if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Device))
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Devices"));
 
-        var added = new SidebarItem(SidebarItemKind.Device, ResolveDeviceDisplayName(device), MaterialIconKind.Laptop, device: device);
+        var added = new SidebarItem(SidebarItemKind.Device, ResolveDeviceDisplayName(device), MaterialIconKind.Laptop, device: device)
+        {
+            IsSyncing = device.Fingerprint == PairedServerFingerprint && IsSyncing,
+        };
         _sidebarItems.Add(added);
         RemoveDuplicateDeviceSidebarItems(added, device);
         RefreshDeviceDisplayNames();
