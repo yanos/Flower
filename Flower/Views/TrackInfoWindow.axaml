@@ -46,6 +46,40 @@
       <Setter Property="Width" Value="50"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
+    <!-- Parallel to TextBox.val above - AutoCompleteBox doesn't inherit from
+         TextBox, so that selector doesn't match it, and its own template has
+         no TextWrapping to set (single-line entry is fine for the three
+         fields this backs: Artist/Album/Album Artist - see
+         TrackInfoWindow.axaml.cs's PopulateSuggestions). Padding/MinHeight
+         are set on the templated PART_TextBox inside it, not on the outer
+         AutoCompleteBox itself - the outer control has its own default
+         Padding too, so setting it there as well stacked both paddings and
+         rendered visibly taller than the plain TextBox.val fields beside it. -->
+    <Style Selector="AutoCompleteBox.val">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Margin" Value="0,0,0,4"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="MinHeight" Value="0"/>
+      <Setter Property="VerticalAlignment" Value="Top"/>
+      <Setter Property="MinWidth" Value="150"/>
+      <Setter Property="FilterMode" Value="Contains"/>
+      <Setter Property="MinimumPrefixLength" Value="1"/>
+    </Style>
+    <Style Selector="AutoCompleteBox.val /template/ TextBox#PART_TextBox">
+      <Setter Property="Padding" Value="4,2"/>
+      <Setter Property="MinHeight" Value="0"/>
+    </Style>
+    <!-- Suggestion dropdown rows - same "Fluent's default list-item chrome is
+         roomier than this compact form needs" issue as PART_TextBox above,
+         just for the popup's ListBoxItem containers instead. Avalonia resolves
+         style scope for AutoCompleteBox's popup content against its logical
+         parent, so this reaches in despite the popup rendering on a separate
+         surface. -->
+    <Style Selector="AutoCompleteBox.val ListBoxItem">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Padding" Value="4,2"/>
+      <Setter Property="MinHeight" Value="0"/>
+    </Style>
   </Window.Styles>
 
   <DockPanel>
@@ -108,10 +142,10 @@
               <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val"/>
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="Artist" Classes="lbl"/>
-              <TextBox   Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val"/>
+              <AutoCompleteBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val"/>
 
               <TextBlock Grid.Row="2" Grid.Column="0" Text="Album"  Classes="lbl"/>
-              <TextBox   Grid.Row="2" Grid.Column="1" x:Name="AlbumBox"  Classes="val"/>
+              <AutoCompleteBox Grid.Row="2" Grid.Column="1" x:Name="AlbumBox"  Classes="val"/>
             </Grid>
 
             <TextBlock Text="ALBUM" Classes="sectionHeader"/>
@@ -154,7 +188,7 @@
             <Grid ColumnDefinitions="*,24,*" Margin="0,0,0,14">
               <Grid Grid.Column="0" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Album Artist" Classes="lbl"/>
-                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="AlbumArtistBox" Classes="val"/>
+                <AutoCompleteBox Grid.Row="0" Grid.Column="1" x:Name="AlbumArtistBox" Classes="val"/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Composer" Classes="lbl"/>
                 <TextBox   Grid.Row="1" Grid.Column="1" x:Name="ComposerBox" Classes="val"/>
