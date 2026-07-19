@@ -49,6 +49,7 @@ public partial class TrackInfoWindow : Window
         _tracks    = tracks;
         _library   = library;
         _index     = index;
+        PopulateSuggestions();
         BuildFields();
         _editTracks = [_track];
         Populate();
@@ -63,6 +64,7 @@ public partial class TrackInfoWindow : Window
         InitializeComponent();
         _library    = library;
         _editTracks = editTracks;
+        PopulateSuggestions();
         BuildFields();
         Populate();
         PrevButton.IsVisible = false;
@@ -70,6 +72,18 @@ public partial class TrackInfoWindow : Window
         if (editTracks.Count > 1)
             Title = $"Track Info ({editTracks.Count} tracks)";
         NativeMenuHelper.InheritFromMainWindow(this);
+    }
+
+    // Computed once per window open from whatever the library holds right now,
+    // not live-updated while the window stays open - see TagSuggestionSource.
+    // Artists and AlbumArtists share one suggestion pool (see its own doc
+    // comment); Album gets its own.
+    private void PopulateSuggestions()
+    {
+        var artistSuggestions = TagSuggestionSource.DistinctArtists(_library.Tracks);
+        ArtistBox.ItemsSource      = artistSuggestions;
+        AlbumArtistBox.ItemsSource = artistSuggestions;
+        AlbumBox.ItemsSource       = TagSuggestionSource.DistinctAlbums(_library.Tracks);
     }
 
     private async void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Navigate(-1);
@@ -99,7 +113,7 @@ public partial class TrackInfoWindow : Window
     // so the same field list drives population and save uniformly - the
     // alternative is ~23 fields each hand-written twice over.
     //
-    // Dirty-tracking is done by comparing Box.Text against OriginalText at save
+    // Dirty-tracking is done by comparing GetText() against OriginalText at save
     // time, NOT via TextChanged + a "currently populating" guard flag - Avalonia's
     // TextBox.TextChanged doesn't fire synchronously with a `.Text =` assignment,
     // it's deferred, so by the time it actually fires Populate() has already
@@ -107,18 +121,34 @@ public partial class TrackInfoWindow : Window
     // (confirmed via logging: every TextChanged during population fired with the
     // guard already back to false). Comparing final text state at save time
     // sidesteps that timing entirely.
-    private sealed class EditableField(TextBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply)
+    //
+    // Backed by accessor delegates rather than a concrete control reference so
+    // both plain TextBox fields and the AutoCompleteBox-backed Artist/Album/
+    // Album Artist fields (see PopulateSuggestions) can share one field list -
+    // AutoCompleteBox doesn't inherit from TextBox, so a single typed Box
+    // reference can't hold either.
+    private sealed class EditableField(
+        Func<string> getText, Action<string> setText, Action<string?> setWatermark,
+        Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply)
     {
-        public readonly TextBox Box = box;
+        public readonly Func<string> GetText = getText;
+        public readonly Action<string> SetText = setText;
+        public readonly Action<string?> SetWatermark = setWatermark;
         public readonly Func<Track, string> Display = display;
         public readonly Action<Track, TagLib.Tag, string?> Apply = apply;
         public string OriginalText = "";
-        public bool IsDirty => Box.Text != OriginalText;
+        public bool IsDirty => GetText() != OriginalText;
     }
+
+    private static EditableField FromTextBox(TextBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply) =>
+        new(() => box.Text ?? "", v => box.Text = v, w => box.Watermark = w, display, apply);
+
+    private static EditableField FromAutoComplete(AutoCompleteBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply) =>
+        new(() => box.Text ?? "", v => box.Text = v, w => box.Watermark = w, display, apply);
 
     private static EditableField SimpleField(
         TextBox box, Func<Track, string?> get, Action<Track, string?> setTrack, Action<TagLib.Tag, string?> setTag) =>
-        new(box, t => get(t) ?? "", (t, tag, v) =>
+        FromTextBox(box, t => get(t) ?? "", (t, tag, v) =>
         {
             var n = NullIfEmpty(v);
             setTrack(t, n);
@@ -130,23 +160,23 @@ public partial class TrackInfoWindow : Window
         _fields =
         [
             SimpleField(TitleBox, t => t.Title, (t, v) => t.Title = v, (tag, v) => tag.Title = v),
-            new(ArtistBox, t => t.Artists ?? "", (t, tag, v) => { t.Artists = NullIfEmpty(v); tag.Performers = SplitArray(v); }),
-            SimpleField(AlbumBox, t => t.Album, (t, v) => t.Album = v, (tag, v) => tag.Album = v),
+            FromAutoComplete(ArtistBox, t => t.Artists ?? "", (t, tag, v) => { t.Artists = NullIfEmpty(v); tag.Performers = SplitArray(v); }),
+            FromAutoComplete(AlbumBox, t => t.Album ?? "", (t, tag, v) => { t.Album = NullIfEmpty(v); tag.Album = v; }),
 
-            new(TrackNumBox, t => t.TrackNumber > 0 ? t.TrackNumber.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.TrackNumber = n; tag.Track = n; }),
-            new(TrackTotalBox, t => t.TrackCount > 0 ? t.TrackCount.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.TrackCount = n; tag.TrackCount = n; }),
-            new(DiscNumBox, t => t.DiscNumber > 0 ? t.DiscNumber.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.DiscNumber = n; tag.Disc = n; }),
-            new(DiscTotalBox, t => t.DiscCount > 0 ? t.DiscCount.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.DiscCount = n; tag.DiscCount = n; }),
+            FromTextBox(TrackNumBox, t => t.TrackNumber > 0 ? t.TrackNumber.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.TrackNumber = n; tag.Track = n; }),
+            FromTextBox(TrackTotalBox, t => t.TrackCount > 0 ? t.TrackCount.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.TrackCount = n; tag.TrackCount = n; }),
+            FromTextBox(DiscNumBox, t => t.DiscNumber > 0 ? t.DiscNumber.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.DiscNumber = n; tag.Disc = n; }),
+            FromTextBox(DiscTotalBox, t => t.DiscCount > 0 ? t.DiscCount.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.DiscCount = n; tag.DiscCount = n; }),
             // Track.Year stays a raw string while tag.Year is parsed to uint - an
             // existing asymmetry in how this field was already handled, preserved as-is.
-            new(YearBox, t => t.Year ?? "", (t, tag, v) => { t.Year = NullIfEmpty(v); tag.Year = ParseUInt(v); }),
-            new(GenreBox, t => t.Genre ?? "", (t, tag, v) => { var g = NullIfEmpty(v); t.Genre = g; tag.Genres = g is string gg ? [gg] : []; }),
-            new(BpmBox, t => t.BeatsPerMinute > 0 ? t.BeatsPerMinute.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.BeatsPerMinute = n; tag.BeatsPerMinute = n; }),
+            FromTextBox(YearBox, t => t.Year ?? "", (t, tag, v) => { t.Year = NullIfEmpty(v); tag.Year = ParseUInt(v); }),
+            FromTextBox(GenreBox, t => t.Genre ?? "", (t, tag, v) => { var g = NullIfEmpty(v); t.Genre = g; tag.Genres = g is string gg ? [gg] : []; }),
+            FromTextBox(BpmBox, t => t.BeatsPerMinute > 0 ? t.BeatsPerMinute.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.BeatsPerMinute = n; tag.BeatsPerMinute = n; }),
             SimpleField(KeyBox, t => t.InitialKey, (t, v) => t.InitialKey = v, (tag, v) => tag.InitialKey = v),
             SimpleField(GroupingBox, t => t.Grouping, (t, v) => t.Grouping = v, (tag, v) => tag.Grouping = v),
 
-            new(AlbumArtistBox, t => t.AlbumArtists ?? "", (t, tag, v) => { t.AlbumArtists = NullIfEmpty(v); tag.AlbumArtists = SplitArray(v); }),
-            new(ComposerBox, t => t.Composers ?? "", (t, tag, v) => { t.Composers = NullIfEmpty(v); tag.Composers = SplitArray(v); }),
+            FromAutoComplete(AlbumArtistBox, t => t.AlbumArtists ?? "", (t, tag, v) => { t.AlbumArtists = NullIfEmpty(v); tag.AlbumArtists = SplitArray(v); }),
+            FromTextBox(ComposerBox, t => t.Composers ?? "", (t, tag, v) => { t.Composers = NullIfEmpty(v); tag.Composers = SplitArray(v); }),
             SimpleField(ConductorBox, t => t.Conductor, (t, v) => t.Conductor = v, (tag, v) => tag.Conductor = v),
             SimpleField(RemixedByBox, t => t.RemixedBy, (t, v) => t.RemixedBy = v, (tag, v) => tag.RemixedBy = v),
 
@@ -168,14 +198,14 @@ public partial class TrackInfoWindow : Window
             var values = _editTracks.Select(field.Display).Distinct().ToList();
             if (values.Count == 1)
             {
-                field.Box.Text = values[0];
-                field.Box.Watermark = null;
+                field.SetText(values[0]);
+                field.SetWatermark(null);
                 field.OriginalText = values[0];
             }
             else
             {
-                field.Box.Text = "";
-                field.Box.Watermark = "Multiple values";
+                field.SetText("");
+                field.SetWatermark("Multiple values");
                 field.OriginalText = ""; // untouched sentinel for a mixed field
             }
         }
@@ -249,7 +279,7 @@ public partial class TrackInfoWindow : Window
                 using var tagFile = TagLib.File.Create(path);
                 var tag = tagFile.Tag;
                 foreach (var field in dirty)
-                    field.Apply(track, tag, field.Box.Text);
+                    field.Apply(track, tag, field.GetText());
                 tagFile.Save();
             }
             catch (Exception ex)
