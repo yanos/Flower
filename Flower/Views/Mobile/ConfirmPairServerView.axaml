@@ -12,7 +12,8 @@
   <UserControl.Styles>
     <Style Selector="Button.peerAction">
       <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="Padding" Value="0,12" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="Padding" Value="16,12" />
       <Setter Property="FontSize" Value="16" />
     </Style>
   </UserControl.Styles>
@@ -31,7 +32,7 @@
       <StackPanel Spacing="14">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <materialIcons:MaterialIcon Kind="Sync" Width="24" Height="24" />
-          <TextBlock Text="Pair With This Server?"
+          <TextBlock Text="{Binding ConfirmPairServerTitle}"
                      FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
         </StackPanel>
 

@@ -200,6 +200,7 @@ public class MobileMainViewModel : ViewModelBase
         _pendingServerOffer = null;
         _pendingServerToPair = device;
         OnPropertyChanged(nameof(PendingServerToPairAlias));
+        OnPropertyChanged(nameof(ConfirmPairServerTitle));
         OnPropertyChanged(nameof(ConfirmPairServerMessage));
         ActiveSheet = MobileSheet.ConfirmPairServer;
     }
@@ -231,6 +232,7 @@ public class MobileMainViewModel : ViewModelBase
     // straight through to Main.PairWithServer).
     private DiscoveredDevice? _pendingServerToPair;
     public string PendingServerToPairAlias => _pendingServerToPair?.Alias ?? "";
+    public string ConfirmPairServerTitle => $"Pair With \"{PendingServerToPairAlias}\"?";
     public string ConfirmPairServerMessage =>
         $"This device's library view will be replaced by \"{PendingServerToPairAlias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted.";
 
@@ -346,6 +348,7 @@ public class MobileMainViewModel : ViewModelBase
             }
             _pendingServerToPair = device;
             OnPropertyChanged(nameof(PendingServerToPairAlias));
+            OnPropertyChanged(nameof(ConfirmPairServerTitle));
             OnPropertyChanged(nameof(ConfirmPairServerMessage));
             ActiveSheet = MobileSheet.ConfirmPairServer;
         };
@@ -464,6 +467,7 @@ public class MobileMainViewModel : ViewModelBase
                 return;
             _pendingServerToPair = device;
             OnPropertyChanged(nameof(PendingServerToPairAlias));
+            OnPropertyChanged(nameof(ConfirmPairServerTitle));
             OnPropertyChanged(nameof(ConfirmPairServerMessage));
             ActiveSheet = MobileSheet.ConfirmPairServer;
         });

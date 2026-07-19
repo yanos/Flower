@@ -97,7 +97,7 @@ public partial class ServerPickerView : UserControl
 
             var confirmed = await ConfirmDialogWindow.ShowAsync(
                 owner,
-                "Unpair From This Server?",
+                $"Unpair From \"{row.Alias}\"?",
                 $"This device will no longer bulk-sync library/playlist data with \"{row.Alias}\". Browsing and streaming will still work.",
                 "Unpair");
             if (!confirmed)
@@ -122,7 +122,7 @@ public partial class ServerPickerView : UserControl
             // about deleting anything already on disk.
             var confirmed = await ConfirmDialogWindow.ShowAsync(
                 owner,
-                "Pair With This Server?",
+                $"Pair With \"{row.Alias}\"?",
                 $"This device's library view will be replaced by \"{row.Alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted.",
                 "Pair");
             if (!confirmed)
