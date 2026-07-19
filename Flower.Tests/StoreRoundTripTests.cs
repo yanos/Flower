@@ -392,6 +392,24 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task AppSettingsStore_round_trips_server_role_and_paired_server()
+    {
+        var settings = new AppSettings
+        {
+            IsServer                 = true,
+            PairedServerFingerprint  = "abc123",
+            PairedServerAlias        = "Living Room Mac",
+        };
+
+        await new AppSettingsStore().SaveAsync(settings);
+        var loaded = new AppSettingsStore().Load();
+
+        Assert.True(loaded.IsServer);
+        Assert.Equal("abc123",          loaded.PairedServerFingerprint);
+        Assert.Equal("Living Room Mac", loaded.PairedServerAlias);
+    }
+
+    [Fact]
     public void AppSettingsStore_Save_is_synchronous_and_round_trips_window_geometry()
     {
         var settings = new AppSettings { WindowWidth = 900, WindowHeight = 600 };

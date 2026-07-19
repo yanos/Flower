@@ -78,6 +78,23 @@ namespace Flower.Persistence
         public string? LastSidebarKind    { get; set; }
         public string? LastPlaylistName   { get; set; }
         public double  LastScrollOffsetY  { get; set; }
+
+        // Whether this device accepts incoming bulk-sync from Client devices
+        // (Server) or initiates bulk-sync toward exactly one chosen Server
+        // (Client, the default) - see Settings' General tab and
+        // Flower.Services.SyncRolePolicy. This only governs the
+        // LibrarySyncService/PlaylistSyncService bulk merge - browsing/
+        // streaming another device's catalog (PeerOpenSubsonicClientFactory)
+        // is unrestricted by role.
+        public bool IsServer { get; set; } = false;
+
+        // The one Server this Client currently bulk-syncs with, picked
+        // manually from MainViewModel.AvailableServers - null if not yet
+        // paired. PairedServerAlias is a display-only cache so Settings can
+        // show the paired server's name even while it is not currently
+        // reachable, without a live lookup.
+        public string? PairedServerFingerprint { get; set; }
+        public string? PairedServerAlias       { get; set; }
     }
 
     public class ColumnState

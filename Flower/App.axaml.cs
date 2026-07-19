@@ -100,10 +100,10 @@ public partial class App : Application
         // the same instance, so the new name takes effect immediately without
         // needing to reconstruct or restart anything.
         var deviceIdentity = deviceIdentityStore.Load();
-        var syncHttpServer = new SyncHttpServer(deviceIdentity, library, playlistStore, trustedPeerStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
-        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
-        var librarySyncService = new LibrarySyncService(library, deviceIdentity, libraryStore, AppLogging.CreateTypedLogger<LibrarySyncService>());
-        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
+        var syncHttpServer = new SyncHttpServer(deviceIdentity, appSettings, library, playlistStore, trustedPeerStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
+        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, appSettings, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
+        var librarySyncService = new LibrarySyncService(library, deviceIdentity, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibrarySyncService>());
+        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()

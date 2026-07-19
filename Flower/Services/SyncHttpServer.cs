@@ -64,6 +64,7 @@ public class SyncHttpServer : IDisposable
 
     private HttpListener? _listener;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly AppSettings _appSettings;
     private readonly Library _library;
     private readonly ILogger _logger;
     private readonly PlaylistStore _playlistStore;
@@ -81,12 +82,14 @@ public class SyncHttpServer : IDisposable
 
     public SyncHttpServer(
         DeviceIdentity deviceIdentity,
+        AppSettings appSettings,
         Library library,
         PlaylistStore playlistStore,
         TrustedPeerStore trustedPeerStore,
         ILogger<SyncHttpServer> logger)
     {
         _deviceIdentity = deviceIdentity;
+        _appSettings = appSettings;
         _library = library;
         _playlistStore = playlistStore;
         _trustedPeerStore = trustedPeerStore;
@@ -164,12 +167,28 @@ public class SyncHttpServer : IDisposable
             var path = context.Request.Url?.AbsolutePath;
             var method = context.Request.HttpMethod;
 
-            if (path != null && RequiresTrust(path) && !await AuthorizeAsync(context))
+            if (path != null && RequiresTrust(path))
             {
-                context.Response.StatusCode = 403;
-                _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: not authorized",
-                    method, path, context.Request.RemoteEndPoint);
-                return;
+                if (!await AuthorizeAsync(context))
+                {
+                    context.Response.StatusCode = 403;
+                    _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: not authorized",
+                        method, path, context.Request.RemoteEndPoint);
+                    return;
+                }
+
+                // Bulk-sync endpoints only (not browse/stream - see
+                // SyncRolePolicy.ShouldRejectPeerAsServer's own doc comment) -
+                // a correctly-behaving Server never initiates bulk sync at
+                // all, so this is defense-in-depth against a caller that also
+                // claims to be a Server somehow reaching this endpoint.
+                if (IsBulkSyncPath(path) && SyncRolePolicy.ShouldRejectPeerAsServer(_appSettings.IsServer, IsCallerServer(context)))
+                {
+                    context.Response.StatusCode = 403;
+                    _logger.LogWarning("Rejected bulk sync {Method} {Path} from {RemoteEndPoint}: caller also advertises Server role",
+                        method, path, context.Request.RemoteEndPoint);
+                    return;
+                }
             }
 
             if (path == "/api/localsend/v2/info" && method == "GET")
@@ -205,6 +224,15 @@ public class SyncHttpServer : IDisposable
     private static bool RequiresTrust(string path) =>
         path.StartsWith("/api/flower/v1/", StringComparison.Ordinal) ||
         path.StartsWith("/rest/", StringComparison.Ordinal);
+
+    // The bulk-merge endpoints (playlists/library manifest) - distinct from
+    // /rest/* browse/stream, which stays open to any trusted peer regardless
+    // of role. See SyncRolePolicy.ShouldRejectPeerAsServer.
+    private static bool IsBulkSyncPath(string path) =>
+        path.StartsWith("/api/flower/v1/", StringComparison.Ordinal);
+
+    private static bool IsCallerServer(HttpListenerContext context) =>
+        string.Equals(context.Request.Headers["X-Flower-Role"], "server", StringComparison.OrdinalIgnoreCase);
 
     private async Task<bool> AuthorizeAsync(HttpListenerContext context)
     {
@@ -270,6 +298,7 @@ public class SyncHttpServer : IDisposable
             deviceModel = (string?)null,
             deviceType,
             fingerprint = _deviceIdentity.Fingerprint,
+            isServer = _appSettings.IsServer,
             download = false
         });
         await WriteJsonAsync(context, body);

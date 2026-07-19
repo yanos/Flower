@@ -264,23 +264,63 @@
                                 IsVisible="{Binding IsShowingTrackList}"
                                 SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
 
-        <!-- Device detail: shown instead of the track list when a Devices sidebar row is selected -->
-        <StackPanel Grid.Column="0" Grid.ColumnSpan="2"
-                    IsVisible="{Binding IsShowingDeviceDetail}"
-                    Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
-                    Margin="24" Spacing="8" VerticalAlignment="Top">
-          <StackPanel Orientation="Horizontal" Spacing="10">
+        <!-- Device detail: shown instead of the track list when a Devices sidebar
+             row is selected. Live browse/stream of that peer's catalog (see
+             PeerLibraryViewModel) - unrestricted by Client/Server role/pairing,
+             deliberately separate from the bulk LibrarySyncService merge (see
+             SyncRolePolicy). Plain DTOs (AlbumID3/Child), not compiled-bound -
+             same x:CompileBindings="False" escape hatch MusicListView/AlbumGridView
+             already use for content assembled/typed outside the MainViewModel
+             DataType this whole view otherwise compiles bindings against. -->
+        <Grid Grid.Column="0" Grid.ColumnSpan="2"
+              IsVisible="{Binding IsShowingDeviceDetail}"
+              Margin="24" RowDefinitions="Auto,*"
+              x:CompileBindings="False">
+          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,16">
             <materialIcons:MaterialIcon Kind="Laptop" Width="28" Height="28" />
             <!-- SelectedSidebarItem.Name, not SelectedDevice.Alias - the sidebar
                  row already resolves a local nickname override (DeviceNicknameStore)
                  over the peer's raw self-reported alias and keeps it live-updated
                  on rename; SelectedDevice.Alias is that raw, unresolved value. -->
             <TextBlock Text="{Binding SelectedSidebarItem.Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding SelectedDevice.EndPoint}" Opacity="0.5" FontSize="13" VerticalAlignment="Center" Margin="8,0,0,0"/>
           </StackPanel>
-          <TextBlock Text="{Binding SelectedDevice.EndPoint}" Opacity="0.6" FontSize="13"/>
-          <TextBlock Text="Found on your local network via Flower's sync discovery. File sync is not built yet."
-                     Opacity="0.5" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" MaxWidth="360"/>
-        </StackPanel>
+
+          <TextBlock Grid.Row="1" Text="{Binding PeerLibrary.ErrorMessage}"
+                     IsVisible="{Binding PeerLibrary.ErrorMessage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                     Opacity="0.6" FontSize="13" TextWrapping="Wrap" VerticalAlignment="Top"/>
+
+          <Grid Grid.Row="1" ColumnDefinitions="220,*"
+                IsVisible="{Binding PeerLibrary.ErrorMessage, Converter={x:Static avc:ObjectConverters.IsNull}}">
+            <ListBox Grid.Column="0" x:Name="PeerAlbumList"
+                     ItemsSource="{Binding PeerLibrary.Albums}"
+                     SelectedItem="{Binding PeerLibrary.SelectedAlbum}"
+                     SelectionChanged="PeerAlbumList_SelectionChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Spacing="2" Margin="0,4">
+                    <TextBlock Text="{Binding Name}" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+
+            <ListBox Grid.Column="1" x:Name="PeerSongList" Margin="16,0,0,0"
+                     ItemsSource="{Binding PeerLibrary.AlbumSongs}"
+                     DoubleTapped="PeerSongList_DoubleTapped">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="32,*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding Track}" Opacity="0.5"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="2" Text="{Binding Duration}" Opacity="0.5"/>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Grid>
       </Grid>
 
       <!-- Floating "what you're dragging" ghost for the drag-onto-playlist gesture

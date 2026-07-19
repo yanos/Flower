@@ -52,6 +52,7 @@ public partial class MainViewModel : ViewModelBase
     private LibrarySyncService? _librarySyncService;
     private LibraryDownloadService? _libraryDownloadService;
     private DeviceIdentity? _deviceIdentity;
+    private NetworkDiscoveryService? _networkDiscovery;
     private LibraryStore? _libraryStore;
     private AppSettingsStore? _appSettingsStore;
     private PlaylistStore? _playlistStore;
@@ -130,12 +131,18 @@ public partial class MainViewModel : ViewModelBase
             return; // A newer change restarted the cooldown - that call's own delay will fire instead.
         }
 
-        // Every currently-known, fingerprint-resolved peer - not gated by
+        // Every currently-known, fingerprint-resolved peer this device should
+        // bulk-sync with per SyncRolePolicy - not gated by
         // _syncedDeviceFingerprints (that dedup is specifically for "don't
         // double-sync from DeviceDiscovered re-firing at first contact" - see
-        // TriggerSyncIfReady - and is orthogonal to resyncing on a later change).
+        // TriggerSyncIfReady - and is orthogonal to resyncing on a later
+        // change). Collapses to at most one device (the Client's paired
+        // Server) under role gating; empty for a Server, which never initiates.
+        var isServer = _appSettings?.IsServer ?? false;
+        var pairedServerFingerprint = _appSettings?.PairedServerFingerprint;
         var devices = _sidebarItems
-            .Where(i => i.Kind == SidebarItemKind.Device && i.Device is { Fingerprint.Length: > 0 })
+            .Where(i => i.Kind == SidebarItemKind.Device && i.Device is { Fingerprint.Length: > 0 } &&
+                        SyncRolePolicy.ShouldInitiateSync(isServer, pairedServerFingerprint, i.Device.Fingerprint))
             .Select(i => i.Device!)
             .ToList();
 
@@ -144,7 +151,10 @@ public partial class MainViewModel : ViewModelBase
 
         foreach (var device in devices)
         {
-            RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
+            // forceInitiator: true - see TriggerSyncIfReady's identical
+            // reasoning; every device here is already the Client's own
+            // paired Server (ShouldInitiateSync above guarantees it).
+            RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
             RunTrackedSync(() => _librarySyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
         }
     }
@@ -262,6 +272,79 @@ public partial class MainViewModel : ViewModelBase
             _appSettings.SyncDateAddedFromITunes = value;
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         }
+    }
+
+    // Whether this device accepts incoming bulk-sync from Client devices
+    // (Server) or initiates bulk-sync toward exactly one chosen Server
+    // (Client, the default) - see Settings' General tab, AppSettings.IsServer,
+    // and SyncRolePolicy. Takes effect immediately, live - unlike
+    // SyncHttpServer/mDNS (which keep running unconditionally on every
+    // device regardless of role, so browsing/streaming stays unrestricted),
+    // nothing here needs a restart.
+    public bool IsServer
+    {
+        get => _appSettings?.IsServer ?? false;
+        set
+        {
+            _appSettings ??= new AppSettings();
+            if (_appSettings.IsServer == value)
+                return;
+            _appSettings.IsServer = value;
+            if (value)
+            {
+                // Not syncing again with the old paired server (a deliberate
+                // requirement, not an oversight) - library/playlists
+                // themselves are untouched by this flip (nothing else reads
+                // IsServer except the sync-trigger gating in
+                // TriggerSyncIfReady/DebouncedContentSyncAsync), this only
+                // clears the now-stale pairing pointer.
+                _appSettings.PairedServerFingerprint = null;
+                _appSettings.PairedServerAlias = null;
+            }
+            _logger.LogInformation("IsServer changed {Old} -> {New}", !value, value);
+            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PairedServerFingerprint));
+            OnPropertyChanged(nameof(PairedServerAlias));
+        }
+    }
+
+    public string? PairedServerFingerprint => _appSettings?.PairedServerFingerprint;
+    public string? PairedServerAlias       => _appSettings?.PairedServerAlias;
+
+    // Every currently-discovered peer advertising Server mode - the pool
+    // ServerPickerView picks a pairing from. Unrelated to trust: an
+    // untrusted server can still appear here, it just won't actually sync
+    // until it approves this device (see SyncHttpServer.AuthorizeAsync).
+    public IEnumerable<DiscoveredDevice> AvailableServers =>
+        _networkDiscovery?.KnownDevices.Where(d => d.IsServer) ?? Enumerable.Empty<DiscoveredDevice>();
+
+    // Manual pairing (see decision: a Client picks its one server explicitly,
+    // no automatic first-found pairing) - called from ServerPickerView's
+    // "Sync with this server" action.
+    public void PairWithServer(DiscoveredDevice device)
+    {
+        _appSettings ??= new AppSettings();
+        _appSettings.PairedServerFingerprint = device.Fingerprint;
+        _appSettings.PairedServerAlias = device.Alias;
+        _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+        OnPropertyChanged(nameof(PairedServerFingerprint));
+        OnPropertyChanged(nameof(PairedServerAlias));
+        TriggerSyncIfReady(device); // sync immediately rather than waiting for the next discovery event
+    }
+
+    // ServerPickerView's "Stop Syncing" action - must be called before
+    // pairing with a different server (switching requires an explicit
+    // unpair-first step, not a direct one-click switch).
+    public void UnpairServer()
+    {
+        if (_appSettings == null)
+            return;
+        _appSettings.PairedServerFingerprint = null;
+        _appSettings.PairedServerAlias = null;
+        _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+        OnPropertyChanged(nameof(PairedServerFingerprint));
+        OnPropertyChanged(nameof(PairedServerAlias));
     }
 
     // Settings' Appearance picker (Follow System / Light / Dark) - see
@@ -603,6 +686,11 @@ public partial class MainViewModel : ViewModelBase
     public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
     public DiscoveredDevice? SelectedDevice => _selectedSidebarItem?.Device;
 
+    // Live browse/stream state for SelectedDevice, unrestricted by Client/
+    // Server role - see PeerLibraryViewModel and OnSidebarSelectionChanged,
+    // which triggers LoadAsync whenever SelectedDevice changes.
+    public PeerLibraryViewModel PeerLibrary { get; }
+
     // Rebuilt in PopulateTracks (every TracksUpdated) - see AlbumGridBuilder/
     // RecentlyAddedAlbumsBuilder, the same shared builders mobile's own grids
     // use. Alphabetical for Albums, by-recency for Recently Added. Reassigned
@@ -726,7 +814,9 @@ public partial class MainViewModel : ViewModelBase
         _playlistSyncService   = playlistSyncService;
         _librarySyncService    = librarySyncService;
         _libraryDownloadService = libraryDownloadService;
+        _networkDiscovery      = networkDiscovery;
         _deviceIdentity        = deviceIdentity;
+        PeerLibrary            = new PeerLibraryViewModel(deviceIdentity, appSettings, playlistControlViewModel);
         _libraryStore          = libraryStore;
         _appSettingsStore      = appSettingsStore;
         _playlistStore         = playlistStore;
@@ -789,10 +879,14 @@ public partial class MainViewModel : ViewModelBase
         networkDiscovery.DeviceDiscovered += (_, device) =>
         {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
+            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
             TriggerSyncIfReady(device);
         };
         networkDiscovery.DeviceLost += (_, instanceName) =>
+        {
             Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
+            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
+        };
 
         // On mobile, MainViewModel is still constructed (App.axaml.cs resolves it
         // unconditionally) but MainView - the only subscriber to
@@ -1178,12 +1272,23 @@ public partial class MainViewModel : ViewModelBase
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
             return;
+        // Server never initiates bulk sync; Client only ever bulk-syncs with
+        // its one paired Server - see SyncRolePolicy.
+        if (!SyncRolePolicy.ShouldInitiateSync(_appSettings?.IsServer ?? false, _appSettings?.PairedServerFingerprint, device.Fingerprint))
+            return;
         if (!_syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0))
             return;
 
         _logger.LogInformation("First contact with {Alias} ({Fingerprint}) this session, triggering initial sync",
             device.Alias, device.Fingerprint);
-        RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
+        // forceInitiator: true - this is always the Client's own paired
+        // Server here (ShouldInitiateSync above already guarantees that), and
+        // a Server never calls SyncWithAsync back (its own trigger paths are
+        // gated off) - without this, PlaylistSyncService's ordinal-fingerprint
+        // election could decide the Client isn't the initiator for roughly
+        // half of all possible fingerprint pairs, and since the Server never
+        // reciprocates, that pair would permanently never sync playlists.
+        RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
         RunTrackedSync(() => _librarySyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
     }
 
@@ -1327,6 +1432,12 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(SelectedDevice));
+        // Live browse, unrestricted by Client/Server role/pairing - see
+        // PeerLibraryViewModel's own doc comment. Fire-and-forget: the VM
+        // guards against a stale request winning a race if the selection
+        // changes again before this completes.
+        if (SelectedDevice is { } device)
+            _ = PeerLibrary.LoadAsync(device);
         // Recently Added carries its own independent sort state (see SortColumn),
         // so switching to/from it changes what these computed properties report.
         OnPropertyChanged(nameof(SortColumn));

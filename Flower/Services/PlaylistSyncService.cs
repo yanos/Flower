@@ -37,6 +37,7 @@ public class PlaylistSyncService
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly AppSettings _appSettings;
     private readonly ILogger _logger;
     private readonly PlaylistStore _playlistStore;
     private readonly PlaylistSyncStateStore _syncStateStore;
@@ -47,6 +48,7 @@ public class PlaylistSyncService
     public PlaylistSyncService(
         Library library,
         DeviceIdentity deviceIdentity,
+        AppSettings appSettings,
         PlaylistStore playlistStore,
         PlaylistSyncStateStore syncStateStore,
         DeviceNicknameStore deviceNicknameStore,
@@ -54,13 +56,21 @@ public class PlaylistSyncService
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _appSettings = appSettings;
         _playlistStore = playlistStore;
         _syncStateStore = syncStateStore;
         _deviceNicknameStore = deviceNicknameStore;
         _logger = logger;
     }
 
-    public async Task SyncWithAsync(DiscoveredDevice device)
+    // forceInitiator is set by MainViewModel's Client-side triggers (see
+    // SyncRolePolicy) - under Client/Server roles, a Client is the only side
+    // that ever calls this for a given pair (a Server's own trigger paths are
+    // gated off entirely, so it never reciprocates), so it must always be the
+    // initiator regardless of the ordinal comparison below, which would
+    // otherwise (for roughly half of all possible fingerprint pairs) decide
+    // the Client isn't the initiator and leave that pair permanently unsynced.
+    public async Task SyncWithAsync(DiscoveredDevice device, bool forceInitiator = false)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
         {
@@ -73,8 +83,9 @@ public class PlaylistSyncService
         // Ordinal comparison is arbitrary but deterministic and identical on both
         // devices (each compares its own fingerprint against the other's), so a
         // pair never both initiate (double conflict prompts, racing writes) or
-        // both stay silent.
-        if (string.CompareOrdinal(_deviceIdentity.Fingerprint, device.Fingerprint) >= 0)
+        // both stay silent. Skipped entirely when forceInitiator is set - see
+        // this method's own doc comment above.
+        if (!forceInitiator && string.CompareOrdinal(_deviceIdentity.Fingerprint, device.Fingerprint) >= 0)
         {
             _logger.LogDebug("Playlist sync with {Alias} ({Fingerprint}): not the initiator, waiting for their push instead",
                 device.Alias, device.Fingerprint);
@@ -189,6 +200,7 @@ public class PlaylistSyncService
     {
         request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
         request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
+        request.Headers.Add("X-Flower-Role", _appSettings.IsServer ? "server" : "client");
         request.Headers.ConnectionClose = true;
     }
 

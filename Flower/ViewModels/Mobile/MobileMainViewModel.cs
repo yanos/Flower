@@ -69,6 +69,8 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand AllowPeerCommand { get; }
     public ICommand DenyPeerCommand { get; }
     public ICommand DownloadTrackCommand { get; }
+    public ICommand PairWithServerCommand { get; }
+    public ICommand UnpairServerCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.RecentlyAdded;
     public MobileTab SelectedTab
@@ -390,6 +392,13 @@ public class MobileMainViewModel : ViewModelBase
             row.IsDownloading = false;
             row.IsDownloadUnavailable = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
         });
+
+        PairWithServerCommand = new RelayCommand<DiscoveredDevice>(device =>
+        {
+            if (device != null)
+                Main.PairWithServer(device);
+        });
+        UnpairServerCommand = new RelayCommand(Main.UnpairServer);
     }
 
     private void ResolvePeerApproval(bool allowed)
