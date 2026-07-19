@@ -1116,6 +1116,7 @@ public partial class MainViewModel : ViewModelBase
         if (existing != null)
         {
             existing.Device = device;
+            RemoveDuplicateDeviceSidebarItems(existing, device);
             RefreshDeviceDisplayNames();
             return;
         }
@@ -1123,8 +1124,33 @@ public partial class MainViewModel : ViewModelBase
         if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Device))
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Devices"));
 
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, ResolveDeviceDisplayName(device), MaterialIconKind.Laptop, device: device));
+        var added = new SidebarItem(SidebarItemKind.Device, ResolveDeviceDisplayName(device), MaterialIconKind.Laptop, device: device);
+        _sidebarItems.Add(added);
+        RemoveDuplicateDeviceSidebarItems(added, device);
         RefreshDeviceDisplayNames();
+    }
+
+    // A peer can transiently be discovered under more than one mDNS instance
+    // name for the same physical device - e.g. a prior run's advertisement
+    // wasn't cleanly withdrawn before a fresh one republished under an
+    // auto-renamed instance name (Bonjour's own collision-avoidance). Each
+    // shows up as its own sidebar item (via FindDeviceSidebarItem's
+    // InstanceName fallback, since neither has a resolved Fingerprint yet to
+    // match on) until one of them resolves a Fingerprint that turns out to
+    // match another already-tracked item - at which point they're revealed
+    // to be duplicates of the same device. Removes every OTHER Device
+    // sidebar item sharing that now-resolved Fingerprint, keeping only the
+    // one AddOrUpdateDeviceSidebarItem just added/updated.
+    private void RemoveDuplicateDeviceSidebarItems(SidebarItem keep, DiscoveredDevice device)
+    {
+        if (string.IsNullOrEmpty(device.Fingerprint))
+            return;
+
+        var duplicates = _sidebarItems
+            .Where(i => i.Kind == SidebarItemKind.Device && i != keep && i.Device?.Fingerprint == device.Fingerprint)
+            .ToList();
+        foreach (var duplicate in duplicates)
+            RemoveDeviceItem(duplicate, clearSyncDedup: false);
     }
 
     // Matches primarily by Fingerprint - the peer's own stable per-install
@@ -1222,10 +1248,23 @@ public partial class MainViewModel : ViewModelBase
         if (matches.Count != 1)
             return;
 
-        var item = matches[0];
+        RemoveDeviceItem(matches[0], clearSyncDedup: true);
+    }
 
-        // Allow a fresh sync if this device is discovered again later this session.
-        if (item.Device?.Fingerprint is { Length: > 0 } fingerprint)
+    // Shared by RemoveDeviceSidebarItem (a peer actually went offline, per
+    // mDNS's own goodbye notification - clearSyncDedup: true, so a fresh
+    // sync fires if it's discovered again later this session rather than
+    // silently being ignored by the dedup check) and
+    // RemoveDuplicateDeviceSidebarItems (the peer never went offline - it
+    // just turned out to already have another sidebar item once its
+    // Fingerprint resolved, so clearSyncDedup: false: the surviving item is
+    // the exact same still-present device and shares that Fingerprint,
+    // clearing it here would just trigger a redundant resync of it for no
+    // reason). Either way: reselect away if this item was selected, remove
+    // it, and drop the "Devices" header once no Device items remain.
+    private void RemoveDeviceItem(SidebarItem item, bool clearSyncDedup)
+    {
+        if (clearSyncDedup && item.Device?.Fingerprint is { Length: > 0 } fingerprint)
             _syncedDeviceFingerprints.TryRemove(fingerprint, out _);
 
         if (SelectedSidebarItem == item)
