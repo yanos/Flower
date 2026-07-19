@@ -66,14 +66,14 @@
         <StackPanel IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                     Orientation="Horizontal" Spacing="10">
           <TextBlock Text="{Binding Main.PairedServerAlias}" VerticalAlignment="Center" FontWeight="Medium"/>
-          <Button Content="Stop Syncing" Command="{Binding UnpairServerCommand}"/>
+          <Button Content="Unpair" Command="{Binding UnpairServerCommand}"/>
         </StackPanel>
         <TextBlock IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"
-                   Text="Not syncing with a server" Opacity="0.5" FontSize="14"/>
+                   Text="Not paired with a server" Opacity="0.5" FontSize="14"/>
 
-        <!-- Sync buttons disabled entirely while already paired with
+        <!-- Pair buttons disabled entirely while already paired with
              anything - matches decision: switching requires an explicit
-             unpair-first step (Stop Syncing above), not a one-click switch.
+             unpair-first step (Unpair above), not a one-click switch.
              Reaches back up to the page's own root DataContext
              (MobileMainViewModel) for the command/paired-state, since each
              row's own DataContext here is a DiscoveredDevice instead. -->
@@ -82,7 +82,7 @@
             <DataTemplate>
               <Grid ColumnDefinitions="*,Auto" Margin="0,4">
                 <TextBlock Grid.Column="0" Text="{Binding Alias}" VerticalAlignment="Center"/>
-                <Button Grid.Column="1" Content="Sync"
+                <Button Grid.Column="1" Content="Pair"
                         Command="{Binding $parent[UserControl].DataContext.PairWithServerCommand}"
                         CommandParameter="{Binding}"
                         IsEnabled="{Binding $parent[UserControl].DataContext.Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"/>

@@ -21,7 +21,7 @@
     <!-- Deliberately no backdrop-tap-to-dismiss, same as PeerApprovalView -
          an unattended dismissal should not silently start replacing this
          device's library view, so the explicit Cancel button below is the
-         only way out other than Sync. -->
+         only way out other than Pair. -->
     <Border Background="#66000000" />
 
     <Border VerticalAlignment="Bottom"
@@ -31,14 +31,14 @@
       <StackPanel Spacing="14">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <materialIcons:MaterialIcon Kind="Sync" Width="24" Height="24" />
-          <TextBlock Text="Sync With This Server?"
+          <TextBlock Text="Pair With This Server?"
                      FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
         </StackPanel>
 
         <TextBlock Text="{Binding ConfirmPairServerMessage}"
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
-        <Button Classes="peerAction" Content="Sync" Command="{Binding ConfirmPairServerCommand}"
+        <Button Classes="peerAction" Content="Pair" Command="{Binding ConfirmPairServerCommand}"
                 Background="{DynamicResource SystemAccentColor}" />
         <Button Classes="peerAction" Content="Cancel" Command="{Binding CancelPairServerCommand}"
                 Background="Transparent" />
