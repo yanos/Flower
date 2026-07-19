@@ -101,6 +101,18 @@ namespace Flower.Models
         // device already has a real, Path-backed copy of with the incoming one,
         // and never removes anything just because a peer doesn't mention it -
         // purely additive/updating, unlike UpdateTracks' full replace.
+        //
+        // DateAdded is the one exception to "never touches an already-known
+        // track": this method's only caller (LibrarySyncService, per
+        // SyncRolePolicy) is always a Client pulling from its one paired
+        // Server over Flower's own private /api/flower/v1/library endpoint -
+        // never a third-party OpenSubsonic server, which only ever answers
+        // the generic /rest/* browse API - so the peer here is always another
+        // Flower instance sending a real Child.DateAdded. Pairing's whole
+        // premise is the Client's library *view* mirroring the Server's (see
+        // ServerPickerView's confirmation dialog), so the Server's DateAdded
+        // should win for Recently Added parity even for a track this device
+        // already has by SyncKey match, real file or placeholder alike.
         public void MergeSyncedTracks(IReadOnlyList<Track> incoming)
         {
             lock (_lock)
@@ -120,6 +132,7 @@ namespace Flower.Models
                             existing.OriginFileExtension = remote.OriginFileExtension;
                             existing.OriginAlbumArtHash = remote.OriginAlbumArtHash;
                         }
+                        existing.DateAdded = remote.DateAdded;
                         MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
                         continue; // Already known locally, real file or placeholder - only
                                   // the bookkeeping above needed updating, not a whole new Track.

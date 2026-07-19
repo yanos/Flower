@@ -2,8 +2,32 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="clr-namespace:Flower.Views"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.Views.ServerPickerView">
-  <Grid RowDefinitions="Auto,*" Margin="0,12,0,0">
+  <UserControl.Styles>
+    <!-- Continuous rotation while a row's IsSyncing is true - see
+         ServerRow.IsSyncing. Same "MaterialIcon Kind=Sync, spinning" visual
+         MainView.axaml.cs uses for the status-bar busy spinner, just done
+         declaratively since these rows are rebuilt wholesale on every
+         Refresh() rather than being stable named elements a DispatcherTimer
+         could target. -->
+    <Style Selector="materialIcons|MaterialIcon.spinning">
+      <Setter Property="RenderTransform" Value="rotate(0deg)"/>
+    </Style>
+    <Style Selector="materialIcons|MaterialIcon.spinning">
+      <Style.Animations>
+        <Animation Duration="0:0:1" IterationCount="INFINITE">
+          <KeyFrame Cue="0%">
+            <Setter Property="RotateTransform.Angle" Value="0"/>
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="RotateTransform.Angle" Value="360"/>
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,*,Auto" Margin="0,12,0,0">
     <TextBlock Grid.Row="0"
                Text="Pick the one Server this device bulk-syncs library/playlist data with. Browsing and streaming other devices works regardless of pairing."
                TextWrapping="Wrap"
@@ -29,29 +53,50 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="views:ServerRow">
               <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4,4">
-                <TextBlock Grid.Row="0" Grid.Column="0"
-                           Text="{Binding Alias}"
-                           FontWeight="SemiBold"
-                           FontSize="13"
-                           VerticalAlignment="Center"
-                           Margin="4,0"/>
+                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="{Binding Alias}"
+                             FontWeight="SemiBold"
+                             FontSize="13"
+                             VerticalAlignment="Center"
+                             Margin="4,0,0,0"/>
+                  <materialIcons:MaterialIcon Kind="Sync"
+                                               Classes="spinning"
+                                               Width="12" Height="12"
+                                               Opacity="0.6"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding IsSyncing}"/>
+                </StackPanel>
                 <TextBlock Grid.Row="1" Grid.Column="0"
                            Text="{Binding HintText}"
                            IsVisible="{Binding HintText, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                            Opacity="0.6" FontSize="11"
                            Margin="4,1,0,0"/>
-                <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
-                        Content="{Binding ActionLabel}"
-                        IsEnabled="{Binding IsActionEnabled}"
-                        Padding="10,4"
-                        VerticalAlignment="Center"
-                        Margin="8,0,0,0"
-                        Click="ActionButton_Click"/>
+                <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                            Orientation="Horizontal" Spacing="6"
+                            VerticalAlignment="Center" Margin="8,0,0,0">
+                  <Button Content="Sync Now"
+                          IsVisible="{Binding IsPaired}"
+                          IsEnabled="{Binding CanForceSync}"
+                          Padding="10,4"
+                          Click="ForceSyncButton_Click"/>
+                  <Button Content="{Binding ActionLabel}"
+                          IsEnabled="{Binding IsActionEnabled}"
+                          Padding="10,4"
+                          Click="ActionButton_Click"/>
+                </StackPanel>
               </Grid>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
       </Border>
     </Grid>
+
+    <TextBlock Grid.Row="2"
+               x:Name="SyncResultText"
+               IsVisible="False"
+               TextWrapping="Wrap"
+               Opacity="0.65"
+               FontSize="11"
+               Margin="0,10,0,0"/>
   </Grid>
 </UserControl>

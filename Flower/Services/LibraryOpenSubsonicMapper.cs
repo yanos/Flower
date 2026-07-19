@@ -126,7 +126,8 @@ public static class LibraryOpenSubsonicMapper
         PlayCounts: new Dictionary<string, int>(track.RemotePlayCounts)
         {
             [selfFingerprint] = track.PlayCount + track.ImportedPlayCount,
-        });
+        },
+        DateAdded: track.DateAdded);
 
     private static int? ParseYear(string? year) => int.TryParse(year, out var y) ? y : null;
 }

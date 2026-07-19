@@ -101,7 +101,14 @@ public sealed record Child(
     // latest known play count for this song, keyed by DeviceIdentity.Fingerprint
     // - see LibraryOpenSubsonicMapper.ToChild and Track.RemotePlayCounts for how
     // this propagates play counts between devices without a central server.
-    Dictionary<string, int>? PlayCounts = null);
+    Dictionary<string, int>? PlayCounts = null,
+    // Also Flower-specific, same reasoning as PlayCounts above. The sending
+    // device's own Track.DateAdded - without this, a synced placeholder
+    // defaults DateAdded to "now" (see LibrarySyncMapper.ToPlaceholderTrack),
+    // so a Client's Recently Added view would show a burst of everything at
+    // sync time instead of matching the paired Server's actual chronology.
+    // Null when talking to a third-party server that doesn't send it.
+    System.DateTimeOffset? DateAdded = null);
 
 public sealed record SearchResult3(
     List<ArtistID3>? Artist,
