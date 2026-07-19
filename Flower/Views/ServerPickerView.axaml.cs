@@ -14,10 +14,10 @@ namespace Flower.Views;
 // One row in ServerPickerView's list of discovered Servers - see
 // MainViewModel.AvailableServers/PairedServerFingerprint. ActionLabel/
 // IsActionEnabled/HintText encode the three states a row can be in: this is
-// the paired server ("Stop Syncing"), a different server is already paired
+// the paired server ("Unpair"), a different server is already paired
 // (disabled, with a hint to unpair first - decision: switching requires an
 // explicit unpair-first step, no direct one-click switch), or nothing is
-// paired yet ("Sync").
+// paired yet ("Pair").
 public sealed class ServerRow : ViewModelBase
 {
     public required string Fingerprint { get; init; }
@@ -29,9 +29,9 @@ public sealed class ServerRow : ViewModelBase
     // is the paired one).
     public required string? BlockedByAlias { get; init; }
 
-    public string ActionLabel => IsPaired ? "Stop Syncing" : "Sync";
+    public string ActionLabel => IsPaired ? "Unpair" : "Pair";
     public bool IsActionEnabled => IsPaired || BlockedByAlias == null;
-    public string? HintText => !IsPaired && BlockedByAlias != null ? $"Stop syncing with {BlockedByAlias} first" : null;
+    public string? HintText => !IsPaired && BlockedByAlias != null ? $"Unpair from {BlockedByAlias} first" : null;
 }
 
 // Client-side counterpart to TrustedDevicesView (shown instead of it on
@@ -97,9 +97,9 @@ public partial class ServerPickerView : UserControl
 
             var confirmed = await ConfirmDialogWindow.ShowAsync(
                 owner,
-                "Stop Syncing With This Server?",
+                "Unpair From This Server?",
                 $"This device will no longer bulk-sync library/playlist data with \"{row.Alias}\". Browsing and streaming will still work.",
-                "Stop Syncing");
+                "Unpair");
             if (!confirmed)
                 return;
 
@@ -122,9 +122,9 @@ public partial class ServerPickerView : UserControl
             // about deleting anything already on disk.
             var confirmed = await ConfirmDialogWindow.ShowAsync(
                 owner,
-                "Sync With This Server?",
+                "Pair With This Server?",
                 $"This device's library view will be replaced by \"{row.Alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted.",
-                "Sync");
+                "Pair");
             if (!confirmed)
                 return;
 

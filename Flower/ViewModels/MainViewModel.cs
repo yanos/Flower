@@ -339,7 +339,7 @@ public partial class MainViewModel : ViewModelBase
 
     // Manual pairing (see decision: a Client picks its one server explicitly,
     // no automatic first-found pairing) - called from ServerPickerView's
-    // "Sync with this server" action.
+    // "Pair" action.
     public void PairWithServer(DiscoveredDevice device)
     {
         _appSettings ??= new AppSettings();
@@ -370,9 +370,9 @@ public partial class MainViewModel : ViewModelBase
         ServerDiscoveredForPairing?.Invoke(this, device);
     }
 
-    // ServerPickerView's "Stop Syncing" action - must be called before
-    // pairing with a different server (switching requires an explicit
-    // unpair-first step, not a direct one-click switch).
+    // ServerPickerView's "Unpair" action - must be called before pairing
+    // with a different server (switching requires an explicit unpair-first
+    // step, not a direct one-click switch).
     public void UnpairServer()
     {
         if (_appSettings == null)
