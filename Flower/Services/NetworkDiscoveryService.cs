@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -26,6 +27,12 @@ public class DiscoveredDevice
     // Empty until that resolves; PlaylistSyncService treats an empty fingerprint
     // as "not ready to sync yet" rather than guessing an identity for the peer.
     public string Fingerprint { get; set; } = "";
+
+    // Whether this peer currently advertises itself as a Server (see
+    // AppSettings.IsServer, SyncHttpServer.HandleInfoAsync) - resolved
+    // alongside Alias/Fingerprint via the same /info handshake. Drives
+    // MainViewModel.AvailableServers; unrelated to trust/pairing.
+    public bool IsServer { get; set; }
 }
 
 // Default IMdnsBackend (see PlatformMdns.cs): raw multicast via
@@ -222,6 +229,17 @@ public class NetworkDiscoveryService : IDisposable
                 device.Fingerprint = fingerprint;
                 changed = true;
             }
+            if (doc.RootElement.TryGetProperty("isServer", out var isServerProp))
+            {
+                // JsonElement has no TryGetBoolean - a JSON literal true/false
+                // parses to ValueKind.True/False directly.
+                var isServer = isServerProp.ValueKind == JsonValueKind.True;
+                if (isServer != device.IsServer)
+                {
+                    device.IsServer = isServer;
+                    changed = true;
+                }
+            }
             if (changed)
             {
                 _logger.LogInformation("Peer {InstanceName} info updated: alias={Alias}, fingerprint={Fingerprint}",
@@ -243,6 +261,12 @@ public class NetworkDiscoveryService : IDisposable
     // audio download and AlbumArtLoader's synced-art fetch.
     public DiscoveredDevice? FindByFingerprint(string fingerprint) =>
         _knownDevices.Values.FirstOrDefault(d => d.Fingerprint == fingerprint);
+
+    // Every peer currently known on the LAN, regardless of trust/role - used
+    // by MainViewModel.AvailableServers to filter down to just the ones
+    // advertising IsServer. Snapshot, not a live view - callers that need to
+    // react to changes should also subscribe to DeviceDiscovered/DeviceLost.
+    public IReadOnlyCollection<DiscoveredDevice> KnownDevices => _knownDevices.Values.ToList();
 
     private static bool IsOurServiceType(string instanceName) =>
         instanceName.EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);

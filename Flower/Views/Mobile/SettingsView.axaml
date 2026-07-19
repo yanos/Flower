@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              mc:Ignorable="d"
              x:CompileBindings="False"
              x:Class="Flower.Views.Mobile.SettingsView"
@@ -43,6 +44,52 @@
         <TextBox Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"/>
         <TextBlock Text="Shown to other Flower devices when syncing over Wi-Fi"
                    FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+      </StackPanel>
+
+      <!-- Client/Server bulk-sync topology (see SyncRolePolicy) - same
+           meaning as desktop's Settings > General checkbox. Doesn't affect
+           browsing/streaming another device's catalog, which always works
+           regardless of role. -->
+      <StackPanel Margin="20,4,20,16" Spacing="6">
+        <CheckBox Content="Act as Server" IsChecked="{Binding Main.IsServer}"/>
+        <TextBlock Text="Browsing and streaming other devices always works regardless of this setting - it only affects automatic library/playlist syncing."
+                   FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+      </StackPanel>
+
+      <!-- Client-only: pick/see the one Server this device bulk-syncs with -
+           desktop's equivalent is ServerPickerView, embedded in Settings'
+           Devices tab; mobile has no separate tab surface, so this is just
+           another block in the same flat sheet. -->
+      <StackPanel IsVisible="{Binding !Main.IsServer}" Margin="20,4,20,16" Spacing="6">
+        <TextBlock Text="Server" FontSize="13" Opacity="0.6"/>
+
+        <StackPanel IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                    Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="{Binding Main.PairedServerAlias}" VerticalAlignment="Center" FontWeight="Medium"/>
+          <Button Content="Stop Syncing" Command="{Binding UnpairServerCommand}"/>
+        </StackPanel>
+        <TextBlock IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"
+                   Text="Not syncing with a server" Opacity="0.5" FontSize="14"/>
+
+        <!-- Sync buttons disabled entirely while already paired with
+             anything - matches decision: switching requires an explicit
+             unpair-first step (Stop Syncing above), not a one-click switch.
+             Reaches back up to the page's own root DataContext
+             (MobileMainViewModel) for the command/paired-state, since each
+             row's own DataContext here is a DiscoveredDevice instead. -->
+        <ItemsControl ItemsSource="{Binding Main.AvailableServers}" Margin="0,8,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                <TextBlock Grid.Column="0" Text="{Binding Alias}" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="Sync"
+                        Command="{Binding $parent[UserControl].DataContext.PairWithServerCommand}"
+                        CommandParameter="{Binding}"
+                        IsEnabled="{Binding $parent[UserControl].DataContext.Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </StackPanel>
 
       <Button Classes="action" Command="{Binding RescanCommand}">

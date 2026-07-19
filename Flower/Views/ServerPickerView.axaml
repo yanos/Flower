@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:Flower.Views"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             x:Class="Flower.Views.ServerPickerView">
+  <Grid RowDefinitions="Auto,*" Margin="0,12,0,0">
+    <TextBlock Grid.Row="0"
+               Text="Pick the one Server this device bulk-syncs library/playlist data with. Browsing and streaming other devices works regardless of pairing."
+               TextWrapping="Wrap"
+               Opacity="0.75"
+               FontSize="12"
+               Margin="0,0,0,12"/>
+
+    <Grid Grid.Row="1">
+      <TextBlock x:Name="EmptyStateText"
+                 Text="No servers found on this network yet."
+                 Opacity="0.6"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"/>
+      <Border BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+        <ListBox x:Name="ServersList">
+          <!-- See TrustedDevicesView's identical style for why. -->
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Padding" Value="0"/>
+              <Setter Property="MinHeight" Value="0"/>
+            </Style>
+          </ListBox.Styles>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="views:ServerRow">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4,4">
+                <TextBlock Grid.Row="0" Grid.Column="0"
+                           Text="{Binding Alias}"
+                           FontWeight="SemiBold"
+                           FontSize="13"
+                           VerticalAlignment="Center"
+                           Margin="4,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="0"
+                           Text="{Binding HintText}"
+                           IsVisible="{Binding HintText, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                           Opacity="0.6" FontSize="11"
+                           Margin="4,1,0,0"/>
+                <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                        Content="{Binding ActionLabel}"
+                        IsEnabled="{Binding IsActionEnabled}"
+                        Padding="10,4"
+                        VerticalAlignment="Center"
+                        Margin="8,0,0,0"
+                        Click="ActionButton_Click"/>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -44,11 +44,34 @@
                   Margin="0,20,0,0"
                   HorizontalAlignment="Left"
                   Click="OpenAppDataLocationButton_Click"/>
+
+          <!-- Client/Server bulk-sync topology (see SyncRolePolicy) - a Server
+               accepts bulk-sync from Client devices and never initiates any
+               itself; a Client (the default) bulk-syncs with exactly one
+               chosen Server, picked from the Devices tab below. Deliberately
+               doesn't affect browsing/streaming another device's catalog
+               (the device-detail pane), which stays open to any trusted peer
+               regardless of role. -->
+          <CheckBox x:Name="IsServerCheckBox"
+                    Content="Act as Server"
+                    Margin="0,20,0,0"
+                    IsCheckedChanged="IsServerCheckBox_IsCheckedChanged"/>
+          <TextBlock Text="Browsing and streaming other devices always works regardless of this setting - it only affects automatic library/playlist syncing."
+                     Margin="0,2,0,0"
+                     FontSize="11"
+                     Opacity="0.6"
+                     TextWrapping="Wrap"/>
         </StackPanel>
       </TabItem>
 
+      <!-- The tab itself always stays selectable - only its content is
+           disabled (see SettingsWindow.UpdateLibraryTabEnabled) while this
+           device is a Client - a Client's library is meant to be synced-in
+           from its paired Server, not locally curated, so importing its own
+           folders/rebuilding its own database/pulling its own iTunes data
+           doesn't make sense here. -->
       <TabItem Header="Library">
-        <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="0,12,0,0">
+        <Grid x:Name="LibraryTabContent" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="0,12,0,0">
           <CheckBox Grid.Row="0"
                     x:Name="SyncPlayCountCheckBox"
                     Content="Sync play count from iTunes/Music.app"
@@ -59,13 +82,6 @@
                     Content="Sync date added from iTunes/Music.app"
                     Margin="0,4,0,0"
                     IsCheckedChanged="SyncDateAddedCheckBox_IsCheckedChanged"/>
-          <TextBlock Grid.Row="1"
-                     Text="On conflict, the older date wins"
-                     Margin="0,4,0,0"
-                     FontSize="11"
-                     Opacity="0.6"
-                     HorizontalAlignment="Right"
-                     VerticalAlignment="Center"/>
 
           <TextBlock Grid.Row="2"
                      x:Name="ITunesLibraryPathText"
@@ -126,15 +142,15 @@
         </Grid>
       </TabItem>
 
-      <!-- Peers approved via the trust gate (SyncHttpServer.AuthorizeAsync,
-           SYNC-PLAN.md Phase 3) - embedded directly rather than a button that
-           opens yet another window (that's what this used to be, and what
-           Rebuild Database/Open App Data Location above used to be too, back
-           when they were all a separate top-level "Library" menu instead -
-           see MainWindow.axaml). -->
-      <TabItem Header="Devices">
-        <views:TrustedDevicesView/>
-      </TabItem>
+      <!-- Content depends on role (see IsServerCheckBox above): a Server shows
+           who's approved to bulk-sync with it (peers approved via the trust
+           gate, SyncHttpServer.AuthorizeAsync, SYNC-PLAN.md Phase 3 -
+           embedded directly rather than a button that opens yet another
+           window, same reasoning as Rebuild Database/Open App Data Location
+           above); a Client shows which one Server it's currently paired to,
+           and lets it pick a different one - see ServerPickerView. Content is
+           set in code-behind from the constructor. -->
+      <TabItem x:Name="DevicesTabItem" Header="Devices"/>
 
     </TabControl>
 

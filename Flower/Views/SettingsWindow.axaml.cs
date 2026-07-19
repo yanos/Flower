@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -47,8 +48,62 @@ public partial class SettingsWindow : Window
             AppThemePreference.Dark => 2,
             _ => 0,
         };
+        IsServerCheckBox.IsChecked = viewModel.IsServer;
+        RefreshDevicesTab();
+        UpdateLibraryTabEnabled();
+        // Pairing/unpairing happens inside ServerPickerView (the Devices tab),
+        // not through anything this window owns directly - listen for it so
+        // the Library tab's enabled state (see UpdateLibraryTabEnabled) stays
+        // live if the user pairs/unpairs while Settings is still open, not
+        // just at construction time.
+        _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        Closed += (_, _) => _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         NativeMenuHelper.InheritFromMainWindow(this);
     }
+
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.PairedServerFingerprint))
+            UpdateLibraryTabEnabled();
+    }
+
+    // Decided by the live IsServerCheckBox state (not just the persisted
+    // value at construction time) so toggling the role mid-dialog swaps the
+    // tab content immediately - safe since, unlike the old draft of this
+    // feature, nothing about SyncHttpServer/mDNS needs a restart, so there's
+    // no stale-content window to worry about.
+    private void RefreshDevicesTab() =>
+        DevicesTabItem.Content = (IsServerCheckBox.IsChecked ?? false) ? new TrustedDevicesView() : new ServerPickerView();
+
+    // The Library tab's *content* (folders list, Add/Remove, Rebuild
+    // Database, iTunes sync) only stops making sense once this device is
+    // actually pulling its library from a paired Server - a Server manages
+    // its own library as always, and a Client that hasn't paired with
+    // anyone yet still has (and can keep curating) its own local library
+    // right up until it actually picks a server (see ServerPickerView's own
+    // confirmation dialog, which is the point this device's library view
+    // becomes the server's instead). So this is enabled whenever EITHER is
+    // true: acting as Server, or a Client not currently paired to anyone -
+    // only "Client, paired" disables it. Greyed out (not just hidden) - but
+    // the tab itself (LibraryTabContent's parent TabItem) stays selectable
+    // either way, so the user can still switch to it and see why everything
+    // inside is disabled, rather than the tab header itself being unclickable.
+    //
+    // Buttons (Add/Remove/Rebuild) are fully inert once disabled - Avalonia
+    // never raises Click for a disabled Button, so _paths can't diverge from
+    // _originalPaths while disabled and SaveButton_Click's pathsChanged
+    // check stays false for free. CheckBoxes are different: IsChecked keeps
+    // reporting whatever it was set to before going disabled, so
+    // SaveButton_Click also gates the two iTunes syncs on CanManageLocalLibrary
+    // directly rather than trusting IsEnabled/IsChecked here alone.
+    // Deliberately doesn't clear/uncheck either iTunes box when disabling -
+    // pairing status changing back later restores whatever preference was
+    // already set, rather than silently discarding it.
+    private bool CanManageLocalLibrary =>
+        (IsServerCheckBox.IsChecked ?? false) || string.IsNullOrEmpty(_viewModel.PairedServerFingerprint);
+
+    private void UpdateLibraryTabEnabled() =>
+        LibraryTabContent.IsEnabled = CanManageLocalLibrary;
 
     // Describes where play counts will actually come from without doing any
     // slow work itself (the live export - see ITunesPlayCountImporter - isn't
@@ -141,6 +196,13 @@ public partial class SettingsWindow : Window
     private void SyncDateAddedCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
         _viewModel.SyncDateAddedFromITunes = SyncDateAddedCheckBox.IsChecked ?? false;
 
+    private void IsServerCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+    {
+        _viewModel.IsServer = IsServerCheckBox.IsChecked ?? false;
+        RefreshDevicesTab();
+        UpdateLibraryTabEnabled();
+    }
+
     // Fires once during the constructor's own initial SelectedIndex set too -
     // harmless, since MainViewModel.ThemePreference's setter already no-ops
     // when the value hasn't actually changed.
@@ -189,8 +251,12 @@ public partial class SettingsWindow : Window
         if (pathsChanged)
             await _viewModel.SaveLibraryPathsAsync(_paths.ToList());
 
-        var syncPlayCount = SyncPlayCountCheckBox.IsChecked ?? false;
-        var syncDateAdded = SyncDateAddedCheckBox.IsChecked ?? false;
+        // Gated on CanManageLocalLibrary too, not just each box's own
+        // IsChecked - see UpdateLibraryTabEnabled's doc comment on why a
+        // disabled CheckBox alone doesn't stop this: it still reports
+        // whatever IsChecked it had before going disabled.
+        var syncPlayCount = CanManageLocalLibrary && (SyncPlayCountCheckBox.IsChecked ?? false);
+        var syncDateAdded = CanManageLocalLibrary && (SyncDateAddedCheckBox.IsChecked ?? false);
 
         Close();
 

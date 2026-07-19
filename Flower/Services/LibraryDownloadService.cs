@@ -21,13 +21,15 @@ public class LibraryDownloadService
 {
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly AppSettings _appSettings;
     private readonly LibraryStore _libraryStore;
     private readonly ILogger<LibraryDownloadService> _logger;
 
-    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, LibraryStore libraryStore, ILogger<LibraryDownloadService> logger)
+    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, AppSettings appSettings, LibraryStore libraryStore, ILogger<LibraryDownloadService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _appSettings = appSettings;
         _libraryStore = libraryStore;
         _logger = logger;
     }
@@ -41,13 +43,7 @@ public class LibraryDownloadService
 
         try
         {
-            var client = new OpenSubsonicClient(
-                $"http://{peer.EndPoint}", username: "", password: "",
-                extraHeaders:
-                [
-                    ("X-Flower-Fingerprint", _deviceIdentity.Fingerprint),
-                    ("X-Flower-Alias", _deviceIdentity.Alias),
-                ]);
+            var client = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings);
 
             var folder = ResolveDownloadFolder();
             Directory.CreateDirectory(folder);

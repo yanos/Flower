@@ -1399,4 +1399,26 @@ public partial class MainView : UserControl
 
         await vm.ReorderPlaylistTrack(playlist, e.dragged, e.insertBefore);
     }
+
+    // ── Device detail: live peer browsing/streaming (PeerLibraryViewModel) ──────
+
+    private async void PeerAlbumList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_viewModel is not { } vm)
+            return;
+        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not AlbumID3 album)
+            return;
+
+        await vm.PeerLibrary.SelectAlbumAsync(album);
+    }
+
+    private void PeerSongList_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (_viewModel is not { } vm)
+            return;
+        if (sender is not ListBox { SelectedItem: Child song })
+            return;
+
+        vm.PeerLibrary.PlaySong(song);
+    }
 }

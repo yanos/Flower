@@ -25,11 +25,16 @@ namespace Flower.Services;
 // unaffected and still used for the OpenSubsonic-shaped endpoints (stream/
 // download, and real third-party server support later).
 //
-// Unlike PlaylistSyncService, both sides of a discovered pair run this
-// independently rather than electing one initiator: there's no write-back to
-// the peer here, just a local, additive merge, so there's no risk of two
-// conflicting writes racing - and both sides genuinely need to learn about the
-// other's exclusive tracks, which a one-sided pull would miss entirely.
+// Originally both sides of a discovered pair ran this independently rather
+// than electing one initiator - there's no write-back to the peer here, just
+// a local, additive merge, so there was no risk of two conflicting writes
+// racing, and in the old mesh model both sides genuinely needed to learn
+// about the other's exclusive tracks. Under Client/Server roles (see
+// SyncRolePolicy) this method is only ever called by a Client pulling from
+// its one paired Server - a Server's own trigger paths (MainViewModel) are
+// gated off entirely, so it never calls this at all, making the pull
+// effectively one-directional (client-pulls-from-server) without needing any
+// change to this method itself.
 public class LibrarySyncService
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
@@ -37,13 +42,15 @@ public class LibrarySyncService
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly AppSettings _appSettings;
     private readonly LibraryStore _libraryStore;
     private readonly ILogger _logger;
 
-    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, LibraryStore libraryStore, ILogger<LibrarySyncService> logger)
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, AppSettings appSettings, LibraryStore libraryStore, ILogger<LibrarySyncService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _appSettings = appSettings;
         _libraryStore = libraryStore;
         _logger = logger;
     }
@@ -65,6 +72,7 @@ public class LibrarySyncService
             using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}/api/flower/v1/library");
             request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
             request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
+            request.Headers.Add("X-Flower-Role", _appSettings.IsServer ? "server" : "client");
             // Fresh connection per request rather than pooling one - see
             // PlaylistSyncService.AddIdentityHeaders for why (avoids reusing a
             // keep-alive connection the server/OS already tore down).
