@@ -517,5 +517,7 @@
                          IsVisible="{Binding IsShowingSettings}" />
     <views:PeerApprovalView Grid.Row="0" Grid.RowSpan="4"
                              IsVisible="{Binding IsShowingPeerApproval}" />
+    <views:ConfirmPairServerView Grid.Row="0" Grid.RowSpan="4"
+                                  IsVisible="{Binding IsShowingConfirmPairServer}" />
   </Grid>
 </UserControl>

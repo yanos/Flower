@@ -67,6 +67,24 @@ public partial class MainViewModel : ViewModelBase
     // because discovery events aren't guaranteed to arrive on one fixed thread.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _syncedDeviceFingerprints = new();
 
+    // Fingerprints of Servers this (unpaired Client) device has already
+    // offered ServerDiscoveredForPairing for this session - see
+    // CheckForNewPairableServer. Once per fingerprint per session regardless
+    // of whether the user actually paired, so declining/dismissing the
+    // prompt doesn't nag again every time that Server's /info re-resolves;
+    // relaunching the app (a fresh session) is the reset. Same
+    // ConcurrentDictionary-as-thread-safe-set idiom as _syncedDeviceFingerprints.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _promptedServerFingerprints = new();
+
+    // Raised the first time a Server is discovered while this device is an
+    // unpaired Client - the UI is expected to proactively offer pairing
+    // (see MobileMainViewModel's subscription) rather than requiring the
+    // user to dig into Settings' server list themselves. Deliberately still
+    // just an offer, not automatic pairing - decision #3 (client picks its
+    // server manually) still holds, this only changes *when* that choice is
+    // surfaced to the user, not who makes it.
+    public event EventHandler<DiscoveredDevice>? ServerDiscoveredForPairing;
+
     // Non-zero while at least one PlaylistSyncService/LibrarySyncService call
     // is in flight (see RunTrackedSync) - both services' merges fire
     // Library.TracksUpdated/PlaylistsUpdated unconditionally, even when
@@ -331,6 +349,25 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(PairedServerFingerprint));
         OnPropertyChanged(nameof(PairedServerAlias));
         TriggerSyncIfReady(device); // sync immediately rather than waiting for the next discovery event
+    }
+
+    // Proactively offers pairing the moment a Server is found, rather than
+    // only when the user happens to open Settings and look - see
+    // ServerDiscoveredForPairing's own doc comment. Deliberately not raised
+    // for a Server itself finding another Server (weAreServer==true here
+    // means this device never pairs with anyone) or once already paired
+    // (PairedServerFingerprint non-empty) - those cases have nothing to
+    // offer.
+    private void CheckForNewPairableServer(DiscoveredDevice device)
+    {
+        if (IsServer || !device.IsServer || string.IsNullOrEmpty(device.Fingerprint))
+            return;
+        if (!string.IsNullOrEmpty(PairedServerFingerprint))
+            return;
+        if (!_promptedServerFingerprints.TryAdd(device.Fingerprint, 0))
+            return;
+
+        ServerDiscoveredForPairing?.Invoke(this, device);
     }
 
     // ServerPickerView's "Stop Syncing" action - must be called before
@@ -880,6 +917,7 @@ public partial class MainViewModel : ViewModelBase
         {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
+            Dispatcher.UIThread.Post(() => CheckForNewPairableServer(device));
             TriggerSyncIfReady(device);
         };
         networkDiscovery.DeviceLost += (_, instanceName) =>
