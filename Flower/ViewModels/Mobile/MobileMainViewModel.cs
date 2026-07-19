@@ -19,7 +19,7 @@ public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings, PeerApproval }
+public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings, PeerApproval, ConfirmPairServer }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -71,6 +71,8 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand DownloadTrackCommand { get; }
     public ICommand PairWithServerCommand { get; }
     public ICommand UnpairServerCommand { get; }
+    public ICommand ConfirmPairServerCommand { get; }
+    public ICommand CancelPairServerCommand { get; }
 
     private MobileTab _selectedTab = MobileTab.RecentlyAdded;
     public MobileTab SelectedTab
@@ -179,7 +181,27 @@ public class MobileMainViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsShowingAddToPlaylist));
             OnPropertyChanged(nameof(IsShowingSettings));
             OnPropertyChanged(nameof(IsShowingPeerApproval));
+            OnPropertyChanged(nameof(IsShowingConfirmPairServer));
+            // Retry a server-pairing offer that arrived while some other
+            // sheet was up (see Main.ServerDiscoveredForPairing's
+            // subscription below) rather than dropping it - reentrant, but
+            // safe: _activeSheet is already committed to None above by the
+            // time this runs, so the nested ActiveSheet = ConfirmPairServer
+            // call below sees a real change and proceeds normally.
+            if (value == MobileSheet.None)
+                TryShowPendingServerOffer();
         }
+    }
+
+    private void TryShowPendingServerOffer()
+    {
+        if (_pendingServerOffer is not { } device)
+            return;
+        _pendingServerOffer = null;
+        _pendingServerToPair = device;
+        OnPropertyChanged(nameof(PendingServerToPairAlias));
+        OnPropertyChanged(nameof(ConfirmPairServerMessage));
+        ActiveSheet = MobileSheet.ConfirmPairServer;
     }
 
     public bool IsShowingNowPlaying => ActiveSheet == MobileSheet.NowPlaying;
@@ -188,6 +210,7 @@ public class MobileMainViewModel : ViewModelBase
     public bool IsShowingAddToPlaylist => ActiveSheet == MobileSheet.AddToPlaylist;
     public bool IsShowingSettings => ActiveSheet == MobileSheet.Settings;
     public bool IsShowingPeerApproval => ActiveSheet == MobileSheet.PeerApproval;
+    public bool IsShowingConfirmPairServer => ActiveSheet == MobileSheet.ConfirmPairServer;
 
     // Set when Main.PeerApprovalRequested fires (see SyncHttpServer's trust gate,
     // SYNC-PLAN.md Phase 3) and cleared once Allow/Deny resolves it - see
@@ -199,6 +222,25 @@ public class MobileMainViewModel : ViewModelBase
     public string PeerApprovalAlias => _pendingPeerApproval?.Alias ?? "";
     public string PeerApprovalMessage =>
         $"\"{PeerApprovalAlias}\" wants to sync playlists and library data with this device. Only allow devices you recognize - it will not be asked again.";
+
+    // Set by PairWithServerCommand (Settings' server list) before switching to
+    // the ConfirmPairServer sheet, cleared once ConfirmPairServerCommand/
+    // CancelPairServerCommand resolves it - see those. Desktop's equivalent is
+    // ServerPickerView's own ConfirmDialogWindow prompt; mobile had no
+    // confirmation at all here previously (SettingsView's Sync button called
+    // straight through to Main.PairWithServer).
+    private DiscoveredDevice? _pendingServerToPair;
+    public string PendingServerToPairAlias => _pendingServerToPair?.Alias ?? "";
+    public string ConfirmPairServerMessage =>
+        $"This device's library view will be replaced by \"{PendingServerToPairAlias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted.";
+
+    // Set when Main.ServerDiscoveredForPairing fires while some other sheet
+    // is already up - see the subscription below and TryShowPendingServerOffer,
+    // which shows it as soon as the user goes idle (ActiveSheet returns to
+    // None) instead of the offer being silently dropped for the rest of the
+    // session. At most one offer is remembered at a time - a second Server
+    // discovered while still busy simply replaces it.
+    private DiscoveredDevice? _pendingServerOffer;
 
     // Android's media-access permission can be permanently denied, in which case the
     // only way back in is the system app-settings screen; desktop/iOS have nothing
@@ -285,6 +327,27 @@ public class MobileMainViewModel : ViewModelBase
             OnPropertyChanged(nameof(PeerApprovalAlias));
             OnPropertyChanged(nameof(PeerApprovalMessage));
             ActiveSheet = MobileSheet.PeerApproval;
+        };
+
+        // Proactively offers pairing the moment a Server is found, instead of
+        // only when the user happens to open Settings and look - see
+        // MainViewModel.ServerDiscoveredForPairing's own doc comment. If some
+        // other sheet is already up, this isn't shown immediately (unlike
+        // PeerApproval above, this isn't a fail-closed security prompt with a
+        // deny-by-default timeout, just a convenience offer - not worth
+        // interrupting whatever the user is doing) but is remembered and
+        // retried the moment the user goes idle - see TryShowPendingServerOffer.
+        Main.ServerDiscoveredForPairing += (_, device) =>
+        {
+            if (ActiveSheet != MobileSheet.None)
+            {
+                _pendingServerOffer = device;
+                return;
+            }
+            _pendingServerToPair = device;
+            OnPropertyChanged(nameof(PendingServerToPairAlias));
+            OnPropertyChanged(nameof(ConfirmPairServerMessage));
+            ActiveSheet = MobileSheet.ConfirmPairServer;
         };
 
         Main.SidebarItems.CollectionChanged += (_, _) => RebuildPlaylistPicker();
@@ -393,12 +456,30 @@ public class MobileMainViewModel : ViewModelBase
             row.IsDownloadUnavailable = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
         });
 
+        // Confirm-before-pairing (see ConfirmPairServerMessage) rather than
+        // pairing immediately - matches desktop's ServerPickerView dialog.
         PairWithServerCommand = new RelayCommand<DiscoveredDevice>(device =>
         {
-            if (device != null)
-                Main.PairWithServer(device);
+            if (device == null)
+                return;
+            _pendingServerToPair = device;
+            OnPropertyChanged(nameof(PendingServerToPairAlias));
+            OnPropertyChanged(nameof(ConfirmPairServerMessage));
+            ActiveSheet = MobileSheet.ConfirmPairServer;
         });
         UnpairServerCommand = new RelayCommand(Main.UnpairServer);
+        ConfirmPairServerCommand = new RelayCommand(() =>
+        {
+            if (_pendingServerToPair is { } device)
+                Main.PairWithServer(device);
+            _pendingServerToPair = null;
+            ActiveSheet = MobileSheet.None;
+        });
+        CancelPairServerCommand = new RelayCommand(() =>
+        {
+            _pendingServerToPair = null;
+            ActiveSheet = MobileSheet.None;
+        });
     }
 
     private void ResolvePeerApproval(bool allowed)

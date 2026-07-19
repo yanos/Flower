@@ -120,6 +120,19 @@ public class NetworkDiscoveryService : IDisposable
     private CancellationTokenSource? _pollCts;
     private readonly ILogger _logger;
 
+    // How many consecutive failed /info polls (see ResolveAliasAsync,
+    // PollKnownDevicesAsync) a peer gets before it's treated as gone and
+    // pruned the same way an actual mDNS goodbye would remove it. A device
+    // that goes offline without a clean goodbye - backgrounding/locking on
+    // iOS doesn't send one, and neither does a hard kill - would otherwise
+    // sit in _knownDevices (and the sidebar) forever, unreachable but never
+    // removed. Three misses (~90s at AliasPollInterval's cadence) is
+    // deliberately more forgiving than a single miss, since a transient
+    // Wi-Fi hiccup or one slow response shouldn't drop a peer that's
+    // actually still there.
+    private const int MaxConsecutiveResolveFailures = 3;
+    private readonly ConcurrentDictionary<string, int> _consecutiveResolveFailures = new();
+
     // Env.MachineName alone collides between desktop and the iOS Simulator, since
     // the simulator shares the host Mac's actual hostname rather than having a
     // network identity of its own - tag with the platform so the two are
@@ -215,6 +228,7 @@ public class NetworkDiscoveryService : IDisposable
         try
         {
             var json = await Http.GetStringAsync($"http://{device.EndPoint}/api/localsend/v2/info");
+            _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
             using var doc = JsonDocument.Parse(json);
             var changed = false;
             if (doc.RootElement.TryGetProperty("alias", out var aliasProp) &&
@@ -250,8 +264,20 @@ public class NetworkDiscoveryService : IDisposable
         catch (Exception ex)
         {
             // Peer unreachable or not running the /info endpoint yet - keep the
-            // mDNS-name fallback alias rather than failing the discovery.
+            // mDNS-name fallback alias rather than failing the discovery, unless
+            // this is its MaxConsecutiveResolveFailures'th miss in a row, in
+            // which case treat it the same as an mDNS goodbye - see
+            // MaxConsecutiveResolveFailures's own doc comment.
             _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.EndPoint);
+
+            var failures = _consecutiveResolveFailures.AddOrUpdate(device.InstanceName, 1, (_, count) => count + 1);
+            if (failures >= MaxConsecutiveResolveFailures && _knownDevices.TryRemove(device.InstanceName, out _))
+            {
+                _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
+                _logger.LogInformation("Peer {InstanceName} unreachable after {Failures} consecutive /info attempts - treating as gone",
+                    device.InstanceName, failures);
+                DeviceLost?.Invoke(this, device.InstanceName);
+            }
         }
     }
 
