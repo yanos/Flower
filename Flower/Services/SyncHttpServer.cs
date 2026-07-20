@@ -405,10 +405,20 @@ public class SyncHttpServer : IDisposable
 
         if (track?.Path == null || !File.Exists(track.Path))
         {
+            // No logging previously existed anywhere on this path - a failed
+            // stream request (bad/stale id, or the file moved/got deleted
+            // since this device last reported having it) was completely
+            // invisible in the server's own log, indistinguishable from the
+            // request never having arrived at all.
+            _logger.LogWarning("Stream request for id {Id} from {RemoteEndPoint} could not be served: {Reason}",
+                id, context.Request.RemoteEndPoint,
+                id == null ? "no id supplied" : track == null ? "no matching track for that id" : "file missing on disk");
             context.Response.StatusCode = 404;
             return;
         }
 
+        _logger.LogInformation("Streaming {Title} ({Id}, {Bytes} bytes) to {RemoteEndPoint}",
+            track.Title, id, new FileInfo(track.Path).Length, context.Request.RemoteEndPoint);
         context.Response.ContentType = "application/octet-stream";
         using var fileStream = File.OpenRead(track.Path);
         context.Response.ContentLength64 = fileStream.Length;

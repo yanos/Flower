@@ -101,14 +101,15 @@ public static class ITunesDateAddedImporter
                     iTunesTrack.TryGetValue("Artist", out var artistNode);
                     iTunesTrack.TryGetValue("Album", out var albumNode);
 
-                    // Rounded, not truncated - see Track.SyncKey's own doc comment
-                    // for the real-world boundary case (171.96s vs 172.01s) this
-                    // fixes; both sides of the match must round the same way.
+                    // Track.RoundedSeconds, not a separate inline Math.Round - see
+                    // its own doc comment for the real-world boundary case
+                    // (171.96s vs 172.01s) this fixes; both sides of the match
+                    // must round the same way.
                     var syncKey = Track.BuildSyncKey(
                         nameNode.ToString(),
                         artistNode?.ToString(),
                         albumNode?.ToString(),
-                        (int)Math.Round(totalTimeMs.ToInt() / 1000.0));
+                        Track.RoundedSeconds(totalTimeMs.ToInt() / 1000.0));
                     var looseKey = Track.BuildLooseKey(nameNode.ToString(), artistNode?.ToString(), albumNode?.ToString());
 
                     var raw = dateAdded.Date;

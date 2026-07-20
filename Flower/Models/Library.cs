@@ -145,10 +145,23 @@ namespace Flower.Models
         // (OriginDeviceFingerprint) and its latest known album art
         // (OriginAlbumArtHash). Every other device's play count
         // (RemotePlayCounts) is merged in either way, real file or placeholder -
-        // see MergeRemotePlayCounts. Never replaces a track this device already
-        // has a real, Path-backed copy of with the incoming one, and never
-        // removes anything just because a peer doesn't mention it - purely
-        // additive/updating, unlike UpdateTracks' full replace.
+        // see MergeRemotePlayCounts. Never replaces (or removes) a track this
+        // device already has a real, Path-backed copy of - a peer's manifest
+        // omitting something is never evidence to touch the user's own file.
+        //
+        // A never-downloaded placeholder (Path == null) IS removed if it was
+        // last known to come from sourceDeviceFingerprint specifically but that
+        // peer's current manifest no longer mentions it - the server is this
+        // placeholder's only reason to exist, so once the server stops
+        // vouching for it there's nothing left backing it locally. Confirmed
+        // necessary against a real duplicate: a duration-rounding fix changed
+        // what SyncKey a track computes to, and without this the old,
+        // now-unreachable placeholder just sat there forever as an orphan
+        // alongside the new, correctly-keyed one. Scoped to
+        // sourceDeviceFingerprint (not "any placeholder no longer mentioned")
+        // so a placeholder left over from a previous pairing to a *different*
+        // server - this method's caller only ever syncs one peer at a time,
+        // see SyncRolePolicy - is never swept up by an unrelated sync.
         //
         // OriginDeviceFingerprint/OriginFileExtension/OriginAlbumArtHash and
         // DateAdded are the exceptions to "never touches an already-known
@@ -171,17 +184,25 @@ namespace Flower.Models
         // (see ServerPickerView's confirmation dialog), so the Server's
         // DateAdded should win for Recently Added parity too, real file or
         // placeholder alike.
-        public void MergeSyncedTracks(IReadOnlyList<Track> incoming)
+        //
+        // Returns how many tracks were pruned, purely for the caller's own
+        // logging (see LibrarySyncService.SyncWithAsync) - visibility that
+        // would have made the bug this was built to fix obvious immediately
+        // instead of needing a manual device-log investigation.
+        public int MergeSyncedTracks(string sourceDeviceFingerprint, IReadOnlyList<Track> incoming)
         {
+            int removedCount;
             lock (_lock)
             {
                 var byKey = Tracks
                     .GroupBy(t => t.SyncKey)
                     .ToDictionary(g => g.Key, g => g.First());
+                var incomingKeys = new HashSet<string>();
 
                 var merged = new List<Track>(Tracks);
                 foreach (var remote in incoming)
                 {
+                    incomingKeys.Add(remote.SyncKey);
                     if (byKey.TryGetValue(remote.SyncKey, out var existing))
                     {
                         existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
@@ -197,10 +218,18 @@ namespace Flower.Models
                     byKey[remote.SyncKey] = remote; // Guards against duplicate SyncKeys within `incoming` itself.
                 }
 
+                var stale = new HashSet<Track>(merged.Where(t =>
+                    t.Path == null &&
+                    t.OriginDeviceFingerprint == sourceDeviceFingerprint &&
+                    !incomingKeys.Contains(t.SyncKey)));
+                merged.RemoveAll(stale.Contains);
+
                 Tracks = merged;
+                removedCount = stale.Count;
             }
 
             TracksUpdated?.Invoke(this, EventArgs.Empty);
+            return removedCount;
         }
 
         // Per-key max, not overwrite - see Track.RemotePlayCounts' own doc

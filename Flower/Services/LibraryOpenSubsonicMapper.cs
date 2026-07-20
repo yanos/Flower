@@ -110,7 +110,14 @@ public static class LibraryOpenSubsonicMapper
         // itself never crosses the wire (SYNC-PLAN.md's Path-can't-cross-the-wire
         // rule), but its extension alone leaks nothing about this device's layout.
         Suffix: track.Path != null ? System.IO.Path.GetExtension(track.Path).TrimStart('.') : null,
-        Duration: (int)track.Duration.TotalSeconds,
+        // Track.RoundedSeconds, not a separate inline Math.Round - must match
+        // Track.SyncKey's own rounding exactly. A receiving peer never trusts
+        // this Child's own Id field as authoritative
+        // (LibrarySyncMapper.ToPlaceholderTrack doesn't even store it) - it
+        // independently recomputes its own SyncKey later from this Duration
+        // field alone (via TimeSpan.FromSeconds(song.Duration) -> SyncKey's
+        // own rounding) to ask this same device to stream/download the track.
+        Duration: Track.RoundedSeconds(track.Duration),
         BitRate: track.Bitrate > 0 ? track.Bitrate : null,
         // See AlbumId's own CoverArt above - a content hash of the album's art
         // bytes, not an opaque id, so a peer syncing this manifest can tell
