@@ -81,18 +81,22 @@
       <StackPanel IsVisible="{Binding !Main.IsServer}" Margin="20,4,20,16" Spacing="6">
         <TextBlock Text="Server" FontSize="13" Opacity="0.6"/>
 
-        <StackPanel IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                    Orientation="Horizontal" Spacing="10">
-          <TextBlock Text="{Binding Main.PairedServerAlias}" VerticalAlignment="Center" FontWeight="Medium"/>
-          <materialIcons:MaterialIcon Kind="Sync"
-                                       Classes="spinning"
-                                       Width="14" Height="14"
-                                       Opacity="0.6"
-                                       VerticalAlignment="Center"
-                                       IsVisible="{Binding Main.IsSyncing}"/>
-          <Button Content="Sync Now" Command="{Binding ForceSyncCommand}" IsEnabled="{Binding Main.CanForceSync}"/>
-          <Button Content="Unpair" Command="{Binding UnpairServerCommand}"/>
-        </StackPanel>
+        <Grid IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+              ColumnDefinitions="*,Auto">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <TextBlock Text="{Binding Main.PairedServerAlias}" VerticalAlignment="Center" FontWeight="Medium"/>
+            <materialIcons:MaterialIcon Kind="Sync"
+                                         Classes="spinning"
+                                         Width="14" Height="14"
+                                         Opacity="0.6"
+                                         VerticalAlignment="Center"
+                                         IsVisible="{Binding Main.IsSyncing}"/>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Content="Sync Now" Command="{Binding ForceSyncCommand}" IsEnabled="{Binding Main.CanForceSync}"/>
+            <Button Content="Unpair" Command="{Binding UnpairServerCommand}"/>
+          </StackPanel>
+        </Grid>
         <TextBlock IsVisible="{Binding Main.LastForceSyncResult, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                    Text="{Binding Main.LastForceSyncResult}"
                    Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>

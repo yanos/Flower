@@ -109,6 +109,22 @@ public class NetworkDiscoveryService : IDisposable
     // service), so a short interval is cheap.
     private static readonly TimeSpan AliasPollInterval = TimeSpan.FromSeconds(5);
 
+    // How often Browse() itself is re-issued, independent of AliasPollInterval
+    // - see PollKnownDevicesAsync. Start() only calls Browse() once; a peer
+    // that gets pruned as stale (MaxConsecutiveResolveFailures, a transient
+    // Wi-Fi hiccup rather than a real goodbye) or was simply missed the first
+    // time otherwise has no way back into _knownDevices short of its own
+    // spontaneous mDNS re-announcement, which this codebase doesn't control
+    // and can be a long, OS-determined interval - observed in practice as a
+    // still-reachable peer permanently vanishing from the sidebar after both
+    // apps had been running a while. Matches AliasPollInterval's cadence - a
+    // peer can be pruned as little as ~15s after going quiet
+    // (MaxConsecutiveResolveFailures), so re-browsing any slower than that
+    // leaves a gap where it stays missing longer than it needed to. Just a
+    // tiny multicast query, not a per-peer unicast request, so there's no
+    // real cost to matching the faster cadence.
+    private static readonly TimeSpan RebrowseInterval = TimeSpan.FromSeconds(5);
+
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
 
     private readonly IMdnsBackend _backend;
@@ -176,10 +192,33 @@ public class NetworkDiscoveryService : IDisposable
         _ = PollKnownDevicesAsync(_pollCts.Token);
     }
 
+    // Re-publishes this device's own advertisement and re-issues Browse() -
+    // meant to be called when an app returns to the foreground after being
+    // backgrounded (see Flower.iOS's AppDelegate.WillEnterForeground). The
+    // poll loop above just pauses under iOS suspension and resumes ticking
+    // on its own once unsuspended, needing no explicit restart - but
+    // NSNetService's own Bonjour publication (BonjourMdnsBackend, real iOS
+    // hardware only) is a known exception: it can silently drop while
+    // backgrounded and does not automatically resume just because the
+    // process becomes active again. Without this, a phone that locks for a
+    // while stops being discoverable by any peer for the rest of the app's
+    // lifetime, even though the process itself never died - observed in
+    // practice as the phone never reappearing in the desktop's sidebar after
+    // being brought back from sleep. Harmless to call when nothing was
+    // actually stale (e.g. on desktop, which has no such quirk) - Advertise/
+    // Browse are just a re-publish/re-query, not a state reset.
+    public void Restart(int port)
+    {
+        _logger.LogInformation("Restarting mDNS advertise/browse");
+        _backend.Advertise(OwnInstanceName, ServiceType, port);
+        _backend.Browse(ServiceType);
+    }
+
     // See AliasPollInterval for why this exists alongside the event-driven
     // discovery path above.
     private async Task PollKnownDevicesAsync(CancellationToken token)
     {
+        var lastBrowse = DateTime.UtcNow;
         try
         {
             while (true)
@@ -189,6 +228,15 @@ public class NetworkDiscoveryService : IDisposable
                 _logger.LogDebug("Polling /info for {Count} known device(s)", devices.Count);
                 foreach (var device in devices)
                     _ = ResolveAliasAsync(device);
+
+                // See RebrowseInterval for why this re-query exists alongside
+                // the one-shot Browse() call in Start().
+                if (DateTime.UtcNow - lastBrowse >= RebrowseInterval)
+                {
+                    lastBrowse = DateTime.UtcNow;
+                    _logger.LogDebug("Re-browsing for {ServiceType} peers", ServiceType);
+                    _backend.Browse(ServiceType);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -295,7 +343,25 @@ public class NetworkDiscoveryService : IDisposable
     // by MainViewModel.AvailableServers to filter down to just the ones
     // advertising IsServer. Snapshot, not a live view - callers that need to
     // react to changes should also subscribe to DeviceDiscovered/DeviceLost.
-    public IReadOnlyCollection<DiscoveredDevice> KnownDevices => _knownDevices.Values.ToList();
+    //
+    // Deduped by Fingerprint: the same physical device can end up as more
+    // than one entry in _knownDevices under different mDNS instance names
+    // (a prior run's advertisement re-registering under an auto-renamed name
+    // after Bonjour's own collision avoidance, or a stale record surfaced
+    // again by a fresh Browse() - see PollKnownDevicesAsync). MainViewModel's
+    // sidebar has its own separate reconciliation for this (see
+    // RemoveDuplicateDeviceSidebarItems), built from individual
+    // DeviceDiscovered events rather than this snapshot, so it needed its
+    // own fix; every other consumer (AvailableServers in particular) reads
+    // straight from here and had no such dedup, hence a server appearing
+    // twice in the picker. Entries with no resolved Fingerprint yet are kept
+    // as-is (grouped by instance name instead) since they cannot yet be
+    // proven to be duplicates of anything.
+    public IReadOnlyCollection<DiscoveredDevice> KnownDevices =>
+        _knownDevices.Values
+            .GroupBy(d => string.IsNullOrEmpty(d.Fingerprint) ? $"instance:{d.InstanceName}" : $"fingerprint:{d.Fingerprint}")
+            .Select(g => g.First())
+            .ToList();
 
     private static bool IsOurServiceType(string instanceName) =>
         instanceName.EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);
