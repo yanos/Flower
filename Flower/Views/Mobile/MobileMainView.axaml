@@ -16,6 +16,92 @@
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
     <conv:EqualsConverter x:Key="EqualsConverter" />
+
+    <!-- Shared by the main track list (Songs/album-artist-playlist drill-in) and
+         the Search tab's own Songs section (see IsShowingSearchResults) - same
+         row for the same underlying TrackRowViewModel wherever it appears,
+         rather than a second copy of this template drifting out of sync. -->
+    <DataTemplate x:Key="TrackRowTemplate">
+      <Button Classes="trackRow"
+              Classes.playing="{Binding IsCurrentlyPlaying}"
+              Classes.placeholder="{Binding IsPlaceholder}"
+              Command="{Binding $parent[UserControl].DataContext.PlayTrackCommand}"
+              CommandParameter="{Binding Track}">
+        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+          <Border Grid.Column="0"
+                  Classes="dragHandle"
+                  IsVisible="{Binding $parent[UserControl].DataContext.IsShowingPlaylistTracks}"
+                  Background="Transparent"
+                  Width="32"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  PointerPressed="DragHandle_PointerPressed"
+                  PointerMoved="DragHandle_PointerMoved"
+                  PointerReleased="DragHandle_PointerReleased"
+                  PointerCaptureLost="DragHandle_PointerCaptureLost">
+            <materialIcons:MaterialIcon Kind="DragHorizontalVariant" Width="20" Height="20" Opacity="0.5" />
+          </Border>
+          <controls:AlbumArtView Grid.Column="1"
+                                  AlbumArt="{Binding AlbumArt}"
+                                  Width="40" Height="40"
+                                  Margin="0,0,10,0" />
+          <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+            <TextBlock Text="{Binding Track.Title}"
+                       FontSize="16"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding Track.Artists}"
+                       FontSize="13"
+                       Opacity="0.65"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+
+          <!-- Normal (downloaded) row: duration + "..." actions menu -->
+          <StackPanel Grid.Column="3" Grid.ColumnSpan="2"
+                      Orientation="Horizontal" Spacing="0"
+                      IsVisible="{Binding !IsPlaceholder}">
+            <TextBlock Text="{Binding DurationDisplay}"
+                       FontSize="13"
+                       Opacity="0.65"
+                       VerticalAlignment="Center"
+                       Margin="8,0,0,0" />
+            <Button Command="{Binding $parent[UserControl].DataContext.OpenTrackActionsCommand}"
+                    CommandParameter="{Binding Track}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="6"
+                    Margin="4,0,0,0"
+                    VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
+            </Button>
+          </StackPanel>
+
+          <!-- Placeholder (not-yet-downloaded) row: only this button is
+               actionable - tapping the row itself (PlayTrackCommand, above)
+               is a no-op for a placeholder track. Three mutually exclusive
+               icon states (idle / in-flight / just-failed-or-unavailable) -
+               see TrackRowViewModel.IsDownloadIdle. -->
+          <Button Grid.Column="3" Grid.ColumnSpan="2"
+                  IsVisible="{Binding IsPlaceholder}"
+                  Command="{Binding $parent[UserControl].DataContext.DownloadTrackCommand}"
+                  CommandParameter="{Binding}"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="6"
+                  VerticalAlignment="Center">
+            <Panel>
+              <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7"
+                                           IsVisible="{Binding IsDownloadIdle}"
+                                           ToolTip.Tip="Download" />
+              <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7"
+                                           IsVisible="{Binding IsDownloading}" />
+              <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="22" Height="22" Opacity="0.7"
+                                           IsVisible="{Binding IsDownloadUnavailable}"
+                                           ToolTip.Tip="Device unavailable - try again later" />
+            </Panel>
+          </Button>
+        </Grid>
+      </Button>
+    </DataTemplate>
   </UserControl.Resources>
 
   <UserControl.Styles>
@@ -72,16 +158,17 @@
 
       <TextBlock Grid.Column="1"
                  Text="{Binding ScreenTitle}"
-                 IsVisible="{Binding !IsSearchVisible}"
+                 IsVisible="{Binding IsShowingScreenTitle}"
                  FontSize="22"
                  FontWeight="SemiBold"
                  VerticalAlignment="Center"
                  Margin="12,0,0,0" />
 
       <TextBox Grid.Column="1"
+                x:Name="SearchBox"
                 Text="{Binding Main.FilterText}"
-                IsVisible="{Binding IsSearchVisible}"
-                Watermark="Search"
+                IsVisible="{Binding IsShowingSearchBox}"
+                Watermark="Search your library"
                 VerticalAlignment="Center"
                 Margin="12,0,0,0" />
 
@@ -296,91 +383,69 @@
                 Background="Transparent"
                 ItemsSource="{Binding Main.Rows}"
                 IsVisible="{Binding IsShowingTrackList}"
-                SelectionMode="Single">
-        <ListBox.ItemTemplate>
-          <DataTemplate>
-            <Button Classes="trackRow"
-                    Classes.playing="{Binding IsCurrentlyPlaying}"
-                    Classes.placeholder="{Binding IsPlaceholder}"
-                    Command="{Binding $parent[UserControl].DataContext.PlayTrackCommand}"
-                    CommandParameter="{Binding Track}">
-              <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
-                <Border Grid.Column="0"
-                        Classes="dragHandle"
-                        IsVisible="{Binding $parent[UserControl].DataContext.IsShowingPlaylistTracks}"
-                        Background="Transparent"
-                        Width="32"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        PointerPressed="DragHandle_PointerPressed"
-                        PointerMoved="DragHandle_PointerMoved"
-                        PointerReleased="DragHandle_PointerReleased"
-                        PointerCaptureLost="DragHandle_PointerCaptureLost">
-                  <materialIcons:MaterialIcon Kind="DragHorizontalVariant" Width="20" Height="20" Opacity="0.5" />
-                </Border>
-                <controls:AlbumArtView Grid.Column="1"
-                                        AlbumArt="{Binding AlbumArt}"
-                                        Width="40" Height="40"
-                                        Margin="0,0,10,0" />
-                <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Track.Title}"
-                             FontSize="16"
-                             TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{Binding Track.Artists}"
-                             FontSize="13"
-                             Opacity="0.65"
-                             TextTrimming="CharacterEllipsis" />
-                </StackPanel>
+                ItemTemplate="{StaticResource TrackRowTemplate}"
+                SelectionMode="Single" />
 
-                <!-- Normal (downloaded) row: duration + "..." actions menu -->
-                <StackPanel Grid.Column="3" Grid.ColumnSpan="2"
-                            Orientation="Horizontal" Spacing="0"
-                            IsVisible="{Binding !IsPlaceholder}">
-                  <TextBlock Text="{Binding DurationDisplay}"
-                             FontSize="13"
-                             Opacity="0.65"
-                             VerticalAlignment="Center"
-                             Margin="8,0,0,0" />
-                  <Button Command="{Binding $parent[UserControl].DataContext.OpenTrackActionsCommand}"
-                          CommandParameter="{Binding Track}"
-                          Background="Transparent"
-                          BorderThickness="0"
-                          Padding="6"
-                          Margin="4,0,0,0"
-                          VerticalAlignment="Center">
-                    <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
+      <!-- Search tab results: Artists/Albums/Songs sections, each hidden when
+           empty - see MobileMainViewModel.RebuildSearchResults. A plain
+           ScrollViewer+StackPanel rather than TrackListBox's virtualized
+           ListBox - search results are bounded by the query, not the whole
+           library, so virtualization isn't worth the extra complexity here. -->
+      <ScrollViewer IsVisible="{Binding IsShowingSearchResults}">
+        <StackPanel>
+          <StackPanel IsVisible="{Binding HasSearchArtistResults}">
+            <TextBlock Text="Artists" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
+            <ItemsControl ItemsSource="{Binding SearchArtistResults}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Classes="pickerRow"
+                          Command="{Binding $parent[UserControl].DataContext.SelectSearchArtistCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                      <materialIcons:MaterialIcon Kind="AccountMusic" Width="22" Height="22" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
                   </Button>
-                </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
 
-                <!-- Placeholder (not-yet-downloaded) row: only this button is
-                     actionable - tapping the row itself (PlayTrackCommand, above)
-                     is a no-op for a placeholder track. Three mutually exclusive
-                     icon states (idle / in-flight / just-failed-or-unavailable) -
-                     see TrackRowViewModel.IsDownloadIdle. -->
-                <Button Grid.Column="3" Grid.ColumnSpan="2"
-                        IsVisible="{Binding IsPlaceholder}"
-                        Command="{Binding $parent[UserControl].DataContext.DownloadTrackCommand}"
-                        CommandParameter="{Binding}"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        Padding="6"
-                        VerticalAlignment="Center">
-                  <Panel>
-                    <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7"
-                                                 IsVisible="{Binding IsDownloadIdle}"
-                                                 ToolTip.Tip="Download" />
-                    <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7"
-                                                 IsVisible="{Binding IsDownloading}" />
-                    <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="22" Height="22" Opacity="0.7"
-                                                 IsVisible="{Binding IsDownloadUnavailable}"
-                                                 ToolTip.Tip="Device unavailable - try again later" />
-                  </Panel>
-                </Button>
-              </Grid>
-            </Button>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
+          <StackPanel IsVisible="{Binding HasSearchAlbumResults}">
+            <TextBlock Text="Albums" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
+            <ItemsControl ItemsSource="{Binding SearchAlbumResults}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Classes="pickerRow"
+                          Command="{Binding $parent[UserControl].DataContext.SelectSearchAlbumCommand}"
+                          CommandParameter="{Binding Name}">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                      <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="40" Height="40" />
+                      <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Artist}" FontSize="13" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding HasSearchSongResults}">
+            <TextBlock Text="Songs" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
+            <ItemsControl ItemsSource="{Binding SearchSongResults}" ItemTemplate="{StaticResource TrackRowTemplate}" />
+          </StackPanel>
+
+          <!-- See MaxSearchResultsPerSection's own doc comment - each section
+               above is capped, so a very broad query needs to say so rather
+               than silently looking like the whole match set. -->
+          <TextBlock IsVisible="{Binding HasMoreSearchResults}"
+                     Text="Showing partial results - refine your search to see more."
+                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"
+                     Margin="16,14,16,20" />
+        </StackPanel>
+      </ScrollViewer>
 
       <!-- Drop-position indicator for the playlist drag-to-reorder gesture -->
       <Border x:Name="DropIndicator"
@@ -397,7 +462,7 @@
                   VerticalAlignment="Center"
                   Spacing="10"
                   MaxWidth="280">
-        <materialIcons:MaterialIcon Kind="MusicNoteOff" Width="40" Height="40" Opacity="0.35" HorizontalAlignment="Center" />
+        <materialIcons:MaterialIcon Kind="{Binding EmptyStateIcon}" Width="40" Height="40" Opacity="0.35" HorizontalAlignment="Center" />
         <TextBlock Text="{Binding EmptyStateTitle}"
                    FontSize="17"
                    FontWeight="SemiBold"
@@ -452,7 +517,7 @@
     <!-- Bottom tab bar - Recently Added first/leftmost, matching it being the
          app's default/home tab (see MobileMainViewModel._selectedTab). -->
     <Grid Grid.Row="3"
-          ColumnDefinitions="*,*,*,*,*"
+          ColumnDefinitions="*,*,*,*,*,*"
           Height="60"
           Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
       <Button Grid.Column="0" Classes="tab"
@@ -498,6 +563,15 @@
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" HorizontalAlignment="Center" />
           <TextBlock Text="Playlists" FontSize="11" HorizontalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <Button Grid.Column="5" Classes="tab"
+              Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Search}"
+              Command="{Binding SelectTabCommand}" CommandParameter="Search"
+              Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
+        <StackPanel HorizontalAlignment="Center" Spacing="2">
+          <materialIcons:MaterialIcon Kind="Magnify" Width="22" Height="22" HorizontalAlignment="Center" />
+          <TextBlock Text="Search" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
     </Grid>
