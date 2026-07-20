@@ -1088,6 +1088,19 @@ public partial class MainViewModel : ViewModelBase
     public void PlayTrack(Track track)
     {
         SyncPlayQueueToCurrentView();
+
+        // Path == null means not yet downloaded (see SYNC-PLAN.md Phase 3) -
+        // stream it on demand from whichever peer currently holds it rather
+        // than requiring an explicit download first. A transient copy, not the
+        // placeholder itself - see GetStreamUrl's own doc comment and
+        // MobileMainViewModel.PlayTrackCommand's identical mobile-side handling.
+        if (track.Path == null)
+        {
+            if (GetStreamUrl(track) is { } streamUrl)
+                _playlistControlViewModel.Play(track with { Path = streamUrl });
+            return;
+        }
+
         _playlistControlViewModel.Play(track);
     }
 
@@ -1448,19 +1461,37 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    // Downloads one placeholder track's audio from whichever peer currently holds
-    // it - see LibraryDownloadService, SYNC-PLAN.md Phase 3's mobile download
-    // button. Resolves the peer against currently-discovered devices (the same
-    // Devices sidebar list Cmd/Ctrl-independent code above already maintains) -
-    // a peer that's gone offline/out of range since it was last seen results in
-    // TrackDownloadResult.PeerUnavailable rather than guessing an address.
-    public Task<TrackDownloadResult> DownloadTrackAsync(Track track)
-    {
-        var peer = track.OriginDeviceFingerprint is { } fingerprint
+    // Shared by DownloadTrackAsync and GetStreamUrl - resolves a placeholder
+    // track's origin peer against currently-discovered devices (the same
+    // Devices sidebar list Cmd/Ctrl-independent code above already maintains).
+    // A peer that's gone offline/out of range since it was last seen resolves
+    // to null rather than guessing an address.
+    private DiscoveredDevice? ResolvePeerForTrack(Track track) =>
+        track.OriginDeviceFingerprint is { } fingerprint
             ? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == fingerprint)?.Device
             : null;
 
-        return _libraryDownloadService?.DownloadAsync(track, peer) ?? Task.FromResult(TrackDownloadResult.Failed);
+    // Downloads one placeholder track's audio from whichever peer currently holds
+    // it - see LibraryDownloadService, SYNC-PLAN.md Phase 3's mobile download
+    // button.
+    public Task<TrackDownloadResult> DownloadTrackAsync(Track track) =>
+        _libraryDownloadService?.DownloadAsync(track, ResolvePeerForTrack(track)) ?? Task.FromResult(TrackDownloadResult.Failed);
+
+    // Builds an on-demand stream URL for a placeholder track from whichever
+    // peer currently holds it, for playing without downloading first - see
+    // MobileMainViewModel.PlayTrackCommand and PeerLibraryViewModel's own
+    // identical streaming approach for peer-browsed (not yet synced-in)
+    // tracks. Null if the peer isn't currently reachable (same resolution
+    // DownloadTrackAsync uses) or this device's own identity isn't ready yet.
+    public string? GetStreamUrl(Track track)
+    {
+        if (_deviceIdentity == null || _appSettings == null)
+            return null;
+        var peer = ResolvePeerForTrack(track);
+        if (peer == null)
+            return null;
+
+        return PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings).GetStreamUrl(track.SyncKey);
     }
 
     // Runs a playlist sync session (Phase 2) and a library sync session (Phase 3 -

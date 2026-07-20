@@ -95,6 +95,15 @@ public class OpenSubsonicClient
     public string BuildUrl(string endpoint, IEnumerable<(string Key, string Value)>? extraParams = null)
     {
         var parameters = AuthParams();
+        // Also embedded as query params, not just sent as headers (see
+        // SendAsync/DownloadTrackAsync, which add _extraHeaders to the
+        // request directly) - a URL handed to something else to fetch (LibVLC
+        // playing GetStreamUrl directly, see VlcAudioManager.Play's "://"
+        // check) can't carry custom headers the way an authenticated
+        // HttpClient call can, and SyncHttpServer.AuthorizeAsync/IsCallerServer
+        // accept either. Harmless against a real third-party OpenSubsonic
+        // server, which just ignores the extra unknown params.
+        parameters.AddRange(_extraHeaders);
         if (extraParams != null)
             parameters.AddRange(extraParams);
 
