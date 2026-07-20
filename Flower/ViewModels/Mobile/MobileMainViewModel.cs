@@ -329,6 +329,14 @@ public class MobileMainViewModel : ViewModelBase
         private set { if (_isBulkDownloading != value) { _isBulkDownloading = value; OnPropertyChanged(); } }
     }
 
+    // A download over the local LAN can finish in well under a UI frame, in
+    // which case IsDownloading would flip true then straight back to false
+    // before anything ever actually painted it - observed in practice as the
+    // spinner "sometimes not even appearing". Holding it visible for at
+    // least this long guarantees it's actually seen, at the cost of a barely
+    // perceptible artificial delay on an already-fast download.
+    private static readonly TimeSpan MinDownloadSpinnerDuration = TimeSpan.FromMilliseconds(400);
+
     // Shared by DownloadTrackCommand (one row) and DownloadAllVisibleCommand
     // (every not-yet-downloaded row in view) - same per-row idle/in-flight/
     // unavailable state either way, so a row started via the bulk action looks
@@ -337,7 +345,11 @@ public class MobileMainViewModel : ViewModelBase
     {
         row.IsDownloadUnavailable = false;
         row.IsDownloading = true;
+        var started = DateTime.UtcNow;
         var result = await Main.DownloadTrackAsync(row.Track);
+        var remaining = MinDownloadSpinnerDuration - (DateTime.UtcNow - started);
+        if (remaining > TimeSpan.Zero)
+            await Task.Delay(remaining);
         row.IsDownloading = false;
         row.IsDownloadUnavailable = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
     }

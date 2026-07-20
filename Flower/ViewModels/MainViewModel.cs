@@ -1022,6 +1022,7 @@ public partial class MainViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(CanForceSync)));
             Dispatcher.UIThread.Post(() => CheckForNewPairableServer(device));
+            Dispatcher.UIThread.Post(RefreshRowReachability);
             TriggerSyncIfReady(device);
         };
         networkDiscovery.DeviceLost += (_, instanceName) =>
@@ -1029,6 +1030,7 @@ public partial class MainViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(CanForceSync)));
+            Dispatcher.UIThread.Post(RefreshRowReachability);
         };
 
         // On mobile, MainViewModel is still constructed (App.axaml.cs resolves it
@@ -1461,15 +1463,51 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    // Quiet lookup shared by ResolvePeerForTrack (below, which adds logging -
+    // meant for a single user-initiated download/stream attempt) and
+    // RefreshRowReachability (which calls this for potentially every
+    // placeholder row in Rows on every device-list change - logging a
+    // warning per row there would flood the log and drown out the one
+    // ResolvePeerForTrack actually emits for a real, individual failure).
+    private DiscoveredDevice? FindDeviceByFingerprint(string? fingerprint) =>
+        fingerprint != null
+            ? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == fingerprint)?.Device
+            : null;
+
     // Shared by DownloadTrackAsync and GetStreamUrl - resolves a placeholder
     // track's origin peer against currently-discovered devices (the same
     // Devices sidebar list Cmd/Ctrl-independent code above already maintains).
     // A peer that's gone offline/out of range since it was last seen resolves
     // to null rather than guessing an address.
-    private DiscoveredDevice? ResolvePeerForTrack(Track track) =>
-        track.OriginDeviceFingerprint is { } fingerprint
-            ? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == fingerprint)?.Device
-            : null;
+    private DiscoveredDevice? ResolvePeerForTrack(Track track)
+    {
+        if (track.OriginDeviceFingerprint is not { } fingerprint)
+        {
+            _logger.LogWarning("Cannot resolve a peer for {Title}: track has no OriginDeviceFingerprint", track.Title);
+            return null;
+        }
+
+        var device = FindDeviceByFingerprint(fingerprint);
+        if (device == null)
+            _logger.LogWarning("Cannot resolve a peer for {Title}: fingerprint {Fingerprint} is not in the Devices sidebar right now", track.Title, fingerprint);
+        return device;
+    }
+
+    // Live-updates every currently-built row's IsPeerReachable without a full
+    // Rows rebuild - called whenever the Devices sidebar changes (see
+    // AddOrUpdateDeviceSidebarItem/RemoveDeviceSidebarItem's callers) and
+    // once after every fresh Rows build (RebuildRowsAsync), since a
+    // just-built row otherwise starts from TrackRowViewModel's own
+    // assume-reachable default regardless of whether that's actually true
+    // right now. Only meaningful for placeholders (see
+    // TrackRowViewModel.IsUnavailable) - computed for every row uniformly
+    // anyway since a downloaded track's own IsPeerReachable value is simply
+    // never read.
+    private void RefreshRowReachability()
+    {
+        foreach (var row in Rows)
+            row.IsPeerReachable = row.Track.Path != null || FindDeviceByFingerprint(row.Track.OriginDeviceFingerprint) != null;
+    }
 
     // Downloads one placeholder track's audio from whichever peer currently holds
     // it - see LibraryDownloadService, SYNC-PLAN.md Phase 3's mobile download
@@ -1490,12 +1528,17 @@ public partial class MainViewModel : ViewModelBase
     public string? GetStreamUrl(Track track)
     {
         if (_deviceIdentity == null || _appSettings == null)
+        {
+            _logger.LogWarning("Cannot build a stream URL for {Title}: device identity/settings not ready yet", track.Title);
             return null;
+        }
         var peer = ResolvePeerForTrack(track);
         if (peer == null)
-            return null;
+            return null; // ResolvePeerForTrack already logged why.
 
-        return PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings).GetStreamUrl(track.SyncKey);
+        var url = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings).GetStreamUrl(track.SyncKey);
+        _logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint}): {Url}", track.Title, peer.Alias, peer.EndPoint, url);
+        return url;
     }
 
     // Runs a playlist sync session (Phase 2) and a library sync session (Phase 3 -
@@ -1849,6 +1892,7 @@ public partial class MainViewModel : ViewModelBase
         Rows = new ObservableCollection<TrackRowViewModel>(rows);
         AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles);
         RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(recentTiles);
+        RefreshRowReachability(); // fresh rows start from TrackRowViewModel's own assume-reachable default.
         OnPropertyChanged(nameof(StatusBarText));
     }
 

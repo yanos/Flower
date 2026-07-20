@@ -24,7 +24,7 @@
     <DataTemplate x:Key="TrackRowTemplate">
       <Button Classes="trackRow"
               Classes.playing="{Binding IsCurrentlyPlaying}"
-              Classes.placeholder="{Binding IsPlaceholder}"
+              Classes.placeholder="{Binding IsUnavailable}"
               Command="{Binding $parent[UserControl].DataContext.PlayTrackCommand}"
               CommandParameter="{Binding Track}">
         <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
@@ -59,16 +59,22 @@
                        TextTrimming="CharacterEllipsis" />
           </StackPanel>
 
-          <!-- Normal (downloaded) row: duration + "..." actions menu -->
+          <!-- Duration always shows, downloaded or not - a placeholder still
+               knows its own length (Track.Duration comes from the peer's
+               catalog, not from reading a local file - see
+               LibrarySyncMapper.ToPlaceholderTrack), there's no reason to
+               hide it just because the file isn't local yet. Only the
+               trailing action (the "..." menu, or the download button) still
+               depends on IsPlaceholder. -->
           <StackPanel Grid.Column="3" Grid.ColumnSpan="2"
-                      Orientation="Horizontal" Spacing="0"
-                      IsVisible="{Binding !IsPlaceholder}">
+                      Orientation="Horizontal" Spacing="0">
             <TextBlock Text="{Binding DurationDisplay}"
                        FontSize="13"
                        Opacity="0.65"
                        VerticalAlignment="Center"
                        Margin="8,0,0,0" />
-            <Button Command="{Binding $parent[UserControl].DataContext.OpenTrackActionsCommand}"
+            <Button IsVisible="{Binding !IsPlaceholder}"
+                    Command="{Binding $parent[UserControl].DataContext.OpenTrackActionsCommand}"
                     CommandParameter="{Binding Track}"
                     Background="Transparent"
                     BorderThickness="0"
@@ -77,32 +83,37 @@
                     VerticalAlignment="Center">
               <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
             </Button>
-          </StackPanel>
 
-          <!-- Placeholder (not-yet-downloaded) row: only this button is
-               actionable - tapping the row itself (PlayTrackCommand, above)
-               is a no-op for a placeholder track. Three mutually exclusive
-               icon states (idle / in-flight / just-failed-or-unavailable) -
-               see TrackRowViewModel.IsDownloadIdle. -->
-          <Button Grid.Column="3" Grid.ColumnSpan="2"
-                  IsVisible="{Binding IsPlaceholder}"
-                  Command="{Binding $parent[UserControl].DataContext.DownloadTrackCommand}"
-                  CommandParameter="{Binding}"
-                  Background="Transparent"
-                  BorderThickness="0"
-                  Padding="6"
-                  VerticalAlignment="Center">
-            <Panel>
-              <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7"
-                                           IsVisible="{Binding IsDownloadIdle}"
-                                           ToolTip.Tip="Download" />
-              <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7"
-                                           IsVisible="{Binding IsDownloading}" />
-              <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="22" Height="22" Opacity="0.7"
-                                           IsVisible="{Binding IsDownloadUnavailable}"
-                                           ToolTip.Tip="Device unavailable - try again later" />
-            </Panel>
-          </Button>
+            <!-- tapping the row itself (PlayTrackCommand, above) is a no-op
+                 for a placeholder track, so this is the only actionable
+                 thing on that row. Three mutually exclusive icon states
+                 (idle / in-flight / just-failed-or-unavailable) - see
+                 TrackRowViewModel.IsDownloadIdle. The Sync icon's own spin
+                 (SpinAnimation.IsSpinning) is a manual DispatcherTimer-driven
+                 rotation, not Avalonia's Animation system - see that class's
+                 own doc comment for why (same TransformAnimator crash
+                 RubberBandScroll already had to work around). -->
+            <Button IsVisible="{Binding IsPlaceholder}"
+                    Command="{Binding $parent[UserControl].DataContext.DownloadTrackCommand}"
+                    CommandParameter="{Binding}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="6"
+                    Margin="4,0,0,0"
+                    VerticalAlignment="Center">
+              <Panel>
+                <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7"
+                                             IsVisible="{Binding IsDownloadIdle}"
+                                             ToolTip.Tip="Download" />
+                <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7"
+                                             IsVisible="{Binding IsDownloading}"
+                                             controls:SpinAnimation.IsSpinning="{Binding IsDownloading}" />
+                <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="22" Height="22" Opacity="0.7"
+                                             IsVisible="{Binding IsDownloadUnavailable}"
+                                             ToolTip.Tip="Device unavailable - try again later" />
+              </Panel>
+            </Button>
+          </StackPanel>
         </Grid>
       </Button>
     </DataTemplate>
@@ -139,9 +150,13 @@
       <Setter Property="FontWeight" Value="Bold" />
       <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
     </Style>
-    <!-- Not-yet-downloaded track (see LibrarySyncService, SYNC-PLAN.md Phase 3) -
-         dimmed like the currently-playing/disabled treatment elsewhere; only the
-         download button in this row is actionable, see DownloadTrackCommand. -->
+    <!-- Not-yet-downloaded track whose origin peer isn't currently reachable
+         (see TrackRowViewModel.IsUnavailable/IsPeerReachable) - dimmed like
+         the currently-playing/disabled treatment elsewhere, since there's
+         genuinely nothing actionable about it right now beyond retrying
+         later. A placeholder whose peer IS reachable looks like any other
+         row - it can be streamed/downloaded immediately, see
+         DownloadTrackCommand. -->
     <Style Selector="Button.trackRow.placeholder">
       <Setter Property="Opacity" Value="0.5" />
     </Style>
