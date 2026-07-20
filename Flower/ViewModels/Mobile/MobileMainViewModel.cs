@@ -1,11 +1,15 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Input;
 
 using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.Input;
+
+using Material.Icons;
 
 using Flower.Models;
 using Flower.Services;
@@ -13,9 +17,12 @@ using Flower.Services;
 namespace Flower.ViewModels.Mobile;
 
 // RecentlyAdded is first/default (see MobileMainViewModel's _selectedTab) - an
-// album grid ordered by recency, the app's home screen. The other four mirror
-// desktop's Songs/Albums/Artists/Playlists sidebar sections.
-public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists }
+// album grid ordered by recency, the app's home screen. The middle four mirror
+// desktop's Songs/Albums/Artists/Playlists sidebar sections. Search is mobile-only
+// (desktop has no equivalent standalone tab - its search box works over whichever
+// sidebar section is already selected) - see IsShowingSearchPrompt/CanSearch for
+// how it differs from the Songs tab's own toggleable search box.
+public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists, Search }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
@@ -43,9 +50,37 @@ public class MobileMainViewModel : ViewModelBase
     // library updates while it's set.
     public ObservableCollection<AlbumGridRow> ArtistAlbumGridRows { get; } = new();
 
+    // Search tab results - see RebuildSearchResultsAsync. Albums matching by
+    // Album name, Artists matching by Artists (the same raw per-track field
+    // the Artists tab's own picker groups by - see
+    // MainViewModel.RebuildSubListItems), Songs mirroring (a capped slice of)
+    // Main.Rows. All three capped at MaxSearchResultsPerSection: unlike the
+    // Songs tab's own TrackListBox (a real virtualized ListBox), this whole
+    // results view is a plain ScrollViewer+ItemsControl per section (mixing
+    // three different item shapes under one scroll, which a single
+    // virtualizing list can't do) - realizing thousands of un-virtualized
+    // track rows for a broad one-letter query froze the UI in practice.
+    private const int MaxSearchResultsPerSection = 40;
+    public ObservableCollection<AlbumTileViewModel> SearchAlbumResults { get; } = new();
+    public ObservableCollection<string> SearchArtistResults { get; } = new();
+    public ObservableCollection<TrackRowViewModel> SearchSongResults { get; } = new();
+
+    // True if any section actually had more matches than the cap - drives a
+    // single "refine your search" caption rather than a separate one per
+    // section, since usually either none or all of them are far over the cap
+    // together (a broad query matches lots of everything at once).
+    private bool _hasMoreSearchResults;
+    public bool HasMoreSearchResults
+    {
+        get => _hasMoreSearchResults;
+        private set { if (_hasMoreSearchResults != value) { _hasMoreSearchResults = value; OnPropertyChanged(); } }
+    }
+
     public ICommand SelectTabCommand { get; }
     public ICommand SelectAlbumOrArtistCommand { get; }
     public ICommand SelectArtistCommand { get; }
+    public ICommand SelectSearchAlbumCommand { get; }
+    public ICommand SelectSearchArtistCommand { get; }
     public ICommand SelectArtistAlbumCommand { get; }
     public ICommand SelectRecentlyAddedAlbumCommand { get; }
     public ICommand SelectPlaylistCommand { get; }
@@ -83,12 +118,24 @@ public class MobileMainViewModel : ViewModelBase
         {
             if (_selectedTab == value)
                 return;
+            var wasSearch = _selectedTab == MobileTab.Search;
             _selectedTab = value;
             _hasDrilledIn = false;
             _selectedArtistName = null;
             _hasDrilledIntoArtistAlbum = false;
             ApplyTabSelection();
             OnPropertyChanged();
+            // Fresh start next time the Search tab is opened, rather than
+            // showing whatever was last typed - mirrors IsSearchVisible's own
+            // clear-on-hide behavior for the Songs tab's toggleable box. Done
+            // AFTER _selectedTab is already updated above, not before: setting
+            // Main.FilterText fires Main.PropertyChanged synchronously (see the
+            // constructor's subscription), and that handler's own
+            // "SelectedTab == MobileTab.Search" check would otherwise still
+            // read the OLD tab mid-assignment and wrongly reschedule a search
+            // results rebuild for a tab we've already left.
+            if (wasSearch)
+                Main.FilterText = null;
             RaiseNavigationChanged();
         }
     }
@@ -115,10 +162,29 @@ public class MobileMainViewModel : ViewModelBase
     public bool IsShowingArtistAlbumGrid => SelectedTab == MobileTab.Artists && _hasDrilledIn && !_hasDrilledIntoArtistAlbum;
     public bool IsShowingPlaylistPicker => SelectedTab == MobileTab.Playlists && !_hasDrilledIn;
     public bool IsShowingRecentlyAddedAlbums => SelectedTab == MobileTab.RecentlyAdded && !_hasDrilledIn;
+
+    // Shown instead of the track list on the Search tab until something is
+    // actually typed - unlike the Songs tab (which lists the whole library by
+    // default and search only narrows it), a dedicated Search tab should not
+    // dump every track in the library the moment it opens.
+    public bool IsShowingSearchPrompt => SelectedTab == MobileTab.Search && string.IsNullOrEmpty(Main.FilterText);
+
+    // The Search tab's own results view (Songs/Albums/Artists sections - see
+    // RebuildSearchResults) once something is typed - a separate layout from
+    // IsShowingTrackList's plain flat list, so Search is fully excluded from
+    // that one rather than just gated by IsShowingSearchPrompt.
+    public bool IsShowingSearchResults => SelectedTab == MobileTab.Search && !string.IsNullOrEmpty(Main.FilterText);
+
     public bool IsShowingTrackList =>
         !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingArtistAlbumGrid
-        && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums;
+        && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums && SelectedTab != MobileTab.Search;
     public bool CanGoBack => _hasDrilledIn;
+
+    // The Search tab's box is always visible (no toggle needed, unlike the
+    // Songs tab's - see CanSearch), so it and the screen title are mutually
+    // exclusive on that basis alone, independent of IsSearchVisible.
+    public bool IsShowingSearchBox => IsSearchVisible || SelectedTab == MobileTab.Search;
+    public bool IsShowingScreenTitle => !IsShowingSearchBox;
 
     public string ScreenTitle
     {
@@ -145,8 +211,10 @@ public class MobileMainViewModel : ViewModelBase
 
     public bool IsShowingPlaylistTracks => CurrentPlaylist != null;
 
-    // The search box only makes sense over a track list (Main.FilterText filters
-    // Rows, which the Albums/Artists/Playlists picker screens do not use).
+    // The toggleable search box only makes sense over a track list (Main.FilterText
+    // filters Rows, which the Albums/Artists/Playlists picker screens do not use) -
+    // IsShowingTrackList already excludes the Search tab itself, whose box is
+    // always visible already (see IsShowingSearchBox), with nothing to toggle.
     public bool CanSearch => IsShowingTrackList;
 
     private bool _isSearchVisible;
@@ -161,6 +229,8 @@ public class MobileMainViewModel : ViewModelBase
             if (!value)
                 Main.FilterText = null;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsShowingSearchBox));
+            OnPropertyChanged(nameof(IsShowingScreenTitle));
         }
     }
 
@@ -261,18 +331,31 @@ public class MobileMainViewModel : ViewModelBase
 
     // Whichever list is currently on screen (picker or track list) has nothing in it.
     // Without this, an empty library or an empty search just renders a blank screen.
+    // IsShowingSearchPrompt counts as "empty" too - the Search tab before anything is
+    // typed has an empty Main.Rows (see ApplyTabSelection/IsShowingSearchPrompt), but
+    // wants its own prompt rather than falling through to "No Results".
+    public bool HasSearchAlbumResults => SearchAlbumResults.Count > 0;
+    public bool HasSearchArtistResults => SearchArtistResults.Count > 0;
+    public bool HasSearchSongResults => SearchSongResults.Count > 0;
+
     public bool IsContentEmpty =>
         (IsShowingAlbumGrid && AlbumGridRows.Count == 0) ||
         (IsShowingArtistPicker && Main.SubListItems.Count == 0) ||
         (IsShowingArtistAlbumGrid && ArtistAlbumGridRows.Count == 0) ||
         (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0) ||
         (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbumRows.Count == 0) ||
+        IsShowingSearchPrompt ||
+        (IsShowingSearchResults && !HasSearchAlbumResults && !HasSearchArtistResults && !HasSearchSongResults) ||
         (IsShowingTrackList && Main.Rows.Count == 0);
+
+    public MaterialIconKind EmptyStateIcon => IsShowingSearchPrompt ? MaterialIconKind.Magnify : MaterialIconKind.MusicNoteOff;
 
     public string EmptyStateTitle
     {
         get
         {
+            if (IsShowingSearchPrompt)
+                return "Search Your Library";
             if (IsShowingPlaylistTracks)
                 return "Playlist is Empty";
             if (!string.IsNullOrEmpty(Main.FilterText))
@@ -287,6 +370,8 @@ public class MobileMainViewModel : ViewModelBase
     {
         get
         {
+            if (IsShowingSearchPrompt)
+                return "Find songs by title, artist, album, or genre.";
             if (IsShowingPlaylistTracks)
                 return "Add tracks from a track's ... menu.";
             if (!string.IsNullOrEmpty(Main.FilterText))
@@ -304,8 +389,17 @@ public class MobileMainViewModel : ViewModelBase
     private void RaiseEmptyStateChanged()
     {
         OnPropertyChanged(nameof(IsContentEmpty));
+        OnPropertyChanged(nameof(EmptyStateIcon));
         OnPropertyChanged(nameof(EmptyStateTitle));
         OnPropertyChanged(nameof(EmptyStateMessage));
+    }
+
+    private void RaiseSearchResultsChanged()
+    {
+        OnPropertyChanged(nameof(HasSearchAlbumResults));
+        OnPropertyChanged(nameof(HasSearchArtistResults));
+        OnPropertyChanged(nameof(HasSearchSongResults));
+        RaiseEmptyStateChanged();
     }
 
     public MobileMainViewModel(
@@ -360,12 +454,31 @@ public class MobileMainViewModel : ViewModelBase
             RebuildRecentlyAddedAlbums();
             RebuildAlbumGrid();
             RebuildArtistAlbumGrid();
+            if (SelectedTab == MobileTab.Search)
+                RefreshSearchResultsNow();
         });
         Main.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems)
                 or nameof(MainViewModel.FilterText))
                 RaiseEmptyStateChanged();
+            // Main.Rows is already fully computed (MainViewModel's own
+            // ScheduleFilter/RebuildRowsAsync debounce already happened by the
+            // time this fires) - just mirror+cap it, see RefreshSearchSongResults.
+            if (e.PropertyName == nameof(MainViewModel.Rows) && SelectedTab == MobileTab.Search)
+                RefreshSearchSongResults();
+            // IsShowingSearchPrompt/IsShowingTrackList/the Albums+Artists
+            // sections (see above) all switch the Search tab between its
+            // prompt and its results as the query goes empty<->non-empty -
+            // only relevant while actually on that tab. Debounced (see
+            // ScheduleSearchResultsRebuild) since this fires on every keystroke.
+            if (e.PropertyName == nameof(MainViewModel.FilterText) && SelectedTab == MobileTab.Search)
+            {
+                OnPropertyChanged(nameof(IsShowingSearchPrompt));
+                OnPropertyChanged(nameof(IsShowingSearchResults));
+                OnPropertyChanged(nameof(IsShowingTrackList));
+                ScheduleSearchResultsRebuild();
+            }
         };
         RebuildPlaylistPicker();
         RebuildRecentlyAddedAlbums();
@@ -380,6 +493,20 @@ public class MobileMainViewModel : ViewModelBase
         });
         SelectAlbumOrArtistCommand = new RelayCommand<string>(SelectAlbumOrArtist);
         SelectArtistCommand = new RelayCommand<string>(SelectArtist);
+        // Switch tab first (moves Main.SelectedSidebarItem to the right scope -
+        // see ApplyTabSelection) then drill in exactly like that tab's own
+        // picker would - same SelectAlbumOrArtist/SelectArtist a tap on the
+        // Albums/Artists tab itself uses, just reached from Search instead.
+        SelectSearchAlbumCommand = new RelayCommand<string>(name =>
+        {
+            SelectedTab = MobileTab.Albums;
+            SelectAlbumOrArtist(name);
+        });
+        SelectSearchArtistCommand = new RelayCommand<string>(name =>
+        {
+            SelectedTab = MobileTab.Artists;
+            SelectArtist(name);
+        });
         SelectArtistAlbumCommand = new RelayCommand<string>(SelectArtistAlbum);
         SelectRecentlyAddedAlbumCommand = new RelayCommand<string>(SelectRecentlyAddedAlbum);
         SelectPlaylistCommand = new RelayCommand<SidebarItem>(SelectPlaylist);
@@ -539,6 +666,134 @@ public class MobileMainViewModel : ViewModelBase
         RaiseEmptyStateChanged();
     }
 
+    private CancellationTokenSource? _searchResultsCts;
+
+    // Immediate (no debounce) - used when the Search tab is entered or the
+    // library changes, neither of which happens once per keystroke, unlike
+    // ScheduleSearchResultsRebuild below.
+    private void RefreshSearchResultsNow()
+    {
+        _searchResultsCts?.Cancel();
+        _searchResultsCts = new CancellationTokenSource();
+        _ = RebuildSearchResultsAsync(_searchResultsCts.Token);
+    }
+
+    // Debounced, same 250ms/cancel-and-restart shape as MainViewModel.ScheduleFilter
+    // for Main.Rows - calling RebuildSearchResultsAsync directly on every keystroke
+    // discarded and rebuilt every matching album's AlbumTileViewModel from scratch
+    // each time (including any art already mid-load - see AlbumTileViewModel.AlbumArt),
+    // observed in practice as the app freezing while typing.
+    private void ScheduleSearchResultsRebuild()
+    {
+        _searchResultsCts?.Cancel();
+        _searchResultsCts = new CancellationTokenSource();
+        _ = DebouncedRebuildSearchResultsAsync(_searchResultsCts.Token);
+    }
+
+    private async Task DebouncedRebuildSearchResultsAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(250, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // A newer keystroke restarted the cooldown - that call's own delay will fire instead.
+        }
+        await RebuildSearchResultsAsync(token);
+    }
+
+    // Pre-cap match counts for Albums/Artists, so HasMoreSearchResults can tell
+    // "over the cap" apart from "genuinely fewer than the cap" after the
+    // collections themselves have already been truncated - see
+    // RebuildSearchResultsAsync/RefreshSearchSongResults.
+    private int _totalMatchingAlbums;
+    private int _totalMatchingArtists;
+
+    // Search tab's Albums/Artists sections - matching songs are handled
+    // separately (see RefreshSearchSongResults, driven by Main.Rows changing)
+    // since that scan/sort/build already happens in MainViewModel's own
+    // debounced pipeline (ScheduleFilter/RebuildRowsAsync) - no reason to
+    // duplicate it here, just mirror and cap its result. Clears down to empty
+    // once the query is blank, since IsShowingSearchResults hides this whole
+    // view at that point anyway - no reason to keep stale matches from the
+    // last query around. The actual scan runs off the UI thread (Task.Run),
+    // same reasoning as MainViewModel.RebuildRowsAsync - a broad
+    // single-character query can match a large fraction of the library.
+    private async Task RebuildSearchResultsAsync(CancellationToken token)
+    {
+        var text = Main.FilterText;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            SearchAlbumResults.Clear();
+            SearchArtistResults.Clear();
+            _totalMatchingAlbums = 0;
+            _totalMatchingArtists = 0;
+            RecomputeHasMoreSearchResults();
+            RaiseSearchResultsChanged();
+            return;
+        }
+
+        var tracks = Main.Library.Tracks;
+        var (albums, albumsTotal, artists, artistsTotal) = await Task.Run(() =>
+        {
+            var matchingAlbumTracks = tracks.Where(t =>
+                t.Album?.Contains(text, StringComparison.OrdinalIgnoreCase) == true);
+            var allAlbums = AlbumGridBuilder.Build(matchingAlbumTracks);
+
+            // Same raw per-track field the Artists tab's own picker groups by
+            // (see MainViewModel.RebuildSubListItems) - not EffectiveAlbumArtist,
+            // which AlbumGridBuilder uses for a different purpose (labeling a
+            // same-named album spanning several artists as "Various Artists").
+            var allArtists = tracks
+                .Select(t => t.Artists)
+                .Where(a => !string.IsNullOrEmpty(a) && a.Contains(text, StringComparison.OrdinalIgnoreCase))
+                .Distinct()
+                .OrderBy(a => a)
+                .ToList();
+
+            return (allAlbums.Take(MaxSearchResultsPerSection).ToList(), allAlbums.Count,
+                    allArtists.Take(MaxSearchResultsPerSection).ToList(), allArtists.Count);
+        }, token);
+
+        if (token.IsCancellationRequested)
+            return;
+
+        SearchAlbumResults.Clear();
+        foreach (var album in albums)
+            SearchAlbumResults.Add(album);
+
+        SearchArtistResults.Clear();
+        foreach (var artist in artists)
+            SearchArtistResults.Add(artist!);
+
+        _totalMatchingAlbums = albumsTotal;
+        _totalMatchingArtists = artistsTotal;
+        RecomputeHasMoreSearchResults();
+        RaiseSearchResultsChanged();
+    }
+
+    // Mirrors (a capped slice of) Main.Rows - see MaxSearchResultsPerSection's
+    // own doc comment for why this view can't just bind ItemsControl straight
+    // to Main.Rows the way TrackListBox does. Cheap (a plain Take/copy, no
+    // scan of its own) since Main.Rows is already fully computed by the time
+    // this runs - driven by Main.PropertyChanged(Rows) firing while on the
+    // Search tab, which already reflects MainViewModel's own debounce.
+    private void RefreshSearchSongResults()
+    {
+        SearchSongResults.Clear();
+        foreach (var row in Main.Rows.Take(MaxSearchResultsPerSection))
+            SearchSongResults.Add(row);
+        RecomputeHasMoreSearchResults();
+        RaiseSearchResultsChanged();
+    }
+
+    private void RecomputeHasMoreSearchResults() =>
+        HasMoreSearchResults =
+            Main.Rows.Count > MaxSearchResultsPerSection ||
+            _totalMatchingAlbums > MaxSearchResultsPerSection ||
+            _totalMatchingArtists > MaxSearchResultsPerSection;
+
     private void ApplyTabSelection()
     {
         var kind = SelectedTab switch
@@ -546,6 +801,11 @@ public class MobileMainViewModel : ViewModelBase
             MobileTab.Songs => SidebarItemKind.Songs,
             MobileTab.Albums => SidebarItemKind.Albums,
             MobileTab.Artists => SidebarItemKind.Artists,
+            // Same scope as Songs (the whole library, not narrowed to any
+            // album/artist/playlist) - see GetBaseTracksForFilter - so typing
+            // in the Search tab searches everything, same fields
+            // (Title/Artists/Album/Genre - see TrackListBuilder.Filter).
+            MobileTab.Search => SidebarItemKind.Songs,
             _ => (SidebarItemKind?)null
         };
         Main.SelectedSidebarItem = kind != null
@@ -659,12 +919,34 @@ public class MobileMainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsShowingArtistAlbumGrid));
         OnPropertyChanged(nameof(IsShowingPlaylistPicker));
         OnPropertyChanged(nameof(IsShowingRecentlyAddedAlbums));
+        OnPropertyChanged(nameof(IsShowingSearchPrompt));
+        OnPropertyChanged(nameof(IsShowingSearchResults));
         OnPropertyChanged(nameof(IsShowingTrackList));
+        OnPropertyChanged(nameof(IsShowingSearchBox));
+        OnPropertyChanged(nameof(IsShowingScreenTitle));
         OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(ScreenTitle));
         OnPropertyChanged(nameof(CurrentPlaylist));
         OnPropertyChanged(nameof(IsShowingPlaylistTracks));
         OnPropertyChanged(nameof(CanSearch));
+        // Leaving the Search tab already clears Main.FilterText (see
+        // SelectedTab's setter), which on its own would raise this via the
+        // Main.PropertyChanged handler above - but that handler only rebuilds
+        // while SelectedTab == Search, i.e. before this method's own
+        // reassignment already moved past it. Entering fresh (query blank)
+        // just needs the stale results from last time cleared instead.
+        if (SelectedTab == MobileTab.Search)
+        {
+            RefreshSearchResultsNow();
+            RefreshSearchSongResults();
+        }
+        else
+        {
+            _searchResultsCts?.Cancel();
+            SearchAlbumResults.Clear();
+            SearchArtistResults.Clear();
+            SearchSongResults.Clear();
+        }
         RaiseEmptyStateChanged();
     }
 

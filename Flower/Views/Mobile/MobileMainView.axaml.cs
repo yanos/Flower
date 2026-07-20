@@ -1,8 +1,10 @@
 using System;
+using System.ComponentModel;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Threading;
 
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
@@ -23,6 +25,27 @@ public partial class MobileMainView : UserControl
     public MobileMainView()
     {
         InitializeComponent();
+    }
+
+    // Auto-focuses SearchBox the moment it actually becomes the visible search
+    // surface - covers both the dedicated Search tab (always shows it) and the
+    // Songs tab's own toggleable box (see MobileMainViewModel.IsShowingSearchBox),
+    // so tapping either one drops the keyboard straight in rather than requiring
+    // a second tap on the box itself. Posted rather than called inline - IsVisible's
+    // own binding update from the same PropertyChanged notification hasn't
+    // necessarily been applied yet at this point, and Avalonia won't focus a
+    // control that's still invisible.
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        if (DataContext is MobileMainViewModel vm)
+        {
+            vm.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(MobileMainViewModel.IsShowingSearchBox) && vm.IsShowingSearchBox)
+                    Dispatcher.UIThread.Post(() => SearchBox.Focus());
+            };
+        }
     }
 
     private void DragHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
