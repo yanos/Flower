@@ -57,6 +57,27 @@ namespace Flower.Models
                     .GroupBy(t => t.Path!, StringComparer.OrdinalIgnoreCase)
                     .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
+                // Fallback for a synced track whose exact Path string no longer
+                // matches anything in this fresh scan - keyed by SyncKey
+                // (Title/Artist/Album/Duration), which stays stable even when
+                // Path doesn't. Confirmed on a real device: iOS can reassign
+                // the sandboxed app's Data container UUID across a reinstall,
+                // which shifts every absolute path under it (including
+                // Documents, where downloaded files and library.json both
+                // live) - the exact-Path match above then fails for a
+                // downloaded file whose content and filename are otherwise
+                // completely unchanged, and without this fallback the stale
+                // old-container Track survives untouched below (see
+                // carriedForwardSyncTracks) alongside the freshly-rescanned
+                // one for the same physical file, showing up as a duplicate.
+                // Restricted to OriginDeviceFingerprint-carrying tracks - a
+                // plain local track's Path has no comparable reason to drift
+                // out from under it between scans.
+                var previousSyncedByKey = Tracks
+                    .Where(t => t.OriginDeviceFingerprint != null)
+                    .GroupBy(t => t.SyncKey)
+                    .ToDictionary(g => g.Key, g => g.First());
+
                 foreach (var track in tracks)
                 {
                     if (track.Path != null && previousByPath.TryGetValue(track.Path, out var previous))
@@ -64,6 +85,14 @@ namespace Flower.Models
                         track.DateAdded         = previous.DateAdded;
                         track.PlayCount         = previous.PlayCount;
                         track.ImportedPlayCount = previous.ImportedPlayCount;
+                        CarryForwardOrigin(track, previous);
+                    }
+                    else if (previousSyncedByKey.TryGetValue(track.SyncKey, out var previousSynced))
+                    {
+                        track.DateAdded         = previousSynced.DateAdded;
+                        track.PlayCount         = previousSynced.PlayCount;
+                        track.ImportedPlayCount = previousSynced.ImportedPlayCount;
+                        CarryForwardOrigin(track, previousSynced);
                     }
                 }
 
@@ -76,13 +105,17 @@ namespace Flower.Models
                 // the track should be forgotten. Excluded here if the fresh scan
                 // *did* also find the same path (e.g. iOS's Documents-folder scan
                 // legitimately re-discovering a file this device downloaded earlier)
-                // to avoid a duplicate row - that fresh-scanned instance already
-                // carried its DateAdded/PlayCount forward above.
+                // OR the same SyncKey (the container-UUID-drift case above) - either
+                // way, that fresh-scanned instance already carried its
+                // DateAdded/PlayCount/origin metadata forward above.
                 var freshPaths = new HashSet<string>(
                     tracks.Where(t => t.Path != null).Select(t => t.Path!),
                     StringComparer.OrdinalIgnoreCase);
+                var freshSyncKeys = new HashSet<string>(tracks.Select(t => t.SyncKey));
                 var carriedForwardSyncTracks = Tracks.Where(t =>
-                    t.OriginDeviceFingerprint != null && (t.Path == null || !freshPaths.Contains(t.Path)));
+                    t.OriginDeviceFingerprint != null
+                    && (t.Path == null || !freshPaths.Contains(t.Path))
+                    && !freshSyncKeys.Contains(t.SyncKey));
 
                 Tracks = tracks.Concat(carriedForwardSyncTracks).ToList();
             }
@@ -90,29 +123,54 @@ namespace Flower.Models
             TracksUpdated?.Invoke(this, EventArgs.Empty);
         }
 
+        // Shared by UpdateTracks' two match branches (exact Path, SyncKey
+        // fallback) - a freshly-rescanned Track starts with none of this
+        // (Importer only reads file tags), so without it a rescan would
+        // silently strip sync origin/redownload info from any track that
+        // also happens to be locally rediscoverable (the common case for a
+        // downloaded file, which lives in the same folder Importer scans).
+        private static void CarryForwardOrigin(Track track, Track previous)
+        {
+            track.OriginDeviceFingerprint = previous.OriginDeviceFingerprint;
+            track.OriginFileExtension = previous.OriginFileExtension;
+            track.OriginAlbumArtHash = previous.OriginAlbumArtHash;
+            MergeRemotePlayCounts(track, previous.RemotePlayCounts);
+        }
+
         // Applies a peer's known-songs catalog (see LibrarySyncService,
         // SYNC-PLAN.md Phase 3): each incoming track becomes a new Path == null
         // placeholder if this device has nothing matching it by SyncKey, or - if
-        // it already has a placeholder for the same track - just updates which
-        // peer currently holds the real file (OriginDeviceFingerprint) and its
-        // latest known album art (OriginAlbumArtHash). Every other device's play
-        // count (RemotePlayCounts) is merged in either way, real file or
-        // placeholder - see MergeRemotePlayCounts. Never replaces a track this
-        // device already has a real, Path-backed copy of with the incoming one,
-        // and never removes anything just because a peer doesn't mention it -
-        // purely additive/updating, unlike UpdateTracks' full replace.
+        // it already has a placeholder OR a real, Path-backed copy for the same
+        // track - just updates which peer currently holds a copy
+        // (OriginDeviceFingerprint) and its latest known album art
+        // (OriginAlbumArtHash). Every other device's play count
+        // (RemotePlayCounts) is merged in either way, real file or placeholder -
+        // see MergeRemotePlayCounts. Never replaces a track this device already
+        // has a real, Path-backed copy of with the incoming one, and never
+        // removes anything just because a peer doesn't mention it - purely
+        // additive/updating, unlike UpdateTracks' full replace.
         //
-        // DateAdded is the one exception to "never touches an already-known
+        // OriginDeviceFingerprint/OriginFileExtension/OriginAlbumArtHash and
+        // DateAdded are the exceptions to "never touches an already-known
         // track": this method's only caller (LibrarySyncService, per
         // SyncRolePolicy) is always a Client pulling from its one paired
         // Server over Flower's own private /api/flower/v1/library endpoint -
         // never a third-party OpenSubsonic server, which only ever answers
         // the generic /rest/* browse API - so the peer here is always another
-        // Flower instance sending a real Child.DateAdded. Pairing's whole
-        // premise is the Client's library *view* mirroring the Server's (see
-        // ServerPickerView's confirmation dialog), so the Server's DateAdded
-        // should win for Recently Added parity even for a track this device
-        // already has by SyncKey match, real file or placeholder alike.
+        // Flower instance, and OriginDeviceFingerprint is always that Server's
+        // own fingerprint (see LibrarySyncMapper.ToPlaceholderTrack). Recording
+        // it even when this device already has its own real file for the same
+        // track (matched by SyncKey, e.g. a song the user separately imported
+        // on both devices) is what lets MobileMainViewModel's delete-downloaded-
+        // file warning correctly tell "the paired Server also has this, safe to
+        // delete and re-download later" apart from "no known peer has this,
+        // deleting it is permanent" - without this, that distinction would only
+        // ever be known for a track that started life as a placeholder here,
+        // not one this device already had a file for before pairing. Pairing's
+        // whole premise is the Client's library *view* mirroring the Server's
+        // (see ServerPickerView's confirmation dialog), so the Server's
+        // DateAdded should win for Recently Added parity too, real file or
+        // placeholder alike.
         public void MergeSyncedTracks(IReadOnlyList<Track> incoming)
         {
             lock (_lock)
@@ -126,12 +184,9 @@ namespace Flower.Models
                 {
                     if (byKey.TryGetValue(remote.SyncKey, out var existing))
                     {
-                        if (existing.Path == null)
-                        {
-                            existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
-                            existing.OriginFileExtension = remote.OriginFileExtension;
-                            existing.OriginAlbumArtHash = remote.OriginAlbumArtHash;
-                        }
+                        existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
+                        existing.OriginFileExtension = remote.OriginFileExtension;
+                        existing.OriginAlbumArtHash = remote.OriginAlbumArtHash;
                         existing.DateAdded = remote.DateAdded;
                         MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
                         continue; // Already known locally, real file or placeholder - only

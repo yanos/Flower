@@ -257,6 +257,35 @@ public class NetworkDiscoveryService : IDisposable
         if (found.InstanceName.StartsWith(OwnInstanceName + ".", StringComparison.OrdinalIgnoreCase))
             return; // mDNS reflects our own advertisement back to us - not a peer.
 
+        // A dual-stack peer (the common case on Wi-Fi) can answer the same
+        // multicast query from more than one of its own addresses - observed
+        // in practice as a link-local IPv6 one (fe80::/10) alongside a normal
+        // IPv4 one for the exact same instance name. The link-local address
+        // is scope-bound to whatever interface happened to receive that
+        // particular packet, which does not reliably accept a follow-up
+        // unicast HTTP connection from this process even though it's the
+        // same reachable peer - confirmed on a real device: HttpClient throws
+        // "Connection refused" against it while the very next announcement
+        // for the identical InstanceName, arriving over IPv4, connects fine.
+        // Every RebrowseInterval re-issues the multicast query, so without
+        // this a peer already known via a working address would otherwise
+        // keep flip-flopping back onto the unreliable one - not just noisy
+        // logging, but real sync requests (LibraryDownloadService,
+        // PlaylistSyncService) can land on whichever endpoint happens to be
+        // stored at that moment and fail the same way. A routable address,
+        // once recorded, is never downgraded back to a link-local one for
+        // the same instance name; a link-local address is still recorded if
+        // it's the only thing seen so far, and gets replaced the moment a
+        // routable one shows up.
+        if (_knownDevices.TryGetValue(found.InstanceName, out var existing) &&
+            !existing.EndPoint.Address.IsIPv6LinkLocal &&
+            found.EndPoint.Address.IsIPv6LinkLocal)
+        {
+            _logger.LogDebug("Ignoring link-local re-announcement for {InstanceName} at {EndPoint} - already have a routable address {Existing}",
+                found.InstanceName, found.EndPoint, existing.EndPoint);
+            return;
+        }
+
         var device = new DiscoveredDevice { InstanceName = found.InstanceName, EndPoint = found.EndPoint, Alias = found.InstanceName };
         _knownDevices[found.InstanceName] = device;
         _logger.LogInformation("Discovered peer {InstanceName} at {EndPoint}", found.InstanceName, found.EndPoint);

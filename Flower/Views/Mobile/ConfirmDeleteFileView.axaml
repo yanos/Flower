@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Views.Mobile.ConfirmDeleteFileView"
+             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}">
+
+  <UserControl.Styles>
+    <Style Selector="Button.deleteAction">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="Padding" Value="16,12" />
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid>
+    <!-- Deliberately no backdrop-tap-to-dismiss, same reasoning as
+         ConfirmPairServerView - a destructive, sometimes-unrecoverable action
+         (see IsRecoverableDownload) should not be dismissible by an
+         unattended tap; Cancel below is the only way out other than Delete. -->
+    <Border Background="#66000000" />
+
+    <Border VerticalAlignment="Bottom"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+            CornerRadius="12,12,0,0"
+            Padding="20,20,20,28">
+      <StackPanel Spacing="14">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="24" Height="24" />
+          <TextBlock Text="{Binding ConfirmDeleteFileTitle}"
+                     FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <TextBlock Text="{Binding ConfirmDeleteFileMessage}"
+                   FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
+
+        <Button Classes="deleteAction" Content="Delete" Command="{Binding ConfirmDeleteFileCommand}"
+                Background="#E05555" Foreground="White" />
+        <Button Classes="deleteAction" Content="Cancel" Command="{Binding CancelDeleteFileCommand}"
+                Background="Transparent" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

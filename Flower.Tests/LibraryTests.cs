@@ -213,6 +213,41 @@ public class LibraryTests
         Assert.Same(rescanned, only);
     }
 
+    // Confirmed on a real device: iOS can reassign the sandboxed app's Data
+    // container UUID across a reinstall, shifting every absolute path under
+    // it - a downloaded file's Path (and the freshly-rescanned Track's Path
+    // for that same, unmoved, unchanged physical file) can then differ by
+    // container UUID alone even though it's the exact same file. The plain
+    // Path-based dedup above can't recognize that, so UpdateTracks also falls
+    // back to matching by SyncKey (Title/Artist/Album/Duration - unaffected
+    // by where the file happens to sit) for any OriginDeviceFingerprint-
+    // carrying track, to avoid the old-container entry surviving as a
+    // duplicate alongside the new one.
+    [Fact]
+    public void UpdateTracks_does_not_duplicate_a_downloaded_sync_track_the_fresh_scan_finds_at_a_different_path()
+    {
+        var downloaded = new Track
+        {
+            Title = "Fabienk", Artists = "Angine de Poitrine", Album = "Vol.II", Duration = TimeSpan.FromSeconds(391),
+            Path = "/var/mobile/Containers/Data/Application/OLD-UUID/Documents/abc.mp3",
+            OriginDeviceFingerprint = "peer-1",
+            RemotePlayCounts = new Dictionary<string, int> { ["peer-1"] = 16 },
+        };
+        var library = new Library(new List<Track> { downloaded });
+
+        var rescanned = new Track
+        {
+            Title = "Fabienk", Artists = "Angine de Poitrine", Album = "Vol.II", Duration = TimeSpan.FromSeconds(391),
+            Path = "/var/mobile/Containers/Data/Application/NEW-UUID/Documents/abc.mp3",
+        };
+        library.UpdateTracks(new List<Track> { rescanned });
+
+        var only = Assert.Single(library.Tracks);
+        Assert.Same(rescanned, only);
+        Assert.Equal("peer-1", only.OriginDeviceFingerprint);
+        Assert.Equal(16, only.RemotePlayCounts["peer-1"]);
+    }
+
     [Fact]
     public void MergeSyncedTracks_inserts_a_new_placeholder_for_a_track_not_already_known()
     {
@@ -253,8 +288,14 @@ public class LibraryTests
     }
 
     [Fact]
-    public void MergeSyncedTracks_does_not_touch_a_track_already_backed_by_a_real_file()
+    public void MergeSyncedTracks_never_replaces_Path_for_a_track_already_backed_by_a_real_file_but_still_records_its_origin()
     {
+        // Path itself is never overwritten - this device's own real file always
+        // wins. OriginDeviceFingerprint IS still recorded even so (unlike an
+        // earlier version of this behavior), so a later "delete downloaded
+        // file" action can tell this copy is recoverable from that peer rather
+        // than treating it as an unrecoverable delete - see
+        // MobileMainViewModel.CanDeleteDownloadedFile/IsRecoverableDownload.
         var local = new Track { Title = "Same Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), Path = "/music/local.mp3" };
         var library = new Library(new List<Track> { local });
         var remote = new Track { Title = "Same Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), OriginDeviceFingerprint = "peer-1" };
@@ -264,7 +305,7 @@ public class LibraryTests
         Assert.Single(library.Tracks);
         Assert.Same(local, library.Tracks.Single());
         Assert.Equal("/music/local.mp3", library.Tracks.Single().Path);
-        Assert.Null(library.Tracks.Single().OriginDeviceFingerprint);
+        Assert.Equal("peer-1", library.Tracks.Single().OriginDeviceFingerprint);
     }
 
     [Fact]

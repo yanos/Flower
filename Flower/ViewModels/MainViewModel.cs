@@ -1477,6 +1477,10 @@ public partial class MainViewModel : ViewModelBase
     public Task<TrackDownloadResult> DownloadTrackAsync(Track track) =>
         _libraryDownloadService?.DownloadAsync(track, ResolvePeerForTrack(track)) ?? Task.FromResult(TrackDownloadResult.Failed);
 
+    // Counterpart to DownloadTrackAsync - see LibraryDownloadService.DeleteDownloadedFileAsync.
+    public Task DeleteDownloadedFileAsync(Track track) =>
+        _libraryDownloadService?.DeleteDownloadedFileAsync(track) ?? Task.CompletedTask;
+
     // Builds an on-demand stream URL for a placeholder track from whichever
     // peer currently holds it, for playing without downloading first - see
     // MobileMainViewModel.PlayTrackCommand and PeerLibraryViewModel's own

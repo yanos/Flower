@@ -41,8 +41,12 @@
                   PointerCaptureLost="DragHandle_PointerCaptureLost">
             <materialIcons:MaterialIcon Kind="DragHorizontalVariant" Width="20" Height="20" Opacity="0.5" />
           </Border>
+          <!-- Hidden while viewing one album's own track list - its header
+               (see IsShowingAlbumTrackList/CurrentAlbumHeader) already shows
+               the art once, full-size, above the list. -->
           <controls:AlbumArtView Grid.Column="1"
                                   AlbumArt="{Binding AlbumArt}"
+                                  IsVisible="{Binding !$parent[UserControl].DataContext.IsShowingAlbumTrackList}"
                                   Width="40" Height="40"
                                   Margin="0,0,10,0" />
           <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
@@ -146,7 +150,7 @@
   <Grid RowDefinitions="Auto,*,Auto,Auto">
 
     <!-- Top bar: back button (when drilled into an album/artist/playlist) + title/search -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" Height="52" Margin="4,4,16,4">
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Height="52" Margin="4,4,16,4">
       <Button Grid.Column="0"
               Command="{Binding BackCommand}"
               IsVisible="{Binding CanGoBack}"
@@ -175,7 +179,15 @@
                 IsVisible="{Binding IsShowingSongsSearchBox}"
                 Watermark="Search your library"
                 VerticalAlignment="Center"
-                Margin="12,0,0,0" />
+                Margin="12,0,0,0">
+        <TextBox.InnerRightContent>
+          <Button Command="{Binding ClearSongsFilterTextCommand}"
+                  IsVisible="{Binding Main.FilterText, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                  Background="Transparent" BorderThickness="0" Padding="4">
+            <materialIcons:MaterialIcon Kind="CloseCircle" Width="16" Height="16" Opacity="0.6" />
+          </Button>
+        </TextBox.InnerRightContent>
+      </TextBox>
 
       <TextBox Grid.Column="1"
                 x:Name="SearchTabBox"
@@ -183,7 +195,15 @@
                 IsVisible="{Binding IsShowingSearchTabBox}"
                 Watermark="Search your library"
                 VerticalAlignment="Center"
-                Margin="12,0,0,0" />
+                Margin="12,0,0,0">
+        <TextBox.InnerRightContent>
+          <Button Command="{Binding ClearSearchQueryCommand}"
+                  IsVisible="{Binding SearchQuery, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                  Background="Transparent" BorderThickness="0" Padding="4">
+            <materialIcons:MaterialIcon Kind="CloseCircle" Width="16" Height="16" Opacity="0.6" />
+          </Button>
+        </TextBox.InnerRightContent>
+      </TextBox>
 
       <Button Grid.Column="2"
               Command="{Binding ToggleSearchCommand}"
@@ -206,7 +226,41 @@
         <materialIcons:MaterialIcon Kind="Plus" Width="24" Height="24" />
       </Button>
 
+      <!-- Downloads every not-yet-downloaded track currently in view - an
+           album's tracks or a playlist's, see IsShowingAlbumTrackList/
+           IsShowingPlaylistTracks and DownloadAllVisibleCommand. Each row's
+           own download icon still shows its individual progress as this runs
+           through them one at a time (see DownloadRowAsync), so there's no
+           separate progress UI needed here beyond swapping to a spinner. -->
       <Button Grid.Column="3"
+              Command="{Binding DownloadAllVisibleCommand}"
+              IsVisible="{Binding IsShowingAlbumTrackList}"
+              IsEnabled="{Binding !IsBulkDownloading}"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="10"
+              ToolTip.Tip="Download all">
+        <Panel>
+          <materialIcons:MaterialIcon Kind="DownloadMultiple" Width="22" Height="22" IsVisible="{Binding !IsBulkDownloading}" />
+          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" IsVisible="{Binding IsBulkDownloading}" />
+        </Panel>
+      </Button>
+
+      <Button Grid.Column="3"
+              Command="{Binding DownloadAllVisibleCommand}"
+              IsVisible="{Binding IsShowingPlaylistTracks}"
+              IsEnabled="{Binding !IsBulkDownloading}"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="10"
+              ToolTip.Tip="Download all">
+        <Panel>
+          <materialIcons:MaterialIcon Kind="DownloadMultiple" Width="22" Height="22" IsVisible="{Binding !IsBulkDownloading}" />
+          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" IsVisible="{Binding IsBulkDownloading}" />
+        </Panel>
+      </Button>
+
+      <Button Grid.Column="4"
               Command="{Binding OpenSettingsCommand}"
               Background="Transparent"
               BorderThickness="0"
@@ -393,14 +447,40 @@
         </ListBox.ItemTemplate>
       </ListBox>
 
-      <!-- Track list: Songs (flat), or the drilled-into album/artist/playlist -->
-      <ListBox x:Name="TrackListBox"
-                Background="Transparent"
-                ItemsSource="{Binding Main.Rows}"
-                IsVisible="{Binding IsShowingTrackList}"
-                ItemTemplate="{StaticResource TrackRowTemplate}"
-                controls:RubberBandScroll.IsEnabled="True"
-                SelectionMode="Single" />
+      <!-- Track list: Songs (flat), or the drilled-into album/artist/playlist.
+           A pinned Auto-row header (not itself part of the scrolling ListBox)
+           for the one-specific-album case only - see IsShowingAlbumTrackList/
+           CurrentAlbumHeader - stays on screen while the list beneath it scrolls. -->
+      <Grid RowDefinitions="Auto,*" IsVisible="{Binding IsShowingTrackList}">
+        <Border Grid.Row="0"
+                IsVisible="{Binding IsShowingAlbumTrackList}"
+                Padding="24,20,24,16">
+          <StackPanel Spacing="12" HorizontalAlignment="Center">
+            <controls:AlbumArtView AlbumArt="{Binding CurrentAlbumHeader.AlbumArt}"
+                                    Width="160" Height="160" />
+            <StackPanel Spacing="2" HorizontalAlignment="Center">
+              <TextBlock Text="{Binding CurrentAlbumHeader.Name}"
+                         FontSize="20" FontWeight="Bold"
+                         TextAlignment="Center" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding CurrentAlbumHeader.Artist}"
+                         FontSize="15" Opacity="0.7"
+                         TextAlignment="Center" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding CurrentAlbumHeader.RepresentativeTrack.Year}"
+                         FontSize="13" Opacity="0.5"
+                         TextAlignment="Center"
+                         IsVisible="{Binding CurrentAlbumHeader.RepresentativeTrack.Year, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <ListBox Grid.Row="1"
+                  x:Name="TrackListBox"
+                  Background="Transparent"
+                  ItemsSource="{Binding Main.Rows}"
+                  ItemTemplate="{StaticResource TrackRowTemplate}"
+                  controls:RubberBandScroll.IsEnabled="True"
+                  SelectionMode="Single" />
+      </Grid>
 
       <!-- Search tab results: Artists/Albums/Songs sections, each hidden when
            empty - see MobileMainViewModel.RebuildSearchResults. A plain
@@ -610,5 +690,7 @@
                              IsVisible="{Binding IsShowingPeerApproval}" />
     <views:ConfirmPairServerView Grid.Row="0" Grid.RowSpan="4"
                                   IsVisible="{Binding IsShowingConfirmPairServer}" />
+    <views:ConfirmDeleteFileView Grid.Row="0" Grid.RowSpan="4"
+                                  IsVisible="{Binding IsShowingConfirmDeleteFile}" />
   </Grid>
 </UserControl>

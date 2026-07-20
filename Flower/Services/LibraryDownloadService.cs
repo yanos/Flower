@@ -66,6 +66,40 @@ public class LibraryDownloadService
         }
     }
 
+    // Reverts a track back to a placeholder (Path == null) and deletes the
+    // local file - the counterpart to DownloadAsync above, freeing the
+    // storage it used without forgetting the track. OriginDeviceFingerprint
+    // is left untouched either way, so if it's set to a peer that still has
+    // this exact track, the (now-placeholder) track can be re-downloaded or
+    // streamed on demand from there afterward, exactly like any other not-
+    // yet-downloaded synced track - if it's null (a purely local import with
+    // no known peer copy), it just becomes a permanently-undownloadable
+    // placeholder instead, which is why the mobile UI warns first for that
+    // case (see MobileMainViewModel.IsRecoverableDownload) rather than
+    // gating this outright - deleting a file that won't come back is still a
+    // choice the user should be able to make, just not by accident.
+    public async Task DeleteDownloadedFileAsync(Track track)
+    {
+        if (track.Path == null)
+            return;
+
+        try
+        {
+            File.Delete(track.Path);
+        }
+        catch (Exception ex)
+        {
+            // Still proceed to revert to a placeholder below even if the file
+            // is already gone/inaccessible - a failed delete of a file that
+            // doesn't exist anymore isn't a reason to leave Path pointing at it.
+            _logger.LogWarning(ex, "Failed to delete downloaded file for {Title} ({Path})", track.Title, track.Path);
+        }
+
+        track.Path = null;
+        await _libraryStore.SaveAsync(_library.Tracks);
+        _library.NotifyTrackChanged();
+    }
+
     // Same folders Importer/AndroidMediaStoreImporter already treat as this
     // platform's own music location (see Importer.ResolveMusicPath) - except on
     // Android, where a downloaded file deliberately lives in app-private storage
