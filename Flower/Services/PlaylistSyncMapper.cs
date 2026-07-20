@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -14,12 +13,12 @@ public static class PlaylistSyncMapper
     public static PlaylistSyncPlaylistDto ToDto(Playlist playlist) =>
         new(playlist.Id, playlist.Name, playlist.UpdatedAt, playlist.Tracks.Select(ToDto).ToList());
 
-    // Rounded, not truncated - must agree with Track.SyncKey's own rounding
-    // (see its doc comment) or a duration near a whole-second boundary can
-    // match locally but silently fail to match once round-tripped through
-    // this DTO to a peer.
+    // Track.RoundedSeconds, not a separate inline Math.Round - must agree with
+    // Track.SyncKey's own rounding (see its doc comment) or a duration near a
+    // whole-second boundary can match locally but silently fail to match once
+    // round-tripped through this DTO to a peer.
     public static PlaylistSyncTrackDto ToDto(Track track) =>
-        new(track.Title, track.Artists, track.Album, (int)Math.Round(track.Duration.TotalSeconds));
+        new(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration));
 
     public static PlaylistSyncManifestDto ToManifest(string deviceFingerprint, IEnumerable<Playlist> playlists) =>
         new(deviceFingerprint, playlists.Select(ToDto).ToList());

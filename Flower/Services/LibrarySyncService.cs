@@ -110,14 +110,15 @@ public class LibrarySyncService
 
         _logger.LogInformation("Library sync with {Alias}: fetched {SongCount} song(s) from their catalog", device.Alias, songs.Count);
 
-        if (placeholders.Count == 0)
-            return new LibrarySyncResult(true, 0, 0);
-
+        // No early-return for an empty catalog: a peer reporting zero songs
+        // (its whole library emptied, or a fresh pairing to one with nothing
+        // yet) must still prune every not-yet-downloaded placeholder this
+        // device previously learned from it - see Library.MergeSyncedTracks.
         var beforeCount = _library.Tracks.Count;
-        _library.MergeSyncedTracks(placeholders);
-        var addedCount = _library.Tracks.Count - beforeCount;
-        _logger.LogInformation("Library sync with {Alias}: merged catalog, {AddedCount} new placeholder track(s) added ({TotalBefore} -> {TotalAfter})",
-            device.Alias, addedCount, beforeCount, _library.Tracks.Count);
+        var removedCount = _library.MergeSyncedTracks(device.Fingerprint, placeholders);
+        var addedCount = _library.Tracks.Count - beforeCount + removedCount;
+        _logger.LogInformation("Library sync with {Alias}: merged catalog, {AddedCount} new placeholder(s) added, {RemovedCount} stale placeholder(s) pruned ({TotalBefore} -> {TotalAfter})",
+            device.Alias, addedCount, removedCount, beforeCount, _library.Tracks.Count);
 
         // Without this, a merge only lives in memory - a killed/relaunched app
         // (mobile has no always-on background process) would lose every

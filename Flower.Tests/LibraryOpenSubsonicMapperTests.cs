@@ -138,6 +138,32 @@ public class LibraryOpenSubsonicMapperTests
         Assert.Equal(albumId, album.Song[0].AlbumId);
     }
 
+    // Confirmed on a real device: a peer that fetches this Duration field
+    // rebuilds a placeholder Track from it (TimeSpan.FromSeconds(Duration))
+    // and later recomputes its own Track.SyncKey from that placeholder to
+    // request a stream/download - which also rounds via Math.Round. If this
+    // mapper truncated instead of rounding, a track whose real duration's
+    // fractional part is >= .5s would report a Duration one second lower than
+    // SyncKey's own rounding, so the peer's later request would carry a
+    // SyncKey this device could never match against its own track (a 404,
+    // "no matching track for that id", indistinguishable from the peer
+    // simply being unreachable without the logging HandleStreamAsync now has).
+    [Fact]
+    public void ToChild_Duration_rounds_to_match_SyncKey_rather_than_truncating()
+    {
+        var track = new Track
+        {
+            Title = "Mata Zyklek", Artists = "Angine de Poitrine", Album = "Vol.II",
+            Duration = TimeSpan.FromSeconds(369.888), Path = "/music/Mata Zyklek.mp3",
+        };
+        Assert.EndsWith("|370", track.SyncKey); // Sanity check on the premise itself.
+
+        var albumId = LibraryOpenSubsonicMapper.AlbumId("Vol.II", "Angine de Poitrine");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, albumId, "self-1");
+
+        Assert.Equal(370, album!.Song![0].Duration);
+    }
+
     [Fact]
     public void ToChild_Suffix_is_the_local_file_extension_without_a_leading_dot()
     {

@@ -224,7 +224,14 @@ public class NetworkDiscoveryService : IDisposable
             while (true)
             {
                 await Task.Delay(AliasPollInterval, token);
-                var devices = _knownDevices.Values.ToList();
+                // Excludes devices currently stuck on a link-local address -
+                // see ResolveAliasAsync's own comment on why polling those on
+                // a fixed timer is pointless noise rather than useful retry:
+                // a link-local endpoint doesn't get more reachable by trying
+                // it again a few seconds later, only by a fresh mDNS
+                // announcement (handled by OnInstanceFound instead) actually
+                // replacing it with something routable.
+                var devices = _knownDevices.Values.Where(d => !d.EndPoint.Address.IsIPv6LinkLocal).ToList();
                 _logger.LogDebug("Polling /info for {Count} known device(s)", devices.Count);
                 foreach (var device in devices)
                     _ = ResolveAliasAsync(device);
@@ -277,11 +284,24 @@ public class NetworkDiscoveryService : IDisposable
         // the same instance name; a link-local address is still recorded if
         // it's the only thing seen so far, and gets replaced the moment a
         // routable one shows up.
+        //
+        // Also skips a *repeat* link-local announcement for an instance
+        // already recorded under that same link-local address - confirmed on
+        // a real device: a burst of several identical link-local
+        // announcements for the same peer can arrive within well under a
+        // second (multiple raw mDNS packets for one browse), and without
+        // this each one built a fresh DiscoveredDevice and kicked off its
+        // own concurrent ResolveAliasAsync call, so 3 (already-doomed)
+        // resolve attempts could fail back-to-back fast enough to trip
+        // MaxConsecutiveResolveFailures and prune the peer within under a
+        // second of first seeing it - which then let the very next
+        // (also-link-local) announcement repeat the entire cycle, over and
+        // over, as long as nothing routable happened to arrive in between.
         if (_knownDevices.TryGetValue(found.InstanceName, out var existing) &&
-            !existing.EndPoint.Address.IsIPv6LinkLocal &&
-            found.EndPoint.Address.IsIPv6LinkLocal)
+            found.EndPoint.Address.IsIPv6LinkLocal &&
+            (!existing.EndPoint.Address.IsIPv6LinkLocal || existing.EndPoint.Address.Equals(found.EndPoint.Address)))
         {
-            _logger.LogDebug("Ignoring link-local re-announcement for {InstanceName} at {EndPoint} - already have a routable address {Existing}",
+            _logger.LogDebug("Ignoring link-local (re-)announcement for {InstanceName} at {EndPoint} - already have {Existing}",
                 found.InstanceName, found.EndPoint, existing.EndPoint);
             return;
         }
@@ -349,6 +369,17 @@ public class NetworkDiscoveryService : IDisposable
             // which case treat it the same as an mDNS goodbye - see
             // MaxConsecutiveResolveFailures's own doc comment.
             _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.EndPoint);
+
+            // A link-local address failing doesn't mean the peer is gone -
+            // see OnInstanceFound's own comment - it just means this
+            // particular address was never going to work, and pruning the
+            // peer over it would only force the exact same discover/fail/
+            // prune cycle to repeat the next time it re-announces the same
+            // way. Left un-pruned, it just waits quietly for a routable
+            // address to actually replace it (OnInstanceFound already
+            // handles that half).
+            if (device.EndPoint.Address.IsIPv6LinkLocal)
+                return;
 
             var failures = _consecutiveResolveFailures.AddOrUpdate(device.InstanceName, 1, (_, count) => count + 1);
             if (failures >= MaxConsecutiveResolveFailures && _knownDevices.TryRemove(device.InstanceName, out _))

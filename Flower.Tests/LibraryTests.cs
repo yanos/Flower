@@ -254,7 +254,7 @@ public class LibraryTests
         var library = new Library(new List<Track> { new Track { Title = "Local", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), Path = "/music/local.mp3" } });
         var remote = new Track { Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200), OriginDeviceFingerprint = "peer-1" };
 
-        library.MergeSyncedTracks(new List<Track> { remote });
+        library.MergeSyncedTracks("peer-1", new List<Track> { remote });
 
         Assert.Equal(2, library.Tracks.Count);
         var inserted = library.Tracks.Single(t => t.Title == "Remote");
@@ -269,7 +269,7 @@ public class LibraryTests
         var library = new Library(new List<Track> { placeholder });
         var remoteAgain = new Track { Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200), OriginDeviceFingerprint = "new-peer" };
 
-        library.MergeSyncedTracks(new List<Track> { remoteAgain });
+        library.MergeSyncedTracks("new-peer", new List<Track> { remoteAgain });
 
         Assert.Single(library.Tracks);
         Assert.Equal("new-peer", library.Tracks.Single().OriginDeviceFingerprint);
@@ -282,7 +282,7 @@ public class LibraryTests
         var library = new Library(new List<Track> { placeholder });
         var remoteAgain = new Track { Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200), OriginDeviceFingerprint = "peer-1", OriginAlbumArtHash = "new-hash" };
 
-        library.MergeSyncedTracks(new List<Track> { remoteAgain });
+        library.MergeSyncedTracks("peer-1", new List<Track> { remoteAgain });
 
         Assert.Equal("new-hash", library.Tracks.Single().OriginAlbumArtHash);
     }
@@ -300,7 +300,7 @@ public class LibraryTests
         var library = new Library(new List<Track> { local });
         var remote = new Track { Title = "Same Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), OriginDeviceFingerprint = "peer-1" };
 
-        library.MergeSyncedTracks(new List<Track> { remote });
+        library.MergeSyncedTracks("peer-1", new List<Track> { remote });
 
         Assert.Single(library.Tracks);
         Assert.Same(local, library.Tracks.Single());
@@ -324,7 +324,7 @@ public class LibraryTests
             RemotePlayCounts = new Dictionary<string, int> { ["peer-1"] = 6 },
         };
 
-        library.MergeSyncedTracks(new List<Track> { remote });
+        library.MergeSyncedTracks("peer-1", new List<Track> { remote });
 
         var merged = library.Tracks.Single();
         Assert.Same(local, merged);
@@ -354,7 +354,7 @@ public class LibraryTests
             RemotePlayCounts = new Dictionary<string, int> { ["peer-1"] = 7, ["peer-2"] = 8 },
         };
 
-        library.MergeSyncedTracks(new List<Track> { remoteAgain });
+        library.MergeSyncedTracks("peer-1", new List<Track> { remoteAgain });
 
         var merged = library.Tracks.Single();
         Assert.Equal(7, merged.RemotePlayCounts["peer-1"]);
@@ -362,15 +362,65 @@ public class LibraryTests
     }
 
     [Fact]
-    public void MergeSyncedTracks_never_removes_a_track_the_peer_did_not_mention()
+    public void MergeSyncedTracks_never_removes_a_track_backed_by_a_real_file()
     {
+        // Doubly safe here: Path != null exempts it from pruning outright, and
+        // it has no OriginDeviceFingerprint at all (never synced), so it
+        // wouldn't match "peer-1" even if it were a placeholder.
         var local = new Track { Title = "Local Only", Path = "/music/local.mp3" };
         var library = new Library(new List<Track> { local });
 
-        library.MergeSyncedTracks(new List<Track>());
+        library.MergeSyncedTracks("peer-1", new List<Track>());
 
         Assert.Single(library.Tracks);
         Assert.Same(local, library.Tracks.Single());
+    }
+
+    [Fact]
+    public void MergeSyncedTracks_prunes_a_placeholder_the_syncing_peer_no_longer_has()
+    {
+        var stale = new Track { Title = "Gone Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), OriginDeviceFingerprint = "peer-1" };
+        var library = new Library(new List<Track> { stale });
+
+        var removedCount = library.MergeSyncedTracks("peer-1", new List<Track>());
+
+        Assert.Empty(library.Tracks);
+        Assert.Equal(1, removedCount);
+    }
+
+    [Fact]
+    public void MergeSyncedTracks_does_not_prune_a_placeholder_from_a_different_peer()
+    {
+        // "peer-2" is being synced with here, not "peer-1" - a placeholder
+        // last known to come from some other, currently-unrelated peer (e.g.
+        // left over from before a re-pair) must survive this sync untouched.
+        var fromOtherPeer = new Track { Title = "Elsewhere Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), OriginDeviceFingerprint = "peer-1" };
+        var library = new Library(new List<Track> { fromOtherPeer });
+
+        var removedCount = library.MergeSyncedTracks("peer-2", new List<Track>());
+
+        Assert.Single(library.Tracks);
+        Assert.Equal(0, removedCount);
+    }
+
+    [Fact]
+    public void MergeSyncedTracks_does_not_prune_a_real_file_the_syncing_peer_no_longer_mentions()
+    {
+        // The core "only prune what has no real file" rule - a downloaded (or
+        // locally-imported) track is never deleted just because its origin
+        // server's manifest stopped mentioning it.
+        var downloaded = new Track
+        {
+            Title = "Downloaded Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100),
+            Path = "/music/downloaded.mp3", OriginDeviceFingerprint = "peer-1",
+        };
+        var library = new Library(new List<Track> { downloaded });
+
+        var removedCount = library.MergeSyncedTracks("peer-1", new List<Track>());
+
+        Assert.Single(library.Tracks);
+        Assert.Same(downloaded, library.Tracks.Single());
+        Assert.Equal(0, removedCount);
     }
 
     [Fact]

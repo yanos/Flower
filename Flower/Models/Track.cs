@@ -148,13 +148,30 @@ namespace Flower.Models
         // every possible boundary case, but it fixes the one actually observed and
         // narrows the remaining risk window to values within ~5ms of an exact .5s.
         [JsonIgnore]
-        public string SyncKey => BuildSyncKey(Title, Artists, Album, (int)Math.Round(Duration.TotalSeconds));
+        public string SyncKey => BuildSyncKey(Title, Artists, Album, RoundedSeconds(Duration));
 
         // Shared with PlaylistSyncPlanner, which builds the same key from the wire
         // DTO (PlaylistSyncTrackDto) on the other side of a sync - both must
         // normalize identically or every cross-device track match silently fails.
         public static string BuildSyncKey(string? title, string? artists, string? album, int durationSeconds) =>
             $"{Normalize(title)}|{Normalize(artists)}|{Normalize(album)}|{durationSeconds}";
+
+        // The ONE place "seconds, rounded to the nearest whole one" gets computed -
+        // every other spot that needs a duration as a bare int for identity
+        // purposes (LibraryOpenSubsonicMapper.ToChild's Duration field,
+        // PlaylistSyncMapper.ToDto, ITunesPlayCountImporter/ITunesDateAddedImporter)
+        // calls this rather than re-deriving Math.Round(...) inline - a second,
+        // independently-written copy of the same rounding rule is exactly how a
+        // previous version of ToChild's Duration field ended up truncating
+        // instead of rounding, silently mismatching this property for any
+        // duration whose fractional part was >= .5s (confirmed on a real device:
+        // a 369.888s track advertised as Duration: 369 while this property
+        // correctly said 370, so a peer's later stream request carried a SyncKey
+        // this device could never match against its own track). The double
+        // overload exists because not every caller starts from a TimeSpan -
+        // the iTunes importers parse milliseconds straight out of a plist.
+        public static int RoundedSeconds(TimeSpan duration) => RoundedSeconds(duration.TotalSeconds);
+        public static int RoundedSeconds(double totalSeconds) => (int)Math.Round(totalSeconds);
 
         // Fallback identity for ITunesDateAddedImporter/ITunesPlayCountImporter,
         // used only when BuildSyncKey finds no match and this resolves to exactly
