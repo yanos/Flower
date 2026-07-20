@@ -231,22 +231,30 @@ public class SyncHttpServer : IDisposable
     private static bool IsBulkSyncPath(string path) =>
         path.StartsWith("/api/flower/v1/", StringComparison.Ordinal);
 
+    // Header if present, else the same name as a query param - see
+    // OpenSubsonicClient.BuildUrl's own doc comment: a URL handed to
+    // something else to fetch (LibVLC playing GetStreamUrl directly) can't
+    // carry custom headers, so the identity travels as a query param there
+    // instead. Header wins when both are somehow present.
+    private static string? GetIdentityValue(HttpListenerContext context, string name) =>
+        context.Request.Headers[name] is { Length: > 0 } header ? header : context.Request.QueryString[name];
+
     private static bool IsCallerServer(HttpListenerContext context) =>
-        string.Equals(context.Request.Headers["X-Flower-Role"], "server", StringComparison.OrdinalIgnoreCase);
+        string.Equals(GetIdentityValue(context, "X-Flower-Role"), "server", StringComparison.OrdinalIgnoreCase);
 
     private async Task<bool> AuthorizeAsync(HttpListenerContext context)
     {
-        var fingerprint = context.Request.Headers["X-Flower-Fingerprint"];
+        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
         if (string.IsNullOrEmpty(fingerprint))
         {
-            _logger.LogWarning("Denying request with no X-Flower-Fingerprint header");
+            _logger.LogWarning("Denying request with no X-Flower-Fingerprint header or query param");
             return false; // Can't evaluate trust without a claimed identity - deny outright.
         }
 
         if (_trustedPeerStore.IsTrusted(fingerprint))
             return true;
 
-        var alias = context.Request.Headers["X-Flower-Alias"];
+        var alias = GetIdentityValue(context, "X-Flower-Alias");
         if (string.IsNullOrEmpty(alias))
             alias = fingerprint;
 

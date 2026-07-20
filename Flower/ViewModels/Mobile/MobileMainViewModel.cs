@@ -517,11 +517,25 @@ public class MobileMainViewModel : ViewModelBase
             // (MainView.axaml.cs calls Play, not PlayOrPause, on Enter/double-click).
             // PlayOrPause ignores its track argument whenever something is already
             // playing, so reusing it here paused instead of switching tracks.
-            // Path == null means not yet downloaded (see SYNC-PLAN.md Phase 3) -
-            // tapping such a row does nothing in v1; only the row's own download
-            // icon (DownloadTrackCommand) is actionable for it.
-            if (track is { Path: not null })
+            if (track == null)
+                return;
+            if (track.Path != null)
+            {
                 PlaylistControl.Play(track);
+                return;
+            }
+
+            // Path == null means not yet downloaded (see SYNC-PLAN.md Phase 3) -
+            // stream it on demand from whichever peer currently holds it rather
+            // than requiring an explicit download first (still available via the
+            // row's own download icon/DownloadTrackCommand, for offline listening
+            // later). A transient copy, not the placeholder itself - Path here is
+            // a stream URL, not a real local file, and must never be persisted
+            // back into Library.Tracks (see VlcAudioManager.Play's "://" check,
+            // which already knows how to play any URL-shaped Path).
+            var streamUrl = Main.GetStreamUrl(track);
+            if (streamUrl != null)
+                PlaylistControl.Play(track with { Path = streamUrl });
         });
         ToggleMiniPlayerCommand = new RelayCommand(() =>
         {
