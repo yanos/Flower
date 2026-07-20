@@ -224,7 +224,7 @@
            virtualizing panel does - it's a non-virtualizing panel (StackPanel/
            WrapPanel) inside a ScrollViewer that would defeat virtualization by
            forcing an unconstrained measure pass. -->
-      <ScrollViewer IsVisible="{Binding IsShowingRecentlyAddedAlbums}">
+      <ScrollViewer IsVisible="{Binding IsShowingRecentlyAddedAlbums}" controls:RubberBandScroll.IsEnabled="True">
         <ItemsControl ItemsSource="{Binding RecentlyAddedAlbumRows}"
                       Margin="12">
           <ItemsControl.ItemsPanel>
@@ -267,7 +267,7 @@
            SelectAlbumOrArtistCommand. -->
       <!-- Wrapped in an explicit ScrollViewer for the same reason as Recently
            Added's grid above - see that comment. -->
-      <ScrollViewer IsVisible="{Binding IsShowingAlbumGrid}">
+      <ScrollViewer IsVisible="{Binding IsShowingAlbumGrid}" controls:RubberBandScroll.IsEnabled="True">
         <ItemsControl ItemsSource="{Binding AlbumGridRows}"
                       Margin="12">
           <ItemsControl.ItemsPanel>
@@ -307,6 +307,7 @@
       <ListBox Background="Transparent"
                 ItemsSource="{Binding Main.SubListItems}"
                 IsVisible="{Binding IsShowingArtistPicker}"
+                controls:RubberBandScroll.IsEnabled="True"
                 SelectionMode="Single">
         <ListBox.ItemTemplate>
           <DataTemplate>
@@ -323,7 +324,7 @@
            tile-grid presentation/virtualization as Recently Added/Albums (see
            that first ScrollViewer's comment); tapping a tile drills into that
            album's tracks via SelectArtistAlbumCommand. -->
-      <ScrollViewer IsVisible="{Binding IsShowingArtistAlbumGrid}">
+      <ScrollViewer IsVisible="{Binding IsShowingArtistAlbumGrid}" controls:RubberBandScroll.IsEnabled="True">
         <ItemsControl ItemsSource="{Binding ArtistAlbumGridRows}"
                       Margin="12">
           <ItemsControl.ItemsPanel>
@@ -363,6 +364,7 @@
       <ListBox Background="Transparent"
                 ItemsSource="{Binding PlaylistPickerItems}"
                 IsVisible="{Binding IsShowingPlaylistPicker}"
+                controls:RubberBandScroll.IsEnabled="True"
                 SelectionMode="Single">
         <ListBox.ItemTemplate>
           <DataTemplate>
@@ -384,6 +386,7 @@
                 ItemsSource="{Binding Main.Rows}"
                 IsVisible="{Binding IsShowingTrackList}"
                 ItemTemplate="{StaticResource TrackRowTemplate}"
+                controls:RubberBandScroll.IsEnabled="True"
                 SelectionMode="Single" />
 
       <!-- Search tab results: Artists/Albums/Songs sections, each hidden when
@@ -391,7 +394,7 @@
            ScrollViewer+StackPanel rather than TrackListBox's virtualized
            ListBox - search results are bounded by the query, not the whole
            library, so virtualization isn't worth the extra complexity here. -->
-      <ScrollViewer IsVisible="{Binding IsShowingSearchResults}">
+      <ScrollViewer IsVisible="{Binding IsShowingSearchResults}" controls:RubberBandScroll.IsEnabled="True">
         <StackPanel>
           <StackPanel IsVisible="{Binding HasSearchArtistResults}">
             <TextBlock Text="Artists" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />

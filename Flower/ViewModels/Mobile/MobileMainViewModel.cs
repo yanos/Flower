@@ -110,6 +110,50 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand CancelPairServerCommand { get; }
     public ICommand ForceSyncCommand { get; }
 
+    // Real back-history: every "navigate forward" action (a tab-bar tap, a
+    // picker tile tap, a drill-in) pushes a closure here that restores
+    // exactly the state it was called from, before applying its own change.
+    // GoBack/SwipeBack just pop and replay the most recent one - unlike the
+    // old algorithmic unwind (SelectedTab-- / clear _hasDrilledIn), this
+    // correctly retraces compound jumps too, e.g. tapping an artist search
+    // result switches tab AND drills in as one step, and back undoes both at
+    // once, landing back on Search - the old approach had no way to know
+    // "before this jump, I was on a completely different tab."
+    private readonly System.Collections.Generic.Stack<Action> _navigationHistory = new();
+
+    private void PushHistory()
+    {
+        var tab = _selectedTab;
+        var hasDrilledIn = _hasDrilledIn;
+        var artistName = _selectedArtistName;
+        var drilledIntoArtistAlbum = _hasDrilledIntoArtistAlbum;
+        var sidebarItem = Main.SelectedSidebarItem;
+        var subItem = Main.SelectedSubItem;
+        var filterText = Main.FilterText;
+
+        _navigationHistory.Push(() =>
+        {
+            _selectedTab = tab;
+            _hasDrilledIn = hasDrilledIn;
+            _selectedArtistName = artistName;
+            _hasDrilledIntoArtistAlbum = drilledIntoArtistAlbum;
+            Main.SelectedSidebarItem = sidebarItem;
+            Main.SelectedSubItem = subItem;
+            if (artistName != null)
+                RebuildArtistAlbumGrid();
+            OnPropertyChanged(nameof(SelectedTab));
+            OnPropertyChanged(nameof(CanGoBack));
+            RaiseNavigationChanged();
+            // After RaiseNavigationChanged (which would otherwise treat this
+            // as "leaving Search" and clear it, per SetSelectedTabCore's own
+            // identical-looking guard) - restoring the exact query the user
+            // had typed, not just the tab, is what makes landing back on
+            // Search actually useful rather than an empty prompt.
+            if (tab == MobileTab.Search)
+                Main.FilterText = filterText;
+        });
+    }
+
     private MobileTab _selectedTab = MobileTab.RecentlyAdded;
     public MobileTab SelectedTab
     {
@@ -118,26 +162,36 @@ public class MobileMainViewModel : ViewModelBase
         {
             if (_selectedTab == value)
                 return;
-            var wasSearch = _selectedTab == MobileTab.Search;
-            _selectedTab = value;
-            _hasDrilledIn = false;
-            _selectedArtistName = null;
-            _hasDrilledIntoArtistAlbum = false;
-            ApplyTabSelection();
-            OnPropertyChanged();
-            // Fresh start next time the Search tab is opened, rather than
-            // showing whatever was last typed - mirrors IsSearchVisible's own
-            // clear-on-hide behavior for the Songs tab's toggleable box. Done
-            // AFTER _selectedTab is already updated above, not before: setting
-            // Main.FilterText fires Main.PropertyChanged synchronously (see the
-            // constructor's subscription), and that handler's own
-            // "SelectedTab == MobileTab.Search" check would otherwise still
-            // read the OLD tab mid-assignment and wrongly reschedule a search
-            // results rebuild for a tab we've already left.
-            if (wasSearch)
-                Main.FilterText = null;
-            RaiseNavigationChanged();
+            PushHistory();
+            SetSelectedTabCore(value);
         }
+    }
+
+    // The actual state mutation, split out from the public setter above so
+    // compound jumps (SelectSearchAlbumCommand/SelectSearchArtistCommand)
+    // can push exactly one history entry for the whole jump rather than one
+    // for the tab switch and a second for the drill-in.
+    private void SetSelectedTabCore(MobileTab value)
+    {
+        var wasSearch = _selectedTab == MobileTab.Search;
+        _selectedTab = value;
+        _hasDrilledIn = false;
+        _selectedArtistName = null;
+        _hasDrilledIntoArtistAlbum = false;
+        ApplyTabSelection();
+        OnPropertyChanged();
+        // Fresh start next time the Search tab is opened, rather than
+        // showing whatever was last typed - mirrors IsSearchVisible's own
+        // clear-on-hide behavior for the Songs tab's toggleable box. Done
+        // AFTER _selectedTab is already updated above, not before: setting
+        // Main.FilterText fires Main.PropertyChanged synchronously (see the
+        // constructor's subscription), and that handler's own
+        // "SelectedTab == MobileTab.Search" check would otherwise still
+        // read the OLD tab mid-assignment and wrongly reschedule a search
+        // results rebuild for a tab we've already left.
+        if (wasSearch)
+            Main.FilterText = null;
+        RaiseNavigationChanged();
     }
 
     // Whether the user has tapped into a specific album/artist/playlist from the
@@ -178,7 +232,7 @@ public class MobileMainViewModel : ViewModelBase
     public bool IsShowingTrackList =>
         !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingArtistAlbumGrid
         && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums && SelectedTab != MobileTab.Search;
-    public bool CanGoBack => _hasDrilledIn;
+    public bool CanGoBack => _navigationHistory.Count > 0;
 
     // The Search tab's box is always visible (no toggle needed, unlike the
     // Songs tab's - see CanSearch), so it and the screen title are mutually
@@ -497,15 +551,26 @@ public class MobileMainViewModel : ViewModelBase
         // see ApplyTabSelection) then drill in exactly like that tab's own
         // picker would - same SelectAlbumOrArtist/SelectArtist a tap on the
         // Albums/Artists tab itself uses, just reached from Search instead.
+        // One history entry for the whole "search -> album/artist" jump (see
+        // PushHistory's own doc comment) - SetSelectedTabCore/*Core below are
+        // the raw mutations SelectedTab's setter/SelectAlbumOrArtist/SelectArtist
+        // themselves use, deliberately skipped here so this doesn't also push
+        // a second entry just for the tab switch.
         SelectSearchAlbumCommand = new RelayCommand<string>(name =>
         {
-            SelectedTab = MobileTab.Albums;
-            SelectAlbumOrArtist(name);
+            if (name == null)
+                return;
+            PushHistory();
+            SetSelectedTabCore(MobileTab.Albums);
+            SelectAlbumOrArtistCore(name);
         });
         SelectSearchArtistCommand = new RelayCommand<string>(name =>
         {
-            SelectedTab = MobileTab.Artists;
-            SelectArtist(name);
+            if (name == null)
+                return;
+            PushHistory();
+            SetSelectedTabCore(MobileTab.Artists);
+            SelectArtistCore(name);
         });
         SelectArtistAlbumCommand = new RelayCommand<string>(SelectArtistAlbum);
         SelectRecentlyAddedAlbumCommand = new RelayCommand<string>(SelectRecentlyAddedAlbum);
@@ -835,6 +900,12 @@ public class MobileMainViewModel : ViewModelBase
     {
         if (name == null)
             return;
+        PushHistory();
+        SelectAlbumOrArtistCore(name);
+    }
+
+    private void SelectAlbumOrArtistCore(string name)
+    {
         Main.SelectedSubItem = name;
         _hasDrilledIn = true;
         RaiseNavigationChanged();
@@ -849,6 +920,12 @@ public class MobileMainViewModel : ViewModelBase
     {
         if (name == null)
             return;
+        PushHistory();
+        SelectArtistCore(name);
+    }
+
+    private void SelectArtistCore(string name)
+    {
         _selectedArtistName = name;
         _hasDrilledIntoArtistAlbum = false;
         _hasDrilledIn = true;
@@ -863,6 +940,7 @@ public class MobileMainViewModel : ViewModelBase
     {
         if (albumName == null)
             return;
+        PushHistory();
         Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
         Main.SelectedSubItem = albumName;
         _hasDrilledIntoArtistAlbum = true;
@@ -880,6 +958,7 @@ public class MobileMainViewModel : ViewModelBase
     {
         if (albumName == null)
             return;
+        PushHistory();
         Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
         Main.SelectedSubItem = albumName;
         _hasDrilledIn = true;
@@ -890,6 +969,7 @@ public class MobileMainViewModel : ViewModelBase
     {
         if (item == null)
             return;
+        PushHistory();
         Main.SelectedSidebarItem = item;
         _hasDrilledIn = true;
         RaiseNavigationChanged();
@@ -897,30 +977,42 @@ public class MobileMainViewModel : ViewModelBase
 
     private void GoBack()
     {
-        // Artists has two levels to unwind one at a time, unlike everything
-        // else's single level - see _selectedArtistName/_hasDrilledIntoArtistAlbum.
-        if (SelectedTab == MobileTab.Artists && _hasDrilledIntoArtistAlbum)
-        {
-            // Undo SelectArtistAlbum's temporary re-point of SelectedSidebarItem
-            // at Albums, back to the artist's own album grid - _selectedArtistName
-            // itself is untouched, so ArtistAlbumGridRows is still exactly as left.
-            _hasDrilledIntoArtistAlbum = false;
-            Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Artists);
-            RaiseNavigationChanged();
+        if (_navigationHistory.Count == 0)
             return;
-        }
-        if (SelectedTab == MobileTab.Artists && _selectedArtistName != null)
-        {
-            _selectedArtistName = null;
-            _hasDrilledIn = false;
-            ApplyTabSelection();
-            RaiseNavigationChanged();
-            return;
-        }
+        _navigationHistory.Pop()();
+    }
 
-        _hasDrilledIn = false;
-        ApplyTabSelection();
-        RaiseNavigationChanged();
+    // First and last MobileTab in bottom-bar order (see the enum's own
+    // declaration) - the clamp bounds for swipe paging below. Named constants
+    // rather than Enum.GetValues<MobileTab>() reflection, which can be trimmed
+    // away under iOS AOT and silently mis-size the range.
+    private const MobileTab FirstTab = MobileTab.RecentlyAdded;
+    private const MobileTab LastTab = MobileTab.Search;
+
+    // Horizontal swipe-to-navigate (see MobileMainView.axaml.cs's raw pointer
+    // gesture detection on ContentGrid) - a swipe right means "go back" in
+    // whichever sense is locally relevant: unwind a drill-down if there is
+    // one (same as the chevron button), else page to the previous tab in the
+    // bottom bar's left-to-right order (MobileTab's own declaration order).
+    // A swipe left is symmetrically "forward" - always the next tab, since
+    // there's no drill-down-forward to redo. Clamped, not wrapping, at
+    // either end of the tab bar - a swipe past Recently Added or past Search
+    // is just a no-op rather than an unexpected jump to the other end.
+    public void SwipeBack()
+    {
+        if (CanGoBack)
+        {
+            GoBack();
+            return;
+        }
+        if (SelectedTab > FirstTab)
+            SelectedTab = SelectedTab - 1;
+    }
+
+    public void SwipeForward()
+    {
+        if (SelectedTab < LastTab)
+            SelectedTab = SelectedTab + 1;
     }
 
     private void RaiseNavigationChanged()
