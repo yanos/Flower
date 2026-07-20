@@ -164,10 +164,23 @@
                  VerticalAlignment="Center"
                  Margin="12,0,0,0" />
 
+      <!-- Songs tab's own toggleable box, over Main.FilterText - and the
+           Search tab's own always-visible box, over SearchQuery, are
+           deliberately two separate controls bound to two separate fields
+           (see MobileMainViewModel.SearchQuery's own doc comment) so a query
+           typed in one can never leak into the other. -->
       <TextBox Grid.Column="1"
                 x:Name="SearchBox"
                 Text="{Binding Main.FilterText}"
-                IsVisible="{Binding IsShowingSearchBox}"
+                IsVisible="{Binding IsShowingSongsSearchBox}"
+                Watermark="Search your library"
+                VerticalAlignment="Center"
+                Margin="12,0,0,0" />
+
+      <TextBox Grid.Column="1"
+                x:Name="SearchTabBox"
+                Text="{Binding SearchQuery}"
+                IsVisible="{Binding IsShowingSearchTabBox}"
                 Watermark="Search your library"
                 VerticalAlignment="Center"
                 Margin="12,0,0,0" />
@@ -571,6 +584,7 @@
       <Button Grid.Column="5" Classes="tab"
               Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Search}"
               Command="{Binding SelectTabCommand}" CommandParameter="Search"
+              Click="SearchTab_Click"
               Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <materialIcons:MaterialIcon Kind="Magnify" Width="22" Height="22" HorizontalAlignment="Center" />
