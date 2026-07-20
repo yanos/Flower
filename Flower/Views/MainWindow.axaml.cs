@@ -3,8 +3,12 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
+
+using Material.Icons;
 
 using Flower.Controls;
 using Flower.Logging;
@@ -119,12 +123,16 @@ public partial class MainWindow : Window
             var windowMenu = NativeMenu.GetMenu(this);
             if (windowMenu != null)
             {
-                var aboutItem = new NativeMenuItem("About Flower");
+                var aboutItem = new NativeMenuItem("About Flower")
+                {
+                    Icon = CreateMenuIcon(MaterialIconKind.InformationOutline),
+                };
                 aboutItem.Click += (_, _) => new AboutWindow().Show();
 
                 var settingsMenuItem = new NativeMenuItem("Settings…")
                 {
                     Gesture = new KeyGesture(Key.OemComma, PlatformShortcuts.Primary),
+                    Icon = CreateMenuIcon(MaterialIconKind.CogOutline),
                 };
                 settingsMenuItem.Click += (_, _) =>
                     Ioc.Default.GetRequiredService<ViewModels.MainViewModel>().OpenSettingsCommand?.Execute(null);
@@ -134,8 +142,41 @@ public partial class MainWindow : Window
                 flowerMenu.Menu.Items.Add(new NativeMenuItemSeparator());
                 flowerMenu.Menu.Items.Add(settingsMenuItem);
                 windowMenu.Items.Insert(0, flowerMenu);
+
+                // Menu-item icons are a Windows/Linux convention (macOS menus
+                // stay text-only, so this lives in the non-macOS branch).
+                // Repeat/Shuffle get none: they're CheckBox toggles, and the
+                // managed menu renders the checkmark in the icon slot.
+                void SetIcon(string header, MaterialIconKind kind)
+                {
+                    var item = topLevelItems.FirstOrDefault(i => i.Header == header);
+                    if (item != null)
+                        item.Icon = CreateMenuIcon(kind);
+                }
+
+                SetIcon("Play/Pause",      MaterialIconKind.PlayPause);
+                SetIcon("Next Track",      MaterialIconKind.SkipNext);
+                SetIcon("Previous Track",  MaterialIconKind.SkipPrevious);
+                SetIcon("New Playlist",    MaterialIconKind.PlaylistPlus);
+                SetIcon("Rename Playlist", MaterialIconKind.PlaylistEdit);
+                SetIcon("Delete Playlist", MaterialIconKind.PlaylistRemove);
+                SetIcon("Select Columns…", MaterialIconKind.ViewColumn);
+                SetIcon("Zoom",            MaterialIconKind.WindowMaximize);
             }
         }
+    }
+
+    // NativeMenuItem.Icon wants a Bitmap rather than a control, so rasterize
+    // the Material icon's 24x24 path geometry into a 16x16 bitmap (the
+    // context draws in raw pixels, hence the plain 96-DPI 1:1 setup).
+    private static RenderTargetBitmap CreateMenuIcon(MaterialIconKind kind)
+    {
+        var geometry = Geometry.Parse(MaterialIconDataProvider.GetData(kind));
+        var bitmap = new RenderTargetBitmap(new PixelSize(16, 16), new Vector(96, 96));
+        using var context = bitmap.CreateDrawingContext();
+        using (context.PushTransform(Matrix.CreateScale(16.0 / 24.0, 16.0 / 24.0)))
+            context.DrawGeometry(Brushes.Black, null, geometry);
+        return bitmap;
     }
 
     private void RestoreWindowGeometry()
