@@ -82,7 +82,7 @@
                     Content="Sync date added from iTunes/Music.app"
                     Margin="0,4,0,0"
                     IsCheckedChanged="SyncDateAddedCheckBox_IsCheckedChanged"/>
-
+          
           <TextBlock Grid.Row="2"
                      x:Name="ITunesLibraryPathText"
                      Margin="20,2,0,0"
