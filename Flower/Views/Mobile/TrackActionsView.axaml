@@ -54,6 +54,21 @@
           </StackPanel>
         </Button>
 
+        <!-- Any track with a real local file (see
+             MobileMainViewModel.CanDeleteDownloadedFile) - reverts it back to
+             a not-yet-downloaded placeholder and frees the local file's
+             storage, rather than removing the track from the library. Opens a
+             confirm sheet (ConfirmDeleteFileView) that warns first if this
+             particular file wouldn't come back on its own - see
+             IsRecoverableDownload. -->
+        <Button Classes="action" Command="{Binding DeleteDownloadedFileCommand}"
+                IsVisible="{Binding CanDeleteDownloadedFile}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="22" Height="22" Foreground="#E05555" />
+            <TextBlock Text="Delete Downloaded File" FontSize="16" VerticalAlignment="Center" Foreground="#E05555" />
+          </StackPanel>
+        </Button>
+
         <Button Classes="action" Command="{Binding CloseSheetCommand}" Margin="0,8,0,0">
           <TextBlock Text="Cancel" FontSize="16" HorizontalAlignment="Center" Opacity="0.7" />
         </Button>

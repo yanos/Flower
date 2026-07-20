@@ -26,7 +26,7 @@ public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists, Search
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings, PeerApproval, ConfirmPairServer }
+public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings, PeerApproval, ConfirmPairServer, ConfirmDeleteFile }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -95,6 +95,8 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand ViewTrackInfoCommand { get; }
     public ICommand ToggleSearchCommand { get; }
     public ICommand ClearSearchCommand { get; }
+    public ICommand ClearSearchQueryCommand { get; }
+    public ICommand ClearSongsFilterTextCommand { get; }
     public ICommand OpenAddToPlaylistCommand { get; }
     public ICommand AddTrackToPlaylistCommand { get; }
     public ICommand CreatePlaylistCommand { get; }
@@ -104,6 +106,10 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand AllowPeerCommand { get; }
     public ICommand DenyPeerCommand { get; }
     public ICommand DownloadTrackCommand { get; }
+    public ICommand DeleteDownloadedFileCommand { get; }
+    public ICommand ConfirmDeleteFileCommand { get; }
+    public ICommand CancelDeleteFileCommand { get; }
+    public ICommand DownloadAllVisibleCommand { get; }
     public ICommand PairWithServerCommand { get; }
     public ICommand UnpairServerCommand { get; }
     public ICommand ConfirmPairServerCommand { get; }
@@ -258,6 +264,84 @@ public class MobileMainViewModel : ViewModelBase
         && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums && SelectedTab != MobileTab.Search;
     public bool CanGoBack => _navigationHistory.Count > 0;
 
+    // The track list is showing one specific album's songs - true whether
+    // reached via the Albums tab's own grid, an artist's album grid
+    // (SelectArtistAlbum), or a Recently Added tile (SelectRecentlyAddedAlbum) -
+    // all three re-point Main.SelectedSidebarItem at the Albums sidebar item
+    // and Main.SelectedSubItem at the album name, the same way Albums' own
+    // in-place drill-in does. Drives the album header (CurrentAlbumHeader)
+    // above the list and hides each row's own small art (see TrackRowTemplate) -
+    // redundant once a big header already shows it once.
+    public bool IsShowingAlbumTrackList =>
+        IsShowingTrackList && Main.SelectedSidebarItem?.Kind == SidebarItemKind.Albums && Main.SelectedSubItem != null;
+
+    // Art/name/artist/year for IsShowingAlbumTrackList's header - reuses
+    // AlbumTileViewModel (the same shape the Albums/Recently Added grids'
+    // tiles already are) rather than a bespoke type, so its lazy AlbumArt
+    // loading (see AlbumTileViewModel.LoadArtAsync) works identically. Cached
+    // by album name rather than rebuilt on every access - a fresh
+    // AlbumTileViewModel instance on every binding pass would restart art
+    // loading each time and could never settle.
+    private string? _currentAlbumHeaderName;
+    private AlbumTileViewModel? _currentAlbumHeader;
+    public AlbumTileViewModel? CurrentAlbumHeader
+    {
+        get
+        {
+            var albumName = IsShowingAlbumTrackList ? Main.SelectedSubItem : null;
+            if (albumName != _currentAlbumHeaderName)
+            {
+                _currentAlbumHeaderName = albumName;
+                _currentAlbumHeader = albumName != null ? BuildAlbumHeader(albumName) : null;
+            }
+            return _currentAlbumHeader;
+        }
+    }
+
+    private AlbumTileViewModel? BuildAlbumHeader(string albumName)
+    {
+        var tracks = Main.Library.Tracks.Where(t => t.Album == albumName).ToList();
+        if (tracks.Count == 0)
+            return null;
+
+        var representative = tracks.OrderByDescending(t => t.DateAdded).First();
+        // Same "Various Artists" fallback as AlbumGridBuilder - a header
+        // naming one arbitrary artist out of several would be misleading.
+        var artists = tracks.Select(t => t.EffectiveAlbumArtist).Distinct().ToList();
+        var artist = artists.Count == 1 ? artists[0] : "Various Artists";
+
+        return new AlbumTileViewModel
+        {
+            Name = albumName,
+            Artist = artist,
+            RepresentativeTrack = representative,
+            MostRecentlyAdded = tracks.Max(t => t.DateAdded),
+        };
+    }
+
+    // True while DownloadAllVisibleCommand is working through a batch - drives
+    // the top bar's download-all icon swapping to a spinner and disabling
+    // itself against a second overlapping run (see MobileMainView.axaml).
+    private bool _isBulkDownloading;
+    public bool IsBulkDownloading
+    {
+        get => _isBulkDownloading;
+        private set { if (_isBulkDownloading != value) { _isBulkDownloading = value; OnPropertyChanged(); } }
+    }
+
+    // Shared by DownloadTrackCommand (one row) and DownloadAllVisibleCommand
+    // (every not-yet-downloaded row in view) - same per-row idle/in-flight/
+    // unavailable state either way, so a row started via the bulk action looks
+    // identical to one started by tapping its own download icon directly.
+    private async Task DownloadRowAsync(TrackRowViewModel row)
+    {
+        row.IsDownloadUnavailable = false;
+        row.IsDownloading = true;
+        var result = await Main.DownloadTrackAsync(row.Track);
+        row.IsDownloading = false;
+        row.IsDownloadUnavailable = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
+    }
+
     // The Search tab's box is always visible (no toggle needed, unlike the
     // Songs tab's - see CanSearch), so it and the screen title are mutually
     // exclusive on that basis alone, independent of IsSearchVisible. Two
@@ -343,6 +427,7 @@ public class MobileMainViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsShowingSettings));
             OnPropertyChanged(nameof(IsShowingPeerApproval));
             OnPropertyChanged(nameof(IsShowingConfirmPairServer));
+            OnPropertyChanged(nameof(IsShowingConfirmDeleteFile));
             // Retry a server-pairing offer that arrived while some other
             // sheet was up (see Main.ServerDiscoveredForPairing's
             // subscription below) rather than dropping it - reentrant, but
@@ -373,6 +458,7 @@ public class MobileMainViewModel : ViewModelBase
     public bool IsShowingSettings => ActiveSheet == MobileSheet.Settings;
     public bool IsShowingPeerApproval => ActiveSheet == MobileSheet.PeerApproval;
     public bool IsShowingConfirmPairServer => ActiveSheet == MobileSheet.ConfirmPairServer;
+    public bool IsShowingConfirmDeleteFile => ActiveSheet == MobileSheet.ConfirmDeleteFile;
 
     // Set when Main.PeerApprovalRequested fires (see SyncHttpServer's trust gate,
     // SYNC-PLAN.md Phase 3) and cleared once Allow/Deny resolves it - see
@@ -416,8 +502,42 @@ public class MobileMainViewModel : ViewModelBase
     public Track? ActionTarget
     {
         get => _actionTarget;
-        private set { _actionTarget = value; OnPropertyChanged(); }
+        private set
+        {
+            _actionTarget = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanDeleteDownloadedFile));
+            OnPropertyChanged(nameof(IsRecoverableDownload));
+            OnPropertyChanged(nameof(ConfirmDeleteFileTitle));
+            OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
+        }
     }
+
+    // Any real local file can be deleted to free up space - a still-
+    // undownloaded placeholder has no file yet to delete. Whether it's safe
+    // to get back later (see IsRecoverableDownload) is surfaced as a warning
+    // in the confirm sheet (ConfirmDeleteFileMessage) rather than gating this
+    // outright - a track this device only has a copy of because the user
+    // imported it directly (or a peer that once had it is no longer the
+    // paired Server) should still be deletable, just with eyes open.
+    public bool CanDeleteDownloadedFile => ActionTarget?.Path != null;
+
+    // Whether ActionTarget's file, once deleted, would actually come back on
+    // its own - true only if the currently paired Server is the same device
+    // that last reported having a copy (OriginDeviceFingerprint). Null (no
+    // peer has ever reported holding this exact track - e.g. purely a local
+    // import) or a fingerprint that isn't the current pairing (a track from
+    // before a Server switch, or synced via ad-hoc peer browsing rather than
+    // bulk sync) both mean the same thing here: nothing will resync it back.
+    public bool IsRecoverableDownload =>
+        ActionTarget?.OriginDeviceFingerprint != null &&
+        ActionTarget.OriginDeviceFingerprint == Main.PairedServerFingerprint;
+
+    public string ConfirmDeleteFileTitle => $"Delete \"{ActionTarget?.Title}\"?";
+
+    public string ConfirmDeleteFileMessage => IsRecoverableDownload
+        ? "This removes the downloaded copy from this device. Your paired server still has it, so you can download it again later."
+        : "Your currently paired server doesn't have this file, so it won't be synced back automatically. Deleting it now will remove your only copy.";
 
     // Whichever list is currently on screen (picker or track list) has nothing in it.
     // Without this, an empty library or an empty search just renders a blank screen.
@@ -548,6 +668,12 @@ public class MobileMainViewModel : ViewModelBase
             RebuildArtistAlbumGrid();
             if (SelectedTab == MobileTab.Search)
                 RefreshSearchResultsNow();
+            // Forces CurrentAlbumHeader to rebuild even though the album name
+            // itself hasn't changed - a download/rescan can still change which
+            // track is "most recently added" (representative art) or the
+            // computed artist/year underneath it.
+            _currentAlbumHeaderName = null;
+            OnPropertyChanged(nameof(CurrentAlbumHeader));
         });
         Main.PropertyChanged += (_, e) =>
         {
@@ -653,6 +779,16 @@ public class MobileMainViewModel : ViewModelBase
         });
         ToggleSearchCommand = new RelayCommand(() => IsSearchVisible = !IsSearchVisible);
         ClearSearchCommand = new RelayCommand(() => IsSearchVisible = false);
+        // Search tab's own inline clear (the embedded "x" in SearchTabBox,
+        // see MobileMainView.axaml) - unlike ClearSearchCommand above, there's
+        // nothing to close here (the Search tab's box is always visible), so
+        // this just empties the query and leaves the box focused.
+        ClearSearchQueryCommand = new RelayCommand(() => SearchQuery = null);
+        // Songs tab's own inline clear (the embedded "x" in SearchBox) - just
+        // empties the text and keeps the box open/focused, unlike
+        // ClearSearchCommand (the header's Close-icon button), which also
+        // collapses the box back to icon-only.
+        ClearSongsFilterTextCommand = new RelayCommand(() => Main.FilterText = null);
         OpenAddToPlaylistCommand = new RelayCommand(() =>
         {
             if (ActionTarget != null)
@@ -682,12 +818,52 @@ public class MobileMainViewModel : ViewModelBase
         {
             if (row == null || row.IsDownloading)
                 return;
-
-            row.IsDownloadUnavailable = false;
-            row.IsDownloading = true;
-            var result = await Main.DownloadTrackAsync(row.Track);
-            row.IsDownloading = false;
-            row.IsDownloadUnavailable = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
+            await DownloadRowAsync(row);
+        });
+        // Opens the confirm sheet (ConfirmDeleteFileCommand/CancelDeleteFileCommand
+        // below actually do the deleting) rather than deleting immediately -
+        // this is a destructive, sometimes-unrecoverable action (see
+        // IsRecoverableDownload/ConfirmDeleteFileMessage), so it always gets a
+        // confirmation with an explicit warning first.
+        DeleteDownloadedFileCommand = new RelayCommand(() =>
+        {
+            if (ActionTarget != null)
+                ActiveSheet = MobileSheet.ConfirmDeleteFile;
+        });
+        ConfirmDeleteFileCommand = new RelayCommand(async () =>
+        {
+            if (ActionTarget is { } track)
+                await Main.DeleteDownloadedFileAsync(track);
+            ActiveSheet = MobileSheet.None;
+        });
+        CancelDeleteFileCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
+        // Downloads every not-yet-downloaded track currently in Main.Rows -
+        // only ever invoked while viewing one album's or one playlist's tracks
+        // (see IsShowingAlbumTrackList/IsShowingPlaylistTracks in
+        // MobileMainView.axaml), so that's the scope this ends up covering;
+        // Main.Rows is whatever MainViewModel already narrowed it to. Reuses
+        // DownloadRowAsync so each row's own download icon still shows its
+        // individual progress exactly like a manual single-track download,
+        // one at a time rather than all in parallel - gentler on the peer
+        // being downloaded from than a burst of simultaneous requests.
+        DownloadAllVisibleCommand = new RelayCommand(async () =>
+        {
+            if (IsBulkDownloading)
+                return;
+            IsBulkDownloading = true;
+            try
+            {
+                foreach (var row in Main.Rows.ToList())
+                {
+                    if (row.Track.Path != null || row.IsDownloading)
+                        continue;
+                    await DownloadRowAsync(row);
+                }
+            }
+            finally
+            {
+                IsBulkDownloading = false;
+            }
         });
 
         // Confirm-before-pairing (see ConfirmPairServerMessage) rather than
@@ -1060,6 +1236,8 @@ public class MobileMainViewModel : ViewModelBase
         OnPropertyChanged(nameof(CurrentPlaylist));
         OnPropertyChanged(nameof(IsShowingPlaylistTracks));
         OnPropertyChanged(nameof(CanSearch));
+        OnPropertyChanged(nameof(IsShowingAlbumTrackList));
+        OnPropertyChanged(nameof(CurrentAlbumHeader));
         // SearchQuery and its matched results survive leaving the Search tab
         // (see SearchQuery's own doc comment) - deliberately NOT cleared here
         // on the way out, so they're still there the instant the user comes
