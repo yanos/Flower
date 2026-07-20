@@ -451,6 +451,39 @@ public class SyncHttpServer : IDisposable
             _listener.Stop();
     }
 
+    // Rebinds a fresh HttpListener on the same port range - meant to be
+    // called alongside NetworkDiscoveryService.Restart when an iOS app
+    // returns to the foreground (see AppDelegate.CustomizeAppBuilder). Real
+    // iOS hardware has the same failure mode here as that class's
+    // NSNetService publication: suspending the app while backgrounded can
+    // silently invalidate the listener's underlying socket. .NET's
+    // HttpListener object survives that (IsListening can still report true),
+    // but ListenLoopAsync's GetContextAsync() throws once the socket is
+    // actually dead, its catch assumes that means a deliberate Stop() and
+    // exits for good - so nothing is left accepting connections at all,
+    // observed from a peer's side as a bare "Connection refused" against a
+    // port that used to work. Swallows a failure while tearing down the old
+    // listener (it may already be in whatever abnormal state caused this)
+    // since the fresh Start() below is what actually matters here.
+    public void Restart()
+    {
+        _logger.LogInformation("Restarting sync HTTP listener");
+        try
+        {
+            Stop();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Ignoring failure while stopping the old listener before restart");
+        }
+        finally
+        {
+            _listener?.Close();
+        }
+
+        Start();
+    }
+
     public void Dispose()
     {
         Stop();

@@ -1256,6 +1256,18 @@ public partial class MainViewModel : ViewModelBase
     private void AddOrUpdateDeviceSidebarItem(DiscoveredDevice device)
     {
         var existing = FindDeviceSidebarItem(device);
+
+        // Don't show a device under its raw mDNS instance name (e.g.
+        // "localhost-iOS._flowersync._tcp.local") while its real Alias is
+        // still unresolved - see ResolveAliasAsync, which re-fires
+        // DeviceDiscovered once /info actually answers, so the item appears
+        // here with its real name a moment later instead. Only gates
+        // creating a brand new row; an already-shown row (existing != null)
+        // still gets its Device reference refreshed below regardless, since
+        // by definition it was already resolved once to exist at all.
+        if (existing == null && string.IsNullOrEmpty(device.Fingerprint))
+            return;
+
         if (existing != null)
         {
             existing.Device = device;
