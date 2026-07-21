@@ -15,9 +15,24 @@
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
   </UserControl.Resources>
 
+  <UserControl.Styles>
+    <!-- Same "active" convention MobileMainView's own currently-playing row
+         highlight already uses (SystemAccentColor), not desktop's
+         AppAccentBrush - keeps this consistent with mobile's own theming
+         rather than importing a second color convention. -->
+    <Style Selector="materialIcons|MaterialIcon.transportToggle">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+    </Style>
+  </UserControl.Styles>
+
   <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="24,8,24,24">
 
-    <!-- Top bar: collapse -->
+    <!-- Top bar: collapse only - no "Now Playing" label, the sheet's own
+         content already makes that obvious. -->
     <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Height="52">
       <Button Grid.Column="0"
               Command="{Binding CloseSheetCommand}"
@@ -26,23 +41,25 @@
               Padding="10">
         <materialIcons:MaterialIcon Kind="ChevronDown" Width="26" Height="26" />
       </Button>
-      <TextBlock Grid.Column="1"
-                 Text="Now Playing"
-                 FontSize="13"
-                 FontWeight="SemiBold"
-                 Opacity="0.6"
-                 HorizontalAlignment="Center"
-                 VerticalAlignment="Center" />
     </Grid>
 
     <!-- Album art + track info -->
     <StackPanel Grid.Row="1" VerticalAlignment="Center" Spacing="24">
-      <Border Width="280" Height="280" HorizontalAlignment="Center"
-              Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-              CornerRadius="8"
-              ClipToBounds="True">
-        <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
-      </Border>
+      <!-- Tapping the art jumps to that track's album (closing this sheet) -
+           see GoToCurrentlyPlayingAlbumCommand. -->
+      <Button Command="{Binding GoToCurrentlyPlayingAlbumCommand}"
+              HorizontalAlignment="Center"
+              HorizontalContentAlignment="Center"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="0">
+        <Border Width="280" Height="280"
+                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                CornerRadius="8"
+                ClipToBounds="True">
+          <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
+        </Border>
+      </Button>
 
       <StackPanel Spacing="4" HorizontalAlignment="Center">
         <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
@@ -60,13 +77,28 @@
       </StackPanel>
     </StackPanel>
 
-    <!-- Seek slider + times -->
+    <!-- Seek slider + times, flanked by shuffle/repeat toggles (same
+         placement convention as desktop's CurrentlyPlayingControl). -->
     <StackPanel Grid.Row="2" Margin="0,8,0,0">
       <Slider Minimum="0" Maximum="1"
               Value="{Binding CurrentlyPlaying.SeekPosition}" />
-      <Grid ColumnDefinitions="*,*">
-        <TextBlock Grid.Column="0" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="12" Opacity="0.65" />
-        <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="12" Opacity="0.65" HorizontalAlignment="Right" />
+      <Grid ColumnDefinitions="Auto,*,*,Auto">
+        <Button Grid.Column="0"
+                Command="{Binding ToggleShuffleCommand}"
+                Background="Transparent" BorderThickness="0" Padding="6">
+          <materialIcons:MaterialIcon Kind="Shuffle" Width="18" Height="18"
+                                       Classes="transportToggle"
+                                       Classes.active="{Binding CurrentlyPlaying.IsShuffleEnabled}" />
+        </Button>
+        <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="12" Opacity="0.65" VerticalAlignment="Center" Margin="8,0,0,0" />
+        <TextBlock Grid.Column="2" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="12" Opacity="0.65" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0" />
+        <Button Grid.Column="3"
+                Command="{Binding ToggleRepeatCommand}"
+                Background="Transparent" BorderThickness="0" Padding="6">
+          <materialIcons:MaterialIcon Kind="Repeat" Width="18" Height="18"
+                                       Classes="transportToggle"
+                                       Classes.active="{Binding CurrentlyPlaying.IsRepeatEnabled}" />
+        </Button>
       </Grid>
     </StackPanel>
 

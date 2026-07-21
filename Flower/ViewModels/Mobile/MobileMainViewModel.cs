@@ -88,6 +88,9 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand PlayTrackCommand { get; }
     public ICommand ToggleMiniPlayerCommand { get; }
     public ICommand OpenNowPlayingCommand { get; }
+    public ICommand GoToCurrentlyPlayingAlbumCommand { get; }
+    public ICommand ToggleRepeatCommand { get; }
+    public ICommand ToggleShuffleCommand { get; }
     public ICommand CloseSheetCommand { get; }
     public ICommand NextTrackCommand { get; }
     public ICommand PreviousTrackCommand { get; }
@@ -807,6 +810,21 @@ public class MobileMainViewModel : ViewModelBase
             if (PlaylistControl.CurrentlyPlayingTrack != null)
                 ActiveSheet = MobileSheet.NowPlaying;
         });
+        // Tapping the Now Playing sheet's album art - closes the sheet and
+        // drills into that track's album, same tab-switch-plus-drill-in-as-
+        // one-history-entry shape as SelectSearchAlbumCommand.
+        GoToCurrentlyPlayingAlbumCommand = new RelayCommand(async () =>
+        {
+            var album = PlaylistControl.CurrentlyPlayingTrack?.Album;
+            if (album == null)
+                return;
+            ActiveSheet = MobileSheet.None;
+            PushHistory();
+            SetSelectedTabCore(MobileTab.Albums);
+            await SelectAlbumOrArtistCore(album);
+        });
+        ToggleRepeatCommand = new RelayCommand(CurrentlyPlaying.ToggleRepeat);
+        ToggleShuffleCommand = new RelayCommand(CurrentlyPlaying.ToggleShuffle);
         CloseSheetCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
         NextTrackCommand = new RelayCommand(PlaylistControl.Next);
         PreviousTrackCommand = new RelayCommand(PlaylistControl.Previous);
