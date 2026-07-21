@@ -345,6 +345,22 @@ public class MobileMainViewModel : ViewModelBase
     // How many of DownloadAllVisibleCommand's downloads run at once.
     private const int MaxConcurrentDownloads = 3;
 
+    // Re-anchors Next/Previous/auto-advance to whatever's actually on screen
+    // right now, mirroring desktop's MainViewModel.SyncPlayQueueToCurrentView -
+    // called immediately before every PlayTrackCommand invocation. Search's
+    // own song section (SearchSongResults) is a separate mirror of Main.Rows,
+    // not Main.Rows itself (see that collection's own doc comment), so it
+    // needs its own branch here; every other screen (Songs, an album/
+    // artist-album/Recently-Added drill-in, or a playlist) renders straight
+    // from Main.Rows, whatever MainViewModel already narrowed it to.
+    private void SyncPlayQueueToCurrentView()
+    {
+        var tracks = IsShowingSearchResults
+            ? SearchSongResults.Select(r => r.Track).ToList()
+            : Main.Rows.Select(r => r.Track).ToList();
+        PlaylistControl.SetCurrentPlaylist(new Playlist("Now Playing Queue", tracks));
+    }
+
     // Shared by DownloadTrackCommand (one row) and DownloadAllVisibleCommand
     // (every not-yet-downloaded row in view) - same per-row idle/in-flight/
     // unavailable state either way, so a row started via the bulk action looks
@@ -754,6 +770,15 @@ public class MobileMainViewModel : ViewModelBase
             // playing, so reusing it here paused instead of switching tracks.
             if (track == null)
                 return;
+            // Desktop's own row-activation path (MainViewModel.PlayTrack) always
+            // re-anchors the Next/Previous queue to whatever's currently on
+            // screen before playing - this was missing here entirely, so
+            // mobile's queue stayed pinned to Importer's raw filesystem-scan
+            // order (whatever MainPlaylist last held) regardless of which
+            // list (Songs/album/playlist/search) the tapped track actually
+            // came from - confirmed on a real device as Next/Previous
+            // advancing through what looked like an arbitrary/random order.
+            SyncPlayQueueToCurrentView();
             if (track.Path != null)
             {
                 PlaylistControl.Play(track);
