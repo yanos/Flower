@@ -104,7 +104,13 @@ public static class TrackListBuilder
                     Track              = tracks[k],
                     IsFirstInAlbumGroup = k == i,
                     AlbumGroupSize     = groupSize,
-                    IsCurrentlyPlaying = tracks[k].Path == currentlyPlaying?.Path,
+                    // tracks[k].Path == currentlyPlaying?.Path alone is wrong
+                    // whenever nothing is playing (currentlyPlaying == null):
+                    // null == null is true, so every not-yet-downloaded track
+                    // (Path == null too) matched "currently playing" and got
+                    // the bold/accent-color styling (Button.trackRow.playing)
+                    // meant for an actual playing row.
+                    IsCurrentlyPlaying = tracks[k].Path != null && currentlyPlaying != null && tracks[k].Path == currentlyPlaying.Path,
                 });
             }
             i = j;

@@ -89,10 +89,11 @@
                  thing on that row. Three mutually exclusive icon states
                  (idle / in-flight / just-failed-or-unavailable) - see
                  TrackRowViewModel.IsDownloadIdle. The Sync icon's own spin
-                 (SpinAnimation.IsSpinning) is a manual DispatcherTimer-driven
-                 rotation, not Avalonia's Animation system - see that class's
-                 own doc comment for why (same TransformAnimator crash
-                 RubberBandScroll already had to work around). -->
+                 is driven by SpinAngle, a plain bindable double owned by the
+                 row's own ViewModel - see TrackRowViewModel.IsDownloading's
+                 own doc comment for why this isn't a View-side animation
+                 (TrackListBox's virtualization made an earlier attempt at
+                 that unreliable during a multi-row batch download). -->
             <Button IsVisible="{Binding IsPlaceholder}"
                     Command="{Binding $parent[UserControl].DataContext.DownloadTrackCommand}"
                     CommandParameter="{Binding}"
@@ -105,9 +106,18 @@
                 <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7"
                                              IsVisible="{Binding IsDownloadIdle}"
                                              ToolTip.Tip="Download" />
+                <!-- Rotation directly on the icon, matching MainView.axaml's
+                     own already-working status-bar spinner exactly (same Sync
+                     icon, same RelativePoint.Center-equivalent origin, same
+                     RotateTransform) - an earlier attempt wrapped this in a
+                     sized Border instead, which was the wrong fix. -->
                 <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7"
                                              IsVisible="{Binding IsDownloading}"
-                                             controls:SpinAnimation.IsSpinning="{Binding IsDownloading}" />
+                                             RenderTransformOrigin="0.5,0.5">
+                  <materialIcons:MaterialIcon.RenderTransform>
+                    <RotateTransform Angle="{Binding SpinAngle}" />
+                  </materialIcons:MaterialIcon.RenderTransform>
+                </materialIcons:MaterialIcon>
                 <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="22" Height="22" Opacity="0.7"
                                              IsVisible="{Binding IsDownloadUnavailable}"
                                              ToolTip.Tip="Device unavailable - try again later" />
@@ -469,7 +479,7 @@
       <Grid RowDefinitions="Auto,*" IsVisible="{Binding IsShowingTrackList}">
         <Border Grid.Row="0"
                 IsVisible="{Binding IsShowingAlbumTrackList}"
-                Padding="24,20,24,16">
+                Padding="24,4,24,16">
           <StackPanel Spacing="12" HorizontalAlignment="Center">
             <controls:AlbumArtView AlbumArt="{Binding CurrentAlbumHeader.AlbumArt}"
                                     Width="160" Height="160" />
