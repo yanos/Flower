@@ -140,6 +140,31 @@
       <Setter Property="Padding" Value="0" />
       <Setter Property="MinHeight" Value="0" />
     </Style>
+    <!-- FluentTheme paints its pressed/pointerover/selected highlight on the
+         ContentPresenter template PART (Background on
+         ContentPresenter#PART_ContentPresenter INSIDE the control's own
+         default template), NOT on the control itself - which is why a plain
+         `Selector="ListBoxItem:pressed { Background }"` (and the Button
+         equivalent) had zero effect: it set the wrong element's Background.
+         The documented way to actually suppress it is to reach into the
+         template and override that same part, so these selectors target
+         `/template/ ContentPresenter#PART_ContentPresenter` for every
+         highlight state. Purely cosmetic - selection/Click routing is
+         untouched, a genuine tap still activates exactly as before, this
+         only removes the "about to activate" grey that flashed on scroll
+         and lingered on press-and-hold. -->
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
     <Style Selector="Button.tab">
       <Setter Property="Opacity" Value="0.55" />
     </Style>
@@ -152,6 +177,20 @@
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="Padding" Value="16,10" />
+    </Style>
+    <!-- Same story as ListBoxItem above - the grey the user sees on press is
+         FluentTheme setting Background on the Button's own
+         ContentPresenter#PART_ContentPresenter template part, so it has to be
+         overridden there (a Background setter on the Button itself, tried
+         first, doesn't touch that inner part). Covers both the picker/album
+         tiles and the song rows. -->
+    <Style Selector="Button.pickerRow:pointerover /template/ ContentPresenter#PART_ContentPresenter,
+                     Button.trackRow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.pickerRow:pressed /template/ ContentPresenter#PART_ContentPresenter,
+                     Button.trackRow:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
     </Style>
     <Style Selector="Button.trackRow">
       <Setter Property="Padding" Value="16,5" />
