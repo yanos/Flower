@@ -54,9 +54,26 @@ public static class AlbumArtLoader
         return await LoadRemoteAsync(track);
     }
 
+    // Album/EffectiveAlbumArtist, not directory - a normally-organized local
+    // library happens to have one directory per album, but a *downloaded*
+    // track (LibraryDownloadService) never does: every downloaded file lands
+    // in one shared flat folder per platform (all of "Downloads", or the
+    // Documents root on iOS), regardless of which album it's actually from.
+    // Confirmed on a real device: once one downloaded track's art got cached
+    // under that shared directory key, every other downloaded track sharing
+    // the same folder returned that same wrong bitmap - visible in practice
+    // as Recently Added's first tile always matching whatever was most
+    // recently downloaded instead of its own album's actual art. Falls back
+    // to directory only for the rare case of a blank Album tag, where there's
+    // nothing better to key on.
+    private static string LocalCacheKey(Track track) =>
+        !string.IsNullOrEmpty(track.Album)
+            ? $"album:{track.Album}|{track.EffectiveAlbumArtist}"
+            : $"dir:{Path.GetDirectoryName(track.Path ?? "") ?? ""}";
+
     private static async Task<Bitmap?> LoadLocalAsync(Track track)
     {
-        var key = Path.GetDirectoryName(track.Path ?? "") ?? "";
+        var key = LocalCacheKey(track);
 
         if (Cache.TryGetValue(key, out var weak) && weak.TryGetTarget(out var cached))
             return cached;

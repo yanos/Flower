@@ -1896,6 +1896,36 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(StatusBarText));
     }
 
+    // Bypasses ScheduleFilter's own 250ms debounce - meant for a single,
+    // discrete navigation action (mobile drilling into a specific album/
+    // playlist - see MobileMainViewModel's SelectAlbumOrArtistCore/
+    // SelectArtistAlbum/SelectRecentlyAddedAlbum/SelectPlaylist) rather than
+    // a rapid-fire one like typing a search query or desktop's own sub-list
+    // multi-select drag, which still want the debounce and so still go
+    // through SelectedSubItem's own setter/ScheduleFilter as before.
+    // Without this, drilling into an album showed the previous scope's
+    // tracks (or the whole library) for up to the debounce's own delay
+    // before the newly-scoped list actually appeared - confirmed on a real
+    // device as a ~500ms flash of a different album's songs on every
+    // drill-in. Returns false if superseded by a newer filter/navigation
+    // change before this one finished, so a caller with its own
+    // follow-up work (see GoToCurrentlyPlayingTrackAsync) can skip it.
+    public async Task<bool> RebuildRowsImmediatelyAsync()
+    {
+        _filterCts?.Cancel();
+        _filterCts = new CancellationTokenSource();
+        var token = _filterCts.Token;
+        try
+        {
+            await RebuildRowsAsync(token);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
     // ── Go to currently playing track (Cmd/Ctrl+L) ───────────────────────────
 
     public async Task GoToCurrentlyPlayingTrackAsync()
@@ -1932,10 +1962,8 @@ public partial class MainViewModel : ViewModelBase
                 break;
         }
 
-        _filterCts?.Cancel();
-        _filterCts = new CancellationTokenSource();
-        try { await RebuildRowsAsync(_filterCts.Token); }
-        catch (OperationCanceledException) { return; }
+        if (!await RebuildRowsImmediatelyAsync())
+            return; // Superseded by a newer filter/navigation change - let that one win.
 
         NavigateToTrackRequested?.Invoke(this, track);
     }

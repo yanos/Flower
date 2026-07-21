@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using Flower.Models;
 using Flower.Services;
 
@@ -76,11 +77,62 @@ public class TrackRowViewModel : ViewModelBase
     // set directly by MobileMainViewModel's download command, not derived from
     // Track. See the comment above for why a stale value here is harmless: any
     // instance holding it gets discarded once the download actually succeeds.
+    //
+    // Drives SpinAngle below directly (rather than a separate View-side
+    // attached-property/animation helper) so the download spinner's rotation
+    // is owned entirely by this row's own ViewModel lifetime, not the View's -
+    // confirmed on a real device this matters: TrackListBox virtualizes/
+    // recycles row containers as items scroll in and out, and a batch
+    // download (DownloadAllVisibleCommand) can easily have several rows
+    // downloading at once while only a couple are actually realized on
+    // screen. A View-side timer tied to a Control's own lifetime got
+    // started/stopped by container recycling independent of whether the
+    // underlying download was still genuinely in progress - observed as the
+    // spinner working for the first couple of rows in a batch, then never
+    // appearing again. A plain bindable double on the row itself has no such
+    // problem: Avalonia's ordinary data binding re-attaches correctly
+    // whenever a recycled container's DataContext changes, same as every
+    // other property on this class already relies on.
     private bool _isDownloading;
     public bool IsDownloading
     {
         get => _isDownloading;
-        set { _isDownloading = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsDownloadIdle)); }
+        set
+        {
+            if (_isDownloading == value)
+                return;
+            _isDownloading = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsDownloadIdle));
+            if (value)
+                StartSpin();
+            else
+                StopSpin();
+        }
+    }
+
+    private DispatcherTimer? _spinTimer;
+    private double _spinAngle;
+    public double SpinAngle
+    {
+        get => _spinAngle;
+        private set { _spinAngle = value; OnPropertyChanged(); }
+    }
+
+    private void StartSpin()
+    {
+        _spinTimer?.Stop();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _spinTimer = timer;
+        timer.Tick += (_, _) => SpinAngle = (SpinAngle + 6) % 360; // ~1 revolution/second.
+        timer.Start();
+    }
+
+    private void StopSpin()
+    {
+        _spinTimer?.Stop();
+        _spinTimer = null;
+        SpinAngle = 0;
     }
 
     private bool _isDownloadUnavailable;

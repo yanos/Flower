@@ -125,7 +125,7 @@ public class MobileMainViewModel : ViewModelBase
     // result switches tab AND drills in as one step, and back undoes both at
     // once, landing back on Search - the old approach had no way to know
     // "before this jump, I was on a completely different tab."
-    private readonly System.Collections.Generic.Stack<Action> _navigationHistory = new();
+    private readonly System.Collections.Generic.Stack<Func<Task>> _navigationHistory = new();
 
     private void PushHistory()
     {
@@ -137,7 +137,7 @@ public class MobileMainViewModel : ViewModelBase
         var subItem = Main.SelectedSubItem;
         var searchQuery = _searchQuery;
 
-        _navigationHistory.Push(() =>
+        _navigationHistory.Push(async () =>
         {
             _selectedTab = tab;
             _hasDrilledIn = hasDrilledIn;
@@ -160,6 +160,11 @@ public class MobileMainViewModel : ViewModelBase
                 _searchQuery = searchQuery;
                 OnPropertyChanged(nameof(SearchQuery));
             }
+            // Same reasoning as SelectAlbumOrArtistCore's own comment -
+            // without bypassing the debounce, going back to an album/playlist
+            // view flashed the wrong scope's tracks for a moment before the
+            // restored one actually appeared.
+            await Main.RebuildRowsImmediatelyAsync();
             RaiseNavigationChanged();
         });
     }
@@ -336,6 +341,9 @@ public class MobileMainViewModel : ViewModelBase
     // least this long guarantees it's actually seen, at the cost of a barely
     // perceptible artificial delay on an already-fast download.
     private static readonly TimeSpan MinDownloadSpinnerDuration = TimeSpan.FromMilliseconds(400);
+
+    // How many of DownloadAllVisibleCommand's downloads run at once.
+    private const int MaxConcurrentDownloads = 3;
 
     // Shared by DownloadTrackCommand (one row) and DownloadAllVisibleCommand
     // (every not-yet-downloaded row in view) - same per-row idle/in-flight/
@@ -718,13 +726,13 @@ public class MobileMainViewModel : ViewModelBase
         // the raw mutations SelectedTab's setter/SelectAlbumOrArtist/SelectArtist
         // themselves use, deliberately skipped here so this doesn't also push
         // a second entry just for the tab switch.
-        SelectSearchAlbumCommand = new RelayCommand<string>(name =>
+        SelectSearchAlbumCommand = new RelayCommand<string>(async name =>
         {
             if (name == null)
                 return;
             PushHistory();
             SetSelectedTabCore(MobileTab.Albums);
-            SelectAlbumOrArtistCore(name);
+            await SelectAlbumOrArtistCore(name);
         });
         SelectSearchArtistCommand = new RelayCommand<string>(name =>
         {
@@ -737,7 +745,7 @@ public class MobileMainViewModel : ViewModelBase
         SelectArtistAlbumCommand = new RelayCommand<string>(SelectArtistAlbum);
         SelectRecentlyAddedAlbumCommand = new RelayCommand<string>(SelectRecentlyAddedAlbum);
         SelectPlaylistCommand = new RelayCommand<SidebarItem>(SelectPlaylist);
-        BackCommand = new RelayCommand(GoBack);
+        BackCommand = new RelayCommand(async () => await GoBack());
         PlayTrackCommand = new RelayCommand<Track>(track =>
         {
             // Always starts this track, mirroring desktop's row-activation handler
@@ -855,9 +863,10 @@ public class MobileMainViewModel : ViewModelBase
         // MobileMainView.axaml), so that's the scope this ends up covering;
         // Main.Rows is whatever MainViewModel already narrowed it to. Reuses
         // DownloadRowAsync so each row's own download icon still shows its
-        // individual progress exactly like a manual single-track download,
-        // one at a time rather than all in parallel - gentler on the peer
-        // being downloaded from than a burst of simultaneous requests.
+        // individual progress exactly like a manual single-track download.
+        // Up to MaxConcurrentDownloads run at once (not all at once, and not
+        // strictly one at a time) - a middle ground between "fast" and
+        // "gentle on the peer being downloaded from".
         DownloadAllVisibleCommand = new RelayCommand(async () =>
         {
             if (IsBulkDownloading)
@@ -865,12 +874,45 @@ public class MobileMainViewModel : ViewModelBase
             IsBulkDownloading = true;
             try
             {
-                foreach (var row in Main.Rows.ToList())
+                // Captures SyncKeys, not TrackRowViewModel instances - a
+                // download completing mid-batch fires Library.TracksUpdated,
+                // which (via MainViewModel's own debounced ScheduleFilter)
+                // eventually replaces Main.Rows wholesale with a fresh set of
+                // TrackRowViewModel objects. Holding onto row objects from a
+                // snapshot taken before that swap meant later iterations kept
+                // mutating IsDownloading on orphaned rows nothing on screen
+                // was bound to anymore - confirmed on a real device as the
+                // spinner working for the first couple of songs in a batch,
+                // then never appearing again. SyncKey (not the row/Track
+                // object itself) is what survives the swap intact, so each
+                // task re-resolves against whatever Main.Rows currently is
+                // right before it actually starts downloading (after
+                // acquiring a throttle slot, not when the task was created) -
+                // safe to do without locking despite running "concurrently"
+                // here, since every one of these tasks' own code (everything
+                // except the actual HTTP I/O in flight) still only ever runs
+                // on the UI thread, the same as the rest of this ViewModel.
+                var syncKeysToDownload = Main.Rows
+                    .Where(r => r.Track.Path == null)
+                    .Select(r => r.Track.SyncKey)
+                    .ToList();
+                using var throttle = new SemaphoreSlim(MaxConcurrentDownloads);
+                var tasks = syncKeysToDownload.Select(async syncKey =>
                 {
-                    if (row.Track.Path != null || row.IsDownloading)
-                        continue;
-                    await DownloadRowAsync(row);
-                }
+                    await throttle.WaitAsync();
+                    try
+                    {
+                        var row = Main.Rows.FirstOrDefault(r => r.Track.SyncKey == syncKey);
+                        if (row == null || row.Track.Path != null || row.IsDownloading)
+                            return;
+                        await DownloadRowAsync(row);
+                    }
+                    finally
+                    {
+                        throttle.Release();
+                    }
+                });
+                await Task.WhenAll(tasks);
             }
             finally
             {
@@ -1107,17 +1149,25 @@ public class MobileMainViewModel : ViewModelBase
     // SelectArtist below instead, so tapping an artist lands on that artist's
     // album grid rather than straight into every one of their songs as one
     // flat list.
-    private void SelectAlbumOrArtist(string? name)
+    private async void SelectAlbumOrArtist(string? name)
     {
         if (name == null)
             return;
         PushHistory();
-        SelectAlbumOrArtistCore(name);
+        await SelectAlbumOrArtistCore(name);
     }
 
-    private void SelectAlbumOrArtistCore(string name)
+    // Sets Main.SelectedSubItem then rebuilds Main.Rows immediately (see
+    // MainViewModel.RebuildRowsImmediatelyAsync) rather than trusting
+    // SelectedSubItem's own setter to get there eventually via its normal
+    // 250ms-debounced ScheduleFilter - without this, RaiseNavigationChanged
+    // below would already have made the track list visible showing the
+    // PREVIOUS scope's tracks for up to that debounce's own delay before the
+    // correct, newly-scoped list actually appeared.
+    private async Task SelectAlbumOrArtistCore(string name)
     {
         Main.SelectedSubItem = name;
+        await Main.RebuildRowsImmediatelyAsync();
         _hasDrilledIn = true;
         RaiseNavigationChanged();
     }
@@ -1147,13 +1197,14 @@ public class MobileMainViewModel : ViewModelBase
     // A tile in that artist's album grid -> that album's tracks, reusing the
     // Albums tab's own filtering the same way SelectRecentlyAddedAlbum does
     // (see its comment) rather than a separate artist+album-scoped track list.
-    private void SelectArtistAlbum(string? albumName)
+    private async void SelectArtistAlbum(string? albumName)
     {
         if (albumName == null)
             return;
         PushHistory();
         Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
         Main.SelectedSubItem = albumName;
+        await Main.RebuildRowsImmediatelyAsync(); // see SelectAlbumOrArtistCore's own comment on why.
         _hasDrilledIntoArtistAlbum = true;
         RaiseNavigationChanged();
     }
@@ -1165,32 +1216,34 @@ public class MobileMainViewModel : ViewModelBase
     // (the un-drilled-in grid renders its own RecentlyAddedAlbumRows collection,
     // not Main.Rows), so it is set explicitly here instead. SelectedTab stays
     // RecentlyAdded so Back returns to this grid, not to the Albums picker.
-    private void SelectRecentlyAddedAlbum(string? albumName)
+    private async void SelectRecentlyAddedAlbum(string? albumName)
     {
         if (albumName == null)
             return;
         PushHistory();
         Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
         Main.SelectedSubItem = albumName;
+        await Main.RebuildRowsImmediatelyAsync(); // see SelectAlbumOrArtistCore's own comment on why.
         _hasDrilledIn = true;
         RaiseNavigationChanged();
     }
 
-    private void SelectPlaylist(SidebarItem? item)
+    private async void SelectPlaylist(SidebarItem? item)
     {
         if (item == null)
             return;
         PushHistory();
         Main.SelectedSidebarItem = item;
+        await Main.RebuildRowsImmediatelyAsync(); // see SelectAlbumOrArtistCore's own comment on why.
         _hasDrilledIn = true;
         RaiseNavigationChanged();
     }
 
-    private void GoBack()
+    private async Task GoBack()
     {
         if (_navigationHistory.Count == 0)
             return;
-        _navigationHistory.Pop()();
+        await _navigationHistory.Pop()();
     }
 
     // First and last MobileTab in bottom-bar order (see the enum's own
@@ -1209,11 +1262,11 @@ public class MobileMainViewModel : ViewModelBase
     // there's no drill-down-forward to redo. Clamped, not wrapping, at
     // either end of the tab bar - a swipe past Recently Added or past Search
     // is just a no-op rather than an unexpected jump to the other end.
-    public void SwipeBack()
+    public async void SwipeBack()
     {
         if (CanGoBack)
         {
-            GoBack();
+            await GoBack();
             return;
         }
         if (SelectedTab > FirstTab)

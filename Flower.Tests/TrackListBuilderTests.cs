@@ -257,4 +257,23 @@ public class TrackListBuilderTests
         Assert.True(rows.Find(r => r.Track.Path == "/music/playing.mp3")!.IsCurrentlyPlaying);
         Assert.False(rows.Find(r => r.Track.Path == "/music/other.mp3")!.IsCurrentlyPlaying);
     }
+
+    // Regression: tracks[k].Path == currentlyPlaying?.Path alone is true for
+    // null == null whenever nothing is playing - every not-yet-downloaded
+    // placeholder (Path == null too) then wrongly matched "currently
+    // playing" and got the bold/accent-color row styling meant for an
+    // actual playing track.
+    [Fact]
+    public void IsCurrentlyPlaying_is_false_for_placeholders_when_nothing_is_playing()
+    {
+        var tracks = new List<Track>
+        {
+            new Track { Title = "Placeholder One", Path = null, OriginDeviceFingerprint = "peer-1" },
+            new Track { Title = "Placeholder Two", Path = null, OriginDeviceFingerprint = "peer-1" },
+        };
+
+        var rows = TrackListBuilder.Build(tracks, null, "Title", true, currentlyPlayingTrack: null);
+
+        Assert.All(rows, r => Assert.False(r.IsCurrentlyPlaying));
+    }
 }
