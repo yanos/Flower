@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 
@@ -56,14 +58,16 @@ public class LibrarySyncService
     private readonly DeviceIdentity _deviceIdentity;
     private readonly AppSettings _appSettings;
     private readonly LibraryStore _libraryStore;
+    private readonly InMemoryLogStore _logStore;
     private readonly ILogger _logger;
 
-    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, AppSettings appSettings, LibraryStore libraryStore, ILogger<LibrarySyncService> logger)
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, AppSettings appSettings, LibraryStore libraryStore, InMemoryLogStore logStore, ILogger<LibrarySyncService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
         _appSettings = appSettings;
         _libraryStore = libraryStore;
+        _logStore = logStore;
         _logger = logger;
     }
 
@@ -127,6 +131,43 @@ public class LibrarySyncService
         // already persist after their own mutations; this one previously did not.
         await _libraryStore.SaveAsync(_library.Tracks);
 
+        // Piggybacks the Log window's remote-log feature on this exact sync
+        // session, so it fires "at the same time as the library" with no
+        // extra caller-side wiring - see docs plan / LogViewModel's own doc
+        // comment. Defense-in-depth, not reliance on the caller's own gating
+        // (see SyncRolePolicy's doc comment above): a Server must never push
+        // logs to anything, only a Client pushes its own snapshot to its one
+        // paired Server.
+        if (!_appSettings.IsServer)
+            await PushLogSnapshotAsync(device);
+
         return new LibrarySyncResult(true, songs.Count, addedCount);
+    }
+
+    private async Task PushLogSnapshotAsync(DiscoveredDevice device)
+    {
+        try
+        {
+            var entries = _logStore.Snapshot().Select(LogEntryDto.FromEntry).ToList();
+            var report = new LogReportDto(_deviceIdentity.Fingerprint, _deviceIdentity.Alias, DateTimeOffset.UtcNow, entries);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}/api/flower/v1/log/report");
+            request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
+            request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
+            request.Headers.Add("X-Flower-Role", _appSettings.IsServer ? "server" : "client");
+            request.Headers.ConnectionClose = true;
+            request.Content = new StringContent(JsonSerializer.Serialize(report, JsonOptions), Encoding.UTF8, "application/json");
+
+            using var response = await Http.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            _logger.LogDebug("Pushed {Count} log line(s) to paired server {Alias}", entries.Count, device.Alias);
+        }
+        catch (Exception ex)
+        {
+            // Not fatal to the library sync itself - the library merge above
+            // already succeeded and saved; the log snapshot just converges
+            // next cycle.
+            _logger.LogDebug(ex, "Could not push log snapshot to {Alias} - not fatal to this sync", device.Alias);
+        }
     }
 }

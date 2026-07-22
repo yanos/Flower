@@ -4,6 +4,8 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
@@ -23,16 +25,18 @@ public sealed class PeerLibraryViewModel : ViewModelBase
     private readonly DeviceIdentity _deviceIdentity;
     private readonly AppSettings _appSettings;
     private readonly PlaylistControlViewModel _playlistControlViewModel;
+    private readonly ILogger<PeerLibraryViewModel> _logger;
 
     private OpenSubsonicClient? _client;
     private DiscoveredDevice? _peer;
     private int _requestId; // guards against a stale LoadAsync/SelectAlbumAsync winning a race
 
-    public PeerLibraryViewModel(DeviceIdentity deviceIdentity, AppSettings appSettings, PlaylistControlViewModel playlistControlViewModel)
+    public PeerLibraryViewModel(DeviceIdentity deviceIdentity, AppSettings appSettings, PlaylistControlViewModel playlistControlViewModel, ILogger<PeerLibraryViewModel> logger)
     {
         _deviceIdentity = deviceIdentity;
         _appSettings = appSettings;
         _playlistControlViewModel = playlistControlViewModel;
+        _logger = logger;
     }
 
     public ObservableCollection<AlbumID3> Albums { get; } = new();
@@ -79,6 +83,7 @@ public sealed class PeerLibraryViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Failed to load peer library for {Alias}", peer.Alias);
             if (requestId == _requestId)
                 ErrorMessage = $"Could not reach {peer.Alias}: {ex.Message}";
         }
@@ -109,6 +114,7 @@ public sealed class PeerLibraryViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Failed to load album {AlbumName} from {Alias}", album.Name, _peer?.Alias);
             if (requestId == _requestId)
                 ErrorMessage = $"Could not load {album.Name}: {ex.Message}";
         }

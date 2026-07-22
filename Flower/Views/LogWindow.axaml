@@ -1,0 +1,98 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Flower.ViewModels"
+        xmlns:ae="using:AvaloniaEdit"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="Flower.Views.LogWindow"
+        x:DataType="vm:LogViewModel"
+        Title="Log"
+        Width="900" Height="600"
+        WindowStartupLocation="CenterScreen">
+  <Grid RowDefinitions="Auto,Auto,*">
+
+    <!-- Header: font size, minimum level, word wrap, filter -->
+    <Border Grid.Row="0"
+            BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" Margin="10,8">
+        <TextBlock Grid.Column="0" Text="Font Size" VerticalAlignment="Center" Opacity="0.7"/>
+        <ComboBox Grid.Column="1"
+                  Margin="6,0,16,0"
+                  Width="80"
+                  ItemsSource="{x:Static vm:LogViewModel.FontSizeOptions}"
+                  SelectedItem="{Binding FontSize, Mode=TwoWay}"/>
+
+        <TextBlock Grid.Column="2" Text="Min Level" VerticalAlignment="Center" Opacity="0.7"/>
+        <ComboBox Grid.Column="3"
+                  Margin="6,0,16,0"
+                  Width="120"
+                  ItemsSource="{x:Static vm:LogViewModel.MinimumLevelOptions}"
+                  SelectedItem="{Binding MinimumLevel, Mode=TwoWay}"/>
+
+        <CheckBox Grid.Column="4"
+                  Content="Word Wrap"
+                  Margin="0,0,16,0"
+                  IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"/>
+
+        <TextBox Grid.Column="6"
+                 Text="{Binding FilterText, Mode=TwoWay}"
+                 Watermark="Filter..."/>
+      </Grid>
+    </Border>
+
+    <!-- Body: adjustable sidebar + virtualized log lines -->
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="220" MinWidth="120" MaxWidth="500"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <Border Grid.Column="0"
+              BorderThickness="0,0,1,0"
+              BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+        <ListBox x:Name="SidebarList"
+                 ItemsSource="{Binding SidebarItems}"
+                 SelectedItem="{Binding SelectedSidebarItem, Mode=TwoWay}"
+                 Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:LogSidebarItem">
+              <TextBlock Text="{Binding Name}" Margin="8,6" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+
+      <GridSplitter Grid.Column="1"
+                    Width="4"
+                    Background="Transparent"
+                    ResizeDirection="Columns"/>
+
+      <!-- A real text-editor control, not Avalonia's own TextBlock/ListBox -
+           those either don't virtualize (a single TextBlock holding the
+           whole log, got sluggish on any real log volume) or don't support
+           one continuous multi-line mouse selection (a virtualizing ListBox
+           of per-row TextBlocks - each row is independently selectable, so
+           dragging across lines doesn't work). AvaloniaEdit's TextEditor
+           handles both a large document and cross-line selection natively.
+           Manages its own scrolling internally - not wrapped in a
+           ScrollViewer. Text/AppendText aren't bindable AvaloniaProperties,
+           so LogWindow.axaml.cs drives them from LogViewModel's
+           LinesReset/LinesAppended events instead of a XAML binding. -->
+      <ae:TextEditor x:Name="LogTextEditor"
+                     Grid.Column="2"
+                     IsReadOnly="True"
+                     ShowLineNumbers="False"
+                     WordWrap="{Binding IsWordWrapEnabled}"
+                     FontFamily="Cascadia Code,Consolas,Menlo,monospace"
+                     FontSize="{Binding FontSize}">
+        <ae:TextEditor.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Copy" Click="CopyMenuItem_Click"/>
+          </ContextMenu>
+        </ae:TextEditor.ContextMenu>
+      </ae:TextEditor>
+    </Grid>
+  </Grid>
+</Window>

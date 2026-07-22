@@ -220,6 +220,8 @@ public class PlaylistSyncService
         });
 
         var choice = await tcs.Task;
+        _logger.LogInformation("Playlist conflict for {Name} with {RemoteAlias} resolved: {Choice}",
+            decision.Local!.Name, remoteAlias, choice);
         return choice == PlaylistConflictChoice.KeepLocal
             ? decision.Local!
             : PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks);
