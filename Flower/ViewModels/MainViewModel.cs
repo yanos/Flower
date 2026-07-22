@@ -1147,12 +1147,23 @@ public partial class MainViewModel : ViewModelBase
     public void PlayTrack(Track track)
     {
         SyncPlayQueueToCurrentView();
+        PlayResolvingPlaceholder(track);
+    }
 
-        // Path == null means not yet downloaded (see SYNC-PLAN.md Phase 3) -
-        // stream it on demand from whichever peer currently holds it rather
-        // than requiring an explicit download first. A transient copy, not the
-        // placeholder itself - see GetStreamUrl's own doc comment and
-        // MobileMainViewModel.PlayTrackCommand's identical mobile-side handling.
+    // Shared by every internal caller that hands a Track straight to
+    // PlaylistControlViewModel.Play - that call goes straight into
+    // IAudioManager.Play, which cannot handle a placeholder (Path == null,
+    // not yet downloaded - see SYNC-PLAN.md Phase 3) the way this method
+    // does: confirmed as a crash inside VlcAudioManager (LibVLCSharp's Media
+    // constructor rejecting a null mrl) wherever a placeholder reached Play
+    // directly (PlayAlbum's tracks[0], and PlayOrPauseFromCurrentView's
+    // auto-picked first track, before both were routed through this).
+    // Streams the track on demand from whichever peer currently holds it
+    // rather than requiring an explicit download first - a transient copy,
+    // not the placeholder itself. See GetStreamUrl's own doc comment and
+    // MobileMainViewModel.PlayTrackCommand's identical mobile-side handling.
+    private void PlayResolvingPlaceholder(Track track)
+    {
         if (track.Path == null)
         {
             if (GetStreamUrl(track) is { } streamUrl)
@@ -1178,7 +1189,7 @@ public partial class MainViewModel : ViewModelBase
         ExpandedAlbumTracks = tracks;
 
         _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
-        _playlistControlViewModel.Play(tracks[0]);
+        PlayResolvingPlaceholder(tracks[0]);
     }
 
     // Space bar / toolbar play-pause button. Only snapshots a fresh queue when
@@ -1191,7 +1202,25 @@ public partial class MainViewModel : ViewModelBase
     public void PlayOrPauseFromCurrentView()
     {
         if (!_playlistControlViewModel.IsPlaying && !_playlistControlViewModel.CanResume)
+        {
             SyncPlayQueueToCurrentView();
+
+            // PlaylistControlViewModel.PlayOrPause()'s own SelectedTrack-or-
+            // first-track fallback calls straight into IAudioManager.Play,
+            // which cannot handle a placeholder track the way
+            // PlayResolvingPlaceholder does (see its own doc comment) -
+            // confirmed as a crash when nothing was selected and the
+            // current view's first track happened to be an undownloaded
+            // placeholder. Resolve the same "selected, or first in the
+            // current view" fallback here instead.
+            var trackToPlay = _playlistControlViewModel.SelectedTrack ?? _currentFilteredTracks.FirstOrDefault();
+            if (trackToPlay != null)
+            {
+                PlayResolvingPlaceholder(trackToPlay);
+                return;
+            }
+        }
+
         _playlistControlViewModel.PlayOrPause();
     }
 
