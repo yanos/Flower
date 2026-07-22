@@ -135,6 +135,7 @@ public partial class App : Application
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
                 .AddSingleton<MobileMainViewModel>()
                 .AddSingleton<LogViewModel>()
+                .AddSingleton<NowPlayingIntegrationService>()
                 .AddLogging(builder => builder.AddSerilog())
                 .BuildServiceProvider());
 
@@ -171,6 +172,12 @@ public partial class App : Application
                 DataContext = Ioc.Default.GetRequiredService<MobileMainViewModel>()
             };
         }
+
+        // Constructed eagerly (nothing else references it) so its
+        // subscriptions to PlaylistControlViewModel/IAudioManager start
+        // immediately rather than lazily on first use - see
+        // NowPlayingIntegrationService.cs / docs/MEDIA-KEYS-PLAN.md Phase 2.
+        Ioc.Default.GetRequiredService<NowPlayingIntegrationService>();
 
         base.OnFrameworkInitializationCompleted();
 
