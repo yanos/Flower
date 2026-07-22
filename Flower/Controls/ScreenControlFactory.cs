@@ -13,14 +13,14 @@ namespace Flower.Controls;
 // scope (see MobileNavigationFrame.ScopeKey) - revisiting the same album/
 // artist/playlist reuses its existing control (and any in-flight art
 // loading it already started) instead of rebuilding from scratch, without
-// growing unboundedly across a long session. Sized past the 2 slots
-// ScreenStackPanel actually keeps alive at rest (current + one back) since
-// a screen further back in history than that still holds its scope key
-// until evicted, ready to be reused if the user drills back into it before
-// the cache cycles it out.
+// growing unboundedly across a long session. Sized past the 3 slots
+// ScreenStackPanel actually keeps alive at rest (current + one back + one
+// forward) since a screen further away in history than that still holds its
+// scope key until evicted, ready to be reused if the user navigates back
+// into it before the cache cycles it out.
 public sealed class ScreenControlFactory
 {
-    private const int MaxCached = 4;
+    private const int MaxCached = 6;
 
     // Ordered oldest-first; the front is the next eviction candidate.
     private readonly List<(string Key, Control Control)> _cache = new();

@@ -136,6 +136,15 @@ public class MobileMainViewModel : ViewModelBase
     // control alive and ready to reveal, which a closure can't expose.
     private readonly Stack<MobileNavigationFrame> _navigationHistory = new();
 
+    // Browser-style redo stack: GoBack pushes the screen it just left here
+    // (see GoBack/GoForward, which share ApplyFrame) so a swipe/tap the
+    // other way can restore exactly what Back just undid, the same way a
+    // real back/forward pair works. Cleared by PushHistory - once the user
+    // takes any genuinely NEW navigation action (rather than a Back/Forward
+    // replay), whatever used to be "ahead" of them is no longer reachable by
+    // going forward, matching ordinary browser history semantics.
+    private readonly Stack<MobileNavigationFrame> _forwardHistory = new();
+
     // Full snapshot of the screen being left, including FrozenRows/
     // FrozenHeader - see PushHistory/GoBack, the only two callers.
     private MobileNavigationFrame BuildLeavingFrame() => new(
@@ -175,6 +184,7 @@ public class MobileMainViewModel : ViewModelBase
         var frame = BuildLeavingFrame();
         NavigationLeaving?.Invoke(this, frame);
         _navigationHistory.Push(frame);
+        _forwardHistory.Clear();
     }
 
     // The live screen, expressed as the same MobileNavigationFrame shape
@@ -200,6 +210,11 @@ public class MobileMainViewModel : ViewModelBase
     // What ScreenStackPanel should keep materialized underneath the current
     // screen, ready to reveal - null if there's nowhere to go back to.
     public MobileNavigationFrame? PeekOneBack => _navigationHistory.Count > 0 ? _navigationHistory.Peek() : null;
+
+    // Symmetric to PeekOneBack, for a leftward (forward/redo) swipe - null
+    // if there's nothing to redo (either nothing was ever undone, or a
+    // newer navigation since then already cleared it - see PushHistory).
+    public MobileNavigationFrame? PeekOneForward => _forwardHistory.Count > 0 ? _forwardHistory.Peek() : null;
 
     // Fired at the end of RaiseNavigationChanged - the single sync point
     // ScreenStackPanel hooks to know when to re-materialize/re-order its
@@ -306,6 +321,7 @@ public class MobileMainViewModel : ViewModelBase
         !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingArtistAlbumGrid
         && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums && SelectedTab != MobileTab.Search;
     public bool CanGoBack => _navigationHistory.Count > 0;
+    public bool CanGoForward => _forwardHistory.Count > 0;
 
     // The track list is showing one specific album's songs - true whether
     // reached via the Albums tab's own grid, an artist's album grid
@@ -1348,13 +1364,39 @@ public class MobileMainViewModel : ViewModelBase
         if (_navigationHistory.Count == 0)
             return;
         var frame = _navigationHistory.Pop();
-        // See NavigationLeaving's own doc comment - fired before any of the
-        // fields below mutate, not just before the much-later
-        // RaiseNavigationChanged, so ScreenStackPanel can freeze the
-        // outgoing screen's control before it gets a chance to observe its
-        // own state turning inconsistent mid-transition.
-        NavigationLeaving?.Invoke(this, BuildLeavingFrame());
+        // The screen being left goes onto the redo stack, not just
+        // discarded - see _forwardHistory's own doc comment. Captured here
+        // (rather than inside ApplyFrame) since GoForward needs the exact
+        // opposite push (onto _navigationHistory instead).
+        var leaving = BuildLeavingFrame();
+        NavigationLeaving?.Invoke(this, leaving);
+        _forwardHistory.Push(leaving);
 
+        await ApplyFrame(frame);
+    }
+
+    // Symmetric to GoBack - pops the redo stack and restores it, pushing the
+    // screen being left back onto the back stack so Back still works
+    // afterward. Same ApplyFrame body either direction; the two methods
+    // only differ in which stack they pop from and which one they push the
+    // outgoing screen onto.
+    private async Task GoForward()
+    {
+        if (_forwardHistory.Count == 0)
+            return;
+        var frame = _forwardHistory.Pop();
+        var leaving = BuildLeavingFrame();
+        NavigationLeaving?.Invoke(this, leaving);
+        _navigationHistory.Push(leaving);
+
+        await ApplyFrame(frame);
+    }
+
+    // Restores a popped frame's state and rebuilds whatever needs it -
+    // shared by GoBack and GoForward, which differ only in which stack they
+    // pop from/push the outgoing screen onto (see both above).
+    private async Task ApplyFrame(MobileNavigationFrame frame)
+    {
         _selectedTab = frame.Tab;
         _hasDrilledIn = frame.HasDrilledIn;
         _selectedArtistName = frame.SelectedArtistName;
@@ -1365,6 +1407,7 @@ public class MobileMainViewModel : ViewModelBase
             RebuildArtistAlbumGrid();
         OnPropertyChanged(nameof(SelectedTab));
         OnPropertyChanged(nameof(CanGoBack));
+        OnPropertyChanged(nameof(CanGoForward));
         // Restoring the exact query the user had typed, not just the tab, is
         // what makes landing back on Search actually useful rather than an
         // empty prompt. Set before RaiseNavigationChanged so its own
@@ -1376,22 +1419,22 @@ public class MobileMainViewModel : ViewModelBase
             _searchQuery = frame.SearchQuery;
             OnPropertyChanged(nameof(SearchQuery));
         }
-        // Unlike the 4 forward-navigation call sites (which always land on
-        // a TrackList screen by definition), GoBack can land on ANY screen
-        // kind - and only TrackList actually reads Main.Rows (every other
-        // kind - AlbumGrid/ArtistPicker/ArtistAlbumGrid/PlaylistPicker/
-        // RecentlyAdded/SearchResults - renders from its own separate
-        // collection instead, see MobileNavigationFrame.Classify). Rebuilding
-        // Main.Rows on the way back to one of those was pure wasted work
-        // (a full filter+sort+row-construction+reachability-scan pass over
-        // the whole library that nothing would even display) - confirmed on
-        // a real device as a large chunk of the remaining pause after Back
+        // Unlike the 4 forward-drill-in call sites (which always land on a
+        // TrackList screen by definition), Back/Forward can land on ANY
+        // screen kind - and only TrackList actually reads Main.Rows (every
+        // other kind - AlbumGrid/ArtistPicker/ArtistAlbumGrid/
+        // PlaylistPicker/RecentlyAdded/SearchResults - renders from its own
+        // separate collection instead, see MobileNavigationFrame.Classify).
+        // Rebuilding Main.Rows on the way to one of those was pure wasted
+        // work (a full filter+sort+row-construction+reachability-scan pass
+        // over the whole library that nothing would even display) -
+        // confirmed on a real device as a large chunk of the pause after Back
         // when the destination isn't a track list at all.
         //
         // Same reasoning as SelectAlbumOrArtistCore's own comment when it IS
-        // one - without bypassing the debounce, going back to an album/
-        // playlist view flashed the wrong scope's tracks for a moment before
-        // the restored one actually appeared. includeGridTiles: false - see
+        // one - without bypassing the debounce, restoring an album/playlist
+        // view flashed the wrong scope's tracks for a moment before the
+        // restored one actually appeared. includeGridTiles: false - see
         // that same comment.
         if (frame.ScreenKind == MobileScreenKind.TrackList)
             await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false);
@@ -1405,15 +1448,16 @@ public class MobileMainViewModel : ViewModelBase
     private const MobileTab FirstTab = MobileTab.RecentlyAdded;
     private const MobileTab LastTab = MobileTab.Search;
 
-    // Horizontal swipe-to-navigate (see MobileMainView.axaml.cs's raw pointer
-    // gesture detection on ContentGrid) - a swipe right means "go back" in
-    // whichever sense is locally relevant: unwind a drill-down if there is
-    // one (same as the chevron button), else page to the previous tab in the
-    // bottom bar's left-to-right order (MobileTab's own declaration order).
-    // A swipe left is symmetrically "forward" - always the next tab, since
-    // there's no drill-down-forward to redo. Clamped, not wrapping, at
-    // either end of the tab bar - a swipe past Recently Added or past Search
-    // is just a no-op rather than an unexpected jump to the other end.
+    // Horizontal swipe-to-navigate (see ScreenStackPanel's own pointer
+    // gesture detection) - a swipe right means "go back" in whichever sense
+    // is locally relevant: undo the last Back/Forward-tracked navigation if
+    // there is one (same as the chevron button), else page to the previous
+    // tab in the bottom bar's left-to-right order (MobileTab's own
+    // declaration order). A swipe left is symmetrically "forward": redo
+    // whatever the most recent Back undid if there is one, else page to the
+    // next tab. Tab-paging is clamped, not wrapping, at either end of the
+    // bar - a swipe past Recently Added or past Search is just a no-op
+    // rather than an unexpected jump to the other end.
     public async void SwipeBack()
     {
         if (CanGoBack)
@@ -1425,20 +1469,27 @@ public class MobileMainViewModel : ViewModelBase
             SelectedTab = SelectedTab - 1;
     }
 
-    public void SwipeForward()
+    public async void SwipeForward()
     {
+        if (CanGoForward)
+        {
+            await GoForward();
+            return;
+        }
         if (SelectedTab < LastTab)
             SelectedTab = SelectedTab + 1;
     }
 
     // Called by ScreenStackPanel's interactive live-drag gesture once its
     // release-triggered easing finishes sliding the outgoing screen fully
-    // off-screen - identical to GoBack() (the same one BackCommand and the
-    // discrete SwipeBack() above both already use), just under a name that
-    // reads correctly from the View side, and only ever invoked when
-    // PeekOneBack was already non-null at gesture start (see
-    // ScreenStackPanel's own gating on CanGoBack before going interactive).
+    // off-screen - identical to GoBack()/GoForward() (the same ones
+    // BackCommand and the discrete SwipeBack()/SwipeForward() above already
+    // use), just under names that read correctly from the View side, and
+    // only ever invoked when PeekOneBack/PeekOneForward was already
+    // non-null at gesture start (see ScreenStackPanel's own gating on
+    // CanGoBack/CanGoForward before going interactive).
     public Task CommitSwipeBack() => GoBack();
+    public Task CommitSwipeForward() => GoForward();
 
     private void RaiseNavigationChanged()
     {

@@ -14,33 +14,36 @@ namespace Flower.Controls;
 
 // Replaces MobileMainView.axaml's old ContentGrid (7 sibling screens toggled
 // by IsVisible - see Stage 1 of the swipe-back navigation feature) with a
-// container that keeps at most 2 real screen instances alive: "current" (on
-// top, interactive) and "one back" (underneath, revealed by an interactive
-// right-swipe - see MobileMainViewModel.PeekOneBack). Anything further back
-// in history stays as plain MobileNavigationFrame data until it's promoted,
-// matching the approved plan's "never mid-gesture" rule - materializing a
-// control is a discrete step that only happens here, in SyncToCurrentFrame,
-// never on a per-pointer-move basis.
+// container that keeps at most 3 real screen instances alive: "current" (on
+// top, interactive), "one back" (underneath, revealed by an interactive
+// right-swipe - see MobileMainViewModel.PeekOneBack) and "one forward"
+// (underneath, revealed by an interactive left-swipe - see
+// MobileMainViewModel.PeekOneForward, the browser-style redo counterpart to
+// PeekOneBack). Anything further away in either direction stays as plain
+// MobileNavigationFrame data until it's promoted, matching the approved
+// plan's "never mid-gesture" rule - materializing a control is a discrete
+// step that only happens here, in SyncToCurrentFrame, never on a
+// per-pointer-move basis.
 //
 // Also owns the swipe gesture itself (moved here from MobileMainView.axaml.cs
-// in this stage - the natural home now that this panel owns the content
-// actually being dragged). Every screen paints its own opaque background
-// (AppBackgroundBrush - see each ScreenView's own root element) so one back
-// can sit there fully rendered at rest without showing through gaps in
-// current, and only becomes visible where current's own RenderTransform has
-// slid out of the way.
+// in an earlier stage - the natural home now that this panel owns the
+// content actually being dragged). Every screen paints its own opaque
+// background (AppBackgroundBrush - see each ScreenView's own root element)
+// so one back/one forward can sit there fully rendered at rest without
+// showing through gaps in current, and only becomes visible where current's
+// own RenderTransform has slid out of the way.
 public sealed class ScreenStackPanel : Panel
 {
-    // Same two-stage swipe detection as before this stage lived on
-    // MobileMainView.axaml.cs - Stage 1 (PointerMoved, EarlyCommitThreshold)
-    // decides direction early and, if horizontal, explicitly captures the
-    // pointer - without that, a touch starting over a ListBox/ScrollViewer
-    // races against its own ScrollGestureRecognizer/Button press machinery,
-    // both also watching the same pointer and possibly grabbing it first.
-    // Stage 2 (PointerReleased, SwipeThreshold) is the final go/no-go on
-    // total distance for the DISCRETE cases (tab-paging, or a rightward
-    // swipe with nothing to reveal) - the interactive case below instead
-    // decides commit/cancel live, right where the finger let go.
+    // Same two-stage swipe detection regardless of direction - Stage 1
+    // (PointerMoved, EarlyCommitThreshold) decides direction early and, if
+    // horizontal, explicitly captures the pointer - without that, a touch
+    // starting over a ListBox/ScrollViewer races against its own
+    // ScrollGestureRecognizer/Button press machinery, both also watching the
+    // same pointer and possibly grabbing it first. Stage 2 (PointerReleased,
+    // SwipeThreshold) is the final go/no-go on total distance for the
+    // DISCRETE cases (tab-paging either way, or a swipe with nothing to
+    // reveal in that direction) - the interactive case below instead decides
+    // commit/cancel live, right where the finger let go.
     private const double EarlyCommitThreshold = 18.0;
     private const double DirectionRatio = 1.5;
     private const double SwipeThreshold = 60.0;
@@ -53,20 +56,22 @@ public sealed class ScreenStackPanel : Panel
     // device, see that class's own doc comment.
     private const double EasingDurationMs = 280;
 
+    private enum SwipeDirection { None, Back, Forward }
+
     private readonly ScreenControlFactory _factory = new();
     private Control? _current;
     private Control? _oneBack;
+    private Control? _oneForward;
 
     private Point? _swipeStart;
     private bool _capturedForSwipe;
 
-    // True only once the committed-to gesture is a rightward (back) swipe
-    // AND there was already a real one-back screen to reveal at the moment
-    // direction was decided. Every other case - leftward (tab-paging
-    // forward), or a rightward swipe with no history to reveal (SwipeBack's
-    // own page-to-previous-tab fallback) - stays exactly as discrete as
+    // None until the committed-to gesture direction actually has something
+    // to reveal (CanGoBack for a rightward swipe, CanGoForward for a
+    // leftward one) - every other case (tab-paging either way, or a swipe
+    // with nothing to reveal in that direction) stays exactly as discrete as
     // before, decided only on release past SwipeThreshold.
-    private bool _isInteractiveBack;
+    private SwipeDirection _interactiveDirection = SwipeDirection.None;
     private DispatcherTimer? _easingTimer;
 
     public ScreenStackPanel()
@@ -108,14 +113,18 @@ public sealed class ScreenStackPanel : Panel
             currentTrackList.ObserveLive(vm);
 
         var backFrame = vm.PeekOneBack;
-        Control? backControl = null;
-        if (backFrame != null)
-        {
-            backControl = _factory.GetOrCreate(backFrame);
-            backControl.DataContext = vm;
-            if (backControl is TrackListScreenView backTrackList)
-                backTrackList.Freeze(backFrame);
-        }
+        var forwardFrame = vm.PeekOneForward;
+        var backControl = backFrame != null ? PrepareInert(backFrame, vm) : null;
+        var forwardControl = forwardFrame != null ? PrepareInert(forwardFrame, vm) : null;
+
+        // Extremely rare coincidence (the back and forward frames happen to
+        // share a ScopeKey - e.g. the same album reachable both ways), where
+        // the factory's cache would hand back the SAME control instance for
+        // both roles. A Control can only ever have one visual parent, so
+        // keep it in just one role rather than adding it to Children twice
+        // and throwing.
+        if (forwardControl != null && ReferenceEquals(forwardControl, backControl))
+            forwardControl = null;
 
         currentControl.IsVisible = true;
         currentControl.IsHitTestVisible = true;
@@ -128,38 +137,47 @@ public sealed class ScreenStackPanel : Panel
         // factory's cache after being the outgoing side of an earlier swipe).
         currentControl.RenderTransform = new TranslateTransform();
 
-        if (backControl != null)
-        {
-            backControl.IsVisible = true;
-            // Never hit-testable - it's a preview revealed by dragging
-            // current out of the way, not an interactive screen in its own
-            // right, even mid-gesture.
-            backControl.IsHitTestVisible = false;
-            // One back never gets dragged itself - only ever current does -
-            // so it should always sit at rest, even if this exact control
-            // instance was mid-drag the last time it was current.
-            backControl.RenderTransform = null;
-        }
-
-        if (ReferenceEquals(_current, currentControl) && ReferenceEquals(_oneBack, backControl))
+        if (ReferenceEquals(_current, currentControl) && ReferenceEquals(_oneBack, backControl) && ReferenceEquals(_oneForward, forwardControl))
             return;
 
-        // One back first (renders underneath), current last (renders on
-        // top) - a plain Panel stacks children full-bleed in collection
-        // order, same as ContentGrid's own default Z-order before this.
+        // Both "underneath" screens first (render order doesn't matter
+        // between the two of them - only one is ever actually uncovered at
+        // a time, depending on which direction is being dragged), current
+        // last (on top) - a plain Panel stacks children full-bleed in
+        // collection order, same as ContentGrid's own default Z-order before
+        // this container existed.
         Children.Clear();
         if (backControl != null)
             Children.Add(backControl);
+        if (forwardControl != null)
+            Children.Add(forwardControl);
         Children.Add(currentControl);
         _current = currentControl;
         _oneBack = backControl;
+        _oneForward = forwardControl;
+    }
+
+    // Materializes/refreshes a control for a non-current (back or forward)
+    // slot - always visible (so it can be uncovered) but never hit-testable
+    // (it's a preview, not an interactive screen, even mid-gesture) and
+    // always at rest (only current itself ever carries a drag transform).
+    private Control PrepareInert(MobileNavigationFrame frame, MobileMainViewModel vm)
+    {
+        var control = _factory.GetOrCreate(frame);
+        control.DataContext = vm;
+        if (control is TrackListScreenView trackList)
+            trackList.Freeze(frame);
+        control.IsVisible = true;
+        control.IsHitTestVisible = false;
+        control.RenderTransform = null;
+        return control;
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         _swipeStart = e.GetPosition(this);
         _capturedForSwipe = false;
-        _isInteractiveBack = false;
+        _interactiveDirection = SwipeDirection.None;
     }
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
@@ -188,19 +206,27 @@ public sealed class ScreenStackPanel : Panel
 
             e.Pointer.Capture(this);
             _capturedForSwipe = true;
-            _isInteractiveBack = dx > 0
-                && DataContext is MobileMainViewModel { CanGoBack: true }
-                && _current?.RenderTransform is TranslateTransform;
+            if (DataContext is MobileMainViewModel vm && _current?.RenderTransform is TranslateTransform)
+            {
+                if (dx > 0 && vm.CanGoBack)
+                    _interactiveDirection = SwipeDirection.Back;
+                else if (dx < 0 && vm.CanGoForward)
+                    _interactiveDirection = SwipeDirection.Forward;
+            }
             e.Handled = true;
         }
 
-        if (_isInteractiveBack && _current?.RenderTransform is TranslateTransform transform)
+        if (_interactiveDirection != SwipeDirection.None && _current?.RenderTransform is TranslateTransform transform)
         {
-            // Clamped to [0, width] - the reveal only ever goes as far as
-            // fully uncovering one back, never past it, and never negative
-            // (a rightward-committed gesture that wobbles back past its own
-            // start just holds current at 0, still fully covering one back).
-            transform.X = Math.Clamp(dx, 0, Math.Max(1, Bounds.Width));
+            var width = Math.Max(1, Bounds.Width);
+            // Clamped so the reveal only ever goes as far as fully
+            // uncovering whichever screen is underneath, never past it and
+            // never into the opposite direction (a gesture that wobbles
+            // back past its own start just holds current at 0, fully
+            // covering both).
+            transform.X = _interactiveDirection == SwipeDirection.Back
+                ? Math.Clamp(dx, 0, width)
+                : Math.Clamp(dx, -width, 0);
             e.Handled = true;
         }
     }
@@ -218,8 +244,8 @@ public sealed class ScreenStackPanel : Panel
         if (!wasCaptured)
             return;
 
-        var wasInteractive = _isInteractiveBack;
-        _isInteractiveBack = false;
+        var direction = _interactiveDirection;
+        _interactiveDirection = SwipeDirection.None;
 
         if (DataContext is not MobileMainViewModel vm)
             return;
@@ -227,16 +253,17 @@ public sealed class ScreenStackPanel : Panel
         var end = e.GetPosition(this);
         var dx = end.X - start.X;
 
-        if (wasInteractive)
+        if (direction != SwipeDirection.None)
         {
             // Distance only for now (matching the discrete case's own
             // threshold) - a velocity estimate for a fast flick under this
             // distance would be a reasonable follow-up, not required for
             // the reveal itself to work correctly.
-            if (dx > SwipeThreshold)
-                CommitInteractiveBack(vm);
+            var committed = direction == SwipeDirection.Back ? dx > SwipeThreshold : dx < -SwipeThreshold;
+            if (committed)
+                CommitInteractive(vm, direction);
             else
-                CancelInteractiveBack();
+                CancelInteractive();
             e.Handled = true;
             return;
         }
@@ -258,36 +285,41 @@ public sealed class ScreenStackPanel : Panel
         // leave the outgoing screen stranded mid-drag either.
         _capturedForSwipe = false;
         _swipeStart = null;
-        if (_isInteractiveBack)
+        if (_interactiveDirection != SwipeDirection.None)
         {
-            _isInteractiveBack = false;
-            CancelInteractiveBack();
+            _interactiveDirection = SwipeDirection.None;
+            CancelInteractive();
         }
     }
 
-    // Eases the outgoing (current) screen the rest of the way off-screen,
-    // then commits the actual navigation (MobileMainViewModel.CommitSwipeBack,
-    // same as GoBack()) - only once it's fully off-screen, so the state
-    // mutation and the SyncToCurrentFrame resync it triggers never race the
-    // animation still in flight. The revealed one-back control is already
-    // sitting at X=0 with nothing further to animate - promoting it to
-    // "current" is exactly what SyncToCurrentFrame's own fresh-transform
-    // assignment above already does, once CommitSwipeBack's
+    // Eases the outgoing (current) screen the rest of the way off-screen in
+    // whichever direction was committed to, then commits the actual
+    // navigation (MobileMainViewModel.CommitSwipeBack/CommitSwipeForward,
+    // same as GoBack()/GoForward()) - only once it's fully off-screen, so
+    // the state mutation and the SyncToCurrentFrame resync it triggers never
+    // race the animation still in flight. The revealed one-back/one-forward
+    // control is already sitting at X=0 with nothing further to animate -
+    // promoting it to "current" is exactly what SyncToCurrentFrame's own
+    // fresh-transform assignment above already does, once the commit call's
     // RaiseNavigationChanged fires it.
-    private void CommitInteractiveBack(MobileMainViewModel vm)
+    private void CommitInteractive(MobileMainViewModel vm, SwipeDirection direction)
     {
         if (_current?.RenderTransform is not TranslateTransform transform)
             return;
-        var target = Math.Max(1, Bounds.Width);
+        var width = Math.Max(1, Bounds.Width);
+        var target = direction == SwipeDirection.Back ? width : -width;
         EaseTransform(transform, target, () =>
         {
-            // Fire-and-forget, same async-void shape SwipeBack()/BackCommand
-            // already use elsewhere - nothing here needs to wait on it.
-            _ = vm.CommitSwipeBack();
+            // Fire-and-forget, same async-void shape SwipeBack()/SwipeForward()/
+            // BackCommand already use elsewhere - nothing here needs to wait on it.
+            if (direction == SwipeDirection.Back)
+                _ = vm.CommitSwipeBack();
+            else
+                _ = vm.CommitSwipeForward();
         });
     }
 
-    private void CancelInteractiveBack()
+    private void CancelInteractive()
     {
         if (_current?.RenderTransform is TranslateTransform transform)
             EaseTransform(transform, 0, null);

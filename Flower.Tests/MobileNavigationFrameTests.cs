@@ -110,6 +110,41 @@ public class MobileNavigationFrameTests
         Assert.Empty(history);
     }
 
+    // MobileMainViewModel.GoBack/GoForward share the same shape: popping one
+    // stack always pushes what's being left onto the OTHER one, so a swipe
+    // back can always be immediately undone by swiping forward and vice
+    // versa - a real back/forward pair, not just a one-way undo. This
+    // exercises that shape directly against bare stacks, independent of the
+    // ViewModel (PushHistory's own "a new navigation clears the forward
+    // stack" behavior needs the real ViewModel to exercise, since it isn't
+    // pure stack mechanics).
+    [Fact]
+    public void Back_and_forward_stacks_mirror_each_other()
+    {
+        var back = new Stack<MobileNavigationFrame>();
+        var forward = new Stack<MobileNavigationFrame>();
+
+        var songs = Frame(MobileTab.Songs);
+        var album = Frame(MobileTab.Albums, hasDrilledIn: true, subItem: "Dawn");
+
+        // Drilling from Songs into an album pushes Songs onto the back stack.
+        back.Push(songs);
+
+        // Going back: pop Songs off the back stack, push what's being left (the album) onto forward.
+        var poppedBack = back.Pop();
+        Assert.Equal(songs, poppedBack);
+        forward.Push(album);
+        Assert.Empty(back);
+        Assert.Single(forward);
+
+        // Going forward: pop the album off the forward stack, push what's being left (Songs) onto back.
+        var poppedForward = forward.Pop();
+        Assert.Equal(album, poppedForward);
+        back.Push(songs);
+        Assert.Empty(forward);
+        Assert.Single(back);
+    }
+
     private static Track T(string title) => new()
     {
         Title = title,
