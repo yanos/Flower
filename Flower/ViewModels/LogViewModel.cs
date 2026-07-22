@@ -40,6 +40,7 @@ namespace Flower.ViewModels
         private readonly InMemoryLogStore _localLogStore;
         private readonly ClientLogStore _clientLogStore;
         private readonly AppSettings _appSettings;
+        private readonly AppSettingsStore _appSettingsStore;
         private readonly TrustedPeerStore _trustedPeerStore;
         private readonly DeviceNicknameStore _deviceNicknameStore;
 
@@ -48,6 +49,13 @@ namespace Flower.ViewModels
         private List<InMemoryLogEntry> _currentEntries = new();
         private bool _noSnapshotYet;
         private List<string> _displayLines = new();
+
+        // _currentEntries.Count as of the last render - compared against in
+        // RenderLines to tell "the underlying log actually grew" apart from
+        // "only the filtered subset changed" (see LinesReset's own doc
+        // comment). Reset to 0 on a sidebar selection change - see
+        // SelectedSidebarItem's setter.
+        private int _lastRenderedEntryCount;
 
         // Coalesces a burst of rapid local entries (e.g. a chatty retry loop
         // logging several times a second) into a single LinesAppended batch
@@ -71,7 +79,13 @@ namespace Flower.ViewModels
 
         // Fired whenever the whole displayed set changes: selection change,
         // filter change, level change, or the "no snapshot yet" placeholder.
-        public event EventHandler? LinesReset;
+        // The bool argument is whether the underlying entries actually grew
+        // since the last render (not just whether the filtered/displayed
+        // subset changed) - the View uses it to decide whether to scroll:
+        // a level/filter change re-renders the same underlying log and
+        // should never yank the view around, only genuinely new content
+        // arriving should.
+        public event EventHandler<bool>? LinesReset;
 
         // Fired once per coalesced batch of new matching local entries - the
         // View responds with exactly one TextEditor.AppendText call per
@@ -86,6 +100,12 @@ namespace Flower.ViewModels
             {
                 _selectedSidebarItem = value;
                 OnPropertyChanged();
+                // A different selection is a fresh view of different
+                // content, not a continuation of the previous one - the
+                // entry-count comparison in RenderLines only makes sense
+                // within the same selection, so reset it here rather than
+                // comparing against whatever the last-viewed device had.
+                _lastRenderedEntryCount = 0;
                 LoadSelection();
             }
         }
@@ -99,6 +119,8 @@ namespace Flower.ViewModels
                 _minimumLevel = value;
                 OnPropertyChanged();
                 RenderLines();
+                _appSettings.LogMinimumLevel = value;
+                _ = _appSettingsStore.SaveAsync(_appSettings);
             }
         }
 
@@ -118,7 +140,13 @@ namespace Flower.ViewModels
         public double FontSize
         {
             get => _fontSize;
-            set { _fontSize = value; OnPropertyChanged(); }
+            set
+            {
+                _fontSize = value;
+                OnPropertyChanged();
+                _appSettings.LogFontSize = value;
+                _ = _appSettingsStore.SaveAsync(_appSettings);
+            }
         }
 
         // Off by default, matching the original NoWrap behavior - most log
@@ -129,21 +157,40 @@ namespace Flower.ViewModels
         public bool IsWordWrapEnabled
         {
             get => _isWordWrapEnabled;
-            set { _isWordWrapEnabled = value; OnPropertyChanged(); }
+            set
+            {
+                _isWordWrapEnabled = value;
+                OnPropertyChanged();
+                _appSettings.LogWordWrapEnabled = value;
+                _ = _appSettingsStore.SaveAsync(_appSettings);
+            }
         }
 
         public LogViewModel(
             InMemoryLogStore localLogStore,
             ClientLogStore clientLogStore,
             AppSettings appSettings,
+            AppSettingsStore appSettingsStore,
             TrustedPeerStore trustedPeerStore,
             DeviceNicknameStore deviceNicknameStore)
         {
             _localLogStore = localLogStore;
             _clientLogStore = clientLogStore;
             _appSettings = appSettings;
+            _appSettingsStore = appSettingsStore;
             _trustedPeerStore = trustedPeerStore;
             _deviceNicknameStore = deviceNicknameStore;
+
+            // Restores the last-used font size/minimum level/word wrap -
+            // set directly on the backing fields, not the properties above,
+            // so restoring a saved preference does not immediately re-save
+            // the exact same value back (harmless, just pointless I/O) and
+            // does not fire RenderLines before SidebarItems/selection exist
+            // yet (RefreshSidebarItems below does that once everything is
+            // actually ready).
+            _fontSize = appSettings.LogFontSize;
+            _minimumLevel = appSettings.LogMinimumLevel;
+            _isWordWrapEnabled = appSettings.LogWordWrapEnabled;
 
             _localLogStore.EntryAdded += OnLocalEntryAdded;
             _clientLogStore.SnapshotUpdated += OnClientSnapshotUpdated;
@@ -201,11 +248,18 @@ namespace Flower.ViewModels
 
         private void RenderLines()
         {
+            // Compares the raw entry count, not _displayLines.Count - a pure
+            // filter/level change re-derives _displayLines from the exact
+            // same _currentEntries, so this correctly reports "nothing new"
+            // for that case regardless of how the filtered subset changed.
+            var grew = _currentEntries.Count > _lastRenderedEntryCount;
+            _lastRenderedEntryCount = _currentEntries.Count;
+
             _displayLines = _noSnapshotYet
                 ? new List<string> { "(no log snapshot received from this device yet)" }
                 : _currentEntries.Where(MatchesFilter).Select(e => e.ToDisplayLine()).ToList();
 
-            LinesReset?.Invoke(this, EventArgs.Empty);
+            LinesReset?.Invoke(this, grew);
         }
 
         private bool MatchesFilter(InMemoryLogEntry entry)
@@ -264,6 +318,10 @@ namespace Flower.ViewModels
                     appended.Add(line);
                 }
             }
+
+            // Keeps RenderLines' own growth comparison accurate for a later
+            // filter/level change that does not go through this method.
+            _lastRenderedEntryCount = _currentEntries.Count;
 
             if (appended.Count > 0)
                 LinesAppended?.Invoke(this, appended);

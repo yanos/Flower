@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using Serilog.Events;
+
 namespace Flower.Persistence
 {
     // Settings > Appearance - see Flower.Services.AppTheme for how this
@@ -95,6 +97,13 @@ namespace Flower.Persistence
         // reachable, without a live lookup.
         public string? PairedServerFingerprint { get; set; }
         public string? PairedServerAlias       { get; set; }
+
+        // Log window preferences (View > Log...), remembered between
+        // launches the same way IsRepeatEnabled/IsShuffleEnabled are - see
+        // LogViewModel.
+        public double        LogFontSize        { get; set; } = 12;
+        public LogEventLevel LogMinimumLevel    { get; set; } = LogEventLevel.Verbose;
+        public bool          LogWordWrapEnabled { get; set; } = false;
     }
 
     public class ColumnState
