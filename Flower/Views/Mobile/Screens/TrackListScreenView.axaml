@@ -1,0 +1,94 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Views.Mobile.Screens.TrackListScreenView"
+             Background="{DynamicResource AppBackgroundBrush}">
+
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://Flower/Views/Mobile/Screens/TrackRowTemplate.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <!-- Track list: Songs (flat), or the drilled-into album/artist/playlist.
+       Two mutually exclusive full-area children, not one Grid - the
+       album case's header used to sit in a pinned Auto row above the
+       scrolling ListBox; now it scrolls away with the rest of the view
+       instead of staying pinned, which needs the header to be part of
+       the SAME scrollable content as the tracks below it, not a sibling
+       of whatever scrolls them. -->
+  <Panel>
+    <!-- Album mode: header + track list share one ScrollViewer, so the
+         art scrolls away with everything else instead of staying
+         pinned. A plain (non-virtualizing) ItemsControl is fine here,
+         unlike Songs' TrackListBox below - one album's tracks are a
+         small, bounded list (a few dozen at most), nothing like the
+         whole library, so there is no virtualization concern to trade
+         away for this. TrackRowTemplate already hides its own drag
+         handle outside IsShowingPlaylistTracks and its own art thumbnail
+         inside IsShowingAlbumTrackList (see the template itself), so
+         reusing it here needs no changes.
+
+         Bound to $parent[UserControl].DisplayRows/DisplayHeader/IsAlbumMode,
+         NOT Main.Rows/AlbumDetailRows/CurrentAlbumHeader/IsShowingAlbumTrackList
+         on the shared DataContext directly - this instance can be kept alive
+         as ScreenStackPanel's "one back" screen (see the swipe-back
+         navigation feature), and a kept-alive ItemsControl's item-container
+         generation is not gated on IsVisible the way layout/rendering is, so
+         binding it straight to the live, wholesale-replaced Main.Rows meant
+         it kept trying to realize thousands of rows in the background even
+         while hidden/frozen - confirmed as making the app feel slow to
+         navigate generally, not just within an album (the same bug, in the
+         same shape, that motivated AlbumDetailRows in the first place - see
+         TrackListScreenView.axaml.cs's ObserveLive/Freeze). -->
+    <ScrollViewer IsVisible="{Binding $parent[UserControl].IsAlbumMode}" controls:RubberBandScroll.IsEnabled="True">
+      <StackPanel>
+        <Border Padding="24,4,24,16">
+          <StackPanel Spacing="12" HorizontalAlignment="Center">
+            <controls:AlbumArtView AlbumArt="{Binding $parent[UserControl].DisplayHeader.AlbumArt}"
+                                    Width="240" Height="240" />
+            <StackPanel Spacing="2" HorizontalAlignment="Center">
+              <TextBlock Text="{Binding $parent[UserControl].DisplayHeader.Name}"
+                         FontSize="20" FontWeight="Bold"
+                         TextAlignment="Center" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding $parent[UserControl].DisplayHeader.Artist}"
+                         FontSize="15" Opacity="0.7"
+                         TextAlignment="Center" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding $parent[UserControl].DisplayHeader.RepresentativeTrack.Year}"
+                         FontSize="13" Opacity="0.5"
+                         TextAlignment="Center"
+                         IsVisible="{Binding $parent[UserControl].DisplayHeader.RepresentativeTrack.Year, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+        <ItemsControl ItemsSource="{Binding $parent[UserControl].DisplayRows}" ItemTemplate="{StaticResource TrackRowTemplate}" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Songs (flat)/playlist mode: unchanged virtualized ListBox, still
+         backing DragHandle_PointerPressed/etc.'s TrackListBox references
+         for playlist drag-to-reorder. -->
+    <ListBox IsVisible="{Binding !$parent[UserControl].IsAlbumMode}"
+              x:Name="TrackListBox"
+              Background="Transparent"
+              ItemsSource="{Binding $parent[UserControl].DisplayRows}"
+              ItemTemplate="{StaticResource TrackRowTemplate}"
+              controls:RubberBandScroll.IsEnabled="True"
+              SelectionMode="Single" />
+
+    <!-- Drop-position indicator for the playlist drag-to-reorder gesture -->
+    <Border x:Name="DropIndicator"
+            Height="2"
+            Background="{DynamicResource SystemAccentColor}"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Top"
+            IsHitTestVisible="False"
+            IsVisible="False" />
+  </Panel>
+</UserControl>
