@@ -306,6 +306,29 @@ public class NetworkDiscoveryService : IDisposable
             return;
         }
 
+        // A re-announcement of the exact same instance at the exact same
+        // address we already have isn't a new discovery - it's just Browse()
+        // re-hearing something still-advertising (every RebrowseInterval, see
+        // PollKnownDevicesAsync). Without this, an unreachable-but-still-
+        // advertised peer (confirmed in practice on iOS: mDNSResponder can go
+        // on reporting a peer that dropped off the actual LAN, e.g. after
+        // switching networks) got "rediscovered" here on every rebrowse,
+        // replacing its DiscoveredDevice and firing a redundant
+        // ResolveAliasAsync on top of PollKnownDevicesAsync's own independent
+        // per-peer poll - two-plus concurrent failing attempts per cycle
+        // instead of one, which raced MaxConsecutiveResolveFailures up far
+        // faster than its 3-strikes design intends, pruned the peer, and then
+        // rediscovered it again next rebrowse - an indefinite fail/prune/
+        // rediscover loop rather than a steady, bounded one. The periodic
+        // poll already re-resolves every known peer on its own cadence, so
+        // there is nothing useful left for a repeat announcement to do here.
+        if (existing != null && existing.EndPoint.Equals(found.EndPoint))
+        {
+            _logger.LogDebug("Ignoring re-announcement for {InstanceName} - already have {EndPoint}, the periodic poll will re-resolve it",
+                found.InstanceName, found.EndPoint);
+            return;
+        }
+
         var device = new DiscoveredDevice { InstanceName = found.InstanceName, EndPoint = found.EndPoint, Alias = found.InstanceName };
         _knownDevices[found.InstanceName] = device;
         _logger.LogInformation("Discovered peer {InstanceName} at {EndPoint}", found.InstanceName, found.EndPoint);
@@ -368,7 +391,19 @@ public class NetworkDiscoveryService : IDisposable
             // this is its MaxConsecutiveResolveFailures'th miss in a row, in
             // which case treat it the same as an mDNS goodbye - see
             // MaxConsecutiveResolveFailures's own doc comment.
-            _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.EndPoint);
+            //
+            // Full exception (with stack trace) only on the first miss for
+            // this peer - a still-unreachable peer fails again every
+            // AliasPollInterval until it's pruned, and logging the same
+            // multi-line stack trace on every one of those is exactly the
+            // kind of log flood that made the Log window sluggish to render
+            // (see LogViewModel). A one-line message carries the same
+            // "still failing" information for the repeats.
+            if (_consecutiveResolveFailures.GetValueOrDefault(device.InstanceName) == 0)
+                _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.EndPoint);
+            else
+                _logger.LogDebug("Still could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
+                    device.InstanceName, device.EndPoint, ex.Message);
 
             // A link-local address failing doesn't mean the peer is gone -
             // see OnInstanceFound's own comment - it just means this
