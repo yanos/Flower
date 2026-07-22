@@ -55,6 +55,11 @@ public sealed record MobileNavigationFrame(
     // MobileMainViewModel.IsShowingAlbumTrackList's own condition exactly.
     public bool IsAlbumTrackList => SidebarItem?.Kind == SidebarItemKind.Albums && SubItem != null;
 
+    // Whether this frame's TrackList (if any) is one specific playlist's own
+    // tracks - mirrors MobileMainViewModel.IsShowingPlaylistTracks/
+    // CurrentPlaylist's own condition exactly.
+    public bool IsPlaylistTrackList => Tab == MobileTab.Playlists && HasDrilledIn && SidebarItem?.Playlist != null;
+
     // Identifies which materialized control a frame should reuse - two
     // frames with the same ScopeKey are "the same screen" as far as
     // ScreenControlFactory's cache is concerned (e.g. revisiting the same

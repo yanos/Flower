@@ -27,9 +27,21 @@
              hosting screen (TrackListScreenView) wires these via AddHandler
              on its ListBox using tunnel routing + e.Source, the same pattern
              MobileMainView.axaml.cs already uses for its swipe gesture. -->
+        <!-- IsPlaylistMode/IsAlbumMode read off the HOSTING screen
+             ($parent[UserControl] itself), NOT $parent[UserControl].DataContext
+             (the shared MobileMainViewModel) - both TrackListScreenView and
+             SearchResultsScreenView expose them (see each one's own code-
+             behind). A kept-alive one-back/one-forward TrackListScreenView
+             needs to reflect ITS OWN frozen state here, not whatever screen
+             is currently live - reading the shared VM's
+             IsShowingPlaylistTracks/IsShowingAlbumTrackList directly briefly
+             showed/hid these based on whatever WAS live at that instant
+             (confirmed on a real device as album art flashing in on every
+             row of a revealed album screen mid swipe-forward, then
+             disappearing once the transition committed and resynced it). -->
         <Border Grid.Column="0"
                 Classes="dragHandle"
-                IsVisible="{Binding $parent[UserControl].DataContext.IsShowingPlaylistTracks}"
+                IsVisible="{Binding $parent[UserControl].IsPlaylistMode}"
                 Background="Transparent"
                 Width="32"
                 HorizontalAlignment="Center"
@@ -41,7 +53,7 @@
              the art once, full-size, above the list. -->
         <controls:AlbumArtView Grid.Column="1"
                                 AlbumArt="{Binding AlbumArt}"
-                                IsVisible="{Binding !$parent[UserControl].DataContext.IsShowingAlbumTrackList}"
+                                IsVisible="{Binding !$parent[UserControl].IsAlbumMode}"
                                 Width="40" Height="40"
                                 Margin="0,0,10,0" />
         <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">

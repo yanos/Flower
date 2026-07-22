@@ -45,6 +45,20 @@ public partial class TrackListScreenView : UserControl
     public static readonly StyledProperty<bool> IsAlbumModeProperty =
         AvaloniaProperty.Register<TrackListScreenView, bool>(nameof(IsAlbumMode));
 
+    // Same reasoning as IsAlbumMode/DisplayRows above, for TrackRowTemplate's
+    // own drag-handle visibility (see that file) - it used to read
+    // IsShowingPlaylistTracks straight off the shared DataContext, which is
+    // exactly as wrong for a kept-alive one-back/one-forward instance as
+    // reading IsShowingAlbumTrackList straight off it was for the row art:
+    // briefly showing/hiding based on whatever screen is CURRENTLY live,
+    // until the promotion/freeze catches up and it flips back - confirmed on
+    // a real device as album art flashing in on every row of a revealed
+    // album screen mid swipe-forward, then disappearing once the transition
+    // committed and ObserveLive resynced it against the (by-then-correct)
+    // live VM.
+    public static readonly StyledProperty<bool> IsPlaylistModeProperty =
+        AvaloniaProperty.Register<TrackListScreenView, bool>(nameof(IsPlaylistMode));
+
     public IReadOnlyList<TrackRowViewModel> DisplayRows
     {
         get => GetValue(DisplayRowsProperty);
@@ -61,6 +75,12 @@ public partial class TrackListScreenView : UserControl
     {
         get => GetValue(IsAlbumModeProperty);
         private set => SetValue(IsAlbumModeProperty, value);
+    }
+
+    public bool IsPlaylistMode
+    {
+        get => GetValue(IsPlaylistModeProperty);
+        private set => SetValue(IsPlaylistModeProperty, value);
     }
 
     private MobileMainViewModel? _observedVm;
@@ -111,6 +131,7 @@ public partial class TrackListScreenView : UserControl
         DisplayRows = frame.FrozenRows ?? Array.Empty<TrackRowViewModel>();
         DisplayHeader = frame.FrozenHeader;
         IsAlbumMode = frame.IsAlbumTrackList;
+        IsPlaylistMode = frame.IsPlaylistTrackList;
     }
 
     // ScreenControlFactory calls this when evicting a cached instance from
@@ -132,6 +153,7 @@ public partial class TrackListScreenView : UserControl
         if (_observedVm == null)
             return;
         IsAlbumMode = _observedVm.IsShowingAlbumTrackList;
+        IsPlaylistMode = _observedVm.IsShowingPlaylistTracks;
         DisplayRows = IsAlbumMode ? _observedVm.AlbumDetailRows : _observedVm.Main.Rows;
         DisplayHeader = _observedVm.CurrentAlbumHeader;
     }
