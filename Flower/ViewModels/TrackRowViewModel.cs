@@ -63,6 +63,7 @@ public class TrackRowViewModel : ViewModelBase
             _isPeerReachable = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsUnavailable));
+            OnPropertyChanged(nameof(IsDownloadable));
         }
     }
 
@@ -72,6 +73,15 @@ public class TrackRowViewModel : ViewModelBase
     // stream/download; a placeholder whose peer IS reachable can be played
     // or downloaded right now and should look like any other row.
     public bool IsUnavailable => IsPlaceholder && !IsPeerReachable;
+
+    // Gates the row's own download button (see TrackRowTemplate) - hidden
+    // entirely rather than shown-then-failing when there's nobody to
+    // actually download this specific track from right now. Separate from
+    // IsDownloadUnavailable below, which reflects an attempt that was
+    // already made and failed (a different, rarer case - the peer was
+    // reachable at tap time but the transfer itself didn't succeed) rather
+    // than "there was never anyone to try".
+    public bool IsDownloadable => IsPlaceholder && IsPeerReachable;
 
     // Transient UI state for an in-flight/failed download attempt on this row -
     // set directly by MobileMainViewModel's download command, not derived from
