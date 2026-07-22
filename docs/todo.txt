@@ -1,20 +1,21 @@
 make an issue link
-repo link
 readme
 improve cli
 icon
 album mode
 artist / playlist icon instead of album art
-more logging
-download songs on phone => not permanent?
-esc to close settings
 lyric service
 song history
-folder in playlist		
-checksum + to prevent corruption if partial transfer
+folder in playlist
+access logs on mobile directly from app, remove from Files app
+dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
+script to make the provisioning profile.
 spinner aside the device name when syncing
 auto complete while editing
+Esc to dismiss
 localisation
 different flower species in dark mode
 intelligent playlist like favorite songs, recently played, etc. 
 export playlist with actual songs
+on each startup, choose an flower emoji and make that the app icon. show it in the about box and in the ios splash screen. 
+push library sync events instead of polling
