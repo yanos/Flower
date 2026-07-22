@@ -1,0 +1,125 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:controls="clr-namespace:Flower.Controls"
+                    xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+                    x:CompileBindings="False">
+
+  <!-- Shared by the main track list (Songs/album-artist-playlist drill-in, see
+       TrackListScreenView) and the Search tab's own Songs section (see
+       SearchResultsScreenView) - same row for the same underlying
+       TrackRowViewModel wherever it appears, rather than a second copy of
+       this template drifting out of sync. Moved into its own
+       ResourceDictionary (out of the old monolithic MobileMainView.axaml)
+       when each screen became its own UserControl, for the same reason. -->
+  <DataTemplate x:Key="TrackRowTemplate">
+    <Button Classes="trackRow"
+            Classes.playing="{Binding IsCurrentlyPlaying}"
+            Classes.placeholder="{Binding IsUnavailable}"
+            Command="{Binding $parent[UserControl].DataContext.PlayTrackCommand}"
+            CommandParameter="{Binding Track}">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+        <!-- Pointer wiring for drag-to-reorder is NOT attached here as XAML
+             event attributes - this file is a class-less ResourceDictionary
+             (no x:Class), so the XAML compiler has no code-behind type to
+             resolve handler method names against (fails at compile time,
+             AVLN3000, regardless of x:CompileBindings - that setting only
+             affects Binding resolution, not event handlers). Instead, the
+             hosting screen (TrackListScreenView) wires these via AddHandler
+             on its ListBox using tunnel routing + e.Source, the same pattern
+             MobileMainView.axaml.cs already uses for its swipe gesture. -->
+        <Border Grid.Column="0"
+                Classes="dragHandle"
+                IsVisible="{Binding $parent[UserControl].DataContext.IsShowingPlaylistTracks}"
+                Background="Transparent"
+                Width="32"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="DragHorizontalVariant" Width="20" Height="20" Opacity="0.5" />
+        </Border>
+        <!-- Hidden while viewing one album's own track list - its header
+             (see IsShowingAlbumTrackList/CurrentAlbumHeader) already shows
+             the art once, full-size, above the list. -->
+        <controls:AlbumArtView Grid.Column="1"
+                                AlbumArt="{Binding AlbumArt}"
+                                IsVisible="{Binding !$parent[UserControl].DataContext.IsShowingAlbumTrackList}"
+                                Width="40" Height="40"
+                                Margin="0,0,10,0" />
+        <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Track.Title}"
+                     FontSize="16"
+                     TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding Track.Artists}"
+                     FontSize="13"
+                     Opacity="0.65"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <!-- Duration always shows, downloaded or not - a placeholder still
+             knows its own length (Track.Duration comes from the peer's
+             catalog, not from reading a local file - see
+             LibrarySyncMapper.ToPlaceholderTrack), there's no reason to
+             hide it just because the file isn't local yet. Only the
+             trailing action (the "..." menu, or the download button) still
+             depends on IsPlaceholder. -->
+        <StackPanel Grid.Column="3" Grid.ColumnSpan="2"
+                    Orientation="Horizontal" Spacing="0">
+          <TextBlock Text="{Binding DurationDisplay}"
+                     FontSize="13"
+                     Opacity="0.65"
+                     VerticalAlignment="Center"
+                     Margin="8,0,0,0" />
+          <Button IsVisible="{Binding !IsPlaceholder}"
+                  Command="{Binding $parent[UserControl].DataContext.OpenTrackActionsCommand}"
+                  CommandParameter="{Binding Track}"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="6"
+                  Margin="4,0,0,0"
+                  VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
+          </Button>
+
+          <!-- tapping the row itself (PlayTrackCommand, above) is a no-op
+               for a placeholder track, so this is the only actionable
+               thing on that row. Three mutually exclusive icon states
+               (idle / in-flight / just-failed-or-unavailable) - see
+               TrackRowViewModel.IsDownloadIdle. The Sync icon's own spin
+               is driven by SpinAngle, a plain bindable double owned by the
+               row's own ViewModel - see TrackRowViewModel.IsDownloading's
+               own doc comment for why this isn't a View-side animation
+               (TrackListBox's virtualization made an earlier attempt at
+               that unreliable during a multi-row batch download). -->
+          <Button IsVisible="{Binding IsPlaceholder}"
+                  Command="{Binding $parent[UserControl].DataContext.DownloadTrackCommand}"
+                  CommandParameter="{Binding}"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="6"
+                  Margin="4,0,0,0"
+                  VerticalAlignment="Center">
+            <Panel>
+              <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7"
+                                           IsVisible="{Binding IsDownloadIdle}"
+                                           ToolTip.Tip="Download" />
+              <!-- Rotation directly on the icon, matching MainView.axaml's
+                   own already-working status-bar spinner exactly (same Sync
+                   icon, same RelativePoint.Center-equivalent origin, same
+                   RotateTransform) - an earlier attempt wrapped this in a
+                   sized Border instead, which was the wrong fix. -->
+              <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7"
+                                           IsVisible="{Binding IsDownloading}"
+                                           RenderTransformOrigin="0.5,0.5">
+                <materialIcons:MaterialIcon.RenderTransform>
+                  <RotateTransform Angle="{Binding SpinAngle}" />
+                </materialIcons:MaterialIcon.RenderTransform>
+              </materialIcons:MaterialIcon>
+              <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="22" Height="22" Opacity="0.7"
+                                           IsVisible="{Binding IsDownloadUnavailable}"
+                                           ToolTip.Tip="Device unavailable - try again later" />
+            </Panel>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Button>
+  </DataTemplate>
+</ResourceDictionary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
@@ -120,57 +121,91 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand ForceSyncCommand { get; }
 
     // Real back-history: every "navigate forward" action (a tab-bar tap, a
-    // picker tile tap, a drill-in) pushes a closure here that restores
-    // exactly the state it was called from, before applying its own change.
-    // GoBack/SwipeBack just pop and replay the most recent one - unlike the
-    // old algorithmic unwind (SelectedTab-- / clear _hasDrilledIn), this
+    // picker tile tap, a drill-in) pushes a frame here capturing exactly the
+    // state it was called from, before applying its own change. GoBack/
+    // SwipeBack just pop and restore the most recent one - unlike the old
+    // algorithmic unwind (SelectedTab-- / clear _hasDrilledIn), this
     // correctly retraces compound jumps too, e.g. tapping an artist search
     // result switches tab AND drills in as one step, and back undoes both at
     // once, landing back on Search - the old approach had no way to know
     // "before this jump, I was on a completely different tab."
-    private readonly System.Collections.Generic.Stack<Func<Task>> _navigationHistory = new();
+    //
+    // Plain data (MobileNavigationFrame) rather than the closures this used
+    // to be - ScreenStackPanel needs to inspect what screen the entry one
+    // back in history represents (PeekOneBack) so it can keep that screen's
+    // control alive and ready to reveal, which a closure can't expose.
+    private readonly Stack<MobileNavigationFrame> _navigationHistory = new();
+
+    // Full snapshot of the screen being left, including FrozenRows/
+    // FrozenHeader - see PushHistory/GoBack, the only two callers.
+    private MobileNavigationFrame BuildLeavingFrame() => new(
+        _selectedTab,
+        _hasDrilledIn,
+        _selectedArtistName,
+        _hasDrilledIntoArtistAlbum,
+        Main.SelectedSidebarItem,
+        Main.SelectedSubItem,
+        _searchQuery,
+        // Only captured leaving a track-list screen - see
+        // MobileNavigationFrame's own doc comment for why a kept-alive
+        // one-back TrackListScreenView needs these instead of the live,
+        // wholesale-replaced Main.Rows/CurrentAlbumHeader.
+        IsShowingTrackList ? Main.Rows.ToList() : null,
+        IsShowingAlbumTrackList ? CurrentAlbumHeader : null);
+
+    // Called BEFORE any state field mutates, both here and in GoBack - not
+    // just before RaiseNavigationChanged's much-later resync. The gap
+    // between "leaving this screen" and "the destination is fully ready"
+    // can be a real await (Main.RebuildRowsImmediatelyAsync), during which
+    // Main.SelectedSidebarItem/SelectedSubItem/etc. already reflect the
+    // DESTINATION while Main.Rows still holds the OUTGOING screen's tracks -
+    // a still-observing TrackListScreenView (see ObserveLive) would recompute
+    // against that inconsistent half-updated state and flash the wrong
+    // thing (confirmed on device: the album header disappearing to show a
+    // stale flat list for a couple of seconds after Back). Firing this
+    // immediately, before any mutation, lets ScreenStackPanel freeze the
+    // outgoing screen's control in place (its subscription detached) so it
+    // keeps showing exactly what the user last saw, unchanged, until the
+    // destination is actually ready to replace it - see
+    // ScreenStackPanel's own subscription to this event.
+    public event EventHandler<MobileNavigationFrame>? NavigationLeaving;
 
     private void PushHistory()
     {
-        var tab = _selectedTab;
-        var hasDrilledIn = _hasDrilledIn;
-        var artistName = _selectedArtistName;
-        var drilledIntoArtistAlbum = _hasDrilledIntoArtistAlbum;
-        var sidebarItem = Main.SelectedSidebarItem;
-        var subItem = Main.SelectedSubItem;
-        var searchQuery = _searchQuery;
-
-        _navigationHistory.Push(async () =>
-        {
-            _selectedTab = tab;
-            _hasDrilledIn = hasDrilledIn;
-            _selectedArtistName = artistName;
-            _hasDrilledIntoArtistAlbum = drilledIntoArtistAlbum;
-            Main.SelectedSidebarItem = sidebarItem;
-            Main.SelectedSubItem = subItem;
-            if (artistName != null)
-                RebuildArtistAlbumGrid();
-            OnPropertyChanged(nameof(SelectedTab));
-            OnPropertyChanged(nameof(CanGoBack));
-            // Restoring the exact query the user had typed, not just the tab,
-            // is what makes landing back on Search actually useful rather
-            // than an empty prompt. Set before RaiseNavigationChanged so its
-            // own Search-tab branch (RefreshSearchResultsNow) rebuilds
-            // against the restored query, not whatever SetSelectedTabCore's
-            // "fresh start" clear (see its own wasSearch guard) already left there.
-            if (tab == MobileTab.Search)
-            {
-                _searchQuery = searchQuery;
-                OnPropertyChanged(nameof(SearchQuery));
-            }
-            // Same reasoning as SelectAlbumOrArtistCore's own comment -
-            // without bypassing the debounce, going back to an album/playlist
-            // view flashed the wrong scope's tracks for a moment before the
-            // restored one actually appeared.
-            await Main.RebuildRowsImmediatelyAsync();
-            RaiseNavigationChanged();
-        });
+        var frame = BuildLeavingFrame();
+        NavigationLeaving?.Invoke(this, frame);
+        _navigationHistory.Push(frame);
     }
+
+    // The live screen, expressed as the same MobileNavigationFrame shape
+    // history entries use - same Classify/ScopeKey logic drives both, so
+    // ScreenStackPanel has exactly one notion of "what screen is this",
+    // never two that could drift apart. Deliberately leaves FrozenRows/
+    // FrozenHeader null (unlike PushHistory's snapshot) - this is read on
+    // every navigation-change resync just to classify/scope the CURRENT
+    // control, which tracks the live VM directly (see
+    // TrackListScreenView.ObserveLive), so paying for a full Main.Rows copy
+    // here would just be discarded work every single time.
+    public MobileNavigationFrame CurrentFrame => new(
+        _selectedTab,
+        _hasDrilledIn,
+        _selectedArtistName,
+        _hasDrilledIntoArtistAlbum,
+        Main.SelectedSidebarItem,
+        Main.SelectedSubItem,
+        _searchQuery,
+        null,
+        null);
+
+    // What ScreenStackPanel should keep materialized underneath the current
+    // screen, ready to reveal - null if there's nowhere to go back to.
+    public MobileNavigationFrame? PeekOneBack => _navigationHistory.Count > 0 ? _navigationHistory.Peek() : null;
+
+    // Fired at the end of RaiseNavigationChanged - the single sync point
+    // ScreenStackPanel hooks to know when to re-materialize/re-order its
+    // current/one-back children. A plain event (not a Control reference)
+    // keeps this ViewModel from needing to know Views/Controls exist.
+    public event EventHandler? NavigationChanged;
 
     private MobileTab _selectedTab = MobileTab.RecentlyAdded;
     public MobileTab SelectedTab
@@ -282,6 +317,19 @@ public class MobileMainViewModel : ViewModelBase
     // redundant once a big header already shows it once.
     public bool IsShowingAlbumTrackList =>
         IsShowingTrackList && Main.SelectedSidebarItem?.Kind == SidebarItemKind.Albums && Main.SelectedSubItem != null;
+
+    // Bound by the album-drilled-into view's own ItemsControl instead of
+    // Main.Rows directly (see MobileMainView.axaml). That ItemsControl stays
+    // in the visual tree - just IsVisible="False" - while Songs mode is
+    // active too, and an ItemsControl's item-container generation is not
+    // gated on IsVisible the way layout/rendering is, so binding it straight
+    // to Main.Rows meant it kept trying to realize the WHOLE library's rows
+    // in the background every time Main.Rows changed, even while completely
+    // hidden - confirmed as the cause of the app feeling slow to navigate
+    // generally, not just when viewing an album. Empty whenever this is not
+    // the active view, so there is nothing for it to do.
+    public IReadOnlyList<TrackRowViewModel> AlbumDetailRows =>
+        IsShowingAlbumTrackList ? Main.Rows : Array.Empty<TrackRowViewModel>();
 
     // Art/name/artist/year for IsShowingAlbumTrackList's header - reuses
     // AlbumTileViewModel (the same shape the Albums/Recently Added grids'
@@ -1210,7 +1258,8 @@ public class MobileMainViewModel : ViewModelBase
     private async Task SelectAlbumOrArtistCore(string name)
     {
         Main.SelectedSubItem = name;
-        await Main.RebuildRowsImmediatelyAsync();
+        // includeGridTiles: false - see SelectAlbumOrArtistCore's own comment on why.
+        await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false);
         _hasDrilledIn = true;
         RaiseNavigationChanged();
     }
@@ -1247,7 +1296,11 @@ public class MobileMainViewModel : ViewModelBase
         PushHistory();
         Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
         Main.SelectedSubItem = albumName;
-        await Main.RebuildRowsImmediatelyAsync(); // see SelectAlbumOrArtistCore's own comment on why.
+        // includeGridTiles: false - mobile never reads Main.AlbumGridTiles/
+        // RecentlyAddedGridTiles (it has its own AlbumGridRows/
+        // RecentlyAddedAlbumRows - see those), so building them here on
+        // every drill-in was pure wasted work.
+        await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false); // see SelectAlbumOrArtistCore's own comment on why.
         _hasDrilledIntoArtistAlbum = true;
         RaiseNavigationChanged();
     }
@@ -1266,7 +1319,11 @@ public class MobileMainViewModel : ViewModelBase
         PushHistory();
         Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
         Main.SelectedSubItem = albumName;
-        await Main.RebuildRowsImmediatelyAsync(); // see SelectAlbumOrArtistCore's own comment on why.
+        // includeGridTiles: false - mobile never reads Main.AlbumGridTiles/
+        // RecentlyAddedGridTiles (it has its own AlbumGridRows/
+        // RecentlyAddedAlbumRows - see those), so building them here on
+        // every drill-in was pure wasted work.
+        await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false); // see SelectAlbumOrArtistCore's own comment on why.
         _hasDrilledIn = true;
         RaiseNavigationChanged();
     }
@@ -1277,7 +1334,11 @@ public class MobileMainViewModel : ViewModelBase
             return;
         PushHistory();
         Main.SelectedSidebarItem = item;
-        await Main.RebuildRowsImmediatelyAsync(); // see SelectAlbumOrArtistCore's own comment on why.
+        // includeGridTiles: false - mobile never reads Main.AlbumGridTiles/
+        // RecentlyAddedGridTiles (it has its own AlbumGridRows/
+        // RecentlyAddedAlbumRows - see those), so building them here on
+        // every drill-in was pure wasted work.
+        await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false); // see SelectAlbumOrArtistCore's own comment on why.
         _hasDrilledIn = true;
         RaiseNavigationChanged();
     }
@@ -1286,7 +1347,55 @@ public class MobileMainViewModel : ViewModelBase
     {
         if (_navigationHistory.Count == 0)
             return;
-        await _navigationHistory.Pop()();
+        var frame = _navigationHistory.Pop();
+        // See NavigationLeaving's own doc comment - fired before any of the
+        // fields below mutate, not just before the much-later
+        // RaiseNavigationChanged, so ScreenStackPanel can freeze the
+        // outgoing screen's control before it gets a chance to observe its
+        // own state turning inconsistent mid-transition.
+        NavigationLeaving?.Invoke(this, BuildLeavingFrame());
+
+        _selectedTab = frame.Tab;
+        _hasDrilledIn = frame.HasDrilledIn;
+        _selectedArtistName = frame.SelectedArtistName;
+        _hasDrilledIntoArtistAlbum = frame.HasDrilledIntoArtistAlbum;
+        Main.SelectedSidebarItem = frame.SidebarItem;
+        Main.SelectedSubItem = frame.SubItem;
+        if (frame.SelectedArtistName != null)
+            RebuildArtistAlbumGrid();
+        OnPropertyChanged(nameof(SelectedTab));
+        OnPropertyChanged(nameof(CanGoBack));
+        // Restoring the exact query the user had typed, not just the tab, is
+        // what makes landing back on Search actually useful rather than an
+        // empty prompt. Set before RaiseNavigationChanged so its own
+        // Search-tab branch (RefreshSearchResultsNow) rebuilds against the
+        // restored query, not whatever SetSelectedTabCore's own "fresh
+        // start" clear already left there.
+        if (frame.Tab == MobileTab.Search)
+        {
+            _searchQuery = frame.SearchQuery;
+            OnPropertyChanged(nameof(SearchQuery));
+        }
+        // Unlike the 4 forward-navigation call sites (which always land on
+        // a TrackList screen by definition), GoBack can land on ANY screen
+        // kind - and only TrackList actually reads Main.Rows (every other
+        // kind - AlbumGrid/ArtistPicker/ArtistAlbumGrid/PlaylistPicker/
+        // RecentlyAdded/SearchResults - renders from its own separate
+        // collection instead, see MobileNavigationFrame.Classify). Rebuilding
+        // Main.Rows on the way back to one of those was pure wasted work
+        // (a full filter+sort+row-construction+reachability-scan pass over
+        // the whole library that nothing would even display) - confirmed on
+        // a real device as a large chunk of the remaining pause after Back
+        // when the destination isn't a track list at all.
+        //
+        // Same reasoning as SelectAlbumOrArtistCore's own comment when it IS
+        // one - without bypassing the debounce, going back to an album/
+        // playlist view flashed the wrong scope's tracks for a moment before
+        // the restored one actually appeared. includeGridTiles: false - see
+        // that same comment.
+        if (frame.ScreenKind == MobileScreenKind.TrackList)
+            await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false);
+        RaiseNavigationChanged();
     }
 
     // First and last MobileTab in bottom-bar order (see the enum's own
@@ -1322,6 +1431,15 @@ public class MobileMainViewModel : ViewModelBase
             SelectedTab = SelectedTab + 1;
     }
 
+    // Called by ScreenStackPanel's interactive live-drag gesture once its
+    // release-triggered easing finishes sliding the outgoing screen fully
+    // off-screen - identical to GoBack() (the same one BackCommand and the
+    // discrete SwipeBack() above both already use), just under a name that
+    // reads correctly from the View side, and only ever invoked when
+    // PeekOneBack was already non-null at gesture start (see
+    // ScreenStackPanel's own gating on CanGoBack before going interactive).
+    public Task CommitSwipeBack() => GoBack();
+
     private void RaiseNavigationChanged()
     {
         if (!IsShowingTrackList)
@@ -1345,6 +1463,7 @@ public class MobileMainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsShowingPlaylistTracks));
         OnPropertyChanged(nameof(CanSearch));
         OnPropertyChanged(nameof(IsShowingAlbumTrackList));
+        OnPropertyChanged(nameof(AlbumDetailRows));
         OnPropertyChanged(nameof(CurrentAlbumHeader));
         // SearchQuery and its matched results survive leaving the Search tab
         // (see SearchQuery's own doc comment) - deliberately NOT cleared here
@@ -1360,6 +1479,7 @@ public class MobileMainViewModel : ViewModelBase
         else
             _searchResultsCts?.Cancel();
         RaiseEmptyStateChanged();
+        NavigationChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // Driven by the track list's touch drag-to-reorder gesture (see MobileMainView's

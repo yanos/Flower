@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Views.Mobile.Screens.SearchResultsScreenView"
+             Background="{DynamicResource AppBackgroundBrush}">
+
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://Flower/Views/Mobile/Screens/TrackRowTemplate.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <!-- Search tab results: Artists/Albums/Songs sections, each hidden when
+       empty - see MobileMainViewModel.RebuildSearchResults. A plain
+       ScrollViewer+StackPanel rather than TrackListScreenView's virtualized
+       ListBox - search results are bounded by the query, not the whole
+       library, so virtualization isn't worth the extra complexity here. -->
+  <ScrollViewer controls:RubberBandScroll.IsEnabled="True">
+    <StackPanel>
+      <StackPanel IsVisible="{Binding HasSearchArtistResults}">
+        <TextBlock Text="Artists" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
+        <ItemsControl ItemsSource="{Binding SearchArtistResults}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Classes="pickerRow"
+                      Command="{Binding $parent[UserControl].DataContext.SelectSearchArtistCommand}"
+                      CommandParameter="{Binding}">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                  <materialIcons:MaterialIcon Kind="AccountMusic" Width="22" Height="22" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <StackPanel IsVisible="{Binding HasSearchAlbumResults}">
+        <TextBlock Text="Albums" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
+        <ItemsControl ItemsSource="{Binding SearchAlbumResults}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Classes="pickerRow"
+                      Command="{Binding $parent[UserControl].DataContext.SelectSearchAlbumCommand}"
+                      CommandParameter="{Binding Name}">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                  <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="40" Height="40" />
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Artist}" FontSize="13" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <StackPanel IsVisible="{Binding HasSearchSongResults}">
+        <TextBlock Text="Songs" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
+        <ItemsControl ItemsSource="{Binding SearchSongResults}" ItemTemplate="{StaticResource TrackRowTemplate}" />
+      </StackPanel>
+
+      <!-- See MaxSearchResultsPerSection's own doc comment - each section
+           above is capped, so a very broad query needs to say so rather
+           than silently looking like the whole match set. -->
+      <TextBlock IsVisible="{Binding HasMoreSearchResults}"
+                 Text="Showing partial results - refine your search to see more."
+                 FontSize="12" Opacity="0.5" TextWrapping="Wrap"
+                 Margin="16,14,16,20" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

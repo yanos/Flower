@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Views.Mobile.Screens.ArtistPickerScreenView"
+             Background="{DynamicResource AppBackgroundBrush}">
+
+  <!-- Artist name picker -->
+  <ListBox Background="Transparent"
+           ItemsSource="{Binding Main.SubListItems}"
+           controls:RubberBandScroll.IsEnabled="True"
+           SelectionMode="Single">
+    <ListBox.ItemTemplate>
+      <DataTemplate>
+        <Button Classes="pickerRow"
+                Command="{Binding $parent[UserControl].DataContext.SelectArtistCommand}"
+                CommandParameter="{Binding}">
+          <TextBlock Text="{Binding}" FontSize="16" TextTrimming="CharacterEllipsis" />
+        </Button>
+      </DataTemplate>
+    </ListBox.ItemTemplate>
+  </ListBox>
+</UserControl>

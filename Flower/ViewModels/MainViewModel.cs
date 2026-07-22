@@ -1948,7 +1948,7 @@ public partial class MainViewModel : ViewModelBase
         catch (OperationCanceledException) { }
     }
 
-    private async Task RebuildRowsAsync(CancellationToken token)
+    private async Task RebuildRowsAsync(CancellationToken token, bool includeGridTiles = true)
     {
         var text       = _filterText;
         // Playlists have a user-defined (drag-reorderable) track order rather
@@ -1967,9 +1967,22 @@ public partial class MainViewModel : ViewModelBase
         // Rebuilt here, alongside Rows, on every filter/sort/view change
         // rather than only on a rescan (see RebuildAlbumGrids), so typing in
         // the search box while on Albums actually narrows the grid.
+        //
+        // includeGridTiles=false skips both builds entirely - mobile (the
+        // only caller that passes false, via RebuildRowsImmediatelyAsync)
+        // has its own separate AlbumGridRows/RecentlyAddedAlbumRows on
+        // MobileMainViewModel (rebuilt only on library changes, not on every
+        // navigation - see RebuildAlbumGrid/RebuildRecentlyAddedAlbums
+        // there) and never reads AlbumGridTiles/RecentlyAddedGridTiles at
+        // all, so building two full-library tile grids on every single
+        // drill-in/back-navigation was pure wasted work there - confirmed on
+        // a real device as a large chunk of the pause after tapping Back.
         var (rows, albumTiles, recentTiles) = await Task.Run(() =>
         {
             var builtRows = TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear);
+            if (!includeGridTiles)
+                return (builtRows, (List<AlbumTileViewModel>?)null, (List<AlbumTileViewModel>?)null);
+
             var filteredForGrids = TrackListBuilder.Filter(allTracks, text).ToList();
             return (
                 builtRows,
@@ -1982,8 +1995,11 @@ public partial class MainViewModel : ViewModelBase
 
         _currentFilteredTracks = rows.Select(r => r.Track).ToList();
         Rows = new ObservableCollection<TrackRowViewModel>(rows);
-        AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles);
-        RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(recentTiles);
+        if (includeGridTiles)
+        {
+            AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles!);
+            RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(recentTiles!);
+        }
         RefreshRowReachability(); // fresh rows start from TrackRowViewModel's own assume-reachable default.
         OnPropertyChanged(nameof(StatusBarText));
     }
@@ -2002,14 +2018,20 @@ public partial class MainViewModel : ViewModelBase
     // drill-in. Returns false if superseded by a newer filter/navigation
     // change before this one finished, so a caller with its own
     // follow-up work (see GoToCurrentlyPlayingTrackAsync) can skip it.
-    public async Task<bool> RebuildRowsImmediatelyAsync()
+    //
+    // includeGridTiles defaults to true so the one desktop caller
+    // (GoToCurrentlyPlayingTrackAsync, which can run while Albums/Recently
+    // Added is the active sidebar view) keeps getting fresh grid tiles
+    // without having to know to ask for them - mobile's 5 call sites pass
+    // false explicitly instead, since mobile never reads them at all.
+    public async Task<bool> RebuildRowsImmediatelyAsync(bool includeGridTiles = true)
     {
         _filterCts?.Cancel();
         _filterCts = new CancellationTokenSource();
         var token = _filterCts.Token;
         try
         {
-            await RebuildRowsAsync(token);
+            await RebuildRowsAsync(token, includeGridTiles);
             return true;
         }
         catch (OperationCanceledException)
