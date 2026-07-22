@@ -100,9 +100,10 @@ public partial class App : Application
         // the same instance, so the new name takes effect immediately without
         // needing to reconstruct or restart anything.
         var deviceIdentity = deviceIdentityStore.Load();
-        var syncHttpServer = new SyncHttpServer(deviceIdentity, appSettings, library, playlistStore, trustedPeerStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
+        var clientLogStore = new ClientLogStore();
+        var syncHttpServer = new SyncHttpServer(deviceIdentity, appSettings, library, playlistStore, trustedPeerStore, clientLogStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
         var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, appSettings, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
-        var librarySyncService = new LibrarySyncService(library, deviceIdentity, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibrarySyncService>());
+        var librarySyncService = new LibrarySyncService(library, deviceIdentity, appSettings, libraryStore, InMemoryLogStore.Instance, AppLogging.CreateTypedLogger<LibrarySyncService>());
         var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
 
         Ioc.Default.ConfigureServices(
@@ -127,10 +128,13 @@ public partial class App : Application
                 .AddSingleton(deviceNicknameStore)
                 .AddSingleton(trustedPeerStore)
                 .AddSingleton(playlistSyncStateStore)
+                .AddSingleton(clientLogStore)
+                .AddSingleton(InMemoryLogStore.Instance)
                 .AddSingleton<MainViewModel>()
                 .AddSingleton<VolumeControlViewModel>()
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
                 .AddSingleton<MobileMainViewModel>()
+                .AddSingleton<LogViewModel>()
                 .AddLogging(builder => builder.AddSerilog())
                 .BuildServiceProvider());
 

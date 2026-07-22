@@ -54,6 +54,10 @@ namespace Flower.Logging
                 // rather than only readable after the fact from the log file.
                 .WriteTo.Console(outputTemplate:
                     "{Timestamp:HH:mm:ss.fff} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+                // Feeds the in-app Log window's "This Device" live view and
+                // the snapshot LibrarySyncService pushes to a paired Server -
+                // see InMemoryLogStore/InMemoryLogEventSink.
+                .WriteTo.Sink(new InMemoryLogEventSink(InMemoryLogStore.Instance))
                 .CreateLogger();
 
             _factory = new SerilogLoggerFactory(Log.Logger, dispose: false);

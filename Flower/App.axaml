@@ -49,6 +49,12 @@
     <Application.Styles>
         <FluentTheme />
         <materialIcons:MaterialIconStyles />
+        <!-- Required for AvaloniaEdit's TextEditor (Log window) to render at
+             all - without its own theme resources included here, the control
+             has no default ControlTemplate and shows completely blank (no
+             text, no caret) even though its Text property is set correctly
+             underneath. -->
+        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"/>
         <!-- Subtle rounded corners on every list selection highlight app-wide
              (sidebar, sub-list, Settings' library paths list, etc). The track
              list's own selection box is a hand-rolled control, not a

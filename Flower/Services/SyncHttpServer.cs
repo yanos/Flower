@@ -37,6 +37,11 @@ public sealed class PeerApprovalRequestedEventArgs : EventArgs
 //   GET  /api/flower/v1/library - every real track in one response (bespoke,
 //                                 not OpenSubsonic - see LibrarySyncContracts;
 //                                 this is what LibrarySyncService actually uses)
+//   POST /api/flower/v1/log/report - a Client pushes its own recent log
+//                                 snapshot here as an extra step of the same
+//                                 sync session (see LibrarySyncService.
+//                                 PushLogSnapshotAsync, LogSyncContracts,
+//                                 ClientLogStore) - never pulled by a Server
 //   GET  /rest/getAlbumList2    - this device's own real tracks, grouped by album
 //   GET  /rest/getAlbum         - one album's song list (OpenSubsonic-shaped
 //                                 browsing, kept for real third-party interop -
@@ -69,6 +74,7 @@ public class SyncHttpServer : IDisposable
     private readonly ILogger _logger;
     private readonly PlaylistStore _playlistStore;
     private readonly TrustedPeerStore _trustedPeerStore;
+    private readonly ClientLogStore _clientLogStore;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingApprovals = new();
     private CancellationTokenSource? _cts;
 
@@ -86,6 +92,7 @@ public class SyncHttpServer : IDisposable
         Library library,
         PlaylistStore playlistStore,
         TrustedPeerStore trustedPeerStore,
+        ClientLogStore clientLogStore,
         ILogger<SyncHttpServer> logger)
     {
         _deviceIdentity = deviceIdentity;
@@ -93,6 +100,7 @@ public class SyncHttpServer : IDisposable
         _library = library;
         _playlistStore = playlistStore;
         _trustedPeerStore = trustedPeerStore;
+        _clientLogStore = clientLogStore;
         _logger = logger;
     }
 
@@ -119,8 +127,9 @@ public class SyncHttpServer : IDisposable
             {
                 listener.Start();
             }
-            catch (HttpListenerException)
+            catch (HttpListenerException ex)
             {
+                _logger.LogDebug(ex, "Port {Port} unavailable, trying the next one", port);
                 continue;
             }
 
@@ -199,6 +208,8 @@ public class SyncHttpServer : IDisposable
                 await HandleApplyPlaylistsAsync(context);
             else if (path == "/api/flower/v1/library" && method == "GET")
                 await HandleGetLibraryAsync(context);
+            else if (path == "/api/flower/v1/log/report" && method == "POST")
+                await HandleReportLogAsync(context);
             else if (path == "/rest/getAlbumList2" && method == "GET")
                 await HandleGetAlbumList2Async(context);
             else if (path == "/rest/getAlbum" && method == "GET")
@@ -325,6 +336,29 @@ public class SyncHttpServer : IDisposable
     {
         var manifest = new LibrarySyncManifestDto(_deviceIdentity.Fingerprint, LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks, _deviceIdentity.Fingerprint));
         await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
+    }
+
+    // A Client's pushed log snapshot (see LibrarySyncService.PushLogSnapshotAsync).
+    // Stored under the header identity AuthorizeAsync already validated this
+    // request against, not whatever fingerprint the JSON body itself claims -
+    // the body hasn't been authenticated, only the headers have.
+    private async Task HandleReportLogAsync(HttpListenerContext context)
+    {
+        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+        var json = await reader.ReadToEndAsync();
+        var report = JsonSerializer.Deserialize<LogReportDto>(json, JsonOptions);
+        if (report == null)
+        {
+            context.Response.StatusCode = 400;
+            return;
+        }
+
+        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint")!;
+        var alias = GetIdentityValue(context, "X-Flower-Alias") ?? report.Alias;
+        _clientLogStore.SetSnapshot(fingerprint, alias, report.Entries, DateTimeOffset.UtcNow);
+        _logger.LogDebug("Received log snapshot from {Alias} ({Fingerprint}): {Count} line(s)", alias, fingerprint, report.Entries.Count);
+
+        context.Response.StatusCode = 204;
     }
 
     // The initiator of a sync session (see PlaylistSyncService) has already resolved

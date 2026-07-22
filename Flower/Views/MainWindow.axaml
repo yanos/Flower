@@ -62,6 +62,8 @@
             <NativeMenuItem Header="Select Columns…" Command="{Binding OpenColumnSelectorCommand}"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Zoom"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Log…" Command="{Binding OpenLogWindowCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>

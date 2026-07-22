@@ -17,6 +17,7 @@ using Microsoft.Extensions.Logging;
 
 using Flower.Controls;
 using Flower.Importer;
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
@@ -215,6 +216,7 @@ public partial class MainViewModel : ViewModelBase
     public ICommand? SortByColumnCommand         { get; private set; }
     public ICommand? OpenSettingsCommand         { get; private set; }
     public ICommand? OpenColumnSelectorCommand   { get; private set; }
+    public ICommand? OpenLogWindowCommand        { get; private set; }
     public ICommand? NewPlaylistCommand          { get; private set; }
     public ICommand? RenamePlaylistCommand       { get; private set; }
     public ICommand? DeletePlaylistCommand       { get; private set; }
@@ -241,6 +243,7 @@ public partial class MainViewModel : ViewModelBase
 
     public event EventHandler? SettingsRequested;
     public event EventHandler? ColumnSelectorRequested;
+    public event EventHandler? LogWindowRequested;
     public event EventHandler<Track>? NavigateToTrackRequested;
     public event EventHandler<PlaylistConflictEventArgs>? PlaylistConflictRequested;
     public event EventHandler<PeerApprovalRequestedEventArgs>? PeerApprovalRequested;
@@ -273,6 +276,7 @@ public partial class MainViewModel : ViewModelBase
             var trimmed = value.Trim();
             if (_deviceIdentity == null || string.IsNullOrEmpty(trimmed) || _deviceIdentity.Alias == trimmed)
                 return;
+            _logger.LogInformation("Device renamed: {Old} -> {New}", _deviceIdentity.Alias, trimmed);
             _deviceIdentity.Alias = trimmed;
             _ = (_deviceIdentityStore?.SaveAsync(_deviceIdentity) ?? Task.CompletedTask);
         }
@@ -956,7 +960,7 @@ public partial class MainViewModel : ViewModelBase
         _libraryDownloadService = libraryDownloadService;
         _networkDiscovery      = networkDiscovery;
         _deviceIdentity        = deviceIdentity;
-        PeerLibrary            = new PeerLibraryViewModel(deviceIdentity, appSettings, playlistControlViewModel);
+        PeerLibrary            = new PeerLibraryViewModel(deviceIdentity, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>());
         _libraryStore          = libraryStore;
         _appSettingsStore      = appSettingsStore;
         _playlistStore         = playlistStore;
@@ -976,6 +980,7 @@ public partial class MainViewModel : ViewModelBase
         SortByColumnCommand         = new RelayCommand<string>(SortByColumn);
         OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         OpenColumnSelectorCommand   = new RelayCommand(() => ColumnSelectorRequested?.Invoke(this, EventArgs.Empty));
+        OpenLogWindowCommand        = new RelayCommand(() => LogWindowRequested?.Invoke(this, EventArgs.Empty));
         NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));
         PlayOrPauseCommand          = new RelayCommand(PlayOrPauseFromCurrentView);
         NextTrackCommand            = new RelayCommand(_playlistControlViewModel.Next);
@@ -1825,6 +1830,12 @@ public partial class MainViewModel : ViewModelBase
     public async Task SaveLibraryPathsAsync(List<string> paths)
     {
         _appSettings ??= new AppSettings();
+        var added = paths.Except(_appSettings.LibraryPaths, StringComparer.OrdinalIgnoreCase).ToList();
+        var removed = _appSettings.LibraryPaths.Except(paths, StringComparer.OrdinalIgnoreCase).ToList();
+        if (added.Count > 0 || removed.Count > 0)
+            _logger.LogInformation("Library folders changed - added: [{Added}], removed: [{Removed}]",
+                string.Join(", ", added), string.Join(", ", removed));
+
         _appSettings.LibraryPaths = paths;
         await (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
     }

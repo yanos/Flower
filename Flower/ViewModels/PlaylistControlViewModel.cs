@@ -156,6 +156,7 @@ namespace Flower.ViewModels
         public void ToggleRepeat()
         {
             IsRepeatEnabled = !IsRepeatEnabled;
+            _logger.LogInformation("Repeat {State}", IsRepeatEnabled ? "enabled" : "disabled");
             _appSettings.IsRepeatEnabled = IsRepeatEnabled;
             _ = _appSettingsStore.SaveAsync(_appSettings);
         }
@@ -163,6 +164,7 @@ namespace Flower.ViewModels
         public void ToggleShuffle()
         {
             IsShuffleEnabled = !IsShuffleEnabled;
+            _logger.LogInformation("Shuffle {State}", IsShuffleEnabled ? "enabled" : "disabled");
             _appSettings.IsShuffleEnabled = IsShuffleEnabled;
             _ = _appSettingsStore.SaveAsync(_appSettings);
         }

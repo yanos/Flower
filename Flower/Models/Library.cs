@@ -50,8 +50,10 @@ namespace Flower.Models
         // launch/rescan. Carry these forward for any track already known by Path.
         public void UpdateTracks(List<Track> tracks)
         {
+            int beforeCount, afterCount, carriedForwardCount;
             lock (_lock)
             {
+                beforeCount = Tracks.Count;
                 var previousByPath = Tracks
                     .Where(t => t.Path != null)
                     .GroupBy(t => t.Path!, StringComparer.OrdinalIgnoreCase)
@@ -115,10 +117,16 @@ namespace Flower.Models
                 var carriedForwardSyncTracks = Tracks.Where(t =>
                     t.OriginDeviceFingerprint != null
                     && (t.Path == null || !freshPaths.Contains(t.Path))
-                    && !freshSyncKeys.Contains(t.SyncKey));
+                    && !freshSyncKeys.Contains(t.SyncKey))
+                    .ToList();
 
                 Tracks = tracks.Concat(carriedForwardSyncTracks).ToList();
+                afterCount = Tracks.Count;
+                carriedForwardCount = carriedForwardSyncTracks.Count;
             }
+
+            _logger.LogInformation("Library updated: {FreshCount} track(s) from scan, {CarriedForwardCount} synced-only track(s) carried forward, {TotalBefore} -> {TotalAfter}",
+                tracks.Count, carriedForwardCount, beforeCount, afterCount);
 
             TracksUpdated?.Invoke(this, EventArgs.Empty);
         }
@@ -275,11 +283,13 @@ namespace Flower.Models
         public void AddPlaylist(Playlist playlist)
         {
             Playlists.Add(playlist);
+            _logger.LogInformation("Playlist created: {Name} ({TrackCount} track(s))", playlist.Name, playlist.Tracks.Count);
         }
 
         public void RemovePlaylist(Playlist playlist)
         {
             Playlists.Remove(playlist);
+            _logger.LogInformation("Playlist deleted: {Name}", playlist.Name);
         }
 
         // Atomically swaps in a merged playlist set from a sync session and notifies

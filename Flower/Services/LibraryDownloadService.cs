@@ -56,6 +56,9 @@ public class LibraryDownloadService
             await _libraryStore.SaveAsync(_library.Tracks);
             _library.NotifyTrackChanged();
 
+            _logger.LogInformation("Downloaded {Title} ({SyncKey}) from {Alias} to {Destination}",
+                track.Title, track.SyncKey, peer.Alias, destination);
+
             return TrackDownloadResult.Downloaded;
         }
         catch (Exception ex)

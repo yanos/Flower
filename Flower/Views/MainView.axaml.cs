@@ -14,6 +14,8 @@ using Avalonia.VisualTree;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Controls;
 using Flower.Models;
 using Flower.Persistence;
@@ -31,6 +33,7 @@ public partial class MainView : UserControl
     private MainViewModel? _viewModel;
     private readonly PlaylistStore _playlistStore = Ioc.Default.GetService<PlaylistStore>()!;
     private readonly DeviceNicknameStore _deviceNicknameStore = Ioc.Default.GetService<DeviceNicknameStore>()!;
+    private readonly ILogger<MainView> _logger = Ioc.Default.GetService<ILogger<MainView>>()!;
 
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
@@ -127,6 +130,7 @@ public partial class MainView : UserControl
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.SettingsRequested -= OnSettingsRequested;
             _viewModel.ColumnSelectorRequested -= OnColumnSelectorRequested;
+            _viewModel.LogWindowRequested -= OnLogWindowRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.PeerApprovalRequested -= OnPeerApprovalRequested;
@@ -142,6 +146,7 @@ public partial class MainView : UserControl
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.ColumnSelectorRequested += OnColumnSelectorRequested;
+            _viewModel.LogWindowRequested += OnLogWindowRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.PeerApprovalRequested += OnPeerApprovalRequested;
@@ -1059,6 +1064,8 @@ public partial class MainView : UserControl
 
     private void OnColumnSelectorRequested(object? sender, EventArgs e) => OpenColumnSelectorWindow();
 
+    private void OnLogWindowRequested(object? sender, EventArgs e) => OpenLogWindow();
+
     // Raised by MainViewModel (forwarding PlaylistSyncService.ConflictDetected)
     // when the same playlist changed on both this device and a peer since they
     // last agreed - see SYNC-PLAN.md Phase 2. The dialog's result is fed back into
@@ -1134,6 +1141,16 @@ public partial class MainView : UserControl
             columnSelectorWindow.ShowDialog(owner);
         else
             columnSelectorWindow.Show();
+    }
+
+    // Non-modal (.Show(), no owner) unlike Settings/Column Selector's
+    // ShowDialog - this window's whole point is to keep showing live log
+    // activity while the user keeps using the rest of the app.
+    private void OpenLogWindow()
+    {
+        var logViewModel = Ioc.Default.GetRequiredService<LogViewModel>();
+        var logWindow = new LogWindow(logViewModel);
+        logWindow.Show();
     }
 
     // ── Track actions ─────────────────────────────────────────────────────────
@@ -1368,6 +1385,7 @@ public partial class MainView : UserControl
         if (item.Device is { Fingerprint.Length: > 0 } device)
         {
             item.IsEditing = false;
+            _logger.LogInformation("Device nickname set for {Alias} ({Fingerprint}): {Nickname}", device.Alias, device.Fingerprint, name ?? "(cleared)");
             await _deviceNicknameStore.SetAsync(device.Fingerprint, name ?? "");
 
             // Re-derives item.Name (and every other Device row's) from
@@ -1383,6 +1401,7 @@ public partial class MainView : UserControl
 
         if (item.Playlist == null || _viewModel == null)
             return;
+        _logger.LogInformation("Playlist renamed: {Old} -> {New}", item.Playlist.Name, item.Name);
         item.Playlist.Name = item.Name;
         await _playlistStore.SaveAsync(_viewModel.Library.Playlists);
         _viewModel.ScheduleContentSync();
