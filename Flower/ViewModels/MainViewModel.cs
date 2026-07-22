@@ -155,6 +155,12 @@ public partial class MainViewModel : ViewModelBase
     // enough that a peer notices a real change reasonably promptly.
     private static readonly TimeSpan ContentSyncCooldown = TimeSpan.FromSeconds(5);
 
+    // See the InMemoryLogStore.EntryAdded subscription in the constructor
+    // for why this is a periodic timer, not routed through ScheduleContentSync's
+    // debounce like everything else here.
+    private bool _hasUnpushedLogActivity;
+    private readonly DispatcherTimer _logPushTimer;
+
     // Called whenever a genuine local change happens to this device's library
     // or playlists: a rescan or download completing (Library.TracksUpdated),
     // or a playlist being created/renamed/deleted/reordered/added-to (called
@@ -162,11 +168,12 @@ public partial class MainViewModel : ViewModelBase
     // Library.PlaylistsUpdated only fires for a *sync's own* ReplacePlaylists
     // call, never for these ordinary local actions, per its own doc comment,
     // so there is no single event to hook for playlists the way there is for
-    // tracks). Debounced: every call restarts the cooldown rather than queuing
-    // another, so only the last change in a burst actually triggers a sync.
+    // tracks). Debounced: every call restarts the cooldown rather than
+    // queuing another, so only the last change in a burst actually triggers
+    // a sync. New log activity does NOT go through this path - see
+    // _logPushTimer below for why a debounce cannot work for that.
     public void ScheduleContentSync()
     {
-        _logger.LogInformation("Content sync scheduled, cooldown restarted ({Cooldown}s)", ContentSyncCooldown.TotalSeconds);
         _contentSyncCts?.Cancel();
         _contentSyncCts = new CancellationTokenSource();
         _ = DebouncedContentSyncAsync(_contentSyncCts.Token);
@@ -183,6 +190,15 @@ public partial class MainViewModel : ViewModelBase
             return; // A newer change restarted the cooldown - that call's own delay will fire instead.
         }
 
+        RunPendingDeviceSyncs();
+    }
+
+    // Shared by the debounced path above (genuine library/playlist changes)
+    // and _logPushTimer's independent periodic tick (new log activity) -
+    // both ultimately just need "sync with whichever peer this Client is
+    // paired to, right now."
+    private void RunPendingDeviceSyncs()
+    {
         // Every currently-known, fingerprint-resolved peer this device should
         // bulk-sync with per SyncRolePolicy - not gated by
         // _syncedDeviceFingerprints (that dedup is specifically for "don't
@@ -198,8 +214,8 @@ public partial class MainViewModel : ViewModelBase
             .Select(i => i.Device!)
             .ToList();
 
-        _logger.LogInformation("Content sync cooldown elapsed, syncing with {Count} known device(s): {Devices}",
-            devices.Count, string.Join(", ", devices.Select(d => d.Alias)));
+        if (devices.Count == 0)
+            return;
 
         foreach (var device in devices)
         {
@@ -209,6 +225,15 @@ public partial class MainViewModel : ViewModelBase
             RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
             RunTrackedSync(() => _librarySyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
         }
+
+        // Logged after RunTrackedSync has already incremented _activeSyncCount
+        // for every device above (that increment is synchronous - see
+        // RunTrackedSync), not before, so this line itself does not get
+        // treated as new log activity by _logPushTimer while _activeSyncCount
+        // is still 0 - logging it earlier caused every completed sync to
+        // immediately re-schedule another one, forever, from its own message.
+        _logger.LogInformation("Content sync running with {Count} known device(s): {Devices}",
+            devices.Count, string.Join(", ", devices.Select(d => d.Alias)));
     }
 
     public ICommand? OpenAppDataLocationCommand  { get; private set; }
@@ -1020,6 +1045,33 @@ public partial class MainViewModel : ViewModelBase
             else
                 _logger.LogDebug("PlaylistsUpdated fired mid-sync ({ActiveSyncCount} active) - not scheduling a resync", _activeSyncCount);
         };
+
+        // Any new log line at all (playing a track, a setting changed, an
+        // error, routine peer-polling chatter, ...) marks that there is
+        // something new for a paired Server's Log window to pick up -
+        // _logPushTimer periodically checks this flag and syncs if it is
+        // set, entirely independent of ScheduleContentSync's debounce above.
+        // A debounce cannot work here: NetworkDiscoveryService's own routine
+        // ~5s polling chatter (and, previously, this sync path's own
+        // completion logging) fires at essentially the same cadence as
+        // ContentSyncCooldown, so a timer that resets on every log line
+        // would perpetually restart itself and never actually go quiet long
+        // enough to fire at all - confirmed in practice as "still no new log
+        // appearing after 5s" when this was first wired straight into
+        // ScheduleContentSync. A periodic tick fires on a fixed wall-clock
+        // schedule no matter how much log activity happens in between, which
+        // is what actually delivers "new lines within roughly 5s" reliably.
+        InMemoryLogStore.Instance.EntryAdded += (_, _) => _hasUnpushedLogActivity = true;
+
+        _logPushTimer = new DispatcherTimer { Interval = ContentSyncCooldown };
+        _logPushTimer.Tick += (_, _) =>
+        {
+            if (!_hasUnpushedLogActivity || _activeSyncCount != 0)
+                return;
+            _hasUnpushedLogActivity = false;
+            RunPendingDeviceSyncs();
+        };
+        _logPushTimer.Start();
 
         networkDiscovery.DeviceDiscovered += (_, device) =>
         {
