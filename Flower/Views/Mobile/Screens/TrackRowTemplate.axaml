@@ -101,7 +101,7 @@
                own doc comment for why this isn't a View-side animation
                (TrackListBox's virtualization made an earlier attempt at
                that unreliable during a multi-row batch download). -->
-          <Button IsVisible="{Binding IsPlaceholder}"
+          <Button IsVisible="{Binding IsDownloadable}"
                   Command="{Binding $parent[UserControl].DataContext.DownloadTrackCommand}"
                   CommandParameter="{Binding}"
                   Background="Transparent"

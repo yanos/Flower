@@ -184,32 +184,48 @@
            IsShowingPlaylistTracks and DownloadAllVisibleCommand. Each row's
            own download icon still shows its individual progress as this runs
            through them one at a time (see DownloadRowAsync), so there's no
-           separate progress UI needed here beyond swapping to a spinner. -->
+           separate progress UI needed here beyond swapping to a spinner.
+           Same icon/opacity as each row's own download button (see
+           TrackRowTemplate) for visual consistency, and - like that one via
+           IsDownloadable - hidden entirely rather than shown-then-failing
+           when there's no paired server currently reachable to download
+           from (Main.CanForceSync, the same condition Settings' own Force
+           Sync button already gates on). -->
       <Button Grid.Column="3"
               Command="{Binding DownloadAllVisibleCommand}"
-              IsVisible="{Binding IsShowingAlbumTrackList}"
               IsEnabled="{Binding !IsBulkDownloading}"
               Background="Transparent"
               BorderThickness="0"
               Padding="10"
               ToolTip.Tip="Download all">
+        <Button.IsVisible>
+          <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
+            <Binding Path="IsShowingAlbumTrackList" />
+            <Binding Path="Main.CanForceSync" />
+          </MultiBinding>
+        </Button.IsVisible>
         <Panel>
-          <materialIcons:MaterialIcon Kind="DownloadMultiple" Width="22" Height="22" IsVisible="{Binding !IsBulkDownloading}" />
-          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" IsVisible="{Binding IsBulkDownloading}" />
+          <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding !IsBulkDownloading}" />
+          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding IsBulkDownloading}" />
         </Panel>
       </Button>
 
       <Button Grid.Column="3"
               Command="{Binding DownloadAllVisibleCommand}"
-              IsVisible="{Binding IsShowingPlaylistTracks}"
               IsEnabled="{Binding !IsBulkDownloading}"
               Background="Transparent"
               BorderThickness="0"
               Padding="10"
               ToolTip.Tip="Download all">
+        <Button.IsVisible>
+          <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
+            <Binding Path="IsShowingPlaylistTracks" />
+            <Binding Path="Main.CanForceSync" />
+          </MultiBinding>
+        </Button.IsVisible>
         <Panel>
-          <materialIcons:MaterialIcon Kind="DownloadMultiple" Width="22" Height="22" IsVisible="{Binding !IsBulkDownloading}" />
-          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" IsVisible="{Binding IsBulkDownloading}" />
+          <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding !IsBulkDownloading}" />
+          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding IsBulkDownloading}" />
         </Panel>
       </Button>
 
