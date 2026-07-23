@@ -19,6 +19,11 @@
          plain property assignment here would freeze at the SDK's static
          default instead of MinVer's computed value. -->
     <ApplicationVersion>1</ApplicationVersion>
+    <!-- Names the AppIcon.appiconset in Resources/Assets.xcassets - without this,
+         actool silently compiles the asset catalog with no app icon output and no
+         build error at all (confirmed by hand: omitting the app icon argument from
+         the actool invocation produces no Assets.car). -->
+    <AppIcon>AppIcon</AppIcon>
   </PropertyGroup>
 
   <ItemGroup>
