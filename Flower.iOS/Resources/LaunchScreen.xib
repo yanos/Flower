@@ -12,8 +12,8 @@
 			<autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES" />
 			<subviews>
 				<label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="&#10048;" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="fLW-er-glY">
-					<rect key="frame" x="140" y="190" width="200" height="100" />
-					<fontDescription key="fontDescription" type="system" pointSize="80" />
+					<rect key="frame" x="-320" y="-10" width="800" height="400" />
+					<fontDescription key="fontDescription" type="system" pointSize="320" />
 					<color key="textColor" red="0.84313725490196072" green="0.15294117647058825" blue="0.16470588235294117" alpha="1" colorSpace="custom" customColorSpace="sRGB" />
 					<nil key="highlightedColor" />
 				</label>
