@@ -293,11 +293,38 @@ namespace Flower.Models
         }
 
         // Atomically swaps in a merged playlist set from a sync session and notifies
-        // listeners - see PlaylistsUpdated.
+        // listeners - see PlaylistsUpdated. Skipped entirely when the merge came out
+        // identical to what's already here (the common case - most syncs find
+        // nothing to reconcile): PlaylistsUpdated drives MainViewModel to rebuild the
+        // sidebar's whole Playlists section, which - since this runs on whatever
+        // debounce/poll cadence PlaylistSyncService uses, independent of the user -
+        // would otherwise tear down and recreate every row, mid-rename or not, on
+        // every single poll even when nothing actually changed.
         public void ReplacePlaylists(List<Playlist> playlists)
         {
+            if (PlaylistsUnchanged(Playlists, playlists))
+                return;
+
             Playlists = new List<Playlist>(playlists);
             PlaylistsUpdated?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Id+UpdatedAt (bumped by Playlist on every rename/track add/remove/reorder -
+        // see Playlist.UpdatedAt) is enough to tell "identical" apart from "changed"
+        // without a deep track-by-track comparison. Order matters too, since the
+        // sidebar renders playlists in list order.
+        private static bool PlaylistsUnchanged(List<Playlist> a, List<Playlist> b)
+        {
+            if (a.Count != b.Count)
+                return false;
+
+            for (var i = 0; i < a.Count; i++)
+            {
+                if (a[i].Id != b[i].Id || a[i].UpdatedAt != b[i].UpdatedAt)
+                    return false;
+            }
+
+            return true;
         }
     }
 }

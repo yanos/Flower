@@ -1669,13 +1669,24 @@ public partial class MainViewModel : ViewModelBase
             ? _selectedSidebarItem.Playlist?.Id
             : null;
 
-        foreach (var stale in _sidebarItems.Where(i => i.Kind == SidebarItemKind.Playlist).ToList())
+        // A row mid-rename (see MainView.BeginRename/CommitRename) keeps its own
+        // SidebarItem/TextBox rather than being torn down and recreated below -
+        // this refresh can be triggered by a background PlaylistsUpdated (e.g. a
+        // device sync landing mid-edit) with no input from the user, and rebuilding
+        // the row would silently yank focus out of its TextBox, looking like the
+        // rename cancelled itself.
+        var editingIds = _sidebarItems
+            .Where(i => i.Kind == SidebarItemKind.Playlist && i.IsEditing && i.Playlist != null)
+            .Select(i => i.Playlist!.Id)
+            .ToHashSet();
+
+        foreach (var stale in _sidebarItems.Where(i => i.Kind == SidebarItemKind.Playlist && !editingIds.Contains(i.Playlist!.Id)).ToList())
             _sidebarItems.Remove(stale);
 
         var header = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Header && i.Name == "Playlists");
         if (Library.Playlists.Count == 0)
         {
-            if (header != null)
+            if (header != null && editingIds.Count == 0)
                 _sidebarItems.Remove(header);
             if (selectedPlaylistId != null)
                 SelectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
@@ -1687,7 +1698,11 @@ public partial class MainViewModel : ViewModelBase
             _sidebarItems.Insert(insertAt++, new SidebarItem(SidebarItemKind.Header, "Playlists"));
 
         foreach (var pl in Library.Playlists)
+        {
+            if (editingIds.Contains(pl.Id))
+                continue;
             _sidebarItems.Insert(insertAt++, new SidebarItem(SidebarItemKind.Playlist, pl.Name, MaterialIconKind.PlaylistPlay, pl));
+        }
 
         if (selectedPlaylistId != null)
         {
