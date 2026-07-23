@@ -18,6 +18,9 @@ class Program
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont()
-            .LogToTrace();
+            .LogToTrace()
+            // Runs once native platform setup (incl. NSApplication) exists -
+            // see MacDockIcon for why this can't just be Window.Icon.
+            .AfterSetup(_ => MacDockIcon.Apply());
 
 }

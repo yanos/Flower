@@ -8,6 +8,10 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>Flower.Desktop.Program</StartupObject>
+    <!-- Windows Explorer/taskbar exe icon - the running window's taskbar/dock icon
+         on all three desktop OSes instead comes from MainWindow.axaml's Icon=,
+         which points at the same source image (see Flower/Assets/flower-icon.ico). -->
+    <ApplicationIcon>..\Flower\Assets\flower-icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
