@@ -121,27 +121,7 @@
                  VerticalAlignment="Center"
                  Margin="12,0,0,0" />
 
-      <!-- Songs tab's own toggleable box, over Main.FilterText - and the
-           Search tab's own always-visible box, over SearchQuery, are
-           deliberately two separate controls bound to two separate fields
-           (see MobileMainViewModel.SearchQuery's own doc comment) so a query
-           typed in one can never leak into the other. -->
-      <TextBox Grid.Column="1"
-                x:Name="SearchBox"
-                Text="{Binding Main.FilterText}"
-                IsVisible="{Binding IsShowingSongsSearchBox}"
-                Watermark="Search your library"
-                VerticalAlignment="Center"
-                Margin="12,0,0,0">
-        <TextBox.InnerRightContent>
-          <Button Command="{Binding ClearSongsFilterTextCommand}"
-                  IsVisible="{Binding Main.FilterText, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                  Background="Transparent" BorderThickness="0" Padding="4">
-            <materialIcons:MaterialIcon Kind="CloseCircle" Width="16" Height="16" Opacity="0.6" />
-          </Button>
-        </TextBox.InnerRightContent>
-      </TextBox>
-
+      <!-- Search tab's own always-visible box, bound to SearchQuery. -->
       <TextBox Grid.Column="1"
                 x:Name="SearchTabBox"
                 Text="{Binding SearchQuery}"
@@ -157,18 +137,6 @@
           </Button>
         </TextBox.InnerRightContent>
       </TextBox>
-
-      <Button Grid.Column="2"
-              Command="{Binding ToggleSearchCommand}"
-              IsVisible="{Binding CanSearch}"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="10">
-        <Panel>
-          <materialIcons:MaterialIcon Kind="Magnify" IsVisible="{Binding !IsSearchVisible}" Width="22" Height="22" />
-          <materialIcons:MaterialIcon Kind="Close" IsVisible="{Binding IsSearchVisible}" Width="22" Height="22" />
-        </Panel>
-      </Button>
 
       <Button Grid.Column="2"
               Command="{Binding CreatePlaylistCommand}"
