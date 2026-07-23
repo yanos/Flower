@@ -21,8 +21,7 @@ namespace Flower.ViewModels.Mobile;
 // album grid ordered by recency, the app's home screen. The middle four mirror
 // desktop's Songs/Albums/Artists/Playlists sidebar sections. Search is mobile-only
 // (desktop has no equivalent standalone tab - its search box works over whichever
-// sidebar section is already selected) - see IsShowingSearchPrompt/CanSearch for
-// how it differs from the Songs tab's own toggleable search box.
+// sidebar section is already selected) - see IsShowingSearchPrompt.
 public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists, Search }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
@@ -97,10 +96,7 @@ public class MobileMainViewModel : ViewModelBase
     public ICommand PreviousTrackCommand { get; }
     public ICommand OpenTrackActionsCommand { get; }
     public ICommand ViewTrackInfoCommand { get; }
-    public ICommand ToggleSearchCommand { get; }
-    public ICommand ClearSearchCommand { get; }
     public ICommand ClearSearchQueryCommand { get; }
-    public ICommand ClearSongsFilterTextCommand { get; }
     public ICommand OpenAddToPlaylistCommand { get; }
     public ICommand AddTrackToPlaylistCommand { get; }
     public ICommand CreatePlaylistCommand { get; }
@@ -247,11 +243,10 @@ public class MobileMainViewModel : ViewModelBase
         _hasDrilledIntoArtistAlbum = false;
         ApplyTabSelection();
         OnPropertyChanged(nameof(SelectedTab));
-        // SearchQuery deliberately survives leaving the Search tab (unlike
-        // Songs' own toggleable box, which does clear on hide - see
-        // IsSearchVisible) - the query and its results should still be there
-        // whenever the user comes back to Search, whether via the tab bar or
-        // Back/swipe-back, not reset to a blank prompt every time.
+        // SearchQuery deliberately survives leaving the Search tab - the query
+        // and its results should still be there whenever the user comes back
+        // to Search, whether via the tab bar or Back/swipe-back, not reset to
+        // a blank prompt every time.
         RaiseNavigationChanged();
     }
 
@@ -279,16 +274,15 @@ public class MobileMainViewModel : ViewModelBase
     public bool IsShowingRecentlyAddedAlbums => SelectedTab == MobileTab.RecentlyAdded && !_hasDrilledIn;
 
     // The Search tab's own query - deliberately its own field, not
-    // Main.FilterText (which the Songs tab's own toggleable search box uses
-    // to filter Main.Rows in place). Search is a one-off lookup across the
-    // whole library, surfaced in its own results view (SearchAlbumResults/
-    // SearchArtistResults/SearchSongResults below) - it was never meant to
-    // act as a filter that follows the user to other tabs. Sharing
-    // Main.FilterText used to do exactly that: ApplyTabSelection pointed the
-    // Search tab at the same "Songs" scope Main.Rows uses, so a query typed
-    // here stayed live in Main.FilterText and kept narrowing the Songs tab's
-    // own list for a moment (or, in the worst case, until something else
-    // happened to clear it) after switching tabs.
+    // Main.FilterText. Search is a one-off lookup across the whole library,
+    // surfaced in its own results view (SearchAlbumResults/SearchArtistResults/
+    // SearchSongResults below) - it was never meant to act as a filter that
+    // follows the user to other tabs. Sharing Main.FilterText used to do
+    // exactly that: ApplyTabSelection pointed the Search tab at the same
+    // "Songs" scope Main.Rows uses, so a query typed here stayed live in
+    // Main.FilterText and kept narrowing the Songs tab's own list for a
+    // moment (or, in the worst case, until something else happened to clear
+    // it) after switching tabs.
     private string? _searchQuery;
     public string? SearchQuery
     {
@@ -445,22 +439,12 @@ public class MobileMainViewModel : ViewModelBase
         row.IsDownloadUnavailable = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
     }
 
-    // The Search tab's box is always visible (no toggle needed, unlike the
-    // Songs tab's - see CanSearch), so it and the screen title are mutually
-    // exclusive on that basis alone, independent of IsSearchVisible. Two
-    // separate boxes exist in MobileMainView.axaml (this is just "is either
-    // one showing") - IsShowingSongsSearchBox/IsShowingSearchTabBox below
-    // pick which physical control is visible and which field it's bound to.
-    public bool IsShowingSearchBox => IsSearchVisible || SelectedTab == MobileTab.Search;
-    public bool IsShowingScreenTitle => !IsShowingSearchBox;
-
-    // The Songs tab's own toggleable box, bound to Main.FilterText.
-    public bool IsShowingSongsSearchBox => IsSearchVisible;
-
-    // The Search tab's always-visible box, bound to SearchQuery - kept as a
-    // physically separate TextBox from the one above specifically so the two
-    // fields backing them can never be confused for one another again.
+    // The Search tab's box is the only header search box left (Songs, album,
+    // and playlist track lists no longer have their own), so it and the
+    // screen title are mutually exclusive purely on tab selection. Bound to
+    // SearchQuery.
     public bool IsShowingSearchTabBox => SelectedTab == MobileTab.Search;
+    public bool IsShowingScreenTitle => !IsShowingSearchTabBox;
 
     public string ScreenTitle
     {
@@ -486,30 +470,6 @@ public class MobileMainViewModel : ViewModelBase
         SelectedTab == MobileTab.Playlists && _hasDrilledIn ? Main.SelectedSidebarItem?.Playlist : null;
 
     public bool IsShowingPlaylistTracks => CurrentPlaylist != null;
-
-    // The toggleable search box only makes sense over a track list (Main.FilterText
-    // filters Rows, which the Albums/Artists/Playlists picker screens do not use) -
-    // IsShowingTrackList already excludes the Search tab itself, whose box is
-    // always visible already (see IsShowingSearchBox), with nothing to toggle.
-    public bool CanSearch => IsShowingTrackList;
-
-    private bool _isSearchVisible;
-    public bool IsSearchVisible
-    {
-        get => _isSearchVisible;
-        private set
-        {
-            if (_isSearchVisible == value)
-                return;
-            _isSearchVisible = value;
-            if (!value)
-                Main.FilterText = null;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsShowingSearchBox));
-            OnPropertyChanged(nameof(IsShowingSongsSearchBox));
-            OnPropertyChanged(nameof(IsShowingScreenTitle));
-        }
-    }
 
     private MobileSheet _activeSheet = MobileSheet.None;
     public MobileSheet ActiveSheet
@@ -671,7 +631,7 @@ public class MobileMainViewModel : ViewModelBase
                 return "Search Your Library";
             if (IsShowingPlaylistTracks)
                 return "Playlist is Empty";
-            if (IsShowingSearchResults || !string.IsNullOrEmpty(Main.FilterText))
+            if (IsShowingSearchResults)
                 return "No Results";
             if (Main.Library.Tracks.Count == 0)
                 return "No Music Yet";
@@ -689,8 +649,6 @@ public class MobileMainViewModel : ViewModelBase
                 return "Add tracks from a track's ... menu.";
             if (IsShowingSearchResults)
                 return $"No matches for \"{SearchQuery}\".";
-            if (!string.IsNullOrEmpty(Main.FilterText))
-                return $"No matches for \"{Main.FilterText}\".";
             if (Main.Library.Tracks.Count > 0)
                 return "Nothing to show here yet.";
             if (System.OperatingSystem.IsAndroid())
@@ -782,9 +740,8 @@ public class MobileMainViewModel : ViewModelBase
         {
             // Songs/Albums/Artists picker empty-states only - Search has its
             // own SearchQuery-driven path (see that property's setter) and no
-            // longer touches Main.Rows/Main.FilterText at all.
-            if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems)
-                or nameof(MainViewModel.FilterText))
+            // longer touches Main.Rows at all.
+            if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems))
                 RaiseEmptyStateChanged();
         };
         RebuildPlaylistPicker();
@@ -904,18 +861,9 @@ public class MobileMainViewModel : ViewModelBase
             if (ActionTarget != null)
                 ActiveSheet = MobileSheet.TrackInfo;
         });
-        ToggleSearchCommand = new RelayCommand(() => IsSearchVisible = !IsSearchVisible);
-        ClearSearchCommand = new RelayCommand(() => IsSearchVisible = false);
-        // Search tab's own inline clear (the embedded "x" in SearchTabBox,
-        // see MobileMainView.axaml) - unlike ClearSearchCommand above, there's
-        // nothing to close here (the Search tab's box is always visible), so
-        // this just empties the query and leaves the box focused.
+        // Search tab's own inline clear (the embedded "x" in SearchTabBox, see
+        // MobileMainView.axaml) - just empties the query and leaves the box focused.
         ClearSearchQueryCommand = new RelayCommand(() => SearchQuery = null);
-        // Songs tab's own inline clear (the embedded "x" in SearchBox) - just
-        // empties the text and keeps the box open/focused, unlike
-        // ClearSearchCommand (the header's Close-icon button), which also
-        // collapses the box back to icon-only.
-        ClearSongsFilterTextCommand = new RelayCommand(() => Main.FilterText = null);
         OpenAddToPlaylistCommand = new RelayCommand(() =>
         {
             if (ActionTarget != null)
@@ -1493,9 +1441,6 @@ public class MobileMainViewModel : ViewModelBase
 
     private void RaiseNavigationChanged()
     {
-        if (!IsShowingTrackList)
-            IsSearchVisible = false;
-
         OnPropertyChanged(nameof(IsShowingAlbumGrid));
         OnPropertyChanged(nameof(IsShowingArtistPicker));
         OnPropertyChanged(nameof(IsShowingArtistAlbumGrid));
@@ -1504,15 +1449,12 @@ public class MobileMainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsShowingSearchPrompt));
         OnPropertyChanged(nameof(IsShowingSearchResults));
         OnPropertyChanged(nameof(IsShowingTrackList));
-        OnPropertyChanged(nameof(IsShowingSearchBox));
-        OnPropertyChanged(nameof(IsShowingSongsSearchBox));
         OnPropertyChanged(nameof(IsShowingSearchTabBox));
         OnPropertyChanged(nameof(IsShowingScreenTitle));
         OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(ScreenTitle));
         OnPropertyChanged(nameof(CurrentPlaylist));
         OnPropertyChanged(nameof(IsShowingPlaylistTracks));
-        OnPropertyChanged(nameof(CanSearch));
         OnPropertyChanged(nameof(IsShowingAlbumTrackList));
         OnPropertyChanged(nameof(AlbumDetailRows));
         OnPropertyChanged(nameof(CurrentAlbumHeader));
