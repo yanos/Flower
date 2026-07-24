@@ -1098,8 +1098,8 @@ public partial class MainView : UserControl
 
         var allowed = await ConfirmDialogWindow.ShowAsync(
             owner,
-            "Allow This Device to Sync?",
-            $"\"{e.Alias}\" wants to sync playlists and library data with this device. Only allow devices you recognize - it will not be asked again.",
+            "Allow Pairing?",
+            $"\"{e.Alias}\" wants to pair to this server. It will be able to sync the whole library data with this device. Only allow devices you recognize - it will not be asked again.",
             "Allow");
         e.Resolution.TrySetResult(allowed);
     }
