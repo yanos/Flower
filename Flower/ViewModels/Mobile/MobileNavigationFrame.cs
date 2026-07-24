@@ -50,6 +50,27 @@ public sealed record MobileNavigationFrame(
 {
     public MobileScreenKind ScreenKind => Classify(Tab, HasDrilledIn, HasDrilledIntoArtistAlbum);
 
+    // The header title for this frame's screen - mirrors
+    // MobileMainViewModel.ScreenTitle's own logic exactly (see that
+    // property's history), now derived per-frame so a swiped-in back/forward
+    // preview shows its own title rather than the live VM's.
+    public string Title =>
+        Tab == MobileTab.Artists && SelectedArtistName != null
+            ? SelectedArtistName
+            : IsSearchScreen
+                ? string.Empty
+                : HasDrilledIn
+                    ? (SidebarItem?.Name ?? Tab.ToString())
+                    : Tab == MobileTab.RecentlyAdded ? "Recently Added" : Tab.ToString();
+
+    // The Search tab's own always-visible box replaces the title there - see
+    // MobileMainViewModel.IsShowingSearchTabBox's own former doc comment.
+    public bool IsSearchScreen => ScreenKind == MobileScreenKind.SearchResults;
+
+    // Mirrors MobileMainViewModel.IsShowingPlaylistPicker's own condition -
+    // used by ScreenSlot to gate the create-playlist button per-frame.
+    public bool IsPlaylistPicker => ScreenKind == MobileScreenKind.PlaylistPicker;
+
     // Whether this frame's TrackList (if any) is showing one album's own
     // tracks vs. a flat Songs/playlist list - mirrors
     // MobileMainViewModel.IsShowingAlbumTrackList's own condition exactly.

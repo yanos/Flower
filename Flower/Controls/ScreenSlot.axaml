@@ -1,0 +1,106 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             mc:Ignorable="d"
+             x:CompileBindings="False"
+             x:Class="Flower.Controls.ScreenSlot"
+             Background="{DynamicResource AppBackgroundBrush}">
+
+  <!-- Wraps one materialized screen control together with that screen's own
+       header row (title/search box/create-playlist/download-all), so
+       ScreenStackPanel's existing swipe transform - applied to this whole
+       control - carries the header along with the screen content instead of
+       leaving it behind in a static bar. Frame is reassigned wholesale on
+       every sync (see ScreenStackPanel.SyncToCurrentFrame), the same
+       StyledProperty-replaced-wholesale shape TrackListScreenView's own
+       DisplayRows/DisplayHeader already use - see that class's own doc
+       comment for why this works correctly even for a kept-alive
+       back/forward preview.
+
+       Margin below (60,4,60,4) must stay in sync with the fixed back/settings
+       overlay's own margin in MobileMainView.axaml - see that file's comment
+       for the pixel math. -->
+  <Grid RowDefinitions="52,*">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="60,4,60,4">
+      <TextBlock Grid.Column="0"
+                 Text="{Binding $parent[UserControl].Frame.Title}"
+                 IsVisible="{Binding !$parent[UserControl].Frame.IsSearchScreen}"
+                 FontSize="22"
+                 FontWeight="SemiBold"
+                 VerticalAlignment="Center" />
+
+      <!-- Search tab's own always-visible box, bound to SearchQuery on the
+           shared DataContext (genuinely live/global state, not per-frame -
+           see ScreenSlot.axaml.cs's own doc comment). -->
+      <TextBox Grid.Column="0"
+               x:Name="SearchTabBox"
+               Text="{Binding SearchQuery}"
+               IsVisible="{Binding $parent[UserControl].Frame.IsSearchScreen}"
+               Watermark="Search your library"
+               VerticalAlignment="Center">
+        <TextBox.InnerRightContent>
+          <Button Command="{Binding ClearSearchQueryCommand}"
+                  IsVisible="{Binding SearchQuery, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                  Background="Transparent" BorderThickness="0" Padding="4">
+            <materialIcons:MaterialIcon Kind="CloseCircle" Width="16" Height="16" Opacity="0.6" />
+          </Button>
+        </TextBox.InnerRightContent>
+      </TextBox>
+
+      <Button Grid.Column="1"
+              Command="{Binding CreatePlaylistCommand}"
+              IsVisible="{Binding $parent[UserControl].Frame.IsPlaylistPicker}"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="10">
+        <materialIcons:MaterialIcon Kind="Plus" Width="24" Height="24" />
+      </Button>
+
+      <!-- Downloads every not-yet-downloaded track currently in view - see
+           MobileMainView.axaml's former copy of this button for the full
+           history/reasoning. Two mutually-exclusive buttons (album vs.
+           playlist track list), same as before. -->
+      <Button Grid.Column="2"
+              Command="{Binding DownloadAllVisibleCommand}"
+              IsEnabled="{Binding !IsBulkDownloading}"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="10"
+              ToolTip.Tip="Download all">
+        <Button.IsVisible>
+          <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
+            <Binding Path="$parent[UserControl].Frame.IsAlbumTrackList" />
+            <Binding Path="Main.CanForceSync" />
+          </MultiBinding>
+        </Button.IsVisible>
+        <Panel>
+          <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding !IsBulkDownloading}" />
+          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding IsBulkDownloading}" />
+        </Panel>
+      </Button>
+
+      <Button Grid.Column="2"
+              Command="{Binding DownloadAllVisibleCommand}"
+              IsEnabled="{Binding !IsBulkDownloading}"
+              Background="Transparent"
+              BorderThickness="0"
+              Padding="10"
+              ToolTip.Tip="Download all">
+        <Button.IsVisible>
+          <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
+            <Binding Path="$parent[UserControl].Frame.IsPlaylistTrackList" />
+            <Binding Path="Main.CanForceSync" />
+          </MultiBinding>
+        </Button.IsVisible>
+        <Panel>
+          <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding !IsBulkDownloading}" />
+          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding IsBulkDownloading}" />
+        </Panel>
+      </Button>
+    </Grid>
+
+    <ContentControl Grid.Row="1" x:Name="ContentHost" />
+  </Grid>
+</UserControl>

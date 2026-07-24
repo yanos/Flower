@@ -100,114 +100,10 @@
     </Style>
   </UserControl.Styles>
 
-  <Grid RowDefinitions="Auto,*,Auto,Auto">
-
-    <!-- Top bar: back button (when drilled into an album/artist/playlist) + title/search -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Height="52" Margin="4,4,16,4">
-      <Button Grid.Column="0"
-              Command="{Binding BackCommand}"
-              IsVisible="{Binding CanGoBack}"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="10">
-        <materialIcons:MaterialIcon Kind="ArrowLeft" Width="24" Height="24" />
-      </Button>
-
-      <TextBlock Grid.Column="1"
-                 Text="{Binding ScreenTitle}"
-                 IsVisible="{Binding IsShowingScreenTitle}"
-                 FontSize="22"
-                 FontWeight="SemiBold"
-                 VerticalAlignment="Center"
-                 Margin="12,0,0,0" />
-
-      <!-- Search tab's own always-visible box, bound to SearchQuery. -->
-      <TextBox Grid.Column="1"
-                x:Name="SearchTabBox"
-                Text="{Binding SearchQuery}"
-                IsVisible="{Binding IsShowingSearchTabBox}"
-                Watermark="Search your library"
-                VerticalAlignment="Center"
-                Margin="12,0,0,0">
-        <TextBox.InnerRightContent>
-          <Button Command="{Binding ClearSearchQueryCommand}"
-                  IsVisible="{Binding SearchQuery, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                  Background="Transparent" BorderThickness="0" Padding="4">
-            <materialIcons:MaterialIcon Kind="CloseCircle" Width="16" Height="16" Opacity="0.6" />
-          </Button>
-        </TextBox.InnerRightContent>
-      </TextBox>
-
-      <Button Grid.Column="2"
-              Command="{Binding CreatePlaylistCommand}"
-              IsVisible="{Binding IsShowingPlaylistPicker}"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="10">
-        <materialIcons:MaterialIcon Kind="Plus" Width="24" Height="24" />
-      </Button>
-
-      <!-- Downloads every not-yet-downloaded track currently in view - an
-           album's tracks or a playlist's, see IsShowingAlbumTrackList/
-           IsShowingPlaylistTracks and DownloadAllVisibleCommand. Each row's
-           own download icon still shows its individual progress as this runs
-           through them one at a time (see DownloadRowAsync), so there's no
-           separate progress UI needed here beyond swapping to a spinner.
-           Same icon/opacity as each row's own download button (see
-           TrackRowTemplate) for visual consistency, and - like that one via
-           IsDownloadable - hidden entirely rather than shown-then-failing
-           when there's no paired server currently reachable to download
-           from (Main.CanForceSync, the same condition Settings' own Force
-           Sync button already gates on). -->
-      <Button Grid.Column="3"
-              Command="{Binding DownloadAllVisibleCommand}"
-              IsEnabled="{Binding !IsBulkDownloading}"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="10"
-              ToolTip.Tip="Download all">
-        <Button.IsVisible>
-          <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
-            <Binding Path="IsShowingAlbumTrackList" />
-            <Binding Path="Main.CanForceSync" />
-          </MultiBinding>
-        </Button.IsVisible>
-        <Panel>
-          <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding !IsBulkDownloading}" />
-          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding IsBulkDownloading}" />
-        </Panel>
-      </Button>
-
-      <Button Grid.Column="3"
-              Command="{Binding DownloadAllVisibleCommand}"
-              IsEnabled="{Binding !IsBulkDownloading}"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="10"
-              ToolTip.Tip="Download all">
-        <Button.IsVisible>
-          <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
-            <Binding Path="IsShowingPlaylistTracks" />
-            <Binding Path="Main.CanForceSync" />
-          </MultiBinding>
-        </Button.IsVisible>
-        <Panel>
-          <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding !IsBulkDownloading}" />
-          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding IsBulkDownloading}" />
-        </Panel>
-      </Button>
-
-      <Button Grid.Column="4"
-              Command="{Binding OpenSettingsCommand}"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="10">
-        <materialIcons:MaterialIcon Kind="Cogs" Width="22" Height="22" />
-      </Button>
-    </Grid>
+  <Grid RowDefinitions="*,Auto,Auto">
 
     <!-- Content -->
-    <Grid Grid.Row="1">
+    <Grid Grid.Row="0">
 
       <!-- Swipe-back navigation feature, final stage: the 7 IsVisible-
            toggled screen siblings Stage 1 introduced are owned by
@@ -215,8 +111,11 @@
            alive (current + one back) and itself owns the whole interactive
            swipe gesture - live-drag reveal on a rightward swipe (when
            there's history to reveal), easing to commit/cancel on release,
-           discrete tab-paging otherwise - see that class's own doc comment. -->
-      <controls:ScreenStackPanel />
+           discrete tab-paging otherwise - see that class's own doc comment.
+           Each slot now carries its own sliding title/search/create-playlist/
+           download-all header (see ScreenSlot) - only the back button and
+           settings gear below stay fixed on top of it. -->
+      <controls:ScreenStackPanel x:Name="ScreenStack" />
 
       <!-- Empty state: shown instead of a blank screen when the current list has nothing in it -->
       <StackPanel IsVisible="{Binding IsContentEmpty}"
@@ -238,10 +137,42 @@
                    TextAlignment="Center"
                    TextWrapping="Wrap" />
       </StackPanel>
+
+      <!-- Fixed back/settings overlay: unlike the title/search/create-
+           playlist/download-all controls (now part of each ScreenSlot's own
+           sliding header), these two never slide - they stay pinned on top
+           of everything, including mid-gesture. No Background, so its empty
+           middle column doesn't intercept the swipe gesture underneath it
+           (Avalonia doesn't hit-test an unpainted Panel/Grid's empty area -
+           same technique AlbumArtView/AlbumGridRowControl already rely on).
+           Margin/button sizing here must stay in sync with ScreenSlot.axaml's
+           own header Margin="60,4,60,4" - see that file's comment for the
+           pixel math (back button: Padding 10 + 24px icon = 44px wide, at
+           outer margin 4 -> right edge 48, +12px gap -> 60; settings button:
+           Padding 10 + 22px icon = 42px wide, at outer margin 16 -> 60
+           clearance). -->
+      <Grid ColumnDefinitions="Auto,*,Auto" Height="52" Margin="4,4,16,4" VerticalAlignment="Top">
+        <Button Grid.Column="0"
+                Click="BackButton_Click"
+                IsVisible="{Binding CanGoBack}"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="10">
+          <materialIcons:MaterialIcon Kind="ArrowLeft" Width="24" Height="24" />
+        </Button>
+
+        <Button Grid.Column="2"
+                Command="{Binding OpenSettingsCommand}"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="10">
+          <materialIcons:MaterialIcon Kind="Cogs" Width="22" Height="22" />
+        </Button>
+      </Grid>
     </Grid>
 
     <!-- Mini player -->
-    <Border Grid.Row="2"
+    <Border Grid.Row="1"
             IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
@@ -278,7 +209,7 @@
 
     <!-- Bottom tab bar - Recently Added first/leftmost, matching it being the
          app's default/home tab (see MobileMainViewModel._selectedTab). -->
-    <Grid Grid.Row="3"
+    <Grid Grid.Row="2"
           ColumnDefinitions="*,*,*,*,*,*"
           Height="60"
           Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
@@ -340,23 +271,23 @@
     </Grid>
 
     <!-- Now-playing sheet: full-screen overlay above everything else -->
-    <views:NowPlayingView Grid.Row="0" Grid.RowSpan="4"
+    <views:NowPlayingView Grid.Row="0" Grid.RowSpan="3"
                            IsVisible="{Binding IsShowingNowPlaying}" />
 
     <!-- Track actions (row "..." menu) and Track Info sheets -->
-    <views:TrackActionsView Grid.Row="0" Grid.RowSpan="4"
+    <views:TrackActionsView Grid.Row="0" Grid.RowSpan="3"
                              IsVisible="{Binding IsShowingTrackActions}" />
-    <views:TrackInfoView Grid.Row="0" Grid.RowSpan="4"
+    <views:TrackInfoView Grid.Row="0" Grid.RowSpan="3"
                           IsVisible="{Binding IsShowingTrackInfo}" />
-    <views:AddToPlaylistView Grid.Row="0" Grid.RowSpan="4"
+    <views:AddToPlaylistView Grid.Row="0" Grid.RowSpan="3"
                               IsVisible="{Binding IsShowingAddToPlaylist}" />
-    <views:SettingsView Grid.Row="0" Grid.RowSpan="4"
+    <views:SettingsView Grid.Row="0" Grid.RowSpan="3"
                          IsVisible="{Binding IsShowingSettings}" />
-    <views:PeerApprovalView Grid.Row="0" Grid.RowSpan="4"
+    <views:PeerApprovalView Grid.Row="0" Grid.RowSpan="3"
                              IsVisible="{Binding IsShowingPeerApproval}" />
-    <views:ConfirmPairServerView Grid.Row="0" Grid.RowSpan="4"
+    <views:ConfirmPairServerView Grid.Row="0" Grid.RowSpan="3"
                                   IsVisible="{Binding IsShowingConfirmPairServer}" />
-    <views:ConfirmDeleteFileView Grid.Row="0" Grid.RowSpan="4"
+    <views:ConfirmDeleteFileView Grid.Row="0" Grid.RowSpan="3"
                                   IsVisible="{Binding IsShowingConfirmDeleteFile}" />
   </Grid>
 </UserControl>

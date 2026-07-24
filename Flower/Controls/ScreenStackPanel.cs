@@ -32,6 +32,16 @@ namespace Flower.Controls;
 // so one back/one forward can sit there fully rendered at rest without
 // showing through gaps in current, and only becomes visible where current's
 // own RenderTransform has slid out of the way.
+//
+// Each of the 3 live slots is a ScreenSlot (not the raw screen Control
+// itself) - a small wrapper pairing the screen's content with its own
+// sliding header (title/search box/create-playlist/download-all), so the
+// gesture code below (which only ever touches _current's own RenderTransform)
+// carries the header along automatically. The raw screen Control for each
+// role is tracked separately (_currentInner/_oneBackInner/_oneForwardInner) -
+// needed for the factory's identity-reuse check and the NavigationLeaving
+// handler's TrackListScreenView pattern-match, neither of which cares about
+// the wrapping slot.
 public sealed class ScreenStackPanel : Panel
 {
     // Same two-stage swipe detection regardless of direction - Stage 1
@@ -59,9 +69,12 @@ public sealed class ScreenStackPanel : Panel
     private enum SwipeDirection { None, Back, Forward }
 
     private readonly ScreenControlFactory _factory = new();
-    private Control? _current;
-    private Control? _oneBack;
-    private Control? _oneForward;
+    private ScreenSlot? _current;
+    private ScreenSlot? _oneBack;
+    private ScreenSlot? _oneForward;
+    private Control? _currentInner;
+    private Control? _oneBackInner;
+    private Control? _oneForwardInner;
 
     private Point? _swipeStart;
     private bool _capturedForSwipe;
@@ -96,7 +109,7 @@ public sealed class ScreenStackPanel : Panel
             // comment for the concrete bug this closes.
             vm.NavigationLeaving += (_, leavingFrame) =>
             {
-                if (_current is TrackListScreenView currentTrackList)
+                if (_currentInner is TrackListScreenView currentTrackList)
                     currentTrackList.Freeze(leavingFrame);
             };
             vm.NavigationChanged += (_, _) => SyncToCurrentFrame(vm);
@@ -107,70 +120,135 @@ public sealed class ScreenStackPanel : Panel
     public void SyncToCurrentFrame(MobileMainViewModel vm)
     {
         var currentFrame = vm.CurrentFrame;
-        var currentControl = _factory.GetOrCreate(currentFrame);
-        currentControl.DataContext = vm;
-        if (currentControl is TrackListScreenView currentTrackList)
+        var currentInner = _factory.GetOrCreate(currentFrame);
+        currentInner.DataContext = vm;
+        if (currentInner is TrackListScreenView currentTrackList)
             currentTrackList.ObserveLive(vm);
 
         var backFrame = vm.PeekOneBack;
         var forwardFrame = vm.PeekOneForward;
-        var backControl = backFrame != null ? PrepareInert(backFrame, vm) : null;
-        var forwardControl = forwardFrame != null ? PrepareInert(forwardFrame, vm) : null;
+        var backInner = backFrame != null ? PrepareInert(backFrame, vm) : null;
+        var forwardInner = forwardFrame != null ? PrepareInert(forwardFrame, vm) : null;
 
         // Extremely rare coincidence (the back and forward frames happen to
         // share a ScopeKey - e.g. the same album reachable both ways), where
         // the factory's cache would hand back the SAME control instance for
         // both roles. A Control can only ever have one visual parent, so
-        // keep it in just one role rather than adding it to Children twice
-        // and throwing.
-        if (forwardControl != null && ReferenceEquals(forwardControl, backControl))
-            forwardControl = null;
+        // keep it in just one role rather than wrapping it in two slots and
+        // fighting over which one actually hosts it.
+        if (forwardInner != null && ReferenceEquals(forwardInner, backInner))
+            forwardInner = null;
 
-        currentControl.IsVisible = true;
-        currentControl.IsHitTestVisible = true;
+        var current = WrapSlot(_current, _currentInner, currentInner, vm);
+        var back = backInner != null ? WrapSlot(_oneBack, _oneBackInner, backInner, vm) : null;
+        var forward = forwardInner != null ? WrapSlot(_oneForward, _oneForwardInner, forwardInner, vm) : null;
+
+        current.Frame = currentFrame;
+        current.IsVisible = true;
+        current.IsHitTestVisible = true;
         // A brand new transform every sync, never a reused/shared one - this
         // only ever runs as the result of an actual completed navigation
-        // (dragging alone never fires NavigationChanged), so whichever
-        // control is (re)confirmed as current here should always start
-        // clean at X=0, regardless of what transform it carried the last
-        // time it was current (e.g. a cancelled drag, or reuse from the
-        // factory's cache after being the outgoing side of an earlier swipe).
-        currentControl.RenderTransform = new TranslateTransform();
+        // (dragging alone never fires NavigationChanged), so whichever slot
+        // is (re)confirmed as current here should always start clean at
+        // X=0, regardless of what transform it carried the last time it was
+        // current (e.g. a cancelled drag, or reuse after being the outgoing
+        // side of an earlier swipe).
+        current.RenderTransform = new TranslateTransform();
+        if (currentFrame.IsSearchScreen)
+            current.FocusSearchBox();
 
-        if (ReferenceEquals(_current, currentControl) && ReferenceEquals(_oneBack, backControl) && ReferenceEquals(_oneForward, forwardControl))
+        if (back != null)
+        {
+            back.Frame = backFrame;
+            back.IsVisible = true;
+            back.IsHitTestVisible = false;
+            back.RenderTransform = null;
+        }
+        if (forward != null)
+        {
+            forward.Frame = forwardFrame;
+            forward.IsVisible = true;
+            forward.IsHitTestVisible = false;
+            forward.RenderTransform = null;
+        }
+
+        bool unchanged = ReferenceEquals(_current, current) && ReferenceEquals(_oneBack, back) && ReferenceEquals(_oneForward, forward);
+
+        _current = current;
+        _oneBack = back;
+        _oneForward = forward;
+        _currentInner = currentInner;
+        _oneBackInner = backInner;
+        _oneForwardInner = forwardInner;
+
+        if (unchanged)
             return;
 
-        // Both "underneath" screens first (render order doesn't matter
-        // between the two of them - only one is ever actually uncovered at
-        // a time, depending on which direction is being dragged), current
-        // last (on top) - a plain Panel stacks children full-bleed in
-        // collection order, same as ContentGrid's own default Z-order before
-        // this container existed.
+        // Both "underneath" slots first (render order doesn't matter between
+        // the two of them - only one is ever actually uncovered at a time,
+        // depending on which direction is being dragged), current last (on
+        // top) - a plain Panel stacks children full-bleed in collection
+        // order, same as ContentGrid's own default Z-order before this
+        // container existed.
         Children.Clear();
-        if (backControl != null)
-            Children.Add(backControl);
-        if (forwardControl != null)
-            Children.Add(forwardControl);
-        Children.Add(currentControl);
-        _current = currentControl;
-        _oneBack = backControl;
-        _oneForward = forwardControl;
+        if (back != null)
+            Children.Add(back);
+        if (forward != null)
+            Children.Add(forward);
+        Children.Add(current);
     }
 
-    // Materializes/refreshes a control for a non-current (back or forward)
-    // slot - always visible (so it can be uncovered) but never hit-testable
-    // (it's a preview, not an interactive screen, even mid-gesture) and
-    // always at rest (only current itself ever carries a drag transform).
+    // Reuses the existing slot for a role if it's still wrapping the exact
+    // same raw screen control (the common no-navigation-happened resync, or
+    // a role whose underlying screen genuinely didn't change), otherwise
+    // builds a fresh ScreenSlot and reparents the raw control into it -
+    // ScreenSlot.SetContent's own defensive detach handles the case where
+    // that control is moving roles (e.g. a swiped-forward "one forward"
+    // becoming "current") and still had a prior slot as its visual parent.
+    private static ScreenSlot WrapSlot(ScreenSlot? existingSlot, Control? existingInner, Control inner, MobileMainViewModel vm)
+    {
+        if (existingSlot != null && ReferenceEquals(existingInner, inner))
+            return existingSlot;
+
+        var slot = new ScreenSlot { DataContext = vm };
+        slot.SetContent(inner);
+        return slot;
+    }
+
+    // Materializes/refreshes the raw screen control for a non-current (back
+    // or forward) slot - always visible (so it can be uncovered) but never
+    // hit-testable (it's a preview, not an interactive screen, even
+    // mid-gesture).
     private Control PrepareInert(MobileNavigationFrame frame, MobileMainViewModel vm)
     {
         var control = _factory.GetOrCreate(frame);
         control.DataContext = vm;
         if (control is TrackListScreenView trackList)
             trackList.Freeze(frame);
-        control.IsVisible = true;
-        control.IsHitTestVisible = false;
-        control.RenderTransform = null;
         return control;
+    }
+
+    // Lets MobileMainView's Search-tab-icon re-tap handler reach the current
+    // slot's search box - tapping the Search tab icon while already on it is
+    // a no-op as far as SelectedTab's own setter is concerned (see
+    // MobileMainViewModel), so it never re-fires NavigationChanged/the
+    // auto-focus above.
+    public void FocusSearchBoxIfShowing()
+    {
+        if (_current?.Frame?.IsSearchScreen == true)
+            _current.FocusSearchBox();
+    }
+
+    // Lets the fixed back button (MobileMainView's own overlay) play the
+    // same slide-off animation as an interactive swipe-back, instead of
+    // calling MobileMainViewModel.BackCommand directly and cutting straight
+    // to the destination screen - reuses CommitInteractive exactly as a
+    // completed drag would, just starting from X=0 rather than wherever a
+    // finger let go.
+    public void AnimateGoBack()
+    {
+        if (DataContext is MobileMainViewModel { CanGoBack: true } vm)
+            CommitInteractive(vm, SwipeDirection.Back);
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -298,7 +376,7 @@ public sealed class ScreenStackPanel : Panel
     // same as GoBack()/GoForward()) - only once it's fully off-screen, so
     // the state mutation and the SyncToCurrentFrame resync it triggers never
     // race the animation still in flight. The revealed one-back/one-forward
-    // control is already sitting at X=0 with nothing further to animate -
+    // slot is already sitting at X=0 with nothing further to animate -
     // promoting it to "current" is exactly what SyncToCurrentFrame's own
     // fresh-transform assignment above already does, once the commit call's
     // RaiseNavigationChanged fires it.
