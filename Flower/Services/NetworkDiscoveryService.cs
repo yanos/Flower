@@ -348,9 +348,24 @@ public class NetworkDiscoveryService : IDisposable
     // refresh even when nothing did.
     private async Task ResolveAliasAsync(DiscoveredDevice device)
     {
+        string json;
         try
         {
-            var json = await Http.GetStringAsync($"http://{device.EndPoint}/api/localsend/v2/info");
+            json = await Http.GetStringAsync($"http://{device.EndPoint}/api/localsend/v2/info");
+        }
+        catch (Exception ex)
+        {
+            HandleUnreachable(device, ex);
+            return;
+        }
+
+        // The peer answered, so it's definitely alive and reachable from here
+        // on - a failure past this point (malformed JSON, unexpected shape) is
+        // a real bug in one side's /info handling, not a connectivity problem,
+        // so it must not feed the same "unreachable" failure counter above
+        // (that would eventually prune a peer that is very much still there).
+        try
+        {
             _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
             using var doc = JsonDocument.Parse(json);
             var changed = false;
@@ -386,44 +401,62 @@ public class NetworkDiscoveryService : IDisposable
         }
         catch (Exception ex)
         {
-            // Peer unreachable or not running the /info endpoint yet - keep the
-            // mDNS-name fallback alias rather than failing the discovery, unless
-            // this is its MaxConsecutiveResolveFailures'th miss in a row, in
-            // which case treat it the same as an mDNS goodbye - see
-            // MaxConsecutiveResolveFailures's own doc comment.
-            //
-            // Full exception (with stack trace) only on the first miss for
-            // this peer - a still-unreachable peer fails again every
-            // AliasPollInterval until it's pruned, and logging the same
-            // multi-line stack trace on every one of those is exactly the
-            // kind of log flood that made the Log window sluggish to render
-            // (see LogViewModel). A one-line message carries the same
-            // "still failing" information for the repeats.
-            if (_consecutiveResolveFailures.GetValueOrDefault(device.InstanceName) == 0)
-                _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.EndPoint);
-            else
-                _logger.LogDebug("Still could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
-                    device.InstanceName, device.EndPoint, ex.Message);
+            // The peer definitely answered (we got past GetStringAsync above),
+            // so this is a real bug - our JSON parsing or its /info response
+            // shape, not a reachability problem - and must not count towards
+            // MaxConsecutiveResolveFailures/pruning a peer that is still there.
+            // Loud on purpose: unlike a flaky connection, this won't clear up
+            // on its own on the next poll.
+            _logger.LogWarning(ex, "Peer {InstanceName} at {EndPoint} answered /info but the response could not be parsed",
+                device.InstanceName, device.EndPoint);
+        }
+    }
 
-            // A link-local address failing doesn't mean the peer is gone -
-            // see OnInstanceFound's own comment - it just means this
-            // particular address was never going to work, and pruning the
-            // peer over it would only force the exact same discover/fail/
-            // prune cycle to repeat the next time it re-announces the same
-            // way. Left un-pruned, it just waits quietly for a routable
-            // address to actually replace it (OnInstanceFound already
-            // handles that half).
-            if (device.EndPoint.Address.IsIPv6LinkLocal)
-                return;
+    // A GetStringAsync failure against /info: covers both a genuinely
+    // unreachable peer (down, out of range, stale mDNS-cached address) and a
+    // peer that is alive but didn't answer within Http's timeout (busy,
+    // overloaded, transient network stall) - the two aren't distinguishable
+    // from here, and the retry/eventual-prune handling below is the right
+    // response to either.
+    private void HandleUnreachable(DiscoveredDevice device, Exception ex)
+    {
+        // Peer unreachable or not running the /info endpoint yet - keep the
+        // mDNS-name fallback alias rather than failing the discovery, unless
+        // this is its MaxConsecutiveResolveFailures'th miss in a row, in
+        // which case treat it the same as an mDNS goodbye - see
+        // MaxConsecutiveResolveFailures's own doc comment.
+        //
+        // Full exception (with stack trace) only on the first miss for
+        // this peer - a still-unreachable peer fails again every
+        // AliasPollInterval until it's pruned, and logging the same
+        // multi-line stack trace on every one of those is exactly the
+        // kind of log flood that made the Log window sluggish to render
+        // (see LogViewModel). A one-line message carries the same
+        // "still failing" information for the repeats.
+        if (_consecutiveResolveFailures.GetValueOrDefault(device.InstanceName) == 0)
+            _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.EndPoint);
+        else
+            _logger.LogDebug("Still could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
+                device.InstanceName, device.EndPoint, ex.Message);
 
-            var failures = _consecutiveResolveFailures.AddOrUpdate(device.InstanceName, 1, (_, count) => count + 1);
-            if (failures >= MaxConsecutiveResolveFailures && _knownDevices.TryRemove(device.InstanceName, out _))
-            {
-                _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
-                _logger.LogInformation("Peer {InstanceName} unreachable after {Failures} consecutive /info attempts - treating as gone",
-                    device.InstanceName, failures);
-                DeviceLost?.Invoke(this, device.InstanceName);
-            }
+        // A link-local address failing doesn't mean the peer is gone -
+        // see OnInstanceFound's own comment - it just means this
+        // particular address was never going to work, and pruning the
+        // peer over it would only force the exact same discover/fail/
+        // prune cycle to repeat the next time it re-announces the same
+        // way. Left un-pruned, it just waits quietly for a routable
+        // address to actually replace it (OnInstanceFound already
+        // handles that half).
+        if (device.EndPoint.Address.IsIPv6LinkLocal)
+            return;
+
+        var failures = _consecutiveResolveFailures.AddOrUpdate(device.InstanceName, 1, (_, count) => count + 1);
+        if (failures >= MaxConsecutiveResolveFailures && _knownDevices.TryRemove(device.InstanceName, out _))
+        {
+            _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
+            _logger.LogInformation("Peer {InstanceName} unreachable after {Failures} consecutive /info attempts - treating as gone",
+                device.InstanceName, failures);
+            DeviceLost?.Invoke(this, device.InstanceName);
         }
     }
 
