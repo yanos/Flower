@@ -22,7 +22,7 @@
     <!-- Deliberately no backdrop-tap-to-dismiss, same as PeerApprovalView -
          an unattended dismissal should not silently start replacing this
          device's library view, so the explicit Cancel button below is the
-         only way out other than Pair. -->
+         only way out other than Ask to pair. -->
     <Border Background="#66000000" />
 
     <Border VerticalAlignment="Bottom"
@@ -39,7 +39,7 @@
         <TextBlock Text="{Binding ConfirmPairServerMessage}"
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
-        <Button Classes="peerAction" Content="Pair" Command="{Binding ConfirmPairServerCommand}"
+        <Button Classes="peerAction" Content="Ask to pair" Command="{Binding ConfirmPairServerCommand}"
                 Background="{DynamicResource SystemAccentColor}" />
         <Button Classes="peerAction" Content="Cancel" Command="{Binding CancelPairServerCommand}"
                 Background="Transparent" />

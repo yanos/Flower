@@ -823,7 +823,8 @@ public partial class MainView : UserControl
     }
 
     // The "drop here to create a new playlist" zone spans everything below the
-    // Library section (Songs/Albums/Artists) and above Devices (if any) - so a
+    // Library section (Songs/Albums/Artists) and above Devices/Server (if
+    // either is present - see MainViewModel.DeviceSectionHeaderName) - so a
     // drop that misses a specific playlist row still creates a playlist rather
     // than silently doing nothing, and this works even with zero playlists (no
     // "Playlists" header exists yet in that case). Computed from realized
@@ -848,7 +849,7 @@ public partial class MainView : UserControl
         var devicesHeaderIndex = -1;
         for (var i = libraryEndIndex + 1; i < items.Count; i++)
         {
-            if (items[i] is { Kind: SidebarItemKind.Header, Name: "Devices" })
+            if (items[i] is { Kind: SidebarItemKind.Header, Name: "Devices" or "Server" })
             {
                 devicesHeaderIndex = i;
                 break;
@@ -1439,5 +1440,42 @@ public partial class MainView : UserControl
             return;
 
         vm.PeerLibrary.PlaySong(song);
+    }
+
+    // Device-detail header's Pair/Unpair button - mirrors ServerPickerView's
+    // ActionButton_Click (Settings' Devices tab), same confirmation copy,
+    // just acting on SelectedDevice instead of a ServerRow.
+    private async void PairActionButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not { SelectedDevice: { } device } vm)
+            return;
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+            return;
+
+        var alias = vm.SelectedSidebarItem?.Name ?? device.Alias;
+
+        if (vm.IsSelectedDevicePaired)
+        {
+            var confirmedUnpair = await ConfirmDialogWindow.ShowAsync(
+                owner,
+                $"Unpair From \"{alias}\"?",
+                $"This device will no longer bulk-sync library/playlist data with \"{alias}\". Browsing and streaming will still work.",
+                "Unpair");
+            if (confirmedUnpair)
+                vm.UnpairServer();
+            return;
+        }
+
+        // Pairing switches this device's own Songs/Albums view over to what
+        // it syncs in from the server (see SettingsWindow's
+        // CanManageLocalLibrary) - worth a clear warning before it happens,
+        // same copy as ServerPickerView's own Pair confirmation.
+        var confirmedPair = await ConfirmDialogWindow.ShowAsync(
+            owner,
+            $"Ask \"{alias}\" To Pair?",
+            $"This device's library view will be replaced by \"{alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. \"{alias}\" will need to approve the request before syncing begins.",
+            "Ask to pair");
+        if (confirmedPair)
+            vm.PairWithServer(device);
     }
 }

@@ -17,7 +17,7 @@ namespace Flower.Views;
 // the paired server ("Unpair"), a different server is already paired
 // (disabled, with a hint to unpair first - decision: switching requires an
 // explicit unpair-first step, no direct one-click switch), or nothing is
-// paired yet ("Pair").
+// paired yet ("Ask to pair").
 public sealed class ServerRow : ViewModelBase
 {
     public required string Fingerprint { get; init; }
@@ -39,7 +39,7 @@ public sealed class ServerRow : ViewModelBase
     // is the paired one).
     public required string? BlockedByAlias { get; init; }
 
-    public string ActionLabel => IsPaired ? "Unpair" : "Pair";
+    public string ActionLabel => IsPaired ? "Unpair" : "Ask to pair";
     public bool IsActionEnabled => IsPaired || BlockedByAlias == null;
     public string? HintText => !IsPaired && BlockedByAlias != null ? $"Unpair from {BlockedByAlias} first" : null;
 }
@@ -149,9 +149,9 @@ public partial class ServerPickerView : UserControl
             // about deleting anything already on disk.
             var confirmed = await ConfirmDialogWindow.ShowAsync(
                 owner,
-                $"Pair With \"{row.Alias}\"?",
-                $"This device's library view will be replaced by \"{row.Alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted.",
-                "Pair");
+                $"Ask \"{row.Alias}\" To Pair?",
+                $"This device's library view will be replaced by \"{row.Alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. \"{row.Alias}\" will need to approve the request before syncing begins.",
+                "Ask to pair");
             if (!confirmed)
                 return;
 

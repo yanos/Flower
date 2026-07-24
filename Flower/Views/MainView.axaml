@@ -295,8 +295,8 @@
                                 IsVisible="{Binding IsShowingTrackList}"
                                 SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
 
-        <!-- Device detail: shown instead of the track list when a Devices sidebar
-             row is selected. Live browse/stream of that peer's catalog (see
+        <!-- Device detail: shown instead of the track list when a Devices/Server
+             sidebar row is selected. Live browse/stream of that peer's catalog (see
              PeerLibraryViewModel) - unrestricted by Client/Server role/pairing,
              deliberately separate from the bulk LibrarySyncService merge (see
              SyncRolePolicy). Plain DTOs (AlbumID3/Child), not compiled-bound -
@@ -308,13 +308,27 @@
               Margin="24" RowDefinitions="Auto,*"
               x:CompileBindings="False">
           <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,16">
-            <materialIcons:MaterialIcon Kind="Laptop" Width="28" Height="28" />
+            <!-- Server vs. plain-device icon - see MainViewModel.DeviceSidebarIcon;
+                 SelectedSidebarItem.Icon is the same one shown in the sidebar row. -->
+            <materialIcons:MaterialIcon Kind="{Binding SelectedSidebarItem.Icon}" Width="28" Height="28" />
             <!-- SelectedSidebarItem.Name, not SelectedDevice.Alias - the sidebar
                  row already resolves a local nickname override (DeviceNicknameStore)
                  over the peer's raw self-reported alias and keeps it live-updated
                  on rename; SelectedDevice.Alias is that raw, unresolved value. -->
             <TextBlock Text="{Binding SelectedSidebarItem.Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
             <TextBlock Text="{Binding SelectedDevice.EndPoint}" Opacity="0.5" FontSize="13" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            <!-- Only shown for a peer advertising Server mode, while this device
+                 is a Client (see MainViewModel.CanPairWithSelectedDevice) - mirrors
+                 ServerPickerView's Pair/Unpair button (Settings' Devices tab) so
+                 pairing doesn't require a trip to Settings. -->
+            <Button Content="{Binding PairActionLabel}"
+                    IsVisible="{Binding CanPairWithSelectedDevice}"
+                    IsEnabled="{Binding IsPairActionEnabled}"
+                    Click="PairActionButton_Click"
+                    Margin="12,0,0,0" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding PairActionHint}"
+                       IsVisible="{Binding PairActionHint, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                       Opacity="0.5" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"/>
           </StackPanel>
 
           <TextBlock Grid.Row="1" Text="{Binding PeerLibrary.ErrorMessage}"
