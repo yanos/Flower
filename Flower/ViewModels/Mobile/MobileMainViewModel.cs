@@ -439,31 +439,6 @@ public class MobileMainViewModel : ViewModelBase
         row.IsDownloadUnavailable = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
     }
 
-    // The Search tab's box is the only header search box left (Songs, album,
-    // and playlist track lists no longer have their own), so it and the
-    // screen title are mutually exclusive purely on tab selection. Bound to
-    // SearchQuery.
-    public bool IsShowingSearchTabBox => SelectedTab == MobileTab.Search;
-    public bool IsShowingScreenTitle => !IsShowingSearchTabBox;
-
-    public string ScreenTitle
-    {
-        get
-        {
-            // Both artist sub-screens (that artist's own album grid, and one of
-            // its albums' tracks) show the artist's name, not Main.SelectedSidebarItem's
-            // ("Artists" while browsing the grid, "Albums" once SelectArtistAlbum
-            // has re-pointed it there - see that method) - _selectedArtistName is
-            // the one thing that's actually stable and meaningful across both.
-            if (SelectedTab == MobileTab.Artists && _selectedArtistName != null)
-                return _selectedArtistName;
-
-            return _hasDrilledIn
-                ? (Main.SelectedSidebarItem?.Name ?? SelectedTab.ToString())
-                : SelectedTab == MobileTab.RecentlyAdded ? "Recently Added" : SelectedTab.ToString();
-        }
-    }
-
     // Non-null only while drilled into a specific playlist's track list, which is the
     // one place mobile allows reordering (Songs/Albums/Artists have no persisted order).
     public Playlist? CurrentPlaylist =>
@@ -1449,10 +1424,7 @@ public class MobileMainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsShowingSearchPrompt));
         OnPropertyChanged(nameof(IsShowingSearchResults));
         OnPropertyChanged(nameof(IsShowingTrackList));
-        OnPropertyChanged(nameof(IsShowingSearchTabBox));
-        OnPropertyChanged(nameof(IsShowingScreenTitle));
         OnPropertyChanged(nameof(CanGoBack));
-        OnPropertyChanged(nameof(ScreenTitle));
         OnPropertyChanged(nameof(CurrentPlaylist));
         OnPropertyChanged(nameof(IsShowingPlaylistTracks));
         OnPropertyChanged(nameof(IsShowingAlbumTrackList));
