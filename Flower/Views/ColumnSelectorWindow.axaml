@@ -37,6 +37,7 @@
             Content="Close"
             HorizontalAlignment="Right"
             IsDefault="True"
+            IsCancel="True"
             Click="CloseButton_Click"/>
   </StackPanel>
 </Window>
