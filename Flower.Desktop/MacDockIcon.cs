@@ -2,6 +2,9 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 
+using Avalonia;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 
 namespace Flower.Desktop;
@@ -38,8 +41,10 @@ internal static class MacDockIcon
             return;
 
         using var stream = AssetLoader.Open(new Uri("avares://Flower/Assets/flower-icon.png"));
+        using var source = new Bitmap(stream);
+        using var rounded = RoundCorners(source);
         using var ms = new MemoryStream();
-        stream.CopyTo(ms);
+        rounded.Save(ms);
         var bytes = ms.ToArray();
 
         var unmanagedBytes = Marshal.AllocHGlobal(bytes.Length);
@@ -62,5 +67,23 @@ internal static class MacDockIcon
         {
             Marshal.FreeHGlobal(unmanagedBytes);
         }
+    }
+
+    // iOS masks app icons into its rounded "squircle" shape automatically;
+    // macOS does not do this for an image handed to setApplicationIconImage:,
+    // it draws it as-is. Bake the same corner rounding in ourselves so the
+    // Dock tile matches the mobile icon instead of showing sharp corners.
+    // 0.223 approximates Apple's iOS/macOS icon corner-radius-to-width ratio.
+    private static RenderTargetBitmap RoundCorners(Bitmap source)
+    {
+        var rect = new Rect(source.PixelSize.ToSize(1));
+        var rtb = new RenderTargetBitmap(source.PixelSize);
+        using var ctx = rtb.CreateDrawingContext();
+        using (ctx.PushClip(new RoundedRect(rect, rect.Width * 0.223)))
+        {
+            ctx.DrawImage(source, rect);
+        }
+
+        return rtb;
     }
 }
