@@ -13,7 +13,8 @@ long term:
  ui customization
  better currently playing controls that looks like an lcd panel
  a way to only see downloaded music
- play after this song, this album
+ queue after this song or this album
+ pulling down the view in mobile should reveal a filter field
 
 build:
  dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
@@ -32,7 +33,7 @@ details:
  spinner aside the device name when syncing
  landscape mode on mobile needs polishing
  download spinner still not centered on mobile
- pulling down the view in mobile should reveal a filter field
+
  server status for client
  when reaching the end of an album, the queued song is the first song from this album
  lock screen widget should stay with the queue song
