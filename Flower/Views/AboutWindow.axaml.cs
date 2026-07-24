@@ -1,5 +1,6 @@
 using System.Reflection;
 using Avalonia.Controls;
+using Avalonia.Input;
 
 namespace Flower.Views;
 
@@ -22,5 +23,15 @@ public partial class AboutWindow : Window
                 : informationalVersion;
             VersionTextBlock.Text = $"Version {displayVersion}";
         }
+    }
+
+    // No button here to hang IsCancel="True" off of (unlike SettingsWindow/
+    // ColumnSelectorWindow/etc.) - this is a pure info popup, so Escape just
+    // closes it directly instead.
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Key == Key.Escape)
+            Close();
     }
 }
