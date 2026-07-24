@@ -114,7 +114,7 @@
             <DataTemplate>
               <Grid ColumnDefinitions="*,Auto" Margin="0,4">
                 <TextBlock Grid.Column="0" Text="{Binding Alias}" VerticalAlignment="Center"/>
-                <Button Grid.Column="1" Content="Pair"
+                <Button Grid.Column="1" Content="Ask to pair"
                         Command="{Binding $parent[UserControl].DataContext.PairWithServerCommand}"
                         CommandParameter="{Binding}"
                         IsEnabled="{Binding $parent[UserControl].DataContext.Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"/>

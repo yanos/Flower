@@ -17,7 +17,17 @@ public class SidebarItem : ViewModelBase
     }
 
     public SidebarItemKind Kind { get; }
-    public MaterialIconKind Icon { get; }
+
+    // Settable, not just init - a Device row's icon changes in place if the
+    // peer's advertised role (DiscoveredDevice.IsServer) changes after this
+    // row was created - see MainViewModel.RelocateDeviceSidebarItemIfNeeded.
+    private MaterialIconKind _icon;
+    public MaterialIconKind Icon
+    {
+        get => _icon;
+        set { _icon = value; OnPropertyChanged(); }
+    }
+
     public Playlist? Playlist { get; }
 
     // Settable (not just init) - see MainViewModel.FindDeviceSidebarItem: a

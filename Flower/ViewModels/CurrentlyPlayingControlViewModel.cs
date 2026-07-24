@@ -92,7 +92,11 @@ namespace Flower.ViewModels
 
         private void LoadAlbumArt(Track? track)
         {
-            if (track?.Path == null) { AlbumArt = null; return; }
+            // A live peer-stream URL (see PeerLibraryViewModel.ToTransientTrack)
+            // is not a local filesystem path - skip straight to no-art instead of
+            // throwing TagLib/IO exceptions trying to read it as one.
+            // VlcAudioManager.Play uses the same "://" check to tell them apart.
+            if (track?.Path is not { } path || path.Contains("://")) { AlbumArt = null; return; }
 
             _ = Task.Run(() =>
             {
@@ -144,8 +148,11 @@ namespace Flower.ViewModels
                 // 3. Embedded art from another track on the same album
                 if (bitmap == null && !string.IsNullOrEmpty(track.Album))
                 {
+                    // t.Path != null - a sibling can be a sync placeholder
+                    // (no local file yet, see SYNC-PLAN.md's library sync)
+                    // that TagLib.File.Create would otherwise throw on.
                     var siblings = _library.Tracks
-                        .Where(t => t.Path != track.Path &&
+                        .Where(t => t.Path != null && t.Path != track.Path &&
                                     string.Equals(t.Album, track.Album, StringComparison.OrdinalIgnoreCase));
                     foreach (var sibling in siblings)
                     {

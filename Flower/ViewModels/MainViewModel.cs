@@ -68,24 +68,6 @@ public partial class MainViewModel : ViewModelBase
     // because discovery events aren't guaranteed to arrive on one fixed thread.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _syncedDeviceFingerprints = new();
 
-    // Fingerprints of Servers this (unpaired Client) device has already
-    // offered ServerDiscoveredForPairing for this session - see
-    // CheckForNewPairableServer. Once per fingerprint per session regardless
-    // of whether the user actually paired, so declining/dismissing the
-    // prompt doesn't nag again every time that Server's /info re-resolves;
-    // relaunching the app (a fresh session) is the reset. Same
-    // ConcurrentDictionary-as-thread-safe-set idiom as _syncedDeviceFingerprints.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _promptedServerFingerprints = new();
-
-    // Raised the first time a Server is discovered while this device is an
-    // unpaired Client - the UI is expected to proactively offer pairing
-    // (see MobileMainViewModel's subscription) rather than requiring the
-    // user to dig into Settings' server list themselves. Deliberately still
-    // just an offer, not automatic pairing - decision #3 (client picks its
-    // server manually) still holds, this only changes *when* that choice is
-    // surfaced to the user, not who makes it.
-    public event EventHandler<DiscoveredDevice>? ServerDiscoveredForPairing;
-
     // Non-zero while at least one PlaylistSyncService/LibrarySyncService call
     // is in flight (see RunTrackedSync) - both services' merges fire
     // Library.TracksUpdated/PlaylistsUpdated unconditionally, even when
@@ -387,6 +369,7 @@ public partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(PairedServerFingerprint));
             OnPropertyChanged(nameof(PairedServerAlias));
             OnPropertyChanged(nameof(CanForceSync));
+            NotifyPairButtonPropertiesChanged();
         }
     }
 
@@ -401,8 +384,10 @@ public partial class MainViewModel : ViewModelBase
         _networkDiscovery?.KnownDevices.Where(d => d.IsServer) ?? Enumerable.Empty<DiscoveredDevice>();
 
     // Manual pairing (see decision: a Client picks its one server explicitly,
-    // no automatic first-found pairing) - called from ServerPickerView's
-    // "Pair" action.
+    // no automatic first-found pairing, and no popup offering it the moment
+    // a Server is seen - the user has to go looking, via the sidebar's
+    // device-detail "Ask to pair" button or ServerPickerView) - called from
+    // either of those.
     public void PairWithServer(DiscoveredDevice device)
     {
         _appSettings ??= new AppSettings();
@@ -412,26 +397,8 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(PairedServerFingerprint));
         OnPropertyChanged(nameof(PairedServerAlias));
         OnPropertyChanged(nameof(CanForceSync));
+        NotifyPairButtonPropertiesChanged();
         TriggerSyncIfReady(device); // sync immediately rather than waiting for the next discovery event
-    }
-
-    // Proactively offers pairing the moment a Server is found, rather than
-    // only when the user happens to open Settings and look - see
-    // ServerDiscoveredForPairing's own doc comment. Deliberately not raised
-    // for a Server itself finding another Server (weAreServer==true here
-    // means this device never pairs with anyone) or once already paired
-    // (PairedServerFingerprint non-empty) - those cases have nothing to
-    // offer.
-    private void CheckForNewPairableServer(DiscoveredDevice device)
-    {
-        if (IsServer || !device.IsServer || string.IsNullOrEmpty(device.Fingerprint))
-            return;
-        if (!string.IsNullOrEmpty(PairedServerFingerprint))
-            return;
-        if (!_promptedServerFingerprints.TryAdd(device.Fingerprint, 0))
-            return;
-
-        ServerDiscoveredForPairing?.Invoke(this, device);
     }
 
     // ServerPickerView's "Unpair" action - must be called before pairing
@@ -447,6 +414,7 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(PairedServerFingerprint));
         OnPropertyChanged(nameof(PairedServerAlias));
         OnPropertyChanged(nameof(CanForceSync));
+        NotifyPairButtonPropertiesChanged();
     }
 
     // "Sync Now" action (desktop's ServerPickerView, mobile's SettingsView) -
@@ -860,6 +828,39 @@ public partial class MainViewModel : ViewModelBase
     // which triggers LoadAsync whenever SelectedDevice changes.
     public PeerLibraryViewModel PeerLibrary { get; }
 
+    // Whether the device-detail header's Pair/Unpair button should show at
+    // all for SelectedDevice - only meaningful for a Client looking at a
+    // peer advertising Server mode; a Server itself never pairs with anyone.
+    public bool CanPairWithSelectedDevice => !IsServer && (SelectedDevice?.IsServer ?? false);
+
+    public bool IsSelectedDevicePaired =>
+        SelectedDevice is { Fingerprint.Length: > 0 } device && device.Fingerprint == PairedServerFingerprint;
+
+    // Mirrors ServerRow's ActionLabel/IsActionEnabled/HintText
+    // (ServerPickerView, Settings' Devices tab) - same three states,
+    // surfaced inline in the device-detail header so pairing doesn't need a
+    // trip to Settings. Switching to a different server still requires an
+    // explicit unpair-first step (PairActionHint), same as ServerPickerView.
+    public string PairActionLabel => IsSelectedDevicePaired ? "Unpair" : "Ask to pair";
+    public bool IsPairActionEnabled => IsSelectedDevicePaired || string.IsNullOrEmpty(PairedServerFingerprint);
+    public string? PairActionHint =>
+        !IsSelectedDevicePaired && !string.IsNullOrEmpty(PairedServerFingerprint) ? $"Unpair from {PairedServerAlias} first" : null;
+
+    // Single place raising every pair-button property's PropertyChanged -
+    // called whenever any input to them changes: the sidebar selection
+    // (OnSidebarSelectionChanged), this device's own role (IsServer's
+    // setter), the paired server (PairWithServer/UnpairServer), or
+    // SelectedDevice's underlying DiscoveredDevice being refreshed
+    // (RefreshDeviceDisplayNames).
+    private void NotifyPairButtonPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(CanPairWithSelectedDevice));
+        OnPropertyChanged(nameof(IsSelectedDevicePaired));
+        OnPropertyChanged(nameof(PairActionLabel));
+        OnPropertyChanged(nameof(IsPairActionEnabled));
+        OnPropertyChanged(nameof(PairActionHint));
+    }
+
     // Rebuilt in PopulateTracks (every TracksUpdated) - see AlbumGridBuilder/
     // RecentlyAddedAlbumsBuilder, the same shared builders mobile's own grids
     // use. Alphabetical for Albums, by-recency for Recently Added. Reassigned
@@ -1078,7 +1079,6 @@ public partial class MainViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(CanForceSync)));
-            Dispatcher.UIThread.Post(() => CheckForNewPairableServer(device));
             Dispatcher.UIThread.Post(RefreshRowReachability);
             TriggerSyncIfReady(device);
         };
@@ -1352,8 +1352,11 @@ public partial class MainViewModel : ViewModelBase
     }
 
     // Mirrors CreatePlaylistWithTrack's incremental _sidebarItems.Add(...) pattern:
-    // devices arrive one at a time from NetworkDiscoveryService, so the "Devices"
-    // section is built up live rather than as part of BuildSidebarItems().
+    // devices arrive one at a time from NetworkDiscoveryService, so the
+    // "Devices"/"Server" sections are built up live rather than as part of
+    // BuildSidebarItems(). A peer advertising Server mode (DiscoveredDevice.
+    // IsServer) goes under its own "Server" section instead of "Devices" -
+    // see DeviceSectionHeaderName/DeviceSidebarIcon.
     private void AddOrUpdateDeviceSidebarItem(DiscoveredDevice device)
     {
         var existing = FindDeviceSidebarItem(device);
@@ -1378,21 +1381,111 @@ public partial class MainViewModel : ViewModelBase
             // NotifyIsSyncingChanged only fires on IsSyncing's own edges, not
             // whenever a sidebar row happens to change.
             existing.IsSyncing = device.Fingerprint == PairedServerFingerprint && IsSyncing;
+            RelocateDeviceSidebarItemIfNeeded(existing, device);
             RemoveDuplicateDeviceSidebarItems(existing, device);
             RefreshDeviceDisplayNames();
             return;
         }
 
-        if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Device))
-            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Devices"));
-
-        var added = new SidebarItem(SidebarItemKind.Device, ResolveDeviceDisplayName(device), MaterialIconKind.Laptop, device: device)
+        var added = new SidebarItem(SidebarItemKind.Device, ResolveDeviceDisplayName(device), DeviceSidebarIcon(device), device: device)
         {
             IsSyncing = device.Fingerprint == PairedServerFingerprint && IsSyncing,
         };
-        _sidebarItems.Add(added);
+        InsertDeviceSidebarItem(added, device);
         RemoveDuplicateDeviceSidebarItems(added, device);
         RefreshDeviceDisplayNames();
+    }
+
+    private static string DeviceSectionHeaderName(DiscoveredDevice device) => device.IsServer ? "Server" : "Devices";
+    private static MaterialIconKind DeviceSidebarIcon(DiscoveredDevice device) => device.IsServer ? MaterialIconKind.Server : MaterialIconKind.Laptop;
+
+    // Inserts a brand-new Device row into the section matching the device's
+    // current role (see DeviceSectionHeaderName), creating that section's
+    // Header row first if this is its first member. Appends the section
+    // itself at the end of the sidebar the first time it's needed (same as
+    // the old single-"Devices"-section behavior), but keeps each section's
+    // own members contiguous so RelocateDeviceSidebarItemIfNeeded/
+    // SectionHeaderFor can find a row's section by walking backward to the
+    // nearest preceding Header.
+    private void InsertDeviceSidebarItem(SidebarItem item, DiscoveredDevice device)
+    {
+        var headerName = DeviceSectionHeaderName(device);
+        var headerIndex = -1;
+        for (var i = 0; i < _sidebarItems.Count; i++)
+        {
+            if (_sidebarItems[i].Kind == SidebarItemKind.Header && _sidebarItems[i].Name == headerName)
+            {
+                headerIndex = i;
+                break;
+            }
+        }
+
+        if (headerIndex < 0)
+        {
+            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, headerName));
+            _sidebarItems.Add(item);
+            return;
+        }
+
+        var insertAt = headerIndex + 1;
+        while (insertAt < _sidebarItems.Count && _sidebarItems[insertAt].Kind != SidebarItemKind.Header)
+            insertAt++;
+        _sidebarItems.Insert(insertAt, item);
+    }
+
+    // A device's advertised role can change after its sidebar row was
+    // created (e.g. the peer flips its own "Act as Server" setting) - moves
+    // the row to the section matching its current role and updates its icon
+    // to match, no-op if it's already in the right place. Preserves
+    // selection across the move since the row is the same SidebarItem
+    // instance throughout, just removed and reinserted elsewhere in
+    // _sidebarItems - Remove briefly drops it out of SelectedSidebarItem via
+    // the sidebar ListBox's two-way binding, so it's explicitly restored
+    // after Insert if it was selected going in.
+    private void RelocateDeviceSidebarItemIfNeeded(SidebarItem item, DiscoveredDevice device)
+    {
+        item.Icon = DeviceSidebarIcon(device);
+
+        var targetHeaderName = DeviceSectionHeaderName(device);
+        var currentHeader = SectionHeaderFor(item);
+        if (currentHeader?.Name == targetHeaderName)
+            return;
+
+        var wasSelected = SelectedSidebarItem == item;
+        _sidebarItems.Remove(item);
+        RemoveHeaderIfEmpty(currentHeader);
+        InsertDeviceSidebarItem(item, device);
+        if (wasSelected)
+            SelectedSidebarItem = item;
+    }
+
+    // The Header row immediately preceding a sidebar item, i.e. the section
+    // it currently belongs to - relies on InsertDeviceSidebarItem always
+    // keeping a section's members contiguous right after its Header.
+    private SidebarItem? SectionHeaderFor(SidebarItem item)
+    {
+        var index = _sidebarItems.IndexOf(item);
+        for (var i = index - 1; i >= 0; i--)
+        {
+            if (_sidebarItems[i].Kind == SidebarItemKind.Header)
+                return _sidebarItems[i];
+        }
+        return null;
+    }
+
+    // Drops a section's Header row once its last member is gone - shared by
+    // RemoveDeviceItem (a device actually left) and
+    // RelocateDeviceSidebarItemIfNeeded (a device moved to the other section).
+    private void RemoveHeaderIfEmpty(SidebarItem? header)
+    {
+        if (header == null)
+            return;
+        var index = _sidebarItems.IndexOf(header);
+        if (index < 0)
+            return;
+        var stillHasMembers = index + 1 < _sidebarItems.Count && _sidebarItems[index + 1].Kind != SidebarItemKind.Header;
+        if (!stillHasMembers)
+            _sidebarItems.Remove(header);
     }
 
     // A peer can transiently be discovered under more than one mDNS instance
@@ -1493,6 +1586,7 @@ public partial class MainViewModel : ViewModelBase
         // property-changed, so the device-detail pane's EndPoint binding
         // needs an explicit nudge to notice.
         OnPropertyChanged(nameof(SelectedDevice));
+        NotifyPairButtonPropertiesChanged();
     }
 
     private void RemoveDeviceSidebarItem(string instanceName)
@@ -1526,7 +1620,8 @@ public partial class MainViewModel : ViewModelBase
     // the exact same still-present device and shares that Fingerprint,
     // clearing it here would just trigger a redundant resync of it for no
     // reason). Either way: reselect away if this item was selected, remove
-    // it, and drop the "Devices" header once no Device items remain.
+    // it, and drop its section's Header row (see RemoveHeaderIfEmpty) once
+    // no other Device items remain in it.
     private void RemoveDeviceItem(SidebarItem item, bool clearSyncDedup)
     {
         if (clearSyncDedup && item.Device?.Fingerprint is { Length: > 0 } fingerprint)
@@ -1535,18 +1630,10 @@ public partial class MainViewModel : ViewModelBase
         if (SelectedSidebarItem == item)
             SelectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
 
+        var header = SectionHeaderFor(item);
         _sidebarItems.Remove(item);
-
-        if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Device))
-        {
-            var header = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
-            if (header != null)
-                _sidebarItems.Remove(header);
-        }
-        else
-        {
-            RefreshDeviceDisplayNames();
-        }
+        RemoveHeaderIfEmpty(header);
+        RefreshDeviceDisplayNames();
     }
 
     // Quiet lookup shared by ResolvePeerForTrack (below, which adds logging -
@@ -1814,6 +1901,7 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(SelectedDevice));
+        NotifyPairButtonPropertiesChanged();
         // Live browse, unrestricted by Client/Server role/pairing - see
         // PeerLibraryViewModel's own doc comment. Fire-and-forget: the VM
         // guards against a stale request winning a race if the selection

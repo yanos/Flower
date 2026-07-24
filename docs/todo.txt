@@ -1,21 +1,49 @@
-make an issue link
-readme
-improve cli
-icon
-album mode
-artist / playlist icon instead of album art
-lyric service
-song history
-folder in playlist
-access logs on mobile directly from app, remove from Files app
-dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
-script to make the provisioning profile.
-spinner aside the device name when syncing
-auto complete while editing
-Esc to dismiss
-localisation
-different flower species in dark mode
-intelligent playlist like favorite songs, recently played, etc. 
-export playlist with actual songs
-on each startup, choose an flower emoji and make that the app icon. show it in the about box and in the ios splash screen. 
-push library sync events instead of polling
+long term:
+ improve cli
+ album mode
+ artist / playlist icon instead of album art
+ lyric service
+ song history
+ localisation
+ intelligent playlist like favorite songs, recently played, etc.
+ export playlist with actual songs
+ on each startup, choose an flower emoji and make that the app icon. show it in the about box and in the ios splash screen. different flower species in  dark mode
+ push library sync events instead of polling
+ account for family and friends, can only read the library, no playlist, update play count etc.
+ ui customization
+ better currently playing controls that looks like an lcd panel
+ a way to only see downloaded music
+ play after this song, this album
+
+build:
+ dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
+ script to make the provisioning profile.
+ more tests
+ ui tests
+
+details:
+ macos app icon not rounded
+ add an issue link in about box
+ readme
+ folder in playlist
+ view logs from devices from the device section of the sidebar
+ put servers under a new server section in the sidebar
+ Esc to dismiss all dialog
+ spinner aside the device name when syncing
+ landscape mode on mobile needs polishing
+ download spinner still not centered on mobile
+ pulling down the view in mobile should reveal a filter field
+ server status for client
+ when reaching the end of an album, the queued song is the first song from this album
+ lock screen widget should stay with the queue song
+ album art top align on mobile
+ next song doesnt alsways play
+ track last played for each song
+ option to toggle each log category (level, category, timestamp)
+
+server / client overhaul:
+ only stream on local network
+ on desktop sidebar: checkmark on devices that are paired.
+ server has the ability to unpaired clients
+ deny devices should show on the device list to be able to forget the resufal.
+ what happens to the library if the client cancel the pairing
