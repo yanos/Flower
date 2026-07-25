@@ -71,6 +71,11 @@
            e.g. NewPlaylistDropZone's "New Playlist" label - must stay fully
            opaque itself. -->
       <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#4088C0D0"/>
+      <!-- Paired-server sidebar row reachability glyph (green check/amber
+           exclamation) - see SidebarItem.ShowReachableIcon/
+           ShowUnreachableIcon, MainView.axaml's Device row template. -->
+      <SolidColorBrush x:Key="AppSuccessBrush" Color="#A3BE8C"/>
+      <SolidColorBrush x:Key="AppWarningBrush" Color="#EBCB8B"/>
     </ResourceDictionary>
 
     <ResourceDictionary x:Key="Light">
@@ -109,6 +114,8 @@
       <SolidColorBrush x:Key="AppAccentBrush" Color="#4C8FB0"/>
       <SolidColorBrush x:Key="AppAccentMutedBrush" Color="#7FA9C4"/>
       <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#404C8FB0"/>
+      <SolidColorBrush x:Key="AppSuccessBrush" Color="#3F9142"/>
+      <SolidColorBrush x:Key="AppWarningBrush" Color="#C98A1B"/>
     </ResourceDictionary>
 
   </ResourceDictionary.ThemeDictionaries>

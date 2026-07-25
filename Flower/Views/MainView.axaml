@@ -171,6 +171,22 @@
                                                      Opacity="0.55"
                                                      VerticalAlignment="Center"
                                                      IsVisible="{Binding IsSyncing}"/>
+                        <!-- Paired-server reachability - see SidebarItem.
+                             ShowReachableIcon/ShowUnreachableIcon. Only ever
+                             set on the one Device row for MainViewModel's
+                             paired Server, which (unlike an ordinary
+                             Devices/Server row) stays in the sidebar even
+                             while unreachable. -->
+                        <materialIcons:MaterialIcon Kind="CheckCircle"
+                                                     Width="11" Height="11"
+                                                     Foreground="{DynamicResource AppSuccessBrush}"
+                                                     VerticalAlignment="Center"
+                                                     IsVisible="{Binding ShowReachableIcon}"/>
+                        <materialIcons:MaterialIcon Kind="AlertCircle"
+                                                     Width="11" Height="11"
+                                                     Foreground="{DynamicResource AppWarningBrush}"
+                                                     VerticalAlignment="Center"
+                                                     IsVisible="{Binding ShowUnreachableIcon}"/>
                       </StackPanel>
                       <TextBox Text="{Binding Name, Mode=TwoWay}"
                                IsVisible="{Binding IsEditing}"
