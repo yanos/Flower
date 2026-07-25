@@ -15,12 +15,15 @@ using Flower.Persistence;
 
 namespace Flower.Services;
 
-// Raised the first time an unrecognized peer fingerprint calls a gated
-// endpoint - see SyncHttpServer.AuthorizeAsync. The UI is expected to show an
-// AirDrop-style "Allow this device?" prompt and report back via Resolution;
-// the HTTP request stays pending (all concurrent requests from the same
-// not-yet-decided fingerprint share this one prompt/Resolution) until it does,
-// or until the approval timeout denies by default.
+// Raised when an unrecognized peer fingerprint explicitly asks to pair - see
+// SyncHttpServer.HandlePairRequestAsync. Never raised by any other endpoint
+// (see this file's top-of-file doc comment) - a peer merely calling some
+// unrelated gated endpoint is just refused, not treated as a pairing attempt.
+// The UI is expected to show an AirDrop-style "Allow this device?" prompt and
+// report back via Resolution; the HTTP request stays pending (all concurrent
+// pair-requests from the same not-yet-decided fingerprint share this one
+// prompt/Resolution) until it does, or until the approval timeout denies by
+// default.
 public sealed class PeerApprovalRequestedEventArgs : EventArgs
 {
     public required string Fingerprint { get; init; }
@@ -30,6 +33,7 @@ public sealed class PeerApprovalRequestedEventArgs : EventArgs
 
 // Plain-HTTP sync endpoints (see SYNC-PLAN.md):
 //   GET  /api/localsend/v2/info        - device identity (phase 1)
+//   POST /api/flower/v1/pair-request   - explicit pairing bootstrap, see below
 //   GET  /api/flower/v1/playlists      - this device's current playlist manifest
 //   POST /api/flower/v1/playlists/apply - adopt a peer-merged manifest wholesale
 // (phase 2, playlist metadata sync), plus an embedded OpenSubsonic host (phase 3,
@@ -54,13 +58,21 @@ public sealed class PeerApprovalRequestedEventArgs : EventArgs
 //                                 placeholder track's art (SYNC-PLAN.md Phase 3)
 // Deliberately plain HTTP for now, not HTTPS - see the plan doc for why.
 //
-// Trust gate (phase 3): every /api/flower/v1/* endpoint requires the caller to
-// identify itself via X-Flower-Fingerprint/X-Flower-Alias headers (see
-// PlaylistSyncService, which sends both). An unrecognized fingerprint raises
-// PeerApprovalRequested and blocks that request until the user approves/denies
-// (or the request times out and is denied by default) - see AuthorizeAsync.
-// /api/localsend/v2/info stays ungated: a peer has to learn our fingerprint (and
-// we, its) via that endpoint before either side can evaluate trust at all.
+// Trust gate (phase 3): every /api/flower/v1/* endpoint other than pair-request,
+// plus every /rest/* endpoint, requires the caller to identify itself via
+// X-Flower-Fingerprint/X-Flower-Alias headers (see PlaylistSyncService, which
+// sends both) and already be in TrustedPeerStore - see IsAuthorized. An
+// unrecognized/untrusted fingerprint just gets a flat 403, nothing more:
+// pairing is not a side effect of any of these. Only POST /api/flower/v1/
+// pair-request (see HandlePairRequestAsync) can raise PeerApprovalRequested -
+// deliberately a separate, explicit call so an incidental request (a stray
+// /rest/getCoverArt fetch for a stale placeholder track, a re-discovery
+// /info poll, etc.) can never look, from the receiving side, like "this
+// device is asking to pair" when nobody asked for that. /api/localsend/v2/info
+// and pair-request itself both stay ungated: a peer has to learn our
+// fingerprint (and we, its) via /info before either side can evaluate trust
+// at all, and pair-request's whole job is bootstrapping trust for a
+// fingerprint that, by definition, isn't trusted yet.
 public class SyncHttpServer : IDisposable
 {
     public const int DefaultPort = 53317;
@@ -176,9 +188,24 @@ public class SyncHttpServer : IDisposable
             var path = context.Request.Url?.AbsolutePath;
             var method = context.Request.HttpMethod;
 
+            // Both ungated, for the same reason: a peer has to learn our fingerprint
+            // via /info before trust can be evaluated at all, and pair-request's own
+            // job is bootstrapping trust for a fingerprint that isn't trusted yet -
+            // see this file's own top-of-file doc comment.
+            if (path == "/api/localsend/v2/info" && method == "GET")
+            {
+                await HandleInfoAsync(context);
+                return;
+            }
+            if (path == "/api/flower/v1/pair-request" && method == "POST")
+            {
+                await HandlePairRequestAsync(context);
+                return;
+            }
+
             if (path != null && RequiresTrust(path))
             {
-                if (!await AuthorizeAsync(context))
+                if (!IsAuthorized(context))
                 {
                     context.Response.StatusCode = 403;
                     _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: not authorized",
@@ -200,9 +227,7 @@ public class SyncHttpServer : IDisposable
                 }
             }
 
-            if (path == "/api/localsend/v2/info" && method == "GET")
-                await HandleInfoAsync(context);
-            else if (path == "/api/flower/v1/playlists" && method == "GET")
+            if (path == "/api/flower/v1/playlists" && method == "GET")
                 await HandleGetPlaylistsAsync(context);
             else if (path == "/api/flower/v1/playlists/apply" && method == "POST")
                 await HandleApplyPlaylistsAsync(context);
@@ -253,37 +278,55 @@ public class SyncHttpServer : IDisposable
     private static bool IsCallerServer(HttpListenerContext context) =>
         string.Equals(GetIdentityValue(context, "X-Flower-Role"), "server", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<bool> AuthorizeAsync(HttpListenerContext context)
+    // Pure trust check, nothing more - see this file's top-of-file doc comment.
+    // Never prompts, never blocks: an unrecognized fingerprint is just denied,
+    // exactly like a missing one. Pairing only ever happens via the dedicated
+    // pair-request endpoint below.
+    private bool IsAuthorized(HttpListenerContext context)
+    {
+        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
+        return !string.IsNullOrEmpty(fingerprint) && _trustedPeerStore.IsTrusted(fingerprint);
+    }
+
+    // The one and only call that can raise PeerApprovalRequested - see this
+    // file's top-of-file doc comment. Reached only from PeerPairingService,
+    // itself only ever called from MainViewModel.PairWithServer's explicit
+    // "Ask to pair" action (ServerPickerView's button on desktop, the
+    // Ask-to-pair confirm sheet on mobile) - never automatically off some
+    // other request's back.
+    private async Task HandlePairRequestAsync(HttpListenerContext context)
     {
         var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
         if (string.IsNullOrEmpty(fingerprint))
         {
-            _logger.LogWarning("Denying request with no X-Flower-Fingerprint header or query param");
-            return false; // Can't evaluate trust without a claimed identity - deny outright.
+            context.Response.StatusCode = 400;
+            return;
         }
-
-        if (_trustedPeerStore.IsTrusted(fingerprint))
-            return true;
 
         var alias = GetIdentityValue(context, "X-Flower-Alias");
         if (string.IsNullOrEmpty(alias))
             alias = fingerprint;
 
-        _logger.LogInformation("Untrusted peer {Alias} ({Fingerprint}) requesting approval", alias, fingerprint);
+        if (_trustedPeerStore.IsTrusted(fingerprint))
+        {
+            context.Response.StatusCode = 204; // Already paired - idempotent, no prompt needed.
+            return;
+        }
+
+        _logger.LogInformation("Pair request from {Alias} ({Fingerprint})", alias, fingerprint);
         var approved = await RequestApprovalAsync(fingerprint, alias);
-        _logger.LogInformation("Peer {Alias} ({Fingerprint}) approval result: {Approved}", alias, fingerprint, approved);
+        _logger.LogInformation("Pair request from {Alias} ({Fingerprint}) result: {Approved}", alias, fingerprint, approved);
         if (approved)
             await _trustedPeerStore.ApproveAsync(fingerprint, alias);
 
-        return approved;
+        context.Response.StatusCode = approved ? 204 : 403;
     }
 
-    // Concurrent requests from the same not-yet-decided fingerprint (e.g. a
-    // playlist GET immediately followed by its POST /apply in one sync session)
-    // share a single prompt/TaskCompletionSource rather than surfacing the
-    // approve/deny dialog twice. Only the caller that actually creates the
-    // pending entry raises the event and starts the timeout; every other
-    // concurrent caller just awaits the same task.
+    // Concurrent pair-requests from the same not-yet-decided fingerprint (a
+    // retried "Ask to pair" tap, say) share a single prompt/TaskCompletionSource
+    // rather than surfacing the approve/deny dialog twice. Only the caller that
+    // actually creates the pending entry raises the event and starts the
+    // timeout; every other concurrent caller just awaits the same task.
     private async Task<bool> RequestApprovalAsync(string fingerprint, string alias)
     {
         var newTcs = new TaskCompletionSource<bool>();

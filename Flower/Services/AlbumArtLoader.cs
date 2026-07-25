@@ -192,10 +192,14 @@ public static class AlbumArtLoader
         // (Views/Controls resolving their ViewModels) - the same pattern here
         // keeps LoadAsync(track) a simple static call for its three existing
         // callers rather than threading a peer-resolution dependency through
-        // TrackRowViewModel/AlbumTileViewModel/TrackInfoWindow.
-        var networkDiscovery = Ioc.Default.GetService<NetworkDiscoveryService>();
+        // TrackRowViewModel/AlbumTileViewModel/TrackInfoWindow. PeerTrackResolver
+        // is what actually decides whether track's origin peer is someone this
+        // device may still talk to at all (only the currently paired Server -
+        // see that class's own doc comment) - this call site doesn't need to
+        // know that rule exists, just that null means "don't fetch."
+        var peerResolver = Ioc.Default.GetService<PeerTrackResolver>();
         var deviceIdentity = Ioc.Default.GetService<DeviceIdentity>();
-        var peer = networkDiscovery?.FindByFingerprint(track.OriginDeviceFingerprint);
+        var peer = peerResolver?.Resolve(track);
         if (peer == null || deviceIdentity == null)
             return null;
 
