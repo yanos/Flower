@@ -23,6 +23,7 @@ namespace Flower.ViewModels;
 public sealed class PeerLibraryViewModel : ViewModelBase
 {
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly DeviceSigningKey _signingKey;
     private readonly AppSettings _appSettings;
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private readonly ILogger<PeerLibraryViewModel> _logger;
@@ -31,9 +32,10 @@ public sealed class PeerLibraryViewModel : ViewModelBase
     private DiscoveredDevice? _peer;
     private int _requestId; // guards against a stale LoadAsync/SelectAlbumAsync winning a race
 
-    public PeerLibraryViewModel(DeviceIdentity deviceIdentity, AppSettings appSettings, PlaylistControlViewModel playlistControlViewModel, ILogger<PeerLibraryViewModel> logger)
+    public PeerLibraryViewModel(DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, PlaylistControlViewModel playlistControlViewModel, ILogger<PeerLibraryViewModel> logger)
     {
         _deviceIdentity = deviceIdentity;
+        _signingKey = signingKey;
         _appSettings = appSettings;
         _playlistControlViewModel = playlistControlViewModel;
         _logger = logger;
@@ -74,7 +76,7 @@ public sealed class PeerLibraryViewModel : ViewModelBase
         IsLoading = true;
         try
         {
-            _client = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings);
+            _client = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey);
             var albums = await _client.GetAlbumList2Async();
             if (requestId != _requestId)
                 return; // A newer selection already replaced this one.

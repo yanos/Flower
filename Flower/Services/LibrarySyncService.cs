@@ -57,6 +57,7 @@ public class LibrarySyncService
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly DeviceSigningKey _signingKey;
     private readonly AppSettings _appSettings;
     private readonly LibraryStore _libraryStore;
     private readonly InMemoryLogStore _logStore;
@@ -66,10 +67,11 @@ public class LibrarySyncService
     // same meaning here.
     public event EventHandler<PeerTrustRejectedEventArgs>? PeerTrustRejected;
 
-    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, AppSettings appSettings, LibraryStore libraryStore, InMemoryLogStore logStore, ILogger<LibrarySyncService> logger)
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, LibraryStore libraryStore, InMemoryLogStore logStore, ILogger<LibrarySyncService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _signingKey = signingKey;
         _appSettings = appSettings;
         _libraryStore = libraryStore;
         _logStore = logStore;
@@ -90,13 +92,19 @@ public class LibrarySyncService
         List<Child> songs;
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}/api/flower/v1/library");
+            const string path = "/api/flower/v1/library";
+            var (signature, timestamp, nonce) = _signingKey.Sign("GET", path, [], body: []);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}{path}");
             request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
             request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
             request.Headers.Add("X-Flower-Role", _appSettings.IsServer ? "server" : "client");
+            request.Headers.Add("X-Flower-Signature", signature);
+            request.Headers.Add("X-Flower-Timestamp", timestamp);
+            request.Headers.Add("X-Flower-Nonce", nonce);
             // Fresh connection per request rather than pooling one - see
-            // PlaylistSyncService.AddIdentityHeaders for why (avoids reusing a
-            // keep-alive connection the server/OS already tore down).
+            // PlaylistSyncService.AddSignedIdentityHeaders for why (avoids
+            // reusing a keep-alive connection the server/OS already tore down).
             request.Headers.ConnectionClose = true;
 
             using var response = await Http.SendAsync(request);
@@ -161,13 +169,22 @@ public class LibrarySyncService
         {
             var entries = _logStore.Snapshot().Select(LogEntryDto.FromEntry).ToList();
             var report = new LogReportDto(_deviceIdentity.Fingerprint, _deviceIdentity.Alias, DateTimeOffset.UtcNow, entries);
+            var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, JsonOptions));
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}/api/flower/v1/log/report");
+            const string path = "/api/flower/v1/log/report";
+            var (signature, timestamp, nonce) = _signingKey.Sign("POST", path, [], bodyBytes);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}{path}");
             request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
             request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
             request.Headers.Add("X-Flower-Role", _appSettings.IsServer ? "server" : "client");
+            request.Headers.Add("X-Flower-Signature", signature);
+            request.Headers.Add("X-Flower-Timestamp", timestamp);
+            request.Headers.Add("X-Flower-Nonce", nonce);
             request.Headers.ConnectionClose = true;
-            request.Content = new StringContent(JsonSerializer.Serialize(report, JsonOptions), Encoding.UTF8, "application/json");
+            using var content = new ByteArrayContent(bodyBytes);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            request.Content = content;
 
             using var response = await Http.SendAsync(request);
             response.EnsureSuccessStatusCode();

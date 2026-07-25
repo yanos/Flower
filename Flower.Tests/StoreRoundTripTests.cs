@@ -236,20 +236,51 @@ public class StoreRoundTripTests : IDisposable
         var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
         Assert.False(store.IsTrusted("fp-1"));
 
-        await store.ApproveAsync("fp-1", "Yanos's iPhone");
+        await store.ApproveAsync("fp-1", "Yanos's iPhone", "pubkey-1");
 
         Assert.True(store.IsTrusted("fp-1"));
         var peer = Assert.Single(store.Load());
         Assert.Equal("fp-1", peer.Fingerprint);
         Assert.Equal("Yanos's iPhone", peer.Alias);
+        Assert.Equal("pubkey-1", peer.PublicKey);
+    }
+
+    [Fact]
+    public async Task TrustedPeerStore_GetPublicKey_round_trips()
+    {
+        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
+        Assert.Null(store.GetPublicKey("fp-1"));
+
+        await store.ApproveAsync("fp-1", "Desktop", "pubkey-1");
+
+        Assert.Equal("pubkey-1", store.GetPublicKey("fp-1"));
+    }
+
+    // Simulates a trusted-peers.json written before PublicKey existed - such
+    // an entry must still deserialize (rather than throwing and silently
+    // trusting nobody), but has no usable key: GetPublicKey treats that
+    // identically to "not trusted" (see SyncHttpServer's verification path),
+    // which is what forces the one-time re-pairing this signing scheme's
+    // migration relies on.
+    [Fact]
+    public void TrustedPeerStore_GetPublicKey_returns_null_for_a_legacy_entry_with_no_key()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(TrustedPeerStore.StorePath)!);
+        File.WriteAllText(TrustedPeerStore.StorePath,
+            """[{"Fingerprint":"fp-legacy","Alias":"Old Desktop","ApprovedAt":"2024-01-01T00:00:00+00:00"}]""");
+
+        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
+
+        Assert.True(store.IsTrusted("fp-legacy"));
+        Assert.Null(store.GetPublicKey("fp-legacy"));
     }
 
     [Fact]
     public async Task TrustedPeerStore_Revoke_removes_a_previously_approved_peer()
     {
         var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
-        await store.ApproveAsync("fp-1", "Desktop");
-        await store.ApproveAsync("fp-2", "iPad");
+        await store.ApproveAsync("fp-1", "Desktop", "pubkey-1");
+        await store.ApproveAsync("fp-2", "iPad", "pubkey-2");
 
         await store.RevokeAsync("fp-1");
 
@@ -261,12 +292,13 @@ public class StoreRoundTripTests : IDisposable
     public async Task TrustedPeerStore_Approve_replaces_rather_than_duplicates_an_existing_fingerprint()
     {
         var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
-        await store.ApproveAsync("fp-1", "Old Alias");
+        await store.ApproveAsync("fp-1", "Old Alias", "pubkey-1");
 
-        await store.ApproveAsync("fp-1", "New Alias");
+        await store.ApproveAsync("fp-1", "New Alias", "pubkey-1-rotated");
 
         var peer = Assert.Single(store.Load());
         Assert.Equal("New Alias", peer.Alias);
+        Assert.Equal("pubkey-1-rotated", peer.PublicKey);
     }
 
     [Fact]
@@ -276,29 +308,98 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task TrustedPeerStore_Deny_then_LoadDenied_round_trips()
+    {
+        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
+        Assert.Empty(store.LoadDenied());
+
+        await store.DenyAsync("fp-1", "Suspicious Device");
+
+        var denied = Assert.Single(store.LoadDenied());
+        Assert.Equal("fp-1", denied.Fingerprint);
+        Assert.Equal("Suspicious Device", denied.Alias);
+    }
+
+    [Fact]
+    public async Task TrustedPeerStore_ForgetDenial_removes_the_entry()
+    {
+        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
+        await store.DenyAsync("fp-1", "Denied Device");
+
+        await store.ForgetDenialAsync("fp-1");
+
+        Assert.Empty(store.LoadDenied());
+    }
+
+    [Fact]
+    public async Task TrustedPeerStore_Approve_clears_a_matching_denial()
+    {
+        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
+        await store.DenyAsync("fp-1", "Reconsidered Device");
+
+        await store.ApproveAsync("fp-1", "Reconsidered Device", "pubkey-1");
+
+        Assert.Empty(store.LoadDenied());
+        Assert.True(store.IsTrusted("fp-1"));
+    }
+
+    [Fact]
     public void DeviceIdentityStore_Load_backfills_a_default_alias_for_a_pre_existing_identity_missing_one()
     {
         // Simulates device.json written before Alias existed - Fingerprint only.
         Directory.CreateDirectory(Path.GetDirectoryName(DeviceIdentityStore.StorePath)!);
         File.WriteAllText(DeviceIdentityStore.StorePath, """{"Fingerprint":"fp-legacy"}""");
 
-        var identity = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load();
+        var identity = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load("fp-derived");
 
-        Assert.Equal("fp-legacy", identity.Fingerprint);
         Assert.False(string.IsNullOrEmpty(identity.Alias));
+    }
+
+    // Fingerprint is now derived from the device's signing keypair (see
+    // DeviceKeyStore/SignedRequestCanonicalizer.ComputeFingerprint), not an
+    // independent value stored in device.json - Load() must overwrite a
+    // stale/legacy fingerprint with whatever the caller says is currently
+    // derived, not preserve the old one.
+    [Fact]
+    public void DeviceIdentityStore_Load_overwrites_a_stale_fingerprint_with_the_derived_one()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(DeviceIdentityStore.StorePath)!);
+        File.WriteAllText(DeviceIdentityStore.StorePath, """{"Fingerprint":"fp-legacy","Alias":"Desktop"}""");
+
+        var identity = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load("fp-derived");
+
+        Assert.Equal("fp-derived", identity.Fingerprint);
+        Assert.Equal("Desktop", identity.Alias);
+
+        var reloaded = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load("fp-derived");
+        Assert.Equal("fp-derived", reloaded.Fingerprint);
     }
 
     [Fact]
     public async Task DeviceIdentityStore_SaveAsync_round_trips_a_renamed_alias()
     {
-        var identity = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load();
+        var identity = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load("fp-derived");
         identity.Alias = "Yanos's iPhone";
 
         await new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).SaveAsync(identity);
-        var reloaded = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load();
+        var reloaded = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load("fp-derived");
 
         Assert.Equal("Yanos's iPhone", reloaded.Alias);
         Assert.Equal(identity.Fingerprint, reloaded.Fingerprint);
+    }
+
+    [Fact]
+    public void DeviceKeyStore_Load_generates_once_and_persists_across_reloads()
+    {
+        var (key1, publicKeyRaw1) = new DeviceKeyStore(NullLogger<DeviceKeyStore>.Instance).Load();
+        var (key2, publicKeyRaw2) = new DeviceKeyStore(NullLogger<DeviceKeyStore>.Instance).Load();
+
+        Assert.Equal(Convert.ToBase64String(publicKeyRaw1), Convert.ToBase64String(publicKeyRaw2));
+        Assert.Equal(
+            key1.ExportParameters(false).Q.X,
+            key2.ExportParameters(false).Q.X);
+        key1.Dispose();
+        key2.Dispose();
     }
 
     [Fact]

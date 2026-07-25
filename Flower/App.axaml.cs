@@ -86,10 +86,18 @@ public partial class App : Application
         foreach (var playlist in playlistStore.Load(library.Tracks))
             library.AddPlaylist(playlist);
 
+        var deviceKeyStore = new DeviceKeyStore(AppLogging.CreateTypedLogger<DeviceKeyStore>());
         var deviceIdentityStore = new DeviceIdentityStore(AppLogging.CreateTypedLogger<DeviceIdentityStore>());
         var deviceNicknameStore = new DeviceNicknameStore(AppLogging.CreateTypedLogger<DeviceNicknameStore>());
         var trustedPeerStore = new TrustedPeerStore(AppLogging.CreateTypedLogger<TrustedPeerStore>());
         var playlistSyncStateStore = new PlaylistSyncStateStore(AppLogging.CreateTypedLogger<PlaylistSyncStateStore>());
+
+        // This device's cryptographic identity (see DeviceSigningKey/
+        // SignatureVerifier) - loaded before DeviceIdentity, since Fingerprint
+        // is now derived from the public key here rather than an independent
+        // random value (see DeviceIdentityStore.Load).
+        var (deviceKey, devicePublicKeyRaw) = deviceKeyStore.Load();
+        var signingKey = new DeviceSigningKey(deviceKey, devicePublicKeyRaw);
 
         // One shared, mutable identity object rather than separate fingerprint/
         // alias strings handed to each service - MainViewModel.DeviceAlias edits
@@ -97,18 +105,19 @@ public partial class App : Application
         // this device in Settings, and every service below reads .Alias live off
         // the same instance, so the new name takes effect immediately without
         // needing to reconstruct or restart anything.
-        var deviceIdentity = deviceIdentityStore.Load();
+        var deviceIdentity = deviceIdentityStore.Load(signingKey.Fingerprint);
         var clientLogStore = new ClientLogStore();
 
         // Needs deviceIdentity constructed first - it identifies us on every
         // /info poll now, not just gated sync requests (see
         // NetworkDiscoveryService.ResolveAliasAsync, DiscoveredDevice.TrustsUs).
         var networkDiscovery = new NetworkDiscoveryService(deviceIdentity, AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
-        var syncHttpServer = new SyncHttpServer(deviceIdentity, appSettings, library, playlistStore, trustedPeerStore, clientLogStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
-        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, appSettings, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
-        var librarySyncService = new LibrarySyncService(library, deviceIdentity, appSettings, libraryStore, InMemoryLogStore.Instance, AppLogging.CreateTypedLogger<LibrarySyncService>());
-        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
-        var peerPairingService = new PeerPairingService(deviceIdentity, AppLogging.CreateTypedLogger<PeerPairingService>());
+        var syncHttpServer = new SyncHttpServer(deviceIdentity, signingKey, appSettings, library, playlistStore, trustedPeerStore, clientLogStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
+        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, signingKey, appSettings, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
+        var librarySyncService = new LibrarySyncService(library, deviceIdentity, signingKey, appSettings, libraryStore, InMemoryLogStore.Instance, AppLogging.CreateTypedLogger<LibrarySyncService>());
+        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, signingKey, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
+        var peerPairingService = new PeerPairingService(deviceIdentity, signingKey, AppLogging.CreateTypedLogger<PeerPairingService>());
+        var peerUnpairNotifier = new PeerUnpairNotifier(networkDiscovery, deviceIdentity, signingKey, AppLogging.CreateTypedLogger<PeerUnpairNotifier>());
         var pairedServerReachability = new PairedServerReachability(networkDiscovery, appSettings);
         var peerTrackResolver = new PeerTrackResolver(pairedServerReachability);
 
@@ -120,6 +129,7 @@ public partial class App : Application
                 .AddSingleton(mainPlaylist)
                 .AddSingleton(appSettings)
                 .AddSingleton(deviceIdentity)
+                .AddSingleton(signingKey)
                 .AddSingleton<ColumnManager>()
                 .AddSingleton(importer)
                 .AddSingleton(networkDiscovery)
@@ -129,10 +139,12 @@ public partial class App : Application
                 .AddSingleton(librarySyncService)
                 .AddSingleton(libraryDownloadService)
                 .AddSingleton(peerPairingService)
+                .AddSingleton(peerUnpairNotifier)
                 .AddSingleton(peerTrackResolver)
                 .AddSingleton(libraryStore)
                 .AddSingleton(appSettingsStore)
                 .AddSingleton(playlistStore)
+                .AddSingleton(deviceKeyStore)
                 .AddSingleton(deviceIdentityStore)
                 .AddSingleton(deviceNicknameStore)
                 .AddSingleton(trustedPeerStore)

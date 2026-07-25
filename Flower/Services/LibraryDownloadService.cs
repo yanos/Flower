@@ -21,14 +21,16 @@ public class LibraryDownloadService
 {
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly DeviceSigningKey _signingKey;
     private readonly AppSettings _appSettings;
     private readonly LibraryStore _libraryStore;
     private readonly ILogger<LibraryDownloadService> _logger;
 
-    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, AppSettings appSettings, LibraryStore libraryStore, ILogger<LibraryDownloadService> logger)
+    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, LibraryStore libraryStore, ILogger<LibraryDownloadService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _signingKey = signingKey;
         _appSettings = appSettings;
         _libraryStore = libraryStore;
         _logger = logger;
@@ -43,7 +45,7 @@ public class LibraryDownloadService
 
         try
         {
-            var client = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings);
+            var client = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey);
 
             var folder = ResolveDownloadFolder();
             Directory.CreateDirectory(folder);

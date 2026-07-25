@@ -22,10 +22,14 @@ namespace Flower.Persistence
         public string Alias { get; set; } = "";
     }
 
-    // Persists a random per-install identifier used as the "fingerprint" field in
-    // the /api/localsend/v2/info response (see SyncHttpServer), so a peer sees the
-    // same fingerprint for this device across restarts. Generated once on first
-    // run; not yet used for trust/pairing (deferred to when TLS is added).
+    // Persists this device's display identity (Alias, and a cached
+    // Fingerprint) used in the "/api/localsend/v2/info" response (see
+    // SyncHttpServer) and shown throughout the sidebar/pairing UI. Fingerprint
+    // is not an independent value: it's always kept in sync with the device's
+    // signing keypair (see DeviceKeyStore, Services.SignedRequestCanonicalizer.
+    // ComputeFingerprint) - Load() takes the currently-derived fingerprint and
+    // backfills/corrects a stale or missing one in place, so every other call
+    // site that just reads DeviceIdentity.Fingerprint needs no changes.
     public class DeviceIdentityStore
     {
         private readonly ILogger<DeviceIdentityStore> _logger;
@@ -39,7 +43,7 @@ namespace Flower.Persistence
 
         private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
-        public DeviceIdentity Load()
+        public DeviceIdentity Load(string derivedFingerprint)
         {
             var path = StorePath;
             if (File.Exists(path))
@@ -47,30 +51,46 @@ namespace Flower.Persistence
                 try
                 {
                     var json = File.ReadAllText(path);
-                    if (JsonSerializer.Deserialize<DeviceIdentity>(json, Options) is { Fingerprint.Length: > 0 } identity)
+                    if (JsonSerializer.Deserialize<DeviceIdentity>(json, Options) is { } identity)
                     {
+                        var changed = false;
+
                         // Alias didn't exist before this field was added - backfill
                         // an existing device.json rather than showing a blank name.
                         if (string.IsNullOrEmpty(identity.Alias))
                         {
                             identity.Alias = DefaultAlias();
-                            Save(identity);
+                            changed = true;
                         }
+
+                        // A mismatch means either first run after the signing
+                        // scheme shipped (a stale GUID-shaped fingerprint
+                        // predating it) or a regenerated key (device-key.json
+                        // lost/corrupted) - either way, every peer that trusted
+                        // the old fingerprint needs one re-approval, same as any
+                        // other fingerprint change (see DeviceKeyStore's own
+                        // warning when it has to regenerate a key).
+                        if (identity.Fingerprint != derivedFingerprint)
+                        {
+                            _logger.LogWarning(
+                                "Device fingerprint changed {Old} -> {New} (now derived from the signing key); previously-trusted peers will need to re-approve this device",
+                                identity.Fingerprint, derivedFingerprint);
+                            identity.Fingerprint = derivedFingerprint;
+                            changed = true;
+                        }
+
+                        if (changed)
+                            Save(identity);
                         return identity;
                     }
                 }
                 catch (Exception ex)
                 {
-                    // Falling through to regenerate below means a brand new
-                    // random Fingerprint - every peer that had this device
-                    // trusted (TrustedPeerStore keys by fingerprint) would stop
-                    // recognizing it, a real enough consequence to warrant a
-                    // warning rather than silently regenerating.
-                    _logger.LogWarning(ex, "Failed to load device identity from {Path}; generating a new one (previously-trusted peers will need to re-approve this device)", path);
+                    _logger.LogWarning(ex, "Failed to load device identity from {Path}; generating a new one", path);
                 }
             }
 
-            var fresh = new DeviceIdentity { Fingerprint = Guid.NewGuid().ToString("N"), Alias = DefaultAlias() };
+            var fresh = new DeviceIdentity { Fingerprint = derivedFingerprint, Alias = DefaultAlias() };
             Save(fresh);
             return fresh;
         }

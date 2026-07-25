@@ -42,6 +42,22 @@ public sealed class TrustedPeerRow : ViewModelBase
     }
 }
 
+// A fingerprint this device explicitly denied (or let time out unanswered -
+// see SyncHttpServer.RequestApprovalAsync) rather than approved - lets the
+// user see who got turned away and forget that refusal, so a since-legitimate
+// device isn't left permanently unable to re-request (denials aren't
+// re-prompted from scratch, but nothing here blocks a fresh pair-request
+// either way - this list is purely visibility/cleanup, see
+// TrustedPeerStore.DenyAsync's own doc comment). No rename affordance - a
+// denied peer has no ongoing relationship to nickname.
+public sealed class DeniedPeerRow
+{
+    public required string Fingerprint { get; init; }
+    public required string Alias { get; init; }
+    public required DateTimeOffset DeniedAt { get; init; }
+    public string DeniedAtDisplay => $"Denied {DeniedAt.LocalDateTime:g}";
+}
+
 // Lists peers approved via the trust gate (see SyncHttpServer.AuthorizeAsync,
 // SYNC-PLAN.md Phase 3) and lets the user revoke one - the "forget this
 // device" action the plan calls for. Embedded directly in Settings' Devices
@@ -61,6 +77,7 @@ public partial class TrustedDevicesView : UserControl
     private readonly TrustedPeerStore _store = Ioc.Default.GetService<TrustedPeerStore>()!;
     private readonly DeviceNicknameStore _nicknames = Ioc.Default.GetService<DeviceNicknameStore>()!;
     private readonly MainViewModel _mainViewModel = Ioc.Default.GetService<MainViewModel>()!;
+    private readonly PeerUnpairNotifier _unpairNotifier = Ioc.Default.GetService<PeerUnpairNotifier>()!;
 
     public TrustedDevicesView()
     {
@@ -85,6 +102,14 @@ public partial class TrustedDevicesView : UserControl
 
         DevicesList.ItemsSource = rows;
         EmptyStateText.IsVisible = rows.Count == 0;
+
+        var deniedRows = _store.LoadDenied()
+            .OrderByDescending(p => p.DeniedAt)
+            .Select(p => new DeniedPeerRow { Fingerprint = p.Fingerprint, Alias = p.Alias, DeniedAt = p.DeniedAt })
+            .ToList();
+
+        DeniedDevicesList.ItemsSource = deniedRows;
+        DeniedDevicesList.IsVisible = deniedRows.Count > 0;
     }
 
     // Pencil icon click: not-yet-editing starts an edit (mirrors MainView.axaml.cs's
@@ -179,6 +204,20 @@ public partial class TrustedDevicesView : UserControl
             return;
 
         await _store.RevokeAsync(row.Fingerprint);
+        // Best-effort - lets the peer clear its own stale pairing proactively
+        // if it's currently reachable; harmless no-op otherwise, since it
+        // falls back to discovering the revoke passively either way (see
+        // PeerUnpairNotifier's own doc comment).
+        _unpairNotifier.NotifyFireAndForget(row.Fingerprint);
+        Refresh();
+    }
+
+    private async void ForgetRefusalButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: DeniedPeerRow row })
+            return;
+
+        await _store.ForgetDenialAsync(row.Fingerprint);
         Refresh();
     }
 }
