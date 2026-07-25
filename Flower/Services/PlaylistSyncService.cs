@@ -53,6 +53,7 @@ public class PlaylistSyncService
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly DeviceSigningKey _signingKey;
     private readonly AppSettings _appSettings;
     private readonly ILogger _logger;
     private readonly PlaylistStore _playlistStore;
@@ -65,6 +66,7 @@ public class PlaylistSyncService
     public PlaylistSyncService(
         Library library,
         DeviceIdentity deviceIdentity,
+        DeviceSigningKey signingKey,
         AppSettings appSettings,
         PlaylistStore playlistStore,
         PlaylistSyncStateStore syncStateStore,
@@ -73,6 +75,7 @@ public class PlaylistSyncService
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
+        _signingKey = signingKey;
         _appSettings = appSettings;
         _playlistStore = playlistStore;
         _syncStateStore = syncStateStore;
@@ -122,8 +125,9 @@ public class PlaylistSyncService
         List<PlaylistSyncPlaylistDto> remotePlaylists;
         try
         {
-            using var getRequest = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}/api/flower/v1/playlists");
-            AddIdentityHeaders(getRequest);
+            const string getPath = "/api/flower/v1/playlists";
+            using var getRequest = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}{getPath}");
+            AddSignedIdentityHeaders(getRequest, "GET", getPath, body: []);
             using var getResponse = await Http.SendAsync(getRequest);
             getResponse.EnsureSuccessStatusCode(); // Throws on a 403 from an unapproved trust gate - handled below like any other unreachable peer.
             var json = await getResponse.Content.ReadAsStringAsync();
@@ -192,10 +196,12 @@ public class PlaylistSyncService
         try
         {
             var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, finalPlaylists);
-            var body = JsonSerializer.Serialize(manifest, JsonOptions);
-            using var content = new StringContent(body, Encoding.UTF8, "application/json");
-            using var postRequest = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}/api/flower/v1/playlists/apply") { Content = content };
-            AddIdentityHeaders(postRequest);
+            var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, JsonOptions));
+            const string postPath = "/api/flower/v1/playlists/apply";
+            using var content = new ByteArrayContent(bodyBytes);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            using var postRequest = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}{postPath}") { Content = content };
+            AddSignedIdentityHeaders(postRequest, "POST", postPath, bodyBytes);
             using var postResponse = await Http.SendAsync(postRequest);
             postResponse.EnsureSuccessStatusCode();
             _logger.LogInformation("Playlist sync with {Alias}: pushed {Count} playlist(s) to their /apply successfully",
@@ -211,8 +217,10 @@ public class PlaylistSyncService
         }
     }
 
-    // See SyncHttpServer.AuthorizeAsync - every /api/flower/v1/* endpoint requires
-    // these to evaluate (and, on first contact, prompt for) trust. ConnectionClose
+    // See SyncHttpServer's trust gate - every gated endpoint requires these
+    // (now including a signature proving possession of the private key behind
+    // Fingerprint, not just the fingerprint string itself - see
+    // DeviceSigningKey/SignatureVerifier) to evaluate trust. ConnectionClose
     // forces a fresh connection per request rather than pooling/reusing one -
     // sync sessions are now just a couple of requests each (see LibrarySyncService's
     // own history of this), so the extra handshake is negligible, and it avoids
@@ -220,11 +228,15 @@ public class PlaylistSyncService
     // HttpListener (or the OS, e.g. after iOS backgrounds the app - see
     // SYNC-PLAN.md's foreground-only note) has already torn down - observed in
     // practice as "Connection reset by peer" / "Socket is not connected" on iOS.
-    private void AddIdentityHeaders(HttpRequestMessage request)
+    private void AddSignedIdentityHeaders(HttpRequestMessage request, string method, string path, byte[] body)
     {
+        var (signature, timestamp, nonce) = _signingKey.Sign(method, path, [], body);
         request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
         request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
         request.Headers.Add("X-Flower-Role", _appSettings.IsServer ? "server" : "client");
+        request.Headers.Add("X-Flower-Signature", signature);
+        request.Headers.Add("X-Flower-Timestamp", timestamp);
+        request.Headers.Add("X-Flower-Nonce", nonce);
         request.Headers.ConnectionClose = true;
     }
 

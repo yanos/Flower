@@ -22,11 +22,13 @@ public class PeerPairingService
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(75) };
 
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly DeviceSigningKey _signingKey;
     private readonly ILogger<PeerPairingService> _logger;
 
-    public PeerPairingService(DeviceIdentity deviceIdentity, ILogger<PeerPairingService> logger)
+    public PeerPairingService(DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, ILogger<PeerPairingService> logger)
     {
         _deviceIdentity = deviceIdentity;
+        _signingKey = signingKey;
         _logger = logger;
     }
 
@@ -34,9 +36,16 @@ public class PeerPairingService
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}/api/flower/v1/pair-request");
+            const string path = "/api/flower/v1/pair-request";
+            var (signature, timestamp, nonce) = _signingKey.Sign("POST", path, [], body: []);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}{path}");
             request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
             request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
+            request.Headers.Add("X-Flower-PublicKey", _signingKey.PublicKeyBase64);
+            request.Headers.Add("X-Flower-Signature", signature);
+            request.Headers.Add("X-Flower-Timestamp", timestamp);
+            request.Headers.Add("X-Flower-Nonce", nonce);
             request.Headers.ConnectionClose = true;
 
             using var response = await Http.SendAsync(request);

@@ -55,6 +55,7 @@ public partial class MainViewModel : ViewModelBase
     private PeerPairingService? _peerPairingService;
     private PeerTrackResolver? _peerTrackResolver;
     private DeviceIdentity? _deviceIdentity;
+    private DeviceSigningKey? _signingKey;
     private NetworkDiscoveryService? _networkDiscovery;
     private PairedServerReachability? _reachability;
     private LibraryStore? _libraryStore;
@@ -1152,6 +1153,7 @@ public partial class MainViewModel : ViewModelBase
         PeerTrackResolver peerTrackResolver,
         SyncHttpServer syncHttpServer,
         DeviceIdentity deviceIdentity,
+        DeviceSigningKey signingKey,
         LibraryStore libraryStore,
         AppSettingsStore appSettingsStore,
         PlaylistStore playlistStore,
@@ -1172,7 +1174,8 @@ public partial class MainViewModel : ViewModelBase
         _networkDiscovery      = networkDiscovery;
         _reachability          = reachability;
         _deviceIdentity        = deviceIdentity;
-        PeerLibrary            = new PeerLibraryViewModel(deviceIdentity, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>());
+        _signingKey            = signingKey;
+        PeerLibrary            = new PeerLibraryViewModel(deviceIdentity, signingKey, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>());
         _libraryStore          = libraryStore;
         _appSettingsStore      = appSettingsStore;
         _playlistStore         = playlistStore;
@@ -1332,6 +1335,11 @@ public partial class MainViewModel : ViewModelBase
         }
         playlistSyncService.PeerTrustRejected += HandlePeerTrustRejected;
         librarySyncService.PeerTrustRejected += HandlePeerTrustRejected;
+        // Server-initiated counterpart to the two above - a peer that
+        // proactively told us (via SyncHttpServer's unpair-notify endpoint)
+        // it revoked our trust, rather than us finding out from a 403/poll -
+        // see PeerUnpairNotifier. Same handler, same effect either way.
+        syncHttpServer.PeerUnpairNotified += HandlePeerTrustRejected;
 
         // Same no-UI-listening fallback shape as ConflictDetected above, but fails
         // *closed* (deny) rather than defaulting to "keep local" - granting a
@@ -1965,7 +1973,7 @@ public partial class MainViewModel : ViewModelBase
     // DownloadTrackAsync uses) or this device's own identity isn't ready yet.
     public string? GetStreamUrl(Track track)
     {
-        if (_deviceIdentity == null || _appSettings == null)
+        if (_deviceIdentity == null || _signingKey == null || _appSettings == null)
         {
             _logger.LogWarning("Cannot build a stream URL for {Title}: device identity/settings not ready yet", track.Title);
             return null;
@@ -1974,7 +1982,7 @@ public partial class MainViewModel : ViewModelBase
         if (peer == null)
             return null; // ResolvePeerForTrack already logged why.
 
-        var url = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings).GetStreamUrl(track.SyncKey);
+        var url = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey).GetStreamUrl(track.SyncKey);
         _logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint}): {Url}", track.Title, peer.Alias, peer.EndPoint, url);
         return url;
     }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -31,9 +32,10 @@ public sealed class PeerApprovalRequestedEventArgs : EventArgs
     public required TaskCompletionSource<bool> Resolution { get; init; }
 }
 
-// Plain-HTTP sync endpoints (see SYNC-PLAN.md):
+// Peer-to-peer sync endpoints (see SYNC-PLAN.md):
 //   GET  /api/localsend/v2/info        - device identity (phase 1)
 //   POST /api/flower/v1/pair-request   - explicit pairing bootstrap, see below
+//   POST /api/flower/v1/unpair-notify  - server-initiated revoke notification
 //   GET  /api/flower/v1/playlists      - this device's current playlist manifest
 //   POST /api/flower/v1/playlists/apply - adopt a peer-merged manifest wholesale
 // (phase 2, playlist metadata sync), plus an embedded OpenSubsonic host (phase 3,
@@ -56,31 +58,56 @@ public sealed class PeerApprovalRequestedEventArgs : EventArgs
 //                                 LibraryOpenSubsonicMapper.AlbumId) - used by
 //                                 AlbumArtLoader's remote-fetch path for a
 //                                 placeholder track's art (SYNC-PLAN.md Phase 3)
-// Deliberately plain HTTP for now, not HTTPS - see the plan doc for why.
+// Deliberately plain HTTP still, not HTTPS - see the plan doc for why (TLS
+// remains explicitly deferred). What changed: identity is no longer a bare
+// self-reported fingerprint string. Every gated request must additionally
+// carry a signature (X-Flower-Signature/-Timestamp/-Nonce, or the same as
+// query-string params for a URL handed directly to LibVLC/OpenSubsonicClient.
+// BuildUrl - see GetIdentityValue) proving possession of the private key
+// behind the fingerprint it claims - see SignedRequestCanonicalizer/
+// DeviceSigningKey/SignatureVerifier. This closes the actual impersonation
+// hole (anyone who merely observed a trusted peer's fingerprint used to be
+// able to reuse it) without needing transport encryption.
 //
-// Trust gate (phase 3): every /api/flower/v1/* endpoint other than pair-request,
-// plus every /rest/* endpoint, requires the caller to identify itself via
-// X-Flower-Fingerprint/X-Flower-Alias headers (see PlaylistSyncService, which
-// sends both) and already be in TrustedPeerStore - see IsAuthorized. An
-// unrecognized/untrusted fingerprint just gets a flat 403, nothing more:
-// pairing is not a side effect of any of these. Only POST /api/flower/v1/
-// pair-request (see HandlePairRequestAsync) can raise PeerApprovalRequested -
-// deliberately a separate, explicit call so an incidental request (a stray
-// /rest/getCoverArt fetch for a stale placeholder track, a re-discovery
-// /info poll, etc.) can never look, from the receiving side, like "this
-// device is asking to pair" when nobody asked for that. /api/localsend/v2/info
-// and pair-request itself both stay ungated: a peer has to learn our
-// fingerprint (and we, its) via /info before either side can evaluate trust
-// at all, and pair-request's whole job is bootstrapping trust for a
-// fingerprint that, by definition, isn't trusted yet.
+// Route table (see Route/AuthMode/RateLimitCategory below) governs auth and
+// rate-limit behavior declaratively per endpoint rather than ad hoc string-
+// prefix checks. AuthMode.Open (info) needs no proof at all - a peer has to
+// learn our fingerprint+public key here before either side can evaluate
+// trust. AuthMode.SelfSigned (pair-request, unpair-notify) proves the caller
+// holds the private key matching the public key it's offering, verified
+// against that offered key itself rather than a trust-store lookup, since
+// there's nothing to look up yet. AuthMode.TrustedPeer (everything else)
+// verifies against the public key captured in TrustedPeerStore at the
+// moment a fingerprint was actually approved - never a cached /info value.
+//
+// Every request is additionally required to originate from a private/
+// loopback address (see LanGuard) - the wildcard "http://+:{port}/" bind
+// means that check is the only thing standing between "LAN-only" and
+// "reachable from the internet if the port is ever forwarded."
 public class SyncHttpServer : IDisposable
 {
     public const int DefaultPort = 53317;
     private const int MaxPortAttempts = 10;
     private static readonly TimeSpan ApprovalTimeout = TimeSpan.FromSeconds(60);
 
+    // Largest legitimate request body in this system today is the bulk
+    // library manifest response (not a request body), roughly 6-8 MB of JSON
+    // at a 16k-track library; the two actual request-body endpoints
+    // (playlists/apply, log/report) stay well under that. 20 MB gives
+    // comfortable headroom while still bounding worst-case memory use to
+    // something trivial, including on mobile.
+    private const long MaxBodyBytes = 20 * 1024 * 1024;
+
+    private enum AuthMode { Open, SelfSigned, TrustedPeer }
+    private enum RateLimitCategory { Info, Pair, Bulk, Browse, Stream }
+
+    private sealed record Route(
+        string Method, string Path, AuthMode Auth, RateLimitCategory RateLimit,
+        bool HasBody, bool IsBulkSync, Func<HttpListenerContext, byte[], Task> Handler);
+
     private HttpListener? _listener;
     private readonly DeviceIdentity _deviceIdentity;
+    private readonly DeviceSigningKey _deviceSigningKey;
     private readonly AppSettings _appSettings;
     private readonly Library _library;
     private readonly ILogger _logger;
@@ -88,9 +115,30 @@ public class SyncHttpServer : IDisposable
     private readonly TrustedPeerStore _trustedPeerStore;
     private readonly ClientLogStore _clientLogStore;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingApprovals = new();
+    private readonly NonceReplayGuard _nonceReplayGuard = new();
     private CancellationTokenSource? _cts;
+    private readonly List<Route> _routes;
+
+    // Pre-trust endpoints (info/pair-request/unpair-notify) have no
+    // fingerprint worth keying by yet - an attacker can mint a fresh keypair
+    // per request, so source IP is the only thing that actually costs them
+    // anything. Everything past the trust gate is keyed by the (self-
+    // reported, but by then meaningless to spoof cheaply since it still has
+    // to pass signature verification) fingerprint instead.
+    private readonly RateLimiter _infoRateLimiter = new(max: 120, TimeSpan.FromSeconds(60));
+    private readonly RateLimiter _pairRateLimiter = new(max: 5, TimeSpan.FromSeconds(60));
+    private readonly RateLimiter _bulkRateLimiter = new(max: 20, TimeSpan.FromSeconds(60));
+    private readonly RateLimiter _browseRateLimiter = new(max: 120, TimeSpan.FromSeconds(60));
+    private readonly RateLimiter _streamRateLimiter = new(max: 30, TimeSpan.FromSeconds(60));
 
     public event EventHandler<PeerApprovalRequestedEventArgs>? PeerApprovalRequested;
+
+    // Reuses PeerTrustRejectedEventArgs (PlaylistSyncService.cs) - same shape
+    // (Fingerprint + Alias) fits a received unpair notification exactly, and
+    // MainViewModel's existing HandlePeerTrustRejected handler already does
+    // the right thing (clear the stale pairing if it matches) with no new
+    // logic needed on the receiving side.
+    public event EventHandler<PeerTrustRejectedEventArgs>? PeerUnpairNotified;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -100,6 +148,7 @@ public class SyncHttpServer : IDisposable
 
     public SyncHttpServer(
         DeviceIdentity deviceIdentity,
+        DeviceSigningKey deviceSigningKey,
         AppSettings appSettings,
         Library library,
         PlaylistStore playlistStore,
@@ -108,12 +157,28 @@ public class SyncHttpServer : IDisposable
         ILogger<SyncHttpServer> logger)
     {
         _deviceIdentity = deviceIdentity;
+        _deviceSigningKey = deviceSigningKey;
         _appSettings = appSettings;
         _library = library;
         _playlistStore = playlistStore;
         _trustedPeerStore = trustedPeerStore;
         _clientLogStore = clientLogStore;
         _logger = logger;
+
+        _routes =
+        [
+            new Route("GET", "/api/localsend/v2/info", AuthMode.Open, RateLimitCategory.Info, false, false, HandleInfoAsync),
+            new Route("POST", "/api/flower/v1/pair-request", AuthMode.SelfSigned, RateLimitCategory.Pair, false, false, HandlePairRequestAsync),
+            new Route("POST", "/api/flower/v1/unpair-notify", AuthMode.SelfSigned, RateLimitCategory.Pair, false, false, HandleUnpairNotifyAsync),
+            new Route("GET", "/api/flower/v1/playlists", AuthMode.TrustedPeer, RateLimitCategory.Bulk, false, true, HandleGetPlaylistsAsync),
+            new Route("POST", "/api/flower/v1/playlists/apply", AuthMode.TrustedPeer, RateLimitCategory.Bulk, true, true, HandleApplyPlaylistsAsync),
+            new Route("GET", "/api/flower/v1/library", AuthMode.TrustedPeer, RateLimitCategory.Bulk, false, true, HandleGetLibraryAsync),
+            new Route("POST", "/api/flower/v1/log/report", AuthMode.TrustedPeer, RateLimitCategory.Bulk, true, false, HandleReportLogAsync),
+            new Route("GET", "/rest/getAlbumList2", AuthMode.TrustedPeer, RateLimitCategory.Browse, false, false, HandleGetAlbumList2Async),
+            new Route("GET", "/rest/getAlbum", AuthMode.TrustedPeer, RateLimitCategory.Browse, false, false, HandleGetAlbumAsync),
+            new Route("GET", "/rest/getCoverArt", AuthMode.TrustedPeer, RateLimitCategory.Browse, false, false, HandleGetCoverArtAsync),
+            new Route("GET", "/rest/stream", AuthMode.TrustedPeer, RateLimitCategory.Stream, false, false, HandleStreamAsync),
+        ];
     }
 
     // Tries DefaultPort first, then a handful of ports after it. Covers testing
@@ -185,31 +250,62 @@ public class SyncHttpServer : IDisposable
             // down - observed in practice as "Connection reset by peer" on iOS.
             context.Response.KeepAlive = false;
 
+            var remoteAddress = context.Request.RemoteEndPoint?.Address;
+            if (remoteAddress == null || !LanGuard.IsPrivateOrLoopback(remoteAddress))
+            {
+                context.Response.StatusCode = 403;
+                _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: not a LAN-local address",
+                    context.Request.HttpMethod, context.Request.Url?.AbsolutePath, context.Request.RemoteEndPoint);
+                return;
+            }
+
             var path = context.Request.Url?.AbsolutePath;
             var method = context.Request.HttpMethod;
-
-            // Both ungated, for the same reason: a peer has to learn our fingerprint
-            // via /info before trust can be evaluated at all, and pair-request's own
-            // job is bootstrapping trust for a fingerprint that isn't trusted yet -
-            // see this file's own top-of-file doc comment.
-            if (path == "/api/localsend/v2/info" && method == "GET")
+            var route = _routes.FirstOrDefault(r => r.Method == method && r.Path == path);
+            if (route == null)
             {
-                await HandleInfoAsync(context);
-                return;
-            }
-            if (path == "/api/flower/v1/pair-request" && method == "POST")
-            {
-                await HandlePairRequestAsync(context);
+                context.Response.StatusCode = 404;
                 return;
             }
 
-            if (path != null && RequiresTrust(path))
+            if (!CheckRateLimit(route.RateLimit, context))
             {
-                if (!IsAuthorized(context))
+                context.Response.StatusCode = 429;
+                _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: rate limit exceeded", method, path, context.Request.RemoteEndPoint);
+                return;
+            }
+
+            var body = Array.Empty<byte>();
+            if (route.HasBody)
+            {
+                var read = await RequestBodyReader.ReadWithCapAsync(context.Request.InputStream, context.Request.ContentLength64, MaxBodyBytes);
+                if (read == null)
+                {
+                    context.Response.StatusCode = 413;
+                    _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: body exceeded {MaxBytes} bytes", method, path, context.Request.RemoteEndPoint, MaxBodyBytes);
+                    return;
+                }
+                body = read;
+            }
+
+            string? fingerprint = null;
+            if (route.Auth == AuthMode.SelfSigned)
+            {
+                fingerprint = VerifySelfSigned(context, body);
+                if (fingerprint == null)
+                {
+                    context.Response.StatusCode = 401;
+                    _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: self-signed verification failed", method, path, context.Request.RemoteEndPoint);
+                    return;
+                }
+            }
+            else if (route.Auth == AuthMode.TrustedPeer)
+            {
+                fingerprint = VerifyTrustedPeer(context, body);
+                if (fingerprint == null)
                 {
                     context.Response.StatusCode = 403;
-                    _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: not authorized",
-                        method, path, context.Request.RemoteEndPoint);
+                    _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: not authorized", method, path, context.Request.RemoteEndPoint);
                     return;
                 }
 
@@ -218,33 +314,15 @@ public class SyncHttpServer : IDisposable
                 // a correctly-behaving Server never initiates bulk sync at
                 // all, so this is defense-in-depth against a caller that also
                 // claims to be a Server somehow reaching this endpoint.
-                if (IsBulkSyncPath(path) && SyncRolePolicy.ShouldRejectPeerAsServer(_appSettings.IsServer, IsCallerServer(context)))
+                if (route.IsBulkSync && SyncRolePolicy.ShouldRejectPeerAsServer(_appSettings.IsServer, IsCallerServer(context)))
                 {
                     context.Response.StatusCode = 403;
-                    _logger.LogWarning("Rejected bulk sync {Method} {Path} from {RemoteEndPoint}: caller also advertises Server role",
-                        method, path, context.Request.RemoteEndPoint);
+                    _logger.LogWarning("Rejected bulk sync {Method} {Path} from {RemoteEndPoint}: caller also advertises Server role", method, path, context.Request.RemoteEndPoint);
                     return;
                 }
             }
 
-            if (path == "/api/flower/v1/playlists" && method == "GET")
-                await HandleGetPlaylistsAsync(context);
-            else if (path == "/api/flower/v1/playlists/apply" && method == "POST")
-                await HandleApplyPlaylistsAsync(context);
-            else if (path == "/api/flower/v1/library" && method == "GET")
-                await HandleGetLibraryAsync(context);
-            else if (path == "/api/flower/v1/log/report" && method == "POST")
-                await HandleReportLogAsync(context);
-            else if (path == "/rest/getAlbumList2" && method == "GET")
-                await HandleGetAlbumList2Async(context);
-            else if (path == "/rest/getAlbum" && method == "GET")
-                await HandleGetAlbumAsync(context);
-            else if (path == "/rest/stream" && method == "GET")
-                await HandleStreamAsync(context);
-            else if (path == "/rest/getCoverArt" && method == "GET")
-                await HandleGetCoverArtAsync(context);
-            else
-                context.Response.StatusCode = 404;
+            await route.Handler(context, body);
         }
         catch (Exception ex)
         {
@@ -257,52 +335,126 @@ public class SyncHttpServer : IDisposable
         }
     }
 
-    private static bool RequiresTrust(string path) =>
-        path.StartsWith("/api/flower/v1/", StringComparison.Ordinal) ||
-        path.StartsWith("/rest/", StringComparison.Ordinal);
+    private bool CheckRateLimit(RateLimitCategory category, HttpListenerContext context)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return category switch
+        {
+            RateLimitCategory.Info => _infoRateLimiter.TryAcquire(RemoteIpKey(context), now),
+            RateLimitCategory.Pair => _pairRateLimiter.TryAcquire(RemoteIpKey(context), now),
+            RateLimitCategory.Bulk => _bulkRateLimiter.TryAcquire(FingerprintKey(context), now),
+            RateLimitCategory.Browse => _browseRateLimiter.TryAcquire(FingerprintKey(context), now),
+            RateLimitCategory.Stream => _streamRateLimiter.TryAcquire(FingerprintKey(context), now),
+            _ => true,
+        };
+    }
 
-    // The bulk-merge endpoints (playlists/library manifest) - distinct from
-    // /rest/* browse/stream, which stays open to any trusted peer regardless
-    // of role. See SyncRolePolicy.ShouldRejectPeerAsServer.
-    private static bool IsBulkSyncPath(string path) =>
-        path.StartsWith("/api/flower/v1/", StringComparison.Ordinal);
+    private static string RemoteIpKey(HttpListenerContext context) => context.Request.RemoteEndPoint?.Address.ToString() ?? "unknown";
+
+    // Self-reported at this point (auth hasn't run yet when rate limiting is
+    // checked) - fine for a rate-limit key: a TrustedPeer route still 403s an
+    // untrusted/unverifiable fingerprint regardless of how many requests it
+    // sent, so spreading requests across fake fingerprints buys an attacker
+    // nothing but individual rejections.
+    private static string FingerprintKey(HttpListenerContext context) => GetIdentityValue(context, "X-Flower-Fingerprint") ?? "unknown";
+
+    private static IEnumerable<(string Key, string Value)> GetQueryParams(HttpListenerContext context)
+    {
+        var qs = context.Request.QueryString;
+        foreach (var key in qs.AllKeys)
+        {
+            if (key == null)
+                continue;
+            foreach (var value in qs.GetValues(key) ?? [])
+                yield return (key, value);
+        }
+    }
+
+    // Proof-of-possession check for pair-request/unpair-notify: the caller
+    // must hold the private key matching the public key it's offering (the
+    // fingerprint it claims must actually be that key's hash), verified
+    // against the offered key itself rather than a trust-store lookup, since
+    // there's nothing to look up yet. Returns the verified fingerprint, or
+    // null on any failure.
+    private string? VerifySelfSigned(HttpListenerContext context, byte[] body)
+    {
+        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
+        var publicKeyBase64 = GetIdentityValue(context, "X-Flower-PublicKey");
+        if (string.IsNullOrEmpty(fingerprint) || string.IsNullOrEmpty(publicKeyBase64))
+            return null;
+
+        byte[] publicKeyRaw;
+        try
+        {
+            publicKeyRaw = Convert.FromBase64String(publicKeyBase64);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+        if (publicKeyRaw.Length != 65 || publicKeyRaw[0] != 0x04)
+            return null;
+        if (SignedRequestCanonicalizer.ComputeFingerprint(publicKeyRaw) != fingerprint)
+            return null;
+
+        var verified = SignatureVerifier.Verify(
+            context.Request.HttpMethod, context.Request.Url!.AbsolutePath, GetQueryParams(context), body,
+            GetIdentityValue(context, "X-Flower-Timestamp"), GetIdentityValue(context, "X-Flower-Nonce"),
+            GetIdentityValue(context, "X-Flower-Signature"), publicKeyBase64,
+            DateTimeOffset.UtcNow, _nonceReplayGuard, fingerprint);
+
+        return verified ? fingerprint : null;
+    }
+
+    // The gated-endpoint check: the caller must be signature-verified against
+    // the public key TrustedPeerStore captured for this fingerprint at the
+    // moment it was actually approved - never a cached /info value. A
+    // fingerprint with no usable key on file (unknown, or a pre-signing-
+    // scheme legacy entry - see TrustedPeerStore.GetPublicKey) fails exactly
+    // like an outright stranger. Returns the verified fingerprint, or null.
+    private string? VerifyTrustedPeer(HttpListenerContext context, byte[] body)
+    {
+        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
+        if (string.IsNullOrEmpty(fingerprint))
+            return null;
+
+        var publicKey = _trustedPeerStore.GetPublicKey(fingerprint);
+        if (publicKey == null)
+            return null;
+
+        var verified = SignatureVerifier.Verify(
+            context.Request.HttpMethod, context.Request.Url!.AbsolutePath, GetQueryParams(context), body,
+            GetIdentityValue(context, "X-Flower-Timestamp"), GetIdentityValue(context, "X-Flower-Nonce"),
+            GetIdentityValue(context, "X-Flower-Signature"), publicKey,
+            DateTimeOffset.UtcNow, _nonceReplayGuard, fingerprint);
+
+        return verified ? fingerprint : null;
+    }
 
     // Header if present, else the same name as a query param - see
     // OpenSubsonicClient.BuildUrl's own doc comment: a URL handed to
     // something else to fetch (LibVLC playing GetStreamUrl directly) can't
-    // carry custom headers, so the identity travels as a query param there
-    // instead. Header wins when both are somehow present.
+    // carry custom headers, so the identity (and, now, the signature/
+    // timestamp/nonce/public key) travels as a query param there instead.
+    // Header wins when both are somehow present.
     private static string? GetIdentityValue(HttpListenerContext context, string name) =>
         context.Request.Headers[name] is { Length: > 0 } header ? header : context.Request.QueryString[name];
 
     private static bool IsCallerServer(HttpListenerContext context) =>
         string.Equals(GetIdentityValue(context, "X-Flower-Role"), "server", StringComparison.OrdinalIgnoreCase);
 
-    // Pure trust check, nothing more - see this file's top-of-file doc comment.
-    // Never prompts, never blocks: an unrecognized fingerprint is just denied,
-    // exactly like a missing one. Pairing only ever happens via the dedicated
-    // pair-request endpoint below.
-    private bool IsAuthorized(HttpListenerContext context)
-    {
-        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
-        return !string.IsNullOrEmpty(fingerprint) && _trustedPeerStore.IsTrusted(fingerprint);
-    }
-
     // The one and only call that can raise PeerApprovalRequested - see this
     // file's top-of-file doc comment. Reached only from PeerPairingService,
     // itself only ever called from MainViewModel.PairWithServer's explicit
     // "Ask to pair" action (ServerPickerView's button on desktop, the
     // Ask-to-pair confirm sheet on mobile) - never automatically off some
-    // other request's back.
-    private async Task HandlePairRequestAsync(HttpListenerContext context)
+    // other request's back. The dispatcher's AuthMode.SelfSigned check has
+    // already proven the caller holds the private key behind the fingerprint/
+    // public key it's presenting by the time this runs.
+    private async Task HandlePairRequestAsync(HttpListenerContext context, byte[] body)
     {
-        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
-        if (string.IsNullOrEmpty(fingerprint))
-        {
-            context.Response.StatusCode = 400;
-            return;
-        }
-
+        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint")!;
+        var publicKey = GetIdentityValue(context, "X-Flower-PublicKey")!;
         var alias = GetIdentityValue(context, "X-Flower-Alias");
         if (string.IsNullOrEmpty(alias))
             alias = fingerprint;
@@ -317,7 +469,9 @@ public class SyncHttpServer : IDisposable
         var approved = await RequestApprovalAsync(fingerprint, alias);
         _logger.LogInformation("Pair request from {Alias} ({Fingerprint}) result: {Approved}", alias, fingerprint, approved);
         if (approved)
-            await _trustedPeerStore.ApproveAsync(fingerprint, alias);
+            await _trustedPeerStore.ApproveAsync(fingerprint, alias, publicKey);
+        else
+            await _trustedPeerStore.DenyAsync(fingerprint, alias);
 
         context.Response.StatusCode = approved ? 204 : 403;
     }
@@ -350,40 +504,58 @@ public class SyncHttpServer : IDisposable
         return await tcs.Task;
     }
 
-    // Deliberately ungated (see RequiresTrust's own doc comment: a peer has to
-    // learn our fingerprint here before either side can evaluate trust at all)
-    // - but if the caller already identifies itself via the same
-    // X-Flower-Fingerprint header every gated endpoint expects, this answers
-    // whether we currently trust it, via trustsCaller. That's what
+    // Server-initiated counterpart to a local "Forget" (see
+    // TrustedDevicesView/PeerUnpairNotifier) - lets a revoked peer clear its
+    // own stale pairing proactively rather than only discovering it passively
+    // via a later 403 or /info poll. Idempotent and side-effect-free beyond
+    // raising the event: 204 regardless of whether this device even has a
+    // pairing matching that fingerprint, so it never leaks local state to the
+    // caller.
+    private Task HandleUnpairNotifyAsync(HttpListenerContext context, byte[] body)
+    {
+        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint")!;
+        var alias = GetIdentityValue(context, "X-Flower-Alias") ?? fingerprint;
+
+        PeerUnpairNotified?.Invoke(this, new PeerTrustRejectedEventArgs { Fingerprint = fingerprint, Alias = alias });
+
+        context.Response.StatusCode = 204;
+        return Task.CompletedTask;
+    }
+
+    // Deliberately ungated (see the route table's AuthMode.Open: a peer has to
+    // learn our fingerprint+public key here before either side can evaluate
+    // trust at all) - but if the caller already identifies itself via the
+    // same X-Flower-Fingerprint header every gated endpoint expects, this
+    // answers whether we currently trust it, via trustsCaller. That's what
     // NetworkDiscoveryService.ResolveAliasAsync polls every ~5s for every
     // known peer (not just during an active sync attempt), so a Client whose
     // paired Server just revoked (or never granted) it finds out on this
-    // device's own timetable rather than needing to be mid-sync (or even
-    // discoverable at the exact moment of the revoke - the poll just resumes
-    // reporting the current answer whenever the two are next in contact) -
-    // see DiscoveredDevice.TrustsUs. trustsCaller is omitted (not false) when
+    // device's own timetable rather than needing to be mid-sync - see
+    // DiscoveredDevice.TrustsUs. trustsCaller is omitted (not false) when
     // the caller didn't identify itself, so a plain unauthenticated /info
-    // probe (e.g. this device's own discovery of a peer, before either side's
-    // fingerprint is known to the other) can't be misread as a rejection.
-    private async Task HandleInfoAsync(HttpListenerContext context)
+    // probe can't be misread as a rejection. This existence check
+    // (IsTrusted) is intentionally unauthenticated/display-only - it grants
+    // no access, unlike the gated endpoints' full signature verification.
+    private async Task HandleInfoAsync(HttpListenerContext context, byte[] body)
     {
         var deviceType = OperatingSystem.IsIOS() || OperatingSystem.IsAndroid() ? "mobile" : "desktop";
         var callerFingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
-        var body = JsonSerializer.Serialize(new
+        var responseBody = JsonSerializer.Serialize(new
         {
             alias = _deviceIdentity.Alias,
             version = "2.0",
             deviceModel = (string?)null,
             deviceType,
             fingerprint = _deviceIdentity.Fingerprint,
+            publicKey = _deviceSigningKey.PublicKeyBase64,
             isServer = _appSettings.IsServer,
             download = false,
             trustsCaller = string.IsNullOrEmpty(callerFingerprint) ? (bool?)null : _trustedPeerStore.IsTrusted(callerFingerprint)
         });
-        await WriteJsonAsync(context, body);
+        await WriteJsonAsync(context, responseBody);
     }
 
-    private async Task HandleGetPlaylistsAsync(HttpListenerContext context)
+    private async Task HandleGetPlaylistsAsync(HttpListenerContext context, byte[] body)
     {
         var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, _library.Playlists);
         await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
@@ -392,20 +564,19 @@ public class SyncHttpServer : IDisposable
     // Bulk, non-OpenSubsonic endpoint for LibrarySyncService - see
     // LibrarySyncContracts for why this exists alongside (not instead of)
     // /rest/getAlbumList2+getAlbum.
-    private async Task HandleGetLibraryAsync(HttpListenerContext context)
+    private async Task HandleGetLibraryAsync(HttpListenerContext context, byte[] body)
     {
         var manifest = new LibrarySyncManifestDto(_deviceIdentity.Fingerprint, LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks, _deviceIdentity.Fingerprint));
         await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
     }
 
     // A Client's pushed log snapshot (see LibrarySyncService.PushLogSnapshotAsync).
-    // Stored under the header identity AuthorizeAsync already validated this
+    // Stored under the header identity the dispatcher already validated this
     // request against, not whatever fingerprint the JSON body itself claims -
-    // the body hasn't been authenticated, only the headers have.
-    private async Task HandleReportLogAsync(HttpListenerContext context)
+    // the body hasn't been independently authenticated, only the headers have.
+    private async Task HandleReportLogAsync(HttpListenerContext context, byte[] body)
     {
-        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
-        var json = await reader.ReadToEndAsync();
+        var json = Encoding.UTF8.GetString(body);
         var report = JsonSerializer.Deserialize<LogReportDto>(json, JsonOptions);
         if (report == null)
         {
@@ -424,10 +595,9 @@ public class SyncHttpServer : IDisposable
     // The initiator of a sync session (see PlaylistSyncService) has already resolved
     // every conflict by the time it POSTs here, so this side just replaces its whole
     // playlist collection to match - no merge logic runs on this end.
-    private async Task HandleApplyPlaylistsAsync(HttpListenerContext context)
+    private async Task HandleApplyPlaylistsAsync(HttpListenerContext context, byte[] body)
     {
-        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
-        var json = await reader.ReadToEndAsync();
+        var json = Encoding.UTF8.GetString(body);
         var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(json, JsonOptions);
         if (manifest == null)
         {
@@ -451,7 +621,7 @@ public class SyncHttpServer : IDisposable
     // tracks for LibrarySyncService to pull from a peer. Only getAlbumList2/
     // getAlbum are implemented - nothing else calls getArtists/getSong/stream yet
     // (the mobile download-button UI, which needs stream, is a later piece).
-    private async Task HandleGetAlbumList2Async(HttpListenerContext context)
+    private async Task HandleGetAlbumList2Async(HttpListenerContext context, byte[] body)
     {
         var query = context.Request.QueryString;
         var size = int.TryParse(query["size"], out var s) ? s : 500;
@@ -462,14 +632,14 @@ public class SyncHttpServer : IDisposable
             .Take(size)
             .ToList();
 
-        var body = JsonSerializer.Serialize(new SubsonicEnvelope
+        var responseBody = JsonSerializer.Serialize(new SubsonicEnvelope
         {
             Response = new SubsonicResponse { Status = "ok", Version = "1.16.1", AlbumList2 = new AlbumList2(albums) },
         }, JsonOptions);
-        await WriteJsonAsync(context, body);
+        await WriteJsonAsync(context, responseBody);
     }
 
-    private async Task HandleGetAlbumAsync(HttpListenerContext context)
+    private async Task HandleGetAlbumAsync(HttpListenerContext context, byte[] body)
     {
         var id = context.Request.QueryString["id"];
         var album = id != null ? LibraryOpenSubsonicMapper.FindAlbum(_library.Tracks, id, _deviceIdentity.Fingerprint) : null;
@@ -479,18 +649,18 @@ public class SyncHttpServer : IDisposable
             return;
         }
 
-        var body = JsonSerializer.Serialize(new SubsonicEnvelope
+        var responseBody = JsonSerializer.Serialize(new SubsonicEnvelope
         {
             Response = new SubsonicResponse { Status = "ok", Version = "1.16.1", Album = album },
         }, JsonOptions);
-        await WriteJsonAsync(context, body);
+        await WriteJsonAsync(context, responseBody);
     }
 
     // Serves this device's own real file bytes for one song, looked up by SyncKey
     // (the same id LibraryOpenSubsonicMapper.ToChild hands out - see
     // LibraryDownloadService, SYNC-PLAN.md Phase 3's download button). Never
     // serves a placeholder - only a track this device actually has a file for.
-    private async Task HandleStreamAsync(HttpListenerContext context)
+    private async Task HandleStreamAsync(HttpListenerContext context, byte[] body)
     {
         var id = context.Request.QueryString["id"];
         var track = id != null
@@ -524,7 +694,7 @@ public class SyncHttpServer : IDisposable
     // from) - see AlbumArtLoader's remote-fetch path, SYNC-PLAN.md Phase 3's
     // synced art. Never serves art for an album with no local (Path != null)
     // track at all, same "only what this device actually has" rule as /rest/stream.
-    private async Task HandleGetCoverArtAsync(HttpListenerContext context)
+    private async Task HandleGetCoverArtAsync(HttpListenerContext context, byte[] body)
     {
         var id = context.Request.QueryString["id"];
         var track = id != null
@@ -548,9 +718,9 @@ public class SyncHttpServer : IDisposable
             ? "image/png"
             : "image/jpeg"; // Overwhelmingly the common case for embedded/cover-file art either way.
 
-    private static async Task WriteJsonAsync(HttpListenerContext context, string body)
+    private static async Task WriteJsonAsync(HttpListenerContext context, string responseBody)
     {
-        var bytes = Encoding.UTF8.GetBytes(body);
+        var bytes = Encoding.UTF8.GetBytes(responseBody);
         context.Response.ContentType = "application/json";
         context.Response.ContentLength64 = bytes.Length;
         await context.Response.OutputStream.WriteAsync(bytes);

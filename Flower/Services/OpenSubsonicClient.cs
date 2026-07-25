@@ -15,6 +15,13 @@ public sealed class SubsonicException(int code, string message) : Exception(mess
     public int Code { get; } = code;
 }
 
+// Builds the peer-identity/signature query params or headers for one specific
+// request (method + path + the params already decided for it + its body) -
+// see OpenSubsonicClient's own doc comment on why this has to be a delegate
+// invoked fresh per call rather than a fixed list computed once.
+public delegate IEnumerable<(string Key, string Value)> PeerIdentityParamsBuilder(
+    string method, string path, IEnumerable<(string Key, string Value)> extraParams, byte[] body);
+
 // Hand-rolled OpenSubsonic/Subsonic REST client (see SYNC-PLAN.md, "The unifying
 // decision": one client, three interchangeable servers - a third-party Navidrome/
 // Jellyfin-compat instance, a first-party Flower.Server, or another Flower app
@@ -32,27 +39,32 @@ public class OpenSubsonicClient
     private readonly string _username;
     private readonly string _password;
     private readonly string _clientName;
-    private readonly List<(string Key, string Value)> _extraHeaders;
+    private readonly PeerIdentityParamsBuilder? _peerIdentityParams;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    // extraHeaders is for talking to another Flower device's embedded host rather
-    // than a real Subsonic server: peer-to-peer auth is the fingerprint trust gate
-    // (X-Flower-Fingerprint/X-Flower-Alias - see SyncHttpServer.AuthorizeAsync,
-    // LibrarySyncService), not real Subsonic credentials, but this is still the
-    // same client either way - see SYNC-PLAN.md's "one client, three
-    // interchangeable servers".
+    // peerIdentityParams is for talking to another Flower device's embedded
+    // host rather than a real Subsonic server: peer-to-peer auth is the
+    // signed trust gate (X-Flower-Fingerprint/-Alias/-Role/-PublicKey/
+    // -Signature/-Timestamp/-Nonce - see SyncHttpServer, LibrarySyncService),
+    // not real Subsonic credentials, but this is still the same client
+    // either way - see SYNC-PLAN.md's "one client, three interchangeable
+    // servers". It's a delegate rather than a fixed header list because a
+    // signature/nonce must be unique per call (see DeviceSigningKey.Sign) -
+    // this client instance is long-lived and calls it repeatedly (once per
+    // browse call, once per stream/download), so the identity params can
+    // never be computed just once at construction time.
     public OpenSubsonicClient(
         string baseUrl, string username, string password,
         HttpClient? httpClient = null, string clientName = "Flower",
-        IEnumerable<(string Key, string Value)>? extraHeaders = null)
+        PeerIdentityParamsBuilder? peerIdentityParams = null)
     {
         _baseUrl = baseUrl.TrimEnd('/');
         _username = username;
         _password = password;
         _clientName = clientName;
         _http = httpClient ?? new HttpClient();
-        _extraHeaders = extraHeaders?.ToList() ?? [];
+        _peerIdentityParams = peerIdentityParams;
     }
 
     // MD5 here is mandated by the Subsonic auth scheme itself (token = md5(password
@@ -77,47 +89,68 @@ public class OpenSubsonicClient
         ];
     }
 
+    // Builds a URL with every peer-identity/signature credential embedded in
+    // the query string - necessary for a URL handed directly to something
+    // else to fetch (LibVLC playing GetStreamUrl directly, see
+    // VlcAudioManager.Play's "://" check, or GetDownloadUrl/GetCoverArtUrl
+    // returned for the caller's own use), which can't carry the custom
+    // headers an authenticated HttpClient call can - see
+    // SyncHttpServer.GetIdentityValue, which accepts either. Not used by
+    // SendAsync/DownloadTrackAsync below, which send the identical
+    // information as headers instead (see BuildPlainUrl) - harmless against a
+    // real third-party OpenSubsonic server either way, which just ignores
+    // the extra unknown params.
+    public string BuildUrl(string endpoint, IEnumerable<(string Key, string Value)>? extraParams = null)
+    {
+        var path = $"/rest/{endpoint}";
+        var parameters = AuthParams();
+        if (extraParams != null)
+            parameters.AddRange(extraParams);
+        if (_peerIdentityParams != null)
+            parameters.AddRange(_peerIdentityParams("GET", path, parameters, []));
+
+        var query = string.Join("&", parameters.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
+        return $"{_baseUrl}{path}?{query}";
+    }
+
+    // Counterpart to BuildUrl for SendAsync/DownloadTrackAsync: builds the URL
+    // without baking peer-identity/signature into the query (those travel as
+    // headers instead, computed fresh - see the callers below) - avoids
+    // generating and discarding an unused, individually-still-valid signed
+    // query string alongside every header-authenticated call.
+    private string BuildPlainUrl(string endpoint, IEnumerable<(string Key, string Value)>? extraParams, out string path, out List<(string Key, string Value)> parameters)
+    {
+        path = $"/rest/{endpoint}";
+        parameters = AuthParams();
+        if (extraParams != null)
+            parameters.AddRange(extraParams);
+        var query = string.Join("&", parameters.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
+        return $"{_baseUrl}{path}?{query}";
+    }
+
     // Only forces a fresh connection per request (rather than pooling/reusing
-    // one) when talking to a peer Flower device (extraHeaders non-empty, i.e.
-    // the trust-gate identity headers are set) - a real third-party Subsonic
+    // one) when talking to a peer Flower device - a real third-party Subsonic
     // server browsing session can have many requests where connection reuse
     // is actually worth keeping. Peer-to-peer sync sessions are only ever a
     // couple of requests each, so the extra handshake is negligible, and it
     // avoids reusing a keep-alive connection the peer's HttpListener (or the
     // OS, e.g. after iOS backgrounds the app) already tore down - observed in
     // practice as "Connection reset by peer" on iOS.
-    private void SetConnectionCloseForPeerRequests(HttpRequestMessage request)
+    private void AddPeerIdentityHeaders(HttpRequestMessage request, string method, string path, IEnumerable<(string Key, string Value)> parameters)
     {
-        if (_extraHeaders.Count > 0)
-            request.Headers.ConnectionClose = true;
-    }
+        if (_peerIdentityParams == null)
+            return;
 
-    public string BuildUrl(string endpoint, IEnumerable<(string Key, string Value)>? extraParams = null)
-    {
-        var parameters = AuthParams();
-        // Also embedded as query params, not just sent as headers (see
-        // SendAsync/DownloadTrackAsync, which add _extraHeaders to the
-        // request directly) - a URL handed to something else to fetch (LibVLC
-        // playing GetStreamUrl directly, see VlcAudioManager.Play's "://"
-        // check) can't carry custom headers the way an authenticated
-        // HttpClient call can, and SyncHttpServer.AuthorizeAsync/IsCallerServer
-        // accept either. Harmless against a real third-party OpenSubsonic
-        // server, which just ignores the extra unknown params.
-        parameters.AddRange(_extraHeaders);
-        if (extraParams != null)
-            parameters.AddRange(extraParams);
-
-        var query = string.Join("&", parameters.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
-        return $"{_baseUrl}/rest/{endpoint}?{query}";
+        foreach (var header in _peerIdentityParams(method, path, parameters, []))
+            request.Headers.Add(header.Key, header.Value);
+        request.Headers.ConnectionClose = true;
     }
 
     private async Task<SubsonicResponse> SendAsync(string endpoint, IEnumerable<(string Key, string Value)>? extraParams = null)
     {
-        var url = BuildUrl(endpoint, extraParams);
+        var url = BuildPlainUrl(endpoint, extraParams, out var path, out var parameters);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        foreach (var header in _extraHeaders)
-            request.Headers.Add(header.Key, header.Value);
-        SetConnectionCloseForPeerRequests(request);
+        AddPeerIdentityHeaders(request, "GET", path, parameters);
 
         using var httpResponse = await _http.SendAsync(request);
         httpResponse.EnsureSuccessStatusCode(); // e.g. a 403 from a peer's trust gate - surfaces as a plain HttpRequestException.
@@ -279,15 +312,13 @@ public class OpenSubsonicClient
     // Streams stream?id=... straight to a file rather than buffering the whole
     // track in memory - see LibraryDownloadService (SYNC-PLAN.md Phase 3's
     // download button). Uses the same identity headers as every other request
-    // (see the constructor's extraHeaders), so this also goes through a peer's
-    // trust gate like any other /rest/* call.
+    // (see the constructor's peerIdentityParams), so this also goes through a
+    // peer's trust gate like any other /rest/* call.
     public async Task DownloadTrackAsync(string id, string destinationPath)
     {
-        var url = BuildUrl("stream", [("id", id)]);
+        var url = BuildPlainUrl("stream", [("id", id)], out var path, out var parameters);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        foreach (var header in _extraHeaders)
-            request.Headers.Add(header.Key, header.Value);
-        SetConnectionCloseForPeerRequests(request);
+        AddPeerIdentityHeaders(request, "GET", path, parameters);
 
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();

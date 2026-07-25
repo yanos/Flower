@@ -3,7 +3,7 @@
              xmlns:views="clr-namespace:Flower.Views"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.Views.TrustedDevicesView">
-  <Grid RowDefinitions="Auto,*" Margin="0,12,0,0">
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="0,12,0,0">
     <TextBlock Grid.Row="0"
                Text="Devices approved to sync playlists and library data with this one."
                TextWrapping="Wrap"
@@ -84,5 +84,45 @@
         </ListBox>
       </Border>
     </Grid>
+
+    <TextBlock Grid.Row="2"
+               Text="Devices you've denied."
+               TextWrapping="Wrap"
+               Opacity="0.75"
+               FontSize="12"
+               Margin="0,16,0,8"/>
+
+    <Border Grid.Row="3" BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+      <ListBox x:Name="DeniedDevicesList">
+        <ListBox.Styles>
+          <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+          </Style>
+        </ListBox.Styles>
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="views:DeniedPeerRow">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4,2">
+              <TextBlock Grid.Row="0" Grid.Column="0"
+                         Text="{Binding Alias}"
+                         FontWeight="SemiBold"
+                         FontSize="13"
+                         VerticalAlignment="Center"
+                         Margin="4,0"/>
+              <TextBlock Grid.Row="1" Grid.Column="0"
+                         Text="{Binding DeniedAtDisplay}"
+                         Opacity="0.6" FontSize="11"
+                         Margin="4,1,0,0"/>
+              <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                      Content="Forget refusal"
+                      Padding="10,4"
+                      VerticalAlignment="Center"
+                      Margin="8,0,0,0"
+                      Click="ForgetRefusalButton_Click"/>
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
   </Grid>
 </UserControl>

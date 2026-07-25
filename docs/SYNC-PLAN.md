@@ -156,8 +156,59 @@ Don't conflate these on iOS: **active playback while streaming** works fine back
 
 ---
 
+## Phase 4 — Cryptographic identity and hardening (done)
+
+The fingerprint-only trust model above had a real gap: `X-Flower-Fingerprint`
+was a self-reported GUID with no proof of possession, handed out by the
+ungated `/info` endpoint and visible in cleartext on every request - anyone
+on the LAN who observed a trusted peer's fingerprint could impersonate it.
+**Done**: every device now generates an ECDSA P-256 keypair on first run
+(`DeviceKeyStore`, `device-key.json`); `DeviceIdentity.Fingerprint` is
+derived from the public key (`SignedRequestCanonicalizer.ComputeFingerprint`)
+rather than an independent random value. Every gated request is signed
+(`X-Flower-Signature`/`-Timestamp`/`-Nonce`, or the same as query params for
+a URL handed directly to LibVLC/`OpenSubsonicClient.BuildUrl`) over
+method+path+query+body+timestamp+nonce (`SignedRequestCanonicalizer`/
+`DeviceSigningKey`/`SignatureVerifier`), verified against the public key
+`TrustedPeerStore` captured at the moment a fingerprint was actually
+approved - never a cached `/info` value. A `±60s` timestamp window plus
+`NonceReplayGuard` bounds replay of a captured request. Pairing
+(`pair-request`) and the new `unpair-notify` endpoint are proof-of-possession
+"self-signed" (verified against the offered key itself, since there's
+nothing to look up yet); every other gated endpoint is `TrustedPeer` mode.
+
+**Breaking migration, by design**: existing `trusted-peers.json` entries have
+no public key on file, so `TrustedPeerStore.GetPublicKey` returns null for
+them and they fail exactly like the existing "trust was revoked" path
+(`PeerTrustRejected` → `UnpairServer()`) - one re-tap of "Ask to pair"
+restores the pairing with a real key captured this time. Every device's own
+fingerprint also changes on upgrade (now derived from its new keypair), so
+this is a one-time "everyone re-pairs once" event.
+
+**Also done in this pass**: a declarative route table (`SyncHttpServer`'s
+`Route`/`AuthMode`/`RateLimitCategory`) replaced the old `if`/`else if`
+dispatch chain; rate limiting (`RateLimiter`, fixed-window, IP-keyed for
+pre-trust endpoints, fingerprint-keyed post-trust); LAN-only enforcement
+(`LanGuard`, hard reject on any non-private/loopback `RemoteEndPoint` -
+closes `docs/todo.txt`'s "only stream on local network," since the wildcard
+`http://+:{port}/` bind has no other network-layer boundary); persisted
+pairing denials (`TrustedPeerStore.DenyAsync`/`denied-peers.json`,
+surfaced in `TrustedDevicesView` with a "Forget refusal" action); a
+server-initiated unpair notification (`POST /api/flower/v1/unpair-notify`,
+`PeerUnpairNotifier`, fire-and-forget) so a revoked peer can learn about it
+proactively instead of only via a later 403/poll; and a 20 MB request-body
+cap (`RequestBodyReader.ReadWithCapAsync`).
+
+**Explicitly still deferred**: TLS/transport encryption. `HttpListener`'s
+HTTPS support off Windows remains a long-standing gap
+(`dotnet/runtime#19752`); the signing scheme above closes the impersonation
+hole without it, but traffic (including the signed headers themselves) is
+still plain HTTP - eavesdropping on the same LAN is an accepted residual
+risk, same "same-LAN threat model" framing as before, revisit if sync ever
+needs to leave a trusted LAN.
+
 ## Status summary
 
-All numbered steps through Phase 3 are **done**: `CROSS-PLATFORM-PLAN.md` item #3 updated to the private-file-library iOS design; WiFi/LAN discovery + LocalSend-style transfer; `UIFileSharingEnabled` for USB; Bluetooth/programmatic-USB deliberately not built; playlist metadata sync; the OpenSubsonic client; and the full Phase 3 stack (trust gate, embedded host, merge logic, mobile download UI).
+All numbered steps through Phase 4 are **done**: `CROSS-PLATFORM-PLAN.md` item #3 updated to the private-file-library iOS design; WiFi/LAN discovery + LocalSend-style transfer; `UIFileSharingEnabled` for USB; Bluetooth/programmatic-USB deliberately not built; playlist metadata sync; the OpenSubsonic client; the full Phase 3 stack (trust gate, embedded host, merge logic, mobile download UI); and Phase 4's cryptographic identity/signed-request hardening (route table, rate limiting, LAN-only enforcement, persisted denials, server-initiated unpair, body size cap).
 
 **Remaining work:** fold the client into the `IMusicImporter` abstraction as a user-facing settings choice; add Jellyfin as a second `IMusicImporter` backend; real-device Android download-path verification and end-to-end testing against a real peer; and, only once there's concrete demand, extract `Flower.Core` and scaffold `Flower.Server`.
