@@ -1,4 +1,7 @@
-﻿using Avalonia;
+﻿using System;
+using System.Linq;
+
+using Avalonia;
 using Avalonia.iOS;
 
 using AVFoundation;
@@ -7,8 +10,13 @@ using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Foundation;
 
+using MetricKit;
+
+using Microsoft.Extensions.Logging;
+
 using UIKit;
 
+using Flower.Logging;
 using Flower.Services;
 
 namespace Flower.iOS;
@@ -17,10 +25,21 @@ namespace Flower.iOS;
 // User Interface of the application, as well as listening (and optionally responding) to
 // application events from iOS.
 [Register("AppDelegate")]
-public partial class AppDelegate : AvaloniaAppDelegate<App>
+public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSubscriber
 {
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
+        // A native crash (e.g. inside libvlc) bypasses .NET's own exception
+        // handling entirely - MetricKit is Apple's supported way for an app
+        // to learn about its own past crashes without a third-party native-
+        // crash library. Delivery is OS-batched and can arrive up to ~24h
+        // after the crash (never on the very next launch), but by then
+        // AppLogging.Initialize() will long since have run, so logging
+        // directly from the callback (unlike Android's equivalent, which
+        // needs a startup-order workaround - see PlatformCrashInfo) is fine.
+        if (OperatingSystem.IsIOSVersionAtLeast(13))
+            MXMetricManager.SharedManager.Add(this);
+
         // Real iOS hardware can't do raw multicast without a hard-to-get Apple
         // entitlement - see PlatformMdns.cs and BonjourMdnsBackend's own doc
         // comment. Must be set before Avalonia (and, in turn, App.axaml.cs's DI
@@ -75,5 +94,16 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>
 
         return base.CustomizeAppBuilder(builder)
             .WithInterFont();
+    }
+
+    public void DidReceiveDiagnosticPayloads(MXDiagnosticPayload[] payloads)
+    {
+        var logger = AppLogging.CreateLogger("Flower.MetricKit");
+        foreach (var crash in payloads.SelectMany(payload => payload.CrashDiagnostics ?? []))
+        {
+            logger.LogCritical(
+                "Native crash reported via MetricKit: signal={Signal} exceptionType={ExceptionType} exceptionCode={ExceptionCode} terminationReason={TerminationReason}",
+                crash.Signal, crash.ExceptionType, crash.ExceptionCode, crash.TerminationReason);
+        }
     }
 }

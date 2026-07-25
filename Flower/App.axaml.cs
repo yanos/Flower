@@ -57,12 +57,33 @@ public partial class App : Application
         // nothing at all) - log it before the process potentially dies so a
         // bug report has something to go on.
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
             logger.LogCritical(e.ExceptionObject as Exception, "Unhandled exception (IsTerminating={IsTerminating})", e.IsTerminating);
+            // The process is about to die - flush now, or Serilog's buffered
+            // file write never reaches disk and this line is lost right along
+            // with the crash it was recording.
+            if (e.IsTerminating)
+                AppLogging.Shutdown();
+        };
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
             logger.LogError(e.Exception, "Unobserved task exception");
             e.SetObserved();
         };
+
+        // A *native* crash (e.g. inside libvlc) bypasses UnhandledException
+        // above entirely - it never becomes a managed exception. Pick up
+        // whatever the OS/runtime already recorded about the previous run's
+        // crash, if any, and fold it into this run's log instead. See
+        // CrashReportScanner's own comment for how each platform's evidence
+        // gets there.
+        CrashReportScanner.ScanAndLog(logger);
+        if (PlatformCrashInfo.PendingAndroidExitReasons is { Count: > 0 } androidExitReasons)
+        {
+            foreach (var reason in androidExitReasons)
+                logger.LogCritical("Crash found in Android's process exit history: {Reason}", reason);
+            PlatformCrashInfo.PendingAndroidExitReasons = null;
+        }
 
         logger.LogInformation("Flower starting. Log file: {LogPath}", logPath);
 
