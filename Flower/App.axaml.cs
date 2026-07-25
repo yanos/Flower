@@ -109,7 +109,8 @@ public partial class App : Application
         var librarySyncService = new LibrarySyncService(library, deviceIdentity, appSettings, libraryStore, InMemoryLogStore.Instance, AppLogging.CreateTypedLogger<LibrarySyncService>());
         var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
         var peerPairingService = new PeerPairingService(deviceIdentity, AppLogging.CreateTypedLogger<PeerPairingService>());
-        var peerTrackResolver = new PeerTrackResolver(networkDiscovery, appSettings);
+        var pairedServerReachability = new PairedServerReachability(networkDiscovery, appSettings);
+        var peerTrackResolver = new PeerTrackResolver(pairedServerReachability);
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
@@ -122,6 +123,7 @@ public partial class App : Application
                 .AddSingleton<ColumnManager>()
                 .AddSingleton(importer)
                 .AddSingleton(networkDiscovery)
+                .AddSingleton(pairedServerReachability)
                 .AddSingleton(syncHttpServer)
                 .AddSingleton(playlistSyncService)
                 .AddSingleton(librarySyncService)

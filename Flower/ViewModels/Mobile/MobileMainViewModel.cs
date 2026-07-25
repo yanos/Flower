@@ -669,6 +669,13 @@ public class MobileMainViewModel : ViewModelBase
             if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems))
                 RaiseEmptyStateChanged();
         };
+        // SearchSongResults is a separate TrackRowViewModel list from
+        // Main.Rows (see RebuildSearchResultsAsync's own doc comment), so it
+        // needs its own live-update subscription to stay correct after the
+        // paired server's reachability changes - MainViewModel.Rows gets this
+        // for free from its own subscription to the same signal.
+        Main.ReachabilityChanged += (_, _) =>
+            TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
         RebuildPlaylistPicker();
         RebuildRecentlyAddedAlbums();
         RebuildAlbumGrid();
@@ -1054,6 +1061,8 @@ public class MobileMainViewModel : ViewModelBase
 
         var tracks = Main.Library.Tracks;
         var playing = Main.CurrentlyPlayingTrack;
+        var pairedServerFingerprint = Main.PairedServerFingerprint;
+        var pairedServerReachable   = Main.IsPairedServerReachable;
         var (albums, albumsTotal, artists, artistsTotal, songs, songsTotal) = await Task.Run(() =>
         {
             var matchingAlbumTracks = tracks.Where(t =>
@@ -1071,7 +1080,15 @@ public class MobileMainViewModel : ViewModelBase
                 .OrderBy(a => a)
                 .ToList();
 
-            var allSongRows = TrackListBuilder.Build(tracks, text, "Title", true, playing);
+            // See TrackAvailability - passed straight in so these rows are
+            // correct from construction, same as Main.Rows itself
+            // (MainViewModel.RebuildRowsAsync); SearchSongResults below is a
+            // separate row list from Main.Rows (see this method's own doc
+            // comment), kept correct afterward by the Main.ReachabilityChanged
+            // subscription in the constructor rather than by a one-off patch
+            // here.
+            var allSongRows = TrackListBuilder.Build(tracks, text, "Title", true, playing,
+                pairedServerFingerprint: pairedServerFingerprint, pairedServerReachable: pairedServerReachable);
 
             return (allAlbums.Take(MaxSearchResultsPerSection).ToList(), allAlbums.Count,
                     allArtists.Take(MaxSearchResultsPerSection).ToList(), allArtists.Count,

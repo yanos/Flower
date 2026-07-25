@@ -14,12 +14,14 @@ public static class TrackListBuilder
         string sortColumn,
         bool sortAscending,
         Track? currentlyPlayingTrack = null,
-        bool sortArtistAlbumsByYear = false)
+        bool sortArtistAlbumsByYear = false,
+        string? pairedServerFingerprint = null,
+        bool pairedServerReachable = false)
     {
         var filtered = Filter(tracks, filterText).ToList();
         var sorted   = Sort(filtered, sortColumn, sortAscending, sortArtistAlbumsByYear).ToList();
 
-        return BuildRows(sorted, currentlyPlayingTrack);
+        return BuildRows(sorted, currentlyPlayingTrack, pairedServerFingerprint, pairedServerReachable);
     }
 
     // Public so MainViewModel can also filter the Albums/Recently Added tile
@@ -85,7 +87,9 @@ public static class TrackListBuilder
     // whose secondary keys happen to keep an album's tracks together).
     private static List<TrackRowViewModel> BuildRows(
         List<Track> tracks,
-        Track? currentlyPlaying)
+        Track? currentlyPlaying,
+        string? pairedServerFingerprint,
+        bool pairedServerReachable)
     {
         var result = new List<TrackRowViewModel>(tracks.Count);
 
@@ -111,6 +115,11 @@ public static class TrackListBuilder
                     // the bold/accent-color styling (Button.trackRow.playing)
                     // meant for an actual playing row.
                     IsCurrentlyPlaying = tracks[k].Path != null && currentlyPlaying != null && tracks[k].Path == currentlyPlaying.Path,
+                    // See TrackAvailability.IsAvailable - computed here so a
+                    // freshly-built row is correct from the moment it exists,
+                    // rather than starting from a default and waiting for a
+                    // separate post-build pass to catch up.
+                    IsAvailable = TrackAvailability.IsAvailable(tracks[k], pairedServerFingerprint, pairedServerReachable),
                 });
             }
             i = j;

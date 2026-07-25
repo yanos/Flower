@@ -88,13 +88,12 @@
       <Setter Property="FontWeight" Value="Bold" />
       <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
     </Style>
-    <!-- Not-yet-downloaded track whose origin peer isn't currently reachable
-         (see TrackRowViewModel.IsUnavailable/IsPeerReachable) - dimmed like
+    <!-- Not-yet-downloaded track that can't currently be streamed/downloaded
+         (see TrackRowViewModel.IsUnavailable/IsAvailable) - dimmed like
          the currently-playing/disabled treatment elsewhere, since there's
          genuinely nothing actionable about it right now beyond retrying
-         later. A placeholder whose peer IS reachable looks like any other
-         row - it can be streamed/downloaded immediately, see
-         DownloadTrackCommand. -->
+         later. An available placeholder looks like any other row - it can be
+         streamed/downloaded immediately, see DownloadTrackCommand. -->
     <Style Selector="Button.trackRow.placeholder">
       <Setter Property="Opacity" Value="0.5" />
     </Style>

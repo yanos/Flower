@@ -45,22 +45,27 @@ public class TrackRowViewModel : ViewModelBase
     // this value never needs to change out from under a still-alive instance.
     public bool IsPlaceholder => Track.Path == null;
 
-    // Whether the placeholder's origin peer is currently reachable - live-
-    // updated by MainViewModel.RefreshRowReachability (device list changes,
-    // and once after every fresh Rows build) rather than derived from Track,
-    // since this genuinely changes over this row instance's lifetime (a peer
-    // can come and go on the LAN) unlike IsPlaceholder above. Defaults to
-    // true (assume reachable) so a just-built row never flashes as
-    // unavailable before MainViewModel's own post-build refresh runs.
-    private bool _isPeerReachable = true;
-    public bool IsPeerReachable
+    // Whether this placeholder can actually be streamed/downloaded right now -
+    // i.e. its origin device is the Client's currently paired, reachable
+    // Server (see TrackAvailability.IsAvailable, the single place this is
+    // computed - PeerTrackResolver.Resolve/SyncRolePolicy.MayRequestFrom gate
+    // every real download/stream/art request the exact same way, so a
+    // placeholder from some other reachable-but-not-paired peer, an
+    // unreachable paired server, or no paired server at all all land here as
+    // false). Set by TrackListBuilder.BuildRows at construction time and kept
+    // live afterward by TrackAvailability.Apply, called once whenever
+    // PairedServerReachability.Changed fires. Defaults to false so a
+    // just-built row never flashes as available before it's actually known
+    // to be.
+    private bool _isAvailable;
+    public bool IsAvailable
     {
-        get => _isPeerReachable;
+        get => _isAvailable;
         set
         {
-            if (_isPeerReachable == value)
+            if (_isAvailable == value)
                 return;
-            _isPeerReachable = value;
+            _isAvailable = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsUnavailable));
             OnPropertyChanged(nameof(IsDownloadable));
@@ -69,10 +74,10 @@ public class TrackRowViewModel : ViewModelBase
 
     // Drives the row's dimmed/faded visual (see MobileMainView's
     // Button.trackRow.placeholder style) - a placeholder is only actually
-    // "unavailable" while its peer can't currently be reached for a
-    // stream/download; a placeholder whose peer IS reachable can be played
-    // or downloaded right now and should look like any other row.
-    public bool IsUnavailable => IsPlaceholder && !IsPeerReachable;
+    // "unavailable" while it can't currently be streamed/downloaded; one
+    // that IsAvailable can be played or downloaded right now and should look
+    // like any other row.
+    public bool IsUnavailable => IsPlaceholder && !IsAvailable;
 
     // Gates the row's own download button (see TrackRowTemplate) - hidden
     // entirely rather than shown-then-failing when there's nobody to
@@ -81,7 +86,7 @@ public class TrackRowViewModel : ViewModelBase
     // already made and failed (a different, rarer case - the peer was
     // reachable at tap time but the transfer itself didn't succeed) rather
     // than "there was never anyone to try".
-    public bool IsDownloadable => IsPlaceholder && IsPeerReachable;
+    public bool IsDownloadable => IsPlaceholder && IsAvailable;
 
     // Transient UI state for an in-flight/failed download attempt on this row -
     // set directly by MobileMainViewModel's download command, not derived from
