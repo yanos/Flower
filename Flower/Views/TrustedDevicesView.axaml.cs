@@ -49,6 +49,13 @@ public sealed class TrustedPeerRow : ViewModelBase
 // MainViewModel itself via the service locator (see PlaylistControls.axaml.cs
 // for the same pattern) means SettingsWindow doesn't need to wire anything up
 // to host it, just place the control.
+//
+// Forgetting a device here doesn't need to actively notify it (compare an
+// earlier version of this method, which POSTed to the forgotten device
+// directly) - the forgotten device finds out the same way regardless of
+// whether it's currently on the network or not, via NetworkDiscoveryService's
+// own periodic /info re-poll of every known peer noticing this device no
+// longer trusts it - see DiscoveredDevice.TrustsUs.
 public partial class TrustedDevicesView : UserControl
 {
     private readonly TrustedPeerStore _store = Ioc.Default.GetService<TrustedPeerStore>()!;

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -61,6 +62,10 @@ public class LibrarySyncService
     private readonly InMemoryLogStore _logStore;
     private readonly ILogger _logger;
 
+    // See PeerTrustRejectedEventArgs (PlaylistSyncService.cs) - same trust gate,
+    // same meaning here.
+    public event EventHandler<PeerTrustRejectedEventArgs>? PeerTrustRejected;
+
     public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, AppSettings appSettings, LibraryStore libraryStore, InMemoryLogStore logStore, ILogger<LibrarySyncService> logger)
     {
         _library = library;
@@ -105,6 +110,12 @@ public class LibrarySyncService
             // Peer unreachable, not running this endpoint yet, or not (yet) trusted.
             _logger.LogWarning(ex, "Library sync with {Alias} ({Fingerprint}): GET /library failed, aborting this sync attempt",
                 device.Alias, device.Fingerprint);
+
+            // See PlaylistSyncService's identical check - a 403 here means the same
+            // thing, just from this service's own (also trust-gated) first request.
+            if (ex is HttpRequestException { StatusCode: HttpStatusCode.Forbidden })
+                PeerTrustRejected?.Invoke(this, new PeerTrustRejectedEventArgs { Fingerprint = device.Fingerprint, Alias = device.Alias });
+
             return new LibrarySyncResult(false, 0, 0);
         }
 

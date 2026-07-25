@@ -12,6 +12,8 @@ using Microsoft.Extensions.Logging;
 
 using Makaretu.Dns;
 
+using Flower.Persistence;
+
 namespace Flower.Services;
 
 // A Flower instance found on the LAN. Alias starts out as the raw mDNS
@@ -33,6 +35,17 @@ public class DiscoveredDevice
     // alongside Alias/Fingerprint via the same /info handshake. Drives
     // MainViewModel.AvailableServers; unrelated to trust/pairing.
     public bool IsServer { get; set; }
+
+    // Whether this peer currently trusts *us* (see SyncHttpServer.
+    // HandleInfoAsync's trustsCaller field and AuthorizeAsync/TrustedPeerStore)
+    // - resolved alongside the rest via the same /info handshake, since
+    // ResolveAliasAsync now identifies us on that request too. Defaults true
+    // so a not-yet-resolved device, or one running old code with no
+    // trustsCaller field at all, isn't mistaken for an active rejection -
+    // MainViewModel only ever acts on this flipping to false. Meaningless for
+    // a peer that isn't our paired Server (every peer answers it, but only
+    // MainViewModel.PairedServerFingerprint's own trust status matters).
+    public bool TrustsUs { get; set; } = true;
 }
 
 // Default IMdnsBackend (see PlatformMdns.cs): raw multicast via
@@ -162,8 +175,14 @@ public class NetworkDiscoveryService : IDisposable
     public event EventHandler<DiscoveredDevice>? DeviceDiscovered;
     public event EventHandler<string>? DeviceLost;
 
-    public NetworkDiscoveryService(ILogger<NetworkDiscoveryService> logger)
+    // Sent as X-Flower-Fingerprint/X-Flower-Alias on every /info request (see
+    // ResolveAliasAsync) so a peer that's also a Server can answer whether it
+    // trusts us - see DiscoveredDevice.TrustsUs.
+    private readonly DeviceIdentity _deviceIdentity;
+
+    public NetworkDiscoveryService(DeviceIdentity deviceIdentity, ILogger<NetworkDiscoveryService> logger)
     {
+        _deviceIdentity = deviceIdentity;
         _logger = logger;
         _backend = PlatformMdns.Current ?? new MakaretuMdnsBackend();
         _backend.InstanceFound += OnInstanceFound;
@@ -351,7 +370,16 @@ public class NetworkDiscoveryService : IDisposable
         string json;
         try
         {
-            json = await Http.GetStringAsync($"http://{device.EndPoint}/api/localsend/v2/info");
+            // Identifies us the same way every gated endpoint does, even though
+            // /info itself stays ungated (see SyncHttpServer.RequiresTrust) - lets
+            // the peer's response include trustsCaller (see DiscoveredDevice.
+            // TrustsUs) if it recognizes these headers, without requiring it to.
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}/api/localsend/v2/info");
+            request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
+            request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
+            using var response = await Http.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            json = await response.Content.ReadAsStringAsync();
         }
         catch (Exception ex)
         {
@@ -389,6 +417,20 @@ public class NetworkDiscoveryService : IDisposable
                 if (isServer != device.IsServer)
                 {
                     device.IsServer = isServer;
+                    changed = true;
+                }
+            }
+            // Present-and-boolean only - absent (older peer) or explicit JSON
+            // null (this peer didn't recognize our identity headers) both leave
+            // TrustsUs at its current value rather than defaulting to a
+            // rejection - see DiscoveredDevice.TrustsUs.
+            if (doc.RootElement.TryGetProperty("trustsCaller", out var trustsCallerProp) &&
+                trustsCallerProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                var trustsUs = trustsCallerProp.ValueKind == JsonValueKind.True;
+                if (trustsUs != device.TrustsUs)
+                {
+                    device.TrustsUs = trustsUs;
                     changed = true;
                 }
             }

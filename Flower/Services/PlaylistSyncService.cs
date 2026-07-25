@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -14,6 +15,21 @@ using Flower.Persistence;
 namespace Flower.Services;
 
 public enum PlaylistConflictChoice { KeepLocal, KeepRemote }
+
+// Raised when a peer's SyncHttpServer answers 403 to a gated request - i.e. it
+// has actively decided this device is not (or no longer) trusted, as opposed
+// to being merely unreachable. Shared by PlaylistSyncService and
+// LibrarySyncService, both of which hit the same trust gate (see
+// SyncHttpServer.AuthorizeAsync) as the first request of their own sync
+// session. MainViewModel uses this to notice a paired Server has revoked (or
+// never granted) trust and clear the stale local PairedServerFingerprint,
+// rather than leaving the UI claiming "paired" indefinitely - see
+// MainViewModel's own subscription for why that drift is otherwise invisible.
+public sealed class PeerTrustRejectedEventArgs : EventArgs
+{
+    public required string Fingerprint { get; init; }
+    public required string Alias { get; init; }
+}
 
 // Raised when the same playlist changed on both this device and a peer since they
 // last agreed - see PlaylistSyncPlanner. The UI is expected to ask the user which
@@ -44,6 +60,7 @@ public class PlaylistSyncService
     private readonly DeviceNicknameStore _deviceNicknameStore;
 
     public event EventHandler<PlaylistConflictEventArgs>? ConflictDetected;
+    public event EventHandler<PeerTrustRejectedEventArgs>? PeerTrustRejected;
 
     public PlaylistSyncService(
         Library library,
@@ -118,6 +135,13 @@ public class PlaylistSyncService
             // Peer unreachable, not running this endpoint yet, or not (yet) trusted.
             _logger.LogWarning(ex, "Playlist sync with {Alias} ({Fingerprint}): GET /playlists failed, aborting this sync attempt",
                 device.Alias, device.Fingerprint);
+
+            // A 403 specifically means the peer is up and answered, but has actively
+            // decided not to trust us - distinct from every other failure above,
+            // which just means "couldn't tell." See PeerTrustRejectedEventArgs.
+            if (ex is HttpRequestException { StatusCode: HttpStatusCode.Forbidden })
+                PeerTrustRejected?.Invoke(this, new PeerTrustRejectedEventArgs { Fingerprint = device.Fingerprint, Alias = device.Alias });
+
             return;
         }
 

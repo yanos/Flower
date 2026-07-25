@@ -1219,6 +1219,7 @@ public partial class MainViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(IsPairedServerReachable)));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning)));
             Dispatcher.UIThread.Post(RefreshRowReachability);
+            HandlePeerTrustChanged(device);
             TriggerSyncIfReady(device);
         };
         networkDiscovery.DeviceLost += (_, instanceName) =>
@@ -1246,6 +1247,32 @@ public partial class MainViewModel : ViewModelBase
             }
             Dispatcher.UIThread.Post(() => PlaylistConflictRequested?.Invoke(this, e));
         };
+
+        // A paired Server no longer trusting us surfaces here every time this
+        // device is in any kind of contact with it - not just while actively
+        // syncing - so it's noticed on (roughly) the same timetable regardless
+        // of whether the revoke happened while this device was reachable or
+        // not: NetworkDiscoveryService.ResolveAliasAsync polls every known
+        // peer's /info roughly every 5s independent of any sync attempt (see
+        // DiscoveredDevice.TrustsUs, SyncHttpServer.HandleInfoAsync's
+        // trustsCaller), and DeviceDiscovered re-fires whenever that (or
+        // anything else in a device's /info) changes - handled by
+        // HandlePeerTrustChanged below. PlaylistSyncService/LibrarySyncService's
+        // PeerTrustRejected is the same information arriving slightly earlier,
+        // opportunistically, off the 403 an actual gated sync request gets in
+        // the meantime - both converge on the exact same check, so a revoke is
+        // never missed just because the two devices happened not to be
+        // "connecting" in one specific sense of the word at the right moment.
+        void HandlePeerTrustRejected(object? _, PeerTrustRejectedEventArgs e)
+        {
+            if (e.Fingerprint != PairedServerFingerprint)
+                return;
+            _logger.LogWarning("Paired server {Alias} ({Fingerprint}) no longer trusts us - clearing stale local pairing",
+                e.Alias, e.Fingerprint);
+            Dispatcher.UIThread.Post(UnpairServer);
+        }
+        playlistSyncService.PeerTrustRejected += HandlePeerTrustRejected;
+        librarySyncService.PeerTrustRejected += HandlePeerTrustRejected;
 
         // Same no-UI-listening fallback shape as ConflictDetected above, but fails
         // *closed* (deny) rather than defaulting to "keep local" - granting a
@@ -1905,6 +1932,27 @@ public partial class MainViewModel : ViewModelBase
         var url = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings).GetStreamUrl(track.SyncKey);
         _logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint}): {Url}", track.Title, peer.Alias, peer.EndPoint, url);
         return url;
+    }
+
+    // Called on every DeviceDiscovered fire (fresh discovery, or a changed
+    // /info field on an already-known peer - see NetworkDiscoveryService.
+    // ResolveAliasAsync) to notice a paired Server has stopped trusting us -
+    // see DiscoveredDevice.TrustsUs, SyncHttpServer.HandleInfoAsync's
+    // trustsCaller. This is what actually catches a revoke that happened while
+    // this device wasn't reachable: the next time the two are back in mDNS
+    // contact, the very first /info resolve already carries the current
+    // answer, no separate "were we there for the revoke" step required. Only
+    // acts when device is the currently paired Server; PlaylistSyncService/
+    // LibrarySyncService.PeerTrustRejected covers the same outcome slightly
+    // earlier if an actual sync attempt happens to land first - see that
+    // subscription's own doc comment.
+    private void HandlePeerTrustChanged(DiscoveredDevice device)
+    {
+        if (device.Fingerprint != PairedServerFingerprint || device.TrustsUs)
+            return;
+        _logger.LogWarning("Paired server {Alias} ({Fingerprint}) no longer trusts us - clearing stale local pairing",
+            device.Alias, device.Fingerprint);
+        Dispatcher.UIThread.Post(UnpairServer);
     }
 
     // Runs a playlist sync session (Phase 2) and a library sync session (Phase 3 -

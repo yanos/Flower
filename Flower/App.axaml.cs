@@ -86,8 +86,6 @@ public partial class App : Application
         foreach (var playlist in playlistStore.Load(library.Tracks))
             library.AddPlaylist(playlist);
 
-        var networkDiscovery = new NetworkDiscoveryService(AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
-
         var deviceIdentityStore = new DeviceIdentityStore(AppLogging.CreateTypedLogger<DeviceIdentityStore>());
         var deviceNicknameStore = new DeviceNicknameStore(AppLogging.CreateTypedLogger<DeviceNicknameStore>());
         var trustedPeerStore = new TrustedPeerStore(AppLogging.CreateTypedLogger<TrustedPeerStore>());
@@ -101,6 +99,11 @@ public partial class App : Application
         // needing to reconstruct or restart anything.
         var deviceIdentity = deviceIdentityStore.Load();
         var clientLogStore = new ClientLogStore();
+
+        // Needs deviceIdentity constructed first - it identifies us on every
+        // /info poll now, not just gated sync requests (see
+        // NetworkDiscoveryService.ResolveAliasAsync, DiscoveredDevice.TrustsUs).
+        var networkDiscovery = new NetworkDiscoveryService(deviceIdentity, AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
         var syncHttpServer = new SyncHttpServer(deviceIdentity, appSettings, library, playlistStore, trustedPeerStore, clientLogStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
         var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, appSettings, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
         var librarySyncService = new LibrarySyncService(library, deviceIdentity, appSettings, libraryStore, InMemoryLogStore.Instance, AppLogging.CreateTypedLogger<LibrarySyncService>());

@@ -307,9 +307,25 @@ public class SyncHttpServer : IDisposable
         return await tcs.Task;
     }
 
+    // Deliberately ungated (see RequiresTrust's own doc comment: a peer has to
+    // learn our fingerprint here before either side can evaluate trust at all)
+    // - but if the caller already identifies itself via the same
+    // X-Flower-Fingerprint header every gated endpoint expects, this answers
+    // whether we currently trust it, via trustsCaller. That's what
+    // NetworkDiscoveryService.ResolveAliasAsync polls every ~5s for every
+    // known peer (not just during an active sync attempt), so a Client whose
+    // paired Server just revoked (or never granted) it finds out on this
+    // device's own timetable rather than needing to be mid-sync (or even
+    // discoverable at the exact moment of the revoke - the poll just resumes
+    // reporting the current answer whenever the two are next in contact) -
+    // see DiscoveredDevice.TrustsUs. trustsCaller is omitted (not false) when
+    // the caller didn't identify itself, so a plain unauthenticated /info
+    // probe (e.g. this device's own discovery of a peer, before either side's
+    // fingerprint is known to the other) can't be misread as a rejection.
     private async Task HandleInfoAsync(HttpListenerContext context)
     {
         var deviceType = OperatingSystem.IsIOS() || OperatingSystem.IsAndroid() ? "mobile" : "desktop";
+        var callerFingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
         var body = JsonSerializer.Serialize(new
         {
             alias = _deviceIdentity.Alias,
@@ -318,7 +334,8 @@ public class SyncHttpServer : IDisposable
             deviceType,
             fingerprint = _deviceIdentity.Fingerprint,
             isServer = _appSettings.IsServer,
-            download = false
+            download = false,
+            trustsCaller = string.IsNullOrEmpty(callerFingerprint) ? (bool?)null : _trustedPeerStore.IsTrusted(callerFingerprint)
         });
         await WriteJsonAsync(context, body);
     }
