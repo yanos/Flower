@@ -13,6 +13,21 @@ using Flower.Persistence;
 
 using LibVLCSharp.Shared;
 
+using Microsoft.Extensions.Logging;
+
+// Was never called here before, so AppLogging.CreateTypedLogger<T> below (and
+// anything else that logs) was silently a no-op - see AppLogging's own
+// before-Initialize fallback comment.
+AppLogging.Initialize();
+var logger = AppLogging.CreateLogger("Flower.CLI");
+
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    logger.LogCritical(e.ExceptionObject as Exception, "Unhandled exception (IsTerminating={IsTerminating})", e.IsTerminating);
+    if (e.IsTerminating)
+        AppLogging.Shutdown();
+};
+
 VlcNativeSetup.Initialize();
 using var libVlc = new LibVLC("--no-video");
 using var player = new MediaPlayer(libVlc);
@@ -37,7 +52,7 @@ else
     if (tracks.Count == 0)
     {
         Console.WriteLine(" scanning music folder...");
-        var importer = new Importer();
+        var importer = new Importer(AppLogging.CreateTypedLogger<Importer>());
         var settings = new AppSettingsStore().Load();
         tracks = importer.Import(settings.LibraryPaths);
         if (tracks.Count == 0)
