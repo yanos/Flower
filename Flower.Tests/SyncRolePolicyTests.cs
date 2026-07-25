@@ -57,4 +57,28 @@ public class SyncRolePolicyTests
     {
         Assert.False(SyncRolePolicy.ShouldRejectPeerAsServer(weAreServer: false, callerIsServer: false));
     }
+
+    [Fact]
+    public void MayRequestFrom_is_true_for_the_currently_paired_server()
+    {
+        Assert.True(SyncRolePolicy.MayRequestFrom(pairedServerFingerprint: "abc", peerFingerprint: "abc"));
+    }
+
+    [Fact]
+    public void MayRequestFrom_is_false_for_a_stale_fingerprint_that_is_no_longer_paired()
+    {
+        Assert.False(SyncRolePolicy.MayRequestFrom(pairedServerFingerprint: "abc", peerFingerprint: "xyz"));
+    }
+
+    [Fact]
+    public void MayRequestFrom_is_false_with_no_paired_server_at_all()
+    {
+        Assert.False(SyncRolePolicy.MayRequestFrom(pairedServerFingerprint: null, peerFingerprint: "abc"));
+    }
+
+    [Fact]
+    public void MayRequestFrom_is_false_when_the_peer_fingerprint_is_empty()
+    {
+        Assert.False(SyncRolePolicy.MayRequestFrom(pairedServerFingerprint: "abc", peerFingerprint: ""));
+    }
 }

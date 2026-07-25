@@ -52,6 +52,8 @@ public partial class MainViewModel : ViewModelBase
     private PlaylistSyncService? _playlistSyncService;
     private LibrarySyncService? _librarySyncService;
     private LibraryDownloadService? _libraryDownloadService;
+    private PeerPairingService? _peerPairingService;
+    private PeerTrackResolver? _peerTrackResolver;
     private DeviceIdentity? _deviceIdentity;
     private NetworkDiscoveryService? _networkDiscovery;
     private LibraryStore? _libraryStore;
@@ -417,17 +419,55 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsPairedServerReachable));
         OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
         NotifyPairButtonPropertiesChanged();
-        TriggerSyncIfReady(device); // sync immediately rather than waiting for the next discovery event
+
+        // The server doesn't trust us yet - that's the whole point of asking -
+        // so a bulk sync attempt right now would just get a flat 403 (see
+        // SyncHttpServer's top-of-file doc comment: a sync request is never
+        // itself treated as a pairing attempt anymore). Explicitly request
+        // pairing first and only start syncing once - if - a human on the
+        // other end actually approves it.
+        RunTrackedSync(() => RequestPairingThenSyncAsync(device));
+    }
+
+    // See PairWithServer. Runs under RunTrackedSync so the "syncing" spinner
+    // covers the wait for the other device's user to tap Allow/Deny, not just
+    // the sync that follows approval.
+    private async Task RequestPairingThenSyncAsync(DiscoveredDevice device)
+    {
+        var approved = await (_peerPairingService?.RequestPairingAsync(device) ?? Task.FromResult(false));
+
+        // The user may have unpaired, or paired with someone else, while this
+        // was in flight (approval can take up to a minute) - don't act on a
+        // stale result either way.
+        if (_appSettings?.PairedServerFingerprint != device.Fingerprint)
+            return;
+
+        if (!approved)
+        {
+            _logger.LogWarning("Pair request to {Alias} ({Fingerprint}) was denied or timed out", device.Alias, device.Fingerprint);
+            Dispatcher.UIThread.Post(UnpairServer);
+            return;
+        }
+
+        ConfirmServerTrust(device.Fingerprint);
+        // Marks this as TriggerSyncIfReady's own "first contact" so a later
+        // DeviceDiscovered re-fire for this same peer this session doesn't
+        // redundantly sync again right on top of this.
+        _syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0);
+        await (_playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
+        await SyncLibraryAndConfirmTrust(device);
     }
 
     // Marks the paired server as having actually approved this device - see
-    // AppSettings.PairedServerTrustConfirmed's own doc comment. Called after
-    // any bulk sync attempt that reached the server and got past its trust
-    // gate (a 403 surfaces as LibrarySyncResult.Success == false, so a true
-    // here really does mean approved, not just reachable). Cheap no-op once
-    // already confirmed, and ignores a result for anyone other than the
-    // currently-paired fingerprint (e.g. a stale in-flight sync completing
-    // just after an Unpair/re-pair to someone else).
+    // AppSettings.PairedServerTrustConfirmed's own doc comment. Called directly
+    // once RequestPairingThenSyncAsync's own pair-request comes back approved,
+    // and again (a cheap no-op by then) after any later bulk sync attempt that
+    // reaches the server and gets past its trust gate (a 403 surfaces as
+    // LibrarySyncResult.Success == false, so a true here really does mean
+    // approved, not just reachable) - belt-and-suspenders in case trust was
+    // somehow confirmed one way but not the other. Ignores a result for anyone
+    // other than the currently-paired fingerprint (e.g. a stale in-flight sync
+    // completing just after an Unpair/re-pair to someone else).
     private void ConfirmServerTrust(string? fingerprint)
     {
         if (_appSettings is not { PairedServerTrustConfirmed: false } settings)
@@ -1104,6 +1144,8 @@ public partial class MainViewModel : ViewModelBase
         PlaylistSyncService playlistSyncService,
         LibrarySyncService librarySyncService,
         LibraryDownloadService libraryDownloadService,
+        PeerPairingService peerPairingService,
+        PeerTrackResolver peerTrackResolver,
         SyncHttpServer syncHttpServer,
         DeviceIdentity deviceIdentity,
         LibraryStore libraryStore,
@@ -1121,6 +1163,8 @@ public partial class MainViewModel : ViewModelBase
         _playlistSyncService   = playlistSyncService;
         _librarySyncService    = librarySyncService;
         _libraryDownloadService = libraryDownloadService;
+        _peerPairingService    = peerPairingService;
+        _peerTrackResolver     = peerTrackResolver;
         _networkDiscovery      = networkDiscovery;
         _deviceIdentity        = deviceIdentity;
         PeerLibrary            = new PeerLibraryViewModel(deviceIdentity, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>());
@@ -1856,33 +1900,30 @@ public partial class MainViewModel : ViewModelBase
         RefreshDeviceDisplayNames();
     }
 
-    // Quiet lookup shared by ResolvePeerForTrack (below, which adds logging -
-    // meant for a single user-initiated download/stream attempt) and
-    // RefreshRowReachability (which calls this for potentially every
-    // placeholder row in Rows on every device-list change - logging a
-    // warning per row there would flood the log and drown out the one
-    // ResolvePeerForTrack actually emits for a real, individual failure).
+    // Quiet lookup for RefreshRowReachability's IsPeerReachable, which calls
+    // this for potentially every placeholder row in Rows on every device-list
+    // change - deliberately NOT gated to the currently paired Server the way
+    // PeerTrackResolver.Resolve is: this answers "is this row's origin device
+    // online at all" for display purposes, a different question from "may
+    // this device actually be asked for it right now" (see PeerTrackResolver's
+    // own doc comment for why those two diverge, e.g. right after an Unpair).
     private DiscoveredDevice? FindDeviceByFingerprint(string? fingerprint) =>
         fingerprint != null
             ? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == fingerprint)?.Device
             : null;
 
-    // Shared by DownloadTrackAsync and GetStreamUrl - resolves a placeholder
-    // track's origin peer against currently-discovered devices (the same
-    // Devices sidebar list Cmd/Ctrl-independent code above already maintains).
-    // A peer that's gone offline/out of range since it was last seen resolves
-    // to null rather than guessing an address.
+    // Shared by DownloadTrackAsync and GetStreamUrl - delegates the actual
+    // resolution (and the "only the currently paired Server" gating that goes
+    // with it) to PeerTrackResolver, the one place that logic lives - see that
+    // class's own doc comment. This wrapper only adds the warning log, since a
+    // user-initiated download/stream attempt failing is worth reporting,
+    // unlike AlbumArtLoader's own (much more frequent, per-row) calls into the
+    // same resolver.
     private DiscoveredDevice? ResolvePeerForTrack(Track track)
     {
-        if (track.OriginDeviceFingerprint is not { } fingerprint)
-        {
-            _logger.LogWarning("Cannot resolve a peer for {Title}: track has no OriginDeviceFingerprint", track.Title);
-            return null;
-        }
-
-        var device = FindDeviceByFingerprint(fingerprint);
+        var device = _peerTrackResolver?.Resolve(track);
         if (device == null)
-            _logger.LogWarning("Cannot resolve a peer for {Title}: fingerprint {Fingerprint} is not in the Devices sidebar right now", track.Title, fingerprint);
+            _logger.LogWarning("Cannot resolve a peer for {Title}: no currently paired, reachable origin device", track.Title);
         return device;
     }
 
