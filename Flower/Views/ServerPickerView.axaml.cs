@@ -13,8 +13,10 @@ namespace Flower.Views;
 
 // One row in ServerPickerView's list of discovered Servers - see
 // MainViewModel.AvailableServers/PairedServerFingerprint. ActionLabel/
-// IsActionEnabled/HintText encode the three states a row can be in: this is
-// the paired server ("Unpair"), a different server is already paired
+// IsActionEnabled/HintText encode the states a row can be in: the paired
+// server, either still waiting on its approval ("Waiting for server...") or
+// confirmed ("Unpair" - see IsTrustConfirmed/MainViewModel.
+// IsPairedServerTrustConfirmed), a different server already paired
 // (disabled, with a hint to unpair first - decision: switching requires an
 // explicit unpair-first step, no direct one-click switch), or nothing is
 // paired yet ("Ask to pair").
@@ -29,6 +31,11 @@ public sealed class ServerRow : ViewModelBase
     // (rebuilding this snapshot) on every IsSyncing edge.
     public required bool IsSyncing { get; init; }
 
+    // True only for the paired row, once it has actually approved this
+    // device - see MainViewModel.IsPairedServerTrustConfirmed. Meaningless
+    // (always false) for any other row.
+    public required bool IsTrustConfirmed { get; init; }
+
     // "Sync Now" is only ever shown on the paired row, and only enabled while
     // that server is actually currently discovered - see
     // MainViewModel.CanForceSync/ForceSyncNow.
@@ -39,7 +46,11 @@ public sealed class ServerRow : ViewModelBase
     // is the paired one).
     public required string? BlockedByAlias { get; init; }
 
-    public string ActionLabel => IsPaired ? "Unpair" : "Ask to pair";
+    public string ActionLabel =>
+        !IsPaired ? "Ask to pair" :
+        IsTrustConfirmed ? "Unpair" :
+        "Waiting for server...";
+    public bool IsAwaitingApproval => IsPaired && !IsTrustConfirmed;
     public bool IsActionEnabled => IsPaired || BlockedByAlias == null;
     public string? HintText => !IsPaired && BlockedByAlias != null ? $"Unpair from {BlockedByAlias} first" : null;
 }
@@ -62,7 +73,7 @@ public partial class ServerPickerView : UserControl
         _networkDiscovery.DeviceLost += (_, _) => Dispatcher.UIThread.Post(Refresh);
         _mainViewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(MainViewModel.IsSyncing))
+            if (e.PropertyName == nameof(MainViewModel.IsSyncing) || e.PropertyName == nameof(MainViewModel.IsPairedServerTrustConfirmed))
                 Dispatcher.UIThread.Post(Refresh);
             if (e.PropertyName == nameof(MainViewModel.LastForceSyncResult))
                 Dispatcher.UIThread.Post(RefreshSyncResultText);
@@ -87,6 +98,7 @@ public partial class ServerPickerView : UserControl
                 Alias = d.Alias,
                 IsPaired = d.Fingerprint == pairedFingerprint,
                 IsSyncing = d.Fingerprint == pairedFingerprint && _mainViewModel.IsSyncing,
+                IsTrustConfirmed = d.Fingerprint == pairedFingerprint && _mainViewModel.IsPairedServerTrustConfirmed,
                 CanForceSync = d.Fingerprint == pairedFingerprint && _mainViewModel.CanForceSync,
                 BlockedByAlias = pairedFingerprint != null && d.Fingerprint != pairedFingerprint ? pairedAlias : null,
             })
@@ -103,6 +115,7 @@ public partial class ServerPickerView : UserControl
                 Alias = pairedAlias ?? pairedFingerprint,
                 IsPaired = true,
                 IsSyncing = _mainViewModel.IsSyncing,
+                IsTrustConfirmed = _mainViewModel.IsPairedServerTrustConfirmed,
                 CanForceSync = _mainViewModel.CanForceSync,
                 BlockedByAlias = null,
             });

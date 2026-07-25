@@ -205,7 +205,7 @@ public partial class MainViewModel : ViewModelBase
             // reasoning; every device here is already the Client's own
             // paired Server (ShouldInitiateSync above guarantees it).
             RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
-            RunTrackedSync(() => _librarySyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
+            RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
         }
 
         // Logged after RunTrackedSync has already incremented _activeSyncCount
@@ -396,6 +396,7 @@ public partial class MainViewModel : ViewModelBase
         _appSettings ??= new AppSettings();
         _appSettings.PairedServerFingerprint = device.Fingerprint;
         _appSettings.PairedServerAlias = device.Alias;
+        _appSettings.PairedServerTrustConfirmed = false; // a fresh request - see ConfirmServerTrust
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
 
         // Pin this device's sidebar row as the paired Server (see
@@ -419,6 +420,38 @@ public partial class MainViewModel : ViewModelBase
         TriggerSyncIfReady(device); // sync immediately rather than waiting for the next discovery event
     }
 
+    // Marks the paired server as having actually approved this device - see
+    // AppSettings.PairedServerTrustConfirmed's own doc comment. Called after
+    // any bulk sync attempt that reached the server and got past its trust
+    // gate (a 403 surfaces as LibrarySyncResult.Success == false, so a true
+    // here really does mean approved, not just reachable). Cheap no-op once
+    // already confirmed, and ignores a result for anyone other than the
+    // currently-paired fingerprint (e.g. a stale in-flight sync completing
+    // just after an Unpair/re-pair to someone else).
+    private void ConfirmServerTrust(string? fingerprint)
+    {
+        if (_appSettings is not { PairedServerTrustConfirmed: false } settings)
+            return;
+        if (string.IsNullOrEmpty(fingerprint) || fingerprint != settings.PairedServerFingerprint)
+            return;
+        settings.PairedServerTrustConfirmed = true;
+        _ = (_appSettingsStore?.SaveAsync(settings) ?? Task.CompletedTask);
+        Dispatcher.UIThread.Post(NotifyPairButtonPropertiesChanged);
+    }
+
+    // Wraps LibrarySyncService.SyncWithAsync with the ConfirmServerTrust hook
+    // above - used anywhere a bulk sync is kicked off via RunTrackedSync
+    // (TriggerSyncIfReady, RunPendingDeviceSyncs), which otherwise discards
+    // the LibrarySyncResult. ForceSyncNow already awaits its own result
+    // directly and calls ConfirmServerTrust itself instead of going through
+    // this.
+    private async Task SyncLibraryAndConfirmTrust(DiscoveredDevice device)
+    {
+        var result = await (_librarySyncService?.SyncWithAsync(device) ?? Task.FromResult(new LibrarySyncResult(false, 0, 0)));
+        if (result.Success)
+            ConfirmServerTrust(device.Fingerprint);
+    }
+
     // ServerPickerView's "Unpair" action - must be called before pairing
     // with a different server (switching requires an explicit unpair-first
     // step, not a direct one-click switch).
@@ -428,6 +461,7 @@ public partial class MainViewModel : ViewModelBase
             return;
         _appSettings.PairedServerFingerprint = null;
         _appSettings.PairedServerAlias = null;
+        _appSettings.PairedServerTrustConfirmed = false;
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         UnpinPairedServerRow();
         OnPropertyChanged(nameof(PairedServerFingerprint));
@@ -532,6 +566,8 @@ public partial class MainViewModel : ViewModelBase
             await Task.WhenAll(playlistTask, libraryTask);
 
             var libraryResult = await libraryTask;
+            if (libraryResult.Success)
+                ConfirmServerTrust(device.Fingerprint);
             LastForceSyncResult = !libraryResult.Success
                 ? $"Could not reach {device.Alias} - check it's still on the network and paired"
                 : libraryResult.AddedCount > 0
@@ -905,12 +941,40 @@ public partial class MainViewModel : ViewModelBase
     // temporarily null (see RemoveDeviceItem).
     public bool IsSelectedDevicePaired => _selectedSidebarItem?.IsPairedServer ?? false;
 
+    // True once the currently-paired server has actually approved this
+    // device (see AppSettings.PairedServerTrustConfirmed), independent of
+    // sidebar selection - drives the green checkmark next to the server's
+    // name (desktop's device-detail header, via IsSelectedDeviceTrustConfirmed
+    // below) and mobile's SettingsView server row, which has no concept of a
+    // "selected" device to key off of.
+    public bool IsPairedServerTrustConfirmed => !string.IsNullOrEmpty(PairedServerFingerprint) && (_appSettings?.PairedServerTrustConfirmed ?? false);
+
+    // Paired but not yet approved - the request has been sent and is sitting
+    // at the server's own approval popup. Drives the "Waiting for server..."
+    // label/spinner on both surfaces above, until either the server approves
+    // it (ConfirmServerTrust) or the user gives up and clicks Unpair.
+    public bool IsPairedServerAwaitingApproval => !string.IsNullOrEmpty(PairedServerFingerprint) && !IsPairedServerTrustConfirmed;
+
+    // SelectedDevice-scoped versions of the two above, for the device-detail
+    // header specifically - SelectedDevice is only ever the paired server
+    // here (IsSelectedDevicePaired), so these track IsPairedServerTrustConfirmed/
+    // IsPairedServerAwaitingApproval 1:1 whenever they're true, but stay false
+    // if the user is merely looking at some *other*, unpaired device.
+    public bool IsSelectedDeviceTrustConfirmed => IsSelectedDevicePaired && IsPairedServerTrustConfirmed;
+    public bool IsPairAwaitingApproval => IsSelectedDevicePaired && IsPairedServerAwaitingApproval;
+
     // Mirrors ServerRow's ActionLabel/IsActionEnabled/HintText
-    // (ServerPickerView, Settings' Devices tab) - same three states,
-    // surfaced inline in the device-detail header so pairing doesn't need a
-    // trip to Settings. Switching to a different server still requires an
-    // explicit unpair-first step (PairActionHint), same as ServerPickerView.
-    public string PairActionLabel => IsSelectedDevicePaired ? "Unpair" : "Ask to pair";
+    // (ServerPickerView, Settings' Devices tab) - same states, surfaced
+    // inline in the device-detail header so pairing doesn't need a trip to
+    // Settings. Switching to a different server still requires an explicit
+    // unpair-first step (PairActionHint), same as ServerPickerView. Clicking
+    // "Waiting for server..." still runs the Unpair flow (PairActionButton_Click
+    // branches on IsSelectedDevicePaired, not on trust) - it's the only way
+    // to cancel a pending request.
+    public string PairActionLabel =>
+        !IsSelectedDevicePaired ? "Ask to pair" :
+        IsSelectedDeviceTrustConfirmed ? "Unpair" :
+        "Waiting for server...";
     public bool IsPairActionEnabled => IsSelectedDevicePaired || string.IsNullOrEmpty(PairedServerFingerprint);
     public string? PairActionHint =>
         !IsSelectedDevicePaired && !string.IsNullOrEmpty(PairedServerFingerprint) ? $"Unpair from {PairedServerAlias} first" : null;
@@ -918,13 +982,17 @@ public partial class MainViewModel : ViewModelBase
     // Single place raising every pair-button property's PropertyChanged -
     // called whenever any input to them changes: the sidebar selection
     // (OnSidebarSelectionChanged), this device's own role (IsServer's
-    // setter), the paired server (PairWithServer/UnpairServer), or
-    // SelectedDevice's underlying DiscoveredDevice being refreshed
-    // (RefreshDeviceDisplayNames).
+    // setter), the paired server (PairWithServer/UnpairServer), server
+    // approval (ConfirmServerTrust), or SelectedDevice's underlying
+    // DiscoveredDevice being refreshed (RefreshDeviceDisplayNames).
     private void NotifyPairButtonPropertiesChanged()
     {
         OnPropertyChanged(nameof(CanPairWithSelectedDevice));
         OnPropertyChanged(nameof(IsSelectedDevicePaired));
+        OnPropertyChanged(nameof(IsPairedServerTrustConfirmed));
+        OnPropertyChanged(nameof(IsPairedServerAwaitingApproval));
+        OnPropertyChanged(nameof(IsSelectedDeviceTrustConfirmed));
+        OnPropertyChanged(nameof(IsPairAwaitingApproval));
         OnPropertyChanged(nameof(PairActionLabel));
         OnPropertyChanged(nameof(IsPairActionEnabled));
         OnPropertyChanged(nameof(PairActionHint));
@@ -1868,7 +1936,7 @@ public partial class MainViewModel : ViewModelBase
         // half of all possible fingerprint pairs, and since the Server never
         // reciprocates, that pair would permanently never sync playlists.
         RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
-        RunTrackedSync(() => _librarySyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
+        RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
     }
 
     // Rebuilds just the "Playlists" section in place, preserving the current

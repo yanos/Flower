@@ -54,6 +54,15 @@
             <DataTemplate x:DataType="views:ServerRow">
               <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4,4">
                 <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                  <!-- Only once the paired server has actually approved this
+                       device (see ServerRow.IsTrustConfirmed) - not just
+                       requested, which is IsPaired alone (see ActionLabel's
+                       "Waiting for server..." state). -->
+                  <materialIcons:MaterialIcon Kind="CheckCircle"
+                                               Width="14" Height="14"
+                                               Foreground="#4CAF50"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding IsTrustConfirmed}"/>
                   <TextBlock Text="{Binding Alias}"
                              FontWeight="SemiBold"
                              FontSize="13"
@@ -83,6 +92,14 @@
                           IsEnabled="{Binding IsActionEnabled}"
                           Padding="10,4"
                           Click="ActionButton_Click"/>
+                  <!-- Pairing requested but not yet approved - see
+                       ServerRow.IsAwaitingApproval. -->
+                  <materialIcons:MaterialIcon Kind="Sync"
+                                               Classes="spinning"
+                                               Width="12" Height="12"
+                                               Opacity="0.6"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding IsAwaitingApproval}"/>
                 </StackPanel>
               </Grid>
             </DataTemplate>
