@@ -84,6 +84,15 @@
         <Grid IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
               ColumnDefinitions="*,Auto">
           <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <!-- Only once the paired server has actually approved this
+                 device (see MainViewModel.IsPairedServerTrustConfirmed) -
+                 not just requested, which is PairedServerAlias alone (see
+                 the "waiting" spinner below). -->
+            <materialIcons:MaterialIcon Kind="CheckCircle"
+                                         Width="14" Height="14"
+                                         Foreground="#4CAF50"
+                                         VerticalAlignment="Center"
+                                         IsVisible="{Binding Main.IsPairedServerTrustConfirmed}"/>
             <TextBlock Text="{Binding Main.PairedServerAlias}" VerticalAlignment="Center" FontWeight="Medium"/>
             <materialIcons:MaterialIcon Kind="Sync"
                                          Classes="spinning"
@@ -91,6 +100,18 @@
                                          Opacity="0.6"
                                          VerticalAlignment="Center"
                                          IsVisible="{Binding Main.IsSyncing}"/>
+            <!-- Pairing requested but not yet approved by the server - see
+                 MainViewModel.IsPairedServerAwaitingApproval. -->
+            <TextBlock Text="Waiting for server..."
+                       Opacity="0.6" FontSize="12"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding Main.IsPairedServerAwaitingApproval}"/>
+            <materialIcons:MaterialIcon Kind="Sync"
+                                         Classes="spinning"
+                                         Width="14" Height="14"
+                                         Opacity="0.6"
+                                         VerticalAlignment="Center"
+                                         IsVisible="{Binding Main.IsPairedServerAwaitingApproval}"/>
           </StackPanel>
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
             <Button Content="Sync Now" Command="{Binding ForceSyncCommand}" IsEnabled="{Binding Main.CanForceSync}"/>

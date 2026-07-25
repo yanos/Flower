@@ -98,6 +98,17 @@ namespace Flower.Persistence
         public string? PairedServerFingerprint { get; set; }
         public string? PairedServerAlias       { get; set; }
 
+        // Set once a bulk sync with PairedServerFingerprint has actually
+        // succeeded - i.e. the server-side approval popup (SyncHttpServer.
+        // AuthorizeAsync/PeerApprovalRequested) has been answered "yes", not
+        // merely that this Client has asked to pair. False the whole time
+        // PairedServerFingerprint is set but every sync attempt is still
+        // getting a 403 - see MainViewModel.IsAwaitingServerApproval, shown
+        // as the device-detail header's "Waiting for server..." spinner.
+        // Reset to false on every new PairWithServer call (a fresh pairing
+        // request starts unconfirmed again).
+        public bool PairedServerTrustConfirmed { get; set; }
+
         // Log window preferences (View > Log...), remembered between
         // launches the same way IsRepeatEnabled/IsShuffleEnabled are - see
         // LogViewModel.

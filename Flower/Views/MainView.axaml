@@ -326,13 +326,27 @@
           <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,16">
             <!-- Server vs. plain-device icon - see MainViewModel.DeviceSidebarIcon;
                  SelectedSidebarItem.Icon is the same one shown in the sidebar row. -->
-            <materialIcons:MaterialIcon Kind="{Binding SelectedSidebarItem.Icon}" Width="28" Height="28" />
-            <!-- SelectedSidebarItem.Name, not SelectedDevice.Alias - the sidebar
-                 row already resolves a local nickname override (DeviceNicknameStore)
-                 over the peer's raw self-reported alias and keeps it live-updated
-                 on rename; SelectedDevice.Alias is that raw, unresolved value. -->
-            <TextBlock Text="{Binding SelectedSidebarItem.Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
-            <TextBlock Text="{Binding SelectedDevice.EndPoint}" Opacity="0.5" FontSize="13" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            <materialIcons:MaterialIcon Kind="{Binding SelectedSidebarItem.Icon}" Width="28" Height="28" VerticalAlignment="Center"/>
+            <StackPanel VerticalAlignment="Center" Spacing="2">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <!-- Only once the paired server has actually approved this
+                     device (see MainViewModel.IsSelectedDeviceTrustConfirmed)
+                     - not just requested, which is IsSelectedDevicePaired
+                     alone (see PairActionLabel's "Waiting for server..."
+                     state below). -->
+                <materialIcons:MaterialIcon Kind="CheckCircle"
+                                             Width="16" Height="16"
+                                             Foreground="#4CAF50"
+                                             VerticalAlignment="Center"
+                                             IsVisible="{Binding IsSelectedDeviceTrustConfirmed}"/>
+                <!-- SelectedSidebarItem.Name, not SelectedDevice.Alias - the sidebar
+                     row already resolves a local nickname override (DeviceNicknameStore)
+                     over the peer's raw self-reported alias and keeps it live-updated
+                     on rename; SelectedDevice.Alias is that raw, unresolved value. -->
+                <TextBlock Text="{Binding SelectedSidebarItem.Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              </StackPanel>
+              <TextBlock Text="{Binding SelectedDevice.EndPoint}" Opacity="0.5" FontSize="13"/>
+            </StackPanel>
             <!-- Only shown for a peer advertising Server mode, while this device
                  is a Client (see MainViewModel.CanPairWithSelectedDevice) - mirrors
                  ServerPickerView's Pair/Unpair button (Settings' Devices tab) so
@@ -342,6 +356,16 @@
                     IsEnabled="{Binding IsPairActionEnabled}"
                     Click="PairActionButton_Click"
                     Margin="12,0,0,0" VerticalAlignment="Center"/>
+            <!-- Spinner while a pairing request has been sent but the server
+                 hasn't approved it yet - see MainViewModel.IsPairAwaitingApproval.
+                 Same "MaterialIcon Kind=Sync, spinning" visual as the sidebar's
+                 own IsSyncing spinner (see this file's Styles block). -->
+            <materialIcons:MaterialIcon Kind="Sync"
+                                         Classes="spinning"
+                                         Width="14" Height="14"
+                                         Opacity="0.55"
+                                         VerticalAlignment="Center"
+                                         IsVisible="{Binding IsPairAwaitingApproval}"/>
             <TextBlock Text="{Binding PairActionHint}"
                        IsVisible="{Binding PairActionHint, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                        Opacity="0.5" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"/>
