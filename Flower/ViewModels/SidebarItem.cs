@@ -81,6 +81,46 @@ public class SidebarItem : ViewModelBase
         set { _isSyncing = value; OnPropertyChanged(); }
     }
 
+    // True only for the one Device row representing MainViewModel's paired
+    // Server (see AppSettings.PairedServerFingerprint) - that row is pinned
+    // in place for the whole session (MainViewModel.BuildSidebarItems/
+    // PairWithServer/RemoveDeviceItem) instead of disappearing the moment
+    // it's no longer discovered like an ordinary Devices/Server row, so it
+    // needs its own reachability glyph (ShowReachableIcon/
+    // ShowUnreachableIcon below, MainView.axaml's check/exclamation icons)
+    // to show whether it's actually reachable right now.
+    private bool _isPairedServer;
+    public bool IsPairedServer
+    {
+        get => _isPairedServer;
+        set
+        {
+            _isPairedServer = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowReachableIcon));
+            OnPropertyChanged(nameof(ShowUnreachableIcon));
+        }
+    }
+
+    // Only meaningful while IsPairedServer - kept up to date by
+    // MainViewModel.AddOrUpdateDeviceSidebarItem/RemoveDeviceItem/
+    // PairWithServer/UnpinPairedServerRow as the peer comes and goes.
+    private bool _isReachable;
+    public bool IsReachable
+    {
+        get => _isReachable;
+        set
+        {
+            _isReachable = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowReachableIcon));
+            OnPropertyChanged(nameof(ShowUnreachableIcon));
+        }
+    }
+
+    public bool ShowReachableIcon   => IsPairedServer && IsReachable;
+    public bool ShowUnreachableIcon => IsPairedServer && !IsReachable;
+
     public SidebarItem(SidebarItemKind kind, string name, MaterialIconKind icon = MaterialIconKind.MusicNote,
         Playlist? playlist = null, DiscoveredDevice? device = null)
     {
