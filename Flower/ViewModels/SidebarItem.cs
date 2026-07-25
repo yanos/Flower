@@ -102,9 +102,10 @@ public class SidebarItem : ViewModelBase
         }
     }
 
-    // Only meaningful while IsPairedServer - kept up to date by
-    // MainViewModel.AddOrUpdateDeviceSidebarItem/RemoveDeviceItem/
-    // PairWithServer/UnpinPairedServerRow as the peer comes and goes.
+    // Only meaningful while IsPairedServer - written exclusively by
+    // MainViewModel.SyncPairedServerSidebarRow, which sources it from
+    // PairedServerReachability (the single source of truth for this - see
+    // that class's own doc comment).
     private bool _isReachable;
     public bool IsReachable
     {

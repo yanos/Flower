@@ -1,5 +1,4 @@
 using Flower.Models;
-using Flower.Persistence;
 
 namespace Flower.Services;
 
@@ -13,27 +12,18 @@ namespace Flower.Services;
 // "don't send this request."
 //
 // Deliberately NOT used by PeerLibraryViewModel, which browses an arbitrary
-// trusted peer's library by design (not just the paired Server), nor by
-// MainViewModel.RefreshRowReachability's IsPeerReachable, which answers "is
-// this row's origin device online at all" for display purposes rather than
-// "may this device actually be asked for it right now."
+// trusted peer's library by design (not just the paired Server).
 public class PeerTrackResolver
 {
-    private readonly NetworkDiscoveryService _networkDiscovery;
-    private readonly AppSettings _appSettings;
+    private readonly PairedServerReachability _reachability;
 
-    public PeerTrackResolver(NetworkDiscoveryService networkDiscovery, AppSettings appSettings)
+    public PeerTrackResolver(PairedServerReachability reachability)
     {
-        _networkDiscovery = networkDiscovery;
-        _appSettings = appSettings;
+        _reachability = reachability;
     }
 
-    public DiscoveredDevice? Resolve(Track track)
-    {
-        if (track.OriginDeviceFingerprint is not { } fingerprint)
-            return null;
-        if (!SyncRolePolicy.MayRequestFrom(_appSettings.PairedServerFingerprint, fingerprint))
-            return null;
-        return _networkDiscovery.FindByFingerprint(fingerprint);
-    }
+    public DiscoveredDevice? Resolve(Track track) =>
+        SyncRolePolicy.MayRequestFrom(_reachability.PairedServerFingerprint, track.OriginDeviceFingerprint)
+            ? _reachability.PairedServerDevice
+            : null;
 }

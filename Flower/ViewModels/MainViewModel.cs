@@ -56,6 +56,7 @@ public partial class MainViewModel : ViewModelBase
     private PeerTrackResolver? _peerTrackResolver;
     private DeviceIdentity? _deviceIdentity;
     private NetworkDiscoveryService? _networkDiscovery;
+    private PairedServerReachability? _reachability;
     private LibraryStore? _libraryStore;
     private AppSettingsStore? _appSettingsStore;
     private PlaylistStore? _playlistStore;
@@ -257,6 +258,12 @@ public partial class MainViewModel : ViewModelBase
     public event EventHandler<PlaylistConflictEventArgs>? PlaylistConflictRequested;
     public event EventHandler<PeerApprovalRequestedEventArgs>? PeerApprovalRequested;
 
+    // Forwards PairedServerReachability.Changed - see the constructor's own
+    // subscription to it. Lets MobileMainViewModel (SearchSongResults, a row
+    // list that doesn't live on Rows) react without needing its own direct
+    // reference to the reachability service.
+    public event EventHandler? ReachabilityChanged;
+
     // Raised by the "Playlist > Rename Playlist" main-menu command - unlike
     // deleting, renaming needs the sidebar's own inline-rename textbox (see
     // MainView.axaml.cs's BeginRename), which is a View concern this ViewModel
@@ -371,10 +378,14 @@ public partial class MainViewModel : ViewModelBase
             OnPropertyChanged();
             OnPropertyChanged(nameof(PairedServerFingerprint));
             OnPropertyChanged(nameof(PairedServerAlias));
-            OnPropertyChanged(nameof(CanForceSync));
-            OnPropertyChanged(nameof(IsPairedServerReachable));
-            OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
             NotifyPairButtonPropertiesChanged();
+            // Reachability itself is unaffected by IsServer alone unless the
+            // PairedServerFingerprint clear above actually changes the
+            // computed value (e.g. flipping to Server mode while paired) -
+            // Recompute() figures that out and fires Changed only if so; see
+            // that method's own doc comment for why this nudge is necessary.
+            _reachability?.Recompute();
+            SyncPairedServerSidebarRow();
         }
     }
 
@@ -401,24 +412,23 @@ public partial class MainViewModel : ViewModelBase
         _appSettings.PairedServerTrustConfirmed = false; // a fresh request - see ConfirmServerTrust
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
 
-        // Pin this device's sidebar row as the paired Server (see
-        // BuildSidebarItems/RemoveDeviceItem) - it's necessarily still live
-        // right now (device came from AvailableServers, itself sourced from
-        // KnownDevices), so mark it reachable outright rather than waiting
-        // for the next DeviceDiscovered re-fire to notice.
+        // Pin this device's sidebar row as the paired Server (identity only -
+        // see SyncPairedServerSidebarRow for the reachability half, and
+        // BuildSidebarItems/RemoveDeviceItem for why this is a persistent
+        // flag rather than something re-derived from Device on every pass).
         var item = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == device.Fingerprint);
         if (item != null)
-        {
             item.IsPairedServer = true;
-            item.IsReachable = true;
-        }
 
         OnPropertyChanged(nameof(PairedServerFingerprint));
         OnPropertyChanged(nameof(PairedServerAlias));
-        OnPropertyChanged(nameof(CanForceSync));
-        OnPropertyChanged(nameof(IsPairedServerReachable));
-        OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
         NotifyPairButtonPropertiesChanged();
+        // device is necessarily still live right now (it came from
+        // AvailableServers, itself sourced from KnownDevices), so
+        // Recompute() picks it up immediately rather than waiting for the
+        // next DeviceDiscovered re-fire to notice.
+        _reachability?.Recompute();
+        SyncPairedServerSidebarRow();
 
         // The server doesn't trust us yet - that's the whole point of asking -
         // so a bulk sync attempt right now would just get a flat 403 (see
@@ -506,10 +516,9 @@ public partial class MainViewModel : ViewModelBase
         UnpinPairedServerRow();
         OnPropertyChanged(nameof(PairedServerFingerprint));
         OnPropertyChanged(nameof(PairedServerAlias));
-        OnPropertyChanged(nameof(CanForceSync));
-        OnPropertyChanged(nameof(IsPairedServerReachable));
-        OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
         NotifyPairButtonPropertiesChanged();
+        _reachability?.Recompute();
+        SyncPairedServerSidebarRow();
     }
 
     // Shared by UnpairServer and the IsServer setter's flip-to-Server-mode
@@ -531,22 +540,16 @@ public partial class MainViewModel : ViewModelBase
         if (pinnedItem.Device == null)
             RemoveDeviceItem(pinnedItem, clearSyncDedup: false);
         else
-        {
             pinnedItem.IsPairedServer = false;
-            pinnedItem.IsReachable = false;
-        }
     }
 
-    // Whether the Client's paired Server (if any) is currently discovered on
-    // the network - the single source of truth for "reachable", shown as
-    // "Server not reachable" under its name in mobile's SettingsView (the
-    // desktop sidebar's equivalent check/exclamation glyph is instead kept
-    // on SidebarItem.IsReachable directly - see AddOrUpdateDeviceSidebarItem/
-    // RemoveDeviceItem - since that surface already tracks per-row state
-    // imperatively rather than re-querying KnownDevices on every bind).
-    public bool IsPairedServerReachable =>
-        !string.IsNullOrEmpty(PairedServerFingerprint) &&
-        (_networkDiscovery?.KnownDevices.Any(d => d.Fingerprint == PairedServerFingerprint) ?? false);
+    // Whether the Client's paired Server (if any) is currently reachable -
+    // a thin pass-through to PairedServerReachability, the single source of
+    // truth for this (see that class's own doc comment). Shown as "Server
+    // not reachable" under its name in mobile's SettingsView; the desktop
+    // sidebar's equivalent check/exclamation glyph reads SidebarItem.IsReachable
+    // instead, kept in sync with the same source via SyncPairedServerSidebarRow.
+    public bool IsPairedServerReachable => _reachability?.IsReachable ?? false;
 
     // Gates mobile SettingsView's "Server not reachable" line - separate
     // from IsPairedServerReachable's own negation so it only shows once
@@ -586,7 +589,7 @@ public partial class MainViewModel : ViewModelBase
         var pairedFingerprint = PairedServerFingerprint;
         if (string.IsNullOrEmpty(pairedFingerprint))
             return;
-        var device = _networkDiscovery?.KnownDevices.FirstOrDefault(d => d.Fingerprint == pairedFingerprint);
+        var device = _reachability?.PairedServerDevice;
         if (device == null)
         {
             _logger.LogWarning("Force sync requested but paired server ({Fingerprint}) is not currently discovered", pairedFingerprint);
@@ -1141,6 +1144,7 @@ public partial class MainViewModel : ViewModelBase
         IMusicImporter importer,
         MainPlaylist mainPlaylist,
         NetworkDiscoveryService networkDiscovery,
+        PairedServerReachability reachability,
         PlaylistSyncService playlistSyncService,
         LibrarySyncService librarySyncService,
         LibraryDownloadService libraryDownloadService,
@@ -1166,6 +1170,7 @@ public partial class MainViewModel : ViewModelBase
         _peerPairingService    = peerPairingService;
         _peerTrackResolver     = peerTrackResolver;
         _networkDiscovery      = networkDiscovery;
+        _reachability          = reachability;
         _deviceIdentity        = deviceIdentity;
         PeerLibrary            = new PeerLibraryViewModel(deviceIdentity, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>());
         _libraryStore          = libraryStore;
@@ -1255,14 +1260,15 @@ public partial class MainViewModel : ViewModelBase
         };
         _logPushTimer.Start();
 
+        // Reachability itself is handled entirely by PairedServerReachability's
+        // own DeviceDiscovered/DeviceLost subscription + this single Changed
+        // handler below - these two lambdas keep only their other,
+        // unrelated responsibilities (general device-list sidebar upkeep,
+        // trust-change handling, sync triggering).
         networkDiscovery.DeviceDiscovered += (_, device) =>
         {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
-            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(CanForceSync)));
-            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(IsPairedServerReachable)));
-            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning)));
-            Dispatcher.UIThread.Post(RefreshRowReachability);
             HandlePeerTrustChanged(device);
             TriggerSyncIfReady(device);
         };
@@ -1270,10 +1276,19 @@ public partial class MainViewModel : ViewModelBase
         {
             Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
-            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(CanForceSync)));
-            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(IsPairedServerReachable)));
-            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning)));
-            Dispatcher.UIThread.Post(RefreshRowReachability);
+        };
+
+        // The one place reachability propagates outward - see
+        // PairedServerReachability's own doc comment. Fires already on the UI
+        // thread.
+        reachability.Changed += (_, _) =>
+        {
+            OnPropertyChanged(nameof(IsPairedServerReachable));
+            OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
+            OnPropertyChanged(nameof(CanForceSync));
+            SyncPairedServerSidebarRow();
+            TrackAvailability.Apply(Rows, PairedServerFingerprint, reachability.IsReachable);
+            ReachabilityChanged?.Invoke(this, EventArgs.Empty);
         };
 
         // On mobile, MainViewModel is still constructed (App.axaml.cs resolves it
@@ -1614,14 +1629,14 @@ public partial class MainViewModel : ViewModelBase
             // Re-discovered after having gone offline while paired (see
             // RemoveDeviceItem, which keeps this row's IsPairedServer set
             // rather than removing it) - or claimed straight from
-            // BuildSidebarItems' placeholder (IsPairedServer already true,
-            // IsReachable already false) the first time this session. Either
-            // way, flip its glyph back to reachable now that it's live again.
+            // BuildSidebarItems' placeholder (IsPairedServer already true)
+            // the first time this session. Either way, SyncPairedServerSidebarRow
+            // below flips its glyph back to reachable now that it's live again.
             existing.IsPairedServer = device.Fingerprint == PairedServerFingerprint;
-            existing.IsReachable = device.Fingerprint == PairedServerFingerprint;
             RelocateDeviceSidebarItemIfNeeded(existing, device);
             RemoveDuplicateDeviceSidebarItems(existing, device);
             RefreshDeviceDisplayNames();
+            SyncPairedServerSidebarRow();
             return;
         }
 
@@ -1629,11 +1644,28 @@ public partial class MainViewModel : ViewModelBase
         {
             IsSyncing = device.Fingerprint == PairedServerFingerprint && IsSyncing,
             IsPairedServer = device.Fingerprint == PairedServerFingerprint,
-            IsReachable = device.Fingerprint == PairedServerFingerprint,
         };
         InsertDeviceSidebarItem(added, device);
         RemoveDuplicateDeviceSidebarItems(added, device);
         RefreshDeviceDisplayNames();
+        SyncPairedServerSidebarRow();
+    }
+
+    // Single place that syncs the sidebar's one pinned "paired Server" row's
+    // reachability glyph from PairedServerReachability - identity (which row,
+    // if any, IsPairedServer) is still set independently at each structural
+    // sidebar-mutation site above/below (BuildSidebarItems/PairWithServer/
+    // AddOrUpdateDeviceSidebarItem/RemoveDeviceItem), since the pinned row can
+    // exist with no live Device at all (see BuildSidebarItems' placeholder) -
+    // there's nothing to derive identity from in that case. This only ever
+    // touches whichever row already has IsPairedServer == true. Safe/cheap to
+    // call unconditionally after any of those structural changes, or from
+    // PairedServerReachability.Changed.
+    private void SyncPairedServerSidebarRow()
+    {
+        var pinnedItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.IsPairedServer);
+        if (pinnedItem != null)
+            pinnedItem.IsReachable = _reachability?.IsReachable ?? false;
     }
 
     private static string DeviceSectionHeaderName(DiscoveredDevice device) => device.IsServer ? "Server" : "Devices";
@@ -1887,7 +1919,7 @@ public partial class MainViewModel : ViewModelBase
         // a since-unpaired row still gets removed for real below.
         if (clearSyncDedup && item.IsPairedServer)
         {
-            item.IsReachable = false;
+            SyncPairedServerSidebarRow();
             return;
         }
 
@@ -1899,18 +1931,6 @@ public partial class MainViewModel : ViewModelBase
         RemoveHeaderIfEmpty(header);
         RefreshDeviceDisplayNames();
     }
-
-    // Quiet lookup for RefreshRowReachability's IsPeerReachable, which calls
-    // this for potentially every placeholder row in Rows on every device-list
-    // change - deliberately NOT gated to the currently paired Server the way
-    // PeerTrackResolver.Resolve is: this answers "is this row's origin device
-    // online at all" for display purposes, a different question from "may
-    // this device actually be asked for it right now" (see PeerTrackResolver's
-    // own doc comment for why those two diverge, e.g. right after an Unpair).
-    private DiscoveredDevice? FindDeviceByFingerprint(string? fingerprint) =>
-        fingerprint != null
-            ? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == fingerprint)?.Device
-            : null;
 
     // Shared by DownloadTrackAsync and GetStreamUrl - delegates the actual
     // resolution (and the "only the currently paired Server" gating that goes
@@ -1925,22 +1945,6 @@ public partial class MainViewModel : ViewModelBase
         if (device == null)
             _logger.LogWarning("Cannot resolve a peer for {Title}: no currently paired, reachable origin device", track.Title);
         return device;
-    }
-
-    // Live-updates every currently-built row's IsPeerReachable without a full
-    // Rows rebuild - called whenever the Devices sidebar changes (see
-    // AddOrUpdateDeviceSidebarItem/RemoveDeviceSidebarItem's callers) and
-    // once after every fresh Rows build (RebuildRowsAsync), since a
-    // just-built row otherwise starts from TrackRowViewModel's own
-    // assume-reachable default regardless of whether that's actually true
-    // right now. Only meaningful for placeholders (see
-    // TrackRowViewModel.IsUnavailable) - computed for every row uniformly
-    // anyway since a downloaded track's own IsPeerReachable value is simply
-    // never read.
-    private void RefreshRowReachability()
-    {
-        foreach (var row in Rows)
-            row.IsPeerReachable = row.Track.Path != null || FindDeviceByFingerprint(row.Track.OriginDeviceFingerprint) != null;
     }
 
     // Downloads one placeholder track's audio from whichever peer currently holds
@@ -2344,6 +2348,8 @@ public partial class MainViewModel : ViewModelBase
         var playing    = CurrentlyPlayingTrack;
         var baseTracks = GetBaseTracksForFilter();
         var allTracks  = _allTracks;
+        var pairedServerFingerprint = PairedServerFingerprint;
+        var pairedServerReachable   = IsPairedServerReachable;
 
         // Albums/Recently Added show a tile grid instead of Rows (see
         // IsShowingAlbumGrid) built straight from _allTracks, not from
@@ -2364,7 +2370,7 @@ public partial class MainViewModel : ViewModelBase
         // a real device as a large chunk of the pause after tapping Back.
         var (rows, albumTiles, recentTiles) = await Task.Run(() =>
         {
-            var builtRows = TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear);
+            var builtRows = TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
             if (!includeGridTiles)
                 return (builtRows, (List<AlbumTileViewModel>?)null, (List<AlbumTileViewModel>?)null);
 
@@ -2385,7 +2391,6 @@ public partial class MainViewModel : ViewModelBase
             AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles!);
             RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(recentTiles!);
         }
-        RefreshRowReachability(); // fresh rows start from TrackRowViewModel's own assume-reachable default.
         OnPropertyChanged(nameof(StatusBarText));
     }
 
