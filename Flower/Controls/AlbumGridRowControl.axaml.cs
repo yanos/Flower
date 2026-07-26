@@ -177,7 +177,7 @@ public partial class AlbumGridRowControl : UserControl
                 break;
             case Key.Enter:
                 if (row.CurrentTrack is { } track)
-                    Ioc.Default.GetService<MainViewModel>()?.PlayTrack(track);
+                    Ioc.Default.GetService<MainViewModel>()?.PlayTrackInExpandedAlbum(track);
                 e.Handled = true;
                 break;
         }
@@ -186,7 +186,7 @@ public partial class AlbumGridRowControl : UserControl
     private void TrackRow_DoubleTapped(object? sender, TappedEventArgs e)
     {
         if ((sender as Border)?.DataContext is ExpandedTrackRowViewModel row)
-            Ioc.Default.GetService<MainViewModel>()?.PlayTrack(row.Track);
+            Ioc.Default.GetService<MainViewModel>()?.PlayTrackInExpandedAlbum(row.Track);
     }
 
     // Get Info / Add To Playlist / Locate File - the same three actions

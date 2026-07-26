@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
-using System.Threading.Tasks;
 using Flower.Manager;
 using Flower.Models;
+using Flower.Tests.TestSupport;
 
 namespace Flower.Tests;
 
@@ -12,35 +12,6 @@ namespace Flower.Tests;
 // LibVLC decode.
 public class GaplessCoordinatorTests
 {
-    private sealed class FakeTrackDecoder : ITrackDecoder
-    {
-        public Track Track { get; }
-        public long BytesProduced { get; set; }
-        public bool PrepareResult { get; set; } = true;
-
-        public volatile bool StartDecodingCalled;
-        public volatile bool RetireCalled;
-        public GaplessRingBuffer? PromotedTo { get; private set; }
-        public float? LastSeekPosition { get; private set; }
-
-        public event Action? Drained;
-        public event Action? Faulted;
-
-        public FakeTrackDecoder(Track track) => Track = track;
-
-        public Task<bool> PrepareAsync(CancellationToken cancellationToken = default) => Task.FromResult(PrepareResult);
-        public void StartDecoding() => StartDecodingCalled = true;
-        public void Seek(float position) => LastSeekPosition = position;
-        public void PromoteTarget(GaplessRingBuffer newTarget) => PromotedTo = newTarget;
-        public void Retire() => RetireCalled = true;
-        public void Dispose()
-        {
-        }
-
-        public void RaiseDrained() => Drained?.Invoke();
-        public void RaiseFaulted() => Faulted?.Invoke();
-    }
-
     private sealed class Harness
     {
         public GaplessCoordinator Coordinator { get; }
@@ -266,5 +237,88 @@ public class GaplessCoordinatorTests
         h.Coordinator.Seek(0.5f);
 
         Assert.Equal(0.5f, h.LatestDecoderFor(a).LastSeekPosition);
+    }
+
+    // CurrentTrackBytesProduced is deliberately driven off the shared ring's
+    // actual read/write counters, not FakeTrackDecoder.BytesProduced (a
+    // plain settable property that doesn't touch any ring at all) - see
+    // GaplessCoordinator's _currentTrackReadSplit remarks for why a
+    // decode-side counter can't represent real playback position (it can be
+    // completely frozen after a handover if decode-ahead already finished).
+    // These tests drive the real SharedRing directly to simulate "the
+    // decoder wrote N bytes" / "the sink consumed N bytes".
+    [Fact]
+    public void CurrentTrackBytesProduced_reports_bytes_actually_consumed_from_the_ring_for_a_freshly_played_track()
+    {
+        var h = new Harness();
+        var a = T("A");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+
+        h.SharedRing.TryWrite(new byte[1000]);
+        h.SharedRing.Read(new byte[300]);
+
+        Assert.Equal(300, h.Coordinator.CurrentTrackBytesProduced);
+    }
+
+    [Fact]
+    public void CurrentTrackBytesProduced_excludes_bytes_from_before_a_natural_handover_promotion()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = T("B");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+        h.Coordinator.SetUpcoming(b);
+        WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should be armed and start decode-ahead");
+
+        // A wrote 1000 bytes total and the sink has consumed 600 of them so
+        // far - 400 of A's tail is still sitting in the ring, unread, at
+        // the moment of the handover below.
+        h.SharedRing.TryWrite(new byte[1000]);
+        h.SharedRing.Read(new byte[600]);
+
+        h.LatestDecoderFor(a).RaiseDrained();
+        Assert.Same(b, h.Coordinator.CurrentTrack);
+
+        // Nothing of B has reached the sink yet - elapsed time for the
+        // newly-current track should read zero.
+        Assert.Equal(0, h.Coordinator.CurrentTrackBytesProduced);
+
+        // Simulate PromoteTarget appending B's already-decoded backlog
+        // right after the split, then the sink finishing off A's leftover
+        // tail (400 bytes) before it ever reaches B's audio.
+        h.SharedRing.TryWrite(new byte[300]);
+        h.SharedRing.Read(new byte[400]);
+        Assert.Equal(0, h.Coordinator.CurrentTrackBytesProduced);
+
+        // Only bytes consumed *past* the split point - B's own audio -
+        // count from here.
+        h.SharedRing.Read(new byte[300]);
+        Assert.Equal(300, h.Coordinator.CurrentTrackBytesProduced);
+    }
+
+    [Fact]
+    public void Seek_reports_the_seek_target_immediately_then_grows_from_there()
+    {
+        var h = new Harness();
+        var a = T("A");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+
+        h.Coordinator.Seek(0.5f);
+
+        // A is 3 minutes (see T()); half way in is 90s worth of canonical
+        // PCM - reported immediately, before any post-seek audio has
+        // actually reached the sink.
+        var targetBytes = (long)(90 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        Assert.Equal(targetBytes, h.Coordinator.CurrentTrackBytesProduced);
+        Assert.Equal(0.5f, h.LatestDecoderFor(a).LastSeekPosition);
+
+        // Once real audio starts flowing again post-seek, it adds on top of
+        // the target instead of restarting from zero.
+        h.SharedRing.TryWrite(new byte[300]);
+        h.SharedRing.Read(new byte[300]);
+        Assert.Equal(targetBytes + 300, h.Coordinator.CurrentTrackBytesProduced);
     }
 }

@@ -5,45 +5,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 
 namespace Flower.Tests;
 
 public class PlaylistControlViewModelTests
 {
-    // Minimal stand-in for GaplessAudioManager - PlaylistControlViewModel only ever
-    // calls Play() on it directly (Resume/Pause/Stop are driven by user actions
-    // this test suite doesn't exercise), and its events are wired up but never
-    // raised here since doing so would run the EndReached handler's
-    // Dispatcher.UIThread.Post callback, which needs a running Avalonia
-    // dispatcher this headless test host doesn't have.
-    private sealed class FakeAudioManager : IAudioManager
-    {
-        public bool IsPlaying { get; set; }
-        public int Volume { get; set; }
-        public float Position { get; set; }
-        public long Time { get; set; }
-        public long Length { get; set; }
-
-        public Track? LastPlayed { get; private set; }
-        public Track? LastUpcoming { get; private set; }
-
-        public void Play(Track track) => LastPlayed = track;
-        public void SetUpcoming(Track? next) => LastUpcoming = next;
-        public void Resume() { }
-        public void Pause() { }
-        public void Stop() { }
-
-#pragma warning disable CS0067 // required by IAudioManager, unused by these tests
-        public event EventHandler? Paused;
-        public event EventHandler? Stopped;
-        public event EventHandler? Playing;
-        public event EventHandler? PositionChanged;
-        public event EventHandler? VolumeChanged;
-        public event EventHandler? EndReached;
-#pragma warning restore CS0067
-    }
-
     private static Track T(string title, string? path = null) =>
         new Track { Title = title, Path = path ?? $"/music/{title}.mp3" };
 
@@ -232,5 +200,61 @@ public class PlaylistControlViewModelTests
         vm.Next();
 
         Assert.Same(only, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Previous_moves_to_the_preceding_track_in_playlist_order()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out _);
+        vm.Play(b);
+
+        vm.Previous();
+
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Previous_at_the_start_of_the_playlist_does_not_wrap_to_the_last_track()
+    {
+        // Matches Palylist.GetPreviousTrack's documented behavior - unlike
+        // Next() wrapping forward, Previous() at track 0 stays put rather
+        // than wrapping to the end.
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out _);
+        vm.Play(a);
+
+        vm.Previous();
+
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Previous_arms_the_track_after_the_new_current_track_as_upcoming()
+    {
+        var a = T("A");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { a, b, c }, out var audio);
+        vm.Play(c);
+
+        vm.Previous();
+
+        Assert.Same(c, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void Previous_before_anything_has_played_does_nothing()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+
+        vm.Previous();
+
+        Assert.Null(vm.CurrentlyPlayingTrack);
+        Assert.Null(audio.LastPlayed);
     }
 }
