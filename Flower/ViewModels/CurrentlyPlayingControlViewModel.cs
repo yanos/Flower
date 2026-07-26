@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Timers;
 
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -23,6 +24,18 @@ namespace Flower.ViewModels
         private double _seekPosition;
         private bool _isUpdatingFromAudio;
         private Bitmap? _albumArt;
+
+        // Debounces the seek bar: a drag fires SeekPosition's setter on
+        // every pointer-move tick, and each one used to issue an immediate
+        // native LibVLC seek. Firing those back-to-back, faster than a seek
+        // can settle, was confirmed (via GaplessCoordinator/TrackDecoder
+        // logging during a real repro) to wedge the decode pipeline
+        // permanently - the shared ring's writer just stops producing PCM
+        // forever, and the render sink starts repeating its last buffer.
+        // Only the last position after a short pause in dragging is ever
+        // actually sent to the audio manager.
+        private readonly Timer _seekDebounceTimer;
+        private float _pendingSeekPosition;
 
         public Track? CurrentlyPlayingTrack => _playlistControlViewModel.CurrentlyPlayingTrack;
 
@@ -49,8 +62,12 @@ namespace Flower.ViewModels
             {
                 _seekPosition = value;
                 OnPropertyChanged();
-                if (!_isUpdatingFromAudio && _audioManager.IsPlaying)
-                    _audioManager.Position = (float)value;
+                if (_isUpdatingFromAudio || !_audioManager.IsPlaying)
+                    return;
+
+                _pendingSeekPosition = (float)value;
+                _seekDebounceTimer.Stop();
+                _seekDebounceTimer.Start();
             }
         }
 
@@ -95,7 +112,7 @@ namespace Flower.ViewModels
             // A live peer-stream URL (see PeerLibraryViewModel.ToTransientTrack)
             // is not a local filesystem path - skip straight to no-art instead of
             // throwing TagLib/IO exceptions trying to read it as one.
-            // VlcAudioManager.Play uses the same "://" check to tell them apart.
+            // TrackDecoder.EnsureMedia uses the same "://" check to tell them apart.
             if (track?.Path is not { } path || path.Contains("://")) { AlbumArt = null; return; }
 
             _ = Task.Run(() =>
@@ -188,6 +205,9 @@ namespace Flower.ViewModels
             _audioManager = audioManager;
             _library = library;
             _logger = logger;
+
+            _seekDebounceTimer = new Timer(150) { AutoReset = false };
+            _seekDebounceTimer.Elapsed += (_, _) => _audioManager.Position = _pendingSeekPosition;
 
             _playlistControlViewModel.PropertyChanged += (s, e) =>
             {

@@ -138,7 +138,7 @@ namespace Flower.ViewModels
                     _library.NotifyTrackChanged();
                     await _libraryStore.SaveAsync(_library.Tracks);
 
-                    var nextTrack = IsRepeatEnabled ? finishedTrack : GetNextTrack(finishedTrack);
+                    var nextTrack = GetUpcomingTrack(finishedTrack);
                     if (nextTrack != null)
                     {
                         _logger.LogDebug("Auto-advancing to {Title} (repeat={Repeat}, shuffle={Shuffle})", nextTrack.Title, IsRepeatEnabled, IsShuffleEnabled);
@@ -159,6 +159,12 @@ namespace Flower.ViewModels
             _logger.LogInformation("Repeat {State}", IsRepeatEnabled ? "enabled" : "disabled");
             _appSettings.IsRepeatEnabled = IsRepeatEnabled;
             _ = _appSettingsStore.SaveAsync(_appSettings);
+
+            // Repeat/shuffle change what "upcoming" resolves to, so a
+            // gapless IAudioManager needs to hear about it even though the
+            // currently playing track itself isn't changing.
+            if (CurrentlyPlayingTrack is { } currentTrack)
+                _audioManager.SetUpcoming(GetUpcomingTrack(currentTrack));
         }
 
         public void ToggleShuffle()
@@ -167,7 +173,16 @@ namespace Flower.ViewModels
             _logger.LogInformation("Shuffle {State}", IsShuffleEnabled ? "enabled" : "disabled");
             _appSettings.IsShuffleEnabled = IsShuffleEnabled;
             _ = _appSettingsStore.SaveAsync(_appSettings);
+
+            if (CurrentlyPlayingTrack is { } currentTrack)
+                _audioManager.SetUpcoming(GetUpcomingTrack(currentTrack));
         }
+
+        // Matches the EndReached handler's own nextTrack computation above -
+        // what should play after currentTrack, given the current
+        // repeat/shuffle state.
+        private Track? GetUpcomingTrack(Track currentTrack) =>
+            IsRepeatEnabled ? currentTrack : GetNextTrack(currentTrack);
 
         private Track? GetNextTrack(Track currentTrack)
         {
@@ -200,6 +215,10 @@ namespace Flower.ViewModels
             SelectedTrack = track;
             CurrentlyPlayingTrack = track;
             _audioManager.Play(track);
+
+            // Arms decode-ahead for whichever track should follow this one,
+            // so the gapless pipeline can splice it in with no gap.
+            _audioManager.SetUpcoming(GetUpcomingTrack(track));
         }
 
         public void PlayOrPause(Track track)

@@ -11,7 +11,7 @@ namespace Flower.Tests;
 
 public class PlaylistControlViewModelTests
 {
-    // Minimal stand-in for VlcAudioManager - PlaylistControlViewModel only ever
+    // Minimal stand-in for GaplessAudioManager - PlaylistControlViewModel only ever
     // calls Play() on it directly (Resume/Pause/Stop are driven by user actions
     // this test suite doesn't exercise), and its events are wired up but never
     // raised here since doing so would run the EndReached handler's
@@ -26,8 +26,10 @@ public class PlaylistControlViewModelTests
         public long Length { get; set; }
 
         public Track? LastPlayed { get; private set; }
+        public Track? LastUpcoming { get; private set; }
 
         public void Play(Track track) => LastPlayed = track;
+        public void SetUpcoming(Track? next) => LastUpcoming = next;
         public void Resume() { }
         public void Pause() { }
         public void Stop() { }
@@ -108,6 +110,72 @@ public class PlaylistControlViewModelTests
         Assert.Same(track, vm.CurrentlyPlayingTrack);
         Assert.Same(track, vm.SelectedTrack);
         Assert.Same(track, audio.LastPlayed);
+    }
+
+    [Fact]
+    public void Play_arms_the_next_track_in_playlist_order_as_upcoming()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+
+        vm.Play(a);
+
+        Assert.Same(b, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void Play_with_repeat_enabled_arms_the_same_track_as_upcoming()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.ToggleRepeat();
+
+        vm.Play(a);
+
+        Assert.Same(a, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void ToggleRepeat_while_a_track_is_playing_rearms_upcoming_to_the_current_track()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.Play(a);
+        Assert.Same(b, audio.LastUpcoming);
+
+        vm.ToggleRepeat();
+
+        Assert.Same(a, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void ToggleShuffle_while_a_track_is_playing_rearms_upcoming_to_a_different_track()
+    {
+        var tracks = new List<Track> { T("A"), T("B"), T("C") };
+        var vm = MakeViewModel(tracks, out var audio);
+        vm.Play(tracks[0]);
+
+        vm.ToggleShuffle();
+
+        Assert.NotSame(tracks[0], audio.LastUpcoming);
+        Assert.Contains(audio.LastUpcoming, tracks);
+    }
+
+    [Fact]
+    public void Next_arms_the_track_after_the_new_current_track_as_upcoming()
+    {
+        var a = T("A");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { a, b, c }, out var audio);
+        vm.Play(a);
+
+        vm.Next();
+
+        Assert.Same(c, audio.LastUpcoming);
     }
 
     [Fact]

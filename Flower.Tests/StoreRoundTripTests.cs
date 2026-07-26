@@ -97,7 +97,7 @@ public class StoreRoundTripTests : IDisposable
         Assert.Equal(1, loaded[0].PlayCount);
     }
 
-    // Minimal stand-in for VlcAudioManager, just for raising EndReached below -
+    // Minimal stand-in for GaplessAudioManager, just for raising EndReached below -
     // see PlaylistControlViewModelTests.FakeAudioManager for why that test
     // class never raises EndReached itself (needs a live Avalonia dispatcher).
     // This test avoids that by giving PlaylistControlViewModel an empty
@@ -113,6 +113,7 @@ public class StoreRoundTripTests : IDisposable
         public long Time { get; set; }
         public long Length { get; set; }
         public void Play(Track track) { }
+        public void SetUpcoming(Track? next) { }
         public void Resume() { }
         public void Pause() { }
         public void Stop() { }

@@ -9,6 +9,8 @@ using Avalonia.Markup.Xaml;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
+using LibVLCSharp.Shared;
+
 using Flower.Controls;
 using Flower.Logging;
 using Flower.Manager;
@@ -142,9 +144,30 @@ public partial class App : Application
         var pairedServerReachability = new PairedServerReachability(networkDiscovery, appSettings);
         var peerTrackResolver = new PeerTrackResolver(pairedServerReachability);
 
+        // Separate LibVLC cores for decode (GaplessAudioManager's
+        // TrackDecoders) versus render (LibVlcRawStreamSink's own
+        // MediaPlayer, when no platform-specific sink is installed) -
+        // confirmed via watchdog logging that a seek on a decode-side
+        // MediaPlayer could stall the render MediaPlayer's own internal
+        // pump thread for several seconds even while the decoder kept
+        // producing PCM normally the whole time; the two MediaPlayers have
+        // no code path connecting them apart from the LibVLC core object
+        // they used to share, so isolating them onto independent cores
+        // removes whatever core-level resource a decode-side seek was
+        // contending with the render side over.
+        VlcNativeSetup.Initialize();
+        var libVLC = new LibVLC();
+        var renderLibVLC = new LibVLC();
+        var audioSink = PlatformAudioManager.Current ?? new LibVlcRawStreamSink(renderLibVLC, AppLogging.CreateTypedLogger<LibVlcRawStreamSink>());
+
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
-                .AddSingleton<IAudioManager>(new VlcAudioManager())
+                .AddSingleton<IAudioManager>(new GaplessAudioManager(
+                    libVLC,
+                    audioSink,
+                    AppLogging.CreateTypedLogger<GaplessAudioManager>(),
+                    AppLogging.CreateTypedLogger<GaplessCoordinator>(),
+                    AppLogging.CreateTypedLogger<TrackDecoder>()))
                 .AddSingleton<PlaylistControlViewModel>()
                 .AddSingleton(library)
                 .AddSingleton(mainPlaylist)

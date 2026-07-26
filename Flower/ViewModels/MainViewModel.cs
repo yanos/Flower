@@ -1389,7 +1389,7 @@ public partial class MainViewModel : ViewModelBase
     // PlaylistControlViewModel.Play - that call goes straight into
     // IAudioManager.Play, which cannot handle a placeholder (Path == null,
     // not yet downloaded - see SYNC-PLAN.md Phase 3) the way this method
-    // does: confirmed as a crash inside VlcAudioManager (LibVLCSharp's Media
+    // does: confirmed as a crash inside the old VlcAudioManager (LibVLCSharp's Media
     // constructor rejecting a null mrl) wherever a placeholder reached Play
     // directly (PlayAlbum's tracks[0], and PlayOrPauseFromCurrentView's
     // auto-picked first track, before both were routed through this).

@@ -131,7 +131,7 @@ public sealed class PeerLibraryViewModel : ViewModelBase
     // Playing" playlist (same pattern as MainViewModel.PlayAlbum), so Next/
     // Previous naturally walk through it - none of these Tracks are added to
     // Library/persisted anywhere; Path is a live http://peer/rest/stream URL,
-    // which VlcAudioManager.Play already streams directly (it branches on any
+    // which TrackDecoder.EnsureMedia already streams directly (it branches on any
     // Path containing "://", originally for Android's content:// URIs).
     public void PlaySong(Child song)
     {
