@@ -45,12 +45,38 @@ namespace Flower.Manager
             ILogger<GaplessAudioManager> logger,
             ILogger<GaplessCoordinator>? coordinatorLogger = null,
             ILogger<TrackDecoder>? trackDecoderLogger = null)
+            : this(new GaplessRingBuffer(RingCapacityBytes), libVLC, sink, logger, coordinatorLogger, trackDecoderLogger)
+        {
+        }
+
+        private GaplessAudioManager(
+            GaplessRingBuffer sharedRing,
+            LibVLC libVLC,
+            IAudioSink sink,
+            ILogger<GaplessAudioManager> logger,
+            ILogger<GaplessCoordinator>? coordinatorLogger,
+            ILogger<TrackDecoder>? trackDecoderLogger)
+            : this(sharedRing, new GaplessCoordinator(libVLC, sharedRing, coordinatorLogger, trackDecoderLogger), sink, logger)
+        {
+        }
+
+        // Lets tests substitute a GaplessCoordinator built against a fake
+        // ITrackDecoder factory, so this class's own glue logic (Time/
+        // Position math, event forwarding, Play/Resume/Pause/Stop
+        // delegation) can be exercised without a real LibVLC - mirrors
+        // GaplessCoordinator's own fake-decoder-factory constructor, which
+        // exists for exactly the same reason.
+        public GaplessAudioManager(
+            GaplessRingBuffer sharedRing,
+            GaplessCoordinator coordinator,
+            IAudioSink sink,
+            ILogger<GaplessAudioManager> logger)
         {
             _sink = sink;
             _logger = logger;
 
-            _sharedRing = new GaplessRingBuffer(RingCapacityBytes);
-            _coordinator = new GaplessCoordinator(libVLC, _sharedRing, coordinatorLogger, trackDecoderLogger);
+            _sharedRing = sharedRing;
+            _coordinator = coordinator;
             _coordinator.EndReached += track =>
             {
                 _logger.LogInformation("EndReached: {Path}", track.Path);

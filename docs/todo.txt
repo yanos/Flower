@@ -33,7 +33,7 @@ details:
  when reaching the end of an album, the queued song is the first song from this album
  lock screen widget should stay with the queue song
  album art top align on mobile
- next song doesnt always play
+ next song doesn't always play
  track last played for each song
  option to toggle each log category (level, category, timestamp)
 

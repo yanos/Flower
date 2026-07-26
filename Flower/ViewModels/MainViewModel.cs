@@ -1427,6 +1427,28 @@ public partial class MainViewModel : ViewModelBase
         PlayResolvingPlaceholder(tracks[0]);
     }
 
+    // Enter/double-click on an individual track row inside the inline-
+    // expanded album (AlbumGridRowControl), as opposed to double-clicking
+    // the album tile itself (PlayAlbum above). Deliberately does NOT go
+    // through PlayTrack/SyncPlayQueueToCurrentView: that sources the queue
+    // from _currentFilteredTracks, which for the Albums/Recently Added grid
+    // is driven by _selectedSubItems - the Ctrl/Shift multi-select used for
+    // drag-to-playlist (see ExpandedAlbumName's remarks), not by which
+    // album is actually expanded on screen. Left-over multi-selected tiles
+    // from that gesture made the queue silently become empty, or a union of
+    // tracks across every selected album - playback would run off the end
+    // of the displayed album straight into a different one. Queuing
+    // ExpandedAlbumTracks directly - the same list PlayAlbum uses - keeps
+    // the queue matching what's actually on screen.
+    public void PlayTrackInExpandedAlbum(Track track)
+    {
+        if (ExpandedAlbumTracks.Count == 0)
+            return;
+
+        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(ExpandedAlbumTracks)));
+        PlayResolvingPlaceholder(track);
+    }
+
     // Space bar / toolbar play-pause button. Only snapshots a fresh queue when
     // PlaylistControlViewModel.PlayOrPause is actually about to start a track from
     // scratch (nothing currently playing or paused) - mirrors the exact condition

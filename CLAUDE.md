@@ -29,10 +29,15 @@ Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#), ru
 
 ```bash
 dotnet build Flower.Desktop/Flower.Desktop.csproj
-dotnet test Flower.Tests/Flower.Tests.csproj
+dotnet test Flower.Tests/Flower.Tests.csproj --filter Category!=RequiresLibVLC   # fast, day-to-day
+dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs a local VLC install
 ```
 
-`Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, and the JSON stores — xUnit tests against pure logic in the shared library.
+`Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `TrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no LibVLC), real-LibVLC decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresLibVLC`, need a local VLC install same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`) these all build on.
+
+`GaplessCoordinator` gives the armed (decode-ahead) role its own independent LibVLC core, separate from current's — two `MediaPlayer`s sharing one core was silently dropping `OnDrain`/`EndReached` under real decode load. See its `_secondCore`/`_cores` remarks and `GaplessCoordinatorRealDecodeTests`' class comment for the full writeup, including a second bug that fix exposed (a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`).
+
+Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is driven off `GaplessCoordinator.CurrentTrackBytesProduced`, which is computed from the shared ring's actual bytes-*read* (real playback consumption), not a decoder's own `BytesProduced` (decode progress) — a decoder that finished decoding ahead before its track was promoted stops producing any new bytes at all, so a decode-side counter reads as permanently frozen at zero for that whole track. See `_currentTrackReadSplit`'s remarks on `GaplessCoordinator`.
 
 ## Git Workflow
 

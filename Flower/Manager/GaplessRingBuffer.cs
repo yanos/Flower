@@ -70,6 +70,34 @@ namespace Flower.Manager
             }
         }
 
+        // Cumulative bytes ever read out of this ring since the current
+        // generation began (0 immediately after Reset(), even before the
+        // reader notices it) - unlike AvailableBytes this reflects real
+        // consumption (what actually reached the render sink), which is
+        // what GaplessCoordinator needs to compute playback position: a
+        // decoder can decode arbitrarily far ahead of real time, but this
+        // only advances as fast as the reader actually drains the ring.
+        public long TotalBytesRead
+        {
+            get
+            {
+                var generation = Volatile.Read(ref _generation);
+                return Volatile.Read(ref _readerGeneration) == generation ? Volatile.Read(ref _readIndex) : 0;
+            }
+        }
+
+        // Cumulative bytes ever written into this ring since the current
+        // generation began - see TotalBytesRead. Used to mark the
+        // write-position split point between tracks at a gapless handover.
+        public long TotalBytesWritten
+        {
+            get
+            {
+                var generation = Volatile.Read(ref _generation);
+                return Volatile.Read(ref _writerGeneration) == generation ? Volatile.Read(ref _writeIndex) : 0;
+            }
+        }
+
         // Reads up to dest.Length bytes without blocking. Returns the number
         // of bytes actually copied - 0 means the buffer is currently empty,
         // not end-of-stream (callers decide what "empty" means for them).

@@ -37,28 +37,73 @@ namespace Flower.Manager
         private const int StagingCapacityBytes = 60 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
 
         private readonly GaplessRingBuffer _sharedRing;
-        private readonly Func<Track, GaplessRingBuffer, ITrackDecoder> _decoderFactory;
+        private readonly Func<Track, GaplessRingBuffer, ITrackDecoder> _currentDecoderFactory;
+        private readonly Func<Track, GaplessRingBuffer, ITrackDecoder> _armedDecoderFactory;
         private readonly object _gate = new();
+
+        // Second, independent LibVLC core used exclusively for the armed
+        // (decode-ahead) role - only non-null when constructed via the
+        // LibVLC-backed constructor below. GaplessCoordinatorRealDecodeTests
+        // proved that two MediaPlayers (current + armed, both
+        // SetAudioCallbacks-based) alive on one shared LibVLC core is enough
+        // to make the current decoder's OnDrain - and even its higher-level
+        // EndReached - silently fail to fire roughly 80% of the time, no
+        // matter how long it's given; adding diagnostic logging reliably
+        // masked the race every time, the signature of a genuine
+        // timing/scheduling issue inside LibVLC's own event dispatch under
+        // concurrent SetAudioCallbacks players, not an application-level
+        // bug. Giving the armed role a completely separate core removes that
+        // contention outright rather than trying to detect or paper over it
+        // with a coarser timeout. _currentCoreIndex/_cores below make
+        // current and armed always land on different cores even as their
+        // roles swap across repeated handovers (see Play/SetUpcoming/the
+        // promotion branch of HandleDrainedOrFaulted).
+        private readonly LibVLC? _secondCore;
+        private readonly LibVLC[]? _cores;
+        private int _currentCoreIndex;
 
         private ITrackDecoder? _current;
         private string? _currentPath;
 
-        // _current.BytesProduced is decode progress, not playback progress -
-        // it runs way ahead of real time for a track that was decode-ahead
-        // buffered (up to StagingCapacityBytes) before being promoted, since
-        // arming starts the instant the *previous* track begins, not a few
-        // seconds before it ends. Subtracting this snapshot (taken at the
-        // exact moment a decoder becomes current) turns "total bytes ever
-        // decoded" back into "bytes decoded since this track became
-        // current", which - once a decoder is current, its writes are
-        // backpressure-paced by the shared ring's small capacity - tracks
-        // real elapsed playback time the same way it always did for a
-        // freshly Play()'d track (whose baseline is simply 0).
-        private long _currentTrackBytesBaseline;
+        // A decoder's own BytesProduced is decode progress, not playback
+        // progress: it runs way ahead of real time for a track that decoded
+        // ahead into its private staging ring before being promoted (the
+        // common case - arming starts the instant the *previous* track
+        // begins, not a few seconds before it ends), and can be completely
+        // frozen at its final value from the moment of promotion onward if
+        // that decode-ahead had already finished - PromoteTarget only moves
+        // already-decoded bytes into the shared ring, it doesn't produce new
+        // ones. That made an earlier baseline-subtraction scheme built on
+        // BytesProduced read as permanently stuck at zero for an entire
+        // track after a handover, even though it was playing correctly the
+        // whole time (found from a real "scrubber stuck at 0:00" report).
+        //
+        // _sharedRing.TotalBytesRead doesn't have that problem: it only
+        // advances as fast as the render sink actually drains the ring, so
+        // it tracks real elapsed playback time unconditionally, independent
+        // of how far ahead decode raced. _currentTrackReadSplit is the
+        // TotalBytesRead value that corresponds to zero elapsed time for
+        // whatever track is current - 0 for a freshly Play()'d track (the
+        // ring was just Reset()), the ring's TotalBytesWritten at the exact
+        // moment of promotion for a natural handover (the byte offset where
+        // the new track's audio begins in the ring's stream - see the
+        // promotion branch of HandleDrainedOrFaulted), or a negative offset
+        // equal to the seek target for Seek() (see its remarks).
+        private long _currentTrackReadSplit;
 
         private ITrackDecoder? _armed;
         private Track? _armedTrack;
         private GaplessRingBuffer? _stagingRing;
+
+        // Set if the armed decoder reaches Drained on its own, before the
+        // current track does (real for a short next-up track decoding into
+        // a much larger staging ring - it can legitimately finish well
+        // ahead of a still-playing current track). A decoder only ever
+        // drains once, so once this has happened there's no future Drained
+        // event left to wire a handler to - promotion has to notice this
+        // flag and synthesize the completion itself instead of waiting for
+        // an event that will never come.
+        private bool _armedAlreadyDrained;
 
         private int _generation;
 
@@ -78,15 +123,21 @@ namespace Flower.Manager
             ILogger<TrackDecoder>? trackDecoderLogger = null)
             : this(sharedRing, (track, ring) => new TrackDecoder(libVLC, track, ring, trackDecoderLogger), logger)
         {
+            _secondCore = new LibVLC();
+            _cores = [libVLC, _secondCore];
+            _currentDecoderFactory = (track, ring) => new TrackDecoder(_cores[_currentCoreIndex], track, ring, trackDecoderLogger);
+            _armedDecoderFactory = (track, ring) => new TrackDecoder(_cores[1 - _currentCoreIndex], track, ring, trackDecoderLogger);
         }
 
         // Lets tests substitute a fake ITrackDecoder to exercise this
         // class's handover/idempotency/generation logic without touching
-        // real LibVLC decode.
+        // real LibVLC decode. Current and armed share the same factory here
+        // - there's no real core contention to isolate in the fake path.
         public GaplessCoordinator(GaplessRingBuffer sharedRing, Func<Track, GaplessRingBuffer, ITrackDecoder> decoderFactory, ILogger<GaplessCoordinator>? logger = null)
         {
             _sharedRing = sharedRing;
-            _decoderFactory = decoderFactory;
+            _currentDecoderFactory = decoderFactory;
+            _armedDecoderFactory = decoderFactory;
             _logger = logger;
         }
 
@@ -104,7 +155,7 @@ namespace Flower.Manager
             get
             {
                 lock (_gate)
-                    return _current == null ? 0 : Math.Max(0, _current.BytesProduced - _currentTrackBytesBaseline);
+                    return _current == null ? 0 : Math.Max(0, _sharedRing.TotalBytesRead - _currentTrackReadSplit);
             }
         }
 
@@ -134,12 +185,17 @@ namespace Flower.Manager
                 _current?.Retire();
                 _sharedRing.Reset();
 
-                var decoder = _decoderFactory(track, _sharedRing);
+                // Hard reset always lands "current" back on core 0
+                // deterministically, matching a fresh Play() discarding
+                // everything armed - see the dual-core remarks above.
+                _currentCoreIndex = 0;
+
+                var decoder = _currentDecoderFactory(track, _sharedRing);
                 decoder.Drained += () => HandleDrainedOrFaulted(decoder);
                 decoder.Faulted += () => HandleDrainedOrFaulted(decoder);
                 _current = decoder;
                 _currentPath = track.Path;
-                _currentTrackBytesBaseline = 0;
+                _currentTrackReadSplit = 0;
 
                 decoder.StartDecoding();
             }
@@ -186,7 +242,7 @@ namespace Flower.Manager
                 ClearArmedSlot(retireDecoder: true);
 
                 var stagingRing = new GaplessRingBuffer(StagingCapacityBytes);
-                var decoder = _decoderFactory(next, stagingRing);
+                var decoder = _armedDecoderFactory(next, stagingRing);
                 _stagingRing = stagingRing;
                 _armed = decoder;
                 _armedTrack = next;
@@ -201,12 +257,26 @@ namespace Flower.Manager
             _logger?.LogInformation("Seek({Position}) on {Path}", position, _currentPath);
             lock (_gate)
             {
-                // TrackDecoder.Seek sets BytesProduced to an absolute
-                // track-relative byte offset, not a delta - the baseline
-                // has to go back to 0 so CurrentTrackBytesProduced reads
-                // that absolute value directly instead of subtracting a
-                // now-meaningless pre-seek snapshot.
-                _currentTrackBytesBaseline = 0;
+                if (_current != null)
+                {
+                    // The seek's flush/reset of the shared ring happens
+                    // asynchronously - on the real decoder, sometime after
+                    // _current.Seek(position) below, once LibVLC's own seek
+                    // machinery gets around to it - so TotalBytesRead can't
+                    // be read as "the fresh post-seek value" synchronously
+                    // here. Instead, pre-negate the split by the seek
+                    // target: once the flush lands and TotalBytesRead
+                    // starts counting from 0 again in the new ring
+                    // generation, CurrentTrackBytesProduced's subtraction
+                    // (0 - -targetBytes) already reads as targetBytes
+                    // immediately, then grows from there as playback
+                    // resumes, without waiting on the decoder to report
+                    // anything about the seek itself.
+                    var targetSeconds = _current.Track.Duration.TotalSeconds * position;
+                    var targetBytes = (long)(targetSeconds * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+                    _currentTrackReadSplit = -targetBytes;
+                }
+
                 _current?.Seek(position);
             }
         }
@@ -223,20 +293,73 @@ namespace Flower.Manager
                 prepared = false;
             }
 
+            // A short/fast-decoding current track can drain and hand over
+            // before this method even finishes awaiting PrepareAsync above -
+            // decoder is then already promoted to _current (and _armed
+            // already cleared) by the time control gets back here. Found via
+            // GaplessCoordinatorRealDecodeTests: playback silently stalled
+            // forever because the old !ReferenceEquals(_armed, decoder)
+            // check treated that as "superseded, nothing to do", so
+            // StartDecoding() - which only ever gets called from this method
+            // - never happened at all for the new current decoder.
+            var promotedWhilePreparingAndFailed = false;
+
             lock (_gate)
             {
-                if (generation != _generation || !ReferenceEquals(_armed, decoder))
+                if (generation != _generation)
+                    return;
+
+                var stillArmed = ReferenceEquals(_armed, decoder);
+                var promotedWhilePreparing = !stillArmed && ReferenceEquals(_current, decoder);
+
+                if (!stillArmed && !promotedWhilePreparing)
                     return;
 
                 if (!prepared)
                 {
-                    _logger?.LogWarning("Decode-ahead prepare failed for {Path} - clearing armed slot", decoder.Track.Path);
-                    ClearArmedSlot(retireDecoder: true);
-                    return;
-                }
+                    if (stillArmed)
+                    {
+                        _logger?.LogWarning("Decode-ahead prepare failed for {Path} - clearing armed slot", decoder.Track.Path);
+                        ClearArmedSlot(retireDecoder: true);
+                        return;
+                    }
 
-                decoder.Faulted += () => HandleArmedFaulted(decoder);
-                decoder.StartDecoding();
+                    // Promoted to current before its own prepare finished,
+                    // and prepare then failed - has to be reported like any
+                    // other current-decoder failure, but HandleDrainedOrFaulted
+                    // can't be called from inside this lock (see its own
+                    // remarks on why), so just flag it and handle it below.
+                    promotedWhilePreparingAndFailed = true;
+                }
+                else
+                {
+                    if (stillArmed)
+                    {
+                        decoder.Drained += () => HandleArmedDrained(decoder);
+                        decoder.Faulted += () => HandleArmedFaulted(decoder);
+                    }
+                    else
+                    {
+                        _logger?.LogInformation("{Path} was promoted to current before its own decode-ahead prepare finished - starting it now", decoder.Track.Path);
+                    }
+
+                    decoder.StartDecoding();
+                }
+            }
+
+            if (promotedWhilePreparingAndFailed)
+                HandleDrainedOrFaulted(decoder);
+        }
+
+        private void HandleArmedDrained(ITrackDecoder decoder)
+        {
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_armed, decoder))
+                    return;
+
+                _logger?.LogInformation("Armed track {Path} finished decoding before the current track did", decoder.Track.Path);
+                _armedAlreadyDrained = true;
             }
         }
 
@@ -260,6 +383,7 @@ namespace Flower.Manager
         {
             Track finishedTrack;
             ITrackDecoder? promoted;
+            var promotedAlreadyDrained = false;
 
             lock (_gate)
             {
@@ -276,10 +400,34 @@ namespace Flower.Manager
                     promoted = _armed;
                     _current = promoted;
                     _currentPath = promoted.Track.Path;
-                    _currentTrackBytesBaseline = promoted.BytesProduced;
-                    _armed = null;
-                    _armedTrack = null;
-                    _stagingRing = null;
+
+                    // The write-index boundary between the finishing
+                    // track's audio and the promoted one's - captured now,
+                    // before PromoteTarget (below, outside this lock)
+                    // appends any of the promoted decoder's already-decoded
+                    // backlog. See _currentTrackReadSplit's remarks for why
+                    // this replaces the old decoder-BytesProduced-based
+                    // baseline.
+                    _currentTrackReadSplit = _sharedRing.TotalBytesWritten;
+                    promotedAlreadyDrained = _armedAlreadyDrained;
+
+                    // The promoted decoder was created via
+                    // _armedDecoderFactory, which always targets the OTHER
+                    // core from whatever _currentCoreIndex was at the time -
+                    // flipping it here keeps that invariant true for
+                    // whatever gets armed next (see dual-core remarks above).
+                    _currentCoreIndex = 1 - _currentCoreIndex;
+
+                    // Wired again here (harmless no-op if it never fires,
+                    // e.g. when promotedAlreadyDrained is true below) for
+                    // the normal case: a promoted decoder that's still
+                    // actively decoding needs its own eventual natural end
+                    // to keep driving the chain forward, and nothing but
+                    // this subscribes to it once it's no longer "armed".
+                    promoted.Drained += () => HandleDrainedOrFaulted(promoted);
+                    promoted.Faulted += () => HandleDrainedOrFaulted(promoted);
+
+                    ClearArmedSlot(retireDecoder: false);
                     _logger?.LogInformation("{Finished} drained - promoting armed {Next}", finishedTrack.Path, promoted.Track.Path);
                 }
                 else
@@ -315,6 +463,23 @@ namespace Flower.Manager
                 var stopwatch = Stopwatch.StartNew();
                 promoted.PromoteTarget(_sharedRing);
                 _logger?.LogInformation("PromoteTarget for {Path} took {ElapsedMs}ms", promoted.Track.Path, stopwatch.ElapsedMilliseconds);
+
+                // The just-promoted decoder already reached Drained while
+                // it was still armed (see _armedAlreadyDrained's remarks) -
+                // its own Drained event fired once already, with nobody
+                // listening, and a decoder never drains twice, so nothing
+                // will ever call this again for it unless we do it
+                // ourselves right now. Recursing here (rather than looping)
+                // correctly cascades through any number of already-finished
+                // tracks queued back to back. Found via
+                // GaplessCoordinatorRealDecodeTests, where a 1-second armed
+                // track reliably finished decoding before its 1-second
+                // "current" track did.
+                if (promotedAlreadyDrained)
+                {
+                    _logger?.LogInformation("{Path} had already finished decoding while armed - handling its completion immediately", promoted.Track.Path);
+                    HandleDrainedOrFaulted(promoted);
+                }
             }
         }
 
@@ -327,6 +492,7 @@ namespace Flower.Manager
             _armed = null;
             _armedTrack = null;
             _stagingRing = null;
+            _armedAlreadyDrained = false;
         }
 
         public void Dispose()
@@ -337,6 +503,8 @@ namespace Flower.Manager
                 _current?.Retire();
                 _current = null;
             }
+
+            _secondCore?.Dispose();
         }
     }
 }

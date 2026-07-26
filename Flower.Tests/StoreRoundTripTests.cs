@@ -33,6 +33,7 @@ namespace Flower.Tests;
 // within a class sequentially - spreading this across classes would risk
 // two tests mutating these process-wide settings at the same time under
 // parallel execution.
+[Collection("PlatformDataDirectory")]
 public class StoreRoundTripTests : IDisposable
 {
     private readonly string? _originalHome;
