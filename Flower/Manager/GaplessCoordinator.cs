@@ -43,6 +43,19 @@ namespace Flower.Manager
         private ITrackDecoder? _current;
         private string? _currentPath;
 
+        // _current.BytesProduced is decode progress, not playback progress -
+        // it runs way ahead of real time for a track that was decode-ahead
+        // buffered (up to StagingCapacityBytes) before being promoted, since
+        // arming starts the instant the *previous* track begins, not a few
+        // seconds before it ends. Subtracting this snapshot (taken at the
+        // exact moment a decoder becomes current) turns "total bytes ever
+        // decoded" back into "bytes decoded since this track became
+        // current", which - once a decoder is current, its writes are
+        // backpressure-paced by the shared ring's small capacity - tracks
+        // real elapsed playback time the same way it always did for a
+        // freshly Play()'d track (whose baseline is simply 0).
+        private long _currentTrackBytesBaseline;
+
         private ITrackDecoder? _armed;
         private Track? _armedTrack;
         private GaplessRingBuffer? _stagingRing;
@@ -91,7 +104,7 @@ namespace Flower.Manager
             get
             {
                 lock (_gate)
-                    return _current?.BytesProduced ?? 0;
+                    return _current == null ? 0 : Math.Max(0, _current.BytesProduced - _currentTrackBytesBaseline);
             }
         }
 
@@ -126,6 +139,7 @@ namespace Flower.Manager
                 decoder.Faulted += () => HandleDrainedOrFaulted(decoder);
                 _current = decoder;
                 _currentPath = track.Path;
+                _currentTrackBytesBaseline = 0;
 
                 decoder.StartDecoding();
             }
@@ -186,7 +200,15 @@ namespace Flower.Manager
         {
             _logger?.LogInformation("Seek({Position}) on {Path}", position, _currentPath);
             lock (_gate)
+            {
+                // TrackDecoder.Seek sets BytesProduced to an absolute
+                // track-relative byte offset, not a delta - the baseline
+                // has to go back to 0 so CurrentTrackBytesProduced reads
+                // that absolute value directly instead of subtracting a
+                // now-meaningless pre-seek snapshot.
+                _currentTrackBytesBaseline = 0;
                 _current?.Seek(position);
+            }
         }
 
         private async Task ArmAsync(ITrackDecoder decoder, int generation)
@@ -254,6 +276,7 @@ namespace Flower.Manager
                     promoted = _armed;
                     _current = promoted;
                     _currentPath = promoted.Track.Path;
+                    _currentTrackBytesBaseline = promoted.BytesProduced;
                     _armed = null;
                     _armedTrack = null;
                     _stagingRing = null;

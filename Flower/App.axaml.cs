@@ -144,21 +144,21 @@ public partial class App : Application
         var pairedServerReachability = new PairedServerReachability(networkDiscovery, appSettings);
         var peerTrackResolver = new PeerTrackResolver(pairedServerReachability);
 
-        // Separate LibVLC cores for decode (GaplessAudioManager's
-        // TrackDecoders) versus render (LibVlcRawStreamSink's own
-        // MediaPlayer, when no platform-specific sink is installed) -
-        // confirmed via watchdog logging that a seek on a decode-side
-        // MediaPlayer could stall the render MediaPlayer's own internal
-        // pump thread for several seconds even while the decoder kept
-        // producing PCM normally the whole time; the two MediaPlayers have
-        // no code path connecting them apart from the LibVLC core object
-        // they used to share, so isolating them onto independent cores
-        // removes whatever core-level resource a decode-side seek was
-        // contending with the render side over.
+        // LibVLC is only needed for decode now (GaplessAudioManager's
+        // TrackDecoders) - the default render sink is MiniaudioSink, a
+        // dedicated miniaudio playback device reading the shared ring
+        // buffer directly, replacing LibVlcRawStreamSink's synthetic-stream-
+        // through-LibVLC's-rawaut-demuxer approach after that proved to be
+        // the source of a real playback bug (a decode-side seek could
+        // freeze the render side solid for several seconds - see git
+        // history). Android/iOS stay on LibVlcRawStreamSink until a
+        // vendored miniaudio native build exists for those platforms (the
+        // published Miniaudio-CS NuGet only ships desktop native binaries).
         VlcNativeSetup.Initialize();
         var libVLC = new LibVLC();
-        var renderLibVLC = new LibVLC();
-        var audioSink = PlatformAudioManager.Current ?? new LibVlcRawStreamSink(renderLibVLC, AppLogging.CreateTypedLogger<LibVlcRawStreamSink>());
+        var audioSink = PlatformAudioManager.Current ?? (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()
+            ? new LibVlcRawStreamSink(libVLC, AppLogging.CreateTypedLogger<LibVlcRawStreamSink>())
+            : new MiniaudioSink(AppLogging.CreateTypedLogger<MiniaudioSink>()));
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
