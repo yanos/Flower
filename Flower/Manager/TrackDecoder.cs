@@ -34,6 +34,7 @@ namespace Flower.Manager
         private GaplessRingBuffer _target;
         private long _bytesProduced;
         private int _retired;
+        private volatile bool _drainFired;
 
         // Diagnostic-only, temporary - null everywhere the internal
         // (LibVLC, Track, GaplessRingBuffer) constructor isn't reached with
@@ -79,6 +80,27 @@ namespace Flower.Manager
                 Faulted?.Invoke();
             };
 
+            // OnDrain (the raw audio callback registered in StartDecoding)
+            // is supposed to be the authoritative "samples exhausted"
+            // signal, but a real repro showed it can simply never fire for
+            // a track that otherwise reaches LibVLC's own higher-level
+            // Ended state - GaplessCoordinator then has nothing armed that
+            // will ever get promoted, and playback sits stuck at the end
+            // forever. EndReached is a backstop for exactly that case: give
+            // OnDrain a head start (it fires right at the last real sample,
+            // where EndReached can fire once LibVLC's higher-level state
+            // machine has settled, not necessarily at the same instant),
+            // and only force the handover ourselves if OnDrain still hasn't
+            // shown up. GaplessCoordinator.HandleDrainedOrFaulted already
+            // no-ops a Drained call for a decoder that isn't _current
+            // anymore, so firing this after a real OnDrain already handled
+            // things is harmless.
+            _mediaPlayer.EndReached += (_, _) =>
+            {
+                _logger?.LogInformation("EndReached (high-level) for {Path}", Track.Path);
+                _ = FallbackDrainIfOnDrainNeverFiresAsync();
+            };
+
             if (_logger != null)
             {
                 _watchdog = new System.Timers.Timer(1000);
@@ -87,6 +109,20 @@ namespace Flower.Manager
                     Track.Path, _mediaPlayer.State, _mediaPlayer.IsPlaying, _mediaPlayer.Time, BytesProduced);
                 _watchdog.Start();
             }
+        }
+
+        // Gives OnDrain a head start before treating EndReached as the
+        // authoritative end-of-track signal instead - see the EndReached
+        // subscription's comment above for why both exist.
+        private async Task FallbackDrainIfOnDrainNeverFiresAsync()
+        {
+            await Task.Delay(500);
+
+            if (Volatile.Read(ref _retired) == 1 || _drainFired)
+                return;
+
+            _logger?.LogWarning("OnDrain never fired for {Path} within 500ms of EndReached - forcing the handover from here instead", Track.Path);
+            Drained?.Invoke();
         }
 
         // Parses the track up front so a bad/missing/unsupported file is
@@ -156,6 +192,21 @@ namespace Flower.Manager
         // no-ops - then stops the underlying MediaPlayer. Used when
         // GaplessCoordinator abandons a decoder on manual skip/flush, or
         // once it's been fully superseded after a handover.
+        //
+        // The _retired flag flip above is what actually matters for
+        // correctness (every OnPlay/OnFlush/OnDrain callback checks it and
+        // no-ops immediately once set) - MediaPlayer.Stop() itself is a
+        // synchronous native call that both of Retire()'s callers invoke
+        // while depending on it returning promptly (GaplessCoordinator.Play
+        // calls it on the UI thread while holding its own _gate lock;
+        // HandleDrainedOrFaulted calls it from a LibVLC decode-callback
+        // thread). LibVLCSharp's Stop() has a known footgun where it can
+        // block for a long time - or hang outright - depending on the
+        // player's internal state when called; a real repro (manual track
+        // skip beachballing the whole UI) confirmed it's not safe to assume
+        // this returns quickly. Running it on its own thread means a slow
+        // or wedged Stop() only strands that one throwaway thread, never
+        // the caller.
         public void Retire()
         {
             if (Interlocked.Exchange(ref _retired, 1) == 1)
@@ -163,7 +214,21 @@ namespace Flower.Manager
 
             _logger?.LogInformation("Retire() for {Path}", Track.Path);
             _watchdog?.Stop();
-            _mediaPlayer.Stop();
+
+            var mediaPlayer = _mediaPlayer;
+            var path = Track.Path;
+            var logger = _logger;
+            Task.Run(() =>
+            {
+                try
+                {
+                    mediaPlayer.Stop();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "MediaPlayer.Stop() failed during Retire() for {Path}", path);
+                }
+            });
         }
 
         private Media EnsureMedia()
@@ -220,6 +285,8 @@ namespace Flower.Manager
 
         private void OnDrain(IntPtr data)
         {
+            _drainFired = true;
+
             if (Volatile.Read(ref _retired) == 1)
                 return;
 
