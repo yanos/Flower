@@ -92,7 +92,7 @@ public class OpenSubsonicClient
     // Builds a URL with every peer-identity/signature credential embedded in
     // the query string - necessary for a URL handed directly to something
     // else to fetch (LibVLC playing GetStreamUrl directly, see
-    // VlcAudioManager.Play's "://" check, or GetDownloadUrl/GetCoverArtUrl
+    // TrackDecoder.EnsureMedia's "://" check, or GetDownloadUrl/GetCoverArtUrl
     // returned for the caller's own use), which can't carry the custom
     // headers an authenticated HttpClient call can - see
     // SyncHttpServer.GetIdentityValue, which accepts either. Not used by

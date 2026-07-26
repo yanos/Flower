@@ -747,7 +747,7 @@ public class MobileMainViewModel : ViewModelBase
             // row's own download icon/DownloadTrackCommand, for offline listening
             // later). A transient copy, not the placeholder itself - Path here is
             // a stream URL, not a real local file, and must never be persisted
-            // back into Library.Tracks (see VlcAudioManager.Play's "://" check,
+            // back into Library.Tracks (see TrackDecoder.EnsureMedia's "://" check,
             // which already knows how to play any URL-shaped Path).
             var streamUrl = Main.GetStreamUrl(track);
             if (streamUrl != null)
