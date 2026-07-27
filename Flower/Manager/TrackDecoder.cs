@@ -41,12 +41,15 @@ namespace Flower.Manager
         // a logger (there is no direct TrackDecoder unit test today).
         private readonly ILogger<TrackDecoder>? _logger;
 
-        // Diagnostic-only, temporary: logs this decode MediaPlayer's own
-        // reported State/IsPlaying/Time once a second, so a seek-induced
-        // wedge shows up here too - distinguishing "the decode player
-        // itself thinks it's paused/stopped" from "it thinks it's still
-        // playing but has simply stopped calling OnPlay".
+        // Diagnostic-only, temporary: watches this decode MediaPlayer's own
+        // reported State/IsPlaying/BytesProduced once a second, so a
+        // seek-induced wedge shows up here too - distinguishing "the decode
+        // player itself thinks it's paused/stopped" from "it thinks it's
+        // still playing but has simply stopped calling OnPlay". Only logs
+        // when something looks wrong (stalled/mismatched/unexpected state);
+        // a healthy decode ticks silently.
         private readonly System.Timers.Timer? _watchdog;
+        private long _watchdogLastBytesProduced = -1;
 
         public Track Track { get; }
 
@@ -104,9 +107,7 @@ namespace Flower.Manager
             if (_logger != null)
             {
                 _watchdog = new System.Timers.Timer(1000);
-                _watchdog.Elapsed += (_, _) => _logger.LogDebug(
-                    "Decode watchdog for {Path}: State={State} IsPlaying={IsPlaying} Time={Time}ms BytesProduced={BytesProduced}",
-                    Track.Path, _mediaPlayer.State, _mediaPlayer.IsPlaying, _mediaPlayer.Time, BytesProduced);
+                _watchdog.Elapsed += (_, _) => CheckWatchdog();
                 _watchdog.Start();
             }
         }
@@ -139,12 +140,41 @@ namespace Flower.Manager
 
         public void StartDecoding()
         {
+            _logger?.LogInformation("StartDecoding() for {Path}", Track.Path);
+
             var media = EnsureMedia();
             _mediaPlayer.SetAudioFormat(GaplessFormat.LibVlcFourCc, GaplessFormat.SampleRate, GaplessFormat.Channels);
             _mediaPlayer.SetAudioCallbacks(OnPlay, OnPause, OnResume, OnFlush, OnDrain);
 
             if (!_mediaPlayer.Play(media))
                 Faulted?.Invoke();
+        }
+
+        // Only logs when something looks wrong, so a healthy decode doesn't
+        // spam once-a-second lines for the whole track: State claiming
+        // Playing while IsPlaying disagrees, State sitting somewhere it
+        // shouldn't for a still-live decoder, or BytesProduced not moving
+        // despite the player believing it's actively playing (the seek-
+        // induced wedge this watchdog exists to catch).
+        private void CheckWatchdog()
+        {
+            var state = _mediaPlayer.State;
+            var isPlaying = _mediaPlayer.IsPlaying;
+            var bytesProduced = BytesProduced;
+
+            var stalled = state == VLCState.Playing && isPlaying && bytesProduced == _watchdogLastBytesProduced;
+            var stateMismatch = state == VLCState.Playing && !isPlaying;
+            var unexpectedState = Volatile.Read(ref _retired) == 0
+                && state is VLCState.Error or VLCState.Stopped;
+
+            if (stalled || stateMismatch || unexpectedState)
+            {
+                _logger?.LogWarning(
+                    "Decode watchdog for {Path}: State={State} IsPlaying={IsPlaying} Time={Time}ms BytesProduced={BytesProduced} (Stalled={Stalled} StateMismatch={StateMismatch} UnexpectedState={UnexpectedState})",
+                    Track.Path, state, isPlaying, _mediaPlayer.Time, bytesProduced, stalled, stateMismatch, unexpectedState);
+            }
+
+            _watchdogLastBytesProduced = bytesProduced;
         }
 
         // Seeks this decoder's own demux/decode to the given position

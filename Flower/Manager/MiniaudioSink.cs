@@ -41,11 +41,15 @@ namespace Flower.Manager
         // _ringBuffer. Freed in Dispose().
         private GCHandle _selfHandle;
 
-        // Diagnostic-only: logs ring.UnderrunCount once a second so a
+        // Diagnostic-only: watches ring.UnderrunCount once a second so a
         // crackling/glitching report can be correlated against actual
         // buffer underruns (ring momentarily empty when the callback asked
         // for data) versus some other cause (format/rate mismatch, etc).
+        // Only logs when the underrun count actually moves or the device's
+        // running state changes - a healthy render loop ticks silently.
         private readonly Timer _watchdog;
+        private long _watchdogLastUnderrunCount;
+        private bool _watchdogLastStarted;
 
         public event EventHandler? Playing;
         public event EventHandler? Paused;
@@ -96,9 +100,24 @@ namespace Flower.Manager
             if (ring == null)
                 return;
 
-            _logger.LogDebug(
-                "Render watchdog: Started={Started} RingAvailable={Available}/{Capacity} Underruns={Underruns}",
-                _started, ring.AvailableBytes, ring.Capacity, ring.UnderrunCount);
+            var underrunCount = ring.UnderrunCount;
+            var started = _started;
+
+            if (underrunCount != _watchdogLastUnderrunCount)
+            {
+                _logger.LogWarning(
+                    "Render watchdog: underrun(s) detected - Started={Started} RingAvailable={Available}/{Capacity} Underruns={Underruns} (+{NewUnderruns})",
+                    started, ring.AvailableBytes, ring.Capacity, underrunCount, underrunCount - _watchdogLastUnderrunCount);
+            }
+            else if (started != _watchdogLastStarted)
+            {
+                _logger.LogInformation(
+                    "Render watchdog: device running state changed - Started={Started} RingAvailable={Available}/{Capacity} Underruns={Underruns}",
+                    started, ring.AvailableBytes, ring.Capacity, underrunCount);
+            }
+
+            _watchdogLastUnderrunCount = underrunCount;
+            _watchdogLastStarted = started;
         }
 
         public bool IsPlaying => _started;
