@@ -456,3 +456,11 @@ $RECYCLE.BIN/
 ## Claude Code
 ##
 .claude/
+
+##
+## Vendored native builds - only the built binaries under Flower.*/libs or
+## Flower.*/Frameworks are committed, not the CMake/Xcode scratch dirs that
+## produce them (see native/miniaudio/README.md to rebuild).
+##
+native/miniaudio/android/build/
+native/miniaudio/ios/build/

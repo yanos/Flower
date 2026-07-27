@@ -35,4 +35,29 @@
   <ItemGroup>
     <ProjectReference Include="..\Flower\Flower.csproj" />
   </ItemGroup>
+
+  <!-- Self-built dynamic frameworks (native/miniaudio/ios/build.sh), not
+       from a NuGet package - Miniaudio-CS only ships desktop native
+       binaries (see MiniaudioSink.cs). Named miniaudio so Miniaudio-CS's
+       own DllImport("miniaudio") bindings resolve it with no custom
+       DllImportResolver needed.
+
+       Two plain per-platform framework folders, not a combined
+       .xcframework: confirmed via a real build that <NativeReference>
+       pointing at a .xcframework silently resolves the MSBuild item but
+       never actually embeds anything in the app bundle (no error, no
+       warning - just missing at runtime). Mirrors VideoLAN.LibVLC.iOS's
+       own proven ios-device/ios-simulator NativeReference pattern
+       (~/.nuget/packages/videolan.libvlc.ios/*/build/VideoLAN.LibVLC.iOS.targets)
+       instead, conditioned the same way. -->
+  <ItemGroup Condition="('$(Platform)' == 'iPhoneSimulator') OR $(RuntimeIdentifier.StartsWith('iossimulator'))">
+    <NativeReference Include="Frameworks\ios-simulator\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+  <ItemGroup Condition="('$(Platform)' == 'iPhone') OR ('$(RuntimeIdentifier)' == 'ios') OR $(RuntimeIdentifier.StartsWith('ios-')) OR $(RuntimeIdentifier.StartsWith('ios.'))">
+    <NativeReference Include="Frameworks\ios-device\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
 </Project>

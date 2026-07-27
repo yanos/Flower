@@ -145,20 +145,19 @@ public partial class App : Application
         var peerTrackResolver = new PeerTrackResolver(pairedServerReachability);
 
         // LibVLC is only needed for decode now (GaplessAudioManager's
-        // TrackDecoders) - the default render sink is MiniaudioSink, a
-        // dedicated miniaudio playback device reading the shared ring
+        // TrackDecoders) - the render sink on every platform is MiniaudioSink,
+        // a dedicated miniaudio playback device reading the shared ring
         // buffer directly, replacing LibVlcRawStreamSink's synthetic-stream-
-        // through-LibVLC's-rawaut-demuxer approach after that proved to be
+        // through-LibVLC's-rawaud-demuxer approach after that proved to be
         // the source of a real playback bug (a decode-side seek could
         // freeze the render side solid for several seconds - see git
-        // history). Android/iOS stay on LibVlcRawStreamSink until a
-        // vendored miniaudio native build exists for those platforms (the
-        // published Miniaudio-CS NuGet only ships desktop native binaries).
+        // history). Android/iOS use their vendored native miniaudio builds
+        // (native/miniaudio/android, native/miniaudio/ios) - see
+        // LibVlcRawStreamSink's own remarks for why it's kept around
+        // unreferenced rather than deleted yet.
         VlcNativeSetup.Initialize();
         var libVLC = new LibVLC();
-        var audioSink = PlatformAudioManager.Current ?? (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()
-            ? new LibVlcRawStreamSink(libVLC, AppLogging.CreateTypedLogger<LibVlcRawStreamSink>())
-            : new MiniaudioSink(AppLogging.CreateTypedLogger<MiniaudioSink>()));
+        var audioSink = PlatformAudioManager.Current ?? new MiniaudioSink(AppLogging.CreateTypedLogger<MiniaudioSink>());
 
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
