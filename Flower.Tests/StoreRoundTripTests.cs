@@ -118,6 +118,7 @@ public class StoreRoundTripTests : IDisposable
         public void Resume() { }
         public void Pause() { }
         public void Stop() { }
+        public void ApplyEqualizer(Flower.Manager.Equalizer? equalizer) { }
         public void RaiseEndReached() => EndReached?.Invoke(this, EventArgs.Empty);
 #pragma warning disable CS0067
         public event EventHandler? Paused;

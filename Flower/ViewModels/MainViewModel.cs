@@ -228,6 +228,7 @@ public partial class MainViewModel : ViewModelBase
     public ICommand? OpenSettingsCommand         { get; private set; }
     public ICommand? OpenColumnSelectorCommand   { get; private set; }
     public ICommand? OpenLogWindowCommand        { get; private set; }
+    public ICommand? OpenEqualizerWindowCommand  { get; private set; }
     public ICommand? NewPlaylistCommand          { get; private set; }
     public ICommand? RenamePlaylistCommand       { get; private set; }
     public ICommand? DeletePlaylistCommand       { get; private set; }
@@ -255,6 +256,7 @@ public partial class MainViewModel : ViewModelBase
     public event EventHandler? SettingsRequested;
     public event EventHandler? ColumnSelectorRequested;
     public event EventHandler? LogWindowRequested;
+    public event EventHandler? EqualizerWindowRequested;
     public event EventHandler<Track>? NavigateToTrackRequested;
     public event EventHandler<PlaylistConflictEventArgs>? PlaylistConflictRequested;
     public event EventHandler<PeerApprovalRequestedEventArgs>? PeerApprovalRequested;
@@ -1218,6 +1220,7 @@ public partial class MainViewModel : ViewModelBase
         OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         OpenColumnSelectorCommand   = new RelayCommand(() => ColumnSelectorRequested?.Invoke(this, EventArgs.Empty));
         OpenLogWindowCommand        = new RelayCommand(() => LogWindowRequested?.Invoke(this, EventArgs.Empty));
+        OpenEqualizerWindowCommand  = new RelayCommand(() => EqualizerWindowRequested?.Invoke(this, EventArgs.Empty));
         NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));
         PlayOrPauseCommand          = new RelayCommand(PlayOrPauseFromCurrentView);
         NextTrackCommand            = new RelayCommand(_playlistControlViewModel.Next);

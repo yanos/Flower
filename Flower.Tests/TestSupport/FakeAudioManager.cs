@@ -21,11 +21,14 @@ public sealed class FakeAudioManager : IAudioManager
     public Track? LastPlayed { get; private set; }
     public Track? LastUpcoming { get; private set; }
 
+    public Equalizer? LastAppliedEqualizer { get; private set; }
+
     public void Play(Track track) => LastPlayed = track;
     public void SetUpcoming(Track? next) => LastUpcoming = next;
     public void Resume() { }
     public void Pause() { }
     public void Stop() { }
+    public void ApplyEqualizer(Equalizer? equalizer) => LastAppliedEqualizer = equalizer;
 
     public event EventHandler? Paused;
     public event EventHandler? Stopped;

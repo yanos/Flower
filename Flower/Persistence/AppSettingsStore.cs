@@ -11,6 +11,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using Serilog.Events;
 
+using Flower.Manager;
+
 namespace Flower.Persistence
 {
     // Settings > Appearance - see Flower.Services.AppTheme for how this
@@ -115,6 +117,14 @@ namespace Flower.Persistence
         public double        LogFontSize        { get; set; } = 12;
         public LogEventLevel LogMinimumLevel    { get; set; } = LogEventLevel.Verbose;
         public bool          LogWordWrapEnabled { get; set; } = false;
+
+        // EQ window (View > Equalizer...) preferences, remembered between
+        // launches the same way IsRepeatEnabled/IsShuffleEnabled are - see
+        // EqualizerViewModel. Null until the user opens the Equalizer window
+        // at least once (distinct from Enabled=false, which is an explicit
+        // bypass) - eagerly re-applied at startup in App.axaml.cs, not only
+        // when the window is opened.
+        public EqualizerSettings? EqualizerSettings { get; set; }
     }
 
     public class ColumnState

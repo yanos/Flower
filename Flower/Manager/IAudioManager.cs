@@ -27,6 +27,12 @@ namespace Flower.Manager
         void Pause();
         void Stop();
 
+        // Applies (or, passing null, true-bypasses) the EQ - see
+        // IAudioSink.ApplyEqualizer for exact bypass semantics. Every change
+        // rebuilds and swaps the whole processor; there is no partial-update
+        // path.
+        void ApplyEqualizer(Equalizer? equalizer);
+
         public event EventHandler? Paused;
         public event EventHandler? Stopped;
         public event EventHandler? Playing;

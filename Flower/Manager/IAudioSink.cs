@@ -24,6 +24,13 @@ namespace Flower.Manager
         // VlcAudioManager's single MediaPlayer did.
         void Start(GaplessRingBuffer ringBuffer);
 
+        // Swaps in a new EQ processor (rebuilt from settings), or clears it
+        // (null = true bypass - the render callback skips processing
+        // entirely rather than running an all-zero-dB filter). Safe to call
+        // from any thread; implementations must publish this atomically for
+        // the real-time callback thread to observe without locking.
+        void ApplyEqualizer(Equalizer? equalizer);
+
         void Resume();
         void Pause();
         void Stop();

@@ -46,7 +46,11 @@ public sealed class FakeAudioSink : IAudioSink
         }
     }
 
+    public Equalizer? AppliedEqualizer { get; private set; }
+
     public void Start(GaplessRingBuffer ringBuffer) => _ring = ringBuffer;
+
+    public void ApplyEqualizer(Equalizer? equalizer) => AppliedEqualizer = equalizer;
 
     public void Resume()
     {

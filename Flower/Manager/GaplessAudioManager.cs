@@ -163,6 +163,8 @@ namespace Flower.Manager
             _sink.Stop();
         }
 
+        public void ApplyEqualizer(Equalizer? equalizer) => _sink.ApplyEqualizer(equalizer);
+
         public void Dispose()
         {
             _positionTimer.Dispose();
