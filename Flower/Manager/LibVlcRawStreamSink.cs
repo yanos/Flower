@@ -8,16 +8,25 @@ using LibVLCSharp.Shared;
 
 namespace Flower.Manager
 {
-    // Default, cross-platform IAudioSink: plays the shared GaplessRingBuffer
-    // back out through LibVLC's own aout (WASAPI/PulseAudio/ALSA/AudioTrack/
-    // CoreAudio, whichever the platform provides) via a second, persistent
-    // MediaPlayer given a virtual, never-ending raw-PCM stream as its input.
-    // From that player's point of view there is only ever been one
-    // continuous stream, so it never stops-and-restarts at a track boundary
-    // - that's what makes the transitions GaplessCoordinator produces
-    // audible as gapless. Used on Windows, Linux, Android, and macOS unless
-    // Flower.Apple's AppleAudioEngineSink has been installed instead (for
-    // real AirPlay/Bluetooth routing).
+    // Former default, cross-platform IAudioSink: plays the shared
+    // GaplessRingBuffer back out through LibVLC's own aout (WASAPI/
+    // PulseAudio/ALSA/AudioTrack/CoreAudio, whichever the platform provides)
+    // via a second, persistent MediaPlayer given a virtual, never-ending
+    // raw-PCM stream as its input. From that player's point of view there is
+    // only ever been one continuous stream, so it never stops-and-restarts
+    // at a track boundary - that's what makes the transitions
+    // GaplessCoordinator produces audible as gapless.
+    //
+    // Superseded on every platform by MiniaudioSink (see App.axaml.cs) after
+    // this proved to have a real playback bug: a decode-side LibVLC seek
+    // could freeze the render side solid for several seconds, because this
+    // sink piggybacked on LibVLC's own rawaud demuxer/aout, which has a
+    // decode/demux state machine that turned out to be shared/wedgeable
+    // across MediaPlayer instances. MiniaudioSink's plain ma_device callback
+    // has no such state machine to wedge. Kept here, unreferenced, as a
+    // fallback for one release cycle rather than deleted outright - remove
+    // once MiniaudioSink has had a full release cycle of real-world use on
+    // every platform with no regressions.
     public sealed class LibVlcRawStreamSink : IAudioSink
     {
         private readonly LibVLC _libVLC;

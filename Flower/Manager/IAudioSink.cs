@@ -5,7 +5,7 @@ namespace Flower.Manager
     // The one platform-forking piece of the gapless pipeline: consumes the
     // shared GaplessRingBuffer that GaplessCoordinator keeps continuously
     // fed across track boundaries, and actually produces sound.
-    // LibVlcRawStreamSink (this project) is the default, cross-platform
+    // MiniaudioSink (this project) is the default, cross-platform
     // implementation; Flower.Apple's AppleAudioEngineSink is the Apple-only
     // alternative that additionally makes real AirPlay/Bluetooth routing
     // possible via AVRoutePickerView.

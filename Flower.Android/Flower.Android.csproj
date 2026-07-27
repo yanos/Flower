@@ -33,4 +33,44 @@
   <ItemGroup>
     <ProjectReference Include="..\Flower\Flower.csproj" />
   </ItemGroup>
+
+  <!-- Self-built (native/miniaudio/android/build.sh), not from a NuGet
+       package - Miniaudio-CS only ships desktop native binaries (see
+       MiniaudioSink.cs). Named libminiaudio.so so Miniaudio-CS's own
+       DllImport("miniaudio") bindings resolve it with no custom
+       DllImportResolver needed.
+
+       .NET's RID graph treats android-* as falling back to linux-* (Android
+       being Linux-kernel-based), so NuGet restore resolves Miniaudio-CS's
+       own *desktop* runtimes/linux-arm64/native/libminiaudio.so - a real
+       glibc/Bionic-incompatible Linux binary - as a "compatible" native
+       asset for this project's android-arm64 target, landing it in the
+       exact same lib/arm64-v8a/ output slot as our real Android build
+       (confirmed via a genuine on-device dlopen failure: "library
+       libc.so.6 not found" - not an Android binary at all). The
+       PackageReference Update below excludes Miniaudio-CS's native assets
+       for this project specifically, so our own explicit
+       AndroidNativeLibrary items below are the only source. -->
+  <!-- PackageReference Update didn't work here - there's no Miniaudio-CS
+       Include item in this project to update, since it only flows in
+       transitively via the Flower.csproj ProjectReference (PackageReference
+       Update only merges metadata into items already Included in the same
+       project's own evaluation). A direct Include, re-declaring the same
+       package this project already gets transitively, does let NuGet
+       override the asset flags for this project's own resolution. -->
+  <ItemGroup>
+    <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AndroidNativeLibrary Include="libs\arm64-v8a\libminiaudio.so">
+      <Abi>arm64-v8a</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="libs\x86_64\libminiaudio.so">
+      <Abi>x86_64</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="libs\armeabi-v7a\libminiaudio.so">
+      <Abi>armeabi-v7a</Abi>
+    </AndroidNativeLibrary>
+  </ItemGroup>
 </Project>

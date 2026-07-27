@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Timers;
@@ -9,20 +10,20 @@ using Miniaudio;
 
 namespace Flower.Manager
 {
-    // Default IAudioSink on desktop: plays the shared GaplessRingBuffer back
-    // out through a dedicated miniaudio playback device - one real-time data
-    // callback pulling directly from the ring buffer. Replaces
-    // LibVlcRawStreamSink (still used on Android/iOS until a vendored
-    // miniaudio native build exists for those platforms - see
-    // AUDIOPHILE-PLAN.md), which piggybacked on LibVLC's rawaud demuxer/aout
-    // to render a synthetic, never-ending PCM stream. That indirection
-    // turned out to be the source of real playback bugs found during manual
-    // testing - a seek on a completely unrelated decode-side MediaPlayer
-    // could freeze the render MediaPlayer solid for several seconds, proven
-    // via watchdog logging (render Time frozen while both decoders kept
-    // producing PCM normally). miniaudio's ma_device model has no
-    // demuxer/decode state machine to wedge in the first place - it only
-    // ever asks this callback for more PCM, on its own real-time thread.
+    // Default IAudioSink on every platform: plays the shared GaplessRingBuffer
+    // back out through a dedicated miniaudio playback device - one real-time
+    // data callback pulling directly from the ring buffer. Android/iOS use
+    // their own vendored native miniaudio build (native/miniaudio/, no NuGet
+    // package - see CLAUDE.md). Replaces LibVlcRawStreamSink, which
+    // piggybacked on LibVLC's rawaud demuxer/aout to render a synthetic,
+    // never-ending PCM stream. That indirection turned out to be the source
+    // of real playback bugs found during manual testing - a seek on a
+    // completely unrelated decode-side MediaPlayer could freeze the render
+    // MediaPlayer solid for several seconds, proven via watchdog logging
+    // (render Time frozen while both decoders kept producing PCM normally).
+    // miniaudio's ma_device model has no demuxer/decode state machine to
+    // wedge in the first place - it only ever asks this callback for more
+    // PCM, on its own real-time thread.
     public sealed unsafe class MiniaudioSink : IAudioSink
     {
         private readonly ILogger<MiniaudioSink> _logger;
@@ -49,6 +50,36 @@ namespace Flower.Manager
         public event EventHandler? Playing;
         public event EventHandler? Paused;
         public event EventHandler? Stopped;
+
+        // NativeLibrary's default probing for a bare DllImport("miniaudio")
+        // string tries flat names ("libminiaudio.dylib", "miniaudio.dylib",
+        // etc.) on a handful of standard search paths - it has no notion of
+        // reaching into Frameworks/miniaudio.framework/miniaudio, the
+        // nested layout a NativeReference embeds an iOS framework at (see
+        // Flower.iOS.csproj's NativeReference comment). Confirmed via a
+        // real on-device-equivalent (simulator) run: the framework was
+        // correctly embedded, signed, and even directly linked into the
+        // main executable (LC_LOAD_DYLIB @rpath/miniaudio.framework/
+        // miniaudio, visible via otool -L), yet the managed DllImport
+        // still threw DllNotFoundException - .NET's iOS interpreter
+        // resolves P/Invokes via its own dlopen-by-string lookup, which
+        // never tried this path. Mirrors VlcNativeSetup.cs's Linux
+        // DllImportResolver (libvlc -> libvlc.so.5) for exactly the same
+        // reason: the default probing doesn't know the real on-disk name.
+        static MiniaudioSink()
+        {
+            if (OperatingSystem.IsIOS())
+                NativeLibrary.SetDllImportResolver(typeof(ma).Assembly, ResolveIosMiniaudio);
+        }
+
+        private static IntPtr ResolveIosMiniaudio(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
+        {
+            if (libraryName != "miniaudio")
+                return IntPtr.Zero;
+
+            var path = Path.Combine(AppContext.BaseDirectory, "Frameworks", "miniaudio.framework", "miniaudio");
+            return NativeLibrary.TryLoad(path, out var handle) ? handle : IntPtr.Zero;
+        }
 
         public MiniaudioSink(ILogger<MiniaudioSink> logger)
         {

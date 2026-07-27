@@ -12,8 +12,8 @@ namespace Flower.Manager
     // The one IAudioManager implementation used on every platform: decode
     // (via GaplessCoordinator/TrackDecoder) and render (via the injected
     // IAudioSink) are fully decoupled, so gapless playback itself needs
-    // nothing platform-specific - only the sink differs (LibVlcRawStreamSink
-    // by default; Flower.Apple's AppleAudioEngineSink on macOS/iOS for real
+    // nothing platform-specific - only the sink differs (MiniaudioSink by
+    // default; Flower.Apple's AppleAudioEngineSink on macOS/iOS for real
     // AirPlay/Bluetooth routing).
     public sealed class GaplessAudioManager : IAudioManager, IDisposable
     {
