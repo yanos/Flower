@@ -1116,14 +1116,28 @@ public partial class MainViewModel : ViewModelBase
     // Used by SubList's multi-select drag/selection-sync code in MainView.axaml.cs.
     public void SetSelectedSubItems(IReadOnlyList<string> items) => ApplySubItemSelection(items);
 
-    private void ApplySubItemSelection(IReadOnlyList<string> items)
+    private void ApplySubItemSelection(IReadOnlyList<string> items) => ApplySubItemSelection(items, immediate: false);
+
+    // immediate=true bypasses ScheduleFilter's 250ms debounce the same way
+    // RebuildRowsImmediatelyAsync's other callers do - used only by
+    // OnSidebarSelectionChanged below, a single discrete navigation (sidebar
+    // click), not the rapid-fire callers (typing a search query, sub-list
+    // drag-multi-select) that still want the debounce. Without this,
+    // switching sidebar views showed the previous view's stale rows for the
+    // debounce's own delay before the new view's rows appeared - visible as
+    // a flash of the old view on every switch, most noticeable jumping to
+    // Songs from a small filtered view.
+    private void ApplySubItemSelection(IReadOnlyList<string> items, bool immediate)
     {
         _selectedSubItems = new HashSet<string>(items);
         _selectedSubItem  = items.Count > 0 ? items[0] : null;
         RememberSubItemSelection(_selectedSubItem);
         OnPropertyChanged(nameof(SelectedSubItem));
         OnPropertyChanged(nameof(SelectedSubItems));
-        ScheduleFilter();
+        if (immediate)
+            _ = RebuildRowsImmediatelyAsync();
+        else
+            ScheduleFilter();
     }
 
     private void RememberSubItemSelection(string? value)
@@ -2241,7 +2255,7 @@ public partial class MainViewModel : ViewModelBase
                 ? _lastSelectedArtist
                 : _subListItems.FirstOrDefault())
             : null;
-        ApplySubItemSelection(initial != null ? new[] { initial } : Array.Empty<string>());
+        ApplySubItemSelection(initial != null ? new[] { initial } : Array.Empty<string>(), immediate: true);
     }
 
     private void RebuildSubListItems()

@@ -69,7 +69,14 @@ public partial class MainWindow : Window
             // SaveWindowGeometry below - restored on the next launch by
             // MainViewModel.BuildSidebarItems/MainView.axaml.cs's own
             // SeedRestoredViewState.
-            (Content as MainView)?.SaveCurrentViewState();
+            //
+            // Referenced by name (MainContent), not Content as MainView - the
+            // Window's actual Content is the DockPanel wrapping both MainView
+            // and NativeMenuBar (added for Windows/Linux's in-window menu
+            // fallback - see MainWindow.axaml), so that cast always silently
+            // evaluated to null via ?. and this line never actually ran,
+            // meaning the sidebar view/scroll position was never once saved.
+            MainContent.SaveCurrentViewState();
             SaveWindowGeometry();
             _columnManager.Flush();
 

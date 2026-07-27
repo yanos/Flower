@@ -520,11 +520,21 @@ public partial class MainView : UserControl
     // one _viewStates otherwise tracks) - the user may never have switched
     // views at all this session, in which case _currentViewKey already holds
     // the only view there ever was.
+    //
+    // Falls back to _viewModel.CurrentViewKey (computed live from
+    // SelectedSidebarItem, always available) rather than bailing out when
+    // _currentViewKey is still null - that field is only ever populated as a
+    // side effect of ApplyRows actually having run once (a Rows-changed
+    // event, i.e. the background scan's first result). Quitting before that
+    // first result lands - a real, observed case, not just hypothetical -
+    // used to save nothing at all here even though the sidebar selection and
+    // window geometry were both perfectly well-known at that point.
     public void SaveCurrentViewState()
     {
-        if (_viewModel == null || _currentViewKey == null)
+        if (_viewModel == null)
             return;
-        _viewModel.SaveLastView(GetScrollOffsetYForKey(_currentViewKey));
+        var key = _currentViewKey ?? _viewModel.CurrentViewKey;
+        _viewModel.SaveLastView(GetScrollOffsetYForKey(key));
     }
 
     // ── Spinner ───────────────────────────────────────────────────────────────
@@ -1043,6 +1053,19 @@ public partial class MainView : UserControl
         else if (e.Key == Key.J && e.KeyModifiers == PlatformShortcuts.Primary)
         {
             _viewModel?.OpenColumnSelectorCommand?.Execute(null);
+            e.Handled = true;
+        }
+        // Space play/pause, reachable from anywhere in MainView - MusicList's
+        // own tunnel handler (MusicList_KeyDown) only fires while focus is
+        // somewhere inside MusicList, so this is the fallback for focus on
+        // the sidebar, Albums/Recently Added grids, Artists sub-list, etc.
+        // (same reasoning as the Cmd/Ctrl+I fallback below). Skipped while a
+        // TextBox has focus (search box, playlist rename) so Space still
+        // types a literal space there instead of toggling playback.
+        else if (e.Key == Key.Space &&
+                 (e.Source is not Visual sourceVisual || sourceVisual.FindAncestorOfType<TextBox>(includeSelf: true) is null))
+        {
+            _viewModel?.PlayOrPauseFromCurrentView();
             e.Handled = true;
         }
         // Cmd/Ctrl+I on Albums/Recently Added - MusicList's own tunnel handler
