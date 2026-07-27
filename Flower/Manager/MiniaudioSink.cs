@@ -29,6 +29,7 @@ namespace Flower.Manager
         private readonly ILogger<MiniaudioSink> _logger;
         private readonly object _gate = new();
         private GaplessRingBuffer? _ringBuffer;
+        private volatile Equalizer? _equalizer;
         private ma_context* _context;
         private ma_device* _device;
         private volatile bool _started;
@@ -140,6 +141,8 @@ namespace Flower.Manager
             }
         }
 
+        public void ApplyEqualizer(Equalizer? equalizer) => _equalizer = equalizer;
+
         public void Start(GaplessRingBuffer ringBuffer)
         {
             lock (_gate)
@@ -232,6 +235,13 @@ namespace Flower.Manager
             var read = ring.Read(dest);
             if (read < byteCount)
                 dest[read..].Clear();
+
+            // null = true bypass - skip the processing call entirely rather
+            // than running an all-zero-dB filter. Only the bytes actually
+            // filled with real audio are processed, never the silence-padded
+            // tail from a short read above.
+            if (sink._equalizer is { } equalizer)
+                equalizer.ProcessInPlace(dest[..read]);
         }
 
         public void Resume()

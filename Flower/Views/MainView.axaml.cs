@@ -131,6 +131,7 @@ public partial class MainView : UserControl
             _viewModel.SettingsRequested -= OnSettingsRequested;
             _viewModel.ColumnSelectorRequested -= OnColumnSelectorRequested;
             _viewModel.LogWindowRequested -= OnLogWindowRequested;
+            _viewModel.EqualizerWindowRequested -= OnEqualizerWindowRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.PeerApprovalRequested -= OnPeerApprovalRequested;
@@ -147,6 +148,7 @@ public partial class MainView : UserControl
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.ColumnSelectorRequested += OnColumnSelectorRequested;
             _viewModel.LogWindowRequested += OnLogWindowRequested;
+            _viewModel.EqualizerWindowRequested += OnEqualizerWindowRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.PeerApprovalRequested += OnPeerApprovalRequested;
@@ -1090,6 +1092,8 @@ public partial class MainView : UserControl
 
     private void OnLogWindowRequested(object? sender, EventArgs e) => OpenLogWindow();
 
+    private void OnEqualizerWindowRequested(object? sender, EventArgs e) => OpenEqualizerWindow();
+
     // Raised by MainViewModel (forwarding PlaylistSyncService.ConflictDetected)
     // when the same playlist changed on both this device and a peer since they
     // last agreed - see SYNC-PLAN.md Phase 2. The dialog's result is fed back into
@@ -1175,6 +1179,15 @@ public partial class MainView : UserControl
         var logViewModel = Ioc.Default.GetRequiredService<LogViewModel>();
         var logWindow = new LogWindow(logViewModel);
         logWindow.Show();
+    }
+
+    // Non-modal, same reasoning as OpenLogWindow - the EQ should stay open
+    // and live-adjustable while music keeps playing.
+    private void OpenEqualizerWindow()
+    {
+        var equalizerViewModel = Ioc.Default.GetRequiredService<EqualizerViewModel>();
+        var equalizerWindow = new EqualizerWindow(equalizerViewModel);
+        equalizerWindow.Show();
     }
 
     // ── Track actions ─────────────────────────────────────────────────────────

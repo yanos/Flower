@@ -4,7 +4,7 @@ using System.Threading;
 namespace Flower.Manager
 {
     // Single-producer/single-consumer byte ring buffer carrying canonical PCM
-    // (Float32/48kHz/stereo throughout the gapless pipeline - see
+    // (S16/48kHz/stereo throughout the gapless pipeline - see
     // GaplessCoordinator). Read() is lock-free and never blocks, so it's safe
     // to call from a real-time audio render callback (Flower.Apple's
     // AVAudioSourceNode). Write()/TryWrite() may be called from a LibVLC

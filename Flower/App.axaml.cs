@@ -159,14 +159,22 @@ public partial class App : Application
         var libVLC = new LibVLC();
         var audioSink = PlatformAudioManager.Current ?? new MiniaudioSink(AppLogging.CreateTypedLogger<MiniaudioSink>());
 
+        var audioManager = new GaplessAudioManager(
+            libVLC,
+            audioSink,
+            AppLogging.CreateTypedLogger<GaplessAudioManager>(),
+            AppLogging.CreateTypedLogger<GaplessCoordinator>(),
+            AppLogging.CreateTypedLogger<TrackDecoder>());
+
+        // Re-apply the persisted EQ curve before the very first frame of
+        // audio plays, rather than waiting for the user to open the
+        // Equalizer window this session - see EqualizerViewModel.
+        if (appSettings.EqualizerSettings is { Enabled: true } eqSettings)
+            audioManager.ApplyEqualizer(Manager.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
+
         Ioc.Default.ConfigureServices(
             new ServiceCollection()
-                .AddSingleton<IAudioManager>(new GaplessAudioManager(
-                    libVLC,
-                    audioSink,
-                    AppLogging.CreateTypedLogger<GaplessAudioManager>(),
-                    AppLogging.CreateTypedLogger<GaplessCoordinator>(),
-                    AppLogging.CreateTypedLogger<TrackDecoder>()))
+                .AddSingleton<IAudioManager>(audioManager)
                 .AddSingleton<PlaylistControlViewModel>()
                 .AddSingleton(library)
                 .AddSingleton(mainPlaylist)
@@ -199,6 +207,7 @@ public partial class App : Application
                 .AddSingleton<CurrentlyPlayingControlViewModel>()
                 .AddSingleton<MobileMainViewModel>()
                 .AddSingleton<LogViewModel>()
+                .AddSingleton<EqualizerViewModel>()
                 .AddSingleton<NowPlayingIntegrationService>()
                 .AddLogging(builder => builder.AddSerilog())
                 .BuildServiceProvider());

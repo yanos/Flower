@@ -61,6 +61,7 @@
           <NativeMenu>
             <NativeMenuItem Header="Device Logs…" Command="{Binding OpenLogWindowCommand}"/>
             <NativeMenuItem Header="Select Columns…" Command="{Binding OpenColumnSelectorCommand}"/>
+            <NativeMenuItem Header="Equalizer…" Command="{Binding OpenEqualizerWindowCommand}"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Zoom"/>
           </NativeMenu>

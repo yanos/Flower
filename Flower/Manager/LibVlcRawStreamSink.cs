@@ -85,6 +85,14 @@ namespace Flower.Manager
             }
         }
 
+        // No-op: this sink is kept only as an unreferenced one-release-cycle
+        // fallback (see class remarks) - EQ was never implemented against
+        // LibVLC's rawaud render path and isn't worth adding now that
+        // MiniaudioSink is the sole production sink.
+        public void ApplyEqualizer(Equalizer? equalizer)
+        {
+        }
+
         public void Start(GaplessRingBuffer ringBuffer)
         {
             _ringBuffer = ringBuffer;

@@ -232,4 +232,17 @@ public class GaplessAudioManagerTests
 
         Assert.Equal(0, Volatile.Read(ref raisedCount));
     }
+
+    [Fact]
+    public void ApplyEqualizer_forwards_to_the_sink_unchanged()
+    {
+        var (manager, _, sink) = Make();
+        var equalizer = Equalizer.BuildFrom(new EqualizerSettings { Enabled = true }, GaplessFormat.SampleRate);
+
+        manager.ApplyEqualizer(equalizer);
+        Assert.Same(equalizer, sink.AppliedEqualizer);
+
+        manager.ApplyEqualizer(null);
+        Assert.Null(sink.AppliedEqualizer);
+    }
 }

@@ -1,17 +1,19 @@
 # Audiophile Playback Features Plan
 
-Five requested features: gapless playback, multi-channel/hi-res sample rate support (24-bit/192kHz+), DSD/APE format support, a low-latency playback engine, and EQ with true bypass. Output-device selection itself is `AIRPLAY-BLUETOOTH-PLAN.md` territory, referenced here only where a feature depends on it. Not yet started.
+Five requested features: gapless playback, multi-channel/hi-res sample rate support (24-bit/192kHz+), DSD/APE format support, a low-latency playback engine, and EQ with true bypass. Output-device selection itself is `AIRPLAY-BLUETOOTH-PLAN.md` territory, referenced here only where a feature depends on it. #1 (EQ) is done; the rest are not yet started.
 
 ## Key findings
 
 - Today's stack: one plain `VlcAudioManager` (`Flower/Manager/VlcAudioManager.cs`) — no equalizer, no preloading, no output-format config. Auto-advance only starts the next track after `EndReached`, so the gap includes full demux/codec-open latency.
-- Confirmed in installed `LibVLCSharp.dll` (3.10.0): `SetEqualizer(null)`/`UnsetEqualizer()` is a **true bypass**, not a flat 0dB filter. `SetAudioCallbacks`/`SetAudioFormat` exist (same seam `AIRPLAY-BLUETOOTH-PLAN.md` uses). No independent "pass multichannel through untouched" toggle exists in the API.
+- Confirmed in installed `LibVLCSharp.dll` (3.10.0): `SetEqualizer(null)`/`UnsetEqualizer()` is a **true bypass**, not a flat 0dB filter. `SetAudioCallbacks`/`SetAudioFormat` exist (same seam `AIRPLAY-BLUETOOTH-PLAN.md` uses). No independent "pass multichannel through untouched" toggle exists in the API. **No longer the implementation path for #1 below** — this API applied to `LibVlcRawStreamSink`'s render `MediaPlayer`, which every platform's render path has since moved off (see `MiniaudioSink`'s own class comment); the finding itself still stands as a fact about LibVLC, just not one anything in this codebase calls anymore.
 - Confirmed in `TagLibSharp.dll` (2.3.0): `.ape` and `.dsf` tag reading works today via the existing `TagLib.File.Create` call; `.dff` (DSDIFF) is not supported by this version.
 - **Confirmed by inspecting the installed macOS VLC's native plugin directory: no Monkey's Audio or DSD demux/decode plugins exist.** Mainline VLC does not ship native `.ape`/`.dsf` playback support — a real gap, not an assumption. Android/iOS's LibVLC NuGets haven't been checked yet and could be in the same position.
 
-## 1. EQ with true bypass — Small effort, Low risk
+## 1. EQ with true bypass — Done
 
-Extend `IAudioManager` with `SetEqualizer(EqualizerSettings? settings)` on top of the confirmed `Equalizer`/`UnsetEqualizer` API — `null` must call `UnsetEqualizer()`, not push an all-zero-dB filter. Persist an `EqualizerSettings` model (preamp, band gains, enabled flag, preset) via `AppSettings`, default disabled. New EQ panel: band sliders sized to `BandCount`, preamp, preset dropdown, an Enabled toggle that is the bypass control. Live-apply, no "apply" button.
+Implemented as a 10-band graphic EQ, not against LibVLC (see above) — LibVLC is decode-only now, and every platform renders through `MiniaudioSink`, a plain `ma_device` pulling raw PCM from `GaplessRingBuffer`. The EQ is a pure-C# RBJ-cookbook peaking/bell biquad cascade (`Equalizer`/`EqualizerSettings`, `Flower/Manager/`), spliced directly into `MiniaudioSink.DataCallback` after the ring read. `IAudioSink.ApplyEqualizer(Equalizer? equalizer)` carries a rebuilt-and-atomically-swapped processor down from `IAudioManager`/`GaplessAudioManager`; passing `null` is **true bypass** — `DataCallback` skips the processing call entirely rather than running an all-zero-dB filter, preserving this section's original bypass requirement under the new render pipeline.
+
+Fixed at 10 bands (31Hz–16kHz, ISO-ish spacing, `Q≈1.41`), ±12dB per band, plus a preamp stage applied before the cascade — no presets, no parametric (frequency/Q) adjustment; out of scope for what was asked. `EqualizerSettings` (enabled flag, preamp, 10 band gains) persists via `AppSettings.EqualizerSettings`/`AppSettingsStore`, and is eagerly re-applied at startup in `App.axaml.cs` — not only when the Equalizer window happens to be opened. UI: `EqualizerWindow`/`EqualizerViewModel`, reachable via **View → Equalizer…**, live-apply with no "Apply" button. A settings change rebuilds the whole processor (fresh coefficients and fresh filter delay-line state together), which can produce a minor transient click on a slider change — an accepted simplicity tradeoff, not coefficient-smoothed/crossfaded.
 
 ## 2. Low-latency playback engine — Small effort, Low risk
 
@@ -35,8 +37,8 @@ Needs a custom PCM pipeline via `SetAudioCallbacks`/`SetAudioFormat` that decode
 
 ## Suggested order
 
-1. #1 EQ bypass — self-contained, no open questions.
-2. #2 Low-latency tuning — alongside #1.
+1. #1 EQ bypass — done.
+2. #2 Low-latency tuning — next up.
 3. #3 DSD/APE — ship tagging/import any time; playback is its own much larger effort.
 4. #4 Near-gapless preload — no external dependencies.
 5. #5 Multi-channel/hi-res — after AirPlay/Bluetooth Phase 1 ships.

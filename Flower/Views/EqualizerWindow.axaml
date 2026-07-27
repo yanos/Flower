@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Flower.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="380"
+        x:Class="Flower.Views.EqualizerWindow"
+        x:DataType="vm:EqualizerViewModel"
+        Title="Equalizer"
+        Width="640" Height="380"
+        CanResize="False">
+  <DockPanel Margin="16">
+
+    <!-- Bypass toggle + preamp, above the band sliders. Unchecking Enabled
+         is true bypass (Equalizer.ApplyEqualizer(null)), not a flat filter -
+         see EqualizerViewModel.ApplyAndSave. -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,140" Margin="0,0,0,16">
+      <CheckBox Grid.Column="0" Content="Enabled" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center"/>
+      <TextBlock Grid.Column="2" Text="Preamp" VerticalAlignment="Center" Margin="12,0,8,0" Opacity="0.75"/>
+      <Slider Grid.Column="3" Minimum="-12" Maximum="12" TickFrequency="1" Value="{Binding PreampDb, Mode=TwoWay}" VerticalAlignment="Center"/>
+    </Grid>
+
+    <!-- 10 vertical band sliders, grayed out and non-interactive while
+         bypassed - IsEnabled cascades down to every child automatically. -->
+    <Border IsEnabled="{Binding Enabled}">
+      <ItemsControl ItemsSource="{Binding Bands}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <UniformGrid Rows="1"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:EqualizerBandViewModel">
+            <StackPanel Margin="4" HorizontalAlignment="Center">
+              <TextBlock Text="{Binding GainDb, StringFormat={}{0:0.0} dB}" HorizontalAlignment="Center" FontSize="10" Opacity="0.75" Margin="0,0,0,4"/>
+              <Slider Orientation="Vertical" Height="180" Minimum="-12" Maximum="12" TickFrequency="1" Value="{Binding GainDb, Mode=TwoWay}" HorizontalAlignment="Center"/>
+              <TextBlock Text="{Binding FrequencyLabel}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Border>
+  </DockPanel>
+</Window>
