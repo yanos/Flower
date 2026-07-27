@@ -108,6 +108,7 @@ public partial class TrackRowControl : UserControl
             "Duration"    => nameof(TrackRowViewModel.DurationDisplay),
             "PlayCount"   => nameof(TrackRowViewModel.PlayCountDisplay),
             "DateAdded"   => nameof(TrackRowViewModel.DateAddedDisplay),
+            "LastPlayed"  => nameof(TrackRowViewModel.LastPlayedDisplay),
             _             => ".",
         }));
         return tb;

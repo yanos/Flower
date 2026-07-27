@@ -36,6 +36,8 @@ public class TrackRowViewModel : ViewModelBase
 
     public string DateAddedDisplay => Track.DateAdded.LocalDateTime.ToString("MMM d, yyyy");
 
+    public string LastPlayedDisplay => Track.LastPlayedAt is { } lastPlayed ? lastPlayed.LocalDateTime.ToString("MMM d, yyyy") : "";
+
     // Not yet downloaded (see LibrarySyncService/LibraryDownloadService,
     // SYNC-PLAN.md Phase 3) - mobile-only for v1, see MobileMainView's row
     // template. Track itself isn't INotifyPropertyChanged, but that's fine here:

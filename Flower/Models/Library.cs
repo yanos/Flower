@@ -87,6 +87,7 @@ namespace Flower.Models
                         track.DateAdded         = previous.DateAdded;
                         track.PlayCount         = previous.PlayCount;
                         track.ImportedPlayCount = previous.ImportedPlayCount;
+                        track.LastPlayedAt      = previous.LastPlayedAt;
                         CarryForwardOrigin(track, previous);
                     }
                     else if (previousSyncedByKey.TryGetValue(track.SyncKey, out var previousSynced))
@@ -94,6 +95,7 @@ namespace Flower.Models
                         track.DateAdded         = previousSynced.DateAdded;
                         track.PlayCount         = previousSynced.PlayCount;
                         track.ImportedPlayCount = previousSynced.ImportedPlayCount;
+                        track.LastPlayedAt      = previousSynced.LastPlayedAt;
                         CarryForwardOrigin(track, previousSynced);
                     }
                 }
@@ -270,6 +272,27 @@ namespace Flower.Models
                     : playedTrack;
                 current.PlayCount++;
                 _logger.LogDebug("PlayCount incremented to {NewCount} for {Title} ({Path})", current.PlayCount, current.Title, current.Path);
+                return current;
+            }
+        }
+
+        // Atomically resolves whichever Track object currently represents
+        // playedTrack.Path in the library and stamps LastPlayedAt to now - same
+        // resolve-under-lock pattern as IncrementPlayCount above, for the same
+        // reason (a concurrent rescan replacing Tracks mid-flight). Called from
+        // PlaylistControlViewModel.Play at the moment a track starts playing, not
+        // from the EndReached/IncrementPlayCount "finished naturally" path - see
+        // Track.LastPlayedAt's own doc comment for why those two are deliberately
+        // different triggers.
+        public Track RecordPlayed(Track playedTrack)
+        {
+            lock (_lock)
+            {
+                var current = playedTrack.Path != null
+                    ? Tracks.FirstOrDefault(t => string.Equals(t.Path, playedTrack.Path, StringComparison.OrdinalIgnoreCase))
+                      ?? playedTrack
+                    : playedTrack;
+                current.LastPlayedAt = DateTimeOffset.UtcNow;
                 return current;
             }
         }

@@ -177,6 +177,20 @@ public class TrackListBuilderTests
     }
 
     [Fact]
+    public void Sort_by_lastplayed_ascending_and_descending()
+    {
+        var playedOlder = T("PlayedOlder") with { LastPlayedAt = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero) };
+        var playedNewer = T("PlayedNewer") with { LastPlayedAt = new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero) };
+        var tracks = new List<Track> { playedNewer, playedOlder };
+
+        var asc = TrackListBuilder.Build(tracks, null, "LastPlayed", true);
+        Assert.Equal(new[] { "PlayedOlder", "PlayedNewer" }, asc.ConvertAll(r => r.Track.Title));
+
+        var desc = TrackListBuilder.Build(tracks, null, "LastPlayed", false);
+        Assert.Equal(new[] { "PlayedNewer", "PlayedOlder" }, desc.ConvertAll(r => r.Track.Title));
+    }
+
+    [Fact]
     public void Sort_by_playcount_ascending_and_descending()
     {
         var tracks = new List<Track>
