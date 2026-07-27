@@ -219,6 +219,13 @@ namespace Flower.ViewModels
             // Arms decode-ahead for whichever track should follow this one,
             // so the gapless pipeline can splice it in with no gap.
             _audioManager.SetUpcoming(GetUpcomingTrack(track));
+
+            // Drives the History sidebar view - see Track.LastPlayedAt/
+            // Library.RecordPlayed for why this stamps here rather than
+            // alongside IncrementPlayCount in the EndReached handler below.
+            _library.RecordPlayed(track);
+            _library.NotifyTrackChanged();
+            _ = _libraryStore.SaveAsync(_library.Tracks);
         }
 
         public void PlayOrPause(Track track)

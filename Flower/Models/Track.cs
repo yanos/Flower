@@ -108,6 +108,14 @@ namespace Flower.Models
         public int PlayCount { get; set; }
         public int ImportedPlayCount { get; set; }
 
+        // When this track last started playing (see PlaylistControlViewModel.Play,
+        // via Library.RecordPlayed) - null if never played. Deliberately stamped at
+        // play-start, not on natural end-of-track like PlayCount above: "History"
+        // (the sidebar view this drives) means "you played this", not "you sat
+        // through the whole thing". Library.UpdateTracks carries it forward across
+        // rescans the same way DateAdded/PlayCount are.
+        public DateTimeOffset? LastPlayedAt { get; set; }
+
         // Latest known play count reported by each OTHER device, keyed by
         // DeviceIdentity.Fingerprint - see LibraryOpenSubsonicMapper.ToChild's
         // PlayCounts field and Library.MergeSyncedTracks. Never contains this

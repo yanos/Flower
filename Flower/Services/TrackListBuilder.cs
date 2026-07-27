@@ -52,6 +52,7 @@ public static class TrackListBuilder
             "Year"        => tracks.OrderBy(t => SortKey(t.Year)),
             "Genre"       => tracks.OrderBy(t => SortKey(t.Genre)),
             "DateAdded"   => tracks.OrderBy(t => t.DateAdded),
+            "LastPlayed"  => tracks.OrderBy(t => t.LastPlayedAt),
             "Duration"    => tracks.OrderBy(t => t.Duration),
             // Sort by the same combined total the column displays (see
             // Track.TotalPlayCount/TrackRowViewModel.PlayCountDisplay), not just

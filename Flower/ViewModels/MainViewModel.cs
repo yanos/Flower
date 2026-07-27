@@ -829,11 +829,18 @@ public partial class MainViewModel : ViewModelBase
     private string _recentlyAddedSortColumn    = "DateAdded";
     private bool   _recentlyAddedSortAscending = false;
 
+    // History gets the same independent-sort-state treatment as Recently Added,
+    // and for the same reason - defaults to newest-played-first rather than
+    // sharing/clobbering Songs' sort column.
+    private string _historySortColumn    = "LastPlayed";
+    private bool   _historySortAscending = false;
+
     private bool IsViewingRecentlyAdded => _selectedSidebarItem?.Kind == SidebarItemKind.RecentlyAdded;
+    private bool IsViewingHistory => _selectedSidebarItem?.Kind == SidebarItemKind.History;
 
-    public string SortColumn => IsViewingRecentlyAdded ? _recentlyAddedSortColumn : _sortColumn;
+    public string SortColumn => IsViewingRecentlyAdded ? _recentlyAddedSortColumn : IsViewingHistory ? _historySortColumn : _sortColumn;
 
-    public bool SortAscending => IsViewingRecentlyAdded ? _recentlyAddedSortAscending : _sortAscending;
+    public bool SortAscending => IsViewingRecentlyAdded ? _recentlyAddedSortAscending : IsViewingHistory ? _historySortAscending : _sortAscending;
 
     private bool _sortArtistAlbumsByYear;
 
@@ -1087,6 +1094,7 @@ public partial class MainViewModel : ViewModelBase
         SidebarItemKind.Artists       => $"artist:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
         SidebarItemKind.Playlist      => $"playlist:{_selectedSidebarItem.Playlist?.Name}",
         SidebarItemKind.RecentlyAdded => "recently-added",
+        SidebarItemKind.History       => "history",
         _                             => "songs"
     };
 
@@ -1520,6 +1528,21 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
+        if (IsViewingHistory)
+        {
+            if (_historySortColumn == columnId)
+                _historySortAscending = !_historySortAscending;
+            else
+            {
+                _historySortColumn    = columnId;
+                _historySortAscending = true;
+            }
+            OnPropertyChanged(nameof(SortColumn));
+            OnPropertyChanged(nameof(SortAscending));
+            ScheduleFilter();
+            return;
+        }
+
         if (_sortColumn == columnId)
             _sortAscending = !_sortAscending;
         else
@@ -1552,6 +1575,7 @@ public partial class MainViewModel : ViewModelBase
         _sidebarItems.Clear();
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header,        "Library"));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.RecentlyAdded, "Recently Added", MaterialIconKind.ClockPlusOutline));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.History, "History", MaterialIconKind.ClockTimeEightOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Songs,   "Songs",   MaterialIconKind.Music));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Albums,  "Albums",  MaterialIconKind.Album));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Artists, "Artists", MaterialIconKind.AccountMusic));
@@ -1616,7 +1640,7 @@ public partial class MainViewModel : ViewModelBase
         // SaveLastView below, which only ever writes one of these four), but
         // guarded anyway since this reads straight back out of a JSON file a
         // user could hand-edit.
-        return kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists or SidebarItemKind.RecentlyAdded
+        return kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists or SidebarItemKind.RecentlyAdded or SidebarItemKind.History
             ? _sidebarItems.FirstOrDefault(i => i.Kind == kind)
             : null;
     }
@@ -2307,6 +2331,11 @@ public partial class MainViewModel : ViewModelBase
                 => new List<Track>(),
             SidebarItemKind.Device
                 => new List<Track>(),
+            // Never-played tracks would otherwise just clutter the bottom/top of
+            // a "newest played first" sort with a meaningless null - History only
+            // makes sense for tracks that actually have a LastPlayedAt.
+            SidebarItemKind.History
+                => _allTracks.Where(t => t.LastPlayedAt != null).ToList(),
             _ => _allTracks
         };
     }

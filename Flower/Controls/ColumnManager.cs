@@ -135,5 +135,6 @@ public class ColumnManager
         new("Duration",    "Duration", 80,  50, true, 6),
         new("PlayCount",   "Plays",    55,  40, true, 7),
         new("DateAdded",   "Added",   100,  70, true, 8),
+        new("LastPlayed",  "Last Played", 100, 70, true, 9),
     ];
 }

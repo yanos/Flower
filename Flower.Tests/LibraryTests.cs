@@ -104,6 +104,59 @@ public class LibraryTests
     }
 
     [Fact]
+    public void UpdateTracks_preserves_LastPlayedAt_for_a_track_matched_by_path()
+    {
+        var lastPlayed = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero);
+        var library = new Library(new List<Track>
+        {
+            new Track { Path = "/music/a.mp3", LastPlayedAt = lastPlayed }
+        });
+
+        // Simulates a rescan: Importer builds a brand-new Track for the same
+        // file, defaulting LastPlayedAt to null like a genuinely new file
+        // would - UpdateTracks must carry the original forward, exactly like
+        // it already does for DateAdded/PlayCount.
+        var rescanned = new Track { Path = "/music/a.mp3" };
+
+        library.UpdateTracks(new List<Track> { rescanned });
+
+        Assert.Equal(lastPlayed, library.Tracks.Single().LastPlayedAt);
+    }
+
+    [Fact]
+    public void UpdateTracks_leaves_LastPlayedAt_null_for_a_never_played_track()
+    {
+        var library = new Library(new List<Track> { new Track { Path = "/music/other.mp3" } });
+
+        library.UpdateTracks(new List<Track> { new Track { Path = "/music/new.mp3" } });
+
+        Assert.Null(library.Tracks.Single().LastPlayedAt);
+    }
+
+    [Fact]
+    public void RecordPlayed_resolves_the_current_track_by_path_and_stamps_it()
+    {
+        var oldTrack = new Track { Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { oldTrack });
+
+        // A rescan swapped in a brand-new Track instance for the same file -
+        // like the Track a caller still holding a reference to oldTrack (e.g.
+        // PlaylistControlViewModel.CurrentlyPlayingTrack) would now be stale
+        // against.
+        var newTrack = new Track { Path = "/music/a.mp3" };
+        library.UpdateTracks(new List<Track> { newTrack });
+
+        var before = DateTimeOffset.UtcNow;
+        var played = library.RecordPlayed(oldTrack);
+        var after = DateTimeOffset.UtcNow;
+
+        Assert.Same(newTrack, played);
+        Assert.NotNull(newTrack.LastPlayedAt);
+        Assert.InRange(newTrack.LastPlayedAt!.Value, before, after);
+        Assert.Null(oldTrack.LastPlayedAt);
+    }
+
+    [Fact]
     public void IncrementPlayCount_resolves_the_current_track_by_path_and_increments_it()
     {
         var oldTrack = new Track { Path = "/music/a.mp3" };
