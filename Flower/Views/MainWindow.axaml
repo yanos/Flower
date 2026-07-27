@@ -59,11 +59,10 @@
       <NativeMenuItem Header="View">
         <NativeMenuItem.Menu>
           <NativeMenu>
+            <NativeMenuItem Header="Device Logs…" Command="{Binding OpenLogWindowCommand}"/>
             <NativeMenuItem Header="Select Columns…" Command="{Binding OpenColumnSelectorCommand}"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Zoom"/>
-            <NativeMenuItemSeparator/>
-            <NativeMenuItem Header="Log…" Command="{Binding OpenLogWindowCommand}"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
@@ -75,6 +74,6 @@
          menu bar) it renders that same NativeMenu as a regular in-window
          menu bar. Without it those platforms have no menu at all. -->
     <NativeMenuBar DockPanel.Dock="Top" HorizontalAlignment="Left"/>
-    <views:MainView />
+    <views:MainView x:Name="MainContent" />
   </DockPanel>
 </Window>
