@@ -105,6 +105,14 @@ public class LibraryDownloadService
         _library.NotifyTrackChanged();
     }
 
+    // Test-only override, checked first below. Unlike AppDataDirectory (see
+    // PlatformDataDirectory.Current), SpecialFolder.MyMusic/.Personal resolve
+    // via native OS APIs that don't respect a HOME env var override on
+    // macOS - without this, a test exercising DownloadAsync's success path
+    // would actually write into the real developer's ~/Music. Left null
+    // everywhere else.
+    public static string? DownloadFolderOverride { get; set; }
+
     // Same folders Importer/AndroidMediaStoreImporter already treat as this
     // platform's own music location (see Importer.ResolveMusicPath) - except on
     // Android, where a downloaded file deliberately lives in app-private storage
@@ -114,6 +122,8 @@ public class LibraryDownloadService
     // not rediscovery. Not yet verified on a real Android device.
     private static string ResolveDownloadFolder()
     {
+        if (DownloadFolderOverride != null)
+            return DownloadFolderOverride;
         if (OperatingSystem.IsIOS())
             return Environment.GetFolderPath(Environment.SpecialFolder.Personal);
         if (OperatingSystem.IsAndroid() && PlatformDataDirectory.Current is { } androidRoot)
