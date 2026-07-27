@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -8,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Flower.Services;
+using Flower.Tests.TestSupport;
 
 namespace Flower.Tests;
 
@@ -108,6 +110,80 @@ public class OpenSubsonicClientTests
 
         Assert.Equal(40, ex.Code);
         Assert.Equal("Wrong username or password.", ex.Message);
+    }
+
+    // No "subsonic-response" wrapper at all - distinct from the "failed"
+    // status case above (a well-formed error the server deliberately sent):
+    // this is what a byte-for-byte truncated/corrupted response, or a
+    // non-Subsonic server answering on the same port, looks like.
+    [Fact]
+    public async Task Malformed_envelope_throws_SubsonicException()
+    {
+        var client = MakeClient("{}", out _);
+
+        var ex = await Assert.ThrowsAsync<SubsonicException>(() => client.PingAsync());
+
+        Assert.Equal("Empty or malformed subsonic-response envelope.", ex.Message);
+    }
+
+    // A non-2xx status (peer's trust gate rejecting us, or any other HTTP
+    // error) must surface as a plain HttpRequestException from
+    // EnsureSuccessStatusCode - not get swallowed or misread as valid JSON -
+    // see SendAsync's own comment on this.
+    [Fact]
+    public async Task Non_success_status_throws_HttpRequestException_before_attempting_to_parse_the_body()
+    {
+        var handler = new FakeHandler("not json at all", HttpStatusCode.Forbidden);
+        var http = new HttpClient(handler);
+        var client = new OpenSubsonicClient("http://peer.local:4533", "alice", "hunter2", http);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.PingAsync());
+    }
+
+    // Real socket-level connection failure (nothing listening on the port at
+    // all) rather than a fake handler standing in for one - proves a
+    // genuinely unreachable peer (network outage, peer app not running)
+    // surfaces the same way any other HttpClient consumer would expect,
+    // rather than hanging or throwing something Flower-specific.
+    [Fact]
+    public async Task Connection_refused_throws_HttpRequestException()
+    {
+        var unboundPort = FakePeerHttpServer.GetUnboundPort();
+        var client = new OpenSubsonicClient($"http://127.0.0.1:{unboundPort}", "alice", "hunter2");
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.PingAsync());
+    }
+
+    // Simulates a network outage partway through a stream/download: the
+    // peer accepts the connection and starts responding but the connection
+    // drops before the declared Content-Length is fully sent. Confirms this
+    // surfaces as an exception the caller can act on (LibraryDownloadService
+    // catches it and reports TrackDownloadResult.Failed - see
+    // LibraryDownloadServiceTests) rather than silently succeeding with a
+    // truncated file.
+    [Fact]
+    public async Task DownloadTrackAsync_throws_when_the_connection_drops_mid_transfer()
+    {
+        var fullPayload = new byte[64 * 1024];
+        Random.Shared.NextBytes(fullPayload);
+        using var server = new FakePeerHttpServer(async ctx =>
+        {
+            ctx.Response.ContentLength64 = fullPayload.Length;
+            await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory(0, fullPayload.Length / 4));
+            await ctx.Response.OutputStream.FlushAsync();
+            ctx.Response.Abort();
+        });
+        var client = new OpenSubsonicClient($"http://127.0.0.1:{server.Port}", "alice", "hunter2");
+        var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
+
+        try
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(() => client.DownloadTrackAsync("sg-1", destination));
+        }
+        finally
+        {
+            File.Delete(destination);
+        }
     }
 
     [Fact]

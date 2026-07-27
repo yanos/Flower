@@ -138,7 +138,7 @@ public class NetworkDiscoveryService : IDisposable
     // real cost to matching the faster cadence.
     private static readonly TimeSpan RebrowseInterval = TimeSpan.FromSeconds(5);
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
+    private readonly HttpClient _http;
 
     private readonly IMdnsBackend _backend;
 
@@ -180,11 +180,20 @@ public class NetworkDiscoveryService : IDisposable
     // trusts us - see DiscoveredDevice.TrustsUs.
     private readonly DeviceIdentity _deviceIdentity;
 
-    public NetworkDiscoveryService(DeviceIdentity deviceIdentity, ILogger<NetworkDiscoveryService> logger)
+    // backend/httpClient are test-only seams (NetworkDiscoveryServiceTests):
+    // production always goes through the other two constructor args alone,
+    // getting the real Makaretu-backed mDNS and a real HttpClient exactly as
+    // before - a fake IMdnsBackend lets a test drive InstanceFound/
+    // InstanceLost directly instead of needing a real LAN, and a fake
+    // HttpMessageHandler behind the HttpClient lets a test control
+    // ResolveAliasAsync's /info response (or make it fail) without a real
+    // socket.
+    public NetworkDiscoveryService(DeviceIdentity deviceIdentity, ILogger<NetworkDiscoveryService> logger, IMdnsBackend? backend = null, HttpClient? httpClient = null)
     {
         _deviceIdentity = deviceIdentity;
         _logger = logger;
-        _backend = PlatformMdns.Current ?? new MakaretuMdnsBackend();
+        _backend = backend ?? PlatformMdns.Current ?? new MakaretuMdnsBackend();
+        _http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
         _backend.InstanceFound += OnInstanceFound;
         _backend.InstanceLost += (_, name) =>
         {
@@ -377,7 +386,7 @@ public class NetworkDiscoveryService : IDisposable
             using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}/api/localsend/v2/info");
             request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
             request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
-            using var response = await Http.SendAsync(request);
+            using var response = await _http.SendAsync(request);
             response.EnsureSuccessStatusCode();
             json = await response.Content.ReadAsStringAsync();
         }
@@ -562,5 +571,6 @@ public class NetworkDiscoveryService : IDisposable
     {
         Stop();
         _backend.Dispose();
+        _http.Dispose();
     }
 }
