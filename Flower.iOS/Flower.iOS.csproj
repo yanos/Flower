@@ -5,6 +5,7 @@
     <SupportedOSPlatformVersion>12.2</SupportedOSPlatformVersion>
     <ProvisioningType>automatic</ProvisioningType>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RuntimeIdentifier>ios-arm64</RuntimeIdentifier>
 
     <!-- Switch back to these two to run on the Simulator instead of a real iDevice -->

@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Linq;
 
 using Avalonia;
 using Avalonia.iOS;
@@ -102,15 +101,22 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // callback below 14 (diagnostics didn't exist as a concept pre-14; only
         // metrics did), but the analyzer can't know that from the Add(this) call
         // above being gated at 13 - this guard is what actually satisfies CA1416.
+        // Plain nested foreach rather than SelectMany(payload => ...): the
+        // guard-clause flow analysis CA1416 relies on doesn't reliably extend
+        // into a captured lambda body, so CrashDiagnostics still needs to be
+        // accessed directly in the guarded method body, not inside one.
         if (!OperatingSystem.IsIOSVersionAtLeast(14))
             return;
 
         var logger = AppLogging.CreateLogger("Flower.MetricKit");
-        foreach (var crash in payloads.SelectMany(payload => payload.CrashDiagnostics ?? []))
+        foreach (var payload in payloads)
         {
-            logger.LogCritical(
-                "Native crash reported via MetricKit: signal={Signal} exceptionType={ExceptionType} exceptionCode={ExceptionCode} terminationReason={TerminationReason}",
-                crash.Signal, crash.ExceptionType, crash.ExceptionCode, crash.TerminationReason);
+            foreach (var crash in payload.CrashDiagnostics ?? [])
+            {
+                logger.LogCritical(
+                    "Native crash reported via MetricKit: signal={Signal} exceptionType={ExceptionType} exceptionCode={ExceptionCode} terminationReason={TerminationReason}",
+                    crash.Signal, crash.ExceptionType, crash.ExceptionCode, crash.TerminationReason);
+            }
         }
     }
 }
