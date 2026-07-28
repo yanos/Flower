@@ -98,6 +98,9 @@ public sealed class AppleNowPlaying : IPlatformNowPlaying
 
     public void Clear()
     {
-        MPNowPlayingInfoCenter.DefaultCenter.NowPlaying = null;
+        // Apple's documented way to clear the Lock Screen/Control Center card
+        // is to set NowPlaying to nil - the .NET binding just doesn't mark the
+        // setter nullable.
+        MPNowPlayingInfoCenter.DefaultCenter.NowPlaying = null!;
     }
 }

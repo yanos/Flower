@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -70,6 +71,12 @@ public partial class TrackRowControl : UserControl
         }
     }
 
+    // Cell content is built per-column from ColumnManager's runtime-configurable
+    // definitions, so these bindings are constructed in code (new Binding(...))
+    // rather than declared in TrackRowControl.axaml, where compiled bindings are
+    // otherwise on. Each path used below (Track.Title etc.) is a real property
+    // on TrackRowViewModel/Track, kept alive by direct references elsewhere.
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Binding paths are real properties on TrackRowViewModel/Track, kept alive by direct references elsewhere in the codebase.")]
     private Control BuildCellContent(MusicColumnDefinition col)
     {
         if (col.Id == "Title")

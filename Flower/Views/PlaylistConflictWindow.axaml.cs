@@ -7,6 +7,10 @@ namespace Flower.Views;
 
 public partial class PlaylistConflictWindow : Window
 {
+    // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) -
+    // never called directly; the real constructor below is what's actually used.
+    public PlaylistConflictWindow() => InitializeComponent();
+
     public PlaylistConflictWindow(PlaylistConflictEventArgs conflict)
     {
         InitializeComponent();

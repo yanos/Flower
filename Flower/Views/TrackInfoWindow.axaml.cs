@@ -41,6 +41,13 @@ public partial class TrackInfoWindow : Window
 
     public event EventHandler<Track>? TrackNavigated;
 
+    // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) -
+    // never called directly; the two real constructors below are what's
+    // actually used.
+#pragma warning disable CS8618
+    public TrackInfoWindow() => InitializeComponent();
+#pragma warning restore CS8618
+
     // Single-track mode: tracks/index is the full displayed list, so Prev/Next
     // can browse through it one at a time.
     public TrackInfoWindow(IReadOnlyList<Track> tracks, int index, Library library)

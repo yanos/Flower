@@ -263,12 +263,18 @@ namespace Flower.Manager
 
         private Media EnsureMedia()
         {
+            // Track.Path is null for a sync placeholder (known via another
+            // device's library but not yet downloaded locally) - decoding
+            // one of those is a caller bug, not something to silently no-op.
+            if (Track.Path is not { } path)
+                throw new InvalidOperationException($"Cannot decode \"{Track.Title}\" - it has no local Path (undownloaded sync placeholder).");
+
             // Android's MediaStore importer hands back content:// URIs
             // rather than filesystem paths; those need FromLocation, not
             // the default FromPath.
-            return _media ??= Track.Path is { } path && path.Contains("://")
+            return _media ??= path.Contains("://")
                 ? new Media(_libVLC, path, FromType.FromLocation)
-                : new Media(_libVLC, Track.Path);
+                : new Media(_libVLC, path);
         }
 
         private void OnPlay(IntPtr data, IntPtr samples, uint count, long pts)

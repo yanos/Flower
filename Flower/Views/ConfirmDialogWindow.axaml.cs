@@ -13,6 +13,10 @@ namespace Flower.Views;
 // straight into the irreversible action.
 public partial class ConfirmDialogWindow : Window
 {
+    // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) -
+    // never called directly; the real constructor below is what's actually used.
+    public ConfirmDialogWindow() => InitializeComponent();
+
     public ConfirmDialogWindow(string title, string message, string confirmText)
     {
         InitializeComponent();

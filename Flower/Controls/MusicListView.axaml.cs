@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 using Avalonia;
@@ -46,7 +47,7 @@ public partial class MusicListView : UserControl
     // Keyed by Track.Path rather than TrackRowViewModel identity: rows are
     // rebuilt from scratch on every SetItems() (filter/sort/view-switch), but
     // path is the stable identity used everywhere else in this control.
-    private readonly HashSet<string> _selectedPaths = new();
+    private readonly HashSet<string?> _selectedPaths = new();
     private readonly List<TrackRowViewModel> _selectedRows = new();
     private string? _anchorPath; // Shift+click range-select anchor
 
@@ -351,7 +352,7 @@ public partial class MusicListView : UserControl
         _selectedRows.Clear();
         if (_selectedPaths.Count > 0)
         {
-            var stillPresent = new HashSet<string>();
+            var stillPresent = new HashSet<string?>();
             foreach (var row in items)
             {
                 if (_selectedPaths.Contains(row.Track.Path))
@@ -523,6 +524,12 @@ public partial class MusicListView : UserControl
         return Brushes.DodgerBlue;
     }
 
+    // MusicListView.axaml sets x:CompileBindings="False" - its columns are
+    // built and rebound dynamically from ColumnManager's runtime-configurable
+    // definitions, so a compile-time binding path isn't available here. The
+    // path used (col.Width) is a real property on MusicColumnDefinition, kept
+    // alive by direct references elsewhere, so trimming it away isn't a risk.
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Binding path is a real property on MusicColumnDefinition, kept alive by direct references elsewhere in the codebase.")]
     private Control MakeHeaderCell(MusicColumnDefinition col, IBrush separatorBrush)
     {
         // Sort arrow
