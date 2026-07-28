@@ -38,6 +38,15 @@
     <PackageReference Include="Avalonia.iOS" Version="12.1.0" />
     <PackageReference Include="VideoLAN.LibVLC.iOS" Version="3.6.1" />
     <PackageReference Include="LibVLCSharp.Avalonia" Version="3.10.0" />
+    <!-- SkiaSharp's own nuspec only declares its NativeAssets.iOS dependency
+         under a net10.0-ios26.2 group - NuGet's platform-version compatibility
+         check requires the group's version to be <= the project's own TFM
+         version, so it's skipped entirely for this project's net10.0-ios26.0
+         (falls back to the generic net10.0 group, which has no iOS entry at
+         all) and libSkiaSharp.framework never gets bundled, crashing at
+         startup with DllNotFoundException. Referencing it directly here
+         sidesteps that TFM-group selection. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.iOS" Version="3.119.4" />
   </ItemGroup>
 
   <ItemGroup>
