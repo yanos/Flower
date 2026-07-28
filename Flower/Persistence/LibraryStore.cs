@@ -76,13 +76,32 @@ namespace Flower.Persistence
         public async Task SaveAsync(IEnumerable<Track> tracks)
         {
             var path = StorePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var json = JsonSerializer.Serialize(tracks, FlowerJsonContext.Default.TrackEnumerable);
 
             await _writeLock.WaitAsync();
             try
             {
+                // CreateDirectory right before the write, not up front - this
+                // is a fire-and-forget call from multiple call sites
+                // (PlaylistControlViewModel.Play/EndReached) with no bound on
+                // how long it sits queued behind _writeLock, so recreating
+                // early would just widen the window for whatever deleted the
+                // directory (only ever test teardown in practice - see the
+                // catch below) to delete it again before the write lands.
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 await File.WriteAllTextAsync(path, json);
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                // The app-data directory disappeared out from under a queued,
+                // unawaited save (in practice: test teardown deleting its temp
+                // PlatformDataDirectory while a fire-and-forget SaveAsync was
+                // still queued behind _writeLock). This runs off an async-void
+                // event handler (PlaylistControlViewModel's EndReached
+                // subscription), so letting this throw crashes the whole
+                // process instead of failing one test/save - nothing left to
+                // persist into is not worth that.
+                _logger.LogWarning(ex, "Library directory disappeared while saving to {Path}; skipping this save", path);
             }
             finally
             {
@@ -99,13 +118,17 @@ namespace Flower.Persistence
         public void Save(IEnumerable<Track> tracks)
         {
             var path = StorePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var json = JsonSerializer.Serialize(tracks, FlowerJsonContext.Default.TrackEnumerable);
 
             _writeLock.Wait();
             try
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.WriteAllText(path, json);
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                _logger.LogWarning(ex, "Library directory disappeared while saving to {Path}; skipping this save", path);
             }
             finally
             {
