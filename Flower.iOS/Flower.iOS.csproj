@@ -25,6 +25,13 @@
          build error at all (confirmed by hand: omitting the app icon argument from
          the actool invocation produces no Assets.car). -->
     <AppIcon>AppIcon</AppIcon>
+
+    <!-- IL2104: trim-analysis warnings from third-party dependencies
+         (Avalonia.Controls.DataGrid, Avalonia.Diagnostics,
+         Avalonia.DesignerSupport, Common.Logging, Serilog, TagLibSharp) that
+         aren't annotated for trimming themselves - nothing to fix on our
+         side short of dropping the dependency. -->
+    <NoWarn>$(NoWarn);IL2104</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

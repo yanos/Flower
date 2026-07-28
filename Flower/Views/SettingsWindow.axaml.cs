@@ -31,6 +31,12 @@ public partial class SettingsWindow : Window
     private readonly List<string> _paths;
     private readonly List<string> _originalPaths;
 
+    // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) -
+    // never called directly; the real constructor below is what's actually used.
+#pragma warning disable CS8618
+    public SettingsWindow() => InitializeComponent();
+#pragma warning restore CS8618
+
     public SettingsWindow(MainViewModel viewModel)
     {
         InitializeComponent();

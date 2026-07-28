@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -89,7 +90,7 @@ public partial class App : Application
 
         logger.LogInformation("Flower starting. Log file: {LogPath}", logPath);
 
-        BindingPlugins.DataValidators.RemoveAt(0);
+        RemoveDataAnnotationsValidationPlugin();
 
         var libraryStore = new LibraryStore(AppLogging.CreateTypedLogger<LibraryStore>());
         var appSettingsStore = new AppSettingsStore(AppLogging.CreateTypedLogger<AppSettingsStore>());
@@ -307,4 +308,13 @@ public partial class App : Application
         });
     }
 
+    // Standard Avalonia template boilerplate: drops the DataAnnotations
+    // validation plugin in favor of INotifyDataErrorInfo/Exception-based
+    // validation. BindingPlugins.DataValidators itself is annotated
+    // RequiresUnreferencedCode because the property relates to the classic
+    // reflection-based binding system as a whole - this specific call
+    // (removing one fixed list entry) doesn't touch any binding path,
+    // so it's safe to suppress.
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Removing a fixed entry from BindingPlugins.DataValidators doesn't touch reflection-based binding paths.")]
+    private static void RemoveDataAnnotationsValidationPlugin() => BindingPlugins.DataValidators.RemoveAt(0);
 }

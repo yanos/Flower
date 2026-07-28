@@ -12,6 +12,12 @@ public partial class LogWindow : Window
 {
     private readonly LogViewModel _viewModel;
 
+    // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) -
+    // never called directly; the real constructor below is what's actually used.
+#pragma warning disable CS8618
+    public LogWindow() => InitializeComponent();
+#pragma warning restore CS8618
+
     public LogWindow(LogViewModel viewModel)
     {
         InitializeComponent();

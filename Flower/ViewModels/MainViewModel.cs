@@ -1160,7 +1160,13 @@ public partial class MainViewModel : ViewModelBase
 
     // ── Constructors ──────────────────────────────────────────────────────────
 
+    // Design-time only, so the Avalonia XAML previewer/designer can construct
+    // a DataContext instance via reflection - never invoked at runtime, so
+    // the non-nullable fields/properties below are never actually observed
+    // unpopulated.
+#pragma warning disable CS8618
     public MainViewModel() { }
+#pragma warning restore CS8618
 
     public MainViewModel(
         PlaylistControlViewModel playlistControlViewModel,

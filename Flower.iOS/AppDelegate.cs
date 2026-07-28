@@ -66,7 +66,10 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // decide an app's audio (and, in practice, its ability to react to
         // that audio) shouldn't be cut off just because it's not visible.
         var audioSession = AVAudioSession.SharedInstance();
-        audioSession.SetCategory(AVAudioSessionCategory.Playback.GetConstant(), out _);
+        // GetConstant() is typed nullable because it's a generic enum->native-constant
+        // lookup, but AVAudioSessionCategory.Playback is a well-known SDK constant that
+        // always resolves.
+        audioSession.SetCategory(AVAudioSessionCategory.Playback.GetConstant()!, out _);
         audioSession.SetActive(true, out _);
 
         // Notification-based rather than overriding UIApplicationDelegate's
