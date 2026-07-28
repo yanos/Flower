@@ -148,10 +148,10 @@ public partial class TrackInfoWindow : Window
     }
 
     private static EditableField FromTextBox(TextBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply) =>
-        new(() => box.Text ?? "", v => box.Text = v, w => box.Watermark = w, display, apply);
+        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, display, apply);
 
     private static EditableField FromAutoComplete(AutoCompleteBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply) =>
-        new(() => box.Text ?? "", v => box.Text = v, w => box.Watermark = w, display, apply);
+        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, display, apply);
 
     private static EditableField SimpleField(
         TextBox box, Func<Track, string?> get, Action<Track, string?> setTrack, Action<TagLib.Tag, string?> setTag) =>

@@ -27,4 +27,4 @@ For a debug build that catches native heap corruption early (relevant given `Min
 
 ## Verification
 
-Real gapless playback test on device/emulator/simulator is required before considering either platform done - see the plan doc / task list for the exact checklist (including an API 21-25 Android image specifically, to confirm the OpenSL|ES fallback engages when AAudio isn't available).
+Real gapless playback test on device/emulator/simulator is required before considering either platform done - see the plan doc / task list for the exact checklist (including an API 23-25 Android image specifically - the app's minSdk floor since the Avalonia 12 upgrade, see Flower.Android.csproj - to confirm the OpenSL|ES fallback engages when AAudio isn't available).

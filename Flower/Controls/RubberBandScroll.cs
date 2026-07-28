@@ -24,8 +24,8 @@ namespace Flower.Controls;
 // Avalonia's own ScrollViewer has no built-in equivalent (confirmed:
 // https://github.com/AvaloniaUI/Avalonia/issues/18648, open and unimplemented
 // as of writing). Its ScrollGestureRecognizer does, however, raise a live,
-// in-progress Gestures.ScrollGestureEvent for every increment of a touch-drag
-// scroll (Delta), not just Gestures.ScrollGestureEndedEvent once it finishes -
+// in-progress InputElement.ScrollGestureEvent for every increment of a touch-drag
+// scroll (Delta), not just InputElement.ScrollGestureEndedEvent once it finishes -
 // this tracks its own "logical" offset from those live deltas, independent of
 // ScrollViewer.Offset itself (which silently clamps to [0, Extent-Viewport],
 // giving no residual amount to react to once already pinned at a bound), and
@@ -33,7 +33,7 @@ namespace Flower.Controls;
 // excess - damped, so it gets harder to pull further, not linear - straight
 // to RenderTransform.Y live, so the content visibly drags along with the
 // finger while still touching, springing back only once the gesture actually
-// ends (Gestures.ScrollGestureEndedEvent).
+// ends (InputElement.ScrollGestureEndedEvent).
 //
 // The spring-back (and the live drag itself) is driven by a DispatcherTimer
 // stepping RenderTransform.Y frame by frame (the same manual-tween approach
@@ -112,12 +112,8 @@ public static class RubberBandScroll
                 templated.TemplateApplied += (_, _) => TryBindScrollViewer();
             TryBindScrollViewer();
 
-            Gestures.AddScrollGestureHandler(control, (_, e) =>
-            {
-                if (e is ScrollGestureEventArgs args)
-                    OnScrollGesture(state, args);
-            });
-            Gestures.AddScrollGestureEndedHandler(control, (_, _) => OnScrollGestureEnded(state));
+            control.AddHandler(InputElement.ScrollGestureEvent, (_, e) => OnScrollGesture(state, e));
+            control.AddHandler(InputElement.ScrollGestureEndedEvent, (_, _) => OnScrollGestureEnded(state));
         }
         catch (Exception ex)
         {

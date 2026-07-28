@@ -1,5 +1,4 @@
 using Android;
-using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.Net;
@@ -14,11 +13,11 @@ namespace Flower.Android;
 
 public class AndroidMediaPermissionStatus : IMediaPermissionStatus
 {
-    private readonly Activity _activity;
+    private readonly Context _context;
 
-    public AndroidMediaPermissionStatus(Activity activity)
+    public AndroidMediaPermissionStatus(Context context)
     {
-        _activity = activity;
+        _context = context;
     }
 
     public bool IsGranted()
@@ -27,14 +26,18 @@ public class AndroidMediaPermissionStatus : IMediaPermissionStatus
             ? Manifest.Permission.ReadMediaAudio!
             : Manifest.Permission.ReadExternalStorage!;
 
-        return ContextCompat.CheckSelfPermission(_activity, permission) == Permission.Granted;
+        return ContextCompat.CheckSelfPermission(_context, permission) == Permission.Granted;
     }
 
+    // NewTask is required here since _context may be the Application context
+    // rather than an Activity (see AvaloniaAndroidApplication/CustomizeAppBuilder
+    // in MainActivity.cs) - starting an Activity from a non-Activity Context is
+    // only legal with this flag set.
     public void OpenAppSettings()
     {
         var intent = new Intent(Settings.ActionApplicationDetailsSettings);
-        intent.SetData(Uri.FromParts("package", _activity.PackageName, null));
+        intent.SetData(Uri.FromParts("package", _context.PackageName, null));
         intent.AddFlags(ActivityFlags.NewTask);
-        _activity.StartActivity(intent);
+        _context.StartActivity(intent);
     }
 }

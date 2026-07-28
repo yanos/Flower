@@ -44,7 +44,7 @@ internal static class MacDockIcon
         using var source = new Bitmap(stream);
         using var rounded = RoundCorners(source);
         using var ms = new MemoryStream();
-        rounded.Save(ms);
+        rounded.Save(ms, new PngBitmapEncoderOptions());
         var bytes = ms.ToArray();
 
         var unmanagedBytes = Marshal.AllocHGlobal(bytes.Length);

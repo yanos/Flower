@@ -38,7 +38,7 @@
                x:Name="SearchTabBox"
                Text="{Binding SearchQuery}"
                IsVisible="{Binding #Root.Frame.IsSearchScreen}"
-               Watermark="Search your library"
+               PlaceholderText="Search your library"
                VerticalAlignment="Center">
         <TextBox.InnerRightContent>
           <Button Command="{Binding ClearSearchQueryCommand}"
