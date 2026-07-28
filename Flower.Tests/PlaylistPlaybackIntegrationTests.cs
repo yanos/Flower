@@ -60,7 +60,18 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
         // A track goes through more than one decoder instance when it's
         // replayed/re-armed (e.g. repeat), so this has to track every
         // instance ever created for it, not just the latest.
-        private readonly Dictionary<Track, List<FakeTrackDecoder>> _decoders = [];
+        //
+        // Reference equality, not Track's own record value-equality: Play()
+        // routes through the real PlaylistControlViewModel -> Library.
+        // RecordPlayed, which stamps LastPlayedAt on this exact track
+        // instance in place. That mutation happens after the instance is
+        // already a dictionary key here, and since Track's generated
+        // GetHashCode/Equals fold in every property including LastPlayedAt,
+        // the key's hash changes underneath the dictionary and later
+        // lookups land in the wrong bucket - surfacing as LatestDecoderFor
+        // asserting an empty collection for a track that was, in fact,
+        // already decoding.
+        private readonly Dictionary<Track, List<FakeTrackDecoder>> _decoders = new(ReferenceEqualityComparer.Instance);
 
         public Harness(List<Track> tracks)
         {
