@@ -98,6 +98,13 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
 
     public void DidReceiveDiagnosticPayloads(MXDiagnosticPayload[] payloads)
     {
+        // CrashDiagnostics is iOS 14+ only. MetricKit itself never invokes this
+        // callback below 14 (diagnostics didn't exist as a concept pre-14; only
+        // metrics did), but the analyzer can't know that from the Add(this) call
+        // above being gated at 13 - this guard is what actually satisfies CA1416.
+        if (!OperatingSystem.IsIOSVersionAtLeast(14))
+            return;
+
         var logger = AppLogging.CreateLogger("Flower.MetricKit");
         foreach (var crash in payloads.SelectMany(payload => payload.CrashDiagnostics ?? []))
         {
