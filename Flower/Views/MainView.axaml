@@ -7,6 +7,7 @@
              xmlns:usercontrols="clr-namespace:Flower.UserControls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             xmlns:services="clr-namespace:Flower.Services"
              mc:Ignorable="d"
              x:Class="Flower.Views.MainView"
              x:DataType="vm:MainViewModel">
@@ -315,14 +316,10 @@
              sidebar row is selected. Live browse/stream of that peer's catalog (see
              PeerLibraryViewModel) - unrestricted by Client/Server role/pairing,
              deliberately separate from the bulk LibrarySyncService merge (see
-             SyncRolePolicy). Plain DTOs (AlbumID3/Child), not compiled-bound -
-             same x:CompileBindings="False" escape hatch MusicListView/AlbumGridView
-             already use for content assembled/typed outside the MainViewModel
-             DataType this whole view otherwise compiles bindings against. -->
+             SyncRolePolicy). -->
         <Grid Grid.Column="0" Grid.ColumnSpan="2"
               IsVisible="{Binding IsShowingDeviceDetail}"
-              Margin="24" RowDefinitions="Auto,*"
-              x:CompileBindings="False">
+              Margin="24" RowDefinitions="Auto,*">
           <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,16">
             <!-- Server vs. plain-device icon - see MainViewModel.DeviceSidebarIcon;
                  SelectedSidebarItem.Icon is the same one shown in the sidebar row. -->
@@ -382,7 +379,7 @@
                      SelectedItem="{Binding PeerLibrary.SelectedAlbum}"
                      SelectionChanged="PeerAlbumList_SelectionChanged">
               <ListBox.ItemTemplate>
-                <DataTemplate>
+                <DataTemplate x:DataType="services:AlbumID3">
                   <StackPanel Spacing="2" Margin="0,4">
                     <TextBlock Text="{Binding Name}" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
                     <TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis"/>
@@ -395,7 +392,7 @@
                      ItemsSource="{Binding PeerLibrary.AlbumSongs}"
                      DoubleTapped="PeerSongList_DoubleTapped">
               <ListBox.ItemTemplate>
-                <DataTemplate>
+                <DataTemplate x:DataType="services:Child">
                   <Grid ColumnDefinitions="32,*,Auto">
                     <TextBlock Grid.Column="0" Text="{Binding Track}" Opacity="0.5"/>
                     <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>

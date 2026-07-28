@@ -1,7 +1,9 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Flower.ViewModels"
+        xmlns:controls="clr-namespace:Flower.Controls"
         x:Class="Flower.Views.ColumnSelectorWindow"
-        x:CompileBindings="False"
+        x:DataType="vm:MainViewModel"
         Title="Select Columns"
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterOwner"
@@ -14,7 +16,7 @@
         </ItemsPanelTemplate>
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
-        <DataTemplate>
+        <DataTemplate x:DataType="controls:MusicColumnDefinition">
           <CheckBox Content="{Binding Header}"
                     IsChecked="{Binding IsVisible}"
                     FontSize="11"

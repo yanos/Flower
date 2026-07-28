@@ -1,8 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Flower.Controls.AlbumArtPlaceholder"
-             x:Name="Root"
-             x:CompileBindings="False">
+             x:Name="Root">
 
   <!-- Shown wherever a track/album has no cover art (loading or absent). The
        note glyph is drawn at a fixed size inside a fixed-size Grid, then a

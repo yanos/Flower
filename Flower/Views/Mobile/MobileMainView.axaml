@@ -9,9 +9,8 @@
              xmlns:conv="clr-namespace:Flower.Converters"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              mc:Ignorable="d"
-             x:CompileBindings="False"
              x:Class="Flower.Views.Mobile.MobileMainView"
-             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}">
+             x:DataType="vm:MobileMainViewModel">
 
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />

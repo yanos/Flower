@@ -6,9 +6,8 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:conv="clr-namespace:Flower.Converters"
              mc:Ignorable="d"
-             x:CompileBindings="False"
              x:Class="Flower.Views.Mobile.NowPlayingView"
-             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}"
+             x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
 
   <UserControl.Resources>

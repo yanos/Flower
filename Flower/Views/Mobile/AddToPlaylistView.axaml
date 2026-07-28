@@ -3,11 +3,11 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:svm="clr-namespace:Flower.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
-             x:CompileBindings="False"
              x:Class="Flower.Views.Mobile.AddToPlaylistView"
-             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}">
+             x:DataType="vm:MobileMainViewModel">
 
   <UserControl.Styles>
     <Style Selector="Button.action">
@@ -56,9 +56,9 @@
 
             <ItemsControl ItemsSource="{Binding PlaylistPickerItems}">
               <ItemsControl.ItemTemplate>
-                <DataTemplate>
+                <DataTemplate x:DataType="svm:SidebarItem">
                   <Button Classes="action"
-                          Command="{Binding $parent[UserControl].DataContext.AddTrackToPlaylistCommand}"
+                          Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).AddTrackToPlaylistCommand}"
                           CommandParameter="{Binding}">
                     <StackPanel Orientation="Horizontal" Spacing="14">
                       <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" />
