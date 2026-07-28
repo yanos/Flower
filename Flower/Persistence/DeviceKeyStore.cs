@@ -37,8 +37,6 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "device-key.json");
 
-        private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-
         public (ECDsa Key, byte[] PublicKeyRaw) Load()
         {
             var path = StorePath;
@@ -47,7 +45,7 @@ namespace Flower.Persistence
                 try
                 {
                     var json = File.ReadAllText(path);
-                    var material = JsonSerializer.Deserialize<DeviceKeyMaterial>(json, Options);
+                    var material = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.DeviceKeyMaterial);
                     if (material is { PrivateKeyPkcs8Base64.Length: > 0 })
                     {
                         var ecdsa = ECDsa.Create();
@@ -97,7 +95,7 @@ namespace Flower.Persistence
                 "ECDSA-P256",
                 Convert.ToBase64String(ecdsa.ExportPkcs8PrivateKey()),
                 Convert.ToBase64String(publicKeyRaw));
-            File.WriteAllText(path, JsonSerializer.Serialize(material, Options));
+            File.WriteAllText(path, JsonSerializer.Serialize(material, FlowerJsonContext.Default.DeviceKeyMaterial));
         }
     }
 }

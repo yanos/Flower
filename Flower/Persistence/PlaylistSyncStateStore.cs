@@ -25,10 +25,9 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "sync-state.json");
 
-        private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-
-        // deviceFingerprint -> (playlistId -> agreed UpdatedAt)
-        private sealed record SyncStateRecord(Dictionary<string, Dictionary<Guid, DateTimeOffset>> Devices);
+        // deviceFingerprint -> (playlistId -> agreed UpdatedAt). Internal (not
+        // private) so FlowerJsonContext can reference it.
+        internal sealed record SyncStateRecord(Dictionary<string, Dictionary<Guid, DateTimeOffset>> Devices);
 
         public Dictionary<Guid, DateTimeOffset> LoadBaselines(string deviceFingerprint)
         {
@@ -45,7 +44,7 @@ namespace Flower.Persistence
 
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(all, Options));
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(all, FlowerJsonContext.Default.SyncStateRecord));
         }
 
         private SyncStateRecord LoadAll()
@@ -57,7 +56,7 @@ namespace Flower.Persistence
             try
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<SyncStateRecord>(json, Options)
+                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.SyncStateRecord)
                        ?? new SyncStateRecord(new Dictionary<string, Dictionary<Guid, DateTimeOffset>>());
             }
             catch (Exception ex)

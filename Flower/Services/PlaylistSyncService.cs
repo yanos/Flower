@@ -49,7 +49,6 @@ public sealed class PlaylistConflictEventArgs : EventArgs
 public class PlaylistSyncService
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
@@ -131,7 +130,7 @@ public class PlaylistSyncService
             using var getResponse = await Http.SendAsync(getRequest);
             getResponse.EnsureSuccessStatusCode(); // Throws on a 403 from an unapproved trust gate - handled below like any other unreachable peer.
             var json = await getResponse.Content.ReadAsStringAsync();
-            var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(json, JsonOptions);
+            var manifest = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.PlaylistSyncManifestDto);
             remotePlaylists = manifest?.Playlists ?? new List<PlaylistSyncPlaylistDto>();
         }
         catch (Exception ex)
@@ -196,7 +195,7 @@ public class PlaylistSyncService
         try
         {
             var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, finalPlaylists);
-            var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, JsonOptions));
+            var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, FlowerJsonContext.Default.PlaylistSyncManifestDto));
             const string postPath = "/api/flower/v1/playlists/apply";
             using var content = new ByteArrayContent(bodyBytes);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");

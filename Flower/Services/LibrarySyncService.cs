@@ -53,7 +53,6 @@ public class LibrarySyncService
     // bigger JSON response over a possibly-imperfect WiFi link without silently
     // timing out and aborting the whole sync (see the catch below).
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(2) };
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
@@ -110,7 +109,7 @@ public class LibrarySyncService
             using var response = await Http.SendAsync(request);
             response.EnsureSuccessStatusCode();
             var json = await response.Content.ReadAsStringAsync();
-            var manifest = JsonSerializer.Deserialize<LibrarySyncManifestDto>(json, JsonOptions);
+            var manifest = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.LibrarySyncManifestDto);
             songs = manifest?.Songs ?? [];
         }
         catch (Exception ex)
@@ -169,7 +168,7 @@ public class LibrarySyncService
         {
             var entries = _logStore.Snapshot().Select(LogEntryDto.FromEntry).ToList();
             var report = new LogReportDto(_deviceIdentity.Fingerprint, _deviceIdentity.Alias, DateTimeOffset.UtcNow, entries);
-            var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, JsonOptions));
+            var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, FlowerJsonContext.Default.LogReportDto));
 
             const string path = "/api/flower/v1/log/report";
             var (signature, timestamp, nonce) = _signingKey.Sign("POST", path, [], bodyBytes);

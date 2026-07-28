@@ -17,6 +17,7 @@ namespace Flower.Persistence
 {
     // Settings > Appearance - see Flower.Services.AppTheme for how this
     // translates into Avalonia's own ThemeVariant.
+    [JsonConverter(typeof(JsonStringEnumConverter<AppThemePreference>))]
     public enum AppThemePreference
     {
         System,
@@ -152,14 +153,6 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "settings.json");
 
-        // Converters: ThemePreference round-trips as "System"/"Light"/"Dark" in
-        // settings.json rather than an opaque integer.
-        private static readonly JsonSerializerOptions Options = new()
-        {
-            WriteIndented = true,
-            Converters = { new JsonStringEnumConverter() },
-        };
-
         public AppSettings Load()
         {
             var settings = LoadFromDisk();
@@ -173,7 +166,7 @@ namespace Flower.Persistence
                 settings.LibraryPaths.Add(appleMusicFolder);
                 var path = StorePath;
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                File.WriteAllText(path, JsonSerializer.Serialize(settings, Options));
+                File.WriteAllText(path, JsonSerializer.Serialize(settings, FlowerJsonContext.Default.AppSettings));
             }
 
             return settings;
@@ -188,7 +181,7 @@ namespace Flower.Persistence
             try
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<AppSettings>(json, Options) ?? new AppSettings();
+                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.AppSettings) ?? new AppSettings();
             }
             catch (Exception ex)
             {
@@ -201,7 +194,7 @@ namespace Flower.Persistence
         {
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var json = JsonSerializer.Serialize(settings, Options);
+            var json = JsonSerializer.Serialize(settings, FlowerJsonContext.Default.AppSettings);
             await File.WriteAllTextAsync(path, json);
         }
 
@@ -211,7 +204,7 @@ namespace Flower.Persistence
         {
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(settings, Options));
+            File.WriteAllText(path, JsonSerializer.Serialize(settings, FlowerJsonContext.Default.AppSettings));
         }
     }
 }

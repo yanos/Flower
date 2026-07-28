@@ -31,8 +31,6 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "device-nicknames.json");
 
-        private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-
         public List<DeviceNickname> Load()
         {
             var path = StorePath;
@@ -42,7 +40,7 @@ namespace Flower.Persistence
             try
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<List<DeviceNickname>>(json, Options) ?? new List<DeviceNickname>();
+                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.DeviceNicknameList) ?? new List<DeviceNickname>();
             }
             catch (Exception ex)
             {
@@ -70,7 +68,7 @@ namespace Flower.Persistence
 
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(nicknames, Options));
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(nicknames, FlowerJsonContext.Default.DeviceNicknameList));
         }
     }
 }

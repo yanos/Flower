@@ -41,8 +41,6 @@ public class OpenSubsonicClient
     private readonly string _clientName;
     private readonly PeerIdentityParamsBuilder? _peerIdentityParams;
 
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     // peerIdentityParams is for talking to another Flower device's embedded
     // host rather than a real Subsonic server: peer-to-peer auth is the
     // signed trust gate (X-Flower-Fingerprint/-Alias/-Role/-PublicKey/
@@ -156,7 +154,7 @@ public class OpenSubsonicClient
         httpResponse.EnsureSuccessStatusCode(); // e.g. a 403 from a peer's trust gate - surfaces as a plain HttpRequestException.
         var json = await httpResponse.Content.ReadAsStringAsync();
 
-        var response = JsonSerializer.Deserialize<SubsonicEnvelope>(json, JsonOptions)?.Response
+        var response = JsonSerializer.Deserialize(json, ExternalProtocolJsonContext.Default.SubsonicEnvelope)?.Response
             ?? throw new SubsonicException(0, "Empty or malformed subsonic-response envelope.");
 
         if (response.Status == "failed")

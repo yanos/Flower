@@ -38,8 +38,6 @@ namespace Flower.Persistence
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "trusted-peers.json");
         public static string DeniedStorePath => Path.Combine(AppDataDirectory.Path, "denied-peers.json");
 
-        private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-
         public List<TrustedPeer> Load()
         {
             var path = StorePath;
@@ -49,7 +47,7 @@ namespace Flower.Persistence
             try
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<List<TrustedPeer>>(json, Options) ?? new List<TrustedPeer>();
+                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.TrustedPeerList) ?? new List<TrustedPeer>();
             }
             catch (Exception ex)
             {
@@ -105,7 +103,7 @@ namespace Flower.Persistence
             try
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<List<DeniedPeer>>(json, Options) ?? new List<DeniedPeer>();
+                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.DeniedPeerList) ?? new List<DeniedPeer>();
             }
             catch (Exception ex)
             {
@@ -136,14 +134,14 @@ namespace Flower.Persistence
         {
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(peers, Options));
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(peers, FlowerJsonContext.Default.TrustedPeerList));
         }
 
         private static async Task SaveDeniedAsync(List<DeniedPeer> denied)
         {
             var path = DeniedStorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(denied, Options));
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(denied, FlowerJsonContext.Default.DeniedPeerList));
         }
     }
 }
