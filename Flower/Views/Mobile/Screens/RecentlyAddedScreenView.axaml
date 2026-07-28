@@ -1,9 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
-             mc:Ignorable="d"
              x:CompileBindings="False"
              x:Class="Flower.Views.Mobile.Screens.RecentlyAddedScreenView"
              Background="{DynamicResource AppBackgroundBrush}">
