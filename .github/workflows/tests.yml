@@ -5,7 +5,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -22,5 +26,51 @@ jobs:
             Flower/Flower.csproj
             Flower.Tests/Flower.Tests.csproj
 
+      # None of the hosted runner images ship VLC, so RequiresLibVLC-tagged
+      # tests (real-decode/native-audio coverage) don't run here - same
+      # "fast, day-to-day" filter as CLAUDE.md's local dev instructions.
       - name: Run tests
-        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release
+        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter Category!=RequiresLibVLC
+
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower/Flower.csproj
+            Flower.iOS/Flower.iOS.csproj
+
+      - name: Install iOS workload
+        run: dotnet workload install ios
+
+      # Build-only: Flower.Tests has no iOS-specific code, so there's nothing
+      # for an on-simulator test run to exercise that this doesn't already
+      # cover - this just catches platform-specific compile breaks.
+      - name: Build for iOS simulator
+        run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64
+
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower/Flower.csproj
+            Flower.Android/Flower.Android.csproj
+
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      - name: Build for Android
+        run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
