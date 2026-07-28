@@ -2,8 +2,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Flower.ViewModels"
         xmlns:ae="using:AvaloniaEdit"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d"
         x:Class="Flower.Views.LogWindow"
         x:DataType="vm:LogViewModel"
         Title="Log"
