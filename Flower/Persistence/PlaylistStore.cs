@@ -29,14 +29,13 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "playlists.json");
 
-        private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-
         // Tracks are stored by file path and resolved against the library on load,
         // so playlists.json never duplicates track metadata. Id/UpdatedAt default to
         // Guid.Empty/default(DateTimeOffset) when absent so records written before
         // sync support (no Id field at all) still deserialize - see Load's migration
-        // below rather than failing the whole file.
-        private sealed record PlaylistRecord(string Name, List<string> TrackPaths, Guid Id = default, DateTimeOffset UpdatedAt = default);
+        // below rather than failing the whole file. Internal (not private) so
+        // FlowerJsonContext can reference it.
+        internal sealed record PlaylistRecord(string Name, List<string> TrackPaths, Guid Id = default, DateTimeOffset UpdatedAt = default);
 
         public List<Playlist> Load(IReadOnlyList<Track> libraryTracks)
         {
@@ -47,7 +46,7 @@ namespace Flower.Persistence
             try
             {
                 var json    = File.ReadAllText(path);
-                var records = JsonSerializer.Deserialize<List<PlaylistRecord>>(json, Options) ?? new();
+                var records = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.PlaylistRecordList) ?? new();
                 var byPath  = libraryTracks
                     .Where(t => t.Path != null)
                     .GroupBy(t => t.Path!)
@@ -81,7 +80,7 @@ namespace Flower.Persistence
                     p.UpdatedAt))
                 .ToList();
 
-            var json = JsonSerializer.Serialize(records, Options);
+            var json = JsonSerializer.Serialize(records, FlowerJsonContext.Default.PlaylistRecordList);
             await File.WriteAllTextAsync(path, json);
         }
     }

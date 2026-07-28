@@ -140,8 +140,6 @@ public class SyncHttpServer : IDisposable
     // logic needed on the receiving side.
     public event EventHandler<PeerTrustRejectedEventArgs>? PeerUnpairNotified;
 
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     // The port actually bound once Start() succeeds - may differ from DefaultPort,
     // see Start(). Null if binding failed on every port tried (sync unavailable).
     public int? BoundPort { get; private set; }
@@ -522,6 +520,13 @@ public class SyncHttpServer : IDisposable
         return Task.CompletedTask;
     }
 
+    // Wire shape for HandleInfoAsync below - camelCase field names come from
+    // ExternalProtocolJsonContext's naming policy, matching what the previous
+    // anonymous-type response produced.
+    internal sealed record SyncInfoResponseDto(
+        string Alias, string Version, string? DeviceModel, string DeviceType,
+        string Fingerprint, string PublicKey, bool IsServer, bool Download, bool? TrustsCaller);
+
     // Deliberately ungated (see the route table's AuthMode.Open: a peer has to
     // learn our fingerprint+public key here before either side can evaluate
     // trust at all) - but if the caller already identifies itself via the
@@ -540,25 +545,24 @@ public class SyncHttpServer : IDisposable
     {
         var deviceType = OperatingSystem.IsIOS() || OperatingSystem.IsAndroid() ? "mobile" : "desktop";
         var callerFingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
-        var responseBody = JsonSerializer.Serialize(new
-        {
-            alias = _deviceIdentity.Alias,
-            version = "2.0",
-            deviceModel = (string?)null,
+        var responseDto = new SyncInfoResponseDto(
+            _deviceIdentity.Alias,
+            "2.0",
+            null,
             deviceType,
-            fingerprint = _deviceIdentity.Fingerprint,
-            publicKey = _deviceSigningKey.PublicKeyBase64,
-            isServer = _appSettings.IsServer,
-            download = false,
-            trustsCaller = string.IsNullOrEmpty(callerFingerprint) ? (bool?)null : _trustedPeerStore.IsTrusted(callerFingerprint)
-        });
+            _deviceIdentity.Fingerprint,
+            _deviceSigningKey.PublicKeyBase64,
+            _appSettings.IsServer,
+            false,
+            string.IsNullOrEmpty(callerFingerprint) ? null : _trustedPeerStore.IsTrusted(callerFingerprint));
+        var responseBody = JsonSerializer.Serialize(responseDto, ExternalProtocolJsonContext.Default.SyncInfoResponseDto);
         await WriteJsonAsync(context, responseBody);
     }
 
     private async Task HandleGetPlaylistsAsync(HttpListenerContext context, byte[] body)
     {
         var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, _library.Playlists);
-        await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
+        await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, FlowerJsonContext.Default.PlaylistSyncManifestDto));
     }
 
     // Bulk, non-OpenSubsonic endpoint for LibrarySyncService - see
@@ -567,7 +571,7 @@ public class SyncHttpServer : IDisposable
     private async Task HandleGetLibraryAsync(HttpListenerContext context, byte[] body)
     {
         var manifest = new LibrarySyncManifestDto(_deviceIdentity.Fingerprint, LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks, _deviceIdentity.Fingerprint));
-        await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, JsonOptions));
+        await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, FlowerJsonContext.Default.LibrarySyncManifestDto));
     }
 
     // A Client's pushed log snapshot (see LibrarySyncService.PushLogSnapshotAsync).
@@ -577,7 +581,7 @@ public class SyncHttpServer : IDisposable
     private async Task HandleReportLogAsync(HttpListenerContext context, byte[] body)
     {
         var json = Encoding.UTF8.GetString(body);
-        var report = JsonSerializer.Deserialize<LogReportDto>(json, JsonOptions);
+        var report = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.LogReportDto);
         if (report == null)
         {
             context.Response.StatusCode = 400;
@@ -598,7 +602,7 @@ public class SyncHttpServer : IDisposable
     private async Task HandleApplyPlaylistsAsync(HttpListenerContext context, byte[] body)
     {
         var json = Encoding.UTF8.GetString(body);
-        var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(json, JsonOptions);
+        var manifest = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.PlaylistSyncManifestDto);
         if (manifest == null)
         {
             context.Response.StatusCode = 400;
@@ -635,7 +639,7 @@ public class SyncHttpServer : IDisposable
         var responseBody = JsonSerializer.Serialize(new SubsonicEnvelope
         {
             Response = new SubsonicResponse { Status = "ok", Version = "1.16.1", AlbumList2 = new AlbumList2(albums) },
-        }, JsonOptions);
+        }, ExternalProtocolJsonContext.Default.SubsonicEnvelope);
         await WriteJsonAsync(context, responseBody);
     }
 
@@ -652,7 +656,7 @@ public class SyncHttpServer : IDisposable
         var responseBody = JsonSerializer.Serialize(new SubsonicEnvelope
         {
             Response = new SubsonicResponse { Status = "ok", Version = "1.16.1", Album = album },
-        }, JsonOptions);
+        }, ExternalProtocolJsonContext.Default.SubsonicEnvelope);
         await WriteJsonAsync(context, responseBody);
     }
 

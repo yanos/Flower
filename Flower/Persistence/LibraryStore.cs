@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -22,12 +21,6 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "library.json");
 
-        private static readonly JsonSerializerOptions Options = new()
-        {
-            WriteIndented = true,
-            Converters = { new TimeSpanTicksConverter() }
-        };
-
         public List<Track> Load()
         {
             var path = StorePath;
@@ -37,7 +30,7 @@ namespace Flower.Persistence
             try
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<List<Track>>(json, Options) ?? new List<Track>();
+                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.TrackList) ?? new List<Track>();
             }
             catch (Exception ex)
             {
@@ -58,7 +51,7 @@ namespace Flower.Persistence
             try
             {
                 var json = await File.ReadAllTextAsync(path);
-                return JsonSerializer.Deserialize<List<Track>>(json, Options) ?? new List<Track>();
+                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.TrackList) ?? new List<Track>();
             }
             catch (Exception ex)
             {
@@ -71,7 +64,7 @@ namespace Flower.Persistence
         {
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var json = JsonSerializer.Serialize(tracks, Options);
+            var json = JsonSerializer.Serialize(tracks, FlowerJsonContext.Default.TrackEnumerable);
             await File.WriteAllTextAsync(path, json);
         }
 
@@ -85,16 +78,7 @@ namespace Flower.Persistence
         {
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(tracks, Options));
-        }
-
-        private sealed class TimeSpanTicksConverter : JsonConverter<TimeSpan>
-        {
-            public override TimeSpan Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-                => TimeSpan.FromTicks(reader.GetInt64());
-
-            public override void Write(Utf8JsonWriter writer, TimeSpan value, JsonSerializerOptions options)
-                => writer.WriteNumberValue(value.Ticks);
+            File.WriteAllText(path, JsonSerializer.Serialize(tracks, FlowerJsonContext.Default.TrackEnumerable));
         }
     }
 }

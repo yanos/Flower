@@ -41,8 +41,6 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "device.json");
 
-        private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-
         public DeviceIdentity Load(string derivedFingerprint)
         {
             var path = StorePath;
@@ -51,7 +49,7 @@ namespace Flower.Persistence
                 try
                 {
                     var json = File.ReadAllText(path);
-                    if (JsonSerializer.Deserialize<DeviceIdentity>(json, Options) is { } identity)
+                    if (JsonSerializer.Deserialize(json, FlowerJsonContext.Default.DeviceIdentity) is { } identity)
                     {
                         var changed = false;
 
@@ -111,14 +109,14 @@ namespace Flower.Persistence
         {
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(identity, Options));
+            File.WriteAllText(path, JsonSerializer.Serialize(identity, FlowerJsonContext.Default.DeviceIdentity));
         }
 
         public async Task SaveAsync(DeviceIdentity identity)
         {
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(identity, Options));
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(identity, FlowerJsonContext.Default.DeviceIdentity));
         }
     }
 }

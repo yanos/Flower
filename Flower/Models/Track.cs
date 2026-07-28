@@ -66,6 +66,7 @@ namespace Flower.Models
         public string? Lyrics { get; set; }
 
         // Audio technical
+        [JsonConverter(typeof(TimeSpanTicksConverter))]
         public TimeSpan Duration { get; set; }
         public int Bitrate { get; set; }
         public int SampleRate { get; set; }
