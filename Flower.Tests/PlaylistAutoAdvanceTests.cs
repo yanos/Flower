@@ -42,6 +42,19 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
     public void Dispose()
     {
+        // A repeat/auto-advance Play() posts its own fire-and-forget
+        // LibraryStore.SaveAsync as a Dispatcher job, which can still be
+        // queued when the test body returns (nothing awaits it) - drain the
+        // dispatcher first so that write lands against a directory that
+        // still exists, instead of racing the delete below and surfacing as
+        // a spurious test-cleanup failure.
+        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(200);
+        while (DateTime.UtcNow < deadline)
+        {
+            Dispatcher.UIThread.RunJobs();
+            Thread.Sleep(1);
+        }
+
         PlatformDataDirectory.Current = null;
         try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
     }
