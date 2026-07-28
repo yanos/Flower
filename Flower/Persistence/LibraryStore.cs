@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,18 @@ namespace Flower.Persistence
     public class LibraryStore
     {
         private readonly ILogger<LibraryStore> _logger;
+
+        // PlaylistControlViewModel fires off SaveAsync from multiple,
+        // independently-triggered call sites (Play, the EndReached handler)
+        // with no ordering guarantee between them, so overlapping writes to
+        // the same library.json are expected, not a bug to fix upstream.
+        // File.WriteAllTextAsync opens without FileShare, so two overlapping
+        // writes collide - silently on Unix (one write's bytes win, harmless
+        // since both are serializing the same up-to-date Library.Tracks),
+        // loudly on Windows (IOException: file in use). Serialize here so
+        // Windows doesn't throw; still race-free content-wise since all
+        // concurrent callers exist to persist the same tracks list.
+        private readonly SemaphoreSlim _writeLock = new(1, 1);
 
         public LibraryStore(ILogger<LibraryStore> logger)
         {
@@ -65,7 +78,16 @@ namespace Flower.Persistence
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var json = JsonSerializer.Serialize(tracks, FlowerJsonContext.Default.TrackEnumerable);
-            await File.WriteAllTextAsync(path, json);
+
+            await _writeLock.WaitAsync();
+            try
+            {
+                await File.WriteAllTextAsync(path, json);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
 
         // Synchronous counterpart for the Window.Closing handler, where the
@@ -78,7 +100,17 @@ namespace Flower.Persistence
         {
             var path = StorePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(tracks, FlowerJsonContext.Default.TrackEnumerable));
+            var json = JsonSerializer.Serialize(tracks, FlowerJsonContext.Default.TrackEnumerable);
+
+            _writeLock.Wait();
+            try
+            {
+                File.WriteAllText(path, json);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
     }
 }
