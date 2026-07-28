@@ -2,8 +2,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
-             x:CompileBindings="False"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Views.Mobile.Screens.TrackListScreenView"
+             x:DataType="vm:MobileMainViewModel"
+             x:Name="Root"
              Background="{DynamicResource AppBackgroundBrush}">
 
   <UserControl.Resources>
@@ -33,7 +35,7 @@
          inside IsShowingAlbumTrackList (see the template itself), so
          reusing it here needs no changes.
 
-         Bound to $parent[UserControl].DisplayRows/DisplayHeader/IsAlbumMode,
+         Bound to #Root.DisplayRows/DisplayHeader/IsAlbumMode,
          NOT Main.Rows/AlbumDetailRows/CurrentAlbumHeader/IsShowingAlbumTrackList
          on the shared DataContext directly - this instance can be kept alive
          as ScreenStackPanel's "one back" screen (see the swipe-back
@@ -45,37 +47,37 @@
          navigate generally, not just within an album (the same bug, in the
          same shape, that motivated AlbumDetailRows in the first place - see
          TrackListScreenView.axaml.cs's ObserveLive/Freeze). -->
-    <ScrollViewer IsVisible="{Binding $parent[UserControl].IsAlbumMode}" controls:RubberBandScroll.IsEnabled="True">
+    <ScrollViewer IsVisible="{Binding #Root.IsAlbumMode}" controls:RubberBandScroll.IsEnabled="True">
       <StackPanel>
         <Border Padding="24,4,24,16">
           <StackPanel Spacing="12" HorizontalAlignment="Center">
-            <controls:AlbumArtView AlbumArt="{Binding $parent[UserControl].DisplayHeader.AlbumArt}"
+            <controls:AlbumArtView AlbumArt="{Binding #Root.DisplayHeader.AlbumArt}"
                                     Width="240" Height="240" />
             <StackPanel Spacing="2" HorizontalAlignment="Center">
-              <TextBlock Text="{Binding $parent[UserControl].DisplayHeader.Name}"
+              <TextBlock Text="{Binding #Root.DisplayHeader.Name}"
                          FontSize="20" FontWeight="Bold"
                          TextAlignment="Center" TextWrapping="Wrap" />
-              <TextBlock Text="{Binding $parent[UserControl].DisplayHeader.Artist}"
+              <TextBlock Text="{Binding #Root.DisplayHeader.Artist}"
                          FontSize="15" Opacity="0.7"
                          TextAlignment="Center" TextWrapping="Wrap" />
-              <TextBlock Text="{Binding $parent[UserControl].DisplayHeader.RepresentativeTrack.Year}"
+              <TextBlock Text="{Binding #Root.DisplayHeader.RepresentativeTrack.Year}"
                          FontSize="13" Opacity="0.5"
                          TextAlignment="Center"
-                         IsVisible="{Binding $parent[UserControl].DisplayHeader.RepresentativeTrack.Year, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}" />
+                         IsVisible="{Binding #Root.DisplayHeader.RepresentativeTrack.Year, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}" />
             </StackPanel>
           </StackPanel>
         </Border>
-        <ItemsControl ItemsSource="{Binding $parent[UserControl].DisplayRows}" ItemTemplate="{StaticResource TrackRowTemplate}" />
+        <ItemsControl ItemsSource="{Binding #Root.DisplayRows}" ItemTemplate="{StaticResource TrackRowTemplate}" />
       </StackPanel>
     </ScrollViewer>
 
     <!-- Songs (flat)/playlist mode: unchanged virtualized ListBox, still
          backing DragHandle_PointerPressed/etc.'s TrackListBox references
          for playlist drag-to-reorder. -->
-    <ListBox IsVisible="{Binding !$parent[UserControl].IsAlbumMode}"
+    <ListBox IsVisible="{Binding !#Root.IsAlbumMode}"
               x:Name="TrackListBox"
               Background="Transparent"
-              ItemsSource="{Binding $parent[UserControl].DisplayRows}"
+              ItemsSource="{Binding #Root.DisplayRows}"
               ItemTemplate="{StaticResource TrackRowTemplate}"
               controls:RubberBandScroll.IsEnabled="True"
               SelectionMode="Single" />

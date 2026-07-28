@@ -5,9 +5,8 @@
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
-             x:CompileBindings="False"
              x:Class="Flower.Views.Mobile.TrackInfoView"
-             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}"
+             x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
 
   <UserControl.Styles>

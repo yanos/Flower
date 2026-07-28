@@ -1,8 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
-             x:Class="Flower.Controls.AlbumGridView"
-             x:CompileBindings="False">
+             xmlns:vm="clr-namespace:Flower.ViewModels"
+             x:Class="Flower.Controls.AlbumGridView">
 
   <!-- Row-chunked album art grid - same VirtualizingStackPanel-of-rows
        approach mobile's own Albums/Recently Added grids use (see
@@ -21,7 +21,7 @@
         </ItemsPanelTemplate>
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
-        <DataTemplate>
+        <DataTemplate x:DataType="vm:AlbumGridRowViewModel">
           <controls:AlbumGridRowControl DataContext="{Binding}"/>
         </DataTemplate>
       </ItemsControl.ItemTemplate>

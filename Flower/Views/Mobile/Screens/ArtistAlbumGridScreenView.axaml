@@ -2,8 +2,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
-             x:CompileBindings="False"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Views.Mobile.Screens.ArtistAlbumGridScreenView"
+             x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- One artist's own albums (tapped from the artist name picker) - same
@@ -19,10 +20,10 @@
         </ItemsPanelTemplate>
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
-        <DataTemplate>
+        <DataTemplate x:DataType="vm:AlbumGridRow">
           <Grid ColumnDefinitions="*,*">
             <Button Grid.Column="0" Classes="pickerRow" Padding="10"
-                    Command="{Binding $parent[UserControl].DataContext.SelectArtistAlbumCommand}"
+                    Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistAlbumCommand}"
                     CommandParameter="{Binding First.Name}">
               <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
                 <controls:AlbumArtView AlbumArt="{Binding First.AlbumArt}" Width="170" Height="170" />
@@ -32,7 +33,7 @@
             </Button>
             <Button Grid.Column="1" Classes="pickerRow" Padding="10"
                     IsVisible="{Binding Second, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                    Command="{Binding $parent[UserControl].DataContext.SelectArtistAlbumCommand}"
+                    Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistAlbumCommand}"
                     CommandParameter="{Binding Second.Name}">
               <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
                 <controls:AlbumArtView AlbumArt="{Binding Second.AlbumArt}" Width="170" Height="170" />

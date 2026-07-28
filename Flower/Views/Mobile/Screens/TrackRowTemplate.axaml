@@ -2,7 +2,9 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:controls="clr-namespace:Flower.Controls"
                     xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-                    x:CompileBindings="False">
+                    xmlns:rowvm="clr-namespace:Flower.ViewModels"
+                    xmlns:mvm="clr-namespace:Flower.ViewModels.Mobile"
+                    xmlns:views="clr-namespace:Flower.Views.Mobile.Screens">
 
   <!-- Shared by the main track list (Songs/album-artist-playlist drill-in, see
        TrackListScreenView) and the Search tab's own Songs section (see
@@ -10,12 +12,21 @@
        TrackRowViewModel wherever it appears, rather than a second copy of
        this template drifting out of sync. Moved into its own
        ResourceDictionary (out of the old monolithic MobileMainView.axaml)
-       when each screen became its own UserControl, for the same reason. -->
-  <DataTemplate x:Key="TrackRowTemplate">
+       when each screen became its own UserControl, for the same reason.
+
+       Compiled bindings: this is a class-less ResourceDictionary (no
+       x:Class), so there's no single concrete type to compile
+       $parent[UserControl] against - both hosts are UserControls, but
+       neither IS the other, and casting to either one by name would make
+       this template only work for that one host. ITrackRowHost (see that
+       file) is the fix: a two-property interface both TrackListScreenView
+       and SearchResultsScreenView implement, purely so this template has
+       one static type to bind $parent[...] against. -->
+  <DataTemplate x:Key="TrackRowTemplate" x:DataType="rowvm:TrackRowViewModel">
     <Button Classes="trackRow"
             Classes.playing="{Binding IsCurrentlyPlaying}"
             Classes.placeholder="{Binding IsUnavailable}"
-            Command="{Binding $parent[UserControl].DataContext.PlayTrackCommand}"
+            Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).PlayTrackCommand}"
             CommandParameter="{Binding Track}">
       <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
         <!-- Pointer wiring for drag-to-reorder is NOT attached here as XAML
@@ -27,13 +38,14 @@
              hosting screen (TrackListScreenView) wires these via AddHandler
              on its ListBox using tunnel routing + e.Source, the same pattern
              MobileMainView.axaml.cs already uses for its swipe gesture. -->
-        <!-- IsPlaylistMode/IsAlbumMode read off the HOSTING screen
-             ($parent[UserControl] itself), NOT $parent[UserControl].DataContext
-             (the shared MobileMainViewModel) - both TrackListScreenView and
-             SearchResultsScreenView expose them (see each one's own code-
-             behind). A kept-alive one-back/one-forward TrackListScreenView
-             needs to reflect ITS OWN frozen state here, not whatever screen
-             is currently live - reading the shared VM's
+        <!-- IsPlaylistMode/IsAlbumMode read off the HOSTING screen via
+             ITrackRowHost ($parent[views:ITrackRowHost]), NOT
+             $parent[UserControl].DataContext (the shared MobileMainViewModel)
+             - both TrackListScreenView and SearchResultsScreenView implement
+             it (see each one's own code-behind, and ITrackRowHost.cs). A
+             kept-alive one-back/one-forward TrackListScreenView needs to
+             reflect ITS OWN frozen state here, not whatever screen is
+             currently live - reading the shared VM's
              IsShowingPlaylistTracks/IsShowingAlbumTrackList directly briefly
              showed/hid these based on whatever WAS live at that instant
              (confirmed on a real device as album art flashing in on every
@@ -41,7 +53,7 @@
              disappearing once the transition committed and resynced it). -->
         <Border Grid.Column="0"
                 Classes="dragHandle"
-                IsVisible="{Binding $parent[UserControl].IsPlaylistMode}"
+                IsVisible="{Binding $parent[views:ITrackRowHost].IsPlaylistMode}"
                 Background="Transparent"
                 Width="32"
                 HorizontalAlignment="Center"
@@ -53,7 +65,7 @@
              the art once, full-size, above the list. -->
         <controls:AlbumArtView Grid.Column="1"
                                 AlbumArt="{Binding AlbumArt}"
-                                IsVisible="{Binding !$parent[UserControl].IsAlbumMode}"
+                                IsVisible="{Binding !$parent[views:ITrackRowHost].IsAlbumMode}"
                                 Width="40" Height="40"
                                 Margin="0,0,10,0" />
         <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
@@ -81,7 +93,7 @@
                      VerticalAlignment="Center"
                      Margin="8,0,0,0" />
           <Button IsVisible="{Binding !IsPlaceholder}"
-                  Command="{Binding $parent[UserControl].DataContext.OpenTrackActionsCommand}"
+                  Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
                   CommandParameter="{Binding Track}"
                   Background="Transparent"
                   BorderThickness="0"
@@ -102,7 +114,7 @@
                (TrackListBox's virtualization made an earlier attempt at
                that unreliable during a multi-row batch download). -->
           <Button IsVisible="{Binding IsDownloadable}"
-                  Command="{Binding $parent[UserControl].DataContext.DownloadTrackCommand}"
+                  Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).DownloadTrackCommand}"
                   CommandParameter="{Binding}"
                   Background="Transparent"
                   BorderThickness="0"

@@ -2,8 +2,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
-             x:CompileBindings="False"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Views.Mobile.Screens.AlbumGridScreenView"
+             x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Albums: same art-tile grid presentation and virtualization approach as
@@ -20,10 +21,10 @@
         </ItemsPanelTemplate>
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
-        <DataTemplate>
+        <DataTemplate x:DataType="vm:AlbumGridRow">
           <Grid ColumnDefinitions="*,*">
             <Button Grid.Column="0" Classes="pickerRow" Padding="10"
-                    Command="{Binding $parent[UserControl].DataContext.SelectAlbumOrArtistCommand}"
+                    Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
                     CommandParameter="{Binding First.Name}">
               <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
                 <controls:AlbumArtView AlbumArt="{Binding First.AlbumArt}" Width="170" Height="170" />
@@ -33,7 +34,7 @@
             </Button>
             <Button Grid.Column="1" Classes="pickerRow" Padding="10"
                     IsVisible="{Binding Second, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                    Command="{Binding $parent[UserControl].DataContext.SelectAlbumOrArtistCommand}"
+                    Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
                     CommandParameter="{Binding Second.Name}">
               <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
                 <controls:AlbumArtView AlbumArt="{Binding Second.AlbumArt}" Width="170" Height="170" />

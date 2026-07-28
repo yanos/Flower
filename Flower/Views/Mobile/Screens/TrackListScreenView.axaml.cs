@@ -12,7 +12,7 @@ using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile.Screens;
 
-public partial class TrackListScreenView : UserControl
+public partial class TrackListScreenView : UserControl, ITrackRowHost
 {
     // Touch drag-to-reorder for the playlist track list: the desktop equivalent
     // (MusicListView) starts dragging immediately anywhere on the row with a small

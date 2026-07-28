@@ -2,8 +2,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
-             x:CompileBindings="False"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Controls.ScreenSlot"
+             x:DataType="vm:MobileMainViewModel"
+             x:Name="Root"
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Wraps one materialized screen control together with that screen's own
@@ -23,8 +25,8 @@
   <Grid RowDefinitions="52,*">
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="60,4,60,4">
       <TextBlock Grid.Column="0"
-                 Text="{Binding $parent[UserControl].Frame.Title}"
-                 IsVisible="{Binding !$parent[UserControl].Frame.IsSearchScreen}"
+                 Text="{Binding #Root.Frame.Title}"
+                 IsVisible="{Binding !#Root.Frame.IsSearchScreen}"
                  FontSize="22"
                  FontWeight="SemiBold"
                  VerticalAlignment="Center" />
@@ -35,7 +37,7 @@
       <TextBox Grid.Column="0"
                x:Name="SearchTabBox"
                Text="{Binding SearchQuery}"
-               IsVisible="{Binding $parent[UserControl].Frame.IsSearchScreen}"
+               IsVisible="{Binding #Root.Frame.IsSearchScreen}"
                Watermark="Search your library"
                VerticalAlignment="Center">
         <TextBox.InnerRightContent>
@@ -49,7 +51,7 @@
 
       <Button Grid.Column="1"
               Command="{Binding CreatePlaylistCommand}"
-              IsVisible="{Binding $parent[UserControl].Frame.IsPlaylistPicker}"
+              IsVisible="{Binding #Root.Frame.IsPlaylistPicker}"
               Background="Transparent"
               BorderThickness="0"
               Padding="10">
@@ -69,7 +71,7 @@
               ToolTip.Tip="Download all">
         <Button.IsVisible>
           <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
-            <Binding Path="$parent[UserControl].Frame.IsAlbumTrackList" />
+            <Binding ElementName="Root" Path="Frame.IsAlbumTrackList" />
             <Binding Path="Main.CanForceSync" />
           </MultiBinding>
         </Button.IsVisible>
@@ -88,7 +90,7 @@
               ToolTip.Tip="Download all">
         <Button.IsVisible>
           <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
-            <Binding Path="$parent[UserControl].Frame.IsPlaylistTrackList" />
+            <Binding ElementName="Root" Path="Frame.IsPlaylistTrackList" />
             <Binding Path="Main.CanForceSync" />
           </MultiBinding>
         </Button.IsVisible>

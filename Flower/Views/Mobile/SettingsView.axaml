@@ -5,10 +5,10 @@
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             xmlns:services="clr-namespace:Flower.Services"
              mc:Ignorable="d"
-             x:CompileBindings="False"
              x:Class="Flower.Views.Mobile.SettingsView"
-             d:DataContext="{d:DesignInstance Type=vm:MobileMainViewModel}"
+             x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
 
   <UserControl.Styles>
@@ -139,13 +139,13 @@
              row's own DataContext here is a DiscoveredDevice instead. -->
         <ItemsControl ItemsSource="{Binding Main.AvailableServers}" Margin="0,8,0,0">
           <ItemsControl.ItemTemplate>
-            <DataTemplate>
+            <DataTemplate x:DataType="services:DiscoveredDevice">
               <Grid ColumnDefinitions="*,Auto" Margin="0,4">
                 <TextBlock Grid.Column="0" Text="{Binding Alias}" VerticalAlignment="Center"/>
                 <Button Grid.Column="1" Content="Ask to pair"
-                        Command="{Binding $parent[UserControl].DataContext.PairWithServerCommand}"
+                        Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).PairWithServerCommand}"
                         CommandParameter="{Binding}"
-                        IsEnabled="{Binding $parent[UserControl].DataContext.Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"/>
+                        IsEnabled="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"/>
               </Grid>
             </DataTemplate>
           </ItemsControl.ItemTemplate>

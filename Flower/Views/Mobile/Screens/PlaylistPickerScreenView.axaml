@@ -2,8 +2,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             x:CompileBindings="False"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:svm="clr-namespace:Flower.ViewModels"
              x:Class="Flower.Views.Mobile.Screens.PlaylistPickerScreenView"
+             x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Playlist picker -->
@@ -12,9 +14,9 @@
            controls:RubberBandScroll.IsEnabled="True"
            SelectionMode="Single">
     <ListBox.ItemTemplate>
-      <DataTemplate>
+      <DataTemplate x:DataType="svm:SidebarItem">
         <Button Classes="pickerRow"
-                Command="{Binding $parent[UserControl].DataContext.SelectPlaylistCommand}"
+                Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectPlaylistCommand}"
                 CommandParameter="{Binding}">
           <StackPanel Orientation="Horizontal" Spacing="12">
             <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" VerticalAlignment="Center" />

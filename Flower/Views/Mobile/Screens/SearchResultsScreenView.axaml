@@ -2,8 +2,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             x:CompileBindings="False"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:system="clr-namespace:System;assembly=System.Runtime"
              x:Class="Flower.Views.Mobile.Screens.SearchResultsScreenView"
+             x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource AppBackgroundBrush}">
 
   <UserControl.Resources>
@@ -25,9 +27,9 @@
         <TextBlock Text="Artists" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
         <ItemsControl ItemsSource="{Binding SearchArtistResults}">
           <ItemsControl.ItemTemplate>
-            <DataTemplate>
+            <DataTemplate x:DataType="system:String">
               <Button Classes="pickerRow"
-                      Command="{Binding $parent[UserControl].DataContext.SelectSearchArtistCommand}"
+                      Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectSearchArtistCommand}"
                       CommandParameter="{Binding}">
                 <StackPanel Orientation="Horizontal" Spacing="12">
                   <materialIcons:MaterialIcon Kind="AccountMusic" Width="22" Height="22" VerticalAlignment="Center" />
@@ -43,9 +45,9 @@
         <TextBlock Text="Albums" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
         <ItemsControl ItemsSource="{Binding SearchAlbumResults}">
           <ItemsControl.ItemTemplate>
-            <DataTemplate>
+            <DataTemplate x:DataType="vm:AlbumTileViewModel">
               <Button Classes="pickerRow"
-                      Command="{Binding $parent[UserControl].DataContext.SelectSearchAlbumCommand}"
+                      Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectSearchAlbumCommand}"
                       CommandParameter="{Binding Name}">
                 <StackPanel Orientation="Horizontal" Spacing="12">
                   <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="40" Height="40" />

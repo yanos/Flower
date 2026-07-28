@@ -31,7 +31,6 @@
 
     <!-- Album art: negative margins counteract the outer padding so art sits 2px from edges -->
     <controls:AlbumArtView Grid.Column="0"
-            x:CompileBindings="False"
             Width="{Binding $self.Bounds.Height}"
             Margin="-10,-4,10,-4"
             VerticalAlignment="Stretch"

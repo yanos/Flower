@@ -2,7 +2,7 @@ using Avalonia.Controls;
 
 namespace Flower.Views.Mobile.Screens;
 
-public partial class SearchResultsScreenView : UserControl
+public partial class SearchResultsScreenView : UserControl, ITrackRowHost
 {
     // TrackRowTemplate (shared with TrackListScreenView) reads these off
     // whichever UserControl hosts it - see that template's own comment -
