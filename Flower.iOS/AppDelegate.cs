@@ -1,4 +1,6 @@
 ﻿using System;
+using System.IO;
+using System.Runtime.InteropServices;
 
 using Avalonia;
 using Avalonia.iOS;
@@ -28,6 +30,19 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
 {
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
+        // SkiaSharp ships no ios-specific bindings assembly (its net10.0-ios*
+        // lib group is an empty placeholder), so it falls back to the same
+        // generic lib/net10.0/SkiaSharp.dll used on desktop, whose
+        // DllImport("libSkiaSharp") is a bare name rather than the
+        // @rpath-qualified string an ios-specific build would use (compare
+        // HarfBuzzSharp, which does ship an ios-specific assembly and
+        // resolves fine unaided). .NET-for-iOS's default P/Invoke probing
+        // for that bare name never looks inside Frameworks/libSkiaSharp.framework -
+        // same underlying limitation as MiniaudioSink.ResolveIosMiniaudio,
+        // and it must run before base.CustomizeAppBuilder's .WithInterFont()/
+        // UseSkia() below ever touches SkiaSharp.SKImageInfo.
+        NativeLibrary.SetDllImportResolver(typeof(SkiaSharp.SKImageInfo).Assembly, ResolveIosSkiaSharp);
+
         // A native crash (e.g. inside libvlc) bypasses .NET's own exception
         // handling entirely - MetricKit is Apple's supported way for an app
         // to learn about its own past crashes without a third-party native-
@@ -96,6 +111,15 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
 
         return base.CustomizeAppBuilder(builder)
             .WithInterFont();
+    }
+
+    private static IntPtr ResolveIosSkiaSharp(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
+    {
+        if (libraryName != "libSkiaSharp")
+            return IntPtr.Zero;
+
+        var path = Path.Combine(AppContext.BaseDirectory, "Frameworks", "libSkiaSharp.framework", "libSkiaSharp");
+        return NativeLibrary.TryLoad(path, out var handle) ? handle : IntPtr.Zero;
     }
 
     public void DidReceiveDiagnosticPayloads(MXDiagnosticPayload[] payloads)
