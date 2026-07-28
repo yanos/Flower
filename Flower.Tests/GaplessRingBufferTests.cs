@@ -110,14 +110,14 @@ public class GaplessRingBufferTests
         {
             ring.Write([5, 6]);
             writeCompleted = true;
-        });
+        }, TestContext.Current.CancellationToken);
 
         // Give the writer a moment to actually block on the full buffer.
         Thread.Sleep(100);
         Assert.False(writeCompleted);
 
         ring.Read(new byte[2]); // frees 2 bytes, should unblock the writer
-        await writer.WaitAsync(TimeSpan.FromSeconds(5));
+        await writer.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.True(writeCompleted);
     }
@@ -128,14 +128,14 @@ public class GaplessRingBufferTests
         var ring = new GaplessRingBuffer(4);
         ring.TryWrite([1, 2, 3, 4]); // fill it
 
-        var writer = Task.Run(() => ring.Write([5, 6]));
+        var writer = Task.Run(() => ring.Write([5, 6]), TestContext.Current.CancellationToken);
 
         Thread.Sleep(100);
         ring.Reset();
 
         // Must return promptly instead of blocking forever for space that
         // will never come from the pre-reset write's perspective.
-        await writer.WaitAsync(TimeSpan.FromSeconds(5));
+        await writer.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -145,11 +145,11 @@ public class GaplessRingBufferTests
         var dest = new byte[4];
         int read = -1;
 
-        var reader = Task.Run(() => read = ring.ReadBlocking(dest));
+        var reader = Task.Run(() => read = ring.ReadBlocking(dest), TestContext.Current.CancellationToken);
 
         Thread.Sleep(100);
         ring.TryWrite([1, 2, 3, 4]);
-        await reader.WaitAsync(TimeSpan.FromSeconds(5));
+        await reader.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal(4, read);
     }
@@ -173,14 +173,14 @@ public class GaplessRingBufferTests
                 ring.Write(chunk.AsSpan(0, thisChunk));
                 written += thisChunk;
             }
-        });
+        }, TestContext.Current.CancellationToken);
 
         var expected = (byte)0;
         var readTotal = 0;
         var buffer = new byte[63]; // also not a divisor of capacity
         while (readTotal < total)
         {
-            var read = ring.ReadBlocking(buffer);
+            var read = ring.ReadBlocking(buffer, TestContext.Current.CancellationToken);
             if (read == 0)
                 continue;
 
@@ -193,6 +193,6 @@ public class GaplessRingBufferTests
             readTotal += read;
         }
 
-        await producer.WaitAsync(TimeSpan.FromSeconds(10));
+        await producer.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
     }
 }

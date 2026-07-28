@@ -205,8 +205,8 @@ public class LibraryTests
         var oldTrack = new Track { Path = "/music/a.mp3" };
         var library = new Library(new List<Track> { oldTrack });
 
-        var incrementTask = Task.Run(() => library.IncrementPlayCount(oldTrack));
-        var rescanTask = Task.Run(() => library.UpdateTracks(new List<Track> { new Track { Path = "/music/a.mp3" } }));
+        var incrementTask = Task.Run(() => library.IncrementPlayCount(oldTrack), TestContext.Current.CancellationToken);
+        var rescanTask = Task.Run(() => library.UpdateTracks(new List<Track> { new Track { Path = "/music/a.mp3" } }), TestContext.Current.CancellationToken);
         await Task.WhenAll(incrementTask, rescanTask);
 
         Assert.Equal(1, library.Tracks.Single().PlayCount);

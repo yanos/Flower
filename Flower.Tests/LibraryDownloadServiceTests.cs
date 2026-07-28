@@ -134,7 +134,7 @@ public class LibraryDownloadServiceTests : IDisposable
         Assert.NotNull(track.Path);
         Assert.StartsWith(_downloadFolder, track.Path);
         Assert.EndsWith(".wav", track.Path);
-        Assert.Equal(audioBytes, await File.ReadAllBytesAsync(track.Path!));
+        Assert.Equal(audioBytes, await File.ReadAllBytesAsync(track.Path!, TestContext.Current.CancellationToken));
 
         var reloaded = await new LibraryStore(NullLogger<LibraryStore>.Instance).LoadAsync();
         Assert.Contains(reloaded, t => t.Path == track.Path);
@@ -186,7 +186,7 @@ public class LibraryDownloadServiceTests : IDisposable
     {
         var filePath = Path.Combine(_downloadFolder, "local.mp3");
         Directory.CreateDirectory(_downloadFolder);
-        await File.WriteAllTextAsync(filePath, "audio");
+        await File.WriteAllTextAsync(filePath, "audio", TestContext.Current.CancellationToken);
         var track = Placeholder() with { Path = filePath };
         var service = MakeService(track, out _);
 
