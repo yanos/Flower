@@ -5,15 +5,24 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- xUnit v3 test projects build as executables, not plain class
+         libraries - required by xunit.v3.mtp-off below (Avalonia.Headess.
+         XUnit forced the move off xunit v2, which every Avalonia 12.x
+         Avalonia.Headless.XUnit release depends on). -->
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia.Headless" Version="11.3.13" />
-    <PackageReference Include="Avalonia.Headless.XUnit" Version="11.3.13" />
-    <PackageReference Include="coverlet.collector" Version="6.0.2" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.0" />
+    <PackageReference Include="coverlet.collector" Version="10.0.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <!-- xunit.v3.mtp-off, not plain xunit.v3: this project runs through the
+         classic VSTest `dotnet test` flow (xunit.runner.visualstudio below),
+         not Microsoft.Testing.Platform, matching the shape `dotnet new
+         xunit3 (test-runner vstest)` generates. -->
+    <PackageReference Include="xunit.v3.mtp-off" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
 
   <ItemGroup>

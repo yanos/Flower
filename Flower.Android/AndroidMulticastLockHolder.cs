@@ -1,4 +1,3 @@
-using Android.App;
 using Android.Content;
 using Android.Net.Wifi;
 
@@ -13,9 +12,9 @@ public class AndroidMulticastLockHolder : IMulticastLockHolder
 {
     private readonly WifiManager.MulticastLock _lock;
 
-    public AndroidMulticastLockHolder(Activity activity)
+    public AndroidMulticastLockHolder(Context context)
     {
-        var wifiManager = (WifiManager)activity.ApplicationContext!.GetSystemService(Context.WifiService)!;
+        var wifiManager = (WifiManager)context.ApplicationContext!.GetSystemService(Context.WifiService)!;
         _lock = wifiManager.CreateMulticastLock("flower-mdns")!;
     }
 

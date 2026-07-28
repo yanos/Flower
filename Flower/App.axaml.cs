@@ -1,11 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
@@ -90,8 +88,29 @@ public partial class App : Application
 
         logger.LogInformation("Flower starting. Log file: {LogPath}", logPath);
 
-        RemoveDataAnnotationsValidationPlugin();
+        if (ApplicationLifetime is IActivityApplicationLifetime activityLifetime)
+        {
+            // Avalonia 12's Android host builds the AppBuilder (and calls this
+            // method) from Application.OnCreate, which Android guarantees
+            // completes before any Activity is created - so MainActivity hasn't
+            // had a chance yet to wire Importer.PlatformMusicImporter.Current
+            // (the one platform hook Bootstrap reads below that genuinely needs
+            // a live Activity, for ActivityCompat.RequestPermissions' result
+            // callback - see AndroidMediaStoreImporter). MainViewFactory is the
+            // sanctioned way to defer content creation until an Activity
+            // actually exists: it's only invoked from AvaloniaMainActivity.
+            // InitializeAvaloniaView, i.e. after MainActivity.OnCreate has
+            // already run.
+            activityLifetime.MainViewFactory = () => Bootstrap(logger)!;
+        }
+        else
+        {
+            Bootstrap(logger);
+        }
+    }
 
+    private Control? Bootstrap(Microsoft.Extensions.Logging.ILogger logger)
+    {
         var libraryStore = new LibraryStore(AppLogging.CreateTypedLogger<LibraryStore>());
         var appSettingsStore = new AppSettingsStore(AppLogging.CreateTypedLogger<AppSettingsStore>());
         var appSettings = appSettingsStore.Load();
@@ -215,12 +234,15 @@ public partial class App : Application
 
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
 
+        Control? mainView = null;
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow
+            var window = new MainWindow
             {
                 DataContext = mainViewModel
             };
+            desktop.MainWindow = window;
+            mainView = window;
 
             // Avalonia's DBus integration can tear down after the dispatcher
             // has already stopped, and its observers then throw an unhandled
@@ -241,10 +263,12 @@ public partial class App : Application
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewPlatform)
         {
-            singleViewPlatform.MainView = new MobileMainView
+            var mobileView = new MobileMainView
             {
                 DataContext = Ioc.Default.GetRequiredService<MobileMainViewModel>()
             };
+            singleViewPlatform.MainView = mobileView;
+            mainView = mobileView;
         }
 
         // Constructed eagerly (nothing else references it) so its
@@ -306,15 +330,7 @@ public partial class App : Application
                 rescanLogger.LogError(ex, "Startup rescan failed");
             }
         });
-    }
 
-    // Standard Avalonia template boilerplate: drops the DataAnnotations
-    // validation plugin in favor of INotifyDataErrorInfo/Exception-based
-    // validation. BindingPlugins.DataValidators itself is annotated
-    // RequiresUnreferencedCode because the property relates to the classic
-    // reflection-based binding system as a whole - this specific call
-    // (removing one fixed list entry) doesn't touch any binding path,
-    // so it's safe to suppress.
-    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Removing a fixed entry from BindingPlugins.DataValidators doesn't touch reflection-based binding paths.")]
-    private static void RemoveDataAnnotationsValidationPlugin() => BindingPlugins.DataValidators.RemoveAt(0);
+        return mainView;
+    }
 }

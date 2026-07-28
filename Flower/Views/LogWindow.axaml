@@ -35,7 +35,7 @@
 
         <TextBox Grid.Column="6"
                  Text="{Binding FilterText, Mode=TwoWay}"
-                 Watermark="Filter..."/>
+                 PlaceholderText="Filter..."/>
       </Grid>
     </Border>
 

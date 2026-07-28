@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -6,6 +6,8 @@ using System.IO;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
+using Android.OS;
+using Android.Runtime;
 
 using Avalonia;
 using Avalonia.Android;
@@ -17,17 +19,24 @@ using Flower.Services;
 
 namespace Flower.Android;
 
-[Activity(
-    Label = "Flower.Android",
-    Theme = "@style/MyTheme.NoActionBar",
-    Icon = "@drawable/icon",
-    MainLauncher = true,
-    ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
-public class MainActivity : AvaloniaMainActivity<App>
+// Avalonia 12 splits Android startup across two objects: an Application
+// (Application.OnCreate runs before any Activity exists - this is where the
+// AppBuilder is built and Avalonia's framework initialization completes) and
+// an Activity (created afterward, purely for hosting the AvaloniaView).
+// Platform hooks that only need a Context (PlatformDataDirectory,
+// PlatformPermissions, PlatformMulticastLock, crash-exit-reason collection)
+// are wired here; PlatformMusicImporter - the one hook below that genuinely
+// needs a live Activity, for ActivityCompat.RequestPermissions' result
+// callback (see AndroidMediaStoreImporter) - is wired from MainActivity
+// instead. See Flower/App.axaml.cs's IActivityApplicationLifetime branch for
+// how OnFrameworkInitializationCompleted defers its own bootstrap until
+// MainActivity has had a chance to run.
+[Application]
+public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
+    : AvaloniaAndroidApplication<App>(javaReference, transfer)
 {
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
-        PlatformMusicImporter.Current = new AndroidMediaStoreImporter(this);
         PlatformDataDirectory.Current = FilesDir!.AbsolutePath;
         PlatformPermissions.Current = new AndroidMediaPermissionStatus(this);
         PlatformMulticastLock.Current = new AndroidMulticastLockHolder(this);
@@ -104,6 +113,27 @@ public class MainActivity : AvaloniaMainActivity<App>
         {
             // Best effort - if this fails we just rescan the same window next time.
         }
+    }
+}
+
+[Activity(
+    Label = "Flower.Android",
+    Theme = "@style/MyTheme.NoActionBar",
+    Icon = "@drawable/icon",
+    MainLauncher = true,
+    ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
+public class MainActivity : AvaloniaMainActivity
+{
+    // AvaloniaActivity.OnCreate (our base) calls InitializeAvaloniaView - which
+    // invokes App.axaml.cs's deferred MainViewFactory/Bootstrap() - as the very
+    // first thing it does, before its own base.OnCreate() even runs. Setting
+    // PlatformMusicImporter.Current here, before calling base.OnCreate(), is
+    // what guarantees it's already wired by the time Bootstrap() reads it.
+    protected override void OnCreate(Bundle? savedInstanceState)
+    {
+        PlatformMusicImporter.Current = new AndroidMediaStoreImporter(this);
+
+        base.OnCreate(savedInstanceState);
     }
 
     public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
