@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Flower.Models
 {
-    internal sealed class TimeSpanTicksConverter : JsonConverter<TimeSpan>
+    public sealed class TimeSpanTicksConverter : JsonConverter<TimeSpan>
     {
         public override TimeSpan Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
             => TimeSpan.FromTicks(reader.GetInt64());

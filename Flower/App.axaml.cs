@@ -48,9 +48,23 @@ public partial class App : Application
     {
         // Must run before anything below can log to a real file - classes with
         // a static logger field (Library, the *Store classes, etc.) resolve it
-        // to whatever AppLogging.Initialize has configured *the first time that
-        // class is touched*, so this needs to be the very first thing that happens.
+        // to whatever AppLogging.UseLoggerFactory below has configured *the
+        // first time that class is touched*, so these two calls need to be the
+        // very first thing that happens.
         var logPath = AppLogging.Initialize();
+
+        // DI container setup starts here, near the top of startup - logging is
+        // the first thing registered on it (via the standard
+        // Microsoft.Extensions.Logging AddLogging(...)/AddSerilog() pipeline,
+        // wrapping the Log.Logger Initialize() just configured) rather than
+        // AppLogging building its own separate factory. `services` keeps
+        // accumulating registrations as Bootstrap constructs each piece of the
+        // app below; only the final Ioc.Default.ConfigureServices(...) call
+        // actually builds and hands off the finished container, since
+        // CommunityToolkit.Mvvm's Ioc.Default can only be configured once.
+        var services = new ServiceCollection().AddLogging(builder => builder.AddSerilog());
+        AppLogging.UseLoggerFactory(services.BuildServiceProvider().GetRequiredService<ILoggerFactory>());
+
         var logger = AppLogging.CreateLogger<App>();
 
         // Anything that throws without a handler further up would otherwise
@@ -101,15 +115,15 @@ public partial class App : Application
             // actually exists: it's only invoked from AvaloniaMainActivity.
             // InitializeAvaloniaView, i.e. after MainActivity.OnCreate has
             // already run.
-            activityLifetime.MainViewFactory = () => Bootstrap(logger)!;
+            activityLifetime.MainViewFactory = () => Bootstrap(logger, services)!;
         }
         else
         {
-            Bootstrap(logger);
+            Bootstrap(logger, services);
         }
     }
 
-    private Control? Bootstrap(Microsoft.Extensions.Logging.ILogger logger)
+    private Control? Bootstrap(Microsoft.Extensions.Logging.ILogger logger, IServiceCollection services)
     {
         var libraryStore = new LibraryStore(AppLogging.CreateTypedLogger<LibraryStore>());
         var appSettingsStore = new AppSettingsStore(AppLogging.CreateTypedLogger<AppSettingsStore>());
@@ -193,7 +207,7 @@ public partial class App : Application
             audioManager.ApplyEqualizer(Manager.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
 
         Ioc.Default.ConfigureServices(
-            new ServiceCollection()
+            services
                 .AddSingleton<IAudioManager>(audioManager)
                 .AddSingleton<PlaylistControlViewModel>()
                 .AddSingleton(library)
@@ -229,7 +243,6 @@ public partial class App : Application
                 .AddSingleton<LogViewModel>()
                 .AddSingleton<EqualizerViewModel>()
                 .AddSingleton<NowPlayingIntegrationService>()
-                .AddLogging(builder => builder.AddSerilog())
                 .BuildServiceProvider());
 
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();

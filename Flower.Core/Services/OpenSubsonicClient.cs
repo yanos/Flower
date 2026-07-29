@@ -154,7 +154,7 @@ public class OpenSubsonicClient
         httpResponse.EnsureSuccessStatusCode(); // e.g. a 403 from a peer's trust gate - surfaces as a plain HttpRequestException.
         var json = await httpResponse.Content.ReadAsStringAsync();
 
-        var response = JsonSerializer.Deserialize(json, ExternalProtocolJsonContext.Default.SubsonicEnvelope)?.Response
+        var response = JsonSerializer.Deserialize(json, OpenSubsonicJsonContext.Default.SubsonicEnvelope)?.Response
             ?? throw new SubsonicException(0, "Empty or malformed subsonic-response envelope.");
 
         if (response.Status == "failed")

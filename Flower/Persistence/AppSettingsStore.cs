@@ -160,7 +160,7 @@ namespace Flower.Persistence
             // Auto-register Apple Music's configured media folder, if found and not
             // already present, so it shows up in Settings without the user having to
             // browse for a folder they've already pointed Music.app at.
-            if (Importer.Importer.TryResolveAppleMusicFolder() is string appleMusicFolder &&
+            if (Importer.Importer.TryResolveAppleMusicFolder(_logger) is string appleMusicFolder &&
                 !settings.LibraryPaths.Any(p => string.Equals(p, appleMusicFolder, StringComparison.OrdinalIgnoreCase)))
             {
                 settings.LibraryPaths.Add(appleMusicFolder);

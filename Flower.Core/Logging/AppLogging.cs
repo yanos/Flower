@@ -6,7 +6,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Serilog;
-using Serilog.Extensions.Logging;
 
 using Flower.Persistence;
 
@@ -34,8 +33,13 @@ namespace Flower.Logging
 
         public static string LogsDirectory => Path.Combine(AppDataDirectory.Path, "logs");
 
-        // Call once, as early as possible in startup. Returns the path of this
-        // run's log file purely for the "where do I find my logs" message.
+        // Call once, as early as possible in startup - configures Serilog's sinks
+        // (file/console/in-memory) only. Returns the path of this run's log file
+        // purely for the "where do I find my logs" message. Doesn't produce a
+        // usable ILogger by itself - see UseLoggerFactory below, called right
+        // after this from App.axaml.cs once the DI container's own
+        // AddLogging(builder => builder.AddSerilog()) has built a factory
+        // wrapping the Log.Logger just configured here.
         public static string Initialize()
         {
             Directory.CreateDirectory(LogsDirectory);
@@ -60,10 +64,21 @@ namespace Flower.Logging
                 .WriteTo.Sink(new InMemoryLogEventSink(InMemoryLogStore.Instance))
                 .CreateLogger();
 
-            _factory = new SerilogLoggerFactory(Log.Logger, dispose: false);
-
             return path;
         }
+
+        // Backs every CreateLogger/CreateTypedLogger call below with the same
+        // Microsoft.Extensions.Logging.ILoggerFactory the DI container itself
+        // uses (built via services.AddLogging(builder => builder.AddSerilog())
+        // near the top of App.axaml.cs's Bootstrap, right after Initialize()
+        // above) - so ad-hoc-constructed classes (LibraryStore, DeviceKeyStore,
+        // etc., built with `new` before the container has anything to inject
+        // into) and genuinely-static call sites (RubberBandScroll, AlbumArtLoader
+        // - a Control/static class Avalonia or app code constructs directly, not
+        // DI-resolved) end up logging through the exact same pipeline as
+        // constructor-injected ILogger<T> does for DI-resolved classes, rather
+        // than a second independent factory wrapping the same Log.Logger.
+        public static void UseLoggerFactory(ILoggerFactory factory) => _factory = factory;
 
         // For classes constructed ad-hoc (new PlaylistStore(), etc.) rather than
         // through the DI container - DI-resolved classes, and ad-hoc-constructed
@@ -72,14 +87,15 @@ namespace Flower.Logging
         // directly instead once AddLogging is wired up (see App.axaml.cs), and
         // will get the same underlying factory either way.
         //
-        // Falls back to a no-op logger if called before Initialize() rather than
-        // throwing: some of these classes (Library, PlaylistControlViewModel,
+        // Falls back to a no-op logger if called before UseLoggerFactory rather
+        // than throwing: some of these classes (Library, PlaylistControlViewModel,
         // PlaylistStore/AppSettingsStore) have a static logger field, evaluated
         // the first time the class is touched - in the real app that's always
-        // after Initialize() (the first line of App.OnFrameworkInitializationCompleted),
-        // but unit tests construct these classes directly without ever running
-        // app startup, so silently discarding log output there is the right
-        // behavior rather than crashing every test that touches a logged class.
+        // after Initialize()/UseLoggerFactory() (the first lines of
+        // App.OnFrameworkInitializationCompleted), but unit tests construct
+        // these classes directly without ever running app startup, so silently
+        // discarding log output there is the right behavior rather than
+        // crashing every test that touches a logged class.
         public static ILogger CreateLogger<T>() => CreateLogger(typeof(T).FullName ?? typeof(T).Name);
 
         public static ILogger CreateLogger(string categoryName) =>

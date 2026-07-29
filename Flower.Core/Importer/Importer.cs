@@ -8,7 +8,6 @@ using Claunia.PropertyList;
 
 using Microsoft.Extensions.Logging;
 
-using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.Importer
@@ -35,7 +34,7 @@ namespace Flower.Importer
                 .Where(p => !string.IsNullOrWhiteSpace(p) && Directory.Exists(p))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            var paths = configured is { Count: > 0 } ? configured : new List<string> { ResolveMusicPath() };
+            var paths = configured is { Count: > 0 } ? configured : new List<string> { ResolveMusicPath(_logger) };
 
             foreach (var path in paths)
             {
@@ -139,7 +138,7 @@ namespace Flower.Importer
             || tagFile.GetTag(TagLib.TagTypes.Apple, false) is TagLib.Mpeg4.AppleTag apple && apple.IsCompilation
             || tagFile.GetTag(TagLib.TagTypes.Xiph, false) is TagLib.Ogg.XiphComment xiph && xiph.IsCompilation;
 
-        private static string ResolveMusicPath()
+        private static string ResolveMusicPath(ILogger logger)
         {
             // iOS has no shared Music folder; the app's sandboxed Documents directory
             // (populated via Finder file sharing, see Info.plist UIFileSharingEnabled)
@@ -147,19 +146,17 @@ namespace Flower.Importer
             if (OperatingSystem.IsIOS())
                 return Environment.GetFolderPath(Environment.SpecialFolder.Personal);
 
-            return TryResolveAppleMusicFolder() ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+            return TryResolveAppleMusicFolder(logger) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
         }
 
         // Reads the media folder Apple Music is configured to use, straight from its
         // preferences plist. Public so it can also be used to auto-populate the
         // configured library paths (see AppSettingsStore) rather than only as a silent
         // fallback when nothing is configured - called from there before any Importer
-        // instance necessarily exists, so this one spot still needs a static logger
-        // rather than the instance one every other method here now takes via the
-        // constructor.
-        private static readonly ILogger StaticLogger = AppLogging.CreateLogger<Importer>();
-
-        public static string? TryResolveAppleMusicFolder()
+        // instance necessarily exists, so this takes an explicit logger from whichever
+        // caller already has one (AppSettingsStore's own _logger, or Importer's via
+        // ResolveMusicPath above) rather than reaching for a static/global one.
+        public static string? TryResolveAppleMusicFolder(ILogger? logger = null)
         {
             if (!OperatingSystem.IsMacOS())
                 return null;
@@ -182,7 +179,7 @@ namespace Flower.Importer
             }
             catch (Exception ex)
             {
-                StaticLogger.LogDebug(ex, "Could not read Apple Music's configured media folder from its preferences plist");
+                logger?.LogDebug(ex, "Could not read Apple Music's configured media folder from its preferences plist");
             }
 
             return null;
