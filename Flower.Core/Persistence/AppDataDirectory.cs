@@ -6,7 +6,7 @@ namespace Flower.Persistence
 {
     // Shared resolver for the app's writable settings/library directory, used
     // by AppSettingsStore, LibraryStore and PlaylistStore.
-    internal static class AppDataDirectory
+    public static class AppDataDirectory
     {
         public static string Path
         {

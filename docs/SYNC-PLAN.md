@@ -124,31 +124,167 @@ Resumable/partial downloads (retry-from-scratch in v1); multi-source download (o
 
 Many self-hosters already run Jellyfin (MIT-licensed `Jellyfin.Sdk`, separate from the GPLv2 server — plain network client use, no derivative-work concern) for movies/TV and would rather not run a second server for music. Worth adding as a second optional `IMusicImporter` backend once the Subsonic client exists — not a replacement for it, since Jellyfin is ~5-10x heavier (300-800MB RAM idle) and video-first; treat it as "support the server users already have."
 
-## Optional, larger effort, later: first-party `Flower.Server`
+## Next: first-party `Flower.Server`, headless with a web interface
 
-For users who want a pure-Flower self-hosted server, or who've outgrown the embedded-in-Flower.Desktop option. Have it speak OpenSubsonic itself so the existing client — and any third-party Subsonic mobile client — works against it for free.
+Promoted from "optional, later" — this is the next initiative. Goal: a headless server
+(NAS/VPS/home box) that plays music through a browser-reachable web interface, lets the owner
+configure the server through that same interface, and lets new devices request pairing with no
+local screen to pop a dialog on. Speaks OpenSubsonic itself so the existing client — and any
+third-party Subsonic mobile client — works against it for free.
 
-**Recommended stack:** ASP.NET Core Minimal API + Kestrel (range-request streaming via `Results.File(..., enableRangeProcessing: true)`, no custom code, uses `sendfile`); SQLite via EF Core (same as Navidrome — needs WAL mode + explicit `busy_timeout` + `IDbContextFactory<T>` per request, since EF Core 7+ no longer auto-retries `SQLITE_BUSY`, and WAL requires local storage, not NFS/SMB); single admin password + long-lived JWT/API tokens (no OAuth); multi-arch Docker image via `dotnet publish -a $TARGETARCH` + `docker buildx`; no transcoding in v1 (stream originals with range support only, matching Navidrome's default).
+**Recommended stack:** ASP.NET Core Minimal API + Kestrel (range-request streaming via
+`Results.File(..., enableRangeProcessing: true)`, no custom code, uses `sendfile`); SQLite via
+EF Core (same as Navidrome — needs WAL mode + explicit `busy_timeout` + `IDbContextFactory<T>`
+per request, since EF Core 7+ no longer auto-retries `SQLITE_BUSY`, and WAL requires local
+storage, not NFS/SMB); single admin password + long-lived JWT/API tokens (no OAuth);
+multi-arch Docker image via `dotnet publish -a $TARGETARCH` + `docker buildx`; no transcoding
+in v1 (stream originals with range support only, matching Navidrome's default).
 
-**Effort:** roughly 3-5 weeks for one engineer — most of it EF Core schema/migration and SQLite concurrency hardening, not streaming or Docker.
+### Web UI framework: Avalonia.Web (Browser/WASM), not Blazor
 
-## Project structure: extracting a shared `Flower.Core` library
+Blazor Server was the first instinct (better fit for a small, greenfield admin panel), which
+raised the question of moving desktop/mobile to Blazor too for consistency. Investigated and
+rejected:
 
-**Deferred work** — reference design for whenever `Flower.Server` or the always-on daemon stage is actually undertaken, not an early prerequisite (see "Sequencing" above).
+- **.NET MAUI Blazor Hybrid has no official Linux support** — a hard blocker, since Flower
+  desktop needs Windows/macOS/Linux from one codebase.
+- **Photino.Blazor** (the community option that does cover Linux) is explicitly early-stage,
+  "not as feature rich as Electron," and its own maintainers just announced leaning on
+  AI-assisted triage due to team bandwidth — too much dependency risk to build the whole app
+  on.
+- **Mobile Avalonia isn't a pain point to escape** — `MOBILE-PLAN.md` confirms it's fully
+  working today (real-device-validated audio, import, touch UI, not scaffolding). The
+  hand-rolled UI surface (`MusicListView`'s virtualization, `RubberBandScroll`'s custom
+  physics, `ScreenStackPanel`'s nav stack) would need full reimplementation in Blazor's DOM
+  model, not porting.
+- A literal **web/PWA mobile app** (no native shell) was also rejected: iOS PWA background
+  audio actively breaks after first launch, storage caps around 50MB, and there's no reliable
+  background sync — that would break the gapless LibVLC/Miniaudio engine, the private
+  on-device file library, and P2P WiFi sync outright.
 
-`Flower.csproj` pulls in Avalonia/LibVLCSharp/every ViewModel — a headless server can't reference that. What moves into a new `Flower.Core` (dual-targeting `net10.0;net9.0`, matching `Flower.iOS`'s TFM):
+So desktop/mobile stay on Avalonia, unchanged — and the decision was then made to keep
+**the browser UI on Avalonia too**, via **Avalonia.Web (Browser/WASM)**, rather than introduce
+Blazor at all. Avalonia.Web compiles the same Views/ViewModels/`Flower/Controls/` (including
+the real `MusicListView`) to WebAssembly via Avalonia's Skia pipeline — the browser UI is a new
+platform head alongside `Flower.Desktop`/`Flower.iOS`/`Flower.Android`, not a parallel
+Razor-component rewrite. Known tradeoffs accepted going in: a heavier first-load payload than
+plain HTML (acceptable for a personal jukebox revisited repeatedly — the browser caches the
+bundle), and Skia-canvas rendering means weaker out-of-the-box accessibility/browser-zoom
+behavior than real DOM/HTML would have.
 
-- **`Models/`** (`Track`, `Playlist`/`MainPlaylist`, `Library`) — pure move, no Avalonia references today.
-- **`Importer/`** (`Importer`, `IMusicImporter`, `PlatformMusicImporter`) — biggest payoff: `Flower.Server`'s scanner becomes the same `Importer.ImportAsync` desktop already uses. Brings `TagLibSharp`/`plist-cil` along.
-- **The OpenSubsonic wire-contract module + mapping functions** — already exists in `Flower`, shared three ways (desktop/mobile client, `Flower.Server`). Deliberately excludes `Track.Path` from the DTO (a filesystem path means something different per device) in favor of a `streamUrl`/opaque id.
+**LibVLCSharp and Miniaudio-CS have no WebAssembly build**, so the browser head is the one
+place that can't reuse `Flower.csproj` completely unmodified: it needs its own `IAudioSink`
+implementation driven by the browser's Web Audio API via JS interop. This reuses the existing
+seam (`IAudioManager`/`IAudioSink` already abstract over `LibVlcRawStreamSink` and
+`MiniaudioSink`), but matching the native engine's *gapless* quality bar in a browser is new,
+real engineering — ship "browser playback works, gaplessness may lag the native engine at
+first" as an accepted v1 scope call.
 
-**Stays in `Flower`:** `LibraryStore`/`PlaylistStore` (server uses SQLite instead — JSON full-rewrite-on-save doesn't fit incremental upserts/foreign keys); `AppSettingsStore`/`ColumnVisibilityStore`/`DeviceIdentityStore`/`PlaylistSyncStateStore` (client-only concerns); `TrackListBuilder`/`TrackRowViewModel` (holds an Avalonia `Bitmap`); `SyncHttpServer`/`NetworkDiscoveryService`/`PlaylistSyncService` (P2P sync is a different feature from `Flower.Server`).
+### Remote access without opening router ports: Tailscale, documented not automated
+
+Jellyfin/Navidrome/Plex self-hoster consensus converges on one answer: don't port-forward — a
+directly port-forwarded login page gets scraped by Shodan within hours. **Tailscale** (mesh
+WireGuard VPN, zero port-forwarding) is the recommended path, and it solves TLS for free:
+`tailscale serve`/`tailscale cert` auto-provisions and renews a Let's Encrypt cert for the
+tailnet's MagicDNS name, no ACME code needed in `Flower.Server` for this path. Cloudflare
+Tunnel is worth documenting as a secondary option for sharing with people who won't install a
+VPN client, but it terminates TLS at Cloudflare's edge — a materially different trust boundary.
+
+There's no .NET binding for `tsnet` (Tailscale's embed-in-your-app library, Go/Rust/Python/
+Elixir only), so embedding Tailscale directly would mean shelling out to the external binary.
+**Decision: document, don't automate** — setup docs tell the user to install Tailscale on the
+server and their own devices; the only code change needed is widening `LanGuard` (below) so
+Tailscale-originated traffic isn't rejected outright.
+
+**Automated SSL**, two tiers: Tailscale users get certs for free as above (and `Flower.Server`
+can stay plain HTTP bound to the tailnet/LAN interface, since WireGuard already encrypts that
+traffic — finally closing, for this deployment shape, the "still plaintext HTTP" gap Phase 4
+below explicitly deferred). Users who want a public domain without Tailscale get
+[**LettuceEncrypt**](https://github.com/natemcmaster/LettuceEncrypt) — a small, Kestrel-native
+ACME library, one `AddLettuceEncrypt()` call, no custom ACME plumbing.
+
+### Security hardening for a server that's no longer LAN-only
+
+- **`LanGuard` must stop being hardcoded RFC1918-only.** Add Tailscale's CGNAT range
+  (`100.64.0.0/10`) to the allowed set, and make the allow-list a config option rather than a
+  fixed constant, so a user behind a trusted tunnel/proxy can widen it without a code change.
+- **The browser UI and its admin API routes need their own auth**, separate from the
+  device-signed P2P scheme (a browser tab isn't a device with a keypair) — single admin
+  password, `Flower.Web` logs in via a REST call and holds a token/cookie for subsequent
+  calls. Rate-limit/lock the login route (reuse `RateLimiter`); if cookie-based, apply the
+  usual CSRF mitigations, or use a bearer token in memory instead of a cookie to avoid the
+  CSRF surface entirely.
+- **The in-browser player needs its own stream-auth bridge** — `/rest/stream`-equivalent
+  routes are gated by the device-signed `TrustedPeer` mode today, which a browser tab can't
+  produce. Route the web player's audio requests through the same admin session instead, as a
+  distinct auth mode, not a relaxation of the existing one.
+- **Pairing codes need brute-force resistance** (below): short expiry, single-use, hard
+  per-IP attempt cap on the redeem endpoint.
+
+### Pairing redesign: admin-issued one-time codes
+
+Today's flow (`SyncHttpServer.PeerApprovalRequested`, raised from `HandlePairRequestAsync`)
+holds an incoming pair request open for 60 seconds waiting on a human to click Approve in a
+popup, and fails closed if nobody's listening — fine when the admin is at the machine, a bad
+fit for a headless box nobody's watching. Replace it for `Flower.Server` with an **admin-issued,
+one-time pairing code**, proactive instead of reactive:
+
+1. Admin, logged into the browser UI, hits "Add device" → server generates a short single-use
+   code (e.g. 8-char alphanumeric) with a ~10 minute expiry, shown on-screen (plus a QR
+   encoding the server's tailnet address + code).
+2. Admin relays the code to whoever's setting up the new device out-of-band.
+3. The new device's "pair with server" flow sends its self-signed public key **plus the code**
+   to a new endpoint, kept separate from the existing device-to-device `pair-request` so that
+   flow's semantics don't change at all. Server validates the code (exists, unexpired,
+   unconsumed), consumes it, completes the same proof-of-possession handshake already built
+   (verify offered key → derive fingerprint → write to `TrustedPeerStore`) — no 60-second live
+   wait, no dialog.
+4. Redeem endpoint is rate-limited hard per-IP (reuse `RateLimiter`) to bound brute-force
+   attempts against the code within its expiry window.
+
+Additive only: the existing GUI reactive-approval path (`PeerApprovalRequested`,
+`ConfirmDialogWindow`, `TrustedDevicesWindow`) is untouched for desktop↔desktop/mobile P2P
+pairing. The code-based flow is specific to pairing *against* `Flower.Server`.
+
+**Effort:** roughly 3-5 weeks for one engineer for the server backend — most of it EF Core
+schema/migration and SQLite concurrency hardening, not streaming or Docker — plus the new
+`Flower.Web` head on top (see project structure below).
+
+## Project structure: extracting a shared `Flower.Core` library, and a new `Flower.Web` head
+
+`Flower.csproj` pulls in Avalonia/LibVLCSharp/every ViewModel — `Flower.Server`'s headless
+backend can't reference that (the browser UI is a different story — see below). **Done**: a new
+`Flower.Core` classlib (plain `net10.0` — no need to dual-target `net9.0`; `Flower.iOS`'s
+`net10.0-ios26.0` head references a `net10.0` library exactly the way `Flower.Desktop`/
+`Flower.Android`/`Flower.CLI` already did, confirmed by a full-solution build) now holds:
+
+- **`Models/`** (`Track`, `Playlist`/`MainPlaylist`, `Library`) — pure move, no Avalonia references. `TimeSpanTicksConverter` had to go from `internal` to `public`: a source-generated `JsonSerializerContext` can't see an `internal` converter type from a different assembly.
+- **`Importer/`** (`Importer`, `IMusicImporter`, `PlatformMusicImporter`, the iTunes importers) — `Flower.Server`'s scanner becomes the same `Importer.ImportAsync` desktop already uses. Brought `TagLibSharp`/`plist-cil` along (`Flower.csproj` still references `TagLibSharp` too, for its own non-import uses like `AlbumArtLoader`/`TrackInfoWindow`).
+- **The OpenSubsonic wire contracts + REST client** (`OpenSubsonicContracts.cs`/`OpenSubsonicClient.cs`) — moved as-is. **Not** `LibraryOpenSubsonicMapper` (the `Track`→`Child` mapping) — that stays in `Flower`, since it calls `AlbumArtLoader` (Avalonia `Bitmap`-backed); `Flower.Server` will write its own `TrackEntity`→`SubsonicSongDto` mapping instead, per the "Reuse boundary" note below. `OpenSubsonicClient`'s own JSON parsing needed a new `OpenSubsonicJsonContext` in `Flower.Core` (mirroring `Flower`'s `ExternalProtocolJsonContext`, which stays put since it also covers `SyncHttpServer.SyncInfoResponseDto`) — two source-generated contexts for the same `SubsonicEnvelope` shape, harmless duplication.
+- **The pairing/trust primitives** — `DeviceKeyStore`/`DeviceSigningKey`, `SignedRequestCanonicalizer`/`SignatureVerifier`/`NonceReplayGuard`, `TrustedPeerStore`, `RateLimiter`, `LanGuard`. (`DeviceIdentity`/`DeviceIdentityStore` did **not** move — it's this device's own display alias, a client-only concern, unchanged from the "Stays in `Flower`" list below.) `DeviceKeyStore`/`TrustedPeerStore` needed their own `FlowerCoreJsonContext` (`DeviceKeyMaterial`/`TrustedPeer`/`DeniedPeer`) since `Flower`'s `FlowerJsonContext` can't be referenced from `Flower.Core`. Also moved, as a necessary transitive dependency not originally called out here: `AppDataDirectory`/`PlatformDataDirectory` (the app-support-directory resolver — `AppDataDirectory` went from `internal` to `public`; still `Flower`'s own resolution logic for now, `Flower.Server` will likely want its own config-driven data directory rather than reusing this as-is). `SyncHttpServer` itself (the `HttpListener`-based P2P host) stays in `Flower` — it's mobile/desktop-specific — but `Flower.Server` gets its own Kestrel-based route layer calling the same moved-out primitives instead of reimplementing them.
+- **`Flower/Logging/`** (`AppLogging`, `InMemoryLogStore`/`InMemoryLogEventSink`/`InMemoryLogEntry`, `CrashReportScanner`, `PlatformCrashInfo`) — no Avalonia coupling, and a headless `Flower.Server` needs the exact same Serilog file/console bootstrap rather than a duplicated copy, so it moved too even though nothing in `Flower.Core` strictly required it (see the `Importer` fix below, which *removed* the one forcing dependency but the logging infrastructure stayed moved anyway on its own merits). `AppLogging.LogsDirectory` uses the now-`public` `AppDataDirectory` above. `Flower.Core.csproj` carries the Serilog/`System.Diagnostics.EventLog` package refs this needs.
+
+**`Importer.TryResolveAppleMusicFolder` no longer needs a static logger.** It's called from `AppSettingsStore.Load()` (to auto-populate a configured library path) before any `Importer` instance necessarily exists, which briefly justified a static `AppLogging.CreateLogger<Importer>()` field — but the method only needed to *accept* a logger from whichever caller already has one, not manufacture its own from a global. Fixed with an `ILogger? logger = null` parameter instead: `AppSettingsStore` passes its own `_logger`, and `Importer.Import()`'s instance `_logger` flows through its own `ResolveMusicPath` the same way. (This was going to shrink `Flower.Core` back to excluding `Flower/Logging/` entirely, until the "why not just move it, it's Avalonia-free and `Flower.Server` wants it too" call above superseded that — the `Importer` fix is still worth keeping on its own: a static global logger for one call site when the caller already has a perfectly good instance one was avoidable either way.)
+
+**Startup logging/DI setup tightened as part of this pass, in `Flower` (prompted by looking at `AppLogging` closely, not really about what moved into `Flower.Core`):** `App.axaml.cs`'s DI container (`ServiceCollection`) is now created near the very top of `OnFrameworkInitializationCompleted`, immediately after `AppLogging.Initialize()` configures Serilog's sinks — and the *first* thing registered on it is `.AddLogging(builder => builder.AddSerilog())`, the standard `Microsoft.Extensions.Logging` DI pipeline, rather than `AppLogging` building its own separate `SerilogLoggerFactory` internally. That one collection then threads through the rest of `Bootstrap`, accumulating `.AddSingleton(...)` registrations as each service gets constructed exactly as before, and only gets built + handed to `Ioc.Default.ConfigureServices(...)` once, at the end (`CommunityToolkit.Mvvm`'s `Ioc.Default` can only be configured once, so the container itself still can't be *finished* until everything it holds exists — only the logging registration genuinely moved earlier). `AppLogging.CreateLogger`/`CreateTypedLogger` (used throughout `Bootstrap` for ad-hoc-`new`'d services, plus genuinely-static call sites like `RubberBandScroll`/`AlbumArtLoader` that can't take constructor-injected loggers at all) now read from that same DI-built `ILoggerFactory` via a new `AppLogging.UseLoggerFactory(...)` setter, instead of wrapping `Log.Logger` a second, independent time.
+
+**Stays in `Flower`:** `LibraryStore`/`PlaylistStore` (server uses SQLite instead — JSON full-rewrite-on-save doesn't fit incremental upserts/foreign keys); `AppSettingsStore`/`ColumnVisibilityStore`/`DeviceIdentityStore`/`PlaylistSyncStateStore` (client-only concerns); `LibraryOpenSubsonicMapper` (Avalonia `Bitmap`-coupled via `AlbumArtLoader`, see above); `TrackListBuilder`/`TrackRowViewModel` (holds an Avalonia `Bitmap`); `SyncHttpServer`/`NetworkDiscoveryService`/`PlaylistSyncService` (P2P sync is a different feature from `Flower.Server`).
 
 **Reuse boundary:** `Importer.ImportAsync()` produces shared `Flower.Core.Track`s → server-internal `TrackEntity` (EF Core) → server-internal mapping to shared `SubsonicSongDto` → HTTP/JSON → OpenSubsonic client maps back to its own `Flower.Core.Track`. Two deliberate seams (`TrackEntity`, `SubsonicSongDto`) keep DB churn and the Path-can't-cross-the-wire rule out of the shared model.
 
-**Mechanical steps:** new `Flower.Core` classlib → `git mv` `Models/`/`Importer/`/the OpenSubsonic contracts+client in, along with their package refs → `Flower.csproj` gets a `ProjectReference` → confirm `Flower.Tests` passes unchanged → scaffold `Flower.Server` (`dotnet new webapi`) referencing `Flower.Core`.
+**Mechanical steps — done:** new `Flower.Core` classlib → `git mv` `Models/`/`Importer/`/the OpenSubsonic contracts+client/pairing-trust primitives in, along with their package refs → `Flower.csproj` gets a `ProjectReference` → confirmed `Flower.Tests` passes unchanged (359/359, plus the pre-existing `RequiresLibVLC` suite bar one flaky timing test that passes in isolation, unrelated to this move). **Next:** scaffold `Flower.Server` (`dotnet new webapi`) referencing `Flower.Core`.
+
+**New `Flower.Web` project** (Avalonia Browser/WASM head): references `Flower.csproj` directly — same Views/ViewModels/`Flower/Controls/` as desktop, not a reimplementation. Two things it needs that the other heads don't: native audio package refs (`LibVLCSharp`/`Miniaudio-CS`, and the `LibVlcRawStreamSink`/`MiniaudioSink` classes that use them) conditioned out of the `browser-wasm` build via an MSBuild `Condition`; and a new `WebAudioSink : IAudioSink` (JS interop to the Web Audio API) registered in its own `App.axaml.cs`, the same per-platform DI-swap pattern already used to pick `MiniaudioSink` vs. `LibVlcRawStreamSink` today. It talks to `Flower.Server`'s REST API (OpenSubsonic + the new admin/pairing endpoints) instead of running `Importer`/LibVLC locally and serves as the static bundle `Flower.Server`'s Kestrel process hosts.
 
 Once `Flower.Core` exists, add a `SubsonicLibraryImporter : IMusicImporter` (and later `JellyfinLibraryImporter`) so "local files" vs. "self-hosted server" is a settings choice via `IMusicImporter`, not a special-cased second code path — this supersedes `CROSS-PLATFORM-PLAN.md` item #3's original `IMusicSource` proposal, which shipped instead as `IMusicImporter`.
+
+### Suggested build order
+
+1. **Done.** Extract `Flower.Core` (mechanical git-mv + reference fixups; confirm `Flower.Tests` still passes unchanged).
+2. Scaffold `Flower.Server`: EF Core/SQLite schema, importer wired up, OpenSubsonic endpoints working against a real Navidrome-compatible client.
+3. Pairing-code endpoint + admin auth + `LanGuard` CGNAT allowance + rate limiting on the redeem route — get a real device pairing against a real headless instance before building UI on top of it.
+4. Scaffold `Flower.Web`: get existing Views/ViewModels building and rendering in-browser first (against `Flower.Server`'s REST API for data, native audio refs conditioned out) before tackling playback; add `WebAudioSink` and transport controls; then the pairing-code "Add device" screen and admin settings screens; full jukebox browse/search/queue last since it needs a populated library to be worth testing against.
+5. Docker packaging + docs: the "expose this over Tailscale" setup guide as the primary documented remote-access path, LettuceEncrypt as the secondary one.
 
 ## Mobile-specific note: streaming vs. background sync
 
@@ -209,6 +345,6 @@ needs to leave a trusted LAN.
 
 ## Status summary
 
-All numbered steps through Phase 4 are **done**: `CROSS-PLATFORM-PLAN.md` item #3 updated to the private-file-library iOS design; WiFi/LAN discovery + LocalSend-style transfer; `UIFileSharingEnabled` for USB; Bluetooth/programmatic-USB deliberately not built; playlist metadata sync; the OpenSubsonic client; the full Phase 3 stack (trust gate, embedded host, merge logic, mobile download UI); and Phase 4's cryptographic identity/signed-request hardening (route table, rate limiting, LAN-only enforcement, persisted denials, server-initiated unpair, body size cap).
+All numbered steps through Phase 4 are **done**: `CROSS-PLATFORM-PLAN.md` item #3 updated to the private-file-library iOS design; WiFi/LAN discovery + LocalSend-style transfer; `UIFileSharingEnabled` for USB; Bluetooth/programmatic-USB deliberately not built; playlist metadata sync; the OpenSubsonic client; the full Phase 3 stack (trust gate, embedded host, merge logic, mobile download UI); and Phase 4's cryptographic identity/signed-request hardening (route table, rate limiting, LAN-only enforcement, persisted denials, server-initiated unpair, body size cap). `Flower.Server` build-order step 1, extracting `Flower.Core`, is also **done** (see "Project structure" above).
 
-**Remaining work:** fold the client into the `IMusicImporter` abstraction as a user-facing settings choice; add Jellyfin as a second `IMusicImporter` backend; real-device Android download-path verification and end-to-end testing against a real peer; and, only once there's concrete demand, extract `Flower.Core` and scaffold `Flower.Server`.
+**Remaining work:** fold the client into the `IMusicImporter` abstraction as a user-facing settings choice; add Jellyfin as a second `IMusicImporter` backend; real-device Android download-path verification and end-to-end testing against a real peer; and, now the next initiative, scaffold `Flower.Server` (headless, web-interfaced, pairing-code-based pairing) on top of the new `Flower.Core`, then add the `Flower.Web` Avalonia Browser/WASM head.

@@ -45,7 +45,7 @@ namespace Flower.Persistence
                 try
                 {
                     var json = File.ReadAllText(path);
-                    var material = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.DeviceKeyMaterial);
+                    var material = JsonSerializer.Deserialize(json, FlowerCoreJsonContext.Default.DeviceKeyMaterial);
                     if (material is { PrivateKeyPkcs8Base64.Length: > 0 })
                     {
                         var ecdsa = ECDsa.Create();
@@ -95,7 +95,7 @@ namespace Flower.Persistence
                 "ECDSA-P256",
                 Convert.ToBase64String(ecdsa.ExportPkcs8PrivateKey()),
                 Convert.ToBase64String(publicKeyRaw));
-            File.WriteAllText(path, JsonSerializer.Serialize(material, FlowerJsonContext.Default.DeviceKeyMaterial));
+            File.WriteAllText(path, JsonSerializer.Serialize(material, FlowerCoreJsonContext.Default.DeviceKeyMaterial));
         }
     }
 }

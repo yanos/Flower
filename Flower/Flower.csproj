@@ -9,6 +9,10 @@
 
   
   <ItemGroup>
+    <ProjectReference Include="..\Flower.Core\Flower.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 

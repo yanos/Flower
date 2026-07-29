@@ -12,6 +12,11 @@ namespace Flower.Services
     // "trustsCaller", so the camelCase policy below isn't just cosmetic).
     // Everything Flower controls both ends of (local files, its own
     // /api/flower/v1/* protocol) lives in FlowerJsonContext instead.
+    // SubsonicEnvelope here is duplicated in Flower.Core's own
+    // OpenSubsonicJsonContext (used by OpenSubsonicClient, which can't
+    // reference this Flower-only context because it also covers
+    // SyncInfoResponseDto below) - two source-generated contexts for the same
+    // type is harmless, just some generated-code duplication.
     [JsonSourceGenerationOptions(
         PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
