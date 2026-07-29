@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 using Flower.Manager;
@@ -10,8 +11,30 @@ using Flower.ViewModels;
 
 namespace Flower.Tests;
 
-public class PlaylistControlViewModelTests
+// PlatformDataDirectory.Current is pinned to an isolated temp directory
+// (same pattern as PlaylistAutoAdvanceTests/StoreRoundTripTests) because
+// Play/ToggleRepeat/ToggleShuffle below all fire-and-forget a real
+// LibraryStore.SaveAsync/AppSettingsStore.SaveAsync - without this, those
+// writes land in the real developer's library.json/settings.json instead
+// of a throwaway temp one.
+[Collection("PlatformDataDirectory")]
+public class PlaylistControlViewModelTests : IDisposable
 {
+    private readonly string _tempHome;
+
+    public PlaylistControlViewModelTests()
+    {
+        _tempHome = Path.Combine(Path.GetTempPath(), "flower-tests-" + Guid.NewGuid());
+        Directory.CreateDirectory(_tempHome);
+        PlatformDataDirectory.Current = _tempHome;
+    }
+
+    public void Dispose()
+    {
+        PlatformDataDirectory.Current = null;
+        try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
+    }
+
     private static Track T(string title, string? path = null) =>
         new Track { Title = title, Path = path ?? $"/music/{title}.mp3" };
 
