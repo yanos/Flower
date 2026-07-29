@@ -20,4 +20,11 @@ public sealed class FlowerServerOptions
     public string AdminUsername { get; set; } = "admin";
 
     public string AdminPassword { get; set; } = "changeme";
+
+    // Widens LanGuard's built-in private/loopback/CGNAT allow-list (see
+    // Program.cs's LanGuard middleware) for a trusted tunnel/proxy whose
+    // source range isn't already covered - e.g. a reverse proxy on its own
+    // subnet. Empty by default: the built-in RFC1918 + Tailscale CGNAT
+    // ranges already cover the documented "expose via Tailscale" path.
+    public List<string> AllowedCidrs { get; set; } = [];
 }
