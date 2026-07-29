@@ -464,3 +464,9 @@ $RECYCLE.BIN/
 ##
 native/miniaudio/android/build/
 native/miniaudio/ios/build/
+
+##
+## Flower.Server's local runtime state (SQLite db/WAL files, default
+## DataDirectory) when run straight from a checkout without overriding it.
+##
+Flower.Server/data/

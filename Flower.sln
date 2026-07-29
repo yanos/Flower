@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Tests", "Flower.Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Core", "Flower.Core\Flower.Core.csproj", "{13E3662D-8D9F-4E92-9941-9024C3511647}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Server", "Flower.Server\Flower.Server.csproj", "{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -111,6 +113,18 @@ Global
 		{13E3662D-8D9F-4E92-9941-9024C3511647}.Release|x64.Build.0 = Release|Any CPU
 		{13E3662D-8D9F-4E92-9941-9024C3511647}.Release|x86.ActiveCfg = Release|Any CPU
 		{13E3662D-8D9F-4E92-9941-9024C3511647}.Release|x86.Build.0 = Release|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Debug|x64.Build.0 = Debug|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Debug|x86.Build.0 = Debug|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Release|x64.ActiveCfg = Release|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Release|x64.Build.0 = Release|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Release|x86.ActiveCfg = Release|Any CPU
+		{BC95BEA8-433A-40D5-8BAF-075F42D72DAD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

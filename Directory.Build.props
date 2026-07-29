@@ -5,11 +5,11 @@
 
   <!-- MinVer: computes $(Version) from git tags for the shipped entry-point
        projects only (not the shared library or the test project -->
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI'">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI' OR '$(MSBuildProjectName)' == 'Flower.Server'">
     <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI'">
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI' OR '$(MSBuildProjectName)' == 'Flower.Server'">
     <PackageReference Include="MinVer" Version="7.*">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
