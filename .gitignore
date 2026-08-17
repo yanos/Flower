@@ -466,7 +466,22 @@ native/miniaudio/android/build/
 native/miniaudio/ios/build/
 
 ##
-## Flower.Server's local runtime state (SQLite db/WAL files, default
-## DataDirectory) when run straight from a checkout without overriding it.
+## Flower.Server's local runtime state (SQLite db/WAL files, device keys,
+## trusted peers) when run straight from a checkout without overriding its
+## default DataDirectory of "./data".
 ##
-Flower.Server/data/
+## Listed as individual artifact patterns rather than the whole directory,
+## and spelled [Dd]ata, on purpose. The rule used to be "Flower.Server/data/",
+## which on a case-insensitive filesystem (macOS, Windows) silently matched
+## the *source* folder Flower.Server/Data/ as well - so FlowerDbContext.cs,
+## TrackEntity.cs, PlaylistEntity.cs and PlaylistTrackEntity.cs were never
+## committed at all, and Flower.Server could not build from a fresh clone.
+## Excluding the directory itself would also make a "!*.cs" negation
+## impossible (git does not descend into an excluded directory), hence
+## per-artifact patterns.
+##
+Flower.Server/[Dd]ata/*.db
+Flower.Server/[Dd]ata/*.db-shm
+Flower.Server/[Dd]ata/*.db-wal
+Flower.Server/[Dd]ata/*.json
+Flower.Server/[Dd]ata/logs/

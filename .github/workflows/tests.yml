@@ -14,10 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Flower.csproj (the shared library Flower.Tests references) multi-targets
-      # net10.0;net9.0, but a project reference resolves to whichever TFM
-      # matches the referencing project - Flower.Tests only targets net10.0,
-      # so only that flavor of Flower.csproj actually gets built here.
+      # Flower.csproj (the shared library Flower.Tests references) targets
+      # net10.0 only. This comment previously claimed it multi-targeted
+      # net10.0;net9.0, which has not been true for some time - see
+      # ARCHITECTURE-REVIEW Tier 5.
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -31,6 +31,54 @@ jobs:
       # "fast, day-to-day" filter as CLAUDE.md's local dev instructions.
       - name: Run tests
         run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter Category!=RequiresLibVLC
+
+  server-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower.Core/Flower.Core.csproj
+            Flower.Server/Flower.Server.csproj
+            Flower.Server.Tests/Flower.Server.Tests.csproj
+
+      # Flower.Server was previously never compiled by CI at all, let alone
+      # tested - `dotnet test Flower.Tests` only ever builds
+      # Flower.Tests -> Flower -> Flower.Core (ARCHITECTURE-REVIEW Tier 5.1).
+      # That is how four entity source files under Flower.Server/Data/ stayed
+      # uncommitted (a .gitignore rule matched the source folder on
+      # case-insensitive filesystems) without anyone noticing the server could
+      # not build from a clean checkout - which is exactly what this job does.
+      - name: Run server tests
+        run: dotnet test Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
+
+  # Everything the two test jobs above don't already compile. A build-only
+  # gate, deliberately: Flower.CLI has no tests worth running yet, but a
+  # project that never gets compiled by CI is a project that silently rots.
+  build-rest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower/Flower.csproj
+            Flower.CLI/Flower.CLI.csproj
+
+      - name: Build Flower.Desktop
+        run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
+
+      - name: Build Flower.CLI
+        run: dotnet build Flower.CLI/Flower.CLI.csproj --configuration Release
 
   build-ios:
     runs-on: macos-latest
