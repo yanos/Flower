@@ -83,21 +83,9 @@ namespace Flower.Models
                 foreach (var track in tracks)
                 {
                     if (track.Path != null && previousByPath.TryGetValue(track.Path, out var previous))
-                    {
-                        track.DateAdded         = previous.DateAdded;
-                        track.PlayCount         = previous.PlayCount;
-                        track.ImportedPlayCount = previous.ImportedPlayCount;
-                        track.LastPlayedAt      = previous.LastPlayedAt;
-                        CarryForwardOrigin(track, previous);
-                    }
+                        CarryForwardMutableState(previous, track);
                     else if (previousSyncedByKey.TryGetValue(track.SyncKey, out var previousSynced))
-                    {
-                        track.DateAdded         = previousSynced.DateAdded;
-                        track.PlayCount         = previousSynced.PlayCount;
-                        track.ImportedPlayCount = previousSynced.ImportedPlayCount;
-                        track.LastPlayedAt      = previousSynced.LastPlayedAt;
-                        CarryForwardOrigin(track, previousSynced);
-                    }
+                        CarryForwardMutableState(previousSynced, track);
                 }
 
                 // Tracks known via sync (OriginDeviceFingerprint set - see
@@ -125,6 +113,8 @@ namespace Flower.Models
                 Tracks = tracks.Concat(carriedForwardSyncTracks).ToList();
                 afterCount = Tracks.Count;
                 carriedForwardCount = carriedForwardSyncTracks.Count;
+
+                RebindPlaylistTracks();
             }
 
             _logger.LogInformation("Library updated: {FreshCount} track(s) from scan, {CarriedForwardCount} synced-only track(s) carried forward, {TotalBefore} -> {TotalAfter}",
@@ -133,17 +123,66 @@ namespace Flower.Models
             TracksUpdated?.Invoke(this, EventArgs.Empty);
         }
 
-        // Shared by UpdateTracks' two match branches (exact Path, SyncKey
-        // fallback) - a freshly-rescanned Track starts with none of this
-        // (Importer only reads file tags), so without it a rescan would
-        // silently strip sync origin/redownload info from any track that
-        // also happens to be locally rediscoverable (the common case for a
-        // downloaded file, which lives in the same folder Importer scans).
-        private static void CarryForwardOrigin(Track track, Track previous)
+        // Points every playlist at the Track instances now in Tracks.
+        //
+        // PlaylistStore resolves playlist membership to Track object references
+        // exactly once, at startup. Every launch then kicks off a background
+        // rescan whose UpdateTracks replaces Tracks wholesale with brand-new
+        // instances - and nothing used to re-point the playlists, so for the
+        // rest of the session a playlist held a *different object graph* than
+        // the library did for the same songs. A play count incremented on the
+        // library's instance never showed up when viewing the playlist, and
+        // vice versa; the two only agreed again after a restart, via
+        // playlists.json's path round-trip.
+        //
+        // Deliberately not ReplaceAll: membership and order haven't changed,
+        // only which object represents each entry, so bumping Playlist.
+        // UpdatedAt here would make every single rescan look like a local edit
+        // to PlaylistSyncPlanner's three-way merge and manufacture conflicts
+        // out of nothing.
+        //
+        // An entry with no match left in Tracks keeps its existing instance
+        // rather than being dropped: a scan not finding a file is not proof
+        // it's gone (see carriedForwardSyncTracks above for the same
+        // reasoning), and silently deleting a user's playlist entry is a much
+        // worse failure than briefly showing a stale one.
+        private void RebindPlaylistTracks()
         {
+            var byId = new Dictionary<Guid, Track>(Tracks.Count);
+            foreach (var track in Tracks)
+                byId.TryAdd(track.Id, track);
+
+            foreach (var playlist in Playlists)
+                playlist.RebindTracks(byId);
+        }
+
+        // THE list of everything about a Track that a rescan must not reset.
+        //
+        // A rescan (see Importer) produces brand-new Track instances read
+        // straight from file tags - fresh Id, DateAdded defaulting to "now",
+        // play counts at 0, no sync origin - so every field here would be
+        // silently lost on every single launch without this. It exists as one
+        // method, called from both of UpdateTracks' match branches (exact
+        // Path, SyncKey fallback), specifically so adding a new
+        // persisted-but-not-rescannable field (Starred, Rating, a provider
+        // Source tag) is one edit rather than two identical ones that are
+        // easy to update only half of. LibraryTests pins that a rescan
+        // preserves all of it.
+        private static void CarryForwardMutableState(Track previous, Track track)
+        {
+            // First, and separately worth calling out: Id is this track's
+            // identity everywhere else in the app (playlist membership, the
+            // play queue, Track Info navigation). Letting a rescan mint a new
+            // one would silently orphan the track from every list holding it.
+            track.Id                      = previous.Id;
+
+            track.DateAdded               = previous.DateAdded;
+            track.PlayCount               = previous.PlayCount;
+            track.ImportedPlayCount       = previous.ImportedPlayCount;
+            track.LastPlayedAt            = previous.LastPlayedAt;
             track.OriginDeviceFingerprint = previous.OriginDeviceFingerprint;
-            track.OriginFileExtension = previous.OriginFileExtension;
-            track.OriginAlbumArtHash = previous.OriginAlbumArtHash;
+            track.OriginFileExtension     = previous.OriginFileExtension;
+            track.OriginAlbumArtHash      = previous.OriginAlbumArtHash;
             MergeRemotePlayCounts(track, previous.RemotePlayCounts);
         }
 

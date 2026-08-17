@@ -1465,7 +1465,7 @@ public partial class MainView : UserControl
         if (e.AddedItems.Count == 0 || e.AddedItems[0] is not AlbumID3 album)
             return;
 
-        await vm.PeerLibrary.SelectAlbumAsync(album);
+        await (vm.PeerLibrary?.SelectAlbumAsync(album) ?? Task.CompletedTask);
     }
 
     private void PeerSongList_DoubleTapped(object? sender, TappedEventArgs e)
@@ -1475,7 +1475,7 @@ public partial class MainView : UserControl
         if (sender is not ListBox { SelectedItem: Child song })
             return;
 
-        vm.PeerLibrary.PlaySong(song);
+        vm.PeerLibrary?.PlaySong(song);
     }
 
     // Device-detail header's Pair/Unpair button - mirrors ServerPickerView's

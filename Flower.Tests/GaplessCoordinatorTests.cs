@@ -174,20 +174,44 @@ public class GaplessCoordinatorTests
         Assert.True(h.LatestDecoderFor(a).RetireCalled);
     }
 
+    // A faulted current track advances the pipeline exactly like a drained one
+    // (promote the armed track, or stop) - but reports itself as TrackFailed,
+    // not EndReached. Both used to raise EndReached, which is what
+    // PlaylistControlViewModel counts a play on, so an unplayable file was
+    // indistinguishable from one the user listened all the way through.
     [Fact]
-    public void Faulted_current_track_behaves_the_same_as_Drained()
+    public void Faulted_current_track_advances_like_Drained_but_reports_TrackFailed()
     {
         var h = new Harness();
         var a = T("A");
         Track? endReachedTrack = null;
+        Track? failedTrack = null;
         h.Coordinator.EndReached += t => endReachedTrack = t;
+        h.Coordinator.TrackFailed += t => failedTrack = t;
         h.Coordinator.Play(a);
         WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
 
         h.LatestDecoderFor(a).RaiseFaulted();
 
-        Assert.Same(a, endReachedTrack);
+        Assert.Same(a, failedTrack);
+        Assert.Null(endReachedTrack);
         Assert.Null(h.Coordinator.CurrentTrack);
+    }
+
+    [Fact]
+    public void Faulted_current_track_still_promotes_the_armed_track()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = T("B");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+        h.Coordinator.SetUpcoming(b);
+        WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should be armed");
+
+        h.LatestDecoderFor(a).RaiseFaulted();
+
+        Assert.Same(b, h.Coordinator.CurrentTrack);
     }
 
     [Fact]

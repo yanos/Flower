@@ -3,7 +3,9 @@ long term:
  album mode
  artist / playlist icon instead of album art
  lyric service
- song history
+ liked song tab
+ artist image service
+ most popular track for an artist service
  localisation
  intelligent playlist like favorite songs, recently played, etc.
  export playlist with actual songs
@@ -15,6 +17,10 @@ long term:
  a way to only see downloaded music
  queue after this song or this album
  pulling down the view in mobile should reveal a filter field
+ visualizers
+ themes
+ back / forward arrows
+ UI tests
 
 build:
  dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
@@ -23,6 +29,7 @@ build:
  ui tests
 
 details:
+ open log folder in log view
  add an issue link in about box
  readme
  folder in playlist

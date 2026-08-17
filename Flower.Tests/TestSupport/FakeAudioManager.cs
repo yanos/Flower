@@ -36,6 +36,7 @@ public sealed class FakeAudioManager : IAudioManager
     public event EventHandler? PositionChanged;
     public event EventHandler? VolumeChanged;
     public event EventHandler? EndReached;
+    public event EventHandler<TrackFailedEventArgs>? TrackFailed;
 
     public void RaisePaused() => Paused?.Invoke(this, EventArgs.Empty);
     public void RaiseStopped() => Stopped?.Invoke(this, EventArgs.Empty);
@@ -43,4 +44,5 @@ public sealed class FakeAudioManager : IAudioManager
     public void RaisePositionChanged() => PositionChanged?.Invoke(this, EventArgs.Empty);
     public void RaiseVolumeChanged() => VolumeChanged?.Invoke(this, EventArgs.Empty);
     public void RaiseEndReached() => EndReached?.Invoke(this, EventArgs.Empty);
+    public void RaiseTrackFailed(Track track) => TrackFailed?.Invoke(this, new TrackFailedEventArgs(track));
 }

@@ -40,29 +40,29 @@ namespace Flower.Persistence
         public (ECDsa Key, byte[] PublicKeyRaw) Load()
         {
             var path = StorePath;
-            if (File.Exists(path))
+            try
             {
-                try
+                // AtomicJsonFile, not a plain read: regenerating below means a
+                // brand new keypair, and every peer that had this device trusted
+                // (TrustedPeerStore keys by the fingerprint derived from the old
+                // key) would stop recognizing it. That makes a torn write to this
+                // file the most consequential one in the app, and makes the
+                // previous-good .bak worth having far more than for any other
+                // store here.
+                var material = AtomicJsonFile.Read(path, FlowerCoreJsonContext.Default.DeviceKeyMaterial, _logger);
+                if (material is { PrivateKeyPkcs8Base64.Length: > 0 })
                 {
-                    var json = File.ReadAllText(path);
-                    var material = JsonSerializer.Deserialize(json, FlowerCoreJsonContext.Default.DeviceKeyMaterial);
-                    if (material is { PrivateKeyPkcs8Base64.Length: > 0 })
-                    {
-                        var ecdsa = ECDsa.Create();
-                        ecdsa.ImportPkcs8PrivateKey(Convert.FromBase64String(material.PrivateKeyPkcs8Base64), out _);
-                        return (ecdsa, PublicKeyRaw(ecdsa));
-                    }
+                    var ecdsa = ECDsa.Create();
+                    ecdsa.ImportPkcs8PrivateKey(Convert.FromBase64String(material.PrivateKeyPkcs8Base64), out _);
+                    return (ecdsa, PublicKeyRaw(ecdsa));
                 }
-                catch (Exception ex)
-                {
-                    // Falling through to regenerate below means a brand new
-                    // keypair - every peer that had this device trusted
-                    // (TrustedPeerStore keys by the fingerprint derived from
-                    // the old key) would stop recognizing it, a real enough
-                    // consequence to warrant a warning rather than silently
-                    // regenerating.
-                    _logger.LogWarning(ex, "Failed to load device key from {Path}; generating a new one (previously-trusted peers will need to re-approve this device)", path);
-                }
+            }
+            catch (Exception ex)
+            {
+                // Readable JSON that isn't a usable key (truncated base64, wrong
+                // curve) still lands here rather than in AtomicJsonFile's own
+                // recovery path, so it still deserves the same warning.
+                _logger.LogWarning(ex, "Device key in {Path} could not be imported; generating a new one (previously-trusted peers will need to re-approve this device)", path);
             }
 
             var fresh = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -89,13 +89,11 @@ namespace Flower.Persistence
 
         private void Save(ECDsa ecdsa, byte[] publicKeyRaw)
         {
-            var path = StorePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var material = new DeviceKeyMaterial(
                 "ECDSA-P256",
                 Convert.ToBase64String(ecdsa.ExportPkcs8PrivateKey()),
                 Convert.ToBase64String(publicKeyRaw));
-            File.WriteAllText(path, JsonSerializer.Serialize(material, FlowerCoreJsonContext.Default.DeviceKeyMaterial));
+            AtomicJsonFile.Write(StorePath, material, FlowerCoreJsonContext.Default.DeviceKeyMaterial);
         }
     }
 }

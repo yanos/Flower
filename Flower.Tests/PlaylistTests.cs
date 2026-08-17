@@ -127,4 +127,80 @@ public class PlaylistTests
         // FirstOrDefault() rather than wrapping to the last track.
         Assert.Same(a, playlist.GetPreviousTrack(a));
     }
+
+    // ── Identity ─────────────────────────────────────────────────────────────
+    //
+    // Track used to be a record, so IndexOf/Remove compared ~40 fields by
+    // value. Two genuinely different tracks that happened to share tag data -
+    // untagged rips, "Track 01", the silence tracks on a lot of CDs - were
+    // indistinguishable, so next/previous/remove all silently acted on
+    // whichever one appeared first in the list. These pin the Id-based
+    // identity that replaced it.
+
+    private static Track Untagged() => new Track { Title = null, Artists = null, Album = null, Path = null };
+
+    [Fact]
+    public void GetNextTrack_distinguishes_two_tracks_with_identical_metadata()
+    {
+        var first  = Untagged();
+        var second = Untagged();
+        var third  = Untagged();
+        var playlist = new Playlist("My Mix", new List<Track> { first, second, third });
+
+        Assert.Same(second, playlist.GetNextTrack(first));
+        Assert.Same(third,  playlist.GetNextTrack(second));
+    }
+
+    [Fact]
+    public void GetPreviousTrack_distinguishes_two_tracks_with_identical_metadata()
+    {
+        var first  = Untagged();
+        var second = Untagged();
+        var third  = Untagged();
+        var playlist = new Playlist("My Mix", new List<Track> { first, second, third });
+
+        Assert.Same(second, playlist.GetPreviousTrack(third));
+    }
+
+    [Fact]
+    public void RemoveTrack_removes_the_requested_instance_not_the_first_lookalike()
+    {
+        var first  = Untagged();
+        var second = Untagged();
+        var playlist = new Playlist("My Mix", new List<Track> { first, second });
+
+        playlist.RemoveTrack(second);
+
+        Assert.Same(first, Assert.Single(playlist.Tracks));
+    }
+
+    // Two Tracks describing the same song but constructed separately (one from
+    // a disk scan, one from a peer's sync manifest) are deliberately NOT equal:
+    // matching those up is SyncKey's job, done explicitly at the points that
+    // need it, not something list lookups should be doing implicitly.
+    [Fact]
+    public void Separately_constructed_tracks_for_the_same_song_are_not_equal()
+    {
+        var scanned = T("A");
+        var synced  = T("A");
+
+        Assert.NotEqual(scanned, synced);
+        Assert.Equal(scanned.SyncKey, synced.SyncKey);
+    }
+
+    [Fact]
+    public void A_clone_keeps_the_original_identity_but_not_its_mutable_dictionary()
+    {
+        var original = T("A");
+        original.RemotePlayCounts["peer"] = 3;
+
+        var clone = original.Clone();
+        clone.Path = "http://peer/stream";
+        clone.RemotePlayCounts["peer"] = 9;
+
+        // Same track as far as the play queue is concerned - this is what lets
+        // a placeholder streamed from a peer still be found in the queue.
+        Assert.Equal(original, clone);
+        Assert.Equal(3, original.RemotePlayCounts["peer"]);
+    }
 }

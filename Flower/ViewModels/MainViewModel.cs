@@ -977,7 +977,10 @@ public partial class MainViewModel : ViewModelBase
     // Live browse/stream state for SelectedDevice, unrestricted by Client/
     // Server role - see PeerLibraryViewModel and OnSidebarSelectionChanged,
     // which triggers LoadAsync whenever SelectedDevice changes.
-    public PeerLibraryViewModel PeerLibrary { get; }
+    // Null on a platform with no P2P sync stack at all (Flower.Web/WASM - see
+    // App.axaml.cs's OperatingSystem.IsBrowser() branch: .NET-for-WASM's crypto
+    // backend has no ECDSA support, so DeviceSigningKey can't exist there).
+    public PeerLibraryViewModel? PeerLibrary { get; }
 
     // Whether the device-detail header's Pair/Unpair button should show at
     // all for SelectedDevice - only meaningful for a Client looking at a
@@ -1174,22 +1177,34 @@ public partial class MainViewModel : ViewModelBase
         AppSettings appSettings,
         IMusicImporter importer,
         MainPlaylist mainPlaylist,
-        NetworkDiscoveryService networkDiscovery,
-        PairedServerReachability reachability,
-        PlaylistSyncService playlistSyncService,
-        LibrarySyncService librarySyncService,
-        LibraryDownloadService libraryDownloadService,
-        PeerPairingService peerPairingService,
-        PeerTrackResolver peerTrackResolver,
-        SyncHttpServer syncHttpServer,
-        DeviceIdentity deviceIdentity,
-        DeviceSigningKey signingKey,
         LibraryStore libraryStore,
         AppSettingsStore appSettingsStore,
         PlaylistStore playlistStore,
         DeviceIdentityStore deviceIdentityStore,
         DeviceNicknameStore deviceNicknameStore,
-        ILogger<MainViewModel> logger)
+        ILogger<MainViewModel> logger,
+        // Trailing + defaulted (not just nullable-typed) deliberately: these
+        // don't exist at all on Flower.Web/WASM (no P2P sync stack there - see
+        // PeerLibrary's own doc comment), and aren't registered in that
+        // platform's DI container. A bare "T? x" parameter with no "= null"
+        // is NOT enough for the container to pick this constructor over the
+        // parameterless one above when T isn't registered - verified directly
+        // against Microsoft.Extensions.DependencyInjection's actual constructor-
+        // selection behavior, which only treats a parameter as satisfiable-
+        // when-unregistered if it has a real default value (nullable
+        // annotations alone aren't consulted). Every platform that does have a
+        // P2P sync stack still gets its real, non-null instances here exactly
+        // as before - registered services always win over the default.
+        NetworkDiscoveryService? networkDiscovery = null,
+        PairedServerReachability? reachability = null,
+        PlaylistSyncService? playlistSyncService = null,
+        LibrarySyncService? librarySyncService = null,
+        LibraryDownloadService? libraryDownloadService = null,
+        PeerPairingService? peerPairingService = null,
+        PeerTrackResolver? peerTrackResolver = null,
+        SyncHttpServer? syncHttpServer = null,
+        DeviceIdentity? deviceIdentity = null,
+        DeviceSigningKey? signingKey = null)
     {
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
@@ -1205,7 +1220,9 @@ public partial class MainViewModel : ViewModelBase
         _reachability          = reachability;
         _deviceIdentity        = deviceIdentity;
         _signingKey            = signingKey;
-        PeerLibrary            = new PeerLibraryViewModel(deviceIdentity, signingKey, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>());
+        PeerLibrary            = deviceIdentity != null && signingKey != null
+            ? new PeerLibraryViewModel(deviceIdentity, signingKey, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>())
+            : null;
         _libraryStore          = libraryStore;
         _appSettingsStore      = appSettingsStore;
         _playlistStore         = playlistStore;
@@ -1247,9 +1264,16 @@ public partial class MainViewModel : ViewModelBase
         BuildSidebarItems();
         PopulateTracks();
 
-        library.TracksUpdated += (_, _) =>
+        // Everything here runs on the UI thread, not just PopulateTracks.
+        // TracksUpdated can be raised from a LibVLC decode-callback thread (see
+        // Library's own _lock comment; PlaylistControlViewModel's EndReached
+        // handler gets there via NotifyTrackChanged), and ScheduleContentSync's
+        // continuation goes on to enumerate _sidebarItems - a plain
+        // ObservableCollection the UI thread mutates through
+        // AddOrUpdateDeviceSidebarItem/RemoveDeviceItem.
+        library.TracksUpdated += (_, _) => Dispatcher.UIThread.Post(() =>
         {
-            Dispatcher.UIThread.Post(PopulateTracks);
+            PopulateTracks();
             // _activeSyncCount > 0 means this fired because one of our own
             // syncs just merged something (see RunTrackedSync's doc comment) -
             // not a genuine local change - so don't treat it as one.
@@ -1257,15 +1281,17 @@ public partial class MainViewModel : ViewModelBase
                 ScheduleContentSync();
             else
                 _logger.LogDebug("TracksUpdated fired mid-sync ({ActiveSyncCount} active) - not scheduling a resync", _activeSyncCount);
-        };
-        library.PlaylistsUpdated += (_, _) =>
+        });
+        // Same reasoning as TracksUpdated above - PlaylistsUpdated is raised
+        // from the sync path, off the UI thread.
+        library.PlaylistsUpdated += (_, _) => Dispatcher.UIThread.Post(() =>
         {
-            Dispatcher.UIThread.Post(RefreshPlaylistSidebarItems);
+            RefreshPlaylistSidebarItems();
             if (_activeSyncCount == 0)
                 ScheduleContentSync();
             else
                 _logger.LogDebug("PlaylistsUpdated fired mid-sync ({ActiveSyncCount} active) - not scheduling a resync", _activeSyncCount);
-        };
+        });
 
         // Any new log line at all (playing a track, a setting changed, an
         // error, routine peer-polling chatter, ...) marks that there is
@@ -1299,14 +1325,14 @@ public partial class MainViewModel : ViewModelBase
         // handler below - these two lambdas keep only their other,
         // unrelated responsibilities (general device-list sidebar upkeep,
         // trust-change handling, sync triggering).
-        networkDiscovery.DeviceDiscovered += (_, device) =>
+        networkDiscovery?.DeviceDiscovered += (_, device) =>
         {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
             HandlePeerTrustChanged(device);
             TriggerSyncIfReady(device);
         };
-        networkDiscovery.DeviceLost += (_, instanceName) =>
+        networkDiscovery?.DeviceLost += (_, instanceName) =>
         {
             Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
@@ -1315,7 +1341,7 @@ public partial class MainViewModel : ViewModelBase
         // The one place reachability propagates outward - see
         // PairedServerReachability's own doc comment. Fires already on the UI
         // thread.
-        reachability.Changed += (_, _) =>
+        reachability?.Changed += (_, _) =>
         {
             OnPropertyChanged(nameof(IsPairedServerReachable));
             OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
@@ -1331,7 +1357,7 @@ public partial class MainViewModel : ViewModelBase
         // instead. Without this check, a conflict during a mobile-initiated sync
         // would await e.Resolution forever. Until mobile gets its own conflict UI,
         // fail safe by keeping the local version rather than hanging the sync.
-        playlistSyncService.ConflictDetected += (_, e) =>
+        playlistSyncService?.ConflictDetected += (_, e) =>
         {
             if (PlaylistConflictRequested == null)
             {
@@ -1364,20 +1390,20 @@ public partial class MainViewModel : ViewModelBase
                 e.Alias, e.Fingerprint);
             Dispatcher.UIThread.Post(UnpairServer);
         }
-        playlistSyncService.PeerTrustRejected += HandlePeerTrustRejected;
-        librarySyncService.PeerTrustRejected += HandlePeerTrustRejected;
+        playlistSyncService?.PeerTrustRejected += HandlePeerTrustRejected;
+        librarySyncService?.PeerTrustRejected += HandlePeerTrustRejected;
         // Server-initiated counterpart to the two above - a peer that
         // proactively told us (via SyncHttpServer's unpair-notify endpoint)
         // it revoked our trust, rather than us finding out from a 403/poll -
         // see PeerUnpairNotifier. Same handler, same effect either way.
-        syncHttpServer.PeerUnpairNotified += HandlePeerTrustRejected;
+        syncHttpServer?.PeerUnpairNotified += HandlePeerTrustRejected;
 
         // Same no-UI-listening fallback shape as ConflictDetected above, but fails
         // *closed* (deny) rather than defaulting to "keep local" - granting a
         // stranger access to this device's playlists/library is a security
         // decision, not a content merge, so an unattended device shouldn't ever
         // silently trust an unrecognized peer. See SyncHttpServer.AuthorizeAsync.
-        syncHttpServer.PeerApprovalRequested += (_, e) =>
+        syncHttpServer?.PeerApprovalRequested += (_, e) =>
         {
             if (PeerApprovalRequested == null)
             {
@@ -1433,11 +1459,28 @@ public partial class MainViewModel : ViewModelBase
         if (track.Path == null)
         {
             if (GetStreamUrl(track) is { } streamUrl)
-                _playlistControlViewModel.Play(track with { Path = streamUrl });
+                _playlistControlViewModel.Play(WithStreamUrl(track, streamUrl));
             return;
         }
 
         _playlistControlViewModel.Play(track);
+    }
+
+    // The transient stream-URL copy of a placeholder track. Clone() keeps
+    // Track.Id, so the copy is still the same track as far as the play queue
+    // is concerned - Playlist.GetNextTrack can find it, which it could not
+    // when this was a `with` expression on a record (the differing Path made
+    // the copy compare unequal to the queued placeholder, so IndexOf returned
+    // -1 and auto-advance jumped back to the front of the queue). Path here is
+    // a stream URL, not a local file, and must never be persisted back into
+    // Library.Tracks - hence a copy rather than mutating the placeholder.
+    // Shared with MobileMainViewModel.PlayTrackCommand, which does the same
+    // thing on the mobile side.
+    public static Track WithStreamUrl(Track track, string streamUrl)
+    {
+        var streaming = track.Clone();
+        streaming.Path = streamUrl;
+        return streaming;
     }
 
     // Double-click on an album tile in the Albums/Recently Added grid (see
@@ -2270,7 +2313,7 @@ public partial class MainViewModel : ViewModelBase
         // guards against a stale request winning a race if the selection
         // changes again before this completes.
         if (SelectedDevice is { } device)
-            _ = PeerLibrary.LoadAsync(device);
+            _ = PeerLibrary?.LoadAsync(device);
         // Recently Added carries its own independent sort state (see SortColumn),
         // so switching to/from it changes what these computed properties report.
         OnPropertyChanged(nameof(SortColumn));
@@ -2467,7 +2510,16 @@ public partial class MainViewModel : ViewModelBase
             return;
 
         _currentFilteredTracks = rows.Select(r => r.Track).ToList();
+
+        // The outgoing rows are dropped on the floor here, so anything they own
+        // that isn't purely managed memory has to be released explicitly - in
+        // practice the download spinner's 60fps DispatcherTimer, which
+        // otherwise outlives the row it belonged to (see TrackRowViewModel.
+        // Dispose).
+        var replaced = Rows;
         Rows = new ObservableCollection<TrackRowViewModel>(rows);
+        foreach (var row in replaced)
+            row.Dispose();
         if (includeGridTiles)
         {
             AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles!);

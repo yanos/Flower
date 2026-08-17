@@ -4,6 +4,13 @@ using Flower.Models;
 
 namespace Flower.Manager
 {
+    // Raised instead of EndReached when a track stops because it could not be
+    // decoded rather than because it finished - see IAudioManager.TrackFailed.
+    public sealed class TrackFailedEventArgs(Track track) : EventArgs
+    {
+        public Track Track { get; } = track;
+    }
+
     public interface IAudioManager
     {
         bool IsPlaying { get; }
@@ -39,5 +46,16 @@ namespace Flower.Manager
         public event EventHandler? PositionChanged;
         public event EventHandler? VolumeChanged;
         public event EventHandler? EndReached;
+
+        // The track stopped because decoding failed (corrupt file, missing
+        // codec, unreadable path), not because it played to the end. Raised
+        // *instead of* EndReached for that track: they used to be the same
+        // event, so a file that couldn't be decoded was indistinguishable from
+        // one the user had listened all the way through - it silently skipped
+        // and picked up a play count on the way past. Subscribers should
+        // advance the queue but must not count a play. See
+        // docs/AUDIOPHILE-PLAN.md's DSD/APE section, which needs this same seam
+        // for its "unsupported format" messaging.
+        public event EventHandler<TrackFailedEventArgs>? TrackFailed;
     }
 }

@@ -10,6 +10,7 @@ Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#), ru
 
 `docs/` holds long-lived design/investigation notes, one file per initiative. Check the relevant file before touching that area — each records its own current status and what's left; this index is intentionally just a pointer, not a summary.
 
+- `ARCHITECTURE-REVIEW.md` — standing whole-codebase backlog: correctness, performance, duplicated sources of truth, test gaps.
 - `CROSS-PLATFORM-PLAN.md` — iOS/Android platform-gap remediation.
 - `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server (same OpenSubsonic client protocol).
 - `MOBILE-PLAN.md` — getting iOS/Android from scaffolding to runnable.
@@ -42,7 +43,7 @@ Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is drive
 ## Git Workflow
 
 - Prefer `rebase` over `merge`.
-- Never commit before the user has personally tested the change — building and passing tests isn't enough.
+- Never commit before the user has ask for it — building and passing tests isn't enough.
 - Don't use git worktrees in this repo — they conflict with Rider. Edit `master` directly.
 
 ## Code Style

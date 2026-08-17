@@ -514,4 +514,72 @@ public class LibraryTests
 
         Assert.Single(library.Playlists);
     }
+
+    // ── Rescan carry-forward and playlist rebinding ──────────────────────────
+
+    [Fact]
+    public void UpdateTracks_preserves_Id_for_a_track_matched_by_path()
+    {
+        var existing = new Track { Title = "Old", Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { existing });
+
+        library.UpdateTracks(new List<Track> { new Track { Title = "Old (retagged)", Path = "/music/a.mp3" } });
+
+        Assert.Equal(existing.Id, library.Tracks.Single().Id);
+    }
+
+    // A rescan replaces Library.Tracks with brand-new Track instances. Playlists
+    // resolve their membership to instances exactly once, at startup - so
+    // without rebinding, a playlist spent the rest of the session pointing at
+    // orphaned objects: a play count incremented via the library never showed up
+    // in the playlist view, and vice versa.
+    [Fact]
+    public void UpdateTracks_repoints_playlists_at_the_freshly_scanned_track_instances()
+    {
+        var original = new Track { Title = "A", Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { original });
+        var playlist = new Playlist("Mix", new List<Track> { original });
+        library.AddPlaylist(playlist);
+
+        library.UpdateTracks(new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } });
+
+        Assert.Same(library.Tracks.Single(), playlist.Tracks.Single());
+
+        // And the shared instance really is shared, which is the whole point.
+        library.IncrementPlayCount(playlist.Tracks.Single());
+        Assert.Equal(1, playlist.Tracks.Single().PlayCount);
+    }
+
+    // Rebinding is not an edit. PlaylistSyncPlanner three-way-merges on
+    // Playlist.UpdatedAt, so bumping it here would make every launch's rescan
+    // look like a local playlist change and manufacture sync conflicts.
+    [Fact]
+    public void UpdateTracks_does_not_bump_playlist_UpdatedAt_when_rebinding()
+    {
+        var original = new Track { Title = "A", Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { original });
+        var playlist = new Playlist("Mix", new List<Track> { original });
+        library.AddPlaylist(playlist);
+        var before = playlist.UpdatedAt;
+
+        library.UpdateTracks(new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } });
+
+        Assert.Equal(before, playlist.UpdatedAt);
+    }
+
+    // A scan not finding a file is not proof the file is gone (see the
+    // carried-forward sync tracks above for the same reasoning) - dropping the
+    // entry would silently edit the user's playlist.
+    [Fact]
+    public void UpdateTracks_keeps_a_playlist_entry_the_fresh_scan_did_not_find()
+    {
+        var missing = new Track { Title = "Gone", Path = "/music/gone.mp3" };
+        var library = new Library(new List<Track> { missing });
+        var playlist = new Playlist("Mix", new List<Track> { missing });
+        library.AddPlaylist(playlist);
+
+        library.UpdateTracks(new List<Track> { new Track { Title = "B", Path = "/music/b.mp3" } });
+
+        Assert.Same(missing, playlist.Tracks.Single());
+    }
 }

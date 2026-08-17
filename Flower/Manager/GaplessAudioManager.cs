@@ -35,6 +35,7 @@ namespace Flower.Manager
         public event EventHandler? PositionChanged;
         public event EventHandler? VolumeChanged;
         public event EventHandler? EndReached;
+        public event EventHandler<TrackFailedEventArgs>? TrackFailed;
 
         // libVLC is a dependency, not owned/created here, because a
         // LibVlcRawStreamSink needs to share the exact same LibVLC core for
@@ -81,6 +82,15 @@ namespace Flower.Manager
             {
                 _logger.LogInformation("EndReached: {Path}", track.Path);
                 EndReached?.Invoke(this, EventArgs.Empty);
+            };
+            _coordinator.TrackFailed += track =>
+            {
+                // Warning, not Information: this is a file the user asked for
+                // and did not get. It's also the only signal they have until
+                // the UI grows a real "couldn't play this" surface - the Log
+                // window is reachable, a silently-skipped track is not.
+                _logger.LogWarning("Playback failed for {Path} - decode error, skipping", track.Path);
+                TrackFailed?.Invoke(this, new TrackFailedEventArgs(track));
             };
 
             _sink.Playing += (_, e) => Playing?.Invoke(this, e);

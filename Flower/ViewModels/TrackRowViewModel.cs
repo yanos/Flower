@@ -8,7 +8,7 @@ using Flower.Services;
 
 namespace Flower.ViewModels;
 
-public class TrackRowViewModel : ViewModelBase
+public class TrackRowViewModel : ViewModelBase, IDisposable
 {
     public const double RowHeight      = 28.0;
     public const double ArtColumnWidth = 80.0;
@@ -151,6 +151,15 @@ public class TrackRowViewModel : ViewModelBase
         _spinTimer = null;
         SpinAngle = 0;
     }
+
+    // Rows are thrown away wholesale and rebuilt on every rescan, search
+    // keystroke and track change (see MainViewModel.RebuildRowsAsync), and
+    // StopSpin above only ever ran from the IsDownloading setter - so a row
+    // discarded mid-download left its 16ms DispatcherTimer registered on the
+    // dispatcher forever, with the Tick closure keeping this view-model alive
+    // and burning a 60fps wakeup per orphaned row. Batch-downloading an album
+    // on a phone accumulated one per track.
+    public void Dispose() => StopSpin();
 
     private bool _isDownloadUnavailable;
     public bool IsDownloadUnavailable

@@ -1,7 +1,5 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -19,12 +17,11 @@ namespace Flower.Persistence
         // independently-triggered call sites (Play, the EndReached handler)
         // with no ordering guarantee between them, so overlapping writes to
         // the same library.json are expected, not a bug to fix upstream.
-        // File.WriteAllTextAsync opens without FileShare, so two overlapping
-        // writes collide - silently on Unix (one write's bytes win, harmless
-        // since both are serializing the same up-to-date Library.Tracks),
-        // loudly on Windows (IOException: file in use). Serialize here so
-        // Windows doesn't throw; still race-free content-wise since all
-        // concurrent callers exist to persist the same tracks list.
+        // AtomicJsonFile opens its temp file with FileShare.None, so two
+        // overlapping writes would collide - silently on Unix, loudly on
+        // Windows (IOException: file in use). Serialize here so neither
+        // happens, and so the serialize itself happens in write order (see
+        // SaveAsync).
         private readonly SemaphoreSlim _writeLock = new(1, 1);
 
         public LibraryStore(ILogger<LibraryStore> logger)
@@ -34,62 +31,26 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "library.json");
 
-        public List<Track> Load()
-        {
-            var path = StorePath;
-            if (!File.Exists(path))
-                return new List<Track>();
+        public List<Track> Load() =>
+            AtomicJsonFile.Read(StorePath, FlowerJsonContext.Default.TrackList, _logger) ?? new List<Track>();
 
-            try
-            {
-                var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.TrackList) ?? new List<Track>();
-            }
-            catch (Exception ex)
-            {
-                // Corrupt/unreadable library.json would otherwise silently look
-                // like "empty library" with no clue why - this is exactly the
-                // kind of thing you need in a bug report.
-                _logger.LogWarning(ex, "Failed to load library from {Path}; starting with an empty library", path);
-                return new List<Track>();
-            }
-        }
-
-        public async Task<List<Track>> LoadAsync()
-        {
-            var path = StorePath;
-            if (!File.Exists(path))
-                return new List<Track>();
-
-            try
-            {
-                var json = await File.ReadAllTextAsync(path);
-                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.TrackList) ?? new List<Track>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load library from {Path}; starting with an empty library", path);
-                return new List<Track>();
-            }
-        }
+        public Task<List<Track>> LoadAsync() => Task.FromResult(Load());
 
         public async Task SaveAsync(IEnumerable<Track> tracks)
         {
             var path = StorePath;
-            var json = JsonSerializer.Serialize(tracks, FlowerJsonContext.Default.TrackEnumerable);
 
             await _writeLock.WaitAsync();
             try
             {
-                // CreateDirectory right before the write, not up front - this
-                // is a fire-and-forget call from multiple call sites
-                // (PlaylistControlViewModel.Play/EndReached) with no bound on
-                // how long it sits queued behind _writeLock, so recreating
-                // early would just widen the window for whatever deleted the
-                // directory (only ever test teardown in practice - see the
-                // catch below) to delete it again before the write lands.
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                await File.WriteAllTextAsync(path, json);
+                // Serialized inside the lock, not before taking it. Every caller
+                // passes the same live Library.Tracks, but they're fire-and-forget
+                // from independently-triggered sites (Play, EndReached), so a
+                // snapshot taken before queueing could sit behind the lock while a
+                // newer save serializes and lands first - then overwrite it with
+                // the older state. Serializing here makes "last to acquire the
+                // lock" and "last to write" the same ordering.
+                await AtomicJsonFile.WriteAsync(path, tracks, FlowerJsonContext.Default.TrackEnumerable);
             }
             catch (DirectoryNotFoundException ex)
             {
@@ -118,13 +79,11 @@ namespace Flower.Persistence
         public void Save(IEnumerable<Track> tracks)
         {
             var path = StorePath;
-            var json = JsonSerializer.Serialize(tracks, FlowerJsonContext.Default.TrackEnumerable);
 
             _writeLock.Wait();
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                File.WriteAllText(path, json);
+                AtomicJsonFile.Write(path, tracks, FlowerJsonContext.Default.TrackEnumerable);
             }
             catch (DirectoryNotFoundException ex)
             {

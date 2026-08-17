@@ -53,13 +53,13 @@ public class LibraryDownloadServiceTests : IDisposable
         try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
     }
 
-    private static Track Placeholder(string? originDeviceFingerprint = "peer-fp", string? extension = "mp3") => new()
+    private static Track Placeholder(string? originDeviceFingerprint = "peer-fp", string? extension = "mp3", string? path = null) => new()
     {
         Title = "Come Together",
         Artists = "The Beatles",
         Album = "Abbey Road",
         Duration = TimeSpan.FromSeconds(259),
-        Path = null,
+        Path = path,
         OriginDeviceFingerprint = originDeviceFingerprint,
         OriginFileExtension = extension,
     };
@@ -95,7 +95,7 @@ public class LibraryDownloadServiceTests : IDisposable
     [Fact]
     public async Task DownloadAsync_returns_AlreadyDownloaded_for_a_track_that_already_has_a_local_path()
     {
-        var track = Placeholder() with { Path = "/music/already-here.mp3" };
+        var track = Placeholder(path: "/music/already-here.mp3");
         var service = MakeService(track, out _);
 
         var result = await service.DownloadAsync(track, PeerAt(1));
@@ -187,7 +187,7 @@ public class LibraryDownloadServiceTests : IDisposable
         var filePath = Path.Combine(_downloadFolder, "local.mp3");
         Directory.CreateDirectory(_downloadFolder);
         await File.WriteAllTextAsync(filePath, "audio", TestContext.Current.CancellationToken);
-        var track = Placeholder() with { Path = filePath };
+        var track = Placeholder(path: filePath);
         var service = MakeService(track, out _);
 
         await service.DeleteDownloadedFileAsync(track);
@@ -200,7 +200,7 @@ public class LibraryDownloadServiceTests : IDisposable
     public async Task DeleteDownloadedFileAsync_still_reverts_to_a_placeholder_if_the_file_is_already_gone()
     {
         var missingPath = Path.Combine(_downloadFolder, "already-gone.mp3");
-        var track = Placeholder() with { Path = missingPath };
+        var track = Placeholder(path: missingPath);
         var service = MakeService(track, out _);
 
         await service.DeleteDownloadedFileAsync(track);

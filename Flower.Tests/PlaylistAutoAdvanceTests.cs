@@ -135,4 +135,65 @@ public class PlaylistAutoAdvanceTests : IDisposable
         PumpUntil(() => vm.CurrentlyPlayingTrack != tracks[0], TimeSpan.FromSeconds(5));
         Assert.Contains(vm.CurrentlyPlayingTrack, tracks);
     }
+
+    // ── Decode failure ───────────────────────────────────────────────────────
+    //
+    // A file that can't be decoded used to arrive on the same EndReached event
+    // a finished track does, so it skipped past silently *and* collected a play
+    // count on the way. TrackFailed separates the two.
+
+    [AvaloniaFact]
+    public void TrackFailed_advances_to_the_next_track()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.Play(a);
+
+        audio.RaiseTrackFailed(a);
+
+        PumpUntil(() => vm.CurrentlyPlayingTrack == b, TimeSpan.FromSeconds(5));
+    }
+
+    [AvaloniaFact]
+    public void TrackFailed_does_not_count_a_play_for_the_track_that_failed()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.Play(a);
+
+        audio.RaiseTrackFailed(a);
+
+        PumpUntil(() => vm.CurrentlyPlayingTrack == b, TimeSpan.FromSeconds(5));
+        Assert.Equal(0, a.PlayCount);
+    }
+
+    // Repeat would otherwise retry the same unplayable file forever.
+    [AvaloniaFact]
+    public void TrackFailed_with_repeat_enabled_moves_on_instead_of_retrying_the_broken_track()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.ToggleRepeat();
+        vm.Play(a);
+
+        audio.RaiseTrackFailed(a);
+
+        PumpUntil(() => vm.CurrentlyPlayingTrack == b, TimeSpan.FromSeconds(5));
+    }
+
+    [AvaloniaFact]
+    public void TrackFailed_raises_PlaybackFailed_for_the_UI()
+    {
+        var a = T("A");
+        var vm = MakeViewModel(new List<Track> { a }, out var audio);
+        Track? reported = null;
+        vm.PlaybackFailed += (_, e) => reported = e.Track;
+
+        audio.RaiseTrackFailed(a);
+
+        Assert.Same(a, reported);
+    }
 }

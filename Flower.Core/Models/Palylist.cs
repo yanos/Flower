@@ -77,6 +77,20 @@ namespace Flower.Models
             UpdatedAt = DateTimeOffset.UtcNow;
         }
 
+        // Swaps each entry for whichever Track instance now represents it,
+        // without touching UpdatedAt - see Library.RebindPlaylistTracks, which
+        // is the only caller and explains why. Not a mutation in the sense the
+        // methods above are: same songs, same order, same playlist, just the
+        // objects a rescan replaced underneath it.
+        internal void RebindTracks(IReadOnlyDictionary<Guid, Track> byId)
+        {
+            for (var i = 0; i < Tracks.Count; i++)
+            {
+                if (byId.TryGetValue(Tracks[i].Id, out var current))
+                    Tracks[i] = current;
+            }
+        }
+
         public Track? GetTrack(int index)
         {
             return Tracks.ElementAtOrDefault(index);
