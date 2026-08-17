@@ -331,4 +331,27 @@ public class TrackListBuilderTests
 
         Assert.All(rows, r => Assert.False(r.IsCurrentlyPlaying));
     }
+
+    // ── Tier 1.5: the allocation-free SortKey rewrite ────────────────────────
+
+    [Fact]
+    public void Title_sort_still_ignores_punctuation_symbols_and_spacing()
+    {
+        // SortKey strips everything but letters and digits before comparing.
+        // The hand-rolled version that replaced the LINQ one-liner has to keep
+        // that behaviour exactly, including the "nothing was stripped, return
+        // the input untouched" fast path and the all-stripped empty case.
+        var tracks = new List<Track>
+        {
+            new Track { Title = "!!!" },          // strips to "" - sorts first
+            new Track { Title = "b" },            // nothing to strip
+            new Track { Title = "\"A Song\"" },   // strips to "ASong"
+        };
+
+        var titles = TrackListBuilder.Build(tracks, "", "Title", true)
+            .Select(r => r.Track.Title)
+            .ToList();
+
+        Assert.Equal(["!!!", "\"A Song\"", "b"], titles);
+    }
 }

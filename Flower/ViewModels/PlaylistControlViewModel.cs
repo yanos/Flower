@@ -111,7 +111,10 @@ namespace Flower.ViewModels
                 OnPropertyChanged(nameof(IsPlaying));
             };
 
-            _audioManager.EndReached += async (s, e) =>
+            // Synchronous now that the play-count save is coalesced rather than
+            // awaited here - this used to be async void over an await on
+            // LibraryStore.SaveAsync, on a LibVLC callback thread.
+            _audioManager.EndReached += (s, e) =>
             {
                 if (CurrentlyPlayingTrack != null)
                 {
@@ -130,13 +133,13 @@ namespace Flower.ViewModels
                     // rescan runs on a threadpool thread - see Library._lock) can't land
                     // between "resolve" and "increment" and silently discard it the way a
                     // plain find-then-increment here already proved it could.
+                    // IncrementPlayCount raises Library.TrackStatsChanged
+                    // itself. Deliberately *not* NotifyTrackChanged: the track
+                    // list hasn't changed, only one track's counter, and
+                    // TracksUpdated means a full UI rebuild plus a peer library
+                    // sync - twice per song. See ARCHITECTURE-REVIEW Tier 1.1.
                     _library.IncrementPlayCount(finishedTrack);
-                    // NotifyTrackChanged, not UpdateTracks(_library.Tracks) - see
-                    // MainViewModel.SyncITunesPlayCountAsync's comment on why
-                    // passing Tracks back into UpdateTracks as a "fresh scan"
-                    // silently doubles every placeholder track.
-                    _library.NotifyTrackChanged();
-                    await _libraryStore.SaveAsync(_library.Tracks);
+                    _libraryStore.ScheduleSave(_library.Tracks);
 
                     var nextTrack = GetUpcomingTrack(finishedTrack);
                     if (nextTrack != null)
@@ -247,9 +250,10 @@ namespace Flower.ViewModels
             // Drives the History sidebar view - see Track.LastPlayedAt/
             // Library.RecordPlayed for why this stamps here rather than
             // alongside IncrementPlayCount in the EndReached handler below.
+            // Raises TrackStatsChanged, not TracksUpdated - same reasoning as
+            // the EndReached handler above.
             _library.RecordPlayed(track);
-            _library.NotifyTrackChanged();
-            _ = _libraryStore.SaveAsync(_library.Tracks);
+            _libraryStore.ScheduleSave(_library.Tracks);
         }
 
         public void PlayOrPause(Track track)

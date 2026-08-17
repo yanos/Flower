@@ -1041,8 +1041,32 @@ public partial class MainViewModel : ViewModelBase
     // setter), the paired server (PairWithServer/UnpairServer), server
     // approval (ConfirmServerTrust), or SelectedDevice's underlying
     // DiscoveredDevice being refreshed (RefreshDeviceDisplayNames).
+    //
+    // Diffed against the last-notified values rather than re-raised
+    // unconditionally: RefreshDeviceDisplayNames is one of the call sites and
+    // runs off the 5s peer poll, where the answer is the same every time, and
+    // each of these nine is a computed property the bindings then re-evaluate.
+    // See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
+    private (bool, bool, bool, bool, bool, bool, string?, bool, string?)? _lastPairButtonState;
+
     private void NotifyPairButtonPropertiesChanged()
     {
+        var state = (
+            CanPairWithSelectedDevice,
+            IsSelectedDevicePaired,
+            IsPairedServerTrustConfirmed,
+            IsPairedServerAwaitingApproval,
+            IsSelectedDeviceTrustConfirmed,
+            IsPairAwaitingApproval,
+            PairActionLabel,
+            IsPairActionEnabled,
+            PairActionHint);
+
+        if (_lastPairButtonState == state)
+            return;
+
+        _lastPairButtonState = state;
+
         OnPropertyChanged(nameof(CanPairWithSelectedDevice));
         OnPropertyChanged(nameof(IsSelectedDevicePaired));
         OnPropertyChanged(nameof(IsPairedServerTrustConfirmed));
@@ -1282,6 +1306,25 @@ public partial class MainViewModel : ViewModelBase
             else
                 _logger.LogDebug("TracksUpdated fired mid-sync ({ActiveSyncCount} active) - not scheduling a resync", _activeSyncCount);
         });
+        // A play-count / LastPlayedAt bump used to arrive as TracksUpdated, so
+        // playing a song cost a full PopulateTracks (16k row allocations, a
+        // full album regroup) plus a peer sync, twice. Only two columns can
+        // actually have changed, and only on one row, so re-raise exactly those
+        // - and don't schedule a content sync at all: another device does not
+        // need to hear about a local play count the moment it happens (the next
+        // genuine library change carries it along anyway).
+        library.TrackStatsChanged += (_, e) => Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var row in Rows)
+            {
+                if (row.Track.Id == e.Track.Id)
+                {
+                    row.NotifyStatsChanged();
+                    break;
+                }
+            }
+        });
+
         // Same reasoning as TracksUpdated above - PlaylistsUpdated is raised
         // from the sync path, off the UI thread.
         library.PlaylistsUpdated += (_, _) => Dispatcher.UIThread.Post(() =>
@@ -2493,10 +2536,21 @@ public partial class MainViewModel : ViewModelBase
         // all, so building two full-library tile grids on every single
         // drill-in/back-navigation was pure wasted work there - confirmed on
         // a real device as a large chunk of the pause after tapping Back.
+        // Desktop got the same treatment mobile already had, just derived
+        // rather than passed in: the two tile grids are only ever *painted* on
+        // the Albums and Recently Added views (see IsShowingAlbumGrid/
+        // IsShowingRecentlyAddedGrid), yet every rebuild built both - two full
+        // passes over the whole library, discarded unread, on every keystroke
+        // and every drill-in while viewing Songs, Artists or a playlist.
+        // Switching to either grid view runs OnSidebarSelectionChanged, which
+        // rebuilds through here again, so they are always built before the view
+        // that reads them appears. See ARCHITECTURE-REVIEW Tier 1.5.
+        var buildGrids = includeGridTiles && (IsShowingAlbumGrid || IsShowingRecentlyAddedGrid);
+
         var (rows, albumTiles, recentTiles) = await Task.Run(() =>
         {
             var builtRows = TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
-            if (!includeGridTiles)
+            if (!buildGrids)
                 return (builtRows, (List<AlbumTileViewModel>?)null, (List<AlbumTileViewModel>?)null);
 
             var filteredForGrids = TrackListBuilder.Filter(allTracks, text).ToList();
@@ -2520,7 +2574,7 @@ public partial class MainViewModel : ViewModelBase
         Rows = new ObservableCollection<TrackRowViewModel>(rows);
         foreach (var row in replaced)
             row.Dispose();
-        if (includeGridTiles)
+        if (buildGrids)
         {
             AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles!);
             RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(recentTiles!);

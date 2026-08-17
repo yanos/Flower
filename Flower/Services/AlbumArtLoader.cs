@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -46,6 +47,101 @@ public static class AlbumArtLoader
     // WeakReference so GC can reclaim bitmaps under memory pressure.
     private static readonly ConcurrentDictionary<string, WeakReference<Bitmap>> Cache = new();
 
+    // The WeakReference cache above lets the GC reclaim art the moment nothing
+    // is painting it, which for a scrolling album grid means re-decoding the
+    // same covers over and over. This keeps the most recently used handful
+    // strongly reachable so the visible set survives a collection, while the
+    // weak cache still covers everything beyond it. Deliberately small: at
+    // MaxArtPixels a bitmap is ~2.4 MB, so 32 entries is a ~75 MB ceiling in
+    // the worst case, and this app runs on phones.
+    private const int StrongCacheSize = 32;
+    private static readonly object StrongCacheLock = new();
+    private static readonly LinkedList<(string Key, Bitmap Bitmap)> StrongCache = new();
+
+    // Also prunes cache entries whose bitmap has already been collected -
+    // without this the dictionary only ever grows, one dead entry per album
+    // ever displayed, for the life of the process.
+    private static void Retain(string key, Bitmap bitmap)
+    {
+        Cache[key] = new WeakReference<Bitmap>(bitmap);
+
+        lock (StrongCacheLock)
+        {
+            for (var node = StrongCache.First; node != null; node = node.Next)
+            {
+                if (node.Value.Key == key)
+                {
+                    StrongCache.Remove(node);
+                    break;
+                }
+            }
+
+            StrongCache.AddFirst((key, bitmap));
+
+            while (StrongCache.Count > StrongCacheSize)
+            {
+                // Evicted to weak-only, not disposed: a row or tile currently on
+                // screen may still be painting this exact Bitmap.
+                StrongCache.RemoveLast();
+            }
+        }
+
+        foreach (var (deadKey, weak) in Cache)
+        {
+            if (!weak.TryGetTarget(out _))
+                Cache.TryRemove(new KeyValuePair<string, WeakReference<Bitmap>>(deadKey, weak));
+        }
+    }
+
+    // Refreshes LRU position on a hit, so the strong cache tracks what is
+    // actually being displayed rather than what was displayed first.
+    private static bool TryGetCached(string key, out Bitmap bitmap)
+    {
+        if (Cache.TryGetValue(key, out var weak) && weak.TryGetTarget(out bitmap!))
+        {
+            Retain(key, bitmap);
+            return true;
+        }
+
+        bitmap = null!;
+        return false;
+    }
+
+    // Widest this app ever actually paints album art: mobile NowPlayingView's
+    // 280pt square, allowing for a ~2.7x-DPI phone screen. Everything else is
+    // smaller by a wide margin (TrackInfoWindow 200pt, AlbumTileControl 180pt,
+    // a track row's art column 76pt at most - see TrackRowViewModel.ArtMaxSize).
+    //
+    // Embedded art in a modern library is routinely 1400x1400 or larger, which
+    // is ~7.8 MB of decoded RGBA held per album; an album grid showing 40 tiles
+    // could hold ~300 MB of bitmaps, and iOS jetsam does not wait for a GC to
+    // reclaim them. One cache serves every one of those call sites, so the size
+    // has to satisfy the largest. See docs/ARCHITECTURE-REVIEW.md Tier 1.2.
+    private const int MaxArtPixels = 768;
+
+    // Decodes at most MaxArtPixels wide, without ever scaling *up*.
+    //
+    // Avalonia's DecodeToWidth always scales to the width it's given, so
+    // applying it unconditionally would inflate a small 300x300 cover into a
+    // 768-wide bitmap - turning a 0.36 MB decode into a 2.36 MB one and making
+    // exactly the problem this is here to fix worse for libraries with modest
+    // art. There is no cheap way to read the intrinsic size first (SkiaSharp,
+    // and so SKCodec, isn't a reference of this project - only Avalonia's own
+    // Bitmap surface is available), so oversized art is decoded twice: once to
+    // learn its size, once at the size actually wanted. The full-size decode is
+    // transient and immediately dropped, which is the whole point - what used
+    // to be *retained*, per album, for the life of the cache entry.
+    private static Bitmap DecodeScaled(Stream stream)
+    {
+        var full = new Bitmap(stream);
+        if (full.PixelSize.Width <= MaxArtPixels)
+            return full;
+
+        full.Dispose();
+        stream.Position = 0;
+        return Bitmap.DecodeToWidth(stream, MaxArtPixels);
+    }
+
     public static async Task<Bitmap?> LoadAsync(Track track)
     {
         if (track.Path != null)
@@ -75,12 +171,12 @@ public static class AlbumArtLoader
     {
         var key = LocalCacheKey(track);
 
-        if (Cache.TryGetValue(key, out var weak) && weak.TryGetTarget(out var cached))
+        if (TryGetCached(key, out var cached))
             return cached;
 
         var bmp = await Task.Run(() => LoadLocalBitmap(track));
         if (bmp != null)
-            Cache[key] = new WeakReference<Bitmap>(bmp);
+            Retain(key, bmp);
 
         return bmp;
     }
@@ -100,7 +196,7 @@ public static class AlbumArtLoader
         try
         {
             using var ms = new MemoryStream(data);
-            return new Bitmap(ms);
+            return DecodeScaled(ms);
         }
         catch (Exception ex)
         {
@@ -174,7 +270,7 @@ public static class AlbumArtLoader
             return null;
 
         var cacheKey = $"remote:{hash}";
-        if (Cache.TryGetValue(cacheKey, out var weak) && weak.TryGetTarget(out var cached))
+        if (TryGetCached(cacheKey, out var cached))
             return cached;
 
         var cachePath = Path.Combine(CacheDirectory, $"{hash}.art");
@@ -183,7 +279,7 @@ public static class AlbumArtLoader
             var bmp = await Task.Run(() => TryDecodeFile(cachePath));
             if (bmp != null)
             {
-                Cache[cacheKey] = new WeakReference<Bitmap>(bmp);
+                Retain(cacheKey, bmp);
                 return bmp;
             }
         }
@@ -230,7 +326,7 @@ public static class AlbumArtLoader
             if (bmp == null)
                 return null;
 
-            Cache[cacheKey] = new WeakReference<Bitmap>(bmp);
+            Retain(cacheKey, bmp);
             return bmp;
         }
         catch (Exception ex)
@@ -249,7 +345,7 @@ public static class AlbumArtLoader
         try
         {
             using var ms = new MemoryStream(bytes);
-            return new Bitmap(ms);
+            return DecodeScaled(ms);
         }
         catch (Exception ex)
         {
@@ -262,7 +358,8 @@ public static class AlbumArtLoader
     {
         try
         {
-            return new Bitmap(path);
+            using var stream = File.OpenRead(path);
+            return DecodeScaled(stream);
         }
         catch (Exception ex)
         {

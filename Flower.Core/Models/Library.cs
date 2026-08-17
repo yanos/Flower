@@ -7,6 +7,14 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Flower.Models
 {
+    // See Library.TrackStatsChanged. Carries the Track object that was
+    // actually mutated, which is not necessarily the one the caller passed in -
+    // a rescan can have replaced it since (see Library.ResolveCurrent).
+    public sealed class TrackStatsChangedEventArgs(Track track) : EventArgs
+    {
+        public Track Track { get; } = track;
+    }
+
     public class Library
     {
         private readonly ILogger<Library> _logger;
@@ -23,7 +31,33 @@ namespace Flower.Models
         public List<Track> Tracks { get; private set; }
         public List<Playlist> Playlists { get; private set; } = new List<Playlist>();
 
+        // Path -> Track lookup for IncrementPlayCount/RecordPlayed, which run
+        // twice per song change and used to do an O(n) FirstOrDefault over the
+        // whole library (16k tracks at the scale SYNC-PLAN.md targets) while
+        // holding _lock.
+        //
+        // Built lazily and thrown away rather than maintained incrementally,
+        // because a Track's Path is not immutable: LibraryDownloadService sets
+        // it on a placeholder when a download lands, in place, without going
+        // through this class at all - so an index kept up to date only at the
+        // points where Tracks is *replaced* would silently miss that. Every
+        // path that can change either the list or a Path calls Invalidate,
+        // including NotifyTrackChanged, which is exactly the "a Track you
+        // already hold was mutated in place" signal.
+        private Dictionary<string, Track>? _byPath;
+
         public event EventHandler? TracksUpdated;
+
+        // A play count / LastPlayedAt bump on a single track, as opposed to
+        // TracksUpdated's "the track list itself changed".
+        //
+        // These used to be the same event, so playing a song rebuilt the whole
+        // UI (a 16k-element copy, a full album regroup, and 16k
+        // TrackRowViewModel allocations - see MainViewModel.PopulateTracks) and
+        // triggered a full library sync with the paired peer, twice per track
+        // change. Subscribers should refresh just the affected track's stats
+        // columns. See docs/ARCHITECTURE-REVIEW.md Tier 1.1.
+        public event EventHandler<TrackStatsChangedEventArgs>? TrackStatsChanged;
 
         // Fired when PlaylistSyncService/SyncHttpServer replace the playlist set as
         // a result of syncing with another device - see ReplacePlaylists. Local UI
@@ -111,6 +145,7 @@ namespace Flower.Models
                     .ToList();
 
                 Tracks = tracks.Concat(carriedForwardSyncTracks).ToList();
+                InvalidatePathIndex();
                 afterCount = Tracks.Count;
                 carriedForwardCount = carriedForwardSyncTracks.Count;
 
@@ -274,6 +309,7 @@ namespace Flower.Models
                 merged.RemoveAll(stale.Contains);
 
                 Tracks = merged;
+                InvalidatePathIndex();
                 removedCount = stale.Count;
             }
 
@@ -303,17 +339,49 @@ namespace Flower.Models
         // since it may not be playedTrack.
         public Track IncrementPlayCount(Track playedTrack)
         {
+            Track current;
             lock (_lock)
             {
-                var current = playedTrack.Path != null
-                    ? Tracks.FirstOrDefault(t => string.Equals(t.Path, playedTrack.Path, StringComparison.OrdinalIgnoreCase))
-                      ?? playedTrack
-                    : playedTrack;
+                current = ResolveCurrent(playedTrack);
                 current.PlayCount++;
                 _logger.LogDebug("PlayCount incremented to {NewCount} for {Title} ({Path})", current.PlayCount, current.Title, current.Path);
-                return current;
             }
+
+            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
+            return current;
         }
+
+        // Whichever Track object currently represents playedTrack's file.
+        // Callers must already hold _lock - the returned reference is only
+        // meaningful for as long as Tracks isn't swapped underneath it, which
+        // is the whole reason IncrementPlayCount/RecordPlayed mutate inside the
+        // lock rather than resolving and returning first.
+        private Track ResolveCurrent(Track playedTrack)
+        {
+            if (playedTrack.Path == null)
+                return playedTrack;
+
+            _byPath ??= BuildPathIndex();
+            return _byPath.TryGetValue(playedTrack.Path, out var current) ? current : playedTrack;
+        }
+
+        // First match wins, matching the FirstOrDefault this replaced: two
+        // library entries for the same path is not supposed to happen, but if
+        // it does, incrementing a consistent one of them beats throwing.
+        private Dictionary<string, Track> BuildPathIndex()
+        {
+            var index = new Dictionary<string, Track>(Tracks.Count, StringComparer.OrdinalIgnoreCase);
+            foreach (var track in Tracks)
+            {
+                if (track.Path != null)
+                    index.TryAdd(track.Path, track);
+            }
+
+            return index;
+        }
+
+        // Callers must hold _lock, except NotifyTrackChanged - see its comment.
+        private void InvalidatePathIndex() => _byPath = null;
 
         // Atomically resolves whichever Track object currently represents
         // playedTrack.Path in the library and stamps LastPlayedAt to now - same
@@ -325,22 +393,33 @@ namespace Flower.Models
         // different triggers.
         public Track RecordPlayed(Track playedTrack)
         {
+            Track current;
             lock (_lock)
             {
-                var current = playedTrack.Path != null
-                    ? Tracks.FirstOrDefault(t => string.Equals(t.Path, playedTrack.Path, StringComparison.OrdinalIgnoreCase))
-                      ?? playedTrack
-                    : playedTrack;
+                current = ResolveCurrent(playedTrack);
                 current.LastPlayedAt = DateTimeOffset.UtcNow;
-                return current;
             }
+
+            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
+            return current;
         }
 
         // Notifies listeners that a Track already in Tracks was mutated in place -
         // e.g. a placeholder's Path being set after a successful download (see
         // LibraryDownloadService) - without a list replacement, since the same
         // Track reference is still current and nothing was added or removed.
-        public void NotifyTrackChanged() => TracksUpdated?.Invoke(this, EventArgs.Empty);
+        // The in-place mutation this announces may well be a Path being set on
+        // a placeholder that just finished downloading, so the path index has
+        // to go with it. Taking _lock here only to null a field would be
+        // pointless (a concurrent reader either sees the stale index and is
+        // about to be told to re-read anyway, or rebuilds it fresh); what
+        // matters is that the next resolve rebuilds rather than trusting an
+        // index that predates the new Path.
+        public void NotifyTrackChanged()
+        {
+            InvalidatePathIndex();
+            TracksUpdated?.Invoke(this, EventArgs.Empty);
+        }
 
         public void AddPlaylist(Playlist playlist)
         {

@@ -38,6 +38,17 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
 
     public string LastPlayedDisplay => Track.LastPlayedAt is { } lastPlayed ? lastPlayed.LocalDateTime.ToString("MMM d, yyyy") : "";
 
+    // Track is not INotifyPropertyChanged and these two read straight off it,
+    // so a play-count/LastPlayedAt bump has to be pushed in from outside. Rows
+    // used to be rebuilt wholesale on every play, which is what made that
+    // unnecessary - and is exactly the cost Tier 1.1 removed. Called from
+    // MainViewModel's Library.TrackStatsChanged handler, on the UI thread.
+    public void NotifyStatsChanged()
+    {
+        OnPropertyChanged(nameof(PlayCountDisplay));
+        OnPropertyChanged(nameof(LastPlayedDisplay));
+    }
+
     // Not yet downloaded (see LibrarySyncService/LibraryDownloadService,
     // SYNC-PLAN.md Phase 3) - mobile-only for v1, see MobileMainView's row
     // template. Track itself isn't INotifyPropertyChanged, but that's fine here:
