@@ -2,6 +2,7 @@ using System;
 using System.Security.Cryptography;
 
 using Flower.Services;
+using Flower.Tests.TestSupport;
 
 namespace Flower.Tests;
 
@@ -9,13 +10,7 @@ public class SignatureVerifierTests
 {
     private static (DeviceSigningKey Signer, string PublicKeyBase64) MakeSigner()
     {
-        var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var q = ecdsa.ExportParameters(false).Q;
-        var raw = new byte[65];
-        raw[0] = 0x04;
-        Buffer.BlockCopy(q.X!, 0, raw, 1, 32);
-        Buffer.BlockCopy(q.Y!, 0, raw, 33, 32);
-        var signer = new DeviceSigningKey(ecdsa, raw);
+        var signer = TestSigningKey.Create();
         return (signer, signer.PublicKeyBase64);
     }
 
