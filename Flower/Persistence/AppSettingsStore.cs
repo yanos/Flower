@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -164,47 +165,47 @@ namespace Flower.Persistence
                 !settings.LibraryPaths.Any(p => string.Equals(p, appleMusicFolder, StringComparison.OrdinalIgnoreCase)))
             {
                 settings.LibraryPaths.Add(appleMusicFolder);
-                var path = StorePath;
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                File.WriteAllText(path, JsonSerializer.Serialize(settings, FlowerJsonContext.Default.AppSettings));
+                Save(settings);
             }
 
             return settings;
         }
 
-        private AppSettings LoadFromDisk()
-        {
-            var path = StorePath;
-            if (!File.Exists(path))
-                return new AppSettings();
+        private AppSettings LoadFromDisk() =>
+            AtomicJsonFile.Read(StorePath, FlowerJsonContext.Default.AppSettings, _logger) ?? new AppSettings();
 
-            try
-            {
-                var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.AppSettings) ?? new AppSettings();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load settings from {Path}; using defaults", path);
-                return new AppSettings();
-            }
-        }
+        // ColumnManager's debounced save fires on every column resize/reorder/
+        // hide, so overlapping writes to settings.json are routine rather than
+        // exceptional - the same reason LibraryStore needed a lock, applied here
+        // too rather than left as the one unprotected store.
+        private readonly SemaphoreSlim _writeLock = new(1, 1);
 
         public async Task SaveAsync(AppSettings settings)
         {
-            var path = StorePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var json = JsonSerializer.Serialize(settings, FlowerJsonContext.Default.AppSettings);
-            await File.WriteAllTextAsync(path, json);
+            await _writeLock.WaitAsync();
+            try
+            {
+                await AtomicJsonFile.WriteAsync(StorePath, settings, FlowerJsonContext.Default.AppSettings);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
 
         // Synchronous counterpart for the Window.Closing handler, where the
         // process may exit before an async save completes.
         public void Save(AppSettings settings)
         {
-            var path = StorePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(settings, FlowerJsonContext.Default.AppSettings));
+            _writeLock.Wait();
+            try
+            {
+                AtomicJsonFile.Write(StorePath, settings, FlowerJsonContext.Default.AppSettings);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
     }
 }

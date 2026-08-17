@@ -54,20 +54,32 @@ public static class PlaylistSyncPlanner
         {
             localById.TryGetValue(id, out var l);
             remoteById.TryGetValue(id, out var r);
+            var baseline = baselineFor(id);
 
+            // A missing side is only a deletion to propagate if the two devices
+            // previously agreed the playlist existed (a baseline) AND the side
+            // that still has it hasn't changed it since. Without that second
+            // check this was an unconditional Delete, so a playlist edited here
+            // while offline lost those edits outright the moment the peer
+            // happened to delete it - a real delete-vs-edit conflict silently
+            // resolved in favour of the deletion, and the only merge case in
+            // this method that didn't ask the user. The edit-vs-edit branch
+            // below has always made exactly this comparison.
             if (r == null)
             {
-                // A baseline for this id means the two devices previously agreed
-                // this playlist existed - if the remote no longer has it, that is
-                // a deletion to propagate, not "local is the only side that has
-                // ever known about this one".
-                var localOnlyKind = baselineFor(id) != null ? PlaylistSyncDecisionKind.Delete : PlaylistSyncDecisionKind.KeepLocal;
+                var localOnlyKind =
+                    baseline == null                ? PlaylistSyncDecisionKind.KeepLocal
+                    : l != null && l.UpdatedAt > baseline ? PlaylistSyncDecisionKind.Conflict
+                    : PlaylistSyncDecisionKind.Delete;
                 decisions.Add(new PlaylistSyncDecision(id, localOnlyKind, l, null));
                 continue;
             }
             if (l == null)
             {
-                var remoteOnlyKind = baselineFor(id) != null ? PlaylistSyncDecisionKind.Delete : PlaylistSyncDecisionKind.AdoptRemote;
+                var remoteOnlyKind =
+                    baseline == null              ? PlaylistSyncDecisionKind.AdoptRemote
+                    : r.UpdatedAt > baseline      ? PlaylistSyncDecisionKind.Conflict
+                    : PlaylistSyncDecisionKind.Delete;
                 decisions.Add(new PlaylistSyncDecision(id, remoteOnlyKind, null, r));
                 continue;
             }
@@ -78,7 +90,6 @@ public static class PlaylistSyncPlanner
                 continue;
             }
 
-            var baseline      = baselineFor(id);
             var localChanged  = baseline == null || l.UpdatedAt > baseline;
             var remoteChanged = baseline == null || r.UpdatedAt > baseline;
 

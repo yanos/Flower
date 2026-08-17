@@ -9,17 +9,23 @@ public class TrackListBuilderTests
 {
     private static Track T(
         string title, string artist = "X", string album = "Y", uint trackNumber = 1,
-        uint discNumber = 0, string? genre = null, string? path = null, string? year = null)
+        uint discNumber = 0, string? genre = null, string? path = null, string? year = null,
+        DateTimeOffset? dateAdded = null, DateTimeOffset? lastPlayedAt = null,
+        int playCount = 0, int importedPlayCount = 0)
         => new Track
         {
-            Title       = title,
-            Artists     = artist,
-            Album       = album,
-            TrackNumber = trackNumber,
-            DiscNumber  = discNumber,
-            Genre       = genre,
-            Year        = year,
-            Path        = path ?? $"/music/{artist}/{album}/{title}.mp3",
+            Title             = title,
+            Artists           = artist,
+            Album             = album,
+            TrackNumber       = trackNumber,
+            DiscNumber        = discNumber,
+            Genre             = genre,
+            Year              = year,
+            Path              = path ?? $"/music/{artist}/{album}/{title}.mp3",
+            DateAdded         = dateAdded ?? DateTimeOffset.UtcNow,
+            LastPlayedAt      = lastPlayedAt,
+            PlayCount         = playCount,
+            ImportedPlayCount = importedPlayCount,
         };
 
     [Fact]
@@ -162,11 +168,46 @@ public class TrackListBuilderTests
         Assert.Equal(1, rows[2].AlbumGroupSize);
     }
 
+    // Descending used to be implemented as Enumerable.Reverse over the fully
+    // sorted sequence, which reverses ties as well as the primary key - so
+    // Album-descending also listed every album's own tracks back to front.
+    [Fact]
+    public void Sort_by_album_descending_keeps_track_order_within_each_album()
+    {
+        var tracks = new List<Track>
+        {
+            T("A1", album: "Alpha Album", trackNumber: 1),
+            T("A2", album: "Alpha Album", trackNumber: 2),
+            T("B1", album: "Beta Album",  trackNumber: 1),
+            T("B2", album: "Beta Album",  trackNumber: 2),
+        };
+
+        var rows = TrackListBuilder.Build(tracks, null, "Album", false);
+
+        Assert.Equal(new[] { "B1", "B2", "A1", "A2" }, rows.ConvertAll(r => r.Track.Title));
+    }
+
+    [Fact]
+    public void Sort_by_artist_descending_keeps_album_and_track_order_within_each_artist()
+    {
+        var tracks = new List<Track>
+        {
+            T("A-1", artist: "Alpha", album: "First",  trackNumber: 1),
+            T("A-2", artist: "Alpha", album: "Second", trackNumber: 1),
+            T("B-1", artist: "Beta",  album: "First",  trackNumber: 1),
+            T("B-2", artist: "Beta",  album: "Second", trackNumber: 1),
+        };
+
+        var rows = TrackListBuilder.Build(tracks, null, "Artist", false);
+
+        Assert.Equal(new[] { "B-1", "B-2", "A-1", "A-2" }, rows.ConvertAll(r => r.Track.Title));
+    }
+
     [Fact]
     public void Sort_by_dateadded_ascending_and_descending()
     {
-        var older = T("Older") with { DateAdded = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero) };
-        var newer = T("Newer") with { DateAdded = new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero) };
+        var older = T("Older", dateAdded: new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var newer = T("Newer", dateAdded: new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero));
         var tracks = new List<Track> { newer, older };
 
         var asc = TrackListBuilder.Build(tracks, null, "DateAdded", true);
@@ -179,8 +220,8 @@ public class TrackListBuilderTests
     [Fact]
     public void Sort_by_lastplayed_ascending_and_descending()
     {
-        var playedOlder = T("PlayedOlder") with { LastPlayedAt = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero) };
-        var playedNewer = T("PlayedNewer") with { LastPlayedAt = new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero) };
+        var playedOlder = T("PlayedOlder", lastPlayedAt: new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var playedNewer = T("PlayedNewer", lastPlayedAt: new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero));
         var tracks = new List<Track> { playedNewer, playedOlder };
 
         var asc = TrackListBuilder.Build(tracks, null, "LastPlayed", true);
@@ -195,9 +236,9 @@ public class TrackListBuilderTests
     {
         var tracks = new List<Track>
         {
-            T("Popular",  album: "A") with { PlayCount = 42 },
-            T("Unplayed", album: "B") with { PlayCount = 0 },
-            T("Some",     album: "C") with { PlayCount = 7 },
+            T("Popular",  album: "A", playCount: 42),
+            T("Unplayed", album: "B", playCount: 0),
+            T("Some",     album: "C", playCount: 7),
         };
 
         var asc = TrackListBuilder.Build(tracks, null, "PlayCount", true);
@@ -216,8 +257,8 @@ public class TrackListBuilderTests
         // TrackRowViewModel.PlayCountDisplay actually shows.
         var tracks = new List<Track>
         {
-            T("FlowerOnly", album: "A") with { PlayCount = 10, ImportedPlayCount = 0 },
-            T("Imported",   album: "B") with { PlayCount = 2,  ImportedPlayCount = 20 },
+            T("FlowerOnly", album: "A", playCount: 10, importedPlayCount: 0),
+            T("Imported",   album: "B", playCount: 2,  importedPlayCount: 20),
         };
 
         var asc = TrackListBuilder.Build(tracks, null, "PlayCount", true);

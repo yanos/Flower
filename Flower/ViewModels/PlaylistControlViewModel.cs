@@ -146,7 +146,31 @@ namespace Flower.ViewModels
                     }
                 }
             };
+
+            // A track that couldn't be decoded (corrupt file, unsupported
+            // format, unreadable path) used to arrive on EndReached like any
+            // finished track, so it picked up a PlayCount on its way past and
+            // was indistinguishable from one the user actually listened to.
+            // Advance the same way, but count nothing and don't stamp
+            // LastPlayedAt - and re-raise for whoever wants to tell the user.
+            _audioManager.TrackFailed += (_, e) =>
+            {
+                _logger.LogWarning("Skipping {Title} ({Path}) - it could not be played", e.Track.Title, e.Track.Path);
+                PlaybackFailed?.Invoke(this, e);
+
+                // Repeat would re-attempt the same broken file forever, so the
+                // next track here is always the *next* one, never a repeat of
+                // this one.
+                var nextTrack = GetNextTrack(e.Track);
+                if (nextTrack != null && nextTrack != e.Track)
+                    Dispatcher.UIThread.Post(() => Play(nextTrack));
+            };
         }
+
+        // Surfaced for the UI to show a "couldn't play this" message. Nothing
+        // consumes it yet - see docs/ARCHITECTURE-REVIEW.md - so today the Log
+        // window is where a failed track shows up.
+        public event EventHandler<TrackFailedEventArgs>? PlaybackFailed;
 
         public void SetCurrentPlaylist(Playlist playlist)
         {

@@ -189,4 +189,67 @@ public class PlaylistSyncPlannerTests
         Assert.Equal(new[] { sharedId, localOnly, remoteOnly }.OrderBy(x => x),
             decisions.Select(d => d.PlaylistId).OrderBy(x => x));
     }
+
+    // ── Delete vs. edit ──────────────────────────────────────────────────────
+    //
+    // A previously-agreed playlist missing from one side is a deletion to
+    // propagate - but only if the surviving side hasn't ALSO changed it since
+    // that same baseline. It used to be an unconditional Delete, so editing a
+    // playlist offline while the peer deleted it silently discarded the edits
+    // with no conflict prompt, even though the edit-vs-edit case a few lines
+    // away in Plan already did exactly this baseline comparison.
+
+    [Fact]
+    public void Remote_deleted_while_local_edited_since_the_baseline_is_a_conflict()
+    {
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddHours(-1);
+        var local = new Playlist(id, "Road Trip", new List<Track> { T("A"), T("B") }, baseline.AddMinutes(30));
+
+        var decisions = PlaylistSyncPlanner.Plan(
+            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.Conflict, Assert.Single(decisions).Kind);
+    }
+
+    [Fact]
+    public void Remote_deleted_with_local_untouched_since_the_baseline_still_deletes()
+    {
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddHours(-1);
+        var local = new Playlist(id, "Road Trip", new List<Track> { T("A") }, baseline);
+
+        var decisions = PlaylistSyncPlanner.Plan(
+            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
+    }
+
+    [Fact]
+    public void Local_deleted_while_remote_edited_since_the_baseline_is_a_conflict()
+    {
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddHours(-1);
+        var remote = new PlaylistSyncPlaylistDto(
+            id, "Road Trip", baseline.AddMinutes(30), new List<PlaylistSyncTrackDto> { Dto("A"), Dto("B") });
+
+        var decisions = PlaylistSyncPlanner.Plan(
+            new List<Playlist>(), new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.Conflict, Assert.Single(decisions).Kind);
+    }
+
+    [Fact]
+    public void Local_deleted_with_remote_untouched_since_the_baseline_still_deletes()
+    {
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddHours(-1);
+        var remote = new PlaylistSyncPlaylistDto(
+            id, "Road Trip", baseline, new List<PlaylistSyncTrackDto> { Dto("A") });
+
+        var decisions = PlaylistSyncPlanner.Plan(
+            new List<Playlist>(), new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
+    }
 }

@@ -5,8 +5,52 @@ using System.Text.Json.Serialization;
 
 namespace Flower.Models
 {
-    public record Track
+    // A plain sealed class, deliberately not a record, even though every
+    // property below is a mutable auto-property that would have made `record`
+    // look like the natural choice.
+    //
+    // A record synthesizes value-based Equals/GetHashCode across *every*
+    // property, and that synthesized equality is what List<Track>.IndexOf/
+    // Contains/Remove and HashSet<Track> actually use - so Playlist.
+    // GetNextTrack/GetPreviousTrack/RemoveTrack, the Track Info window's
+    // prev/next navigation, PlaylistControlViewModel's shuffle re-roll, and
+    // Library.MergeSyncedTracks were all silently deciding "same track?" by
+    // comparing ~40 fields including a Dictionary (which compares by
+    // reference, so two logically identical tracks never matched on it
+    // anyway). Two genuinely different tracks that happen to share tag data -
+    // untagged files, "Track 01", silence tracks, two rips of one song -
+    // were indistinguishable to all of them, and every lookup cost O(n x 40
+    // field comparisons) on a 16k-track queue. Records also promise
+    // immutability this type has never had: nothing here uses `with` for
+    // anything but a deliberate copy, and PlayCount++/tag edits/Path being
+    // set after a download all mutate in place, on purpose, because the same
+    // instance is shared between Library.Tracks, a Playlist's Tracks, and
+    // whatever ViewModel is showing it.
+    //
+    // Id below is the identity instead - see its own comment.
+    public sealed class Track : IEquatable<Track>
     {
+        // Stable surrogate identity, minted once when a Track is first
+        // constructed (import, sync placeholder, test) and carried forward
+        // across rescans by Library.UpdateTracks the same way DateAdded is.
+        //
+        // Everything else that has ever been used to identify a track is
+        // derived from mutable data and only valid within one layer: Path is
+        // a local filesystem path that doesn't exist on a not-yet-downloaded
+        // track and changes out from under iOS on a reinstall; SyncKey is a
+        // cross-device *matching heuristic* built from tags and a rounded
+        // duration. Both are still needed for what they do - matching a fresh
+        // scan against the previous library, and matching this device's
+        // library against a peer's - but neither is an identity, and using
+        // them as one is what made a track's identity depend on whether its
+        // file happened to be downloaded yet.
+        //
+        // The default initializer is also the migration: a library.json
+        // written before this field existed has no Id to deserialize, so the
+        // initializer's value survives and every track gets one minted on
+        // load, made permanent by the next save.
+        public Guid Id { get; set; } = Guid.NewGuid();
+
         // Core identity
         public string? Title { get; set; }
         public string? Subtitle { get; set; }
@@ -199,5 +243,41 @@ namespace Flower.Models
 
         private static string Normalize(string? value) =>
             value?.Trim().ToLowerInvariant() ?? "";
+
+        // Identity is Id and nothing else. Note what this does NOT fix: adding
+        // the same track to a playlist twice puts the same instance (hence the
+        // same Id) in the list twice, so IndexOf still resolves to the first
+        // occurrence. Telling those two apart needs the queue to track a
+        // position rather than a track - see docs/ARCHITECTURE-REVIEW.md.
+        public bool Equals(Track? other) => other is not null && Id == other.Id;
+
+        public override bool Equals(object? obj) => Equals(obj as Track);
+
+        public override int GetHashCode() => Id.GetHashCode();
+
+        // Defined so the many existing `trackA == trackB` call sites keep
+        // meaning "the same track" rather than silently switching to reference
+        // equality the moment this stopped being a record.
+        public static bool operator ==(Track? left, Track? right) =>
+            left is null ? right is null : left.Equals(right);
+
+        public static bool operator !=(Track? left, Track? right) => !(left == right);
+
+        // Replaces the `with` expressions this type used to support. Keeps Id,
+        // so a copy made to hand a peer stream URL to the audio manager (see
+        // MainViewModel/MobileMainViewModel) is still *the same track* as far
+        // as the play queue is concerned - which the record-equality version
+        // was not, since the differing Path made it compare unequal and
+        // Playlist.GetNextTrack then fell back to the front of the queue.
+        public Track Clone()
+        {
+            var copy = (Track)MemberwiseClone();
+            // MemberwiseClone is shallow, and this is the one reference-typed
+            // field callers mutate (Library.MergeRemotePlayCounts writes into
+            // it in place) - sharing it would make a copy's merges land on the
+            // original too.
+            copy.RemotePlayCounts = new Dictionary<string, int>(RemotePlayCounts);
+            return copy;
+        }
     }
 }

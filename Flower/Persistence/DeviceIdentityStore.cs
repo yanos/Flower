@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Text.Json;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -43,49 +42,37 @@ namespace Flower.Persistence
 
         public DeviceIdentity Load(string derivedFingerprint)
         {
-            var path = StorePath;
-            if (File.Exists(path))
+            if (AtomicJsonFile.Read(StorePath, FlowerJsonContext.Default.DeviceIdentity, _logger) is { } identity)
             {
-                try
+                var changed = false;
+
+                // Alias didn't exist before this field was added - backfill
+                // an existing device.json rather than showing a blank name.
+                if (string.IsNullOrEmpty(identity.Alias))
                 {
-                    var json = File.ReadAllText(path);
-                    if (JsonSerializer.Deserialize(json, FlowerJsonContext.Default.DeviceIdentity) is { } identity)
-                    {
-                        var changed = false;
-
-                        // Alias didn't exist before this field was added - backfill
-                        // an existing device.json rather than showing a blank name.
-                        if (string.IsNullOrEmpty(identity.Alias))
-                        {
-                            identity.Alias = DefaultAlias();
-                            changed = true;
-                        }
-
-                        // A mismatch means either first run after the signing
-                        // scheme shipped (a stale GUID-shaped fingerprint
-                        // predating it) or a regenerated key (device-key.json
-                        // lost/corrupted) - either way, every peer that trusted
-                        // the old fingerprint needs one re-approval, same as any
-                        // other fingerprint change (see DeviceKeyStore's own
-                        // warning when it has to regenerate a key).
-                        if (identity.Fingerprint != derivedFingerprint)
-                        {
-                            _logger.LogWarning(
-                                "Device fingerprint changed {Old} -> {New} (now derived from the signing key); previously-trusted peers will need to re-approve this device",
-                                identity.Fingerprint, derivedFingerprint);
-                            identity.Fingerprint = derivedFingerprint;
-                            changed = true;
-                        }
-
-                        if (changed)
-                            Save(identity);
-                        return identity;
-                    }
+                    identity.Alias = DefaultAlias();
+                    changed = true;
                 }
-                catch (Exception ex)
+
+                // A mismatch means either first run after the signing
+                // scheme shipped (a stale GUID-shaped fingerprint
+                // predating it) or a regenerated key (device-key.json
+                // lost/corrupted) - either way, every peer that trusted
+                // the old fingerprint needs one re-approval, same as any
+                // other fingerprint change (see DeviceKeyStore's own
+                // warning when it has to regenerate a key).
+                if (identity.Fingerprint != derivedFingerprint)
                 {
-                    _logger.LogWarning(ex, "Failed to load device identity from {Path}; generating a new one", path);
+                    _logger.LogWarning(
+                        "Device fingerprint changed {Old} -> {New} (now derived from the signing key); previously-trusted peers will need to re-approve this device",
+                        identity.Fingerprint, derivedFingerprint);
+                    identity.Fingerprint = derivedFingerprint;
+                    changed = true;
                 }
+
+                if (changed)
+                    Save(identity);
+                return identity;
             }
 
             var fresh = new DeviceIdentity { Fingerprint = derivedFingerprint, Alias = DefaultAlias() };
@@ -105,18 +92,10 @@ namespace Flower.Persistence
             return Environment.MachineName;
         }
 
-        public void Save(DeviceIdentity identity)
-        {
-            var path = StorePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(identity, FlowerJsonContext.Default.DeviceIdentity));
-        }
+        public void Save(DeviceIdentity identity) =>
+            AtomicJsonFile.Write(StorePath, identity, FlowerJsonContext.Default.DeviceIdentity);
 
-        public async Task SaveAsync(DeviceIdentity identity)
-        {
-            var path = StorePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(identity, FlowerJsonContext.Default.DeviceIdentity));
-        }
+        public Task SaveAsync(DeviceIdentity identity) =>
+            AtomicJsonFile.WriteAsync(StorePath, identity, FlowerJsonContext.Default.DeviceIdentity);
     }
 }

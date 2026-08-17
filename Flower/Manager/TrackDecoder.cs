@@ -34,6 +34,10 @@ namespace Flower.Manager
         private GaplessRingBuffer _target;
         private long _bytesProduced;
         private int _retired;
+
+        // Guards the native Media/MediaPlayer against being disposed by Retire()
+        // while PrepareAsync/StartDecoding is still using them - see Retire().
+        private readonly SemaphoreSlim _nativeGate = new(1, 1);
         private volatile bool _drainFired;
 
         // Diagnostic-only, temporary - null everywhere the internal
@@ -133,21 +137,46 @@ namespace Flower.Manager
         // "currently playing" role, where the user just explicitly chose it.
         public async Task<bool> PrepareAsync(CancellationToken cancellationToken = default)
         {
-            var media = EnsureMedia();
-            var status = await media.Parse(MediaParseOptions.ParseLocal, 5000, cancellationToken);
-            return status == MediaParsedStatus.Done;
+            // See Retire(): the gate keeps this method's native Media alive for
+            // as long as Parse is using it, even if the coordinator retires this
+            // decoder mid-parse.
+            await _nativeGate.WaitAsync(cancellationToken);
+            try
+            {
+                if (Volatile.Read(ref _retired) == 1)
+                    return false;
+
+                var media = EnsureMedia();
+                var status = await media.Parse(MediaParseOptions.ParseLocal, 5000, cancellationToken);
+                return status == MediaParsedStatus.Done;
+            }
+            finally
+            {
+                _nativeGate.Release();
+            }
         }
 
         public void StartDecoding()
         {
             _logger?.LogInformation("StartDecoding() for {Path}", Track.Path);
 
-            var media = EnsureMedia();
-            _mediaPlayer.SetAudioFormat(GaplessFormat.LibVlcFourCc, GaplessFormat.SampleRate, GaplessFormat.Channels);
-            _mediaPlayer.SetAudioCallbacks(OnPlay, OnPause, OnResume, OnFlush, OnDrain);
+            _nativeGate.Wait();
+            try
+            {
+                if (Volatile.Read(ref _retired) == 1)
+                    return;
 
-            if (!_mediaPlayer.Play(media))
-                Faulted?.Invoke();
+                var media = EnsureMedia();
+                _mediaPlayer.SetAudioFormat(GaplessFormat.LibVlcFourCc, GaplessFormat.SampleRate, GaplessFormat.Channels);
+                _mediaPlayer.SetAudioCallbacks(OnPlay, OnPause, OnResume, OnFlush, OnDrain);
+
+                if (!_mediaPlayer.Play(media))
+                    Faulted?.Invoke();
+            }
+            finally
+            {
+                _nativeGate.Release();
+            }
         }
 
         // Only logs when something looks wrong, so a healthy decode doesn't
@@ -245,18 +274,45 @@ namespace Flower.Manager
             _logger?.LogInformation("Retire() for {Path}", Track.Path);
             _watchdog?.Stop();
 
-            var mediaPlayer = _mediaPlayer;
             var path = Track.Path;
             var logger = _logger;
-            Task.Run(() =>
+            _ = Task.Run(async () =>
             {
+                // Serializes against PrepareAsync/StartDecoding: the coordinator
+                // can retire a decoder whose PrepareAsync is still in flight
+                // (see GaplessCoordinator.ArmAsync's own remarks on that race),
+                // and disposing the native Media out from under an in-progress
+                // Parse is a native crash, not an exception.
+                await _nativeGate.WaitAsync();
                 try
                 {
-                    mediaPlayer.Stop();
+                    _mediaPlayer.Stop();
                 }
                 catch (Exception ex)
                 {
                     logger?.LogWarning(ex, "MediaPlayer.Stop() failed during Retire() for {Path}", path);
+                }
+
+                try
+                {
+                    // The actual release of the native handles. This is a fresh
+                    // Media + MediaPlayer per track, and nothing used to dispose
+                    // them: GaplessCoordinator only ever calls Retire(), never
+                    // Dispose(), so every track change leaked both for the life
+                    // of the process. Done here rather than in Retire's body
+                    // because it has to happen after Stop() returns, and Stop()
+                    // is the call that can hang (see this method's remarks).
+                    _watchdog?.Dispose();
+                    _media?.Dispose();
+                    _mediaPlayer.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Disposing native decode resources failed during Retire() for {Path}", path);
+                }
+                finally
+                {
+                    _nativeGate.Release();
                 }
             });
         }
@@ -330,12 +386,11 @@ namespace Flower.Manager
             Drained?.Invoke();
         }
 
-        public void Dispose()
-        {
-            Retire();
-            _watchdog?.Dispose();
-            _media?.Dispose();
-            _mediaPlayer.Dispose();
-        }
+        // Retire() is the single end-of-life path and now releases the native
+        // handles itself, so this is just the IDisposable spelling of it.
+        // Nothing in the pipeline calls this - GaplessCoordinator retires
+        // decoders - and that was exactly the bug: disposal lived only here,
+        // unreachable, while Retire() left Media/MediaPlayer allocated.
+        public void Dispose() => Retire();
     }
 }

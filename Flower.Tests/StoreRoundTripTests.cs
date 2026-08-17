@@ -127,6 +127,7 @@ public class StoreRoundTripTests : IDisposable
         public event EventHandler? PositionChanged;
         public event EventHandler? VolumeChanged;
         public event EventHandler? EndReached;
+        public event EventHandler<Flower.Manager.TrackFailedEventArgs>? TrackFailed;
 #pragma warning restore CS0067
     }
 
@@ -828,6 +829,147 @@ public class StoreRoundTripTests : IDisposable
         File.WriteAllText(iTunesPath, SampleLibraryXml(4));
 
         Assert.Equal(iTunesPath, ITunesPlayCountImporter.ResolveLibraryXmlPath());
+    }
+
+    // ── Playlist membership persistence ──────────────────────────────────────
+
+    // PlaylistStore used to persist entries as `t.Path` and filter out anything
+    // with a null Path - so adding a synced-but-not-yet-downloaded track (see
+    // SYNC-PLAN.md Phase 3) to a playlist worked until the save, then the entry
+    // was gone on next launch with nothing logged.
+    [Fact]
+    public async Task PlaylistStore_round_trips_a_not_yet_downloaded_placeholder_track()
+    {
+        var placeholder = new Track { Title = "Synced", Path = null, OriginDeviceFingerprint = "peer-fp" };
+        var local       = new Track { Title = "Local",  Path = "/music/local.mp3" };
+        var store       = new PlaylistStore(NullLogger<PlaylistStore>.Instance);
+
+        await store.SaveAsync(new[] { new Playlist("Mix", new List<Track> { local, placeholder }) });
+        var loaded = store.Load(new List<Track> { local, placeholder });
+
+        var tracks = Assert.Single(loaded).Tracks;
+        Assert.Equal(2, tracks.Count);
+        Assert.Same(placeholder, tracks[1]);
+    }
+
+    // The pre-Track.Id shape: a playlists.json with TrackPaths and no Tracks
+    // must still resolve, because the first launch after upgrading has a
+    // library.json with no ids either (they're minted on load).
+    [Fact]
+    public void PlaylistStore_still_loads_a_legacy_path_only_playlists_file()
+    {
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        Directory.CreateDirectory(Path.GetDirectoryName(PlaylistStore.StorePath)!);
+        File.WriteAllText(PlaylistStore.StorePath,
+            """[{"Name":"Legacy Mix","TrackPaths":["/music/a.mp3"]}]""");
+
+        var loaded = new PlaylistStore(NullLogger<PlaylistStore>.Instance).Load(new List<Track> { track });
+
+        var playlist = Assert.Single(loaded);
+        Assert.Equal("Legacy Mix", playlist.Name);
+        Assert.Same(track, Assert.Single(playlist.Tracks));
+    }
+
+    // ── Crash-safety (AtomicJsonFile) ────────────────────────────────────────
+    //
+    // Before AtomicJsonFile, every store wrote straight over its live file, so
+    // a crash mid-write truncated it - and every Load() catches a bad parse and
+    // returns "empty". For library.json that isn't a degraded read, it's total
+    // loss: the startup rescan then rewrites the file with DateAdded defaulted
+    // to now and every PlayCount back to 0, and play counts/DateAdded/
+    // LastPlayedAt/RemotePlayCounts exist nowhere else. These pin the recovery.
+
+    [Fact]
+    public async Task LibraryStore_recovers_play_counts_from_the_backup_when_the_live_file_is_truncated()
+    {
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var tracks = new List<Track>
+        {
+            new Track { Title = "A", Artists = "X", PlayCount = 7, Path = "/music/a.mp3" },
+        };
+
+        // Two saves: the first creates the file, the second rotates it into .bak.
+        await store.SaveAsync(tracks);
+        await store.SaveAsync(tracks);
+
+        Truncate(LibraryStore.StorePath);
+
+        var loaded = store.Load();
+
+        Assert.Single(loaded);
+        Assert.Equal(7, loaded[0].PlayCount);
+    }
+
+    // The recovered contents go back to the live path, so a user who quits
+    // before the next save still keeps them.
+    [Fact]
+    public async Task LibraryStore_writes_the_recovered_contents_back_to_the_live_file()
+    {
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var tracks = new List<Track> { new Track { Title = "A", PlayCount = 3, Path = "/music/a.mp3" } };
+
+        await store.SaveAsync(tracks);
+        await store.SaveAsync(tracks);
+        Truncate(LibraryStore.StorePath);
+
+        store.Load();
+
+        // A second, independent store instance reads the live file with no
+        // recovery step of its own.
+        var reloaded = new LibraryStore(NullLogger<LibraryStore>.Instance).Load();
+        Assert.Single(reloaded);
+        Assert.Equal(3, reloaded[0].PlayCount);
+    }
+
+    // With no backup to fall back on the data really is gone, but the bad file
+    // is preserved for a bug report rather than being silently overwritten by
+    // the next save.
+    [Fact]
+    public async Task LibraryStore_quarantines_an_unreadable_file_when_there_is_no_backup()
+    {
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        await store.SaveAsync(new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } });
+        Truncate(LibraryStore.StorePath);
+
+        var loaded = store.Load();
+
+        Assert.Empty(loaded);
+        Assert.True(File.Exists(AtomicJsonFile.CorruptPath(LibraryStore.StorePath)));
+    }
+
+    [Fact]
+    public async Task AtomicJsonFile_leaves_no_temp_file_behind_after_a_successful_write()
+    {
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        await store.SaveAsync(new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } });
+
+        Assert.False(File.Exists(LibraryStore.StorePath + ".tmp"));
+        Assert.True(File.Exists(LibraryStore.StorePath));
+    }
+
+    // AppSettingsStore was the one store with no write lock, while
+    // ColumnManager's debounced save fires on every pixel of a column-resize
+    // drag - overlapping writes were routine, and on Windows they threw.
+    [Fact]
+    public async Task AppSettingsStore_survives_many_concurrent_saves()
+    {
+        var store = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        var settings = new AppSettings { SortColumn = "Album", SortAscending = false };
+
+        await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => store.SaveAsync(settings)));
+
+        var reloaded = store.Load();
+        Assert.Equal("Album", reloaded.SortColumn);
+        Assert.False(reloaded.SortAscending);
+    }
+
+    // Half a file is the realistic crash shape: valid JSON prefix, no closing
+    // bracket. An empty file would also fail to parse, but wouldn't prove the
+    // recovery path handles partial content.
+    private static void Truncate(string path)
+    {
+        var contents = File.ReadAllText(path);
+        File.WriteAllText(path, contents[..(contents.Length / 2)]);
     }
 
     // 200 seconds (200000 ms) - matches Track.BuildSyncKey's (int)Duration.TotalSeconds

@@ -241,6 +241,30 @@ public class PlaylistSyncService
 
     private async Task<Playlist> ResolveConflictAsync(PlaylistSyncDecision decision, string remoteAlias)
     {
+        // Delete-vs-edit: one side deleted a playlist the two devices had
+        // previously agreed on, while the other side edited it since that same
+        // baseline (see PlaylistSyncPlanner). Only one side has anything left to
+        // show, so the two-column "yours vs. theirs" prompt below has nothing to
+        // put in one of its columns.
+        //
+        // Resolved without asking, in favour of the surviving edit. An edit
+        // beating a delete is the safe direction - the worst case is a playlist
+        // the user meant to delete coming back (visible, one tap to delete
+        // again, and it converges because the merge is pushed straight back to
+        // the peer's /apply below), against a worst case the other way of edits
+        // vanishing with nothing on screen to say so. That silent loss is
+        // exactly what this whole branch exists to stop; a real "they deleted
+        // this, keep it?" prompt is worth adding, but it needs its own UI on
+        // both desktop and mobile - see docs/ARCHITECTURE-REVIEW.md.
+        if (decision.Local == null || decision.Remote == null)
+        {
+            var survivor = decision.Local ?? PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks);
+            _logger.LogInformation(
+                "Playlist {Name}: deleted on {DeletedSide} but edited on the other side since they last agreed - keeping the edit rather than propagating the delete",
+                survivor.Name, decision.Local == null ? "this device" : remoteAlias);
+            return survivor;
+        }
+
         var handler = ConflictDetected;
         if (handler == null)
             return decision.Local!; // No UI listening (e.g. sync running before the view attaches) - keep local rather than silently discarding it.

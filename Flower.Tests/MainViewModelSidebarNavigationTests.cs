@@ -113,10 +113,10 @@ public class MainViewModelSidebarNavigationTests : IDisposable
 
         return new MainViewModel(
             playlistControl, library, appSettings, new FakeMusicImporter(), mainPlaylist,
-            networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
-            peerPairingService, peerTrackResolver, syncHttpServer, deviceIdentity, signingKey,
             libraryStore, appSettingsStore, playlistStore, deviceIdentityStore, deviceNicknameStore,
-            NullLogger<MainViewModel>.Instance);
+            NullLogger<MainViewModel>.Instance,
+            networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
+            peerPairingService, peerTrackResolver, syncHttpServer, deviceIdentity, signingKey);
     }
 
     [AvaloniaFact]

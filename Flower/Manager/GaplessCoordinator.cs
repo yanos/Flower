@@ -116,6 +116,11 @@ namespace Flower.Manager
         // mid-decode) - see class remarks.
         public event Action<Track>? EndReached;
 
+        // The current track stopped because its decode failed, not because it
+        // finished - see HandleDrainedOrFaulted. Follow-up behavior (promote
+        // the armed track, or stop) is identical; only the reporting differs.
+        public event Action<Track>? TrackFailed;
+
         public GaplessCoordinator(
             LibVLC libVLC,
             GaplessRingBuffer sharedRing,
@@ -191,8 +196,8 @@ namespace Flower.Manager
                 _currentCoreIndex = 0;
 
                 var decoder = _currentDecoderFactory(track, _sharedRing);
-                decoder.Drained += () => HandleDrainedOrFaulted(decoder);
-                decoder.Faulted += () => HandleDrainedOrFaulted(decoder);
+                decoder.Drained += () => HandleDrainedOrFaulted(decoder, faulted: false);
+                decoder.Faulted += () => HandleDrainedOrFaulted(decoder, faulted: true);
                 _current = decoder;
                 _currentPath = track.Path;
                 _currentTrackReadSplit = 0;
@@ -348,7 +353,7 @@ namespace Flower.Manager
             }
 
             if (promotedWhilePreparingAndFailed)
-                HandleDrainedOrFaulted(decoder);
+                HandleDrainedOrFaulted(decoder, faulted: true);
         }
 
         private void HandleArmedDrained(ITrackDecoder decoder)
@@ -379,7 +384,14 @@ namespace Flower.Manager
         // done as far as playback is concerned, so the follow-up behavior
         // (promote the armed track if it's ready, otherwise stop) is the
         // same either way.
-        private void HandleDrainedOrFaulted(ITrackDecoder decoder)
+        //
+        // What is NOT the same either way is what gets reported: `faulted`
+        // decides whether this raises TrackFailed or EndReached. Both used to
+        // funnel into EndReached, which is what PlaylistControlViewModel
+        // increments a play count on - so an unplayable file skipped past
+        // silently *and* counted as listened-to. See the two events' own
+        // remarks.
+        private void HandleDrainedOrFaulted(ITrackDecoder decoder, bool faulted)
         {
             Track finishedTrack;
             ITrackDecoder? promoted;
@@ -424,8 +436,8 @@ namespace Flower.Manager
                     // actively decoding needs its own eventual natural end
                     // to keep driving the chain forward, and nothing but
                     // this subscribes to it once it's no longer "armed".
-                    promoted.Drained += () => HandleDrainedOrFaulted(promoted);
-                    promoted.Faulted += () => HandleDrainedOrFaulted(promoted);
+                    promoted.Drained += () => HandleDrainedOrFaulted(promoted, faulted: false);
+                    promoted.Faulted += () => HandleDrainedOrFaulted(promoted, faulted: true);
 
                     ClearArmedSlot(retireDecoder: false);
                     _logger?.LogInformation("{Finished} drained - promoting armed {Next}", finishedTrack.Path, promoted.Track.Path);
@@ -439,7 +451,10 @@ namespace Flower.Manager
                 }
             }
 
-            EndReached?.Invoke(finishedTrack);
+            if (faulted)
+                TrackFailed?.Invoke(finishedTrack);
+            else
+                EndReached?.Invoke(finishedTrack);
 
             // Retire + the promoted decoder's staged-audio drain happen
             // outside _gate: PromoteTarget's Write() calls are paced by the
@@ -478,7 +493,7 @@ namespace Flower.Manager
                 if (promotedAlreadyDrained)
                 {
                     _logger?.LogInformation("{Path} had already finished decoding while armed - handling its completion immediately", promoted.Track.Path);
-                    HandleDrainedOrFaulted(promoted);
+                    HandleDrainedOrFaulted(promoted, faulted: false);
                 }
             }
         }

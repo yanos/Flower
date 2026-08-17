@@ -751,7 +751,7 @@ public class MobileMainViewModel : ViewModelBase
             // which already knows how to play any URL-shaped Path).
             var streamUrl = Main.GetStreamUrl(track);
             if (streamUrl != null)
-                PlaylistControl.Play(track with { Path = streamUrl });
+                PlaylistControl.Play(MainViewModel.WithStreamUrl(track, streamUrl));
         });
         ToggleMiniPlayerCommand = new RelayCommand(() =>
         {

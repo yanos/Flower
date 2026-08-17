@@ -11,7 +11,7 @@ public class ColumnManager
 {
     private readonly AppSettings _appSettings;
     private readonly AppSettingsStore _appSettingsStore;
-    private Task? _pendingSave;
+    private CancellationTokenSource? _pendingSaveCts;
 
     public List<MusicColumnDefinition> Columns { get; }
 
@@ -97,16 +97,34 @@ public class ColumnManager
         }
     }
 
+    // A real debounce: each call cancels the previous pending save, so only the
+    // last change in a burst actually writes. This used to just start another
+    // unawaited Task.Delay(500) chain and assign it to a field nothing ever
+    // read - so a column-resize drag, which fires this on every width change,
+    // spawned dozens of independent timers that all woke up and wrote
+    // settings.json at once (and swallowed any exception they threw, since
+    // nothing observed the tasks).
     private void ScheduleSave()
     {
-        _pendingSave = SaveAsync();
+        _pendingSaveCts?.Cancel();
+        _pendingSaveCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _pendingSaveCts = cts;
+        _ = SaveAfterDelayAsync(cts.Token);
     }
 
-    private async Task SaveAsync()
+    private async Task SaveAfterDelayAsync(CancellationToken token)
     {
-        await Task.Delay(500);
-        _appSettings.ColumnStates = BuildStates();
-        await _appSettingsStore.SaveAsync(_appSettings);
+        try
+        {
+            await Task.Delay(500, token);
+            _appSettings.ColumnStates = BuildStates();
+            await _appSettingsStore.SaveAsync(_appSettings);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer change - that one carries the current state.
+        }
     }
 
     // Synchronous, immediate counterpart to the debounced SaveAsync above - for
@@ -115,6 +133,10 @@ public class ColumnManager
     // reorder/hide) made shortly before quitting.
     public void Flush()
     {
+        // Cancel the pending debounced save first: this writes the same state
+        // synchronously and right now, so letting the queued one fire too would
+        // just be a redundant write racing process shutdown.
+        _pendingSaveCts?.Cancel();
         _appSettings.ColumnStates = BuildStates();
         _appSettingsStore.Save(_appSettings);
     }

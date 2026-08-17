@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -31,23 +31,8 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "device-nicknames.json");
 
-        public List<DeviceNickname> Load()
-        {
-            var path = StorePath;
-            if (!File.Exists(path))
-                return new List<DeviceNickname>();
-
-            try
-            {
-                var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize(json, FlowerJsonContext.Default.DeviceNicknameList) ?? new List<DeviceNickname>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load device nicknames from {Path}; starting with none set", path);
-                return new List<DeviceNickname>();
-            }
-        }
+        public List<DeviceNickname> Load() =>
+            AtomicJsonFile.Read(StorePath, FlowerJsonContext.Default.DeviceNicknameList, _logger) ?? new List<DeviceNickname>();
 
         public string? Get(string fingerprint) =>
             string.IsNullOrEmpty(fingerprint)
@@ -62,13 +47,24 @@ namespace Flower.Persistence
             if (string.IsNullOrEmpty(fingerprint))
                 return;
 
-            var nicknames = Load().Where(n => n.Fingerprint != fingerprint).ToList();
-            if (!string.IsNullOrWhiteSpace(nickname))
-                nicknames.Add(new DeviceNickname(fingerprint, nickname.Trim()));
+            // Load and save are one critical section: this is a whole-file
+            // read-modify-write, so two peers being renamed at once would
+            // otherwise each save a list built before the other's change.
+            await _writeLock.WaitAsync();
+            try
+            {
+                var nicknames = Load().Where(n => n.Fingerprint != fingerprint).ToList();
+                if (!string.IsNullOrWhiteSpace(nickname))
+                    nicknames.Add(new DeviceNickname(fingerprint, nickname.Trim()));
 
-            var path = StorePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(nicknames, FlowerJsonContext.Default.DeviceNicknameList));
+                await AtomicJsonFile.WriteAsync(StorePath, nicknames, FlowerJsonContext.Default.DeviceNicknameList);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
+
+        private readonly SemaphoreSlim _writeLock = new(1, 1);
     }
 }

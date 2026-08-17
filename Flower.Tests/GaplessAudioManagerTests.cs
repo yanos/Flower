@@ -190,21 +190,24 @@ public class GaplessAudioManagerTests
 
     // A decode error - e.g. a network outage partway through a streamed
     // track - reaches the coordinator as Faulted rather than Drained (see
-    // TrackDecoder.EncounteredError), but GaplessCoordinator.
-    // HandleDrainedOrFaulted treats both identically, and that has to keep
-    // holding all the way up through GaplessAudioManager: this is what lets
-    // PlaylistControlViewModel's EndReached handler auto-advance to the next
-    // track even when the current one failed rather than finished cleanly.
+    // TrackDecoder.EncounteredError). The pipeline handles both the same way
+    // (advance or stop), but they surface as different events all the way up:
+    // PlaylistControlViewModel counts a play on EndReached, so a track that
+    // failed must not arrive there.
     [Fact]
-    public void EndReached_is_forwarded_from_the_coordinator_when_the_decoder_faults()
+    public void TrackFailed_is_forwarded_from_the_coordinator_when_the_decoder_faults()
     {
-        var (manager, decoder, _, _) = PlayTrack(T("A", TimeSpan.FromSeconds(1)));
-        var raised = false;
-        manager.EndReached += (_, _) => raised = true;
+        var track = T("A", TimeSpan.FromSeconds(1));
+        var (manager, decoder, _, _) = PlayTrack(track);
+        Track? failed = null;
+        var endReached = false;
+        manager.TrackFailed += (_, e) => failed = e.Track;
+        manager.EndReached += (_, _) => endReached = true;
 
         decoder.RaiseFaulted();
 
-        Assert.True(raised);
+        Assert.Same(track, failed);
+        Assert.False(endReached);
     }
 
     [Fact]
