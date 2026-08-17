@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -45,6 +46,34 @@ namespace Flower.Models
         // including NotifyTrackChanged, which is exactly the "a Track you
         // already hold was mutated in place" signal.
         private Dictionary<string, Track>? _byPath;
+
+        // Opaque "has the track catalog changed" token, handed to peers as the
+        // ETag on GET /api/flower/v1/library and advertised on /info so a
+        // client can tell a changed server-side catalog from an unchanged one
+        // without pulling 6-8 MB of manifest to find out (see
+        // ARCHITECTURE-REVIEW Tier 1.4, SyncHttpServer.HandleGetLibraryAsync,
+        // LibrarySyncService).
+        //
+        // Session id + counter rather than a bare counter, and deliberately
+        // not a content hash. A bare counter would collide across a restart -
+        // a peer holding "7" from before could see a *different* catalog that
+        // has also reached "7" and wrongly conclude nothing changed, which is
+        // the one failure mode that actually loses data. The session id makes
+        // that impossible: a restarted device's tokens never match anything a
+        // peer saw before it, so the worst case is one redundant pull. A
+        // content hash would avoid even that, but computing it means building
+        // the whole manifest (~1,400 TagLib opens for the album-art hashes),
+        // which is exactly the work this exists to skip - and /info is polled
+        // every ~5s per peer.
+        private readonly string _sessionId = Guid.NewGuid().ToString("N")[..8];
+        private long _changeCount;
+
+        public string ChangeToken => $"{_sessionId}-{Interlocked.Read(ref _changeCount)}";
+
+        // Every mutation that can change what BuildAllSongs would produce -
+        // the list itself, a Path, or a play count / LastPlayedAt, all of
+        // which ride along in the manifest.
+        private void BumpChangeToken() => Interlocked.Increment(ref _changeCount);
 
         public event EventHandler? TracksUpdated;
 
@@ -344,6 +373,7 @@ namespace Flower.Models
             {
                 current = ResolveCurrent(playedTrack);
                 current.PlayCount++;
+                BumpChangeToken();
                 _logger.LogDebug("PlayCount incremented to {NewCount} for {Title} ({Path})", current.PlayCount, current.Title, current.Path);
             }
 
@@ -381,7 +411,11 @@ namespace Flower.Models
         }
 
         // Callers must hold _lock, except NotifyTrackChanged - see its comment.
-        private void InvalidatePathIndex() => _byPath = null;
+        private void InvalidatePathIndex()
+        {
+            _byPath = null;
+            BumpChangeToken();
+        }
 
         // Atomically resolves whichever Track object currently represents
         // playedTrack.Path in the library and stamps LastPlayedAt to now - same
@@ -398,6 +432,7 @@ namespace Flower.Models
             {
                 current = ResolveCurrent(playedTrack);
                 current.LastPlayedAt = DateTimeOffset.UtcNow;
+                BumpChangeToken();
             }
 
             TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));

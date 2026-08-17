@@ -86,6 +86,8 @@ No supported path for bulk Bluetooth file transfer from an iOS app to an arbitra
 
 **Confirmed real problem, changed after real-world testing:** the original per-album (`getAlbumList2`+`getAlbum`) catalog fetch produced 1000+ HTTP connections against a 1,397-album library, causing real network/battery cost on iOS. `LibrarySyncService` now uses a bespoke bulk endpoint instead — `GET /api/flower/v1/library` returning the whole manifest in one response, same shape as the playlist endpoint. The standard `/rest/getAlbumList2`/`getAlbum` endpoints are unchanged for real OpenSubsonic interop; only Flower-to-Flower bulk sync moved off them.
 
+That endpoint is now conditional: it serves `Library.ChangeToken` as its `ETag` and answers `304` to a matching `If-None-Match`, and the serialized manifest is cached against the token it was built from (the album-art hashes it embeds cost ~1,400 TagLib file opens to compute). The same token is advertised on `/info`, which is what finally lets a Client notice a *server-side* change: sync previously fired only on first mDNS contact or a debounced local change, so a track added on the Server went unnoticed for as long as both apps stayed running. The ~5s `/info` poll every Client already runs now carries the token, so a change on either side converges within one poll. See ARCHITECTURE-REVIEW §1.4.
+
 ### Data model
 
 `Track.Path` is already nullable — a track with `Path == null` is metadata known via sync but not locally downloaded. `Track.OriginDeviceFingerprint` tracks which peer currently has the file.

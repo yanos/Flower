@@ -633,4 +633,103 @@ public class SyncHttpServerRoundTripTests : IDisposable
         Assert.Contains(albums, a => a.Name == "First");
         Assert.Contains(albums, a => a.Name == "Second");
     }
+
+    // ── Conditional manifest pull (Tier 1.4) ─────────────────────────────────
+
+    [Fact]
+    public async Task The_library_manifest_is_served_with_the_libraries_change_token_as_its_ETag()
+    {
+        var directory = Path.Combine(_tempHome, "music-etag");
+        Directory.CreateDirectory(directory);
+        using var harness = new Harness([TrackWithFile(directory, "Song One")]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var request = harness.Signed(HttpMethod.Get, "/api/flower/v1/library");
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(harness.Library.ChangeToken, response.Headers.GetValues("ETag").Single());
+    }
+
+    [Fact]
+    public async Task An_unchanged_catalog_answers_304_with_no_body_at_all()
+    {
+        var directory = Path.Combine(_tempHome, "music-304");
+        Directory.CreateDirectory(directory);
+        using var harness = new Harness([TrackWithFile(directory, "Song One")]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var first = harness.Signed(HttpMethod.Get, "/api/flower/v1/library");
+        using var firstResponse = await harness.Http.SendAsync(first);
+        var token = firstResponse.Headers.GetValues("ETag").Single();
+
+        using var second = harness.Signed(HttpMethod.Get, "/api/flower/v1/library");
+        second.Headers.TryAddWithoutValidation("If-None-Match", token);
+        var secondResponse = await harness.Http.SendAsync(second);
+
+        Assert.Equal(HttpStatusCode.NotModified, secondResponse.StatusCode);
+        Assert.Empty(await secondResponse.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task A_changed_catalog_invalidates_the_token_and_serves_the_new_manifest()
+    {
+        var directory = Path.Combine(_tempHome, "music-changed");
+        Directory.CreateDirectory(directory);
+        var first = TrackWithFile(directory, "Song One");
+        using var harness = new Harness([first]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var before = harness.Signed(HttpMethod.Get, "/api/flower/v1/library");
+        using var beforeResponse = await harness.Http.SendAsync(before);
+        var staleToken = beforeResponse.Headers.GetValues("ETag").Single();
+
+        harness.Library.UpdateTracks([first, TrackWithFile(directory, "Song Two")]);
+
+        // The client presents the token it holds; the server has moved on, so
+        // this must be a full 200 rather than a 304 against a stale token.
+        using var after = harness.Signed(HttpMethod.Get, "/api/flower/v1/library");
+        after.Headers.TryAddWithoutValidation("If-None-Match", staleToken);
+        var afterResponse = await harness.Http.SendAsync(after);
+
+        Assert.Equal(HttpStatusCode.OK, afterResponse.StatusCode);
+        Assert.NotEqual(staleToken, afterResponse.Headers.GetValues("ETag").Single());
+        var manifest = JsonSerializer.Deserialize<LibrarySyncManifestDto>(
+            await afterResponse.Content.ReadAsStringAsync(), JsonOptions)!;
+        Assert.Equal(2, manifest.Songs.Count);
+    }
+
+    [Fact]
+    public async Task Info_advertises_the_same_library_token_the_manifest_serves_as_its_ETag()
+    {
+        var directory = Path.Combine(_tempHome, "music-info-token");
+        Directory.CreateDirectory(directory);
+        var track = TrackWithFile(directory, "Song One");
+        using var harness = new Harness([track]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        async Task<string> InfoTokenAsync()
+        {
+            using var response = await harness.Http.GetAsync(harness.Url("/api/localsend/v2/info"));
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return doc.RootElement.GetProperty("libraryToken").GetString()!;
+        }
+
+        using var request = harness.Signed(HttpMethod.Get, "/api/flower/v1/library");
+        using var manifestResponse = await harness.Http.SendAsync(request);
+        Assert.Equal(manifestResponse.Headers.GetValues("ETag").Single(), await InfoTokenAsync());
+
+        // This is the whole point: a change made here, with no request from
+        // the peer, is visible on the poll every client already runs.
+        var before = await InfoTokenAsync();
+        harness.Library.UpdateTracks([track, TrackWithFile(directory, "Song Two")]);
+        Assert.NotEqual(before, await InfoTokenAsync());
+    }
 }
