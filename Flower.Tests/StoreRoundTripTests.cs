@@ -348,15 +348,12 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
-    public void DeviceIdentityStore_Load_backfills_a_default_alias_for_a_pre_existing_identity_missing_one()
+    public void DeviceIdentityStore_Load_seeds_a_default_alias_on_first_run()
     {
-        // Simulates device.json written before Alias existed - Fingerprint only.
-        Directory.CreateDirectory(Path.GetDirectoryName(DeviceIdentityStore.StorePath)!);
-        File.WriteAllText(DeviceIdentityStore.StorePath, """{"Fingerprint":"fp-legacy"}""");
-
         var identity = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance).Load("fp-derived");
 
         Assert.False(string.IsNullOrEmpty(identity.Alias));
+        Assert.Equal("fp-derived", identity.Fingerprint);
     }
 
     // Fingerprint is now derived from the device's signing keypair (see
@@ -404,6 +401,23 @@ public class StoreRoundTripTests : IDisposable
             key2.ExportParameters(false).Q.X);
         key1.Dispose();
         key2.Dispose();
+    }
+
+    [Fact]
+    public void DeviceKeyStore_writes_the_private_key_readable_only_by_its_owner()
+    {
+        // POSIX modes only - on Windows the file relies on the per-user
+        // profile directory's ACL instead, and SetUnixFileMode throws.
+        if (OperatingSystem.IsWindows())
+            return;
+
+        // The key sits in plaintext JSON (no OS keychain - see DeviceKeyStore's
+        // own remarks), so 0600 is what keeps another local user on a shared
+        // machine from lifting this device's identity outright.
+        new DeviceKeyStore(NullLogger<DeviceKeyStore>.Instance).Load().Key.Dispose();
+
+        var mode = File.GetUnixFileMode(DeviceKeyStore.StorePath);
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
     }
 
     [Fact]
@@ -567,22 +581,6 @@ public class StoreRoundTripTests : IDisposable
         // simulates the next app launch.
         var second = new ColumnManager(appSettingsStore.Load(), appSettingsStore);
         Assert.Equal(321, second.Columns.Single(c => c.Id == "Title").Width);
-    }
-
-    [Fact]
-    public void PlaylistStore_Load_assigns_a_fresh_Id_to_pre_sync_records_missing_one()
-    {
-        // Simulates playlists.json written before Playlist.Id existed: the JSON
-        // has no "id" property at all, which PlaylistRecord's default parameter
-        // deserializes as Guid.Empty - Load must not persist that sentinel.
-        var trackA = new Track { Title = "A", Path = "/music/a.mp3" };
-        Directory.CreateDirectory(Path.GetDirectoryName(PlaylistStore.StorePath)!);
-        File.WriteAllText(PlaylistStore.StorePath, """[{"Name":"Legacy","TrackPaths":["/music/a.mp3"]}]""");
-
-        var loaded = new PlaylistStore().Load(new List<Track> { trackA });
-
-        var only = Assert.Single(loaded);
-        Assert.NotEqual(Guid.Empty, only.Id);
     }
 
     // These test ApplyFromXmlFile directly, against an explicit synthetic XML
@@ -852,22 +850,21 @@ public class StoreRoundTripTests : IDisposable
         Assert.Same(placeholder, tracks[1]);
     }
 
-    // The pre-Track.Id shape: a playlists.json with TrackPaths and no Tracks
-    // must still resolve, because the first launch after upgrading has a
-    // library.json with no ids either (they're minted on load).
+    // Track.Id is the only thing a playlist entry stores, so an entry naming a
+    // track the library no longer has is simply dropped - there's no path
+    // fallback to rescue it with.
     [Fact]
-    public void PlaylistStore_still_loads_a_legacy_path_only_playlists_file()
+    public async Task PlaylistStore_drops_entries_whose_track_is_gone_from_the_library()
     {
-        var track = new Track { Title = "A", Path = "/music/a.mp3" };
-        Directory.CreateDirectory(Path.GetDirectoryName(PlaylistStore.StorePath)!);
-        File.WriteAllText(PlaylistStore.StorePath,
-            """[{"Name":"Legacy Mix","TrackPaths":["/music/a.mp3"]}]""");
+        var kept = new Track { Title = "A", Path = "/music/a.mp3" };
+        var gone = new Track { Title = "B", Path = "/music/b.mp3" };
+        var store = new PlaylistStore(NullLogger<PlaylistStore>.Instance);
 
-        var loaded = new PlaylistStore(NullLogger<PlaylistStore>.Instance).Load(new List<Track> { track });
+        await store.SaveAsync(new[] { new Playlist("Mix", new List<Track> { kept, gone }) });
+        var loaded = store.Load(new List<Track> { kept });
 
         var playlist = Assert.Single(loaded);
-        Assert.Equal("Legacy Mix", playlist.Name);
-        Assert.Same(track, Assert.Single(playlist.Tracks));
+        Assert.Same(kept, Assert.Single(playlist.Tracks));
     }
 
     // ── Crash-safety (AtomicJsonFile) ────────────────────────────────────────

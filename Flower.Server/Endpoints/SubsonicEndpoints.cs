@@ -17,13 +17,40 @@ namespace Flower.Server.Endpoints;
 // same "known v1 simplification" spirit as GET-only (no POST) routes below.
 public static class SubsonicEndpoints
 {
+    // Classic Subsonic auth is t=md5(password+salt) with no expiry and no
+    // nonce, so a captured u/t/s query string replays forever and a wrong one
+    // costs an attacker nothing to retry - this surface had no rate limiting
+    // at all, unlike AdminEndpoints and PairingEndpoints. Two budgets, both
+    // keyed by source IP (there is no pre-auth identity worth keying by):
+    //
+    // - FailedAuthLimiter is charged only when auth actually fails, and is
+    //   peeked before anything else, so a source that burns it is locked out
+    //   of /rest entirely until it drains. That is what bounds password
+    //   guessing against the shipped-default-credentials case.
+    // - RequestLimiter is charged on every request and is sized for real
+    //   client behaviour instead: an album grid pulls one getCoverArt per
+    //   tile, which is bursty enough that SyncHttpServer's 120/60s browse
+    //   ceiling would be too tight here.
+    private static readonly RateLimiter FailedAuthLimiter = new(max: 10, TimeSpan.FromSeconds(60));
+    private static readonly RateLimiter RequestLimiter = new(max: 600, TimeSpan.FromSeconds(60));
+
     public static void MapSubsonicEndpoints(this WebApplication app)
     {
         var rest = app.MapGroup("/rest").AddEndpointFilter(async (context, next) =>
         {
             var options = context.HttpContext.RequestServices.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
+            var key = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var now = DateTimeOffset.UtcNow;
+
+            if (!FailedAuthLimiter.WouldAllow(key, now) || !RequestLimiter.TryAcquire(key, now))
+                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+
             if (!SubsonicAuth.Validate(context.HttpContext.Request.Query, options))
+            {
+                FailedAuthLimiter.TryAcquire(key, now);
                 return SubsonicResults.Failed(40, "Wrong username or password.");
+            }
+
             return await next(context);
         });
 

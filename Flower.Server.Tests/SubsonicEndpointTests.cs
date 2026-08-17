@@ -361,3 +361,131 @@ public class LanGuardTests(SubsonicServerFixture server) : IClassFixture<Subsoni
         Assert.Equal(HttpStatusCode.Forbidden, status);
     }
 }
+
+// The /rest surface had no rate limiting at all (ARCHITECTURE-REVIEW Tier
+// 3.1), unlike AdminEndpoints and PairingEndpoints - and classic Subsonic
+// auth gives a guesser unlimited free retries.
+//
+// Each test uses its own source IP: the limiters are static (one budget per
+// process, keyed by source) and deliberately outlive any single request, so
+// sharing an IP would make these tests order-dependent on each other and on
+// the endpoint tests above.
+public class SubsonicRateLimitTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
+{
+    private static int ErrorCode(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement
+            .GetProperty("subsonic-response").GetProperty("error").GetProperty("code").GetInt32();
+    }
+
+    [Fact]
+    public async Task Repeated_failed_logins_from_one_source_are_locked_out()
+    {
+        const string ip = "10.20.30.40";
+        var wrong = "/rest/ping" + SubsonicServerFixture.Auth("wrong");
+
+        for (var i = 0; i < 10; i++)
+        {
+            var (status, body) = await server.SendAsync(wrong, ip);
+            Assert.Equal(HttpStatusCode.OK, status);
+            Assert.Equal(40, ErrorCode(body));
+        }
+
+        // Eleventh attempt: over the failed-auth budget, so the source stops
+        // getting an answer at all rather than another free guess.
+        var (limited, _) = await server.SendAsync(wrong, ip);
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited);
+    }
+
+    [Fact]
+    public async Task A_locked_out_source_is_refused_even_with_correct_credentials()
+    {
+        const string ip = "10.20.30.41";
+        var wrong = "/rest/ping" + SubsonicServerFixture.Auth("wrong");
+
+        for (var i = 0; i < 11; i++)
+        {
+            await server.SendAsync(wrong, ip);
+        }
+
+        // The lockout is on the source, not on the guess - otherwise finally
+        // landing the right password would clear the penalty.
+        var (status, _) = await server.SendAsync("/rest/ping" + SubsonicServerFixture.Auth(), ip);
+        Assert.Equal(HttpStatusCode.TooManyRequests, status);
+    }
+
+    [Fact]
+    public async Task One_source_being_locked_out_does_not_affect_another()
+    {
+        const string attacker = "10.20.30.42";
+        const string bystander = "10.20.30.43";
+        var wrong = "/rest/ping" + SubsonicServerFixture.Auth("wrong");
+
+        for (var i = 0; i < 11; i++)
+        {
+            await server.SendAsync(wrong, attacker);
+        }
+
+        var (status, body) = await server.SendAsync("/rest/ping" + SubsonicServerFixture.Auth(), bystander);
+        Assert.Equal(HttpStatusCode.OK, status);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal("ok", document.RootElement.GetProperty("subsonic-response").GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Normal_authenticated_traffic_is_not_rate_limited()
+    {
+        const string ip = "10.20.30.44";
+
+        // Well under the 600/60s request ceiling, which is sized for an album
+        // grid's burst of getCoverArt calls rather than for a single client
+        // browsing slowly.
+        for (var i = 0; i < 50; i++)
+        {
+            var (status, _) = await server.SendAsync("/rest/ping" + SubsonicServerFixture.Auth(), ip);
+            Assert.Equal(HttpStatusCode.OK, status);
+        }
+    }
+}
+
+// AdminPassword guards /api/admin *and*, through SubsonicAuth, every /rest
+// route, so booting on the shipped placeholder meant one well-known
+// credential in front of the whole library (ARCHITECTURE-REVIEW Tier 3.1).
+public class AdminPasswordStartupTests
+{
+    private sealed class Factory(string? password) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            var dataDirectory = Path.Combine(Path.GetTempPath(), "flower-server-pw-" + Guid.NewGuid());
+            var emptyLibrary = Path.Combine(Path.GetTempPath(), "flower-server-pw-lib-" + Guid.NewGuid());
+            Directory.CreateDirectory(dataDirectory);
+            Directory.CreateDirectory(emptyLibrary);
+
+            builder.UseSetting("Flower:DataDirectory", dataDirectory);
+            builder.UseSetting("Flower:LibraryPaths:0", emptyLibrary);
+            builder.UseSetting("Flower:AdminPassword", password ?? "");
+        }
+    }
+
+    [Theory]
+    [InlineData("changeme")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void The_server_refuses_to_start_without_a_real_admin_password(string password)
+    {
+        using var factory = new Factory(password);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => factory.Services);
+        Assert.Contains("AdminPassword", ex.Message);
+    }
+
+    [Fact]
+    public void A_real_password_starts_normally()
+    {
+        using var factory = new Factory("a-real-password");
+
+        Assert.NotNull(factory.Services);
+    }
+}

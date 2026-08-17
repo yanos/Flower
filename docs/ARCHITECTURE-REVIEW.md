@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except 1.4 and two deferred 1.5 items. Tier 5.1 implemented. Tiers 2-4 and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except 1.4 and two deferred 1.5 items. Tier 2.5 implemented. Tier 3 implemented. Tier 5.1 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 55 tests as of Tier 5.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 461 — 406 in `Flower.Tests`, 55 in `Flower.Server.Tests` (393 before Tier 1) |
+| Tests at review time | 478 — 413 in `Flower.Tests`, 65 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3; Tier 2.5 net -1, deleting two legacy-shape tests and adding one) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -56,7 +56,7 @@ Consequences, all real: two tracks with identical tags (untagged rips, "Track 01
 
 `PlaylistStore.Load(library.Tracks)` resolved playlist membership to `Track` object references once, at startup. The startup rescan then replaced `Library.Tracks` with brand-new instances and nothing re-resolved playlists — `TracksUpdated` had exactly two subscribers, neither touching `Library.Playlists`. For the whole session after the first rescan a playlist's tracks were a different object graph from the library's, so play counts incremented on one never appeared in the other. Separately, `PlaylistStore.SaveAsync` persisted only `Path != null` tracks, so **a synced-but-not-downloaded track added to a playlist was silently dropped on save**.
 
-**Fixed:** playlists are re-resolved inside `UpdateTracks` under the lock, keyed by the new stable `Id`; membership persists by `Id` with `Path` as a migration fallback; placeholder tracks survive.
+**Fixed:** playlists are re-resolved inside `UpdateTracks` under the lock, keyed by the new stable `Id`; membership persists by `Id` alone (the `Path` fallback was a migration shim, removed in Tier 2.5); placeholder tracks survive.
 
 ### 0.4 `PlaylistSyncPlanner` silently resolved delete-vs-edit in favour of delete
 
@@ -154,7 +154,7 @@ Meanwhile a *server-side* change is never noticed while both apps stay running �
 
 ---
 
-## Tier 2 — structural: multiple sources of truth — NOT STARTED
+## Tier 2 — structural: multiple sources of truth — 2.5 DONE, rest NOT STARTED
 
 ### 2.1 Four track models and five identity schemes
 
@@ -188,15 +188,24 @@ Every service in `App.axaml.cs::Bootstrap` is `new`'d by hand then registered as
 
 `AddPlaylist`/`RemovePlaylist`/`ReplacePlaylists` take no lock despite `ReplacePlaylists` being called from the sync path concurrently with UI-thread mutations — the same threat model that motivated `_lock` for `Tracks`, inconsistently applied. Persistence is also caller-responsibility; nothing structurally guarantees a mutation is followed by a save.
 
-### 2.5 No schema version anywhere
+### 2.5 No schema version anywhere — DONE
 
-Backward compatibility is ad hoc sentinel detection invented independently three times: `PlaylistRecord.Id = default`, `TrustedPeer.PublicKey = ""`, and `DeviceIdentityStore.Load`'s alias-backfill/fingerprint-correction. `Flower.Server` is worse — `EnsureCreatedAsync()` with no EF migrations at all, so **any** schema change wipes a self-hoster's database.
+Backward compatibility was ad hoc sentinel detection invented independently three times: `PlaylistRecord.Id = default`, `TrustedPeer.PublicKey = ""`, and `DeviceIdentityStore.Load`'s alias-backfill/fingerprint-correction. `Flower.Server` was worse — `EnsureCreatedAsync()` with no EF migrations at all, so **any** schema change wiped a self-hoster's database.
+
+**Resolution.** The JSON side needed no versioning scheme at all, because there is nothing to be compatible *with* (see `CLAUDE.md`, "No Users Yet") — every sentinel was deleted rather than formalized:
+
+- `PlaylistRecord.Id`/`UpdatedAt` are plain required fields; the `Guid.Empty`/`default` re-minting in `Load` is gone. `PlaylistTrackRecord` is now just `(Guid Id)` — the `Path` fallback and the pre-`Track.Id` `TrackPaths` list are both deleted, along with `Load`'s whole by-path index. An entry whose id doesn't resolve is dropped, full stop.
+- `TrustedPeer.PublicKey` is a required constructor parameter, not `= ""`. `GetPublicKey` is a plain lookup: an approval without a key is not a representable state anymore.
+- `DeviceIdentityStore.Load` no longer backfills a missing alias. The fingerprint correction *stays* — it is not a migration, it's the runtime response to a regenerated signing key (`DeviceKeyStore`), and its comment now says so.
+- `Track.Id`'s initializer stays for the same reason (every `Track` needs an id from construction); only its "the initializer is also the migration" comment went.
+
+`Flower.Server` got the real thing instead: `Microsoft.EntityFrameworkCore.Design` was already referenced, so `Data/Migrations/` now holds an `InitialCreate` migration plus the model snapshot, and startup calls `MigrateAsync()` instead of `EnsureCreatedAsync()`. Subsequent entity changes go through `dotnet ef migrations add <Name> -p Flower.Server -s Flower.Server -o Data/Migrations`. **An existing dev `flower.db` created by `EnsureCreated` has no `__EFMigrationsHistory` table and must be deleted once** — `MigrateAsync` would otherwise try to create tables that already exist.
 
 ---
 
-## Tier 3 — security — NOT STARTED
+## Tier 3 — security — DONE
 
-Ordered by real exposure, not theoretical severity.
+Ordered by real exposure, not theoretical severity. All six landed; see *Tier 3 execution* below for what each fix actually is.
 
 1. **`Flower.Server`'s `/rest/*` has no rate limiting.** `AdminEndpoints` and `PairingEndpoints` each get a `RateLimiter`; `SubsonicEndpoints` has none. Classic Subsonic auth is `t = md5(password+salt)` with no expiry or nonce, so a captured `u`/`t`/`s` query string replays forever. Combined with the shipped default `AdminPassword = "changeme"` and `LanGuard`'s unconditional trust of the Tailscale CGNAT range `100.64.0.0/10`, that is an unauthenticated brute-force surface on any tailnet-exposed deployment.
 2. **Application logs, including exception text and file paths, are pushed over plaintext HTTP** to the paired peer. TLS is permanently deferred for the P2P path by design; the log-push feature arrived after that decision and changed what is at stake.
@@ -204,6 +213,19 @@ Ordered by real exposure, not theoretical severity.
 4. **`AdminAuthService` tokens are in-memory with no per-token revocation** — a stolen bearer token is good for 24 h and the only lever is a process restart.
 5. `RateLimiter` is a fixed window, so a boundary-timed burst gets roughly 2× the intended ceiling on login and pairing-code redeem.
 6. Body-size caps are inconsistent: `SyncHttpServer` caps at 20 MB; `Flower.Server` caps only pair-redeem at 4 KB, with no global limit.
+
+### Tier 3 execution
+
+1. **`/rest/*` rate limiting + no more shipped default password.** `SubsonicEndpoints` now carries two per-source-IP budgets: `FailedAuthLimiter` (10/60s) charged *only* on an auth failure and *peeked* (`RateLimiter.WouldAllow`) before every request, so a source that burns it is locked out of `/rest` entirely rather than getting another free guess; and `RequestLimiter` (600/60s) on every request, sized for an album grid's `getCoverArt` burst rather than for `SyncHttpServer`'s 120/60s browse ceiling. On top of that, `AdminPassword` no longer ships as `"changeme"` — `appsettings.json` ships it empty and `Program.cs` throws at startup on empty/whitespace/placeholder, checked after `builder.Build()` so environment variables and Docker secrets count. The replay property of `t=md5(password+salt)` itself is unchanged: that is protocol-level, and fixing it means breaking every third-party Subsonic client. `LanGuard`'s CGNAT trust is now a flag (`allowCarrierGradeNat`, exposed as `Flower:TrustTailscaleRange`, default on) so a non-tailnet deployment can drop `100.64.0.0/10` instead of trusting a whole carrier's subscriber range for nothing.
+2. **Log push is opt-in.** `AppSettings.ShareLogsWithPairedServer`, default **false**, gates `LibrarySyncService.PushLogSnapshotAsync` on top of the existing role check, with a checkbox in both Settings surfaces that says plainly that the logs go out unencrypted and contain file paths and error details. The transport stays plaintext by design (TLS is permanently deferred for P2P — `SYNC-PLAN.md`); what changed is that the highest-value payload on that path is no longer sent by default.
+3. **The private signing key is written 0600.** `AtomicJsonFile.Write/WriteAsync` take an `ownerOnly` flag, applied to the temp file *before* any bytes are serialized (so the key is never briefly world-readable) and re-applied to the target and its `.bak` after `File.Replace`, which preserves the target's old mode rather than the temp file's. No-op on Windows and best-effort on filesystems without POSIX modes. Still no OS keychain and still no remotely-initiated revocation — the accepted-limitation comment on `DeviceKeyStore` now spells out the peer-side revocation path instead of leaving it implied.
+4. **Admin tokens are revocable.** `AdminAuthService.Revoke`/`RevokeAll`, backing `POST /api/admin/logout` (the presenting token, stashed in `HttpContext.Items` by the bearer filter) and `POST /api/admin/logout-all` (every session, including the caller's).
+5. **`RateLimiter` is a sliding window.** The standard weighted approximation — previous window's count carried alongside the current one and charged in proportion to the overlap — so a boundary-timed burst no longer gets ~2x the ceiling. One extra `int` per key, no per-request timestamp list. It also evicts keys idle for four windows: keys are attacker-chosen source IPs, so the old never-evicting dictionary was itself an unbounded memory sink.
+6. **A global body cap.** `Kestrel.Limits.MaxRequestBodySize = 20 MB`, matching `SyncHttpServer`, replacing Kestrel's 30 MB default on every route except pair-redeem's hand-rolled 4 KB check (which still applies on top).
+
+**Not addressed, deliberately:** Subsonic token replay (protocol-level, see above), TLS on the P2P path (`SYNC-PLAN.md` decision), and OS-keychain key storage.
+
+**Verification:** `dotnet test Flower.Tests/Flower.Tests.csproj --filter Category!=RequiresLibVLC` (414 passing) and `dotnet test Flower.Server.Tests/Flower.Server.Tests.csproj` (65 passing). New coverage: sliding-window/boundary-burst/peek/eviction cases in `RateLimiterTests`, `LanGuardTests`' CGNAT-off cases, `AdminAuthServiceTests`' revocation cases, `SubsonicRateLimitTests` (lockout, per-source isolation, normal traffic unaffected), `AdminPasswordStartupTests` (the server refuses to boot on a placeholder password), and a `DeviceKeyStore` 0600 assertion in `StoreRoundTripTests`.
 
 ---
 
@@ -300,6 +322,7 @@ Highest-value additions, roughly in priority order:
 2. ~~**Tier 1.1**~~ — done, on the JSON layer. The real split lands with 4.1.
 3. ~~**Tier 5.1**~~ — done.
 4. **Tier 1.4** — manifest versioning/ETag and push-based sync events; the one Tier 1 section untouched. 1.2, 1.3 and most of 1.5 are done; row diffing is what is left.
-5. **Tier 3** — server rate limiting, default-password handling, log-push exposure.
-6. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.
-7. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.
+5. ~~**Tier 3**~~ — done.
+6. ~~**Tier 2.5**~~ — done: sentinels deleted (no users to be compatible with), EF migrations added to `Flower.Server`.
+7. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.
+8. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.

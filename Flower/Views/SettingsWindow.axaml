@@ -61,6 +61,19 @@
                      FontSize="11"
                      Opacity="0.6"
                      TextWrapping="Wrap"/>
+
+          <!-- Opt-in, off by default: the log snapshot travels over plaintext
+               HTTP and contains exception text and absolute file paths (see
+               AppSettings.ShareLogsWithPairedServer). -->
+          <CheckBox x:Name="ShareLogsCheckBox"
+                    Content="Send logs to paired server"
+                    Margin="0,16,0,0"
+                    IsCheckedChanged="ShareLogsCheckBox_IsCheckedChanged"/>
+          <TextBlock Text="Sends this device's recent log lines after each sync so they can be read on the server. Sent unencrypted over your local network, and they include file paths and error details."
+                     Margin="0,2,0,0"
+                     FontSize="11"
+                     Opacity="0.6"
+                     TextWrapping="Wrap"/>
         </StackPanel>
       </TabItem>
 

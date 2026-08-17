@@ -16,8 +16,8 @@ public class LogSidebarBuilderTests
     {
         var peers = new List<TrustedPeer>
         {
-            new("fp-1", "Alias1", DateTimeOffset.UtcNow),
-            new("fp-2", "Alias2", DateTimeOffset.UtcNow)
+            new("fp-1", "Alias1", DateTimeOffset.UtcNow, "key"),
+            new("fp-2", "Alias2", DateTimeOffset.UtcNow, "key")
         };
 
         var items = LogSidebarBuilder.Build(isServer: false, peers, NoNicknames);
@@ -31,8 +31,8 @@ public class LogSidebarBuilderTests
     {
         var peers = new List<TrustedPeer>
         {
-            new("fp-1", "Alias1", DateTimeOffset.UtcNow),
-            new("fp-2", "Alias2", DateTimeOffset.UtcNow)
+            new("fp-1", "Alias1", DateTimeOffset.UtcNow, "key"),
+            new("fp-2", "Alias2", DateTimeOffset.UtcNow, "key")
         };
 
         var items = LogSidebarBuilder.Build(isServer: true, peers, NoNicknames);
@@ -49,7 +49,7 @@ public class LogSidebarBuilderTests
     [Fact]
     public void Nickname_override_wins_over_the_peers_stored_alias()
     {
-        var peers = new List<TrustedPeer> { new("fp-1", "StoredAlias", DateTimeOffset.UtcNow) };
+        var peers = new List<TrustedPeer> { new("fp-1", "StoredAlias", DateTimeOffset.UtcNow, "key") };
         string? Nickname(string fingerprint) => fingerprint == "fp-1" ? "My Nickname" : null;
 
         var items = LogSidebarBuilder.Build(isServer: true, peers, Nickname);

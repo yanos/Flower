@@ -22,6 +22,14 @@ builder.Services.Configure<FlowerServerOptions>(builder.Configuration.GetSection
 var dataDirectory = builder.Configuration.GetValue<string>($"{FlowerServerOptions.SectionName}:DataDirectory") ?? "./data";
 PlatformDataDirectory.Current = Path.GetFullPath(dataDirectory);
 
+// Nothing in this process should ever accept a body larger than the sync
+// server's own ceiling (SyncHttpServer.MaxBodyBytes, 20 MB) - before this,
+// only pair-redeem had a cap (4 KB, enforced by hand) and every other route
+// inherited Kestrel's 30 MB default, with the LanGuard middleware the only
+// thing between an unauthenticated caller and a 30 MB buffered upload.
+// Per-endpoint caps still apply on top; this is the backstop.
+builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 20 * 1024 * 1024);
+
 builder.Services.AddDbContextFactory<FlowerDbContext>((services, options) =>
 {
     var serverOptions = services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
@@ -42,11 +50,30 @@ builder.Services.AddSingleton<TrustedPeerStore>();
 
 var app = builder.Build();
 
+// Fail fast rather than boot an open server: AdminPassword guards the admin
+// API *and*, via SubsonicAuth, every /rest route, so shipping a usable
+// placeholder meant a self-hoster who never edited the config had one
+// well-known credential in front of their whole library. Checked after
+// Build() so it reads the fully-composed configuration (env vars, user
+// secrets, Docker secrets) and not just appsettings.json.
+{
+    var configured = app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
+    if (string.IsNullOrWhiteSpace(configured.AdminPassword)
+        || configured.AdminPassword == FlowerServerOptions.PlaceholderAdminPassword)
+    {
+        throw new InvalidOperationException(
+            "Flower:AdminPassword is unset or still the placeholder. Set a real password before starting the server "
+            + "- e.g. Flower__AdminPassword=<password> in the environment, or the Flower:AdminPassword key in appsettings.json. "
+            + "It protects both /api/admin and the whole /rest Subsonic API.");
+    }
+}
+
 app.Use(async (context, next) =>
 {
     var serverOptions = context.RequestServices.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
     var remoteAddress = context.Connection.RemoteIpAddress;
-    if (remoteAddress == null || !LanGuard.IsPrivateOrLoopback(remoteAddress, serverOptions.AllowedCidrs))
+    if (remoteAddress == null
+        || !LanGuard.IsPrivateOrLoopback(remoteAddress, serverOptions.AllowedCidrs, serverOptions.TrustTailscaleRange))
     {
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
         return;
@@ -58,7 +85,14 @@ using (var scope = app.Services.CreateScope())
 {
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FlowerDbContext>>();
     await using var db = await dbFactory.CreateDbContextAsync();
-    await db.Database.EnsureCreatedAsync();
+    // MigrateAsync, not EnsureCreatedAsync: EnsureCreated stamps no schema
+    // version, so any later change to an entity left a self-hoster with a
+    // silently stale table and no upgrade path but deleting flower.db. Real
+    // migrations (Data/Migrations) apply incrementally and are the whole
+    // reason the DB can evolve without data loss - add one with
+    // `dotnet ef migrations add <Name> -p Flower.Server -s Flower.Server -o Data/Migrations`
+    // whenever an entity changes.
+    await db.Database.MigrateAsync();
     // WAL requires local storage, not NFS/SMB (see SYNC-PLAN.md) - a pragma,
     // not a connection-string option, and persists in the db file itself once
     // set, but cheap enough to re-issue on every startup rather than track.

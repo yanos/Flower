@@ -42,6 +42,36 @@ public sealed class AdminAuthService(IOptions<FlowerServerOptions> options)
         return _tokens.TryGetValue(token, out var expiresAt) && expiresAt > DateTimeOffset.UtcNow;
     }
 
+    // Per-token revocation, so a stolen bearer token isn't good for its full
+    // 24 hours with a process restart as the only lever. Backs
+    // POST /api/admin/logout.
+    public bool Revoke(string? token)
+    {
+        if (string.IsNullOrEmpty(token))
+            return false;
+        return _tokens.TryRemove(token, out _);
+    }
+
+    // The "I think a token leaked and I don't know which" lever: invalidates
+    // every outstanding session, including the caller's own. Backs
+    // POST /api/admin/logout-all, and is also what a credential change should
+    // call once the admin password becomes runtime-editable.
+    public int RevokeAll()
+    {
+        var revoked = _tokens.Count;
+        _tokens.Clear();
+        return revoked;
+    }
+
+    public int ActiveTokenCount
+    {
+        get
+        {
+            Prune();
+            return _tokens.Count;
+        }
+    }
+
     private void Prune()
     {
         var now = DateTimeOffset.UtcNow;

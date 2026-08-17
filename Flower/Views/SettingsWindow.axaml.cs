@@ -55,6 +55,7 @@ public partial class SettingsWindow : Window
             _ => 0,
         };
         IsServerCheckBox.IsChecked = viewModel.IsServer;
+        ShareLogsCheckBox.IsChecked = viewModel.ShareLogsWithPairedServer;
         RefreshDevicesTab();
         UpdateLibraryTabEnabled();
         // Pairing/unpairing happens inside ServerPickerView (the Devices tab),
@@ -201,6 +202,9 @@ public partial class SettingsWindow : Window
 
     private void SyncDateAddedCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
         _viewModel.SyncDateAddedFromITunes = SyncDateAddedCheckBox.IsChecked ?? false;
+
+    private void ShareLogsCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
+        _viewModel.ShareLogsWithPairedServer = ShareLogsCheckBox.IsChecked ?? false;
 
     private void IsServerCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
     {

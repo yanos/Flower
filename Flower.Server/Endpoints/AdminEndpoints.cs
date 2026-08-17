@@ -24,6 +24,8 @@ public static class AdminEndpoints
     // them anything.
     private static readonly RateLimiter LoginRateLimiter = new(max: 10, TimeSpan.FromSeconds(60));
 
+    private const string PresentedTokenKey = "Flower.AdminToken";
+
     public static void MapAdminEndpoints(this WebApplication app)
     {
         var jsonOptions = new JsonSerializerOptions
@@ -59,7 +61,25 @@ public static class AdminEndpoints
                 : null;
             if (!auth.ValidateToken(token))
                 return Results.Unauthorized();
+            // Stashed so /logout can revoke exactly the token that was
+            // presented without re-parsing the header in the handler.
+            context.HttpContext.Items[PresentedTokenKey] = token;
             return await next(context);
+        });
+
+        authenticated.MapPost("/logout", (HttpContext context, AdminAuthService auth) =>
+        {
+            auth.Revoke(context.Items[PresentedTokenKey] as string);
+            return Results.NoContent();
+        });
+
+        // Deliberately separate from /logout rather than a flag on it: this
+        // one signs out every other browser/session too, which is a different
+        // decision the caller has to make explicitly.
+        authenticated.MapPost("/logout-all", (AdminAuthService auth) =>
+        {
+            auth.RevokeAll();
+            return Results.NoContent();
         });
 
         authenticated.MapPost("/pairing-codes", (PairingCodeService pairing) =>

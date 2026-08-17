@@ -45,10 +45,9 @@ namespace Flower.Models
         // them as one is what made a track's identity depend on whether its
         // file happened to be downloaded yet.
         //
-        // The default initializer is also the migration: a library.json
-        // written before this field existed has no Id to deserialize, so the
-        // initializer's value survives and every track gets one minted on
-        // load, made permanent by the next save.
+        // Minted at construction so every Track has one from the moment it
+        // exists, whether it came from a scan, a peer's catalog, or a
+        // deserialized library.json; the id in the file wins on load.
         public Guid Id { get; set; } = Guid.NewGuid();
 
         // Core identity
