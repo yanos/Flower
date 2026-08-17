@@ -676,4 +676,57 @@ public class LibraryTests
         // whole sync layer matches tracks across devices on this.
         Assert.NotEqual(before, track.SyncKey);
     }
+
+    // ── ChangeToken (ARCHITECTURE-REVIEW Tier 1.4) ───────────────────────────
+
+    [Fact]
+    public void ChangeToken_is_stable_while_nothing_mutates_the_catalog()
+    {
+        var library = new Library([new Track { Title = "A", Path = "/music/a.mp3" }]);
+
+        var token = library.ChangeToken;
+
+        Assert.Equal(token, library.ChangeToken);
+        // Reading the list is not a mutation - a peer polling /info every ~5s
+        // must not see the token move on its own, or it would resync forever.
+        _ = library.Tracks.Count;
+        Assert.Equal(token, library.ChangeToken);
+    }
+
+    [Fact]
+    public void ChangeToken_moves_for_every_mutation_that_the_sync_manifest_can_see()
+    {
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        var library = new Library([track]);
+        var seen = new HashSet<string> { library.ChangeToken };
+
+        library.UpdateTracks([track, new Track { Title = "B", Path = "/music/b.mp3" }]);
+        Assert.True(seen.Add(library.ChangeToken), "UpdateTracks must move the token");
+
+        library.IncrementPlayCount(track);
+        Assert.True(seen.Add(library.ChangeToken), "A play count rides along in the manifest");
+
+        library.RecordPlayed(track);
+        Assert.True(seen.Add(library.ChangeToken), "LastPlayedAt rides along in the manifest");
+
+        library.MergeSyncedTracks("peer", [new Track { Title = "C", OriginDeviceFingerprint = "peer" }]);
+        Assert.True(seen.Add(library.ChangeToken), "MergeSyncedTracks must move the token");
+
+        // A placeholder gaining a Path after a download is an in-place
+        // mutation with no list replacement - the one case a naive
+        // "did the list change" check would miss.
+        library.NotifyTrackChanged();
+        Assert.True(seen.Add(library.ChangeToken), "NotifyTrackChanged must move the token");
+    }
+
+    [Fact]
+    public void Two_libraries_never_share_a_change_token_even_with_identical_contents()
+    {
+        // The token is session-scoped on purpose: a bare counter would let a
+        // restarted device hand a peer a token it already holds for entirely
+        // different content, which reads as a false "nothing changed".
+        var tracks = new List<Track> { new() { Title = "A", Path = "/music/a.mp3" } };
+
+        Assert.NotEqual(new Library(tracks).ChangeToken, new Library(tracks).ChangeToken);
+    }
 }

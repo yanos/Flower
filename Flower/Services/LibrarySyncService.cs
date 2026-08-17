@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -20,7 +21,12 @@ namespace Flower.Services;
 // nothing visibly changes: "reached the peer but already up to date" and
 // "couldn't reach the peer at all" both merge zero new tracks, but they're
 // very different things to tell the user.
-public readonly record struct LibrarySyncResult(bool Success, int FetchedCount, int AddedCount);
+// Unchanged means the peer answered 304 to our conditional request (see
+// LibrarySyncService's _lastSeenTokens): its catalog is byte-for-byte what we
+// already merged, so nothing was fetched and nothing needed merging. That is
+// a success, not a failure - distinguished only so a user-initiated sync can
+// say "already up to date" rather than implying it re-pulled everything.
+public readonly record struct LibrarySyncResult(bool Success, int FetchedCount, int AddedCount, bool Unchanged = false);
 
 // Pulls a peer's full track catalog in one request (GET /api/flower/v1/library
 // - see LibrarySyncContracts) and merges anything this device doesn't already
@@ -53,6 +59,14 @@ public class LibrarySyncService
     // bigger JSON response over a possibly-imperfect WiFi link without silently
     // timing out and aborting the whole sync (see the catch below).
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(2) };
+
+    // The ETag (Library.ChangeToken) each peer served with the manifest we
+    // last successfully merged from it, sent back as If-None-Match so an
+    // unchanged catalog costs one 304 instead of 6-8 MB - see
+    // SyncHttpServer.HandleGetLibraryAsync, ARCHITECTURE-REVIEW Tier 1.4.
+    // In-memory only: the token is session-scoped on the serving side anyway
+    // (see Library.ChangeToken), so persisting it would buy nothing.
+    private readonly ConcurrentDictionary<string, string> _lastSeenTokens = new();
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
@@ -89,12 +103,15 @@ public class LibrarySyncService
             device.Alias, device.Fingerprint, device.EndPoint);
 
         List<Child> songs;
+        string? servedToken;
         try
         {
             const string path = "/api/flower/v1/library";
             var (signature, timestamp, nonce) = _signingKey.Sign("GET", path, [], body: []);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}{path}");
+            if (_lastSeenTokens.TryGetValue(device.Fingerprint, out var knownToken))
+                request.Headers.TryAddWithoutValidation("If-None-Match", knownToken);
             request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
             request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
             request.Headers.Add("X-Flower-Role", _appSettings.IsServer ? "server" : "client");
@@ -107,7 +124,15 @@ public class LibrarySyncService
             request.Headers.ConnectionClose = true;
 
             using var response = await Http.SendAsync(request);
+            if (response.StatusCode == HttpStatusCode.NotModified)
+            {
+                _logger.LogDebug("Library sync with {Alias}: catalog unchanged since {Token}, nothing to merge",
+                    device.Alias, _lastSeenTokens.GetValueOrDefault(device.Fingerprint));
+                return new LibrarySyncResult(true, 0, 0, Unchanged: true);
+            }
+
             response.EnsureSuccessStatusCode();
+            servedToken = response.Headers.ETag?.Tag ?? (response.Headers.TryGetValues("ETag", out var etags) ? etags.FirstOrDefault() : null);
             var json = await response.Content.ReadAsStringAsync();
             var manifest = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.LibrarySyncManifestDto);
             songs = manifest?.Songs ?? [];
@@ -148,6 +173,13 @@ public class LibrarySyncService
         // successful sync. PlaylistSyncService and LibraryDownloadService both
         // already persist after their own mutations; this one previously did not.
         await _libraryStore.SaveAsync(_library.Tracks);
+
+        // Only after the merge *and* the save have both succeeded - remembering
+        // the token any earlier would mean a failure between fetch and persist
+        // leaves this device claiming to have content it never stored, and the
+        // next sync would be answered 304.
+        if (servedToken != null)
+            _lastSeenTokens[device.Fingerprint] = servedToken;
 
         // Piggybacks the Log window's remote-log feature on this exact sync
         // session, so it fires "at the same time as the library" with no

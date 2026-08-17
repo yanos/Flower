@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except 1.4 and two deferred 1.5 items. Tier 2.5 implemented. Tier 3 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.5 implemented. Tier 3 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 55 tests as of Tier 5.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 500 — 435 in `Flower.Tests`, 65 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2) |
+| Tests at review time | 510 — 445 in `Flower.Tests`, 65 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -98,7 +98,7 @@ Both single-sided branches decided `Delete` whenever a baseline existed, without
 
 ---
 
-## Tier 1 — performance — MOSTLY DONE (1.4 not started; two 1.5 items deferred)
+## Tier 1 — performance — DONE (two 1.5 items deferred)
 
 ### 1.1 A full 17.9 MB library serialization on every track change — DONE
 
@@ -132,11 +132,21 @@ Two things only a real run would have caught, and there is still no `Flower.Serv
 
 Verified against the real 16,116-track library, all five `getAlbumList2` sort types plus `search3` and `getArtists`, zero server-side exceptions. Warm timings, before → after: `getAlbumList2` 187ms → 29ms, `search3` 172ms → 31ms, `getArtists` 37ms → 33ms.
 
-### 1.4 Sync transfers the whole manifest every time, and re-hashes all album art to build it
+### 1.4 Sync transfers the whole manifest every time, and re-hashes all album art to build it — DONE
 
 `GET /api/flower/v1/library` returns the complete catalog (6-8 MB at 16k tracks by `SYNC-PLAN.md`'s own estimate) with no ETag, version, or `If-Modified-Since`, and is re-pulled on the 5s-debounced local-change path — so editing one playlist track re-downloads the peer's entire library manifest. Building that manifest calls `ComputeAlbumArtHash` once per album, each opening the file with TagLib and SHA-256'ing the art bytes: ~1,400 file opens and hashes per request, uncached.
 
 Meanwhile a *server-side* change is never noticed while both apps stay running — sync fires only on first mDNS contact or a debounced **local** change, and the 5s `/info` poll checks reachability/trust/alias only. This is `todo.txt`'s "push library sync events instead of polling", and it is a correctness gap, not an optimization.
+
+**Resolution.** `Library.ChangeToken` — a session id plus a mutation counter, bumped by every mutation the manifest can see (the list itself, a `Path`, a play count, a `LastPlayedAt`) — is now the currency for all three problems:
+
+- **Conditional pull.** `GET /api/flower/v1/library` serves the token as its `ETag` and answers `304` to a matching `If-None-Match`. `LibrarySyncService` remembers the token per peer and sends it back, so an unchanged catalog costs one 304 instead of 6-8 MB. It records the token only after the merge *and* the save both succeed — remembering it earlier would mean a device that failed to persist gets 304'd for content it never stored. A 304 returns `LibrarySyncResult.Unchanged`, deliberately distinct from an empty manifest: merging empty would prune every placeholder the peer ever taught this device about, so conflating the two is data loss, not a missed optimization.
+- **Manifest build cost.** The serialized manifest is cached alongside the token it was built from, so several peers missing the cache at once still build it once. `ComputeAlbumArtHash` is separately memoized on path + last-write-time + length, which covers the OpenSubsonic browse endpoints (per-request by nature) and self-invalidates when a file is re-tagged.
+- **The correctness gap.** `/info` now advertises the same token, and `DiscoveredDevice.LibraryToken` carries it into `MainViewModel.TriggerSyncIfPeerCatalogChanged`. The ~5s poll every Client already runs therefore notices a *server-side* change promptly — no new endpoint, no long-lived connection to keep alive on mobile. A redundant trigger is cheap by construction, since the pull it starts is itself conditional.
+
+Why a session id rather than a bare counter or a content hash: a bare counter collides across a restart, letting a peer holding "7" see a different catalog that has also reached "7" and conclude nothing changed — the one failure mode that actually loses data. A content hash would avoid even the one redundant pull a restart causes, but computing it means building the whole manifest, which is the work this exists to skip, and `/info` is polled every ~5s per peer.
+
+**Verification:** `SyncHttpServerRoundTripTests` (ETag matches `ChangeToken`, 304 with an empty body, a changed catalog invalidating a stale token, `/info` advertising the same token and moving it when the library changes with no request from the peer), `LibrarySyncConditionalPullTests` (no condition on the first pull then the served token on the second, a 304 leaving every placeholder alone, a failed pull not poisoning the next one), and `LibraryTests`' `ChangeToken` cases (stable while idle, moves for every manifest-visible mutation including in-place `NotifyTrackChanged`, never shared between two libraries with identical contents).
 
 ### 1.5 Repeated O(n) passes with no incrementality — MOSTLY DONE
 
@@ -312,7 +322,7 @@ Highest-value additions, roughly in priority order:
 | Planned work | Blocked/complicated by | Unblocked by |
 |---|---|---|
 | Streaming providers (`IMusicProvider`, `Track.Source`) — `STREAMING-SERVICES-PLAN.md` | `Path` as identity; no `Source` field; credentials would land in `settings.json` | §0.2 (done), §4.1, a new `ISecretStore` |
-| Push sync instead of polling — `todo.txt` | Full-manifest-only protocol, no version/ETag, sync triggered only by local events | §1.4 manifest versioning + a server→client change notification |
+| Push sync instead of polling — `todo.txt` | Full-manifest-only protocol, no version/ETag, sync triggered only by local events | §1.4 (done) — token as ETag, and the existing `/info` poll carries it |
 | Family/friends read-only accounts — `todo.txt` | `Flower.Server` has no `User` table; `PlayCount` is a single global column | §4.1 shared schema, per-user play counts |
 | Liked songs / smart playlists / "downloaded only" | No queryable store; `Starred` exists server-side only | §4.1 + §2.1 |
 | Track last-played per song — `todo.txt` | `LastPlayedAt` exists but every write rewrites 17.9 MB | §1.1 |
@@ -325,7 +335,7 @@ Highest-value additions, roughly in priority order:
 1. **Tier 0** — done.
 2. ~~**Tier 1.1**~~ — done, on the JSON layer. The real split lands with 4.1.
 3. ~~**Tier 5.1**~~ — done.
-4. **Tier 1.4** — manifest versioning/ETag and push-based sync events; the one Tier 1 section untouched. 1.2, 1.3 and most of 1.5 are done; row diffing is what is left.
+4. ~~**Tier 1.4**~~ — done: ETag/`If-None-Match` on the manifest, a memoized album-art hash, and server-side changes surfaced through the existing `/info` poll.
 5. ~~**Tier 3**~~ — done.
 6. ~~**Tier 2.5**~~ — done: sentinels deleted (no users to be compatible with), EF migrations added to `Flower.Server`.
 7. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.

@@ -525,7 +525,8 @@ public class SyncHttpServer : IDisposable
     // anonymous-type response produced.
     internal sealed record SyncInfoResponseDto(
         string Alias, string Version, string? DeviceModel, string DeviceType,
-        string Fingerprint, string PublicKey, bool IsServer, bool Download, bool? TrustsCaller);
+        string Fingerprint, string PublicKey, bool IsServer, bool Download, bool? TrustsCaller,
+        string LibraryToken);
 
     // Deliberately ungated (see the route table's AuthMode.Open: a peer has to
     // learn our fingerprint+public key here before either side can evaluate
@@ -554,7 +555,17 @@ public class SyncHttpServer : IDisposable
             _deviceSigningKey.PublicKeyBase64,
             _appSettings.IsServer,
             false,
-            string.IsNullOrEmpty(callerFingerprint) ? null : _trustedPeerStore.IsTrusted(callerFingerprint));
+            string.IsNullOrEmpty(callerFingerprint) ? null : _trustedPeerStore.IsTrusted(callerFingerprint),
+            // The same token GET /api/flower/v1/library serves as its ETag.
+            // This is what closes Tier 1.4's actual correctness gap: sync
+            // previously fired only on first mDNS contact or a debounced
+            // *local* change, so a change made on the server was never
+            // noticed at all while both apps stayed running. Carrying it on
+            // the poll every client already runs (~5s, see
+            // NetworkDiscoveryService.ResolveAliasAsync) means a client sees
+            // a changed server catalog promptly without a new connection, a
+            // new endpoint, or anything long-lived to keep alive on mobile.
+            _library.ChangeToken);
         var responseBody = JsonSerializer.Serialize(responseDto, ExternalProtocolJsonContext.Default.SyncInfoResponseDto);
         await WriteJsonAsync(context, responseBody);
     }
@@ -568,10 +579,48 @@ public class SyncHttpServer : IDisposable
     // Bulk, non-OpenSubsonic endpoint for LibrarySyncService - see
     // LibrarySyncContracts for why this exists alongside (not instead of)
     // /rest/getAlbumList2+getAlbum.
+    //
+    // Conditional on Library.ChangeToken, which is served as the ETag: a
+    // caller that sends back the token it already holds gets 304 and no body
+    // at all. Both halves matter (ARCHITECTURE-REVIEW Tier 1.4) - this
+    // response is 6-8 MB of JSON at a 16k-track library, and *building* it
+    // costs ~1,400 TagLib opens for the per-album art hashes, so the previous
+    // behaviour meant editing one playlist track re-serialized and re-hashed
+    // a peer's entire library. The serialized body is cached alongside the
+    // token it was built from, so even a genuine cache miss from several
+    // peers at once only builds it once.
+    private readonly object _manifestCacheLock = new();
+    private string? _cachedManifestToken;
+    private string? _cachedManifestJson;
+
     private async Task HandleGetLibraryAsync(HttpListenerContext context, byte[] body)
     {
-        var manifest = new LibrarySyncManifestDto(_deviceIdentity.Fingerprint, LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks, _deviceIdentity.Fingerprint));
-        await WriteJsonAsync(context, JsonSerializer.Serialize(manifest, FlowerJsonContext.Default.LibrarySyncManifestDto));
+        var token = _library.ChangeToken;
+        context.Response.Headers["ETag"] = token;
+
+        if (context.Request.Headers["If-None-Match"] == token)
+        {
+            context.Response.StatusCode = 304;
+            _logger.LogDebug("Library manifest unchanged ({Token}) for {RemoteEndPoint}, answered 304", token, context.Request.RemoteEndPoint);
+            return;
+        }
+
+        string json;
+        lock (_manifestCacheLock)
+        {
+            if (_cachedManifestToken != token || _cachedManifestJson == null)
+            {
+                var manifest = new LibrarySyncManifestDto(
+                    _deviceIdentity.Fingerprint,
+                    LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks, _deviceIdentity.Fingerprint));
+                _cachedManifestJson = JsonSerializer.Serialize(manifest, FlowerJsonContext.Default.LibrarySyncManifestDto);
+                _cachedManifestToken = token;
+                _logger.LogDebug("Rebuilt library manifest at token {Token} ({Bytes} bytes)", token, _cachedManifestJson.Length);
+            }
+            json = _cachedManifestJson;
+        }
+
+        await WriteJsonAsync(context, json);
     }
 
     // A Client's pushed log snapshot (see LibrarySyncService.PushLogSnapshotAsync).

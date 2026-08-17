@@ -634,9 +634,14 @@ public partial class MainViewModel : ViewModelBase
                 ConfirmServerTrust(device.Fingerprint);
             LastForceSyncResult = !libraryResult.Success
                 ? $"Could not reach {device.Alias} - check it's still on the network and paired"
-                : libraryResult.AddedCount > 0
-                    ? $"Added {libraryResult.AddedCount} new track(s) from {device.Alias}"
-                    : $"Already up to date with {device.Alias} ({libraryResult.FetchedCount} track(s) checked)";
+                // Unchanged means the server answered 304 - its catalog is
+                // exactly what was merged last time, so there is no fetched
+                // count to report (see LibrarySyncResult).
+                : libraryResult.Unchanged
+                    ? $"Already up to date with {device.Alias}"
+                    : libraryResult.AddedCount > 0
+                        ? $"Added {libraryResult.AddedCount} new track(s) from {device.Alias}"
+                        : $"Already up to date with {device.Alias} ({libraryResult.FetchedCount} track(s) checked)";
             _logger.LogInformation("Force sync result: {Result}", LastForceSyncResult);
         }
         finally
@@ -1391,6 +1396,7 @@ public partial class MainViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
             HandlePeerTrustChanged(device);
+            TriggerSyncIfPeerCatalogChanged(device);
             TriggerSyncIfReady(device);
         };
         networkDiscovery?.DeviceLost += (_, instanceName) =>
@@ -2189,6 +2195,41 @@ public partial class MainViewModel : ViewModelBase
     // one dedup gate/trigger even though library sync itself has no initiator
     // election (see LibrarySyncService) - there's still only one "first contact"
     // per peer per session worth reacting to.
+    // The last Library.ChangeToken observed on each peer's /info answer (see
+    // DiscoveredDevice.LibraryToken). Purely a change detector - the value
+    // itself means nothing to this device.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _observedPeerLibraryTokens = new();
+
+    // Closes ARCHITECTURE-REVIEW Tier 1.4's correctness gap: a change made on
+    // the Server was never noticed while both apps stayed running, because
+    // sync fired only on first mDNS contact (TriggerSyncIfReady) or a
+    // debounced *local* change (ScheduleContentSync). The ~5s /info poll every
+    // Client already runs now carries the Server's library token, so a
+    // server-side edit shows up as that token changing and syncs promptly -
+    // no new endpoint, no long-lived connection to keep alive on mobile.
+    //
+    // Runs *before* TriggerSyncIfReady in the DeviceDiscovered handler, so the
+    // first observation of a peer can be told apart from a later change: that
+    // first one is TriggerSyncIfReady's initial sync to make, not this one's.
+    // A redundant trigger is cheap anyway - LibrarySyncService sends the token
+    // back as If-None-Match, so an unchanged catalog costs one 304.
+    private void TriggerSyncIfPeerCatalogChanged(DiscoveredDevice device)
+    {
+        if (string.IsNullOrEmpty(device.Fingerprint) || string.IsNullOrEmpty(device.LibraryToken))
+            return;
+        if (!SyncRolePolicy.ShouldInitiateSync(_appSettings?.IsServer ?? false, _appSettings?.PairedServerFingerprint, device.Fingerprint))
+            return;
+
+        var isFirstObservation = !_observedPeerLibraryTokens.TryGetValue(device.Fingerprint, out var previousToken);
+        _observedPeerLibraryTokens[device.Fingerprint] = device.LibraryToken;
+        if (isFirstObservation || previousToken == device.LibraryToken)
+            return;
+
+        _logger.LogInformation("{Alias} ({Fingerprint}) reports a changed library ({Previous} -> {Current}), syncing",
+            device.Alias, device.Fingerprint, previousToken, device.LibraryToken);
+        RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
+    }
+
     private void TriggerSyncIfReady(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))

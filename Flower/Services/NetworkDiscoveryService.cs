@@ -46,6 +46,15 @@ public class DiscoveredDevice
     // a peer that isn't our paired Server (every peer answers it, but only
     // MainViewModel.PairedServerFingerprint's own trust status matters).
     public bool TrustsUs { get; set; } = true;
+
+    // This peer's Library.ChangeToken as of its last /info answer - the same
+    // opaque token GET /api/flower/v1/library serves as its ETag. Empty until
+    // resolved. Changing means the peer's catalog changed, which is how a
+    // Client notices a *server-side* edit at all: sync otherwise fires only on
+    // first mDNS contact or a debounced local change, so a track added on the
+    // Server went unnoticed for as long as both apps stayed running (see
+    // ARCHITECTURE-REVIEW Tier 1.4, MainViewModel.HandleDeviceDiscovered).
+    public string LibraryToken { get; set; } = "";
 }
 
 // Default IMdnsBackend (see PlatformMdns.cs): raw multicast via
@@ -442,6 +451,12 @@ public class NetworkDiscoveryService : IDisposable
                     device.TrustsUs = trustsUs;
                     changed = true;
                 }
+            }
+            if (doc.RootElement.TryGetProperty("libraryToken", out var tokenProp) &&
+                tokenProp.GetString() is { } libraryToken && libraryToken != device.LibraryToken)
+            {
+                device.LibraryToken = libraryToken;
+                changed = true;
             }
             if (changed)
             {

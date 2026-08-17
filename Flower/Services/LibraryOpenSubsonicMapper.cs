@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 using Flower.Models;
@@ -60,9 +62,52 @@ public static class LibraryOpenSubsonicMapper
     private static string? ComputeAlbumArtHash(List<Track> tracks)
     {
         var track = tracks.FirstOrDefault(t => t.Path != null);
-        var bytes = track != null ? AlbumArtLoader.TryGetLocalArtBytes(track) : null;
-        return bytes != null ? AlbumArtLoader.ComputeArtHash(bytes) : null;
+        if (track?.Path == null)
+            return null;
+
+        // Memoized on the file's own identity, because the uncached cost is
+        // the dominant one on this whole path: every call opens the file with
+        // TagLib and SHA-256s the art bytes, once per album, so a full
+        // getAlbumList2 over a 16k-track library was ~1,400 file opens and
+        // hashes per request (ARCHITECTURE-REVIEW Tier 1.4). Keyed by path +
+        // last-write time + length so re-tagging a file invalidates the entry
+        // on its own, with no cache-busting call sites to remember. The bulk
+        // /library manifest is additionally cached wholesale by
+        // SyncHttpServer; this covers the OpenSubsonic browse endpoints, which
+        // are per-request by nature.
+        FileInfo info;
+        try
+        {
+            info = new FileInfo(track.Path);
+            if (!info.Exists)
+                return null;
+        }
+        catch (Exception)
+        {
+            return null; // Unreadable path - same "no art" answer as a track with none.
+        }
+
+        var key = $"{track.Path}|{info.LastWriteTimeUtc.Ticks}|{info.Length}";
+        if (ArtHashCache.TryGetValue(key, out var cached))
+            return cached;
+
+        var bytes = AlbumArtLoader.TryGetLocalArtBytes(track);
+        var hash = bytes != null ? AlbumArtLoader.ComputeArtHash(bytes) : null;
+
+        // Bounded rather than unbounded: one entry per album-leading file, so
+        // a library the size of the 16k-track development one settles around
+        // 1,400 entries, but nothing structurally stops a long-running server
+        // from seeing far more paths than that over its lifetime. Clearing
+        // wholesale at the cap beats evicting cleverly - the next few requests
+        // just repopulate what they need.
+        if (ArtHashCache.Count >= MaxCachedArtHashes)
+            ArtHashCache.Clear();
+        ArtHashCache[key] = hash;
+        return hash;
     }
+
+    private const int MaxCachedArtHashes = 5000;
+    private static readonly ConcurrentDictionary<string, string?> ArtHashCache = new();
 
     // Grouped by (Album, EffectiveAlbumArtist) rather than Album alone, so two
     // different artists' same-named album ("Greatest Hits") don't collide into
