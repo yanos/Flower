@@ -1,0 +1,636 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+using Microsoft.Extensions.Logging.Abstractions;
+
+using Flower.Models;
+using Flower.Persistence;
+using Flower.Services;
+using Flower.Tests.TestSupport;
+
+namespace Flower.Tests;
+
+// The real thing over a real socket: an actual SyncHttpServer bound to an
+// actual port, driven by an actual HttpClient. Everything else that touches
+// this class substitutes FakePeerHttpServer for the listener, which means the
+// dispatcher in HandleRequestAsync - route table, LanGuard check, rate-limit
+// categories, body cap, and the three AuthMode branches - was previously
+// validated only by hand. That dispatcher is where all of the security
+// behaviour lives, so it is exactly the part that should not be faked.
+//
+// Requests go over 127.0.0.1, which LanGuard accepts as loopback; the
+// non-LAN rejection branch can't be produced from a test on one machine and
+// is covered by LanGuardTests against the predicate itself instead. The 20 MB
+// body cap is likewise not exercised here - RequestBodyReaderTests covers the
+// cap logic directly, and asserting it through the socket would mean actually
+// uploading 20 MB into a server that closes the connection partway, which
+// races the client's own send.
+//
+// Pinned to an isolated PlatformDataDirectory (see StoreRoundTripTests' own
+// comment): TrustedPeerStore and PlaylistStore both write real files, and
+// pairing tests here approve/deny peers.
+[Collection("PlatformDataDirectory")]
+public class SyncHttpServerRoundTripTests : IDisposable
+{
+    // The wire format is camelCase on both sides (the app's source-generated
+    // contexts are internal to Flower, so tests re-parse with the equivalent
+    // web defaults rather than reaching into them).
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private readonly string? _originalHome;
+    private readonly string _tempHome;
+
+    public SyncHttpServerRoundTripTests()
+    {
+        _originalHome = Environment.GetEnvironmentVariable("HOME");
+        _tempHome = Path.Combine(Path.GetTempPath(), "flower-synchttp-" + Guid.NewGuid());
+        Directory.CreateDirectory(_tempHome);
+        Environment.SetEnvironmentVariable("HOME", _tempHome);
+        PlatformDataDirectory.Current = _tempHome;
+    }
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("HOME", _originalHome);
+        PlatformDataDirectory.Current = null;
+        try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
+    }
+
+    // Everything a live server needs, plus the peer-side signing key the
+    // tests present to it. Start() binds "http://+:{port}/", which on Windows
+    // needs a one-time netsh urlacl reservation (see SyncHttpServer.Start's
+    // own comment) - without it every port attempt throws and BoundPort stays
+    // null. Tests early-return in that case rather than failing: the gap is
+    // real, known, and about the host's HTTP.sys ACLs, not about this code.
+    private sealed class Harness : IDisposable
+    {
+        public SyncHttpServer Server { get; }
+        public DeviceIdentity Identity { get; }
+        public DeviceSigningKey OwnKey { get; }
+        public DeviceSigningKey PeerKey { get; }
+        public TrustedPeerStore TrustedPeers { get; }
+        public ClientLogStore ClientLogs { get; }
+        public Library Library { get; }
+        public AppSettings Settings { get; }
+        public HttpClient Http { get; }
+
+        public int? Port => Server.BoundPort;
+        public string PeerFingerprint => PeerKey.Fingerprint;
+
+        public Harness(List<Track>? tracks = null, bool isServer = false)
+        {
+            OwnKey = TestSigningKey.Create();
+            PeerKey = TestSigningKey.Create();
+            Identity = new DeviceIdentity { Fingerprint = OwnKey.Fingerprint, Alias = "Test Device" };
+            Settings = new AppSettings { IsServer = isServer };
+            Library = new Library(tracks ?? new List<Track>());
+            TrustedPeers = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
+            ClientLogs = new ClientLogStore();
+
+            Server = new SyncHttpServer(
+                Identity, OwnKey, Settings, Library,
+                new PlaylistStore(NullLogger<PlaylistStore>.Instance),
+                TrustedPeers, ClientLogs,
+                NullLogger<SyncHttpServer>.Instance);
+            Server.Start();
+
+            // Matches the app's own clients (see PlaylistSyncService) - the
+            // server sets KeepAlive = false on every response, so pooling
+            // would just mean reusing a connection it already tore down.
+            Http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            Http.DefaultRequestHeaders.ConnectionClose = true;
+        }
+
+        public string Url(string path) => $"http://127.0.0.1:{Port}{path}";
+
+        public Task ApprovePeerAsync() =>
+            TrustedPeers.ApproveAsync(PeerFingerprint, "Peer", PeerKey.PublicKeyBase64);
+
+        // Builds the request exactly the way PlaylistSyncService/
+        // LibrarySyncService do: identity headers plus a signature over
+        // method + path + query + body.
+        public HttpRequestMessage Signed(
+            HttpMethod method, string path,
+            IEnumerable<(string Key, string Value)>? query = null,
+            byte[]? body = null,
+            DeviceSigningKey? signer = null,
+            string? claimedFingerprint = null,
+            string? role = null)
+        {
+            var key = signer ?? PeerKey;
+            var pairs = (query ?? []).ToList();
+            var bytes = body ?? [];
+            var (signature, timestamp, nonce) = key.Sign(method.Method, path, pairs, bytes);
+
+            var queryString = pairs.Count == 0
+                ? ""
+                : "?" + string.Join("&", pairs.Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value)}"));
+            var request = new HttpRequestMessage(method, Url(path + queryString));
+            request.Headers.Add("X-Flower-Fingerprint", claimedFingerprint ?? key.Fingerprint);
+            request.Headers.Add("X-Flower-Alias", "Peer");
+            request.Headers.Add("X-Flower-PublicKey", key.PublicKeyBase64);
+            request.Headers.Add("X-Flower-Signature", signature);
+            request.Headers.Add("X-Flower-Timestamp", timestamp);
+            request.Headers.Add("X-Flower-Nonce", nonce);
+            if (role != null)
+                request.Headers.Add("X-Flower-Role", role);
+            request.Headers.ConnectionClose = true;
+            if (body != null)
+                request.Content = new ByteArrayContent(bytes) { Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json") } };
+            return request;
+        }
+
+        public void Dispose()
+        {
+            Http.Dispose();
+            Server.Dispose();
+            OwnKey.Dispose();
+            PeerKey.Dispose();
+        }
+    }
+
+    private static Track TrackWithFile(string directory, string title, string album = "Album", string artist = "Artist")
+    {
+        var path = Path.Combine(directory, title + ".mp3");
+        File.WriteAllBytes(path, Encoding.UTF8.GetBytes("fake audio bytes for " + title));
+        return new Track
+        {
+            Title = title,
+            Album = album,
+            Artists = artist,
+            Path = path,
+            Duration = TimeSpan.FromSeconds(180),
+        };
+    }
+
+    // ── The open endpoint ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Info_is_served_without_any_credentials_and_advertises_this_devices_public_key()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        var response = await harness.Http.GetAsync(harness.Url("/api/localsend/v2/info"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(harness.Identity.Fingerprint, info.RootElement.GetProperty("fingerprint").GetString());
+        Assert.Equal(harness.OwnKey.PublicKeyBase64, info.RootElement.GetProperty("publicKey").GetString());
+        // Omitted, not false - an anonymous probe must not read as a rejection.
+        Assert.Equal(JsonValueKind.Null, info.RootElement.GetProperty("trustsCaller").ValueKind);
+    }
+
+    [Fact]
+    public async Task Info_tells_an_identified_caller_whether_this_device_currently_trusts_it()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        async Task<bool?> AskAsync()
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, harness.Url("/api/localsend/v2/info"));
+            request.Headers.Add("X-Flower-Fingerprint", harness.PeerFingerprint);
+            using var response = await harness.Http.SendAsync(request);
+            using var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var trustsCaller = info.RootElement.GetProperty("trustsCaller");
+            return trustsCaller.ValueKind == JsonValueKind.Null ? null : trustsCaller.GetBoolean();
+        }
+
+        Assert.False(await AskAsync());
+        await harness.ApprovePeerAsync();
+        Assert.True(await AskAsync());
+    }
+
+    [Fact]
+    public async Task An_unknown_route_is_404_not_403()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        var response = await harness.Http.GetAsync(harness.Url("/api/flower/v1/does-not-exist"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // ── The trust gate ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_gated_endpoint_refuses_a_request_carrying_no_signature_at_all()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, harness.Url("/api/flower/v1/library"));
+        request.Headers.Add("X-Flower-Fingerprint", harness.PeerFingerprint);
+        var response = await harness.Http.SendAsync(request);
+
+        // Trusted fingerprint, no proof of possession - being on the trust
+        // list is not itself a credential.
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_correctly_signed_request_from_an_untrusted_peer_is_still_refused()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        using var request = harness.Signed(HttpMethod.Get, "/api/flower/v1/library");
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_trusted_signed_peer_gets_the_library_manifest()
+    {
+        var directory = Path.Combine(_tempHome, "music");
+        Directory.CreateDirectory(directory);
+        using var harness = new Harness([TrackWithFile(directory, "Song One")]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var request = harness.Signed(HttpMethod.Get, "/api/flower/v1/library");
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var manifest = JsonSerializer.Deserialize<LibrarySyncManifestDto>(
+            await response.Content.ReadAsStringAsync(), JsonOptions)!;
+        Assert.Equal(harness.Identity.Fingerprint, manifest.DeviceFingerprint);
+        Assert.Equal("Song One", Assert.Single(manifest.Songs).Title);
+    }
+
+    [Fact]
+    public async Task A_signature_cannot_be_replayed_even_seconds_later()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        // Same signature/timestamp/nonce sent twice, which is precisely what
+        // an attacker who captured one request off the wire has.
+        var (signature, timestamp, nonce) = harness.PeerKey.Sign("GET", "/api/flower/v1/library", [], []);
+
+        async Task<HttpStatusCode> SendAsync()
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, harness.Url("/api/flower/v1/library"));
+            request.Headers.Add("X-Flower-Fingerprint", harness.PeerFingerprint);
+            request.Headers.Add("X-Flower-Signature", signature);
+            request.Headers.Add("X-Flower-Timestamp", timestamp);
+            request.Headers.Add("X-Flower-Nonce", nonce);
+            request.Headers.ConnectionClose = true;
+            using var response = await harness.Http.SendAsync(request);
+            return response.StatusCode;
+        }
+
+        Assert.Equal(HttpStatusCode.OK, await SendAsync());
+        Assert.Equal(HttpStatusCode.Forbidden, await SendAsync());
+    }
+
+    [Fact]
+    public async Task A_signature_is_bound_to_the_query_it_was_made_for()
+    {
+        var directory = Path.Combine(_tempHome, "music-query");
+        Directory.CreateDirectory(directory);
+        var track = TrackWithFile(directory, "Song One");
+        using var harness = new Harness([track]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        // Signed for one id, sent for another - without the query in the
+        // canonical string, a captured stream URL would work for any song.
+        var (signature, timestamp, nonce) = harness.PeerKey.Sign(
+            "GET", "/rest/stream", [("id", track.SyncKey)], []);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, harness.Url("/rest/stream?id=some-other-song"));
+        request.Headers.Add("X-Flower-Fingerprint", harness.PeerFingerprint);
+        request.Headers.Add("X-Flower-Signature", signature);
+        request.Headers.Add("X-Flower-Timestamp", timestamp);
+        request.Headers.Add("X-Flower-Nonce", nonce);
+        request.Headers.ConnectionClose = true;
+
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    // ── Pairing (AuthMode.SelfSigned) ────────────────────────────────────────
+
+    [Fact]
+    public async Task An_approved_pair_request_captures_the_peers_public_key_and_returns_204()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        string? promptedAlias = null;
+        harness.Server.PeerApprovalRequested += (_, e) =>
+        {
+            promptedAlias = e.Alias;
+            e.Resolution.TrySetResult(true);
+        };
+
+        using var request = harness.Signed(HttpMethod.Post, "/api/flower/v1/pair-request");
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal("Peer", promptedAlias);
+        Assert.True(harness.TrustedPeers.IsTrusted(harness.PeerFingerprint));
+        // The key on file has to be the one that will be checked later - a
+        // trusted peer with no usable key would fail every gated request.
+        Assert.Equal(harness.PeerKey.PublicKeyBase64, harness.TrustedPeers.GetPublicKey(harness.PeerFingerprint));
+    }
+
+    [Fact]
+    public async Task A_denied_pair_request_returns_403_and_records_the_refusal()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        harness.Server.PeerApprovalRequested += (_, e) => e.Resolution.TrySetResult(false);
+
+        using var request = harness.Signed(HttpMethod.Post, "/api/flower/v1/pair-request");
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False(harness.TrustedPeers.IsTrusted(harness.PeerFingerprint));
+        Assert.Equal(harness.PeerFingerprint, Assert.Single(harness.TrustedPeers.LoadDenied()).Fingerprint);
+    }
+
+    [Fact]
+    public async Task A_pair_request_with_no_UI_listening_fails_closed()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        // No PeerApprovalRequested subscriber at all - a headless/backgrounded
+        // instance must not silently trust a stranger.
+        using var request = harness.Signed(HttpMethod.Post, "/api/flower/v1/pair-request");
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.False(harness.TrustedPeers.IsTrusted(harness.PeerFingerprint));
+    }
+
+    [Fact]
+    public async Task A_pair_request_claiming_a_fingerprint_that_is_not_its_public_keys_is_rejected_unauthenticated()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        var raised = false;
+        harness.Server.PeerApprovalRequested += (_, e) => { raised = true; e.Resolution.TrySetResult(true); };
+
+        // Valid signature, valid key, but a fingerprint belonging to someone
+        // else - the impersonation attempt the whole scheme exists to stop.
+        using var request = harness.Signed(
+            HttpMethod.Post, "/api/flower/v1/pair-request",
+            claimedFingerprint: harness.Identity.Fingerprint);
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.False(raised); // Never even reached the prompt.
+    }
+
+    [Fact]
+    public async Task Re_pairing_an_already_trusted_peer_is_idempotent_and_prompts_nobody()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        var raised = false;
+        harness.Server.PeerApprovalRequested += (_, e) => { raised = true; e.Resolution.TrySetResult(true); };
+
+        using var request = harness.Signed(HttpMethod.Post, "/api/flower/v1/pair-request");
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public async Task Pair_requests_are_rate_limited_per_source_address()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        harness.Server.PeerApprovalRequested += (_, e) => e.Resolution.TrySetResult(false);
+
+        // The pair limiter is 5/60s keyed by source IP, and a fresh keypair
+        // per attempt is exactly what an attacker would use - so the budget
+        // must not be per-fingerprint here.
+        var statuses = new List<HttpStatusCode>();
+        for (var i = 0; i < 7; i++)
+        {
+            using var attacker = TestSigningKey.Create();
+            using var request = harness.Signed(HttpMethod.Post, "/api/flower/v1/pair-request", signer: attacker);
+            using var response = await harness.Http.SendAsync(request);
+            statuses.Add(response.StatusCode);
+        }
+
+        Assert.Equal(5, statuses.Count(s => s == HttpStatusCode.Forbidden));
+        Assert.Equal(2, statuses.Count(s => s == (HttpStatusCode)429));
+    }
+
+    [Fact]
+    public async Task An_unpair_notification_is_reported_to_the_UI_and_always_answers_204()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+
+        string? notified = null;
+        harness.Server.PeerUnpairNotified += (_, e) => notified = e.Fingerprint;
+
+        using var request = harness.Signed(HttpMethod.Post, "/api/flower/v1/unpair-notify");
+        var response = await harness.Http.SendAsync(request);
+
+        // 204 whether or not this device had a pairing for that fingerprint -
+        // the response must not leak local trust state.
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(harness.PeerFingerprint, notified);
+    }
+
+    // ── Body-carrying endpoints ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_pushed_log_snapshot_is_stored_under_the_verified_header_identity()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        var entries = new List<LogEntryDto>
+        {
+            new(DateTimeOffset.UtcNow, "Warning", "Flower.Services.Thing", "something happened", null),
+        };
+        // The body claims a different fingerprint than the headers the
+        // signature actually covers - the store must key by the verified one.
+        var report = new LogReportDto("some-other-fingerprint", "Body Alias", DateTimeOffset.UtcNow, entries);
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, JsonOptions));
+
+        using var request = harness.Signed(HttpMethod.Post, "/api/flower/v1/log/report", body: body);
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var stored = harness.ClientLogs.Get(harness.PeerFingerprint);
+        Assert.NotNull(stored);
+        Assert.Equal("something happened", Assert.Single(stored!.Entries).Message);
+        Assert.Null(harness.ClientLogs.Get("some-other-fingerprint"));
+    }
+
+    [Fact]
+    public async Task A_tampered_body_invalidates_the_signature_that_covered_the_original()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        var original = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+            new LogReportDto(harness.PeerFingerprint, "Peer", DateTimeOffset.UtcNow, []), JsonOptions));
+        var (signature, timestamp, nonce) = harness.PeerKey.Sign("POST", "/api/flower/v1/log/report", [], original);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, harness.Url("/api/flower/v1/log/report"))
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes("""{"deviceFingerprint":"x","alias":"x","capturedAt":"2026-01-01T00:00:00Z","entries":[]}""")),
+        };
+        request.Headers.Add("X-Flower-Fingerprint", harness.PeerFingerprint);
+        request.Headers.Add("X-Flower-Signature", signature);
+        request.Headers.Add("X-Flower-Timestamp", timestamp);
+        request.Headers.Add("X-Flower-Nonce", nonce);
+        request.Headers.ConnectionClose = true;
+
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_pushed_playlist_manifest_replaces_this_devices_playlists()
+    {
+        var directory = Path.Combine(_tempHome, "music-playlists");
+        Directory.CreateDirectory(directory);
+        var track = TrackWithFile(directory, "Song One");
+        using var harness = new Harness([track]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+        harness.Library.AddPlaylist(new Playlist("Stale", [track]));
+
+        var manifest = PlaylistSyncMapper.ToManifest(
+            harness.PeerFingerprint, [new Playlist("Pushed", [track])]);
+        var body = Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(manifest, JsonOptions));
+
+        using var request = harness.Signed(HttpMethod.Post, "/api/flower/v1/playlists/apply", body: body);
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var playlist = Assert.Single(harness.Library.Playlists);
+        Assert.Equal("Pushed", playlist.Name);
+        Assert.Same(track, Assert.Single(playlist.Tracks));
+    }
+
+    [Fact]
+    public async Task A_server_refuses_bulk_sync_from_a_caller_that_also_claims_to_be_a_server()
+    {
+        using var harness = new Harness(isServer: true);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var bulk = harness.Signed(HttpMethod.Get, "/api/flower/v1/library", role: "server");
+        var bulkResponse = await harness.Http.SendAsync(bulk);
+        Assert.Equal(HttpStatusCode.Forbidden, bulkResponse.StatusCode);
+
+        // Browsing is deliberately unaffected by role (see SyncRolePolicy) -
+        // only the bulk-sync endpoints carry this check.
+        using var browse = harness.Signed(HttpMethod.Get, "/rest/getAlbumList2", role: "server");
+        var browseResponse = await harness.Http.SendAsync(browse);
+        Assert.Equal(HttpStatusCode.OK, browseResponse.StatusCode);
+    }
+
+    // ── The OpenSubsonic surface ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task Stream_serves_the_real_file_bytes_for_a_track_this_device_actually_has()
+    {
+        var directory = Path.Combine(_tempHome, "music-stream");
+        Directory.CreateDirectory(directory);
+        var track = TrackWithFile(directory, "Song One");
+        using var harness = new Harness([track]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var request = harness.Signed(HttpMethod.Get, "/rest/stream", [("id", track.SyncKey)]);
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(File.ReadAllBytes(track.Path!), await response.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task Stream_is_404_for_an_id_this_device_has_no_file_for()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var request = harness.Signed(HttpMethod.Get, "/rest/stream", [("id", "no-such-song")]);
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAlbumList2_lists_this_devices_own_albums()
+    {
+        var directory = Path.Combine(_tempHome, "music-albums");
+        Directory.CreateDirectory(directory);
+        using var harness = new Harness([
+            TrackWithFile(directory, "Song One", album: "First"),
+            TrackWithFile(directory, "Song Two", album: "Second"),
+        ]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var request = harness.Signed(HttpMethod.Get, "/rest/getAlbumList2");
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var envelope = JsonSerializer.Deserialize<SubsonicEnvelope>(
+            await response.Content.ReadAsStringAsync(), JsonOptions)!;
+        var albums = envelope.Response!.AlbumList2!.Album;
+        Assert.Equal(2, albums.Count);
+        Assert.Contains(albums, a => a.Name == "First");
+        Assert.Contains(albums, a => a.Name == "Second");
+    }
+}

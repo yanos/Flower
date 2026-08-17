@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except 1.4 and two deferred 1.5 items. Tier 2.5 implemented. Tier 3 implemented. Tier 5.1 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except 1.4 and two deferred 1.5 items. Tier 2.5 implemented. Tier 3 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 55 tests as of Tier 5.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 478 — 413 in `Flower.Tests`, 65 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3; Tier 2.5 net -1, deleting two legacy-shape tests and adding one) |
+| Tests at review time | 500 — 435 in `Flower.Tests`, 65 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -268,7 +268,7 @@ Two pieces of genuine business logic also sit in code-behind and should move whe
 
 ---
 
-## Tier 5 — test coverage — 5.1 DONE, rest NOT STARTED
+## Tier 5 — test coverage — 5.1 and 5.2 DONE, rest NOT STARTED
 
 CI ran `dotnet test Flower.Tests`, which builds only `Flower.Tests → Flower → Flower.Core`: **`Flower.Server` and `Flower.CLI` were never compiled by CI**, let alone tested. (The `tests.yml` comment claiming `Flower.csproj` multi-targets `net10.0;net9.0` was stale — it targets `net10.0` only. Corrected.)
 
@@ -283,7 +283,11 @@ Highest-value additions, roughly in priority order:
    Confirmed to have teeth by mutation: reintroducing the `Max(DateTimeOffset)` that shipped in 1.3 fails two of these tests.
 
    New CI jobs: `server-test` (runs the above) and `build-rest` (builds `Flower.Desktop` and `Flower.CLI`), so every project in the solution is now compiled by CI.
-2. **A real socket round trip**: `SyncHttpServer` against `LibrarySyncService`/`PlaylistSyncService`. Today `FakePeerHttpServer` substitutes for the real listener, so the route table, rate limits, and trust gates in `HandleRequestAsync` are validated only by hand.
+2. ~~**A real socket round trip**: `SyncHttpServer`.~~ **DONE** — `SyncHttpServerRoundTripTests`, 22 tests against a real `SyncHttpServer` on a real port driven by a real `HttpClient` over loopback, with `TestSupport/TestSigningKey` standing in for a peer's keypair. Covers the open `/info` endpoint (including `trustsCaller` omitted-vs-false), unknown-route 404, the trust gate (unsigned request from a trusted fingerprint, correctly-signed request from an untrusted one, nonce replay, and a signature bound to a query it was not made for), all of `AuthMode.SelfSigned` pairing (approve, deny, no-UI-listening fail-closed, fingerprint-not-matching-its-public-key, idempotent re-pair, and the 5/60s per-source-IP pair budget defeating fresh-keypair-per-attempt), unpair notification, the body-carrying endpoints (log snapshot keyed by the *verified* header identity rather than the body's claim, tampered body invalidating the signature, playlist manifest replacing local playlists), the bulk-sync role check, and the OpenSubsonic surface (stream serving real file bytes, 404 for an unknown id, `getAlbumList2`).
+
+   Confirmed to have teeth by mutation: making `VerifyTrustedPeer` return its fingerprint without checking the signature fails four of them.
+
+   Two branches are deliberately not covered here. The non-LAN `LanGuard` rejection cannot be produced from a single-machine test (`LanGuardTests` covers the predicate instead), and the 20 MB body cap would mean uploading 20 MB into a server that closes the connection partway, racing the client's own send (`RequestBodyReaderTests` covers the cap logic instead). On Windows the wildcard `http://+:{port}/` bind needs a `netsh http add urlacl` reservation, so `BoundPort` stays null and every test early-returns rather than failing — the same known gap `SyncHttpServer.Start` documents.
 3. **`Importer`** — zero coverage. Dedup across overlapping paths, extension filtering, `IsCompilation` per-format branching, skip-unreadable-file behaviour.
 4. **`AlbumArtLoader`** — zero coverage, despite carrying the most "confirmed on a real device" bug narratives in the codebase (cache-key collision, corrupt-image fallback, remote fetch/disk cache).
 5. **`MusicListView`/`MusicListPanel`** — the highest-risk untested UI surface given it is entirely hand-rolled: virtualization range math, album-group-leader spanning, shift-range/ctrl-toggle selection, header drag-reorder.
