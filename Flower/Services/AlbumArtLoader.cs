@@ -301,7 +301,7 @@ public static class AlbumArtLoader
 
         try
         {
-            var albumId = LibraryOpenSubsonicMapper.AlbumId(track.Album, track.Artists);
+            var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
             using var request = new HttpRequestMessage(HttpMethod.Get,
                 $"http://{peer.EndPoint}/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}");
             request.Headers.Add("X-Flower-Fingerprint", deviceIdentity.Fingerprint);
