@@ -138,3 +138,27 @@ jobs:
 
       - name: Build for Android
         run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
+
+  build-web:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower/Flower.csproj
+            Flower.Web/Flower.Web.csproj
+
+      # WasmBuildNative (see Flower.Web.csproj) needs wasm-tools' Emscripten
+      # toolchain to statically link libSkiaSharp/libHarfBuzzSharp into the
+      # WASM bundle - without it the build fails outright (NETSDK1147), not
+      # just renders broken.
+      - name: Install wasm-tools workload
+        run: dotnet workload install wasm-tools
+
+      - name: Build for browser-wasm
+        run: dotnet build Flower.Web/Flower.Web.csproj --configuration Release

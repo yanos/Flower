@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0-browser</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <!-- Avalonia's Skia renderer needs libSkiaSharp/libHarfBuzzSharp statically
+         linked into the WASM bundle - without this, SkiaSharp's native P/Invokes
+         just throw DllNotFoundException at first use (SKImageInfo's static
+         constructor), which is exactly what an unset WasmBuildNative produces
+         (see the "@(NativeFileReference) is not empty... won't be linked in"
+         build warning). Requires the wasm-tools SDK workload's native toolchain
+         (Emscripten) to actually build, not just restore. -->
+    <WasmBuildNative>true</WasmBuildNative>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Browser" Version="12.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flower\Flower.csproj" />
+  </ItemGroup>
+</Project>

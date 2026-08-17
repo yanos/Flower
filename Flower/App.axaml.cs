@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
@@ -148,35 +149,60 @@ public partial class App : Application
         var deviceNicknameStore = new DeviceNicknameStore(AppLogging.CreateTypedLogger<DeviceNicknameStore>());
         var trustedPeerStore = new TrustedPeerStore(AppLogging.CreateTypedLogger<TrustedPeerStore>());
         var playlistSyncStateStore = new PlaylistSyncStateStore(AppLogging.CreateTypedLogger<PlaylistSyncStateStore>());
-
-        // This device's cryptographic identity (see DeviceSigningKey/
-        // SignatureVerifier) - loaded before DeviceIdentity, since Fingerprint
-        // is now derived from the public key here rather than an independent
-        // random value (see DeviceIdentityStore.Load).
-        var (deviceKey, devicePublicKeyRaw) = deviceKeyStore.Load();
-        var signingKey = new DeviceSigningKey(deviceKey, devicePublicKeyRaw);
-
-        // One shared, mutable identity object rather than separate fingerprint/
-        // alias strings handed to each service - MainViewModel.DeviceAlias edits
-        // it in place (and persists via DeviceIdentityStore) when the user renames
-        // this device in Settings, and every service below reads .Alias live off
-        // the same instance, so the new name takes effect immediately without
-        // needing to reconstruct or restart anything.
-        var deviceIdentity = deviceIdentityStore.Load(signingKey.Fingerprint);
         var clientLogStore = new ClientLogStore();
 
-        // Needs deviceIdentity constructed first - it identifies us on every
-        // /info poll now, not just gated sync requests (see
-        // NetworkDiscoveryService.ResolveAliasAsync, DiscoveredDevice.TrustsUs).
-        var networkDiscovery = new NetworkDiscoveryService(deviceIdentity, AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
-        var syncHttpServer = new SyncHttpServer(deviceIdentity, signingKey, appSettings, library, playlistStore, trustedPeerStore, clientLogStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
-        var playlistSyncService = new PlaylistSyncService(library, deviceIdentity, signingKey, appSettings, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
-        var librarySyncService = new LibrarySyncService(library, deviceIdentity, signingKey, appSettings, libraryStore, InMemoryLogStore.Instance, AppLogging.CreateTypedLogger<LibrarySyncService>());
-        var libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, signingKey, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
-        var peerPairingService = new PeerPairingService(deviceIdentity, signingKey, AppLogging.CreateTypedLogger<PeerPairingService>());
-        var peerUnpairNotifier = new PeerUnpairNotifier(networkDiscovery, deviceIdentity, signingKey, AppLogging.CreateTypedLogger<PeerUnpairNotifier>());
-        var pairedServerReachability = new PairedServerReachability(networkDiscovery, appSettings);
-        var peerTrackResolver = new PeerTrackResolver(pairedServerReachability);
+        // Flower.Web/WASM has no P2P sync stack at all: .NET-for-WASM's crypto
+        // backend has no asymmetric crypto support whatsoever (verified
+        // directly - ECDsa.Create()/RSA.Create() both throw
+        // PlatformNotSupportedException for every curve/key size; only
+        // symmetric crypto and hashing work), so DeviceSigningKey - and every
+        // one of these services below, which all depend on it transitively -
+        // simply cannot be constructed there. MainViewModel takes all of
+        // these as nullable, defaulted constructor parameters specifically to
+        // accommodate this (see its own doc comment); every other platform
+        // still gets the exact same non-null instances as before.
+        DeviceIdentity? deviceIdentity = null;
+        DeviceSigningKey? signingKey = null;
+        NetworkDiscoveryService? networkDiscovery = null;
+        SyncHttpServer? syncHttpServer = null;
+        PlaylistSyncService? playlistSyncService = null;
+        LibrarySyncService? librarySyncService = null;
+        LibraryDownloadService? libraryDownloadService = null;
+        PeerPairingService? peerPairingService = null;
+        PeerUnpairNotifier? peerUnpairNotifier = null;
+        PairedServerReachability? pairedServerReachability = null;
+        PeerTrackResolver? peerTrackResolver = null;
+
+        if (!OperatingSystem.IsBrowser())
+        {
+            // This device's cryptographic identity (see DeviceSigningKey/
+            // SignatureVerifier) - loaded before DeviceIdentity, since Fingerprint
+            // is now derived from the public key here rather than an independent
+            // random value (see DeviceIdentityStore.Load).
+            var (deviceKey, devicePublicKeyRaw) = deviceKeyStore.Load();
+            signingKey = new DeviceSigningKey(deviceKey, devicePublicKeyRaw);
+
+            // One shared, mutable identity object rather than separate fingerprint/
+            // alias strings handed to each service - MainViewModel.DeviceAlias edits
+            // it in place (and persists via DeviceIdentityStore) when the user renames
+            // this device in Settings, and every service below reads .Alias live off
+            // the same instance, so the new name takes effect immediately without
+            // needing to reconstruct or restart anything.
+            deviceIdentity = deviceIdentityStore.Load(signingKey.Fingerprint);
+
+            // Needs deviceIdentity constructed first - it identifies us on every
+            // /info poll now, not just gated sync requests (see
+            // NetworkDiscoveryService.ResolveAliasAsync, DiscoveredDevice.TrustsUs).
+            networkDiscovery = new NetworkDiscoveryService(deviceIdentity, AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
+            syncHttpServer = new SyncHttpServer(deviceIdentity, signingKey, appSettings, library, playlistStore, trustedPeerStore, clientLogStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
+            playlistSyncService = new PlaylistSyncService(library, deviceIdentity, signingKey, appSettings, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
+            librarySyncService = new LibrarySyncService(library, deviceIdentity, signingKey, appSettings, libraryStore, InMemoryLogStore.Instance, AppLogging.CreateTypedLogger<LibrarySyncService>());
+            libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, signingKey, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
+            peerPairingService = new PeerPairingService(deviceIdentity, signingKey, AppLogging.CreateTypedLogger<PeerPairingService>());
+            peerUnpairNotifier = new PeerUnpairNotifier(networkDiscovery, deviceIdentity, signingKey, AppLogging.CreateTypedLogger<PeerUnpairNotifier>());
+            pairedServerReachability = new PairedServerReachability(networkDiscovery, appSettings);
+            peerTrackResolver = new PeerTrackResolver(pairedServerReachability);
+        }
 
         // LibVLC is only needed for decode now (GaplessAudioManager's
         // TrackDecoders) - the render sink on every platform is MiniaudioSink,
@@ -189,22 +215,70 @@ public partial class App : Application
         // (native/miniaudio/android, native/miniaudio/ios) - see
         // LibVlcRawStreamSink's own remarks for why it's kept around
         // unreferenced rather than deleted yet.
-        VlcNativeSetup.Initialize();
-        var libVLC = new LibVLC();
-        var audioSink = PlatformAudioManager.Current ?? new MiniaudioSink(AppLogging.CreateTypedLogger<MiniaudioSink>());
+        //
+        // Neither LibVLC nor miniaudio ships a browser/WASM build (see
+        // SYNC-PLAN.md's Flower.Web section) - VlcNativeSetup.Initialize()/
+        // `new LibVLC()` would throw immediately there, so Flower.Web gets
+        // WebAudioManager instead, driving a browser <audio> element via
+        // [JSImport] rather than going through IAudioSink/GaplessCoordinator
+        // at all (see its own remarks for why). Everything else in Bootstrap
+        // below (DI, Views/ViewModels, the library/settings stores) is
+        // unaffected - this is the only platform fork the audio pipeline
+        // needs.
+        IAudioManager audioManager;
+        if (OperatingSystem.IsBrowser())
+        {
+            audioManager = new Manager.WebAudioManager();
+        }
+        else
+        {
+            VlcNativeSetup.Initialize();
+            var libVLC = new LibVLC();
+            var audioSink = PlatformAudioManager.Current ?? new MiniaudioSink(AppLogging.CreateTypedLogger<MiniaudioSink>());
 
-        var audioManager = new GaplessAudioManager(
-            libVLC,
-            audioSink,
-            AppLogging.CreateTypedLogger<GaplessAudioManager>(),
-            AppLogging.CreateTypedLogger<GaplessCoordinator>(),
-            AppLogging.CreateTypedLogger<TrackDecoder>());
+            var gaplessAudioManager = new GaplessAudioManager(
+                libVLC,
+                audioSink,
+                AppLogging.CreateTypedLogger<GaplessAudioManager>(),
+                AppLogging.CreateTypedLogger<GaplessCoordinator>(),
+                AppLogging.CreateTypedLogger<TrackDecoder>());
 
-        // Re-apply the persisted EQ curve before the very first frame of
-        // audio plays, rather than waiting for the user to open the
-        // Equalizer window this session - see EqualizerViewModel.
-        if (appSettings.EqualizerSettings is { Enabled: true } eqSettings)
-            audioManager.ApplyEqualizer(Manager.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
+            // Re-apply the persisted EQ curve before the very first frame of
+            // audio plays, rather than waiting for the user to open the
+            // Equalizer window this session - see EqualizerViewModel.
+            if (appSettings.EqualizerSettings is { Enabled: true } eqSettings)
+                gaplessAudioManager.ApplyEqualizer(Manager.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
+
+            audioManager = gaplessAudioManager;
+        }
+
+        // AddSingleton(instance) throws on a null instance, unlike a
+        // constructor parameter default (see MainViewModel's own doc comment) -
+        // these ten are only ever null on Flower.Web/WASM, where nothing else
+        // in the container needs them resolvable at all, so they're simply
+        // left unregistered there rather than registered-as-null.
+        if (deviceIdentity != null)
+            services.AddSingleton(deviceIdentity);
+        if (signingKey != null)
+            services.AddSingleton(signingKey);
+        if (networkDiscovery != null)
+            services.AddSingleton(networkDiscovery);
+        if (pairedServerReachability != null)
+            services.AddSingleton(pairedServerReachability);
+        if (syncHttpServer != null)
+            services.AddSingleton(syncHttpServer);
+        if (playlistSyncService != null)
+            services.AddSingleton(playlistSyncService);
+        if (librarySyncService != null)
+            services.AddSingleton(librarySyncService);
+        if (libraryDownloadService != null)
+            services.AddSingleton(libraryDownloadService);
+        if (peerPairingService != null)
+            services.AddSingleton(peerPairingService);
+        if (peerUnpairNotifier != null)
+            services.AddSingleton(peerUnpairNotifier);
+        if (peerTrackResolver != null)
+            services.AddSingleton(peerTrackResolver);
 
         Ioc.Default.ConfigureServices(
             services
@@ -213,19 +287,8 @@ public partial class App : Application
                 .AddSingleton(library)
                 .AddSingleton(mainPlaylist)
                 .AddSingleton(appSettings)
-                .AddSingleton(deviceIdentity)
-                .AddSingleton(signingKey)
                 .AddSingleton<ColumnManager>()
                 .AddSingleton(importer)
-                .AddSingleton(networkDiscovery)
-                .AddSingleton(pairedServerReachability)
-                .AddSingleton(syncHttpServer)
-                .AddSingleton(playlistSyncService)
-                .AddSingleton(librarySyncService)
-                .AddSingleton(libraryDownloadService)
-                .AddSingleton(peerPairingService)
-                .AddSingleton(peerUnpairNotifier)
-                .AddSingleton(peerTrackResolver)
                 .AddSingleton(libraryStore)
                 .AddSingleton(appSettingsStore)
                 .AddSingleton(playlistStore)
@@ -276,12 +339,37 @@ public partial class App : Application
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewPlatform)
         {
-            var mobileView = new MobileMainView
+            // Avalonia.Browser reports the same single-view lifetime iOS and
+            // Android do, but a browser is a desktop-shaped surface, so it gets
+            // the full MainView rather than the touch-first MobileMainView.
+            //
+            // Both are UserControls with no Background of their own - on
+            // desktop MainWindow supplies the window background, and there is
+            // no Window in a single-view lifetime. Without one the top level
+            // composites onto the transparent page and every DynamicResource
+            // themed brush underneath has nothing to sit on. Hosting the view
+            // in a themed Panel gives it the surface MainWindow otherwise would.
+            Control singleView;
+            if (OperatingSystem.IsBrowser())
             {
-                DataContext = Ioc.Default.GetRequiredService<MobileMainViewModel>()
-            };
-            singleViewPlatform.MainView = mobileView;
-            mainView = mobileView;
+                var browserRoot = new Border
+                {
+                    Child = new MainView { DataContext = mainViewModel }
+                };
+                browserRoot[!Border.BackgroundProperty] =
+                    new DynamicResourceExtension("SystemControlBackgroundAltHighBrush");
+                singleView = browserRoot;
+            }
+            else
+            {
+                singleView = new MobileMainView
+                {
+                    DataContext = Ioc.Default.GetRequiredService<MobileMainViewModel>()
+                };
+            }
+
+            singleViewPlatform.MainView = singleView;
+            mainView = singleView;
         }
 
         // Constructed eagerly (nothing else references it) so its
@@ -296,53 +384,73 @@ public partial class App : Application
         // SyncHttpServer starts first so networkDiscovery can advertise whichever
         // port it actually bound (see SyncHttpServer.Start for why that can differ
         // from SyncHttpServer.DefaultPort).
-        PlatformMulticastLock.Current?.Acquire();
-        syncHttpServer.Start();
-        networkDiscovery.Start(syncHttpServer.BoundPort ?? SyncHttpServer.DefaultPort);
-
-        // Rescan the music folder in the background while the UI is already showing
-        _ = Task.Run(async () =>
+        //
+        // Neither exists under WASM: SyncHttpServer binds a raw HttpListener
+        // socket and NetworkDiscoveryService sends/receives mDNS multicast UDP,
+        // both flatly unavailable inside a browser sandbox. Flower.Web instead
+        // talks to Flower.Server's REST API directly (see SYNC-PLAN.md) - LAN
+        // peer-to-peer sync is a desktop/mobile-only feature.
+        if (!OperatingSystem.IsBrowser())
         {
-            var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");
-            // Covers the whole sequence below, not just the two iTunes syncs'
-            // own brief individual scopes - the rescan itself is the longest
-            // part (~9s against a large real library) and previously had no
-            // busy-spinner coverage of its own at all, which is why the
-            // spinner was so easy to miss at startup.
-            using var busy = mainViewModel.BeginBusyScope("Refreshing Library");
-            try
+            // Non-null here by construction - both were built in the matching
+            // !IsBrowser() branch above, just too far away for flow analysis
+            // to see across.
+            PlatformMulticastLock.Current?.Acquire();
+            syncHttpServer!.Start();
+            networkDiscovery!.Start(syncHttpServer.BoundPort ?? SyncHttpServer.DefaultPort);
+        }
+
+        // Rescan the music folder in the background while the UI is already
+        // showing. Meaningless under WASM - there's no local music folder to
+        // scan in a browser sandbox; Flower.Web's library instead comes from
+        // Flower.Server via a SubsonicLibraryImporter (IMusicImporter), not yet
+        // built (see SYNC-PLAN.md) - until then the browser head just starts
+        // with an empty library rather than running this against nothing.
+        if (!OperatingSystem.IsBrowser())
+        {
+            _ = Task.Run(async () =>
             {
-                rescanLogger.LogInformation("Startup rescan starting for paths: {LibraryPaths}", string.Join(", ", appSettings.LibraryPaths));
-                var stopwatch = Stopwatch.StartNew();
-                var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
-                rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
+                var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");
+                // Covers the whole sequence below, not just the two iTunes syncs'
+                // own brief individual scopes - the rescan itself is the longest
+                // part (~9s against a large real library) and previously had no
+                // busy-spinner coverage of its own at all, which is why the
+                // spinner was so easy to miss at startup.
+                using var busy = mainViewModel.BeginBusyScope("Refreshing Library");
+                try
+                {
+                    rescanLogger.LogInformation("Startup rescan starting for paths: {LibraryPaths}", string.Join(", ", appSettings.LibraryPaths));
+                    var stopwatch = Stopwatch.StartNew();
+                    var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
+                    rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
 
-                // Update the playlist first so navigation is consistent when TracksUpdated fires
-                mainPlaylist.ReplaceAll(freshTracks);
-                library.UpdateTracks(freshTracks);
+                    // Update the playlist first so navigation is consistent when TracksUpdated fires
+                    mainPlaylist.ReplaceAll(freshTracks);
+                    library.UpdateTracks(freshTracks);
 
-                await libraryStore.SaveAsync(library.Tracks);
-                rescanLogger.LogInformation("Library saved ({TrackCount} tracks)", library.Tracks.Count);
+                    await libraryStore.SaveAsync(library.Tracks);
+                    rescanLogger.LogInformation("Library saved ({TrackCount} tracks)", library.Tracks.Count);
 
-                // SyncITunesPlayCountAsync/SyncITunesDateAddedAsync each do their
-                // own save (either may run again later via its own Settings
-                // checkbox, independent of this startup rescan) and layer their
-                // own more specific BusyMessage on top of this outer scope's.
-                if (appSettings.SyncPlayCountFromITunes)
-                    await mainViewModel.SyncITunesPlayCountAsync();
-                if (appSettings.SyncDateAddedFromITunes)
-                    await mainViewModel.SyncITunesDateAddedAsync();
-            }
-            catch (Exception ex)
-            {
-                // Without this, a failure here (e.g. a library path became
-                // unreadable) would just be an unobserved task fault - logged
-                // above via TaskScheduler.UnobservedTaskException, eventually,
-                // but only once the GC finalizes the task; log it immediately
-                // here instead.
-                rescanLogger.LogError(ex, "Startup rescan failed");
-            }
-        });
+                    // SyncITunesPlayCountAsync/SyncITunesDateAddedAsync each do their
+                    // own save (either may run again later via its own Settings
+                    // checkbox, independent of this startup rescan) and layer their
+                    // own more specific BusyMessage on top of this outer scope's.
+                    if (appSettings.SyncPlayCountFromITunes)
+                        await mainViewModel.SyncITunesPlayCountAsync();
+                    if (appSettings.SyncDateAddedFromITunes)
+                        await mainViewModel.SyncITunesDateAddedAsync();
+                }
+                catch (Exception ex)
+                {
+                    // Without this, a failure here (e.g. a library path became
+                    // unreadable) would just be an unobserved task fault - logged
+                    // above via TaskScheduler.UnobservedTaskException, eventually,
+                    // but only once the GC finalizes the task; log it immediately
+                    // here instead.
+                    rescanLogger.LogError(ex, "Startup rescan failed");
+                }
+            });
+        }
 
         return mainView;
     }
