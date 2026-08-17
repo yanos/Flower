@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tiers 1-5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except 1.4 and two deferred 1.5 items. Tiers 2-5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -10,11 +10,11 @@ Measured against the real 16k-track development library, not estimated:
 
 | Fact | Value |
 |---|---|
-| `library.json` | **17.9 MB**, 16,116 tracks, `WriteIndented = true` |
-| Rewritten in full | on **every track start** and **every track end** |
+| `library.json` | **17.9 MB**, 16,116 tracks, `WriteIndented = true` — since Tier 1.1, unindented and null-omitting |
+| Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | zero — `Flower.Tests` references only `Flower/Flower.csproj` |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 393 (402 after Tier 0) |
+| Tests at review time | 406 (393 before Tier 1) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -98,9 +98,9 @@ Both single-sided branches decided `Delete` whenever a baseline existed, without
 
 ---
 
-## Tier 1 — performance — NOT STARTED
+## Tier 1 — performance — MOSTLY DONE (1.4 not started; two 1.5 items deferred)
 
-### 1.1 A full 17.9 MB library serialization on every track change
+### 1.1 A full 17.9 MB library serialization on every track change — DONE
 
 `PlaylistControlViewModel.Play` does `RecordPlayed` → `NotifyTrackChanged()` → fire-and-forget `SaveAsync(_library.Tracks)`; the `EndReached` handler does the same again. Per song change that is:
 
@@ -110,15 +110,27 @@ Both single-sided branches decided `Delete` whenever a baseline existed, without
 
 There is also a lost-update race despite the semaphore: `SaveAsync` takes its snapshot as a parameter and serializes *before* acquiring the write lock, so an earlier-queued call carrying stale data can physically land last.
 
-**Fix, in order of payoff:** split mutable per-track state (play counts, `LastPlayedAt`, `DateAdded`, `RemotePlayCounts`, a future `Starred`) out of the metadata blob so a play-count bump writes ~100 bytes; immediately and cheaply, set `WriteIndented = false` + `DefaultIgnoreCondition = WhenWritingNull` on `FlowerJsonContext` (~17.9 MB → ~4 MB) and coalesce saves behind a dirty flag; give `Library` a distinct `TrackStatsChanged` event so a play-count bump doesn't trigger a full `PopulateTracks` or a peer sync.
+The lost-update race was already closed in Tier 0 (`SaveAsync` now serializes inside the lock).
 
-### 1.2 Album art is decoded at full source resolution
+**Fixed** on three fronts. `FlowerJsonContext` sets `WriteIndented = false` and `DefaultIgnoreCondition = WhenWritingNull`, safe because that context covers only formats Flower controls both ends of — a reader of a missing property gets the same default an explicit null would have given. `LibraryStore.ScheduleSave` coalesces the write-per-event behind a 3s debounce, with `Flush()` for the app-exit path and `Save()` superseding anything still pending, so quitting inside the window can't lose the increment that opened it. And `Library` now raises a distinct `TrackStatsChanged` carrying the mutated track: `PlaylistControlViewModel`'s `Play`/`EndReached` no longer call `NotifyTrackChanged` at all, so a play no longer rebuilds 16k rows or schedules a peer sync — `MainViewModel` re-raises the two affected columns on the one affected row instead (`TrackRowViewModel.NotifyStatsChanged`).
 
-`AlbumArtLoader.LoadLocalBitmap` does `new Bitmap(ms)` with no downscale. Modern embedded art is routinely 1400×1400+ → ~7.8 MB decoded RGBA per bitmap, for tiles rendered at ~120 px. An album grid showing 40 tiles can hold 300 MB of decoded bitmaps; the `WeakReference` cache softens it, but iOS jetsam will not wait for a GC. Use `Bitmap.DecodeToWidth` sized to the largest real display size, and a small strong-referenced LRU for the visible set instead of an unbounded `ConcurrentDictionary<string, WeakReference>` that is never pruned.
+**Still open:** the real fix named above — splitting mutable per-track state out of the metadata blob so a play-count bump writes ~100 bytes instead of the whole library. That is Tier 4.1's SQLite work, and everything here is on the JSON layer beneath it.
 
-### 1.3 `Flower.Server` materializes the entire `Tracks` table on every browse request
+### 1.2 Album art is decoded at full source resolution — DONE
+
+`AlbumArtLoader.LoadLocalBitmap` does `new Bitmap(ms)` with no downscale. Modern embedded art is routinely 1400×1400+ → ~7.8 MB decoded RGBA per bitmap, for tiles rendered at ~120 px. An album grid showing 40 tiles can hold 300 MB of decoded bitmaps; the `WeakReference` cache softens it, but iOS jetsam will not wait for a GC. 
+
+**Fixed** by `AlbumArtLoader.DecodeScaled`, capping decodes at 768px — mobile `NowPlayingView`'s 280pt square at ~2.7x DPI, the widest this app actually paints, and one cache serves every call site so the size has to satisfy the largest. It never scales *up*: applying `DecodeToWidth` unconditionally would inflate a 300px cover into a 768-wide bitmap and make the problem worse for libraries with modest art, and SkiaSharp (so `SKCodec`) isn't a reference of this project, so there is no cheap way to read the intrinsic size first — oversized art is decoded twice, once to learn its size and once at the size wanted. The full-size decode is transient; what used to be *retained* per album is what mattered. A 32-entry strong-referenced LRU now keeps the visible set alive across collections, and `Retain` prunes dead `WeakReference` entries, which previously accumulated one per album ever displayed for the life of the process.
+
+### 1.3 `Flower.Server` materializes the entire `Tracks` table on every browse request — DONE
 
 `GetAlbumList2` is `(await db.Tracks.ToListAsync()).GroupBy(t => t.AlbumId)`. `GetArtists` does the same with a projection. `Search3` pulls all SQL-side matches then re-filters in memory with *different* case semantics than the SQL `LIKE`, so the two passes genuinely disagree. Every one is a full table scan + full materialization + in-memory group/sort/paginate, per request, with no caching — against the 16k-track library `SYNC-PLAN.md` names as the target scale. The indices on `Path`/`ArtistId`/`AlbumId` exist but these query shapes never exercise them.
+
+**Fixed.** `GetAlbumList2` and `Search3` share an `AlbumSummaries` projection that groups and aggregates in SQL and paginates there too; `GetArtists` collapses to one row per distinct (artist, album) pair SQL-side (~1.4k rows rather than ~16k) and counts in memory; `Search3` is now three individually-limited SQL queries with the disagreeing in-memory re-filter removed, so one filter decides matching and the `Take` happens in the database.
+
+Two things only a real run would have caught, and there is still no `Flower.Server` test project to catch them (Tier 5.1): SQLite refuses `Max()` over a `DateTimeOffset`, so `type=newest` — which orders by each album's most recent `DateAdded` — aggregates client-side over a two-column projection instead, pending the value converter that belongs with Tier 4.1's schema work; and EF Core can only translate a grouped aggregate projection written as a **member initializer**, never a constructor call, so `AlbumSummary` is an init-property class rather than the positional record it started as (which compiled fine and threw at request time).
+
+Verified against the real 16,116-track library, all five `getAlbumList2` sort types plus `search3` and `getArtists`, zero server-side exceptions. Warm timings, before → after: `getAlbumList2` 187ms → 29ms, `search3` 172ms → 31ms, `getArtists` 37ms → 33ms.
 
 ### 1.4 Sync transfers the whole manifest every time, and re-hashes all album art to build it
 
@@ -126,17 +138,19 @@ There is also a lost-update race despite the semaphore: `SaveAsync` takes its sn
 
 Meanwhile a *server-side* change is never noticed while both apps stay running — sync fires only on first mDNS contact or a debounced **local** change, and the 5s `/info` poll checks reachability/trust/alias only. This is `todo.txt`'s "push library sync events instead of polling", and it is a correctness gap, not an optimization.
 
-### 1.5 Repeated O(n) passes with no incrementality
+### 1.5 Repeated O(n) passes with no incrementality — MOSTLY DONE
 
-- `Track.SyncKey` is a computed property allocating four strings per read, read in tight loops in `UpdateTracks`, `MergeSyncedTracks`, and both iTunes importers — ~100k+ allocations per rescan just for keys. Cache it, invalidated on tag edit.
-- `Library.IncrementPlayCount`/`RecordPlayed` do an O(n) `FirstOrDefault` over 16k tracks under the global lock, twice per song. A path-keyed dictionary maintained by `UpdateTracks` makes it O(1).
-- `TrackListBuilder.SortKey` allocates a `char[]` + `string` per track per sort key; `Build` reallocates all 16k row view-models per rebuild rather than diffing.
-- `TrustedPeerStore.Load()` does a synchronous `File.ReadAllText` + full deserialize **on every gated request** (`SyncHttpServer.VerifyTrustedPeer` → `GetPublicKey`) — blocking disk I/O on the streaming hot path, at up to 120 browse requests/min.
-- `MusicListPanel.ComputeRenderIndices` backscans to the album-group leader per visible row — O(viewport × group size). `TrackListBuilder` already knows `AlbumGroupSize`; precompute a leader-index array in `SetItems`.
-- `RebuildRowsAsync` always builds **three** O(library) collections (rows, album tiles, recently-added tiles) even when viewing Songs/Playlists/Artists, where two are discarded. Mobile passes `includeGridTiles: false` with a comment acknowledging the waste; desktop never got the same treatment.
-- Wholesale `Rows` replacement discards each row's lazily-decoded `AlbumArt`, so every settled keystroke re-triggers N `Task.Run` art loads even on pure cache hits.
-- `NotifyPairButtonPropertiesChanged` unconditionally re-raises nine properties from six-plus call sites instead of diffing.
-- At least eight timers run app-wide, four at 60 Hz (busy spinner, per-row download spinner, swipe easing, scroll-into-view). No shared animation clock exists, so a batch download runs one dispatcher timer *per row*.
+- **Done** — `Track.SyncKey` is cached, invalidated by the setters of the four fields it derives from (`Title`/`Artists`/`Album`/`Duration`, now backed properties), so a tag edit still takes effect.
+- **Done** — `Library` keeps a lazily-built path index. Built lazily and invalidated rather than maintained incrementally, because `Path` is not immutable: `LibraryDownloadService` sets it on a placeholder in place, so `NotifyTrackChanged` invalidates too.
+- **Partly done** — `TrackListBuilder.SortKey` now counts then fills exactly once via `string.Create`, and returns the input untouched when there is nothing to strip (allocating nothing at all). `Build` still reallocates all 16k row view-models per rebuild rather than diffing — **deferred**, see below.
+- **Done** — `TrustedPeerStore` caches both lists in memory, invalidated by its own writes. The only way to observe a stale value is editing `trusted-peers.json` under a running app, which was never supported.
+- **Done** — `MusicListPanel` precomputes a group-leader index array in `SetItems`, making the per-scroll cost O(viewport).
+- **Done** — `RebuildRowsAsync` derives `buildGrids` from `IsShowingAlbumGrid`/`IsShowingRecentlyAddedGrid`, so the two tile grids are built only for the views that paint them. Switching to either runs `OnSidebarSelectionChanged`, which rebuilds through here again, so they are always ready before the view appears.
+- **Mitigated, not fixed** — 1.2's strong LRU means the re-triggered loads now hit a live cache instead of re-decoding, but the `Task.Run` per row still happens. Properly fixing it means row diffing — **deferred**, same as `Build` above.
+- **Done** — `NotifyPairButtonPropertiesChanged` diffs against the last-notified tuple and returns early when nothing changed, which is every firing of the 5s peer poll.
+- **Not started** — the shared animation clock. At least eight timers run app-wide, four at 60 Hz (busy spinner, per-row download spinner, swipe easing, scroll-into-view), so a batch download still runs one dispatcher timer *per row*.
+
+**Deferred deliberately:** row diffing in `TrackListBuilder.Build` (and the `AlbumArt` discard that rides on it). It is the largest remaining Tier 1 item and the only one that needs real structural change to a hot, well-covered path rather than a local fix; the cheaper wins above land first precisely so its benefit can be measured against them.
 
 ---
 
@@ -275,9 +289,9 @@ Highest-value additions, roughly in priority order:
 ## Suggested order
 
 1. **Tier 0** — done.
-2. **Tier 1.1** — stop rewriting the library per play. Single biggest felt improvement.
+2. ~~**Tier 1.1**~~ — done, on the JSON layer. The real split lands with 4.1.
 3. **Tier 5.1** — `Flower.Server` test project + CI jobs that build every project.
-4. **Tier 1.2-1.5** — art downscaling, server query shapes, manifest versioning, the O(n) hot paths.
+4. **Tier 1.4** — manifest versioning/ETag and push-based sync events; the one Tier 1 section untouched. 1.2, 1.3 and most of 1.5 are done; row diffing is what is left.
 5. **Tier 3** — server rate limiting, default-password handling, log-push exposure.
 6. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.
 7. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.

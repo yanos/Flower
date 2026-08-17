@@ -16,7 +16,18 @@ namespace Flower.Persistence
     // either way; PropertyNameCaseInsensitive costs nothing and is a bit more
     // forgiving reading a file/payload written by a slightly different
     // version of this same code.
-    [JsonSourceGenerationOptions(WriteIndented = true, PropertyNameCaseInsensitive = true)]
+    //
+    // WriteIndented is off and nulls are omitted purely for size: library.json
+    // at the 16k-track scale this app targets was ~17.9 MB, roughly 60% of it
+    // indentation and null-valued properties spelled out in full, and it is
+    // rewritten whenever track stats change. Both are safe here precisely
+    // because this context covers only formats Flower controls both ends of -
+    // a reader of a missing property gets the same default it would have got
+    // reading an explicit null. See docs/ARCHITECTURE-REVIEW.md Tier 1.1.
+    [JsonSourceGenerationOptions(
+        WriteIndented = false,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true)]
     [JsonSerializable(typeof(AppSettings))]
     [JsonSerializable(typeof(List<Track>), TypeInfoPropertyName = "TrackList")]
     [JsonSerializable(typeof(IEnumerable<Track>), TypeInfoPropertyName = "TrackEnumerable")]

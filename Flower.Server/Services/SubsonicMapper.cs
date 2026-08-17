@@ -34,6 +34,37 @@ public static class SubsonicMapper
         CoverArt: null,
         AlbumCount: albumCount);
 
+    // One album's worth of pre-aggregated columns, as computed by SQL rather
+    // than by grouping materialized entities in memory - see
+    // SubsonicEndpoints.GetAlbumList2 and GetArtists.
+    //
+    // Init-only properties rather than a positional record on purpose: EF Core
+    // can only translate a grouped aggregate projection written as a member
+    // initializer, not as a constructor call - a positional record compiles
+    // fine and then throws "could not be translated" at request time.
+    public sealed class AlbumSummary
+    {
+        public required string AlbumId { get; init; }
+        public string? Album { get; init; }
+        public string? AlbumArtist { get; init; }
+        public string? ArtistId { get; init; }
+        public int SongCount { get; init; }
+        public double TotalDurationSeconds { get; init; }
+        public int? Year { get; init; }
+        public string? Genre { get; init; }
+    }
+
+    public static AlbumID3 ToAlbumId3(AlbumSummary album) => new(
+        Id: album.AlbumId,
+        Name: album.Album ?? "Unknown Album",
+        Artist: album.AlbumArtist,
+        ArtistId: album.ArtistId ?? "",
+        CoverArt: album.AlbumId,
+        SongCount: album.SongCount,
+        Duration: (long)album.TotalDurationSeconds,
+        Year: album.Year,
+        Genre: album.Genre);
+
     public static AlbumID3 ToAlbumId3(IGrouping<string, TrackEntity> albumTracks)
     {
         var first = albumTracks.First();

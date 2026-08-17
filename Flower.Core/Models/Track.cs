@@ -52,9 +52,13 @@ namespace Flower.Models
         public Guid Id { get; set; } = Guid.NewGuid();
 
         // Core identity
-        public string? Title { get; set; }
+        // Backed rather than auto-implemented so SyncKey's cache can be
+        // invalidated - see SyncKey.
+        public string? Title { get => _title; set { _title = value; ClearSyncKey(); } }
+        private string? _title;
         public string? Subtitle { get; set; }
-        public string? Artists { get; set; }
+        public string? Artists { get => _artists; set { _artists = value; ClearSyncKey(); } }
+        private string? _artists;
         public string? AlbumArtists { get; set; }
 
         // The tag's own "part of a compilation" flag (ID3 TCMP / MP4 cpil) - the
@@ -82,7 +86,8 @@ namespace Flower.Models
             : IsCompilation ? "Various Artists"
             : Artists ?? "";
 
-        public string? Album { get; set; }
+        public string? Album { get => _album; set { _album = value; ClearSyncKey(); } }
+        private string? _album;
         public string? AlbumSort { get; set; }
         public string? Year { get; set; }
         public uint TrackNumber { get; set; }
@@ -111,7 +116,8 @@ namespace Flower.Models
 
         // Audio technical
         [JsonConverter(typeof(TimeSpanTicksConverter))]
-        public TimeSpan Duration { get; set; }
+        public TimeSpan Duration { get => _duration; set { _duration = value; ClearSyncKey(); } }
+        private TimeSpan _duration;
         public int Bitrate { get; set; }
         public int SampleRate { get; set; }
         public int Channels { get; set; }
@@ -200,8 +206,21 @@ namespace Flower.Models
         // synced. Rounding both to the nearest second still isn't foolproof against
         // every possible boundary case, but it fixes the one actually observed and
         // narrows the remaining risk window to values within ~5ms of an exact .5s.
+        //
+        // Cached, because this is read in tight loops over the whole library -
+        // Library.UpdateTracks and MergeSyncedTracks both build SyncKey-keyed
+        // dictionaries and HashSets over every track, as do both iTunes
+        // importers - and recomputing it allocates four normalized strings plus
+        // the joined result every single read: ~100k allocations per rescan for
+        // nothing. Invalidated by the setters of the four fields it derives
+        // from (see ClearSyncKey), so a tag edit in TrackInfoWindow still takes
+        // effect. See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
         [JsonIgnore]
-        public string SyncKey => BuildSyncKey(Title, Artists, Album, RoundedSeconds(Duration));
+        public string SyncKey => _syncKey ??= BuildSyncKey(Title, Artists, Album, RoundedSeconds(Duration));
+
+        private string? _syncKey;
+
+        private void ClearSyncKey() => _syncKey = null;
 
         // Shared with PlaylistSyncPlanner, which builds the same key from the wire
         // DTO (PlaylistSyncTrackDto) on the other side of a sync - both must

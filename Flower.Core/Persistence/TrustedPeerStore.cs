@@ -49,8 +49,36 @@ namespace Flower.Persistence
         // by SyncHttpServer.AuthorizeAsync with no clue why, which is why this
         // goes through AtomicJsonFile's recover-from-.bak path rather than just
         // shrugging and returning empty.
-        public List<TrustedPeer> Load() =>
-            AtomicJsonFile.Read(StorePath, FlowerCoreJsonContext.Default.TrustedPeerList, _logger) ?? new List<TrustedPeer>();
+        //
+        // Cached in memory after the first read. This is not a cold-path
+        // settings load: SyncHttpServer.VerifyTrustedPeer calls GetPublicKey on
+        // *every* gated request, so a browsing peer turned this into a
+        // synchronous File.ReadAllText plus a full deserialize on the streaming
+        // hot path, dozens of times a minute. Every mutation below runs through
+        // this class and invalidates the cache, so the only way to observe a
+        // stale value is to edit trusted-peers.json underneath a running app -
+        // which was never supported anyway. See ARCHITECTURE-REVIEW Tier 1.5.
+        public List<TrustedPeer> Load()
+        {
+            lock (_cacheLock)
+            {
+                return _cachedPeers ??=
+                    AtomicJsonFile.Read(StorePath, FlowerCoreJsonContext.Default.TrustedPeerList, _logger) ?? new List<TrustedPeer>();
+            }
+        }
+
+        private readonly object _cacheLock = new();
+        private List<TrustedPeer>? _cachedPeers;
+        private List<DeniedPeer>? _cachedDenied;
+
+        private void InvalidateCache()
+        {
+            lock (_cacheLock)
+            {
+                _cachedPeers = null;
+                _cachedDenied = null;
+            }
+        }
 
         public bool IsTrusted(string fingerprint) =>
             Load().Any(p => p.Fingerprint == fingerprint);
@@ -102,8 +130,15 @@ namespace Flower.Persistence
             }
         }
 
-        public List<DeniedPeer> LoadDenied() =>
-            AtomicJsonFile.Read(DeniedStorePath, FlowerCoreJsonContext.Default.DeniedPeerList, _logger) ?? new List<DeniedPeer>();
+        // Cached the same way, and for the same reason, as Load above.
+        public List<DeniedPeer> LoadDenied()
+        {
+            lock (_cacheLock)
+            {
+                return _cachedDenied ??=
+                    AtomicJsonFile.Read(DeniedStorePath, FlowerCoreJsonContext.Default.DeniedPeerList, _logger) ?? new List<DeniedPeer>();
+            }
+        }
 
         // Called for both an explicit Deny tap and an unanswered/timed-out
         // pairing prompt (see SyncHttpServer.RequestApprovalAsync) - both are
@@ -139,11 +174,18 @@ namespace Flower.Persistence
             }
         }
 
-        // Both assume _writeLock is already held by the caller.
-        private static Task SaveAsync(List<TrustedPeer> peers) =>
-            AtomicJsonFile.WriteAsync(StorePath, peers, FlowerCoreJsonContext.Default.TrustedPeerList);
+        // Both assume _writeLock is already held by the caller, and both drop
+        // the read cache so the next Load/LoadDenied reflects what was written.
+        private async Task SaveAsync(List<TrustedPeer> peers)
+        {
+            await AtomicJsonFile.WriteAsync(StorePath, peers, FlowerCoreJsonContext.Default.TrustedPeerList);
+            InvalidateCache();
+        }
 
-        private static Task SaveDeniedAsync(List<DeniedPeer> denied) =>
-            AtomicJsonFile.WriteAsync(DeniedStorePath, denied, FlowerCoreJsonContext.Default.DeniedPeerList);
+        private async Task SaveDeniedAsync(List<DeniedPeer> denied)
+        {
+            await AtomicJsonFile.WriteAsync(DeniedStorePath, denied, FlowerCoreJsonContext.Default.DeniedPeerList);
+            InvalidateCache();
+        }
     }
 }

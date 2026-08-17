@@ -85,11 +85,21 @@ public static class SubsonicEndpoints
     private static async Task<IResult> GetArtists(IDbContextFactory<FlowerDbContext> dbFactory)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var rows = await db.Tracks.Select(t => new { t.ArtistId, t.AlbumArtist, t.AlbumId }).ToListAsync();
+        // One row per distinct (artist, album) pair, grouped SQL-side, instead
+        // of a projection of every track in the library. The album count this
+        // needs is a count of distinct albums per artist, so collapsing the
+        // duplicates in SQL first means materializing roughly one row per album
+        // (~1.4k at the target scale) rather than one per track (~16k), and the
+        // AlbumId index actually gets used. Counting the pairs per artist is
+        // then trivial in memory. See ARCHITECTURE-REVIEW Tier 1.3.
+        var pairs = await db.Tracks
+            .GroupBy(t => new { t.ArtistId, t.AlbumId })
+            .Select(g => new { g.Key.ArtistId, g.Key.AlbumId, Name = g.Min(t => t.AlbumArtist) })
+            .ToListAsync();
 
-        var artists = rows
+        var artists = pairs
             .GroupBy(r => r.ArtistId)
-            .Select(g => (Id: g.Key, Name: g.First().AlbumArtist ?? "Unknown Artist", AlbumCount: g.Select(x => x.AlbumId).Distinct().Count()))
+            .Select(g => (Id: g.Key, Name: g.Min(x => x.Name) ?? "Unknown Artist", AlbumCount: g.Count()))
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -155,22 +165,85 @@ public static class SubsonicEndpoints
         IDbContextFactory<FlowerDbContext> dbFactory, string type = "alphabeticalByName", int size = 500, int offset = 0)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var groups = (await db.Tracks.ToListAsync()).GroupBy(t => t.AlbumId);
 
-        IEnumerable<IGrouping<string, TrackEntity>> ordered = type switch
+        // Grouped, ordered and paginated in SQL. This used to be
+        // db.Tracks.ToListAsync() - the whole table materialized into memory,
+        // grouped, sorted and then paged, on every browse request, against the
+        // 16k-track library SYNC-PLAN.md names as the target scale, with no
+        // caching. Returning one page of albums now touches one page of rows.
+        //
+        // The per-album scalars come from Min() rather than "whichever row came
+        // back first". For a well-formed album every track carries the same
+        // Album/AlbumArtist/ArtistId anyway, so the value is identical; where
+        // tracks genuinely disagree (a per-track Genre or Year on a
+        // compilation), Min is at least deterministic, which First() over an
+        // unordered SQL result never was. See ARCHITECTURE-REVIEW Tier 1.3.
+        var albums = AlbumSummaries(db.Tracks);
+        var take = size <= 0 ? 500 : size;
+
+        // "newest" is the one sort that can't be done in SQL here: it orders by
+        // each album's most recent DateAdded, and the SQLite provider refuses
+        // Max() over a DateTimeOffset (it is stored as TEXT, with no value
+        // converter on TrackEntity.DateAdded - adding one would be a schema
+        // change, which Tier 4.1's SQLite work is the right place for). So this
+        // path aggregates client-side, but over a two-column projection rather
+        // than whole entities: still one row per track, but a tiny one, and no
+        // entity materialization or change tracking. Verified against the real
+        // 16k-track library.
+        List<SubsonicMapper.AlbumSummary> page;
+        if (type == "newest")
         {
-            "newest" => groups.OrderByDescending(g => g.Max(t => t.DateAdded)),
-            "alphabeticalByArtist" => groups.OrderBy(g => g.First().AlbumArtist, StringComparer.OrdinalIgnoreCase),
-            "random" => groups.OrderBy(_ => Random.Shared.Next()),
-            _ => groups.OrderBy(g => g.First().Album, StringComparer.OrdinalIgnoreCase),
-        };
+            var newestIds = (await db.Tracks
+                    .Select(t => new { t.AlbumId, t.DateAdded })
+                    .ToListAsync())
+                .GroupBy(t => t.AlbumId)
+                .OrderByDescending(g => g.Max(t => t.DateAdded))
+                .Skip(offset)
+                .Take(take)
+                .Select(g => g.Key)
+                .ToList();
 
-        var page = ordered.Skip(offset).Take(size <= 0 ? 500 : size)
-            .Select(SubsonicMapper.ToAlbumId3)
-            .ToList();
+            var byId = (await albums.Where(a => newestIds.Contains(a.AlbumId)).ToListAsync())
+                .ToDictionary(a => a.AlbumId);
 
-        return SubsonicResults.Ok(albumList2: new AlbumList2(page));
+            // Re-imposes the recency order the WHERE ... IN above doesn't preserve.
+            page = newestIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+        }
+        else
+        {
+            var ordered = type switch
+            {
+                "alphabeticalByArtist" => albums.OrderBy(a => a.AlbumArtist),
+                // ORDER BY RANDOM() server-side - Random.Shared.Next() as a sort
+                // key can't translate, and shuffling in memory would mean pulling
+                // every album back just to throw most of them away.
+                "random" => albums.OrderBy(_ => EF.Functions.Random()),
+                _ => albums.OrderBy(a => a.Album),
+            };
+
+            page = await ordered.Skip(offset).Take(take).ToListAsync();
+        }
+
+        return SubsonicResults.Ok(albumList2: new AlbumList2(page.Select(SubsonicMapper.ToAlbumId3).ToList()));
     }
+
+    // The shared "one row per album, aggregated by SQL" projection behind both
+    // GetAlbumList2 and Search3 - see GetAlbumList2's comment for why the
+    // scalars use Min() rather than an arbitrary first row.
+    private static IQueryable<SubsonicMapper.AlbumSummary> AlbumSummaries(IQueryable<TrackEntity> tracks) =>
+        tracks
+            .GroupBy(t => t.AlbumId)
+            .Select(g => new SubsonicMapper.AlbumSummary
+            {
+                AlbumId = g.Key,
+                Album = g.Min(t => t.Album),
+                AlbumArtist = g.Min(t => t.AlbumArtist),
+                ArtistId = g.Min(t => t.ArtistId),
+                SongCount = g.Count(),
+                TotalDurationSeconds = g.Sum(t => t.DurationSeconds),
+                Year = g.Min(t => t.Year),
+                Genre = g.Min(t => t.Genre),
+            });
 
     private static async Task<IResult> GetSong(string? id, IDbContextFactory<FlowerDbContext> dbFactory)
     {
@@ -190,30 +263,42 @@ public static class SubsonicEndpoints
         string query = "", int artistCount = 20, int albumCount = 20, int songCount = 20)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var matches = await db.Tracks
-            .Where(t => (t.Title != null && t.Title.Contains(query))
-                     || (t.Album != null && t.Album.Contains(query))
-                     || (t.Artist != null && t.Artist.Contains(query)))
-            .ToListAsync();
 
-        var songs = matches
-            .Where(t => t.Title != null && t.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
+        // Three targeted, individually-limited queries rather than one
+        // unbounded fetch of every SQL-side match followed by a second,
+        // in-memory re-filter.
+        //
+        // The two passes did not agree: SQL's LIKE and .NET's
+        // OrdinalIgnoreCase have different case semantics, so a match SQLite
+        // accepted could be dropped again in memory (and the SQL pass was the
+        // one deciding how much got materialized). There is now one filter, in
+        // SQL, and the Take happens there too - so a one-character query stops
+        // pulling most of the library back to discard it. See
+        // ARCHITECTURE-REVIEW Tier 1.3.
+        var songs = (await db.Tracks
+            .Where(t => t.Title != null && EF.Functions.Like(t.Title, $"%{query}%"))
             .Take(songCount)
+            .ToListAsync())
             .Select(SubsonicMapper.ToChild)
             .ToList();
 
-        var albums = matches
-            .Where(t => t.Album != null && t.Album.Contains(query, StringComparison.OrdinalIgnoreCase))
-            .GroupBy(t => t.AlbumId)
+        var albums = (await AlbumSummaries(
+                db.Tracks.Where(t => t.Album != null && EF.Functions.Like(t.Album, $"%{query}%")))
             .Take(albumCount)
+            .ToListAsync())
             .Select(SubsonicMapper.ToAlbumId3)
             .ToList();
 
-        var artists = matches
-            .Where(t => t.AlbumArtist != null && t.AlbumArtist.Contains(query, StringComparison.OrdinalIgnoreCase))
-            .GroupBy(t => t.ArtistId)
+        var artistPairs = await db.Tracks
+            .Where(t => t.AlbumArtist != null && EF.Functions.Like(t.AlbumArtist, $"%{query}%"))
+            .GroupBy(t => new { t.ArtistId, t.AlbumId })
+            .Select(g => new { g.Key.ArtistId, Name = g.Min(t => t.AlbumArtist) })
+            .ToListAsync();
+
+        var artists = artistPairs
+            .GroupBy(r => r.ArtistId)
             .Take(artistCount)
-            .Select(g => SubsonicMapper.ToArtistId3(g.Key, g.First().AlbumArtist ?? "Unknown Artist", g.Select(x => x.AlbumId).Distinct().Count()))
+            .Select(g => SubsonicMapper.ToArtistId3(g.Key, g.Min(x => x.Name) ?? "Unknown Artist", g.Count()))
             .ToList();
 
         return SubsonicResults.Ok(searchResult3: new SearchResult3(artists, albums, songs));

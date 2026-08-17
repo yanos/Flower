@@ -582,4 +582,98 @@ public class LibraryTests
 
         Assert.Same(missing, playlist.Tracks.Single());
     }
+
+    // ── Tier 1.1 / 1.5: stats changes are not list changes ───────────────────
+
+    [Fact]
+    public void IncrementPlayCount_raises_TrackStatsChanged_not_TracksUpdated()
+    {
+        var track   = new Track { Title = "A", Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { track });
+
+        var tracksUpdated = 0;
+        Track? statsChanged = null;
+        library.TracksUpdated    += (_, _) => tracksUpdated++;
+        library.TrackStatsChanged += (_, e) => statsChanged = e.Track;
+
+        library.IncrementPlayCount(track);
+
+        // A play count bump used to arrive as TracksUpdated, which means a full
+        // UI rebuild and a peer library sync - twice per song change.
+        Assert.Equal(0, tracksUpdated);
+        Assert.Same(track, statsChanged);
+    }
+
+    [Fact]
+    public void RecordPlayed_raises_TrackStatsChanged_with_the_resolved_track()
+    {
+        var oldTrack = new Track { Title = "A", Path = "/music/a.mp3" };
+        var library  = new Library(new List<Track> { oldTrack });
+
+        // A rescan replaces the instance; the event must carry the one that was
+        // actually mutated, not the stale reference the caller passed in.
+        var rescanned = new Track { Title = "A", Path = "/music/a.mp3" };
+        library.UpdateTracks(new List<Track> { rescanned });
+
+        Track? statsChanged = null;
+        library.TrackStatsChanged += (_, e) => statsChanged = e.Track;
+
+        library.RecordPlayed(oldTrack);
+
+        Assert.Same(rescanned, statsChanged);
+        Assert.NotNull(rescanned.LastPlayedAt);
+    }
+
+    [Fact]
+    public void IncrementPlayCount_sees_a_Path_set_after_the_index_was_first_built()
+    {
+        var placeholder = new Track { Title = "A" };
+        var library     = new Library(new List<Track> { placeholder });
+
+        // Build the path index while this track still has no Path...
+        library.IncrementPlayCount(new Track { Title = "B", Path = "/music/b.mp3" });
+
+        // ...then let a download set one in place, as LibraryDownloadService
+        // does, and announce it the way that service does.
+        placeholder.Path = "/music/a.mp3";
+        library.NotifyTrackChanged();
+
+        var incremented = library.IncrementPlayCount(new Track { Title = "A", Path = "/music/a.mp3" });
+
+        Assert.Same(placeholder, incremented);
+        Assert.Equal(1, placeholder.PlayCount);
+    }
+
+    // ── Tier 1.5: SyncKey is cached, and the cache is invalidated ────────────
+
+    [Fact]
+    public void SyncKey_is_stable_across_reads()
+    {
+        var track = new Track { Title = "A", Artists = "B", Album = "C", Duration = TimeSpan.FromSeconds(10) };
+
+        Assert.Equal(track.SyncKey, track.SyncKey);
+    }
+
+    [Theory]
+    [InlineData("title")]
+    [InlineData("artists")]
+    [InlineData("album")]
+    [InlineData("duration")]
+    public void SyncKey_is_recomputed_after_an_edit_to_any_field_it_derives_from(string field)
+    {
+        var track = new Track { Title = "A", Artists = "B", Album = "C", Duration = TimeSpan.FromSeconds(10) };
+        var before = track.SyncKey; // Populates the cache.
+
+        switch (field)
+        {
+            case "title":    track.Title    = "Z"; break;
+            case "artists":  track.Artists  = "Z"; break;
+            case "album":    track.Album    = "Z"; break;
+            case "duration": track.Duration = TimeSpan.FromSeconds(99); break;
+        }
+
+        // A tag edit in TrackInfoWindow must not leave a stale key behind - the
+        // whole sync layer matches tracks across devices on this.
+        Assert.NotEqual(before, track.SyncKey);
+    }
 }

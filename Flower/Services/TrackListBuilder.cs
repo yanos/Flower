@@ -78,11 +78,41 @@ public static class TrackListBuilder
     // Strips everything but letters/digits before comparing, so punctuation,
     // symbols, and spacing differences (leading quotes/brackets, "&" vs
     // "and", double vs. no space, etc.) don't affect sort order.
+    //
+    // Hand-rolled rather than the obvious LINQ one-liner
+    // (new string(s.Where(char.IsLetterOrDigit).ToArray())): this is a sort
+    // key selector, so it runs O(n log n) times over the whole library on every
+    // filter, sort and view change, and that version allocated an enumerator,
+    // a growing intermediate char[] and the result string on every single call.
+    // This counts first, then fills exactly once - and returns the input
+    // untouched when there was nothing to strip, which allocates nothing at
+    // all. See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
     private static string SortKey(string? s)
     {
         if (string.IsNullOrEmpty(s))
             return "";
-        return new string(s.Where(char.IsLetterOrDigit).ToArray());
+
+        var kept = 0;
+        foreach (var c in s)
+        {
+            if (char.IsLetterOrDigit(c))
+                kept++;
+        }
+
+        if (kept == s.Length)
+            return s;
+        if (kept == 0)
+            return "";
+
+        return string.Create(kept, s, static (span, source) =>
+        {
+            var i = 0;
+            foreach (var c in source)
+            {
+                if (char.IsLetterOrDigit(c))
+                    span[i++] = c;
+            }
+        });
     }
 
     // Groups runs of consecutive tracks that share an album so the row list can

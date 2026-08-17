@@ -18,6 +18,7 @@ public class MusicListPanel : Panel
     private readonly ColumnManager _columnManager;
 
     private IReadOnlyList<TrackRowViewModel> _items = Array.Empty<TrackRowViewModel>();
+    private int[] _groupLeader = [];
     private double _scrollOffset;
     private double _viewportHeight = 600; // reasonable default before first layout
     private double _viewportWidth  = 800; // reasonable default before first layout
@@ -47,6 +48,7 @@ public class MusicListPanel : Panel
     public void SetItems(IReadOnlyList<TrackRowViewModel> items)
     {
         _items = items;
+        _groupLeader = BuildGroupLeaderIndex(items);
         // The new list may reuse the same indices as the old one (e.g. switching
         // albums while scrolled near the top), so force every active slot to
         // re-bind its DataContext rather than relying on the index comparison.
@@ -123,15 +125,39 @@ public class MusicListPanel : Panel
         {
             set.Add(i);
             // Ensure the album-group leader is always rendered so its art spans down visually
-            if (!_items[i].IsFirstInAlbumGroup)
-            {
-                int j = i - 1;
-                while (j >= 0 && !_items[j].IsFirstInAlbumGroup) j--;
-                if (j >= 0)
-                    set.Add(j);
-            }
+            var leader = _groupLeader[i];
+            if (leader >= 0)
+                set.Add(leader);
         }
         return [.. set];
+    }
+
+    // Index of the album-group leader for each row, or -1 for a row that is
+    // its own leader (nothing extra to render).
+    //
+    // This used to be a backscan from every visible row up to its leader,
+    // making the per-scroll cost O(viewport x group size) rather than
+    // O(viewport) - and it runs on every single scroll event. The grouping only
+    // changes when the item list does, so compute it once here instead. See
+    // docs/ARCHITECTURE-REVIEW.md Tier 1.5.
+    private static int[] BuildGroupLeaderIndex(IReadOnlyList<TrackRowViewModel> items)
+    {
+        var leaders = new int[items.Count];
+        int current = -1;
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (items[i].IsFirstInAlbumGroup)
+            {
+                current = i;
+                leaders[i] = -1;
+            }
+            else
+            {
+                leaders[i] = current;
+            }
+        }
+
+        return leaders;
     }
 
     // ── Layout ────────────────────────────────────────────────────────────────

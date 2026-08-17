@@ -994,4 +994,70 @@ public class StoreRoundTripTests : IDisposable
         </dict>
         </plist>
         """;
+
+    // ── Tier 1.1: coalesced library saves ─────────────────────────────────────
+
+    [Fact]
+    public async Task ScheduleSave_coalesces_a_burst_into_a_single_write()
+    {
+        var store  = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var tracks = new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } };
+
+        // Playing one song fires two of these (RecordPlayed on Play,
+        // IncrementPlayCount on EndReached). Neither should hit the disk on its
+        // own - that write-per-event, over the whole library, is what Tier 1.1
+        // set out to remove.
+        store.ScheduleSave(tracks);
+        store.ScheduleSave(tracks);
+
+        Assert.False(File.Exists(LibraryStore.StorePath));
+
+        store.Flush();
+
+        Assert.True(File.Exists(LibraryStore.StorePath));
+        var reloaded = store.Load();
+        Assert.Equal("A", Assert.Single(reloaded).Title);
+    }
+
+    [Fact]
+    public void Flush_with_nothing_pending_writes_nothing()
+    {
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+
+        store.Flush();
+
+        Assert.False(File.Exists(LibraryStore.StorePath));
+    }
+
+    [Fact]
+    public async Task Save_supersedes_a_pending_ScheduleSave_rather_than_being_overwritten_by_it()
+    {
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+
+        store.ScheduleSave(new List<Track> { new Track { Title = "Stale" } });
+        // The app-exit path (MainWindow's Closing handler): an explicit
+        // synchronous save while a debounced one is still queued. The queued one
+        // must not fire afterwards and put the older snapshot back.
+        store.Save(new List<Track> { new Track { Title = "Current" } });
+
+        await Task.Delay(200);
+
+        Assert.Equal("Current", Assert.Single(store.Load()).Title);
+    }
+
+    [Fact]
+    public async Task Library_json_is_written_without_indentation_or_null_properties()
+    {
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        await store.SaveAsync(new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } });
+
+        var json = await File.ReadAllTextAsync(LibraryStore.StorePath);
+
+        // Tier 1.1's cheap size win - roughly 60% of the old file was
+        // indentation and null-valued properties spelled out in full.
+        Assert.DoesNotContain("\n  ", json);
+        Assert.DoesNotContain("null", json);
+        // Still round-trips, which is the only thing that actually matters.
+        Assert.Equal("A", Assert.Single(store.Load()).Title);
+    }
 }
