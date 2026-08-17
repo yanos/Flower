@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except 1.4 and two deferred 1.5 items. Tiers 2-5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except 1.4 and two deferred 1.5 items. Tier 5.1 implemented. Tiers 2-4 and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -12,9 +12,9 @@ Measured against the real 16k-track development library, not estimated:
 |---|---|
 | `library.json` | **17.9 MB**, 16,116 tracks, `WriteIndented = true` — since Tier 1.1, unindented and null-omitting |
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
-| `Flower.Server` test coverage | zero — `Flower.Tests` references only `Flower/Flower.csproj` |
+| `Flower.Server` test coverage | was zero; 55 tests as of Tier 5.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 406 (393 before Tier 1) |
+| Tests at review time | 461 — 406 in `Flower.Tests`, 55 in `Flower.Server.Tests` (393 before Tier 1) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -246,13 +246,21 @@ Two pieces of genuine business logic also sit in code-behind and should move whe
 
 ---
 
-## Tier 5 — test coverage — NOT STARTED
+## Tier 5 — test coverage — 5.1 DONE, rest NOT STARTED
 
-CI runs 335 tests, but `dotnet test Flower.Tests` builds only `Flower.Tests → Flower → Flower.Core`: **`Flower.Server` and `Flower.CLI` are never compiled by CI**, let alone tested. (The `tests.yml` comment claiming `Flower.csproj` multi-targets `net10.0;net9.0` is stale — it targets `net10.0` only.)
+CI ran `dotnet test Flower.Tests`, which builds only `Flower.Tests → Flower → Flower.Core`: **`Flower.Server` and `Flower.CLI` were never compiled by CI**, let alone tested. (The `tests.yml` comment claiming `Flower.csproj` multi-targets `net10.0;net9.0` was stale — it targets `net10.0` only. Corrected.)
+
+**What that hid, found while fixing it:** `Flower.Server/Data/`'s four entity sources — `FlowerDbContext.cs`, `TrackEntity.cs`, `PlaylistEntity.cs`, `PlaylistTrackEntity.cs` — **were never committed at all**. The `.gitignore` rule `Flower.Server/data/`, meant for the default runtime `DataDirectory`, also matched the *source* folder `Flower.Server/Data/` on a case-insensitive filesystem (macOS, Windows), so `git add` silently skipped them. `Flower.Server` has therefore been unbuildable from a clean checkout since it was scaffolded, and nothing noticed because no CI job ever built it. The rule is now per-artifact (`[Dd]ata/*.db`, `*.db-shm`, `*.db-wal`, `*.json`, `logs/`) rather than a directory exclusion — a directory exclusion would also have made a `!*.cs` negation impossible, since git does not descend into an excluded directory.
 
 Highest-value additions, roughly in priority order:
 
-1. **A `Flower.Server` test project at all.** `AdminAuthService`, `PairingCodeService`, `DeviceSignatureAuth`, `SubsonicAuth` are security-critical and entirely unverified. `WebApplicationFactory` + temp SQLite. Add CI jobs that at minimum *build* `Flower.Server` and `Flower.CLI`.
+1. ~~**A `Flower.Server` test project at all.**~~ **DONE** — `Flower.Server.Tests`, 55 tests. `SubsonicAuth` (salted-token acceptance, salt reuse, wrong password/username, each missing parameter, and that plaintext `p=` auth stays unsupported), `AdminAuthService` (fixed-time credential comparison including the prefix case, token issue/validate, tokens not surviving a restart), `PairingCodeService` (single-use, case/whitespace tolerance, ambiguous-character exclusion, independence between outstanding codes), and `LanGuard` (private/loopback/CGNAT allowed, public refused with 403 *before* auth runs).
+
+   Plus endpoint tests over the real route table via `WebApplicationFactory` + temp SQLite, covering every Tier 1.3 query shape. Requests go through `TestServer.SendAsync` rather than an `HttpClient`, because `LanGuard` rejects the null `RemoteIpAddress` an `HttpClient`-issued test request carries — that is real behaviour worth testing rather than configuring away, so the harness presents a loopback client instead of bypassing the middleware.
+
+   Confirmed to have teeth by mutation: reintroducing the `Max(DateTimeOffset)` that shipped in 1.3 fails two of these tests.
+
+   New CI jobs: `server-test` (runs the above) and `build-rest` (builds `Flower.Desktop` and `Flower.CLI`), so every project in the solution is now compiled by CI.
 2. **A real socket round trip**: `SyncHttpServer` against `LibrarySyncService`/`PlaylistSyncService`. Today `FakePeerHttpServer` substitutes for the real listener, so the route table, rate limits, and trust gates in `HandleRequestAsync` are validated only by hand.
 3. **`Importer`** — zero coverage. Dedup across overlapping paths, extension filtering, `IsCompilation` per-format branching, skip-unreadable-file behaviour.
 4. **`AlbumArtLoader`** — zero coverage, despite carrying the most "confirmed on a real device" bug narratives in the codebase (cache-key collision, corrupt-image fallback, remote fetch/disk cache).
@@ -290,7 +298,7 @@ Highest-value additions, roughly in priority order:
 
 1. **Tier 0** — done.
 2. ~~**Tier 1.1**~~ — done, on the JSON layer. The real split lands with 4.1.
-3. **Tier 5.1** — `Flower.Server` test project + CI jobs that build every project.
+3. ~~**Tier 5.1**~~ — done.
 4. **Tier 1.4** — manifest versioning/ETag and push-based sync events; the one Tier 1 section untouched. 1.2, 1.3 and most of 1.5 are done; row diffing is what is left.
 5. **Tier 3** — server rate limiting, default-password handling, log-push exposure.
 6. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.

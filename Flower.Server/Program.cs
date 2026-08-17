@@ -73,3 +73,8 @@ app.MapAdminEndpoints();
 app.MapPairingEndpoints();
 
 app.Run();
+
+// Exposed so Flower.Server.Tests's WebApplicationFactory<Program> can boot the
+// real app in-process. Top-level statements otherwise compile to an internal
+// Program class the test project cannot name.
+public partial class Program;
