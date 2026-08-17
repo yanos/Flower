@@ -9,11 +9,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Flower.Persistence
 {
-    // PublicKey defaults to "" (not a required constructor param) specifically
-    // so a pre-signing-scheme trusted-peers.json (written before this field
-    // existed) deserializes without throwing - see GetPublicKey's own doc
-    // comment for what that means for an old entry.
-    public sealed record TrustedPeer(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, string PublicKey = "");
+    // PublicKey is the cryptographic trust anchor (see SignatureVerifier), not
+    // an optional annotation on the entry - an approval without one is not a
+    // usable approval, so it's a plain required field.
+    public sealed record TrustedPeer(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, string PublicKey);
 
     public sealed record DeniedPeer(string Fingerprint, string Alias, DateTimeOffset DeniedAt);
 
@@ -83,16 +82,10 @@ namespace Flower.Persistence
         public bool IsTrusted(string fingerprint) =>
             Load().Any(p => p.Fingerprint == fingerprint);
 
-        // The actual cryptographic trust anchor (see SignatureVerifier) - null
-        // both for an unknown fingerprint and for a pre-signing-scheme entry
-        // with no key on file (PublicKey == ""), which the caller treats
-        // identically: no usable key means the signature can never verify, so
-        // that peer fails closed the same as an outright stranger until it
-        // re-pairs and a real key gets captured.
+        // Null for an unknown fingerprint, which the caller fails closed on:
+        // no key means the signature can never verify.
         public string? GetPublicKey(string fingerprint) =>
-            Load().FirstOrDefault(p => p.Fingerprint == fingerprint) is { PublicKey.Length: > 0 } peer
-                ? peer.PublicKey
-                : null;
+            Load().FirstOrDefault(p => p.Fingerprint == fingerprint)?.PublicKey;
 
         // Re-approving an already-trusted fingerprint (e.g. it reconnected with a
         // new alias/key) replaces its entry rather than duplicating it. Also

@@ -156,7 +156,12 @@ public class LibrarySyncService
         // (see SyncRolePolicy's doc comment above): a Server must never push
         // logs to anything, only a Client pushes its own snapshot to its one
         // paired Server.
-        if (!_appSettings.IsServer)
+        //
+        // ShareLogsWithPairedServer gates it on top of the role check: the
+        // snapshot travels over plaintext HTTP and carries exception text and
+        // absolute file paths, so it ships off by default (see the setting's
+        // own comment in AppSettingsStore).
+        if (!_appSettings.IsServer && _appSettings.ShareLogsWithPairedServer)
             await PushLogSnapshotAsync(device);
 
         return new LibrarySyncResult(true, songs.Count, addedCount);

@@ -113,6 +113,20 @@ namespace Flower.Persistence
         // request starts unconfirmed again).
         public bool PairedServerTrustConfirmed { get; set; }
 
+        // Whether this Client pushes its own recent log lines to its paired
+        // Server at the end of each library sync (LibrarySyncService.
+        // PushLogSnapshotAsync, read back by the Log window's remote view).
+        //
+        // Off by default, and deliberately opt-in rather than merely
+        // role-gated: the P2P transport is plaintext HTTP by design (TLS is
+        // permanently deferred there - see SYNC-PLAN.md), and a log snapshot
+        // is the highest-value payload that path carries. It contains
+        // exception text and absolute filesystem paths, i.e. usernames and
+        // library layout, which nothing else in the sync protocol exposes.
+        // Sending that in the clear on someone else's Wi-Fi has to be a
+        // choice the user made, not a default.
+        public bool ShareLogsWithPairedServer { get; set; } = false;
+
         // Log window preferences (View > Log...), remembered between
         // launches the same way IsRepeatEnabled/IsShuffleEnabled are - see
         // LogViewModel.

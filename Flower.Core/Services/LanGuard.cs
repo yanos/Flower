@@ -14,7 +14,16 @@ namespace Flower.Services;
 // failure here as a hard reject, not a warning.
 public static class LanGuard
 {
-    public static bool IsPrivateOrLoopback(IPAddress address, IEnumerable<string>? extraAllowedCidrs = null)
+    // allowCarrierGradeNat covers 100.64.0.0/10, which is where Tailscale
+    // hands out its addresses (the documented remote-access path for
+    // Flower.Server) but is also a real carrier-grade-NAT range: on a mobile
+    // connection sitting behind CGNAT, "some other subscriber on the same
+    // carrier" lands inside it too. Left on by default so the Tailscale path
+    // keeps working untouched, but Flower.Server exposes it as
+    // TrustTailscaleRange so a deployment that doesn't use a tailnet can drop
+    // the range instead of trusting it for nothing.
+    public static bool IsPrivateOrLoopback(
+        IPAddress address, IEnumerable<string>? extraAllowedCidrs = null, bool allowCarrierGradeNat = true)
     {
         if (IPAddress.IsLoopback(address))
             return true;
@@ -29,8 +38,9 @@ public static class LanGuard
             if (b[0] == 10
                 || (b[0] == 172 && b[1] is >= 16 and <= 31)
                 || (b[0] == 192 && b[1] == 168)
-                || (b[0] == 169 && b[1] == 254) // IPv4 link-local
-                || (b[0] == 100 && b[1] is >= 64 and <= 127)) // Tailscale CGNAT range, 100.64.0.0/10
+                || (b[0] == 169 && b[1] == 254)) // IPv4 link-local
+                return true;
+            if (allowCarrierGradeNat && b[0] == 100 && b[1] is >= 64 and <= 127) // Tailscale CGNAT range, 100.64.0.0/10
                 return true;
         }
         else if (address.AddressFamily == AddressFamily.InterNetworkV6)

@@ -74,6 +74,15 @@
                    FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
       </StackPanel>
 
+      <!-- Opt-in, off by default: the log snapshot travels over plaintext
+           HTTP and contains exception text and absolute file paths (see
+           AppSettings.ShareLogsWithPairedServer). -->
+      <StackPanel IsVisible="{Binding !Main.IsServer}" Margin="20,4,20,16" Spacing="6">
+        <CheckBox Content="Send logs to paired server" IsChecked="{Binding Main.ShareLogsWithPairedServer}"/>
+        <TextBlock Text="Sends this device's recent log lines after each sync so they can be read on the server. Sent unencrypted over your local network, and they include file paths and error details."
+                   FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+      </StackPanel>
+
       <!-- Client-only: pick/see the one Server this device bulk-syncs with -
            desktop's equivalent is ServerPickerView, embedded in Settings'
            Devices tab; mobile has no separate tab surface, so this is just

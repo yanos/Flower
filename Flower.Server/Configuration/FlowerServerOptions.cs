@@ -17,9 +17,22 @@ public sealed class FlowerServerOptions
 
     public List<string> LibraryPaths { get; set; } = [];
 
+    // The password shipped in appsettings.json before this was a real
+    // credential ("changeme"). Program.cs now refuses to start on it, or on
+    // an empty one - the same value guards both the admin API and, through
+    // SubsonicAuth, every /rest route, so a self-hoster who never edited the
+    // config was one exposed port away from an open server.
+    public const string PlaceholderAdminPassword = "changeme";
+
     public string AdminUsername { get; set; } = "admin";
 
-    public string AdminPassword { get; set; } = "changeme";
+    public string AdminPassword { get; set; } = "";
+
+    // Whether LanGuard's built-in allow-list includes 100.64.0.0/10 - the
+    // Tailscale range, and also generic carrier-grade NAT. See LanGuard's own
+    // remarks; turn it off on a deployment that doesn't reach the server over
+    // a tailnet.
+    public bool TrustTailscaleRange { get; set; } = true;
 
     // Widens LanGuard's built-in private/loopback/CGNAT allow-list (see
     // Program.cs's LanGuard middleware) for a trusted tunnel/proxy whose

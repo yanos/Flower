@@ -164,6 +164,41 @@ public class AdminAuthServiceTests
     }
 
     [Fact]
+    public void A_revoked_token_stops_validating_and_leaves_the_others_alone()
+    {
+        // Before this, a stolen bearer token was good for its full 24 hours
+        // with a process restart as the only lever (ARCHITECTURE-REVIEW Tier
+        // 3.4).
+        var service = Service();
+        var stolen = service.IssueToken();
+        var other = service.IssueToken();
+
+        Assert.True(service.Revoke(stolen));
+        Assert.False(service.ValidateToken(stolen));
+        Assert.True(service.ValidateToken(other));
+
+        // Revoking something already gone (or never issued) is a no-op, not
+        // an error - /logout can be called twice.
+        Assert.False(service.Revoke(stolen));
+        Assert.False(service.Revoke("not-a-real-token"));
+        Assert.False(service.Revoke(null));
+    }
+
+    [Fact]
+    public void RevokeAll_invalidates_every_outstanding_session()
+    {
+        var service = Service();
+        var tokens = Enumerable.Range(0, 5).Select(_ => service.IssueToken()).ToList();
+
+        Assert.Equal(5, service.RevokeAll());
+        Assert.All(tokens, t => Assert.False(service.ValidateToken(t)));
+        Assert.Equal(0, service.ActiveTokenCount);
+
+        // Still usable afterwards - this is a sign-out, not a shutdown.
+        Assert.True(service.ValidateToken(service.IssueToken()));
+    }
+
+    [Fact]
     public void A_token_from_one_service_instance_is_not_valid_in_another()
     {
         // Tokens live in memory only - a restart invalidates every session.

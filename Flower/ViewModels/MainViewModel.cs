@@ -348,6 +348,24 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    // Whether this Client pushes its recent log lines to its paired Server
+    // after each library sync - see AppSettings.ShareLogsWithPairedServer for
+    // why that is opt-in (plaintext transport, exception text and absolute
+    // paths in the payload). Persist-immediately, same as the two above.
+    public bool ShareLogsWithPairedServer
+    {
+        get => _appSettings?.ShareLogsWithPairedServer ?? false;
+        set
+        {
+            _appSettings ??= new AppSettings();
+            if (_appSettings.ShareLogsWithPairedServer == value)
+                return;
+            _appSettings.ShareLogsWithPairedServer = value;
+            OnPropertyChanged();
+            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+        }
+    }
+
     // Whether this device accepts incoming bulk-sync from Client devices
     // (Server) or initiates bulk-sync toward exactly one chosen Server
     // (Client, the default) - see Settings' General tab, AppSettings.IsServer,

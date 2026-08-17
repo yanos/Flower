@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#), running on Windows, macOS, Linux, iOS, and Android. Every feature must work across all platforms. Uses LibVLC for playback and TagLib# for metadata. Shared `Flower` library project + platform-specific entry points.
 
+## No Users Yet
+
+The app is a WIP with no released users and no data anyone else depends on. **Backward compatibility is not a constraint** — the sync/pairing protocol, on-disk JSON shapes, the server's DB schema, config keys and defaults can all be changed outright rather than versioned, sentinel-detected, or migrated. Prefer the clean design over the compatible one, and delete the old path instead of keeping a fallback. (Third-party *client* compatibility is a separate question: the OpenSubsonic surface is a published protocol others implement, so changing it means breaking real clients — that one still needs a reason.)
+
 ## Planning Docs
 
 `docs/` holds long-lived design/investigation notes, one file per initiative. Check the relevant file before touching that area — each records its own current status and what's left; this index is intentionally just a pointer, not a summary.

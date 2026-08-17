@@ -25,7 +25,13 @@ namespace Flower.Persistence
     // filesystem access to this device can extract it and impersonate this
     // device to its peers. That threat (local filesystem compromise) is
     // already far more severe than the LAN-spoofing threat this signing
-    // scheme actually closes.
+    // scheme actually closes. What *is* done about it: this file (and its
+    // .bak) is written 0600 on every non-Windows platform (see
+    // AtomicJsonFile's ownerOnly), so at least a different local user on a
+    // shared machine can't read it. Revocation stays peer-side - a victim
+    // deletes this file to force a new keypair, then each peer unpairs the
+    // old fingerprint (TrustedPeerStore.RevokeAsync / the Settings device
+    // list); there is still no way to invalidate a stolen key remotely.
     public class DeviceKeyStore
     {
         private readonly ILogger<DeviceKeyStore> _logger;
@@ -93,7 +99,7 @@ namespace Flower.Persistence
                 "ECDSA-P256",
                 Convert.ToBase64String(ecdsa.ExportPkcs8PrivateKey()),
                 Convert.ToBase64String(publicKeyRaw));
-            AtomicJsonFile.Write(StorePath, material, FlowerCoreJsonContext.Default.DeviceKeyMaterial);
+            AtomicJsonFile.Write(StorePath, material, FlowerCoreJsonContext.Default.DeviceKeyMaterial, ownerOnly: true);
         }
     }
 }

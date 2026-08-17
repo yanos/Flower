@@ -46,21 +46,11 @@ namespace Flower.Persistence
             {
                 var changed = false;
 
-                // Alias didn't exist before this field was added - backfill
-                // an existing device.json rather than showing a blank name.
-                if (string.IsNullOrEmpty(identity.Alias))
-                {
-                    identity.Alias = DefaultAlias();
-                    changed = true;
-                }
-
-                // A mismatch means either first run after the signing
-                // scheme shipped (a stale GUID-shaped fingerprint
-                // predating it) or a regenerated key (device-key.json
-                // lost/corrupted) - either way, every peer that trusted
-                // the old fingerprint needs one re-approval, same as any
-                // other fingerprint change (see DeviceKeyStore's own
-                // warning when it has to regenerate a key).
+                // A mismatch means the signing key was regenerated
+                // (device-key.json lost or corrupted - see DeviceKeyStore's
+                // own warning when it has to do that). The key is the
+                // identity, so the stored fingerprint follows it, and every
+                // peer that trusted the old one needs one re-approval.
                 if (identity.Fingerprint != derivedFingerprint)
                 {
                     _logger.LogWarning(

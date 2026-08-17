@@ -41,11 +41,12 @@ namespace Flower.Persistence
 
         private static string TempPath(string path) => path + ".tmp";
 
-        public static void Write<T>(string path, T value, JsonTypeInfo<T> typeInfo)
+        public static void Write<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly = false)
         {
             var temp = PrepareWrite(path);
             using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
+                RestrictToOwner(temp, ownerOnly);
                 JsonSerializer.Serialize(stream, value, typeInfo);
                 // flushToDisk: the whole point is surviving a crash between
                 // here and the swap below - a write sitting in the OS page
@@ -54,18 +55,46 @@ namespace Flower.Persistence
             }
 
             Commit(temp, path);
+            RestrictToOwner(path, ownerOnly);
+            RestrictToOwner(BackupPath(path), ownerOnly);
         }
 
-        public static async Task WriteAsync<T>(string path, T value, JsonTypeInfo<T> typeInfo)
+        public static async Task WriteAsync<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly = false)
         {
             var temp = PrepareWrite(path);
             await using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
+                RestrictToOwner(temp, ownerOnly);
                 await JsonSerializer.SerializeAsync(stream, value, typeInfo);
                 stream.Flush(flushToDisk: true);
             }
 
             Commit(temp, path);
+            RestrictToOwner(path, ownerOnly);
+            RestrictToOwner(BackupPath(path), ownerOnly);
+        }
+
+        // 0600 for files holding secrets (DeviceKeyStore's private key). Set on
+        // the temp file *before* any bytes are serialized into it, so the key
+        // material is never world-readable even briefly, and re-applied after
+        // Commit because File.Replace preserves the *target's* old mode, not
+        // the temp file's. No-op on Windows, where the file inherits the
+        // per-user profile directory's ACL and SetUnixFileMode throws.
+        private static void RestrictToOwner(string path, bool ownerOnly)
+        {
+            if (!ownerOnly || OperatingSystem.IsWindows() || !File.Exists(path))
+                return;
+
+            try
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+            catch (Exception)
+            {
+                // Best-effort: a filesystem without POSIX modes (an Android
+                // external-storage/FAT mount, a network share) is not a reason
+                // to fail the save - the file's contents are still correct.
+            }
         }
 
         // Returns default(T) only when there is genuinely nothing to read (no

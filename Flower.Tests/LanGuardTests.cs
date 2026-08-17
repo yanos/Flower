@@ -48,6 +48,26 @@ public class LanGuardTests
         Assert.True(LanGuard.IsPrivateOrLoopback(address, ["10.0.0.0/8", "203.0.113.42/32"]));
     }
 
+    [Theory]
+    [InlineData("100.64.0.1")]
+    [InlineData("100.100.100.100")]
+    [InlineData("100.127.255.255")]
+    public void IsPrivateOrLoopback_can_be_told_not_to_trust_the_cgnat_range(string address)
+    {
+        // 100.64.0.0/10 is Tailscale's range but also generic carrier-grade
+        // NAT, where "another subscriber on the same carrier" lives - a
+        // deployment that doesn't use a tailnet can drop it (Flower.Server's
+        // TrustTailscaleRange).
+        Assert.False(LanGuard.IsPrivateOrLoopback(
+            IPAddress.Parse(address), allowCarrierGradeNat: false));
+
+        // Everything else keeps working with it off.
+        Assert.True(LanGuard.IsPrivateOrLoopback(
+            IPAddress.Parse("192.168.1.1"), allowCarrierGradeNat: false));
+        Assert.True(LanGuard.IsPrivateOrLoopback(
+            IPAddress.Parse("127.0.0.1"), allowCarrierGradeNat: false));
+    }
+
     [Fact]
     public void IsPrivateOrLoopback_ignores_malformed_extra_cidrs()
     {

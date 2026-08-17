@@ -20,7 +20,7 @@ This review answers **what works, what needs improvement, and what needs a rewri
 
 ## Status
 
-**Tier 0: implemented. Tier 1: implemented except §1.4, plus two deliberately deferred §1.5 items. §5.1: implemented. Tiers 2-4 and the rest of Tier 5: documented, not started.**
+**Tier 0: implemented. Tier 1: implemented except §1.4, plus two deliberately deferred §1.5 items. Tier 3: implemented. §5.1: implemented. Tiers 2 and 4 and the rest of Tier 5: documented, not started.**
 
 This file is the original review and proposal, kept as written. Per *Scope of this change* below, the living tracker is **`docs/ARCHITECTURE-REVIEW.md`** — it carries the per-item status, what each fix actually turned out to be, and the findings that only surfaced during implementation. Update that file as things land, not this one; the execution sections here (*Tier 0 execution*, *Tier 1 execution*) record what was planned and, for Tier 1, what was done.
 
@@ -31,16 +31,16 @@ Delivered so far:
 - **Tier 1.2** — album art decoded at a display-sized cap, with a strong LRU and pruning of the previously unbounded weak cache.
 - **Tier 1.3** — `Flower.Server` browse queries grouped, aggregated and paginated in SQL. Measured against the real 16,116-track library: `getAlbumList2` 187ms → 29ms, `search3` 172ms → 31ms.
 - **Tier 1.5** — cached `SyncKey`, O(1) path lookups in `Library`, cached `TrustedPeerStore`, precomputed album-group leaders, desktop no longer building two discarded tile grids per keystroke, allocation-free `SortKey`, diffed pair-button notifications.
+- **Tier 3** (all six items) — `/rest/*` rate limiting with a per-source failed-auth lockout, a server that refuses to boot on the placeholder admin password, opt-in log push, 0600 on the private signing key, revocable admin tokens, a sliding-window `RateLimiter`, and a global request-body cap. See `ARCHITECTURE-REVIEW.md`'s *Tier 3 execution* for what each one is and for the three things deliberately left alone.
 - **Tier 5.1** — `Flower.Server.Tests` (55 tests) covering the four security-critical services, `LanGuard`, and every Tier 1.3 query shape against the real route table; CI now compiles every project in the solution. This also uncovered that `Flower.Server/Data/`'s four entity sources had **never been committed** — a `.gitignore` rule for the runtime data directory was matching the source folder on case-insensitive filesystems, so the server could not build from a clean checkout, and no CI job existed to notice.
 
 Still open, in the order worth doing them:
 
 1. **Tier 1.4** — manifest ETag/versioning and push-based sync events. The one Tier 1 section untouched, and partly a correctness gap rather than an optimization: a server-side change is still never noticed while both apps stay running.
 2. **Tier 1.5, deferred** — row diffing in `TrackListBuilder.Build`, and with it the `AlbumArt` discard on every rebuild (mitigated by §1.2's LRU, not fixed). The largest remaining Tier 1 item and the only one needing structural change to a hot, well-covered path.
-3. **Tier 3** — server rate limiting, default-password handling, log-push exposure. Now cheap to do safely: `Flower.Server.Tests` exists, and `LanGuard` already has coverage to build on.
-4. **Tier 5.2-5.9** — the rest of the coverage gaps, most valuably `DeviceSignatureAuth` and a real `SyncHttpServer` socket round trip (today `FakePeerHttpServer` stands in for the real listener, so the route table, rate limits and trust gates are hand-verified only).
-5. **Tier 4.1** — the SQLite migration, once a roadmap item actually demands queryable state. It also subsumes §1.1's real fix (splitting mutable per-track state out of the metadata blob) and §1.3's `DateAdded` value converter.
-6. **Tiers 2, 4.2/4.3** — the source-of-truth consolidation and the ViewModel/code-behind decomposition, last, when the seams are visible.
+3. **Tier 5.2-5.9** — the rest of the coverage gaps, most valuably `DeviceSignatureAuth` and a real `SyncHttpServer` socket round trip (today `FakePeerHttpServer` stands in for the real listener, so the route table, rate limits and trust gates are hand-verified only).
+4. **Tier 4.1** — the SQLite migration, once a roadmap item actually demands queryable state. It also subsumes §1.1's real fix (splitting mutable per-track state out of the metadata blob) and §1.3's `DateAdded` value converter.
+5. **Tiers 2, 4.2/4.3** — the source-of-truth consolidation and the ViewModel/code-behind decomposition, last, when the seams are visible.
 
 ---
 
@@ -278,9 +278,11 @@ Every service in `App.axaml.cs::Bootstrap` (`:127-309`) is `new`'d by hand then 
 
 `Library.UpdateTracks` (`:87-91` and `:95-99`) repeats the same five assignments in two branches, plus `CarryForwardOrigin`. Every new persisted-and-not-rescannable field (`Starred`, `Rating`, `Source`, …) must be remembered by hand in three places. Make it one `CarryForwardMutableState(from, to)` method, and add a test that fails when a new such field is added and forgotten.
 
-### 2.6 No schema version anywhere
+### 2.6 No schema version anywhere — DONE
 
 Backward compatibility is ad hoc sentinel detection invented independently three times: `PlaylistRecord.Id = default` (`PlaylistStore.cs:38,56`), `TrustedPeer.PublicKey = ""` (`TrustedPeerStore.cs:12-15`), `DeviceIdentityStore.Load`'s alias-backfill/fingerprint-correction (`:54-78`). `Flower.Server` is worse: `EnsureCreatedAsync()` (`Program.cs:61`) with no EF migrations at all, so **any** schema change wipes a self-hoster's database.
+
+**Resolved.** All three JSON sentinels were deleted outright rather than replaced by a version field — there are no users to be compatible with (`CLAUDE.md`, "No Users Yet") — and `Flower.Server` moved to real EF migrations (`Data/Migrations/`, `MigrateAsync()`). See `ARCHITECTURE-REVIEW.md` §2.5 for the per-site detail.
 
 ---
 
