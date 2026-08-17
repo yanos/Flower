@@ -5,11 +5,11 @@
 
   <!-- MinVer: computes $(Version) from git tags for the shipped entry-point
        projects only (not the shared library or the test project -->
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI' OR '$(MSBuildProjectName)' == 'Flower.Server'">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI' OR '$(MSBuildProjectName)' == 'Flower.Server' OR '$(MSBuildProjectName)' == 'Flower.Web'">
     <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI' OR '$(MSBuildProjectName)' == 'Flower.Server'">
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI' OR '$(MSBuildProjectName)' == 'Flower.Server' OR '$(MSBuildProjectName)' == 'Flower.Web'">
     <PackageReference Include="MinVer" Version="7.*">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
