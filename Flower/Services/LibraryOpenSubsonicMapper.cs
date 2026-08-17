@@ -116,12 +116,13 @@ public static class LibraryOpenSubsonicMapper
     // but a consistent (or absent) AlbumArtists tag - as one entry instead of
     // fragmenting into one per distinct track artist (see Track.EffectiveAlbumArtist).
     private static IEnumerable<IGrouping<string, Track>> GroupByAlbum(IReadOnlyList<Track> tracks) =>
-        tracks.Where(t => t.Path != null).GroupBy(t => AlbumId(t.Album, t.EffectiveAlbumArtist));
+        tracks.Where(t => t.Path != null).GroupBy(t => AlbumIdFor(t));
 
-    public static string AlbumId(string? album, string? artist) => $"al:{Normalize(album)}|{Normalize(artist)}";
-    public static string ArtistId(string? artist) => $"ar:{Normalize(artist)}";
-
-    private static string Normalize(string? value) => value?.Trim().ToLowerInvariant() ?? "";
+    // The grouping key for one track, in one place, so no call site has to
+    // remember that it is the *album* artist that identifies an album (see
+    // SubsonicIdentity's own comment - getting this wrong silently 404'd
+    // cover art for every compilation).
+    public static string AlbumIdFor(Track track) => SubsonicIdentity.AlbumId(track.EffectiveAlbumArtist, track.Album);
 
     private static AlbumID3 ToAlbumID3(string albumId, List<Track> tracks, string? artHash)
     {
@@ -130,7 +131,7 @@ public static class LibraryOpenSubsonicMapper
             Id: albumId,
             Name: first.Album ?? "",
             Artist: first.EffectiveAlbumArtist,
-            ArtistId: ArtistId(first.EffectiveAlbumArtist),
+            ArtistId: SubsonicIdentity.ArtistId(first.EffectiveAlbumArtist),
             CoverArt: artHash,
             SongCount: tracks.Count,
             Duration: (long)tracks.Sum(t => t.Duration.TotalSeconds),
@@ -144,7 +145,11 @@ public static class LibraryOpenSubsonicMapper
         Album: track.Album,
         Artist: track.Artists,
         AlbumId: albumId,
-        ArtistId: ArtistId(track.Artists),
+        // The album artist, matching AlbumIdFor above and the standalone
+        // server (LibraryImportService) - an artist id derived from the
+        // per-track Artists would point at an artist the album listing never
+        // mentions for any compilation.
+        ArtistId: SubsonicIdentity.ArtistId(track.EffectiveAlbumArtist),
         Track: track.TrackNumber == 0 ? null : (int)track.TrackNumber,
         Year: ParseYear(track.Year),
         Genre: track.Genre,

@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.5 implemented. Tier 3 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.5 implemented and 2.1 partly. Tier 3 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 55 tests as of Tier 5.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 510 — 445 in `Flower.Tests`, 65 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4) |
+| Tests at review time | 520 — 450 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -164,9 +164,9 @@ Why a session id rather than a bare counter or a content hash: a bare counter co
 
 ---
 
-## Tier 2 — structural: multiple sources of truth — 2.5 DONE, rest NOT STARTED
+## Tier 2 — structural: multiple sources of truth — 2.5 DONE, 2.1 PARTLY DONE, rest NOT STARTED
 
-### 2.1 Four track models and five identity schemes
+### 2.1 Four track models and five identity schemes — PARTLY DONE
 
 | Layer | Model | Identity |
 |---|---|---|
@@ -179,6 +179,12 @@ Why a session id rather than a bare counter or a content hash: a bare counter co
 The two album-ID schemes differ by a punctuation character and nothing enforces the distinction (`LibraryOpenSubsonicMapper.AlbumId` vs `SubsonicIdentity.AlbumId`). `SubsonicMapper.ToChild` re-implements duration rounding inline as `Math.Round(t.DurationSeconds)` instead of calling `Track.RoundedSeconds` — exactly the bug class `Track.RoundedSeconds`' own doc comment records having already been hit and fixed once. `TrackEntity` has a `Starred` column the client `Track` has no concept of.
 
 **Direction:** `Track.Id` is now the single identity; demote `SyncKey` to a *matching heuristic* used at import and first pairing, not an identity. Move the canonical `(artist, album) → id` function and the DTO mapping into `Flower.Core` so client and server share one implementation.
+
+**Done:** the id function and the duration rounding are now single implementations. `Flower.Core/Services/SubsonicIdentity.cs` is the only `(albumArtist, album) → id` in the codebase, used by the standalone server (`LibraryImportService`) and the embedded host (`LibraryOpenSubsonicMapper`) alike; the client's plain-text `al:{album}|{artist}` form is gone in favour of the hashed one, which is opaque and can't collide when an album name contains the separator. `SubsonicMapper.ToChild` calls `Track.RoundedSeconds` instead of re-implementing it.
+
+Unifying them **surfaced a live bug**: `AlbumArtLoader`'s remote-fetch path and `SyncHttpServer.HandleGetCoverArtAsync` both derived the album id from the per-track `Artists`, while the manifest that published those ids grouped by `EffectiveAlbumArtist`. Remote cover art therefore 404'd for every album with an `AlbumArtists` tag or a compilation flag — silently, since a missing cover just renders as no art. Both now go through `LibraryOpenSubsonicMapper.AlbumIdFor(track)`, and a song's `ArtistId` is the album artist too, so it points at an artist the album listing actually mentions. Covered by `LibraryOpenSubsonicMapperTests` (compilation ids agree and match what `BuildAlbumList` publishes; ids are opaque and normalized) and `Flower.Server.Tests`' `IdentityParityTests` (rounding parity, including that both sides inherit `Math.Round`'s banker's rounding at an exact .5 because they call the same method).
+
+**Still open:** the four *models* themselves (`Track`, `Child`/`AlbumID3`, `PlaylistSyncTrackDto`, `TrackEntity`) are unchanged — mapping between them is not shareable while the inputs differ, and collapsing them is a much larger change. `TrackEntity.Starred` still has no client-side counterpart; that is feature work (it needs UI), not drift to be deduplicated. `Child.Id` is still the origin track's `SyncKey` rather than its `Track.Id`, so a tag edit on the serving side still breaks a peer's outstanding stream/download references.
 
 ### 2.2 Auth and album-art lookup implemented two-to-three times
 

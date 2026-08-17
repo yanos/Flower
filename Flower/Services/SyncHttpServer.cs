@@ -751,7 +751,7 @@ public class SyncHttpServer : IDisposable
     {
         var id = context.Request.QueryString["id"];
         var track = id != null
-            ? _library.Tracks.FirstOrDefault(t => t.Path != null && LibraryOpenSubsonicMapper.AlbumId(t.Album, t.Artists) == id)
+            ? _library.Tracks.FirstOrDefault(t => t.Path != null && LibraryOpenSubsonicMapper.AlbumIdFor(t) == id)
             : null;
 
         var bytes = track != null ? AlbumArtLoader.TryGetLocalArtBytes(track) : null;

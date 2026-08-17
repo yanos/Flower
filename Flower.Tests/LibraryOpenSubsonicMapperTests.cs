@@ -127,7 +127,7 @@ public class LibraryOpenSubsonicMapperTests
             RealTrack("Come Together", "Beatles", "Abbey Road", trackNumber: 1, durationSeconds: 259),
             RealTrack("Something", "Beatles", "Abbey Road", trackNumber: 2, durationSeconds: 183),
         };
-        var albumId = LibraryOpenSubsonicMapper.AlbumId("Abbey Road", "Beatles");
+        var albumId = SubsonicIdentity.AlbumId("Beatles", "Abbey Road");
 
         var album = LibraryOpenSubsonicMapper.FindAlbum(tracks, albumId, "self-1");
 
@@ -158,7 +158,7 @@ public class LibraryOpenSubsonicMapperTests
         };
         Assert.EndsWith("|370", track.SyncKey); // Sanity check on the premise itself.
 
-        var albumId = LibraryOpenSubsonicMapper.AlbumId("Vol.II", "Angine de Poitrine");
+        var albumId = SubsonicIdentity.AlbumId("Angine de Poitrine", "Vol.II");
         var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, albumId, "self-1");
 
         Assert.Equal(370, album!.Song![0].Duration);
@@ -169,7 +169,7 @@ public class LibraryOpenSubsonicMapperTests
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road");
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, LibraryOpenSubsonicMapper.AlbumId("Abbey Road", "Beatles"), "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
 
         Assert.Equal("mp3", album!.Song!.Single().Suffix);
     }
@@ -179,7 +179,7 @@ public class LibraryOpenSubsonicMapperTests
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road", durationSeconds: 259);
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, LibraryOpenSubsonicMapper.AlbumId("Abbey Road", "Beatles"), "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
 
         Assert.Equal(track.SyncKey, album!.Song!.Single().Id);
     }
@@ -191,7 +191,7 @@ public class LibraryOpenSubsonicMapperTests
         track.PlayCount = 3;
         track.ImportedPlayCount = 4;
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, LibraryOpenSubsonicMapper.AlbumId("Abbey Road", "Beatles"), "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
 
         Assert.Equal(7, album!.Song!.Single().PlayCounts!["self-1"]);
     }
@@ -202,8 +202,67 @@ public class LibraryOpenSubsonicMapperTests
         var track = RealTrack("Come Together", "Beatles", "Abbey Road");
         track.RemotePlayCounts = new Dictionary<string, int> { ["peer-2"] = 12 };
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, LibraryOpenSubsonicMapper.AlbumId("Abbey Road", "Beatles"), "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
 
         Assert.Equal(12, album!.Song!.Single().PlayCounts!["peer-2"]);
+    }
+
+    // ── One identity scheme, client and server (Tier 2.1) ────────────────────
+
+    [Fact]
+    public void AlbumIdFor_is_the_album_artist_not_the_track_artist()
+    {
+        // A compilation: one album artist, many track artists. Deriving the
+        // id from Artists fragments the album into one id per track, and the
+        // grouped id nothing ever hands out - which is exactly how remote
+        // cover art for every compilation used to 404 (AlbumArtLoader and
+        // SyncHttpServer.HandleGetCoverArtAsync both asked with the track
+        // artist while the manifest was built with the album artist).
+        var first = new Track
+        {
+            Title = "One", Artists = "Artist A", AlbumArtists = "Various Artists",
+            Album = "Compilation", Path = "/music/one.mp3",
+        };
+        var second = new Track
+        {
+            Title = "Two", Artists = "Artist B", AlbumArtists = "Various Artists",
+            Album = "Compilation", Path = "/music/two.mp3",
+        };
+
+        Assert.Equal(LibraryOpenSubsonicMapper.AlbumIdFor(first), LibraryOpenSubsonicMapper.AlbumIdFor(second));
+        Assert.Equal(SubsonicIdentity.AlbumId("Various Artists", "Compilation"), LibraryOpenSubsonicMapper.AlbumIdFor(first));
+
+        // And the id the album listing actually publishes is that same one.
+        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList([first, second]));
+        Assert.Equal(LibraryOpenSubsonicMapper.AlbumIdFor(first), album.Id);
+    }
+
+    [Fact]
+    public void A_songs_ArtistId_is_the_albums_artist_so_it_points_at_an_artist_the_listing_mentions()
+    {
+        var track = new Track
+        {
+            Title = "One", Artists = "Artist A", AlbumArtists = "Various Artists",
+            Album = "Compilation", Path = "/music/one.mp3",
+        };
+
+        var album = LibraryOpenSubsonicMapper.FindAlbum([track], LibraryOpenSubsonicMapper.AlbumIdFor(track), "self-1");
+
+        Assert.Equal(SubsonicIdentity.ArtistId("Various Artists"), album!.Song!.Single().ArtistId);
+        Assert.Equal(album.ArtistId, album.Song!.Single().ArtistId);
+    }
+
+    [Theory]
+    [InlineData("Beatles", "Abbey Road")]
+    [InlineData("  BEATLES  ", "abbey road")] // Normalized: trimmed and lowercased.
+    [InlineData("A|B", "C")] // The old plain-text form embedded this separator into the id itself.
+    public void Ids_are_opaque_and_normalized(string artist, string album)
+    {
+        var id = SubsonicIdentity.AlbumId(artist, album);
+
+        Assert.Equal(SubsonicIdentity.AlbumId(artist.Trim().ToUpperInvariant(), album.ToUpperInvariant()), id);
+        Assert.StartsWith("al-", id);
+        Assert.DoesNotContain(artist.Trim().ToLowerInvariant(), id);
+        Assert.NotEqual(SubsonicIdentity.AlbumId(album, artist), id); // Argument order is meaningful.
     }
 }

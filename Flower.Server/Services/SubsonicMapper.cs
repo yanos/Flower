@@ -1,3 +1,4 @@
+using Flower.Models;
 using Flower.Server.Data;
 using Flower.Services;
 
@@ -22,7 +23,11 @@ public static class SubsonicMapper
         Size: t.Size,
         ContentType: t.ContentType,
         Suffix: t.Suffix,
-        Duration: (int)Math.Round(t.DurationSeconds),
+        // Track.RoundedSeconds, not an inline Math.Round: an earlier inline
+        // version here truncated instead of rounding and silently disagreed
+        // with the client's own duration for any track whose fractional part
+        // was >= .5s (see Track.RoundedSeconds' own comment).
+        Duration: Track.RoundedSeconds(t.DurationSeconds),
         BitRate: t.Bitrate > 0 ? t.Bitrate : null,
         CoverArt: t.AlbumId,
         Starred: t.Starred,
