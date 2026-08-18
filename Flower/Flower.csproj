@@ -7,6 +7,12 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- CompositionRootTests builds the real container out of
+         App.RegisterServices, which is not something any head should call. -->
+    <InternalsVisibleTo Include="Flower.Tests" />
+  </ItemGroup>
+
   
   <ItemGroup>
     <ProjectReference Include="..\Flower.Core\Flower.Core.csproj" />

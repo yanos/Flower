@@ -7,19 +7,17 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Flower.Tests.TestSupport;
 
-// Ioc.Default is a process-wide singleton that can only be configured once,
-// so any test touching code that service-locates through it (AlbumArtLoader's
-// remote-art path) has to share one configuration for the whole test run.
-// AlbumArtLoader's tests want it to hold *nothing* - GetService returning
-// null is the "no peer to fetch from" branch they exercise - while
-// TrackRowControl (built by MusicListPanelTests) genuinely needs a
-// ColumnManager out of it. The
-// ColumnManager registered here is constructed over a plain in-memory
-// AppSettings, so resolving it touches no disk.
+// Ioc.Default is a process-wide singleton that can only be configured once, so
+// any test touching code that service-locates through it has to share one
+// configuration for the whole test run. Only TrackRowControl (built by
+// MusicListPanelTests) still needs anything out of it - a ColumnManager,
+// registered here over a plain in-memory AppSettings so resolving it touches
+// no disk.
 //
-// That one shared, immutable container is the *only* thing a test can
-// reasonably set up here is the point of docs/ARCHITECTURE-REVIEW.md §2.3 -
-// code reaching into Ioc.Default cannot be given per-test dependencies.
+// That one shared, immutable container is the *only* thing such a test can
+// set up, which is the point of docs/ARCHITECTURE-REVIEW.md §2.3: code
+// reaching into Ioc.Default cannot be given per-test dependencies. Controls
+// resolving their own ViewModels are what is left of that pattern - see §4.2.
 internal static class TestIoc
 {
     private static readonly object Gate = new();

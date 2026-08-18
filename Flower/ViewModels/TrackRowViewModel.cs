@@ -235,7 +235,7 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
 
     private async Task LoadArtAsync()
     {
-        var bmp = await AlbumArtLoader.LoadAsync(Track);
+        var bmp = await AlbumArtLoader.Current.LoadAsync(Track);
         Interlocked.Exchange(ref _artState, 2);
         AlbumArt = bmp;
     }

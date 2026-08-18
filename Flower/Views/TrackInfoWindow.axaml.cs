@@ -248,7 +248,7 @@ public partial class TrackInfoWindow : Window
         if (_editTracks.Count == 0)
             return;
 
-        var bmp = await AlbumArtLoader.LoadAsync(_editTracks[0]);
+        var bmp = await AlbumArtLoader.Current.LoadAsync(_editTracks[0]);
         if (requestId == _artRequestId)
             AlbumArtView.AlbumArt = bmp;
     }

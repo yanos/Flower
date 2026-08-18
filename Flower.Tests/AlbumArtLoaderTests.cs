@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net;
 using System.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
@@ -8,6 +9,8 @@ using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
 using Flower.Tests.TestSupport;
+
+using Microsoft.Extensions.Logging.Abstractions;
 
 using Xunit;
 
@@ -25,22 +28,26 @@ namespace Flower.Tests;
 // drawing stub reports every image as 1x1 whatever bytes it is handed, which
 // would make the scaling and corrupt-input cases assert nothing.
 //
-// Not covered: the actual peer HTTP fetch. AlbumArtLoader is a static class
-// that service-locates PeerTrackResolver/DeviceIdentity out of the
-// process-wide Ioc.Default (§2.3), so a test cannot give it a peer pointed at
-// a local fake server without fixing the whole process's container for the
-// run. The branches on either side of that call - disk cache hit, and no
-// resolvable peer - are covered below.
+// The peer HTTP fetch used to be uncoverable: AlbumArtLoader was a static
+// class that service-located PeerTrackResolver/DeviceIdentity out of the
+// process-wide Ioc.Default (§2.3), so no test could point it at a local fake
+// server without fixing the whole process's container for the run. Both are
+// constructor parameters now, so the fetch, its on-disk caching, and the
+// no-resolvable-peer branch are all exercised below against a real socket.
 [Collection("PlatformDataDirectory")]
 public class AlbumArtLoaderTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("flower-albumart-tests").FullName;
     private readonly string? _previousDataDirectory;
 
+    // No peer resolver and no identity: the "nothing to fetch from" loader
+    // every test that isn't about the remote fetch uses. Its dependencies
+    // being constructor parameters is what lets a test choose that, rather
+    // than inheriting whatever the process-wide container happens to hold.
+    private readonly AlbumArtLoader _loader = new(null, null, NullLogger<AlbumArtLoader>.Instance);
+
     public AlbumArtLoaderTests()
     {
-        TestIoc.EnsureConfigured();
-
         // AlbumArtLoader's remote disk cache lives under AppDataDirectory -
         // unpinned, these tests would write into the real library folder.
         _previousDataDirectory = PlatformDataDirectory.Current;
@@ -95,7 +102,7 @@ public class AlbumArtLoaderTests : IDisposable
     {
         var track = LocalTrack(_root, "embedded.wav", Unique("Album"), SyntheticPng.Build(120, 120));
 
-        var bitmap = await AlbumArtLoader.LoadAsync(track);
+        var bitmap = await _loader.LoadAsync(track);
 
         Assert.NotNull(bitmap);
         Assert.Equal(120, bitmap.PixelSize.Width);
@@ -106,7 +113,7 @@ public class AlbumArtLoaderTests : IDisposable
     {
         var track = LocalTrack(Dir("bare"), "bare.wav", Unique("Album"), picture: null);
 
-        Assert.Null(await AlbumArtLoader.LoadAsync(track));
+        Assert.Null(await _loader.LoadAsync(track));
     }
 
     [AvaloniaFact]
@@ -116,7 +123,7 @@ public class AlbumArtLoaderTests : IDisposable
         // that used to fault out of Task.Run unobserved.
         var track = LocalTrack(Dir("corrupt"), "corrupt.wav", Unique("Album"), [0x89, 0x50, 0x4E, 0x47, 0, 1, 2, 3]);
 
-        Assert.Null(await AlbumArtLoader.LoadAsync(track));
+        Assert.Null(await _loader.LoadAsync(track));
     }
 
     [AvaloniaFact]
@@ -124,7 +131,7 @@ public class AlbumArtLoaderTests : IDisposable
     {
         var track = LocalTrack(Dir("large"), "large.wav", Unique("Album"), SyntheticPng.Build(1400, 1400));
 
-        var bitmap = await AlbumArtLoader.LoadAsync(track);
+        var bitmap = await _loader.LoadAsync(track);
 
         // MaxArtPixels - a 1400x1400 cover is ~7.8 MB of decoded RGBA if kept
         // whole, per album, for the life of the cache entry (Tier 1.2).
@@ -136,7 +143,7 @@ public class AlbumArtLoaderTests : IDisposable
     {
         var track = LocalTrack(Dir("small"), "small.wav", Unique("Album"), SyntheticPng.Build(300, 300));
 
-        var bitmap = await AlbumArtLoader.LoadAsync(track);
+        var bitmap = await _loader.LoadAsync(track);
 
         Assert.Equal(300, bitmap!.PixelSize.Width);
     }
@@ -152,8 +159,8 @@ public class AlbumArtLoaderTests : IDisposable
         var first = LocalTrack(downloads, "first.wav", Unique("First"), SyntheticPng.Build(64, 64));
         var second = LocalTrack(downloads, "second.wav", Unique("Second"), SyntheticPng.Build(96, 96));
 
-        var firstArt = await AlbumArtLoader.LoadAsync(first);
-        var secondArt = await AlbumArtLoader.LoadAsync(second);
+        var firstArt = await _loader.LoadAsync(first);
+        var secondArt = await _loader.LoadAsync(second);
 
         Assert.Equal(64, firstArt!.PixelSize.Width);
         Assert.Equal(96, secondArt!.PixelSize.Width);
@@ -166,8 +173,8 @@ public class AlbumArtLoaderTests : IDisposable
         var first = LocalTrack(Dir("disc-one"), "a.wav", album, SyntheticPng.Build(64, 64));
         var second = LocalTrack(Dir("disc-two"), "b.wav", album, SyntheticPng.Build(64, 64));
 
-        var firstArt = await AlbumArtLoader.LoadAsync(first);
-        var secondArt = await AlbumArtLoader.LoadAsync(second);
+        var firstArt = await _loader.LoadAsync(first);
+        var secondArt = await _loader.LoadAsync(second);
 
         // Same instance, not merely an equivalent one: the cache exists so a
         // 40-tile grid decodes each cover once.
@@ -180,8 +187,8 @@ public class AlbumArtLoaderTests : IDisposable
         var first = LocalTrack(Dir("untagged-one"), "a.wav", album: "", SyntheticPng.Build(64, 64));
         var second = LocalTrack(Dir("untagged-two"), "b.wav", album: "", SyntheticPng.Build(96, 96));
 
-        var firstArt = await AlbumArtLoader.LoadAsync(first);
-        var secondArt = await AlbumArtLoader.LoadAsync(second);
+        var firstArt = await _loader.LoadAsync(first);
+        var secondArt = await _loader.LoadAsync(second);
 
         Assert.Equal(64, firstArt!.PixelSize.Width);
         Assert.Equal(96, secondArt!.PixelSize.Width);
@@ -207,14 +214,14 @@ public class AlbumArtLoaderTests : IDisposable
     [AvaloniaFact]
     public async Task A_placeholder_track_with_no_art_hash_is_not_fetched_at_all()
     {
-        Assert.Null(await AlbumArtLoader.LoadAsync(RemoteTrack(hash: null)));
-        Assert.Null(await AlbumArtLoader.LoadAsync(RemoteTrack(hash: "")));
+        Assert.Null(await _loader.LoadAsync(RemoteTrack(hash: null)));
+        Assert.Null(await _loader.LoadAsync(RemoteTrack(hash: "")));
     }
 
     [AvaloniaFact]
     public async Task A_placeholder_track_with_no_origin_device_is_not_fetched_at_all()
     {
-        Assert.Null(await AlbumArtLoader.LoadAsync(RemoteTrack(Unique("hash"), fingerprint: null)));
+        Assert.Null(await _loader.LoadAsync(RemoteTrack(Unique("hash"), fingerprint: null)));
     }
 
     [AvaloniaFact]
@@ -226,7 +233,7 @@ public class AlbumArtLoaderTests : IDisposable
         var hash = Unique("hash");
         WriteArtCache(hash, SyntheticPng.Build(200, 200));
 
-        var bitmap = await AlbumArtLoader.LoadAsync(RemoteTrack(hash));
+        var bitmap = await _loader.LoadAsync(RemoteTrack(hash));
 
         Assert.Equal(200, bitmap!.PixelSize.Width);
     }
@@ -239,7 +246,7 @@ public class AlbumArtLoaderTests : IDisposable
 
         // No peer is resolvable in tests, so the fall-through ends in null -
         // the placeholder icon - rather than a decode exception escaping.
-        Assert.Null(await AlbumArtLoader.LoadAsync(RemoteTrack(hash)));
+        Assert.Null(await _loader.LoadAsync(RemoteTrack(hash)));
     }
 
     [AvaloniaFact]
@@ -248,12 +255,83 @@ public class AlbumArtLoaderTests : IDisposable
         var hash = Unique("hash");
         WriteArtCache(hash, SyntheticPng.Build(200, 200));
 
-        var first = await AlbumArtLoader.LoadAsync(RemoteTrack(hash));
+        var first = await _loader.LoadAsync(RemoteTrack(hash));
         // A different album on a different origin device: the hash is the key,
         // because identical art bytes are identical art.
-        var second = await AlbumArtLoader.LoadAsync(RemoteTrack(hash, fingerprint: "other-peer-fp"));
+        var second = await _loader.LoadAsync(RemoteTrack(hash, fingerprint: "other-peer-fp"));
 
         Assert.Same(first, second);
+    }
+
+    // A PeerTrackResolver that resolves every track to one endpoint, standing
+    // in for "this track's origin device is the currently paired Server, and
+    // it is reachable at this address."
+    private sealed class FixedPeerResolver(int port) : PeerTrackResolver
+    {
+        public override DiscoveredDevice? Resolve(Track track) => new()
+        {
+            InstanceName = "fake-peer",
+            EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+        };
+    }
+
+    [AvaloniaFact]
+    public async Task Remote_art_is_fetched_from_the_peer_and_written_to_the_disk_cache()
+    {
+        var art = SyntheticPng.Build(150, 150);
+        string? requestedPath = null;
+        string? requestedFingerprint = null;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            requestedPath = context.Request.Url?.PathAndQuery;
+            requestedFingerprint = context.Request.Headers["X-Flower-Fingerprint"];
+            context.Response.ContentType = "image/png";
+            await context.Response.OutputStream.WriteAsync(art);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new FixedPeerResolver(peer.Port),
+            new DeviceIdentity { Fingerprint = "us-fp", Alias = "Us" },
+            NullLogger<AlbumArtLoader>.Instance);
+
+        var hash = Unique("hash");
+        var track = RemoteTrack(hash);
+        var bitmap = await loader.LoadAsync(track);
+
+        Assert.Equal(150, bitmap!.PixelSize.Width);
+        // Identified to the peer as us, and asking for this track's album by
+        // the same id the server side maps albums under.
+        Assert.Equal("us-fp", requestedFingerprint);
+        Assert.Contains(Uri.EscapeDataString(LibraryOpenSubsonicMapper.AlbumIdFor(track)), requestedPath);
+        // Content-addressed on disk, so the next run (or a restart) needs no
+        // peer at all - see the cached-file test above.
+        Assert.Equal(art, await File.ReadAllBytesAsync(
+            Path.Combine(AppDataDirectory.Path, "AlbumArtCache", $"{hash}.art")));
+    }
+
+    [AvaloniaFact]
+    public async Task A_peer_error_response_is_not_cached_and_yields_the_placeholder()
+    {
+        using var peer = new FakePeerHttpServer(context =>
+        {
+            context.Response.StatusCode = 404;
+            context.Response.Close();
+            return Task.CompletedTask;
+        });
+
+        var loader = new AlbumArtLoader(
+            new FixedPeerResolver(peer.Port),
+            new DeviceIdentity { Fingerprint = "us-fp", Alias = "Us" },
+            NullLogger<AlbumArtLoader>.Instance);
+
+        var hash = Unique("hash");
+
+        Assert.Null(await loader.LoadAsync(RemoteTrack(hash)));
+        // Caching a 404 body would make the miss permanent - the album would
+        // stay a placeholder icon even once the peer could serve it.
+        Assert.False(File.Exists(Path.Combine(AppDataDirectory.Path, "AlbumArtCache", $"{hash}.art")));
     }
 
     [Fact]

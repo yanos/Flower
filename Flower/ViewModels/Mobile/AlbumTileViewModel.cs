@@ -67,7 +67,7 @@ public sealed class AlbumTileViewModel : ViewModelBase
 
     private async Task LoadArtAsync()
     {
-        var bmp = await AlbumArtLoader.LoadAsync(RepresentativeTrack);
+        var bmp = await AlbumArtLoader.Current.LoadAsync(RepresentativeTrack);
         Interlocked.Exchange(ref _artState, 2);
         AlbumArt = bmp;
     }

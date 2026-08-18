@@ -15,14 +15,22 @@ namespace Flower.Services;
 // trusted peer's library by design (not just the paired Server).
 public class PeerTrackResolver
 {
-    private readonly PairedServerReachability _reachability;
+    // Null only for the protected test constructor below, which overrides
+    // Resolve outright and never reaches it.
+    private readonly PairedServerReachability _reachability = null!;
 
     public PeerTrackResolver(PairedServerReachability reachability)
     {
         _reachability = reachability;
     }
 
-    public DiscoveredDevice? Resolve(Track track) =>
+    // PairedServerReachability owns a live NetworkDiscoveryService (mDNS
+    // sockets), so a test that just wants to say "this track resolves to that
+    // endpoint" - AlbumArtLoaderTests' peer fetch - subclasses instead of
+    // standing the discovery stack up.
+    protected PeerTrackResolver() { }
+
+    public virtual DiscoveredDevice? Resolve(Track track) =>
         SyncRolePolicy.MayRequestFrom(_reachability.PairedServerFingerprint, track.OriginDeviceFingerprint)
             ? _reachability.PairedServerDevice
             : null;
