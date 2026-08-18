@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Flower.Models;
-
+using Xunit;
 namespace Flower.Tests;
 
 public class PlaylistTests
@@ -202,5 +202,74 @@ public class PlaylistTests
         // a placeholder streamed from a peer still be found in the queue.
         Assert.Equal(original, clone);
         Assert.Equal(3, original.RemotePlayCounts["peer"]);
+    }
+
+    // ── MoveTrack (drag-to-reorder) ──────────────────────────────────────────
+
+    // UpdatedAt is the entire basis on which PlaylistSyncPlanner decides "did
+    // this side change?", so a drag that reorders nothing must not touch it -
+    // otherwise every aborted drag manufactures a sync-visible edit. Same
+    // reasoning as RemoveTrack's own no-op guard (ARCHITECTURE-REVIEW 2.4).
+    [Fact]
+    public void MoveTrack_reorders_and_bumps_UpdatedAt()
+    {
+        var a = T("A");
+        var b = T("B");
+        var c = T("C");
+        var playlist = new Playlist("p", new List<Track> { a, b, c });
+        var before = playlist.UpdatedAt;
+
+        Assert.True(playlist.MoveTrack(c, a));
+
+        Assert.Equal(new[] { "C", "A", "B" }, playlist.Tracks.Select(t => t.Title));
+        Assert.True(playlist.UpdatedAt > before);
+    }
+
+    [Fact]
+    public void MoveTrack_to_the_end_reorders_and_bumps_UpdatedAt()
+    {
+        var a = T("A");
+        var b = T("B");
+        var playlist = new Playlist("p", new List<Track> { a, b });
+        var before = playlist.UpdatedAt;
+
+        Assert.True(playlist.MoveTrack(a, null));
+
+        Assert.Equal(new[] { "B", "A" }, playlist.Tracks.Select(t => t.Title));
+        Assert.True(playlist.UpdatedAt > before);
+    }
+
+    [Theory]
+    // Dropped onto the entry that already follows it.
+    [InlineData("A", "B")]
+    // Dropped onto itself - before the guard this removed it first, failed to
+    // find the target in the shortened list, and silently appended it.
+    [InlineData("B", "B")]
+    // Already last, dropped at the end.
+    [InlineData("C", null)]
+    public void MoveTrack_that_changes_nothing_reports_false_and_leaves_UpdatedAt_alone(string dragged, string? insertBefore)
+    {
+        var tracks = new List<Track> { T("A"), T("B"), T("C") };
+        var playlist = new Playlist("p", tracks);
+        var before = playlist.UpdatedAt;
+
+        var moved = playlist.MoveTrack(
+            tracks.Single(t => t.Title == dragged),
+            insertBefore == null ? null : tracks.Single(t => t.Title == insertBefore));
+
+        Assert.False(moved);
+        Assert.Equal(new[] { "A", "B", "C" }, playlist.Tracks.Select(t => t.Title));
+        Assert.Equal(before, playlist.UpdatedAt);
+    }
+
+    [Fact]
+    public void MoveTrack_of_a_track_the_playlist_does_not_contain_reports_false()
+    {
+        var playlist = new Playlist("p", new List<Track> { T("A") });
+        var before = playlist.UpdatedAt;
+
+        Assert.False(playlist.MoveTrack(T("stranger"), null));
+
+        Assert.Equal(before, playlist.UpdatedAt);
     }
 }
