@@ -63,12 +63,17 @@ public static class MainViewModelHarness
         Library Library,
         MainPlaylist MainPlaylist);
 
-    public static MainViewModel Build(Library library, MainPlaylist mainPlaylist) =>
-        BuildParts(library, mainPlaylist).Main;
+    public static MainViewModel Build(Library library, MainPlaylist mainPlaylist, AppSettings? appSettings = null) =>
+        BuildParts(library, mainPlaylist, appSettings).Main;
 
-    public static Parts BuildParts(Library library, MainPlaylist mainPlaylist)
+    // appSettings is injectable so a test can construct a MainViewModel that
+    // already has, say, a saved PairedServerFingerprint - several things
+    // (BuildSidebarItems' pinned paired-server placeholder, the restored last
+    // view) only ever happen once, in the constructor, off whatever settings
+    // exist at that moment.
+    public static Parts BuildParts(Library library, MainPlaylist mainPlaylist, AppSettings? appSettings = null)
     {
-        var appSettings = new AppSettings();
+        appSettings ??= new AppSettings();
         var audio = new FakeAudioManager();
         var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
         var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
