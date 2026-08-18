@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1 and 2.5 implemented. Tier 3 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1 and 2.5 implemented. Tier 3 implemented. Tier 4.4 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -12,9 +12,9 @@ Measured against the real 16k-track development library, not estimated:
 |---|---|
 | `library.json` | **17.9 MB**, 16,116 tracks, `WriteIndented = true` — since Tier 1.1, unindented and null-omitting |
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
-| `Flower.Server` test coverage | was zero; 55 tests as of Tier 5.1 |
+| `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 524 — 454 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1) |
+| Tests at review time | 545 — 475 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -199,7 +199,7 @@ Identity is now `Track.Id` (the one identity), `SyncKey` (demoted in fact as wel
 
 **Moved rather than closed:** `TrackEntity.Starred` still has no client-side counterpart. That is not drift to deduplicate — it is a missing feature that needs UI, a persisted field and a sidebar view, and it is already tracked as part of §4.1's liked-songs/smart-playlists gap. Nothing in §2.1 depends on it.
 
-### 2.2 Auth and album-art lookup implemented two-to-three times
+### 2.2 Auth and album-art lookup implemented two-to-three times — RECOMMENDED NEXT
 
 `SyncHttpServer.VerifySelfSigned`/`VerifyTrustedPeer` vs `Flower.Server/Services/DeviceSignatureAuth` are near-identical hand copies, down to the `GetIdentityValue` header/query fallback helper written twice. Album-art file fallback exists in `AlbumArtLoader.TryGetLocalArtBytes`, `SyncHttpServer.HandleGetCoverArtAsync`'s sniffing, and `SubsonicEndpoints`' own private copy — three places to fix when someone adds a format.
 
@@ -258,7 +258,7 @@ Ordered by real exposure, not theoretical severity. All six landed; see *Tier 3 
 
 ---
 
-## Tier 4 — rewrite candidates — NOT STARTED
+## Tier 4 — rewrite candidates — 4.4 DONE, rest NOT STARTED
 
 ### 4.1 Persistence: JSON blobs → SQLite (client side)
 
@@ -291,9 +291,15 @@ Roughly 400 lines implement shift-range / ctrl-toggle / drag-threshold / drop-hi
 
 Two pieces of genuine business logic also sit in code-behind and should move where they can be tested: `OpenTrackInfoForSelectedAlbums`/`ResolveSelectedAlbumTracks` (non-trivial precedence rules for what "Get Info" applies to) and `CommitRename` (mixes UI teardown with `PlaylistStore.SaveAsync`/`DeviceNicknameStore.SetAsync`/`ScheduleContentSync`).
 
-### 4.4 `SyncHttpServer` streaming has no range support
+### 4.4 `SyncHttpServer` streaming has no range support — DONE
 
-`HandleStreamAsync` sets `ContentLength64` and copies the whole file — no `Range` handling, so a dropped mobile download restarts at byte 0 and seeking within a peer-streamed track can't use partial content. `Flower.Server` gets this right via `Results.File(..., enableRangeProcessing: true)`. Related: `OpenSubsonicClient.DownloadTrackAsync` creates the destination file and never deletes the partial on failure, leaking orphans no code path can reach.
+`HandleStreamAsync` set `ContentLength64` and copied the whole file — no `Range` handling, so a dropped mobile download restarted at byte 0 and seeking within a peer-streamed track couldn't use partial content. `Flower.Server` already got this right via `Results.File(..., enableRangeProcessing: true)`, so only the peer-to-peer server was wrong.
+
+**Server:** `HandleStreamAsync` now advertises `Accept-Ranges: bytes` on every response — including the unranged one, which is the only place a client can learn resuming is possible — and serves a single byte range as 206 + `Content-Range`, bounding the copy rather than seeking and running to EOF. `ParseSingleByteRange` handles the bounded, open-ended and suffix forms, clamps an end past the end (RFC 9110 14.1.1), and *ignores* anything it can't interpret (multipart, unknown unit, malformed — 14.2) rather than failing the request. A range starting past the end is 416 with `bytes */{length}`, which is what lets a client with an over-long partial recover instead of retrying forever.
+
+**Client:** `DownloadTrackAsync` now downloads to `<destination>.part` and only renames on success, so a truncated file can never be mistaken for a playable one, and a failed transfer deliberately *keeps* the partial for the next attempt to resume from. A 200 answer to a ranged request (a peer on an older build, or any server that ignores `Range`) overwrites rather than appends; a 416 discards the partial and refetches. The orphan leak is closed at the source: `LibraryDownloadService` names the destination `{track.Id:N}.{ext}` instead of a fresh `Guid` per attempt, which is also what makes resuming possible at all.
+
+**Verification:** 475 passing in `Flower.Tests` (was 454). Four round-trip tests over the real socket (bounded range, open-ended resume, 416 with the real length, `Accept-Ranges` on the full body), `RangeHeaderParsingTests` for the forms an `HttpClient` won't put on the wire, and three `OpenSubsonicClientTests` against a real `HttpListener` that aborts mid-transfer: resume asks for exactly the remainder, an ignored range overwrites, an unsatisfiable partial is discarded and refetched.
 
 ---
 
@@ -357,5 +363,9 @@ Highest-value additions, roughly in priority order:
 4. ~~**Tier 1.4**~~ — done: ETag/`If-None-Match` on the manifest, a memoized album-art hash, and server-side changes surfaced through the existing `/info` poll.
 5. ~~**Tier 3**~~ — done.
 6. ~~**Tier 2.5**~~ — done: sentinels deleted (no users to be compatible with), EF migrations added to `Flower.Server`.
-7. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.
-8. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.
+7. ~~**Tier 5.2**~~ — done: 22 real-socket round-trip tests over `SyncHttpServer`'s whole route table.
+8. ~~**Tier 2.1**~~ — done: one shared `SubsonicIdentity`, one duration rounding, and `Child.Id` demoted from `SyncKey` to `Track.Id`.
+9. ~~**Tier 4.4** — range support on `SyncHttpServer` streaming.~~ **Done.** Ranged serving, resumable downloads, no more orphaned partials.
+10. **Tier 2.2 — the two hand-copied signature verifiers.** Recommended next. `SyncHttpServer.VerifySelfSigned`/`VerifyTrustedPeer` and `Flower.Server/Services/DeviceSignatureAuth` are near-identical copies of security-critical code, which means a fix to one silently leaves the other wrong; both now have real tests, so collapsing them into `Flower.Core` is a refactor with a net underneath it rather than a leap. The three copies of album-art file fallback ride along.
+11. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.
+12. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.

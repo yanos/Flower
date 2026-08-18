@@ -596,6 +596,95 @@ public class SyncHttpServerRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task Stream_serves_a_requested_byte_range_as_206_with_a_Content_Range()
+    {
+        var directory = Path.Combine(_tempHome, "music-range");
+        Directory.CreateDirectory(directory);
+        var track = TrackWithFile(directory, "Song One");
+        var all = File.ReadAllBytes(track.Path!);
+        using var harness = new Harness([track]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var request = harness.Signed(HttpMethod.Get, "/rest/stream", [("id", track.Id.ToString("N"))]);
+        request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(5, 9);
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.PartialContent, response.StatusCode);
+        Assert.Equal($"bytes 5-9/{all.Length}", response.Content.Headers.ContentRange!.ToString());
+        Assert.Equal(all[5..10], await response.Content.ReadAsByteArrayAsync());
+        // Note this cannot distinguish a server that stops at the end of the
+        // range from one that copies to EOF: the declared Content-Length is 5
+        // either way, so the client stops reading regardless. CopyRangeAsync
+        // bounds the write anyway - HttpListener treats overshooting a
+        // declared Content-Length as a protocol violation.
+    }
+
+    [Fact]
+    public async Task Stream_serves_an_open_ended_range_as_the_rest_of_the_file()
+    {
+        var directory = Path.Combine(_tempHome, "music-range-open");
+        Directory.CreateDirectory(directory);
+        var track = TrackWithFile(directory, "Song One");
+        var all = File.ReadAllBytes(track.Path!);
+        using var harness = new Harness([track]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        // The shape a resuming download sends: "I have the first N bytes."
+        using var request = harness.Signed(HttpMethod.Get, "/rest/stream", [("id", track.Id.ToString("N"))]);
+        request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(4, null);
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.PartialContent, response.StatusCode);
+        Assert.Equal(all[4..], await response.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task Stream_refuses_a_range_that_starts_past_the_end_with_416_and_the_real_length()
+    {
+        var directory = Path.Combine(_tempHome, "music-range-bad");
+        Directory.CreateDirectory(directory);
+        var track = TrackWithFile(directory, "Song One");
+        var length = new FileInfo(track.Path!).Length;
+        using var harness = new Harness([track]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var request = harness.Signed(HttpMethod.Get, "/rest/stream", [("id", track.Id.ToString("N"))]);
+        request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(length + 100, null);
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.RequestedRangeNotSatisfiable, response.StatusCode);
+        // The length is what lets a client with an over-long partial recover
+        // rather than retry the same doomed request forever.
+        Assert.Equal($"bytes */{length}", response.Content.Headers.ContentRange!.ToString());
+    }
+
+    [Fact]
+    public async Task Stream_advertises_range_support_on_the_plain_full_body_response()
+    {
+        var directory = Path.Combine(_tempHome, "music-range-advert");
+        Directory.CreateDirectory(directory);
+        var track = TrackWithFile(directory, "Song One");
+        using var harness = new Harness([track]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        // A client only learns it may resume from the *first*, unranged
+        // response - so this header has to be there when no range was asked for.
+        using var request = harness.Signed(HttpMethod.Get, "/rest/stream", [("id", track.Id.ToString("N"))]);
+        var response = await harness.Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("bytes", response.Headers.AcceptRanges.Single());
+    }
+
+    [Fact]
     public async Task Stream_is_404_for_an_id_this_device_has_no_file_for()
     {
         using var harness = new Harness();

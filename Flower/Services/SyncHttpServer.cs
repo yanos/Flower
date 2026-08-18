@@ -735,12 +735,118 @@ public class SyncHttpServer : IDisposable
             return;
         }
 
-        _logger.LogInformation("Streaming {Title} ({Id}, {Bytes} bytes) to {RemoteEndPoint}",
-            track.Title, id, new FileInfo(track.Path).Length, context.Request.RemoteEndPoint);
         context.Response.ContentType = "application/octet-stream";
+        // Advertised unconditionally, including on the full-body response: a
+        // client only knows it may resume an interrupted download if it saw
+        // this on the *first* (unranged) response. Flower.Server gets this for
+        // free from Results.File(..., enableRangeProcessing: true).
+        context.Response.Headers["Accept-Ranges"] = "bytes";
+
         using var fileStream = File.OpenRead(track.Path);
-        context.Response.ContentLength64 = fileStream.Length;
-        await fileStream.CopyToAsync(context.Response.OutputStream);
+        var total = fileStream.Length;
+        var rangeHeader = context.Request.Headers["Range"];
+        var range = ParseSingleByteRange(rangeHeader, total);
+
+        if (range == UnsatisfiableRange)
+        {
+            // RFC 9110 14.4: a syntactically valid range that starts past the
+            // end gets 416 plus the real length, so the client can recover
+            // rather than guess. This is the case a resuming client hits when
+            // its partial file is somehow longer than the track now is.
+            _logger.LogWarning("Stream request for id {Id} from {RemoteEndPoint} asked for unsatisfiable range {Range} of {Total} bytes",
+                id, context.Request.RemoteEndPoint, rangeHeader, total);
+            context.Response.StatusCode = 416;
+            context.Response.Headers["Content-Range"] = $"bytes */{total}";
+            context.Response.ContentLength64 = 0;
+            return;
+        }
+
+        var (start, end) = range ?? (0, total - 1);
+        var length = end - start + 1;
+
+        if (range != null)
+        {
+            context.Response.StatusCode = 206;
+            context.Response.Headers["Content-Range"] = $"bytes {start}-{end}/{total}";
+            fileStream.Seek(start, SeekOrigin.Begin);
+        }
+
+        _logger.LogInformation("Streaming {Title} ({Id}, bytes {Start}-{End} of {Total}) to {RemoteEndPoint}",
+            track.Title, id, start, end, total, context.Request.RemoteEndPoint);
+        context.Response.ContentLength64 = length;
+        await CopyRangeAsync(fileStream, context.Response.OutputStream, length);
+    }
+
+    // Distinct from null (no range asked for) and from a real (start, end):
+    // "asked for a range that cannot be served", which is a 416 rather than a
+    // silent full body. A negative start is rejected by the parser, so this
+    // sentinel value can never collide with a real range.
+    public static readonly (long Start, long End)? UnsatisfiableRange = (-1, -1);
+
+    // Single byte range only ("bytes=100-", "bytes=100-199", "bytes=-500"),
+    // which is all any streaming or resuming client sends. A multipart range
+    // request, or anything malformed, returns null - RFC 9110 14.2 says a
+    // recipient that cannot interpret a Range header must ignore it and serve
+    // the whole representation, which is strictly better than failing.
+    public static (long Start, long End)? ParseSingleByteRange(string? header, long total)
+    {
+        if (header == null || !header.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var spec = header["bytes=".Length..].Trim();
+        if (spec.Contains(','))
+            return null;
+
+        var dash = spec.IndexOf('-');
+        if (dash < 0)
+            return null;
+
+        var fromText = spec[..dash].Trim();
+        var toText = spec[(dash + 1)..].Trim();
+
+        // Suffix form: the *last* N bytes. N == 0 asks for nothing, which is
+        // unsatisfiable rather than an empty 206.
+        if (fromText.Length == 0)
+        {
+            if (!long.TryParse(toText, out var suffix) || suffix < 0)
+                return null;
+            if (suffix == 0)
+                return UnsatisfiableRange;
+
+            var suffixStart = Math.Max(0, total - suffix);
+            return total == 0 ? UnsatisfiableRange : (suffixStart, total - 1);
+        }
+
+        if (!long.TryParse(fromText, out var start) || start < 0)
+            return null;
+        if (start >= total)
+            return UnsatisfiableRange;
+
+        if (toText.Length == 0)
+            return (start, total - 1);
+        if (!long.TryParse(toText, out var end) || end < start)
+            return null;
+
+        // An end past the end is clamped, not refused (RFC 9110 14.1.1).
+        return (start, Math.Min(end, total - 1));
+    }
+
+    // CopyToAsync would send everything from the seek position to EOF, which is
+    // wrong for a bounded "bytes=0-1023" request and would contradict the
+    // Content-Length already written.
+    private static async Task CopyRangeAsync(Stream source, Stream destination, long length)
+    {
+        var buffer = new byte[81920];
+        var remaining = length;
+        while (remaining > 0)
+        {
+            var read = await source.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)));
+            if (read == 0)
+                break;
+
+            await destination.WriteAsync(buffer.AsMemory(0, read));
+            remaining -= read;
+        }
     }
 
     // Serves this device's own real album art bytes, looked up by album id (the

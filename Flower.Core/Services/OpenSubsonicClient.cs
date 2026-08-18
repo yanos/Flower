@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -314,14 +316,61 @@ public class OpenSubsonicClient
     // peer's trust gate like any other /rest/* call.
     public async Task DownloadTrackAsync(string id, string destinationPath)
     {
+        var partPath = destinationPath + PartialSuffix;
+
+        // A previous attempt that died mid-transfer left its bytes here, so
+        // ask for the rest instead of starting over - on a phone on flaky
+        // wifi, a large FLAC otherwise restarts at byte 0 every time and may
+        // never finish. Resuming only works because the caller's destination
+        // path is deterministic per track (see LibraryDownloadService); a
+        // random name per attempt would strand each partial instead.
+        var alreadyHave = File.Exists(partPath) ? new FileInfo(partPath).Length : 0;
+
+        if (!await TryFetchAsync(id, partPath, alreadyHave))
+        {
+            // The server refused the range as unsatisfiable, which means our
+            // partial is longer than the track now is - it is worthless.
+            File.Delete(partPath);
+            await TryFetchAsync(id, partPath, 0);
+        }
+
+        // Only now does the file take the name the library will record, so a
+        // half-downloaded track is never mistaken for a playable one.
+        File.Move(partPath, destinationPath, overwrite: true);
+    }
+
+    // Writes the track to partPath, appending to what is already there when
+    // asked to resume from a non-zero offset. Returns false only when the
+    // server rejected the range outright and the caller must retry from zero;
+    // a failed *transfer* throws instead, deliberately leaving the partial in
+    // place for the next attempt to resume from.
+    private async Task<bool> TryFetchAsync(string id, string partPath, long from)
+    {
         var url = BuildPlainUrl("stream", [("id", id)], out var path, out var parameters);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         AddPeerIdentityHeaders(request, "GET", path, parameters);
+        if (from > 0)
+            request.Headers.Range = new RangeHeaderValue(from, null);
 
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
+        if (from > 0 && response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+            return false;
 
-        await using var fileStream = File.Create(destinationPath);
+        response.EnsureSuccessStatusCode(); // e.g. a 403 from a peer's trust gate - surfaces as a plain HttpRequestException.
+
+        // A server is free to ignore Range and answer 200 with the whole body
+        // (a peer on an older build does exactly that), and appending that to
+        // a partial would corrupt it - so a 200 always overwrites, and only a
+        // 206 appends. The full body is already on its way either way, so this
+        // is handled by writing it rather than by asking again.
+        var append = from > 0 && response.StatusCode == HttpStatusCode.PartialContent;
+
+        await using var fileStream = new FileStream(partPath, append ? FileMode.Append : FileMode.Create, FileAccess.Write);
         await response.Content.CopyToAsync(fileStream);
+        return true;
     }
+
+    // Kept next to the only two places that care (here and the resume check
+    // above) rather than spelled inline, since the two must agree exactly.
+    public const string PartialSuffix = ".part";
 }
