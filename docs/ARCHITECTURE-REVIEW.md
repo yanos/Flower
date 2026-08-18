@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2, 2.4 and 2.5 implemented, 2.6 half. Tier 3 implemented. Tier 4.2 and 4.4 implemented. Tier 5 implemented, bar two unreachable-from-a-test corners of 5.6. Tier 4.1 and 4.3 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2, 2.4 and 2.5 implemented, 2.6 half. Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented, bar two unreachable-from-a-test corners of 5.6. Tier 4.1 documented, not started — deliberately gated on a roadmap item that needs queryable state.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 824 — 754 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
+| Tests at review time | 893 — 823 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -282,7 +282,7 @@ Ordered by real exposure, not theoretical severity. All six landed; see *Tier 3 
 
 ---
 
-## Tier 4 — rewrite candidates — 4.2 and 4.4 DONE, 4.1/4.3 NOT STARTED
+## Tier 4 — rewrite candidates — 4.2, 4.3 and 4.4 DONE, 4.1 NOT STARTED
 
 ### 4.1 Persistence: JSON blobs → SQLite (client side)
 
@@ -327,11 +327,15 @@ Neither is a Tier 4.2 item; both surfaced writing tests against the extracted cl
 
 ---
 
-### 4.3 Duplicated multi-select and drag gestures in `MainView.axaml.cs`
+### 4.3 Duplicated multi-select and drag gestures in `MainView.axaml.cs` — DONE
 
-Roughly 400 lines implement shift-range / ctrl-toggle / drag-threshold / drop-highlight **twice** — once for `SubList`, once for the album grids — same logic, different target. Extract one reusable multi-select-and-drag-source helper.
+Roughly 400 lines implemented shift-range / ctrl-toggle / drag-threshold / drop-highlight **twice** — once for `SubList`, once for the album grids — same logic, different target.
 
-Two pieces of genuine business logic also sit in code-behind and should move where they can be tested: `OpenTrackInfoForSelectedAlbums`/`ResolveSelectedAlbumTracks` (non-trivial precedence rules for what "Get Info" applies to) and `CommitRename` (mixes UI teardown with `PlaylistStore.SaveAsync`/`DeviceNicknameStore.SetAsync`/`ScheduleContentSync`).
+**`Flower/Controls/NameSelectionDragGesture.cs`** is now the single state machine: anchor bookkeeping, the ctrl-toggle algebra, the squared-distance threshold and resolving which items a drag actually carries. What stays in the view is the genuinely control-bound half — hit-testing a name out of a pointer event (a `ListBoxItem`'s `DataContext` vs. `AlbumGridView.HitTestTile`) and drawing the ghost. The selection is not owned by the gesture: all three instances read and write the one shared `MainViewModel.SelectedSubItems` through delegates. Two behavioural notes: `selectOnPlainPress` is the one real difference between the call sites (SubList's plain click selects; a grid's expands a tile in place without touching the tile selection), and the two grids now get **an instance each** rather than sharing one anchor, since a Shift+click range is only meaningful against one ordering — Albums is alphabetical, Recently Added is by-recency. `MainView` also lost the third copy of the drop half, now `CompleteNameDrop`.
+
+**Both pieces of business logic moved out of code-behind.** `OpenTrackInfoForSelectedAlbums`' precedence rules became `AlbumTrackInfoSelection.Resolve` (`Flower/ViewModels/`), returning a `TrackInfoTarget` of tracks plus an optional focus index — the view is left with reading the grids' expanded-row selection and choosing which `TrackInfoWindow` constructor that maps to. Extracting it also surfaced an unhandled corner the old code papered over with `if (index < 0) index = 0`: a selected song that isn't in the expanded album's list at all (nothing expanded, or it changed underneath) used to open *someone else's* album focused on its first track; it now opens that one track. `CommitRename` became `SidebarRenameService` over a two-member `ISidebarRenameHost` (`RefreshDeviceDisplayNames`, `ScheduleContentSync`) that `MainViewModel` implements, leaving only the `TextBox` teardown in the view.
+
+**Verification:** 823 passing in `Flower.Tests` (was 795). 13 tests over the gesture (both `selectOnPlainPress` modes, repeated Shift+clicks re-ranging from a fixed anchor, the drag set being resolved once at threshold-crossing and a drag from outside the selection carrying only the pressed item), 9 over the Get Info precedence, and 6 over the rename service — none of which need a window, a `DataContext` or a service graph.
 
 ### 4.4 `SyncHttpServer` streaming has no range support — DONE
 
