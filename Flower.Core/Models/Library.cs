@@ -245,6 +245,7 @@ namespace Flower.Models
             track.ImportedPlayCount       = previous.ImportedPlayCount;
             track.LastPlayedAt            = previous.LastPlayedAt;
             track.OriginDeviceFingerprint = previous.OriginDeviceFingerprint;
+            track.OriginTrackId           = previous.OriginTrackId;
             track.OriginFileExtension     = previous.OriginFileExtension;
             track.OriginAlbumArtHash      = previous.OriginAlbumArtHash;
             MergeRemotePlayCounts(track, previous.RemotePlayCounts);
@@ -319,6 +320,7 @@ namespace Flower.Models
                     if (byKey.TryGetValue(remote.SyncKey, out var existing))
                     {
                         existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
+                        existing.OriginTrackId = remote.OriginTrackId;
                         existing.OriginFileExtension = remote.OriginFileExtension;
                         existing.OriginAlbumArtHash = remote.OriginAlbumArtHash;
                         existing.DateAdded = remote.DateAdded;

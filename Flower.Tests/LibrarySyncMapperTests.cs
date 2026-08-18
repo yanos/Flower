@@ -27,6 +27,26 @@ public class LibrarySyncMapperTests
         Assert.Null(track.Path);
         Assert.Equal("peer-1", track.OriginDeviceFingerprint);
         Assert.Equal("mp3", track.OriginFileExtension);
+        Assert.Equal("some-id", track.OriginTrackId);
+    }
+
+    // The peer's id is stored verbatim rather than re-derived, so it keeps
+    // working across a tag edit on the serving side and works at all against a
+    // standalone Flower.Server, whose ids are database row ids that no amount
+    // of local recomputation would ever produce. Note this track's own Id is a
+    // fresh local one - the two identities are deliberately separate.
+    [Fact]
+    public void ToPlaceholderTrack_keeps_the_peers_own_id_verbatim_and_does_not_adopt_it_as_its_own()
+    {
+        var song = new Child(
+            Id: "row-42-on-the-server", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
+            AlbumId: null, ArtistId: null, Track: 1, Year: 1969, Genre: "Rock",
+            Size: null, ContentType: null, Suffix: null, Duration: 259, BitRate: null, CoverArt: null);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Equal("row-42-on-the-server", track.OriginTrackId);
+        Assert.NotEqual("row-42-on-the-server", track.Id.ToString("N"));
     }
 
     [Fact]
@@ -65,11 +85,14 @@ public class LibrarySyncMapperTests
 
         var placeholder = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
 
-        // The wire "id" (song.Id, e.g. a peer's own SyncKey - see
-        // LibraryOpenSubsonicMapper.ToChild) is deliberately not trusted as the
-        // cross-device identity (see SYNC-PLAN.md Phase 3) - the client
-        // recomputes SyncKey itself from title/artist/album/duration, which must
-        // land on the exact same value the server-side track's SyncKey would.
+        // The wire "id" (song.Id - the peer's own Track.Id, see
+        // LibraryOpenSubsonicMapper.ToChild) is what the track is *addressed*
+        // by, and is kept as OriginTrackId - but it is deliberately not the
+        // cross-device *matching* identity (see SYNC-PLAN.md Phase 3), since
+        // two devices that each imported the same song separately have no
+        // reason to share one. That matching is SyncKey, recomputed here from
+        // title/artist/album/duration, and it must land on the exact same value
+        // the server-side track's own SyncKey would.
         Assert.Equal(Flower.Models.Track.BuildSyncKey("Come Together", "Beatles", "Abbey Road", 259), placeholder.SyncKey);
     }
 

@@ -29,6 +29,10 @@ public static class LibrarySyncMapper
         Year = song.Year?.ToString(),
         Path = null,
         OriginDeviceFingerprint = originDeviceFingerprint,
+        // Kept verbatim - an OpenSubsonic id is opaque to a client, and this is
+        // what a later stream/download request is addressed with. See
+        // Track.OriginTrackId for what re-deriving it instead used to break.
+        OriginTrackId = song.Id,
         OriginFileExtension = song.Suffix,
         OriginAlbumArtHash = song.CoverArt,
         RemotePlayCounts = (song.PlayCounts ?? new Dictionary<string, int>())

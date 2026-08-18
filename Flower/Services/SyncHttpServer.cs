@@ -709,15 +709,16 @@ public class SyncHttpServer : IDisposable
         await WriteJsonAsync(context, responseBody);
     }
 
-    // Serves this device's own real file bytes for one song, looked up by SyncKey
-    // (the same id LibraryOpenSubsonicMapper.ToChild hands out - see
-    // LibraryDownloadService, SYNC-PLAN.md Phase 3's download button). Never
-    // serves a placeholder - only a track this device actually has a file for.
+    // Serves this device's own real file bytes for one song, looked up by
+    // Track.Id (the same id LibraryOpenSubsonicMapper.ToChild hands out and the
+    // requesting peer stored as Track.OriginTrackId - see LibraryDownloadService,
+    // SYNC-PLAN.md Phase 3's download button). Never serves a placeholder - only
+    // a track this device actually has a file for.
     private async Task HandleStreamAsync(HttpListenerContext context, byte[] body)
     {
         var id = context.Request.QueryString["id"];
         var track = id != null
-            ? _library.Tracks.FirstOrDefault(t => t.Path != null && t.SyncKey == id)
+            ? _library.Tracks.FirstOrDefault(t => t.Path != null && t.Id.ToString("N") == id)
             : null;
 
         if (track?.Path == null || !File.Exists(track.Path))

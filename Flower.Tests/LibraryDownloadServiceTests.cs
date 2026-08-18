@@ -53,7 +53,7 @@ public class LibraryDownloadServiceTests : IDisposable
         try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
     }
 
-    private static Track Placeholder(string? originDeviceFingerprint = "peer-fp", string? extension = "mp3", string? path = null) => new()
+    private static Track Placeholder(string? originDeviceFingerprint = "peer-fp", string? extension = "mp3", string? path = null, string? originTrackId = "peer-track-id") => new()
     {
         Title = "Come Together",
         Artists = "The Beatles",
@@ -61,6 +61,7 @@ public class LibraryDownloadServiceTests : IDisposable
         Duration = TimeSpan.FromSeconds(259),
         Path = path,
         OriginDeviceFingerprint = originDeviceFingerprint,
+        OriginTrackId = originTrackId,
         OriginFileExtension = extension,
     };
 

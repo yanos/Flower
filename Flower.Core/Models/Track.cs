@@ -133,6 +133,24 @@ namespace Flower.Models
         // and never set on a track this device actually imported itself.
         public string? OriginDeviceFingerprint { get; set; }
 
+        // The id the origin peer (or a third-party OpenSubsonic server) gave
+        // this track in its own catalog - the Child.Id this track was built
+        // from, kept verbatim, because OpenSubsonic ids are opaque to a client
+        // by specification: the only correct thing to do with one is hand it
+        // back. It is what /rest/stream and /rest/download are asked for (see
+        // LibraryDownloadService, MainViewModel.GetStreamUrl).
+        //
+        // This used to be re-derived on demand as this device's own SyncKey
+        // instead, on the assumption that the far side would recompute the
+        // same string from the same tags. Two ways that was wrong: a tag edit
+        // on the serving device changes its SyncKey, so every reference a peer
+        // was still holding silently 404'd; and a standalone Flower.Server
+        // (whose ids are database row ids - see SubsonicMapper.ToChild) never
+        // computed a SyncKey for anything, so it could not have matched one at
+        // all. Storing what the peer actually said removes the guess. Same
+        // lifetime/meaning as OriginDeviceFingerprint.
+        public string? OriginTrackId { get; set; }
+
         // The origin peer's file extension (no leading dot - see
         // LibraryOpenSubsonicMapper.ToChild's Suffix field), needed at download
         // time to give the saved file a real extension since Path is null until

@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.5 implemented and 2.1 partly. Tier 3 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1 and 2.5 implemented. Tier 3 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 55 tests as of Tier 5.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 520 — 450 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1) |
+| Tests at review time | 524 — 454 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -164,17 +164,17 @@ Why a session id rather than a bare counter or a content hash: a bare counter co
 
 ---
 
-## Tier 2 — structural: multiple sources of truth — 2.5 DONE, 2.1 PARTLY DONE, rest NOT STARTED
+## Tier 2 — structural: multiple sources of truth — 2.1 and 2.5 DONE, rest NOT STARTED
 
-### 2.1 Four track models and five identity schemes — PARTLY DONE
+### 2.1 Four track models and five identity schemes — DONE
 
 | Layer | Model | Identity |
 |---|---|---|
 | Client domain | `Flower.Core.Models.Track` | `Id` (as of Tier 0), previously `Path` |
 | Cross-device sync | same `Track` | `SyncKey` = normalized Title\|Artist\|Album\|rounded seconds |
 | In-memory UI navigation | same `Track` | was **accidental** full-record value equality — fixed in Tier 0 |
-| Wire (P2P + Subsonic) | `Child`/`AlbumID3` DTOs, `PlaylistSyncTrackDto` | `al:{norm}\|{norm}` |
-| Server | `Flower.Server.Data.TrackEntity` | `al-{hash}` |
+| Wire (P2P + Subsonic) | `Child`/`AlbumID3` DTOs, `PlaylistSyncTrackDto` | `Track.Id` per song; `al-{hash}` per album |
+| Server | `Flower.Server.Data.TrackEntity` | row id per song; the same `al-{hash}` per album |
 
 The two album-ID schemes differ by a punctuation character and nothing enforces the distinction (`LibraryOpenSubsonicMapper.AlbumId` vs `SubsonicIdentity.AlbumId`). `SubsonicMapper.ToChild` re-implements duration rounding inline as `Math.Round(t.DurationSeconds)` instead of calling `Track.RoundedSeconds` — exactly the bug class `Track.RoundedSeconds`' own doc comment records having already been hit and fixed once. `TrackEntity` has a `Starred` column the client `Track` has no concept of.
 
@@ -184,7 +184,20 @@ The two album-ID schemes differ by a punctuation character and nothing enforces 
 
 Unifying them **surfaced a live bug**: `AlbumArtLoader`'s remote-fetch path and `SyncHttpServer.HandleGetCoverArtAsync` both derived the album id from the per-track `Artists`, while the manifest that published those ids grouped by `EffectiveAlbumArtist`. Remote cover art therefore 404'd for every album with an `AlbumArtists` tag or a compilation flag — silently, since a missing cover just renders as no art. Both now go through `LibraryOpenSubsonicMapper.AlbumIdFor(track)`, and a song's `ArtistId` is the album artist too, so it points at an artist the album listing actually mentions. Covered by `LibraryOpenSubsonicMapperTests` (compilation ids agree and match what `BuildAlbumList` publishes; ids are opaque and normalized) and `Flower.Server.Tests`' `IdentityParityTests` (rounding parity, including that both sides inherit `Math.Round`'s banker's rounding at an exact .5 because they call the same method).
 
-**Still open:** the four *models* themselves (`Track`, `Child`/`AlbumID3`, `PlaylistSyncTrackDto`, `TrackEntity`) are unchanged — mapping between them is not shareable while the inputs differ, and collapsing them is a much larger change. `TrackEntity.Starred` still has no client-side counterpart; that is feature work (it needs UI), not drift to be deduplicated. `Child.Id` is still the origin track's `SyncKey` rather than its `Track.Id`, so a tag edit on the serving side still breaks a peer's outstanding stream/download references.
+**`Child.Id` is now the origin track's `Track.Id`**, not its `SyncKey`. `SyncKey` is derived from tags and a rounded duration, so serving it as the song id meant a tag edit on the serving device silently invalidated every id a peer was still holding — the peer's next stream or download request 404'd, indistinguishable from the peer being offline. The receiving side stores what the peer actually said, verbatim, as `Track.OriginTrackId` (carried across rescans by `UpdateTracks` and refreshed by `MergeSyncedTracks`, same as the rest of the origin metadata), and hands it straight back on `/rest/stream` and `/rest/download` instead of recomputing a `SyncKey` and hoping the far side lands on the same string. That is also what the OpenSubsonic spec asks of a client: ids are opaque, and the only correct thing to do with one is return it.
+
+That removed a **second latent bug** on the way: a standalone `Flower.Server`'s ids are database row ids (`SubsonicMapper.ToChild`), and it looks a stream request up with `db.Tracks.FindAsync(id)` — it never computes a `SyncKey` for anything, so a client asking with one could never have matched. Only the peer-to-peer path was self-consistent enough to work at all; `PeerLibraryViewModel`'s browse-and-play path already did the right thing, which is why this never surfaced as a visible failure.
+
+**The four models are resolved as intentional, not collapsed.** Each earns its separate existence, and the drift that made this an item — five identity schemes, two of them differing by a punctuation character — is what actually got fixed:
+
+- `Flower.Models.Track` is the mutable domain model, shared instance across `Library`, playlists and ViewModels.
+- `Child`/`AlbumID3` are protocol DTOs whose shape is defined by OpenSubsonic, not by Flower; bending them toward `Track` would break the published surface.
+- `PlaylistSyncTrackDto` is deliberately *minimal* — four fields, exactly enough to recompute `SyncKey` on the far side. Replacing it with `Child` would put fifteen fields on the wire to use four of them.
+- `TrackEntity` is an EF Core entity in a different process with a different storage model.
+
+Identity is now `Track.Id` (the one identity), `SyncKey` (demoted in fact as well as in comment: a *matching* heuristic for rescans, sync merges and the iTunes importers, no longer addressing anything), and one shared opaque `SubsonicIdentity` for albums and artists.
+
+**Moved rather than closed:** `TrackEntity.Starred` still has no client-side counterpart. That is not drift to deduplicate — it is a missing feature that needs UI, a persisted field and a sidebar view, and it is already tracked as part of §4.1's liked-songs/smart-playlists gap. Nothing in §2.1 depends on it.
 
 ### 2.2 Auth and album-art lookup implemented two-to-three times
 
@@ -330,7 +343,7 @@ Highest-value additions, roughly in priority order:
 | Streaming providers (`IMusicProvider`, `Track.Source`) — `STREAMING-SERVICES-PLAN.md` | `Path` as identity; no `Source` field; credentials would land in `settings.json` | §0.2 (done), §4.1, a new `ISecretStore` |
 | Push sync instead of polling — `todo.txt` | Full-manifest-only protocol, no version/ETag, sync triggered only by local events | §1.4 (done) — token as ETag, and the existing `/info` poll carries it |
 | Family/friends read-only accounts — `todo.txt` | `Flower.Server` has no `User` table; `PlayCount` is a single global column | §4.1 shared schema, per-user play counts |
-| Liked songs / smart playlists / "downloaded only" | No queryable store; `Starred` exists server-side only | §4.1 + §2.1 |
+| Liked songs / smart playlists / "downloaded only" | No queryable store; `Starred` exists server-side only | §4.1 |
 | Track last-played per song — `todo.txt` | `LastPlayedAt` exists but every write rewrites 17.9 MB | §1.1 |
 | Export playlist with actual songs, playlist folders | Playlists persisted by `Path` and dropped placeholder tracks | §0.3 (done) |
 | AirPlay/Bluetooth device picker — `AIRPLAY-BLUETOOTH-PLAN.md` | `IAudioSink` has no device-enumeration concept | Additive; design the seam when §4.2 touches the audio manager |

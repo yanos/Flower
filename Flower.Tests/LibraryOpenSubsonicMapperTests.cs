@@ -175,13 +175,31 @@ public class LibraryOpenSubsonicMapperTests
     }
 
     [Fact]
-    public void ToChild_song_id_matches_the_track_SyncKey_so_the_client_can_independently_recompute_it()
+    public void ToChild_song_id_is_the_tracks_own_stable_Id_not_its_tag_derived_SyncKey()
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road", durationSeconds: 259);
 
         var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
 
-        Assert.Equal(track.SyncKey, album!.Song!.Single().Id);
+        Assert.Equal(track.Id.ToString("N"), album!.Song!.Single().Id);
+        Assert.NotEqual(track.SyncKey, album.Song!.Single().Id);
+    }
+
+    // The point of the change: SyncKey is derived from Title/Artist/Album and a
+    // rounded duration, so serving it as the song id meant a tag edit here
+    // invalidated every id a peer was still holding - its next stream or
+    // download request 404'd, indistinguishable from the peer being offline.
+    [Fact]
+    public void ToChild_song_id_survives_a_tag_edit_on_the_serving_device()
+    {
+        var track = RealTrack("Come Together", "Beatles", "Abbey Road", durationSeconds: 259);
+        var before = LibraryOpenSubsonicMapper.FindAlbum([track], LibraryOpenSubsonicMapper.AlbumIdFor(track), "self-1")!.Song!.Single().Id;
+
+        track.Title = "Come Together (Remastered)";
+        var after = LibraryOpenSubsonicMapper.FindAlbum([track], LibraryOpenSubsonicMapper.AlbumIdFor(track), "self-1")!.Song!.Single().Id;
+
+        Assert.Equal(before, after);
+        Assert.NotEqual(track.SyncKey, after); // Sanity check on the premise: SyncKey did move.
     }
 
     [Fact]

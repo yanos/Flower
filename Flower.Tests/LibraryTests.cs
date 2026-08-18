@@ -230,6 +230,51 @@ public class LibraryTests
         Assert.Contains(library.Tracks, t => t.Title == "Remote Song" && t.OriginDeviceFingerprint == "peer-1");
     }
 
+    // OriginTrackId is how a downloaded-then-deleted track gets re-fetched
+    // later (see LibraryDownloadService.DeleteDownloadedFileAsync, which leaves
+    // the origin metadata in place on purpose), so it has to ride the same
+    // carry-forward as the rest of it. A rescan re-reads a file's tags and
+    // builds a brand new Track from them - nothing on disk carries the peer's
+    // id, so losing it here would make the track permanently unrecoverable
+    // with no visible symptom until the user tried.
+    [Fact]
+    public void UpdateTracks_carries_the_origin_track_id_forward_across_a_rescan()
+    {
+        var downloaded = new Track
+        {
+            Title = "Downloaded Song", Path = "/music/abc.mp3",
+            OriginDeviceFingerprint = "peer-1", OriginTrackId = "peer-track-id",
+        };
+        var library = new Library(new List<Track> { downloaded });
+
+        library.UpdateTracks(new List<Track> { new Track { Title = "Downloaded Song", Path = "/music/abc.mp3" } });
+
+        Assert.Equal("peer-track-id", library.Tracks.Single().OriginTrackId);
+    }
+
+    // The same field arriving over sync for a track this device already knows
+    // about: the peer may have re-imported it and minted a new id, and the
+    // stale one would 404 on the next download.
+    [Fact]
+    public void MergeSyncedTracks_updates_the_origin_track_id_of_a_track_already_known_locally()
+    {
+        var known = new Track
+        {
+            Title = "Song", Artists = "A", Album = "B", Duration = TimeSpan.FromSeconds(100),
+            Path = null, OriginDeviceFingerprint = "peer-1", OriginTrackId = "old-id",
+        };
+        var library = new Library(new List<Track> { known });
+        var incoming = new Track
+        {
+            Title = "Song", Artists = "A", Album = "B", Duration = TimeSpan.FromSeconds(100),
+            Path = null, OriginDeviceFingerprint = "peer-1", OriginTrackId = "new-id",
+        };
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { incoming });
+
+        Assert.Equal("new-id", library.Tracks.Single().OriginTrackId);
+    }
+
     // A track downloaded via LibraryDownloadService (Path now set, but still
     // carrying OriginDeviceFingerprint) must also survive a rescan that doesn't
     // happen to find it - e.g. Android, where a downloaded file lives in
