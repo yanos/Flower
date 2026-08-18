@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -31,7 +31,6 @@ public partial class MainView : UserControl
 {
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private MainViewModel? _viewModel;
-    private readonly PlaylistStore _playlistStore = Ioc.Default.GetService<PlaylistStore>()!;
     private readonly DeviceNicknameStore _deviceNicknameStore = Ioc.Default.GetService<DeviceNicknameStore>()!;
     private readonly ILogger<MainView> _logger = Ioc.Default.GetService<ILogger<MainView>>()!;
 
@@ -1439,8 +1438,9 @@ public partial class MainView : UserControl
         if (item.Playlist == null || _viewModel == null)
             return;
         _logger.LogInformation("Playlist renamed: {Old} -> {New}", item.Playlist.Name, item.Name);
+        // No save here: setting Name raises Playlist.Changed, which Library
+        // relays as PlaylistsChanged, which App.axaml.cs persists.
         item.Playlist.Name = item.Name;
-        await _playlistStore.SaveAsync(_viewModel.Library.Playlists);
         _viewModel.ScheduleContentSync();
     }
 

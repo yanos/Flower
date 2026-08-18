@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -60,7 +60,6 @@ public partial class MainViewModel : ViewModelBase
     private PairedServerReachability? _reachability;
     private LibraryStore? _libraryStore;
     private AppSettingsStore? _appSettingsStore;
-    private PlaylistStore? _playlistStore;
     private DeviceIdentityStore? _deviceIdentityStore;
     private DeviceNicknameStore? _deviceNicknameStore;
 
@@ -1226,7 +1225,6 @@ public partial class MainViewModel : ViewModelBase
         MainPlaylist mainPlaylist,
         LibraryStore libraryStore,
         AppSettingsStore appSettingsStore,
-        PlaylistStore playlistStore,
         DeviceIdentityStore deviceIdentityStore,
         DeviceNicknameStore deviceNicknameStore,
         ILogger<MainViewModel> logger,
@@ -1272,7 +1270,6 @@ public partial class MainViewModel : ViewModelBase
             : null;
         _libraryStore          = libraryStore;
         _appSettingsStore      = appSettingsStore;
-        _playlistStore         = playlistStore;
         _deviceIdentityStore   = deviceIdentityStore;
         _deviceNicknameStore   = deviceNicknameStore;
         _logger                = logger;
@@ -2317,7 +2314,7 @@ public partial class MainViewModel : ViewModelBase
     public Task CreatePlaylistWithTrack(Track? track)
         => CreatePlaylistWithTracks(track != null ? new List<Track> { track } : new List<Track>());
 
-    public async Task CreatePlaylistWithTracks(IEnumerable<Track> tracks)
+    public Task CreatePlaylistWithTracks(IEnumerable<Track> tracks)
     {
         var playlist = new Playlist("New Playlist", tracks.ToList());
         Library.AddPlaylist(playlist);
@@ -2333,8 +2330,8 @@ public partial class MainViewModel : ViewModelBase
 
         SelectedSidebarItem = sidebarItem;
 
-        await (_playlistStore?.SaveAsync(Library.Playlists) ?? Task.CompletedTask);
         ScheduleContentSync();
+        return Task.CompletedTask;
     }
 
     public async Task DeletePlaylistAsync(Playlist playlist)
@@ -2359,7 +2356,6 @@ public partial class MainViewModel : ViewModelBase
         // falling back to Songs if the deleted playlist was selected.
         RefreshPlaylistSidebarItems();
 
-        await (_playlistStore?.SaveAsync(Library.Playlists) ?? Task.CompletedTask);
         ScheduleContentSync();
     }
 
@@ -2377,30 +2373,30 @@ public partial class MainViewModel : ViewModelBase
     public Task AddTrackToPlaylist(Track track, Playlist playlist)
         => AddTracksToPlaylist(new[] { track }, playlist);
 
-    public async Task AddTracksToPlaylist(IEnumerable<Track> tracks, Playlist playlist)
+    public Task AddTracksToPlaylist(IEnumerable<Track> tracks, Playlist playlist)
     {
         foreach (var track in tracks)
             playlist.AppendTrack(track);
         if (_selectedSidebarItem?.Playlist == playlist)
             ScheduleFilter();
 
-        await (_playlistStore?.SaveAsync(Library.Playlists) ?? Task.CompletedTask);
         ScheduleContentSync();
+        return Task.CompletedTask;
     }
 
-    public async Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore)
+    public Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore)
     {
-        if (!playlist.Tracks.Remove(dragged))
-            return;
-
-        var index = insertBefore != null ? playlist.Tracks.IndexOf(insertBefore) : -1;
-        playlist.Tracks.Insert(index < 0 ? playlist.Tracks.Count : index, dragged);
+        // Was an open-coded Remove()+Insert() on playlist.Tracks, which bumped
+        // neither UpdatedAt nor Changed - so a reorder was invisible to both
+        // sync and the save. See Playlist.Tracks.
+        if (!playlist.MoveTrack(dragged, insertBefore))
+            return Task.CompletedTask;
 
         if (_selectedSidebarItem?.Playlist == playlist)
             ScheduleFilter();
 
-        await (_playlistStore?.SaveAsync(Library.Playlists) ?? Task.CompletedTask);
         ScheduleContentSync();
+        return Task.CompletedTask;
     }
 
     private void OnSidebarSelectionChanged()

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -80,6 +80,26 @@ namespace Flower.Persistence
 
         public async Task SaveAsync(IEnumerable<Playlist> playlists)
         {
+            // Snapshot taken *inside* _writeLock, not before it. Saves are now
+            // triggered by Library.PlaylistsChanged rather than by one call
+            // site at a time, so two can genuinely be in flight at once; with
+            // the snapshot outside, the one that happened to be taken first
+            // could still land last and write stale playlists over fresh ones.
+            // Reading current state under the lock means whoever writes last
+            // writes the newest state.
+            await _writeLock.WaitAsync();
+            try
+            {
+                await WriteAsync(playlists);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
+        }
+
+        private static async Task WriteAsync(IEnumerable<Playlist> playlists)
+        {
             var records = playlists
                 .Select(p => new PlaylistRecord(
                     p.Name,
@@ -93,15 +113,7 @@ namespace Flower.Persistence
                     p.Tracks.Select(t => new PlaylistTrackRecord(t.Id)).ToList()))
                 .ToList();
 
-            await _writeLock.WaitAsync();
-            try
-            {
-                await AtomicJsonFile.WriteAsync(StorePath, records, FlowerJsonContext.Default.PlaylistRecordList);
-            }
-            finally
-            {
-                _writeLock.Release();
-            }
+            await AtomicJsonFile.WriteAsync(StorePath, records, FlowerJsonContext.Default.PlaylistRecordList);
         }
     }
 }

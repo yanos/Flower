@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -111,7 +111,6 @@ public class SyncHttpServer : IDisposable
     private readonly AppSettings _appSettings;
     private readonly Library _library;
     private readonly ILogger _logger;
-    private readonly PlaylistStore _playlistStore;
     private readonly TrustedPeerStore _trustedPeerStore;
     private readonly ClientLogStore _clientLogStore;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingApprovals = new();
@@ -149,7 +148,6 @@ public class SyncHttpServer : IDisposable
         DeviceSigningKey deviceSigningKey,
         AppSettings appSettings,
         Library library,
-        PlaylistStore playlistStore,
         TrustedPeerStore trustedPeerStore,
         ClientLogStore clientLogStore,
         ILogger<SyncHttpServer> logger)
@@ -158,7 +156,6 @@ public class SyncHttpServer : IDisposable
         _deviceSigningKey = deviceSigningKey;
         _appSettings = appSettings;
         _library = library;
-        _playlistStore = playlistStore;
         _trustedPeerStore = trustedPeerStore;
         _clientLogStore = clientLogStore;
         _logger = logger;
@@ -606,8 +603,10 @@ public class SyncHttpServer : IDisposable
         var playlists = manifest.Playlists
             .Select(dto => PlaylistSyncMapper.ToPlaylist(dto, _library.Tracks))
             .ToList();
+        // ReplacePlaylists persists, via Library.PlaylistsChanged - and only
+        // when the incoming set is actually different, where this used to write
+        // playlists.json on every push whether anything changed or not.
         _library.ReplacePlaylists(playlists);
-        await _playlistStore.SaveAsync(playlists);
 
         _logger.LogInformation("Received and applied {Count} playlist(s) pushed from a peer", playlists.Count);
 

@@ -20,11 +20,36 @@ namespace Flower.Models
             set
             {
                 _name = value;
-                UpdatedAt = DateTimeOffset.UtcNow;
+                Touch();
             }
         }
 
-        public List<Track> Tracks { get; }
+        // Copy-on-write, never mutated in place, for the same reason
+        // Library.Playlists is: the save triggered by Changed runs on a
+        // threadpool thread (App.axaml.cs) and enumerates this while the UI
+        // thread may be adding a track to the very same playlist.
+        private List<Track> _tracks;
+
+        // Read-only so that every mutation has to go through the methods below,
+        // which are what bump UpdatedAt and raise Changed. It used to be a bare
+        // List<Track>, and MainViewModel.ReorderPlaylistTrack duly reached in
+        // and did its own Remove()+Insert() - so a drag-reorder changed the
+        // playlist without bumping UpdatedAt at all, and PlaylistSyncPlanner
+        // (which decides "did this side change?" purely from UpdatedAt against
+        // a per-peer baseline) never saw the reorder and never propagated it.
+        public IReadOnlyList<Track> Tracks => _tracks;
+
+        // Raised after any mutation that bumps UpdatedAt. Library subscribes to
+        // every playlist it holds and relays this as Library.PlaylistsChanged,
+        // which is what actually drives persistence - see Library.PlaylistsChanged
+        // for why that has to happen here rather than at each UI call site.
+        public event EventHandler? Changed;
+
+        private void Touch()
+        {
+            UpdatedAt = DateTimeOffset.UtcNow;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
 
         // Bumped on every mutation (rename, track add/remove/reorder). Sync uses
         // this against a per-peer last-synced baseline to tell which side(s)
@@ -48,33 +73,54 @@ namespace Flower.Models
             // own "previous" snapshot from a list that had *already* been overwritten
             // with the fresh (PlayCount/DateAdded/ImportedPlayCount-defaulted) data -
             // silently discarding whatever was actually there, every single rescan.
-            Tracks = new List<Track>(tracks);
+            _tracks = new List<Track>(tracks);
             UpdatedAt = updatedAt;
         }
 
         public void InsertTrack(int index, Track track)
         {
-            Tracks.Insert(index, track);
-            UpdatedAt = DateTimeOffset.UtcNow;
+            var next = new List<Track>(_tracks);
+            next.Insert(index, track);
+            _tracks = next;
+            Touch();
         }
 
         public void AppendTrack(Track track)
         {
-            Tracks.Add(track);
-            UpdatedAt = DateTimeOffset.UtcNow;
+            _tracks = new List<Track>(_tracks) { track };
+            Touch();
         }
 
         public void RemoveTrack(Track track)
         {
-            Tracks.Remove(track);
-            UpdatedAt = DateTimeOffset.UtcNow;
+            var next = new List<Track>(_tracks);
+            if (!next.Remove(track))
+                return;
+
+            _tracks = next;
+            Touch();
         }
 
         public void ReplaceAll(List<Track> tracks)
         {
-            Tracks.Clear();
-            Tracks.AddRange(tracks);
-            UpdatedAt = DateTimeOffset.UtcNow;
+            _tracks = new List<Track>(tracks);
+            Touch();
+        }
+
+        // Drag-to-reorder: move an entry to sit immediately before insertBefore,
+        // or to the end when that is null. Returns false (changing nothing, not
+        // even UpdatedAt) when the dragged track is not in this playlist.
+        public bool MoveTrack(Track dragged, Track? insertBefore)
+        {
+            var next = new List<Track>(_tracks);
+            if (!next.Remove(dragged))
+                return false;
+
+            var index = insertBefore != null ? next.IndexOf(insertBefore) : -1;
+            next.Insert(index < 0 ? next.Count : index, dragged);
+            _tracks = next;
+            Touch();
+            return true;
         }
 
         // Swaps each entry for whichever Track instance now represents it,
@@ -84,11 +130,13 @@ namespace Flower.Models
         // objects a rescan replaced underneath it.
         internal void RebindTracks(IReadOnlyDictionary<Guid, Track> byId)
         {
-            for (var i = 0; i < Tracks.Count; i++)
+            var next = new List<Track>(_tracks);
+            for (var i = 0; i < next.Count; i++)
             {
-                if (byId.TryGetValue(Tracks[i].Id, out var current))
-                    Tracks[i] = current;
+                if (byId.TryGetValue(next[i].Id, out var current))
+                    next[i] = current;
             }
+            _tracks = next;
         }
 
         public Track? GetTrack(int index)
@@ -98,7 +146,7 @@ namespace Flower.Models
 
         public Track? GetPreviousTrack(Track currentTrack)
         {
-            int index = Tracks.IndexOf(currentTrack);
+            int index = _tracks.IndexOf(currentTrack);
             if (index == -1)
             {
                 return Tracks.FirstOrDefault();
@@ -111,7 +159,7 @@ namespace Flower.Models
 
         public Track? GetNextTrack(Track currentTrack)
         {
-            int index = Tracks.IndexOf(currentTrack);
+            int index = _tracks.IndexOf(currentTrack);
             if (index == -1)
             {
                 return Tracks.FirstOrDefault();

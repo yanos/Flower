@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2 and 2.5 implemented. Tier 3 implemented. Tier 4.4 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2, 2.4 and 2.5 implemented. Tier 3 implemented. Tier 4.4 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 568 — 498 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2) |
+| Tests at review time | 579 — 509 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -217,9 +217,15 @@ Every service in `App.axaml.cs::Bootstrap` is `new`'d by hand then registered as
 
 **Event subscriptions are never unsubscribed anywhere.** `MainViewModel`'s constructor alone subscribes to eleven event sources and implements no `IDisposable`. Harmless *only* because it is a process-lifetime singleton — nothing enforces that, and it blocks per-test reconstruction.
 
-### 2.4 `Library.Playlists` is unlocked while `Library.Tracks` is locked — RECOMMENDED NEXT
+### 2.4 `Library.Playlists` is unlocked while `Library.Tracks` is locked — DONE
 
-`AddPlaylist`/`RemovePlaylist`/`ReplacePlaylists` take no lock despite `ReplacePlaylists` being called from the sync path concurrently with UI-thread mutations — the same threat model that motivated `_lock` for `Tracks`, inconsistently applied. Persistence is also caller-responsibility; nothing structurally guarantees a mutation is followed by a save.
+**Locking.** `AddPlaylist`/`RemovePlaylist`/`ReplacePlaylists` now take `_lock` — the same one `Tracks` uses — and, more importantly, follow the same copy-on-write discipline: `Playlists` is an `IReadOnlyList<Playlist>` over a list that is never mutated in place, only swapped. Locking the mutators alone would not have been enough. The list is enumerated without a lock all over the place (`MainViewModel` rebuilding the sidebar, `PlaylistSyncMapper.ToManifest`, `MainView`'s context menus), so in-place mutation under a lock would only have converted a lost update into an `InvalidOperationException` in a reader. Both halves are covered by tests that fail against their respective mutants (`Enumerating_Playlists_is_unaffected_by_a_concurrent_mutation`, `Concurrent_AddPlaylist_calls_do_not_lose_playlists`).
+
+**Persistence.** Saving was six separate `_playlistStore.SaveAsync(Library.Playlists)` calls spread across `MainViewModel` (4), `MainView.axaml.cs` (1) and `PlaylistSyncService`/`SyncHttpServer` (1 each) — one per known mutation path, with nothing stopping the next one from forgetting. It is now one subscription in `App.axaml.cs` to a new `Library.PlaylistsChanged`, which fires for every mutation including in-place ones: `Playlist` raises its own `Changed` event wherever it bumps `UpdatedAt`, and `Library` relays it, moving the subscription from the outgoing to the incoming set on every swap. `PlaylistsChanged` is deliberately separate from the existing `PlaylistsUpdated`, which means "rebuild the sidebar" and must *not* fire for local edits (it would tear down the row the user is mid-rename in).
+
+`PlaylistStore` no longer needs to be a `MainViewModel`/`MainView`/`PlaylistSyncService`/`SyncHttpServer` dependency at all, and those four constructor parameters are gone. `SaveAsync` now takes its record snapshot inside its write lock rather than before it, since saves can now genuinely overlap and the older snapshot could otherwise land last.
+
+**A bug this uncovered.** `Playlist.Tracks` was a public `List<Track>` and `MainViewModel.ReorderPlaylistTrack` reached straight into it with `Remove()`+`Insert()`, bypassing `UpdatedAt` entirely — so a drag-reorder was invisible to `PlaylistSyncPlanner`, which decides "did this side change?" purely from `UpdatedAt` against a per-peer baseline, and a reorder therefore never propagated to a paired device. `Tracks` is now `IReadOnlyList<Track>` and the reorder goes through a new `Playlist.MoveTrack`. It is copy-on-write for the same reason `Library.Playlists` is: the save now runs on a threadpool thread and enumerates a playlist's tracks while the UI thread may be adding to that same playlist. (`RemoveTrack` also stopped bumping `UpdatedAt` when the track was not in the playlist, which used to manufacture a sync-visible "change" out of a no-op.)
 
 ### 2.5 No schema version anywhere — DONE
 
@@ -371,6 +377,6 @@ Highest-value additions, roughly in priority order:
 8. ~~**Tier 2.1**~~ — done: one shared `SubsonicIdentity`, one duration rounding, and `Child.Id` demoted from `SyncKey` to `Track.Id`.
 9. ~~**Tier 4.4** — range support on `SyncHttpServer` streaming.~~ **Done.** Ranged serving, resumable downloads, no more orphaned partials.
 10. ~~**Tier 2.2** — the two hand-copied signature verifiers and the three copies of album-art fallback.~~ **Done.** Both collapsed into `Flower.Core`; the album-art copies had already drifted into a real cross-implementation bug.
-11. **Tier 2.4 — `Library.Playlists` is unlocked while `Library.Tracks` is locked.** Recommended next, and small: the same threat model that motivated `_lock` for `Tracks`, inconsistently applied, with `ReplacePlaylists` called from the sync path concurrently with UI-thread mutations. §2.3's DI cleanup is the larger remaining Tier 2 item and is better done as part of 4.2, where the seams it needs become visible.
-12. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.
+11. ~~**Tier 2.4** — `Library.Playlists` unlocked while `Library.Tracks` is locked.~~ **Done.** Copy-on-write under the same lock, persistence made structural via `Library.PlaylistsChanged`, and a silent drag-reorder-never-syncs bug fixed on the way. §2.3's DI cleanup is the remaining Tier 2 item and is better done as part of 4.2, where the seams it needs become visible.
+12. **Tier 4.1 — the SQLite migration.** Recommended next: it is the largest remaining correctness/performance lever (see §4.1), and 4.2/4.3 want to be done after it, not before.
 13. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.

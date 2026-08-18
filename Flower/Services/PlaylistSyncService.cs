@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -55,7 +55,6 @@ public class PlaylistSyncService
     private readonly DeviceSigningKey _signingKey;
     private readonly AppSettings _appSettings;
     private readonly ILogger _logger;
-    private readonly PlaylistStore _playlistStore;
     private readonly PlaylistSyncStateStore _syncStateStore;
     private readonly DeviceNicknameStore _deviceNicknameStore;
 
@@ -67,7 +66,6 @@ public class PlaylistSyncService
         DeviceIdentity deviceIdentity,
         DeviceSigningKey signingKey,
         AppSettings appSettings,
-        PlaylistStore playlistStore,
         PlaylistSyncStateStore syncStateStore,
         DeviceNicknameStore deviceNicknameStore,
         ILogger<PlaylistSyncService> logger)
@@ -76,7 +74,6 @@ public class PlaylistSyncService
         _deviceIdentity = deviceIdentity;
         _signingKey = signingKey;
         _appSettings = appSettings;
-        _playlistStore = playlistStore;
         _syncStateStore = syncStateStore;
         _deviceNicknameStore = deviceNicknameStore;
         _logger = logger;
@@ -188,8 +185,8 @@ public class PlaylistSyncService
             newBaselines[decision.PlaylistId] = resolved.UpdatedAt;
         }
 
+        // Persisted by Library.PlaylistsChanged; see SyncHttpServer's twin.
         _library.ReplacePlaylists(finalPlaylists);
-        await _playlistStore.SaveAsync(finalPlaylists);
         await _syncStateStore.SaveBaselinesAsync(device.Fingerprint, newBaselines);
 
         try
