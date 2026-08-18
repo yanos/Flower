@@ -1786,7 +1786,12 @@ public partial class MainViewModel : ViewModelBase
     // BuildSidebarItems(). A peer advertising Server mode (DiscoveredDevice.
     // IsServer) goes under its own "Server" section instead of "Devices" -
     // see DeviceSectionHeaderName/DeviceSidebarIcon.
-    private void AddOrUpdateDeviceSidebarItem(DiscoveredDevice device)
+    // internal, not private, so MainViewModelDeviceSidebarTests can drive the
+    // device-row state machine directly. Reaching it through the real
+    // NetworkDiscoveryService would mean standing up an mDNS backend AND an
+    // HTTP /info endpoint per case, just to choose a Fingerprint - see
+    // ARCHITECTURE-REVIEW Tier 5.6.
+    internal void AddOrUpdateDeviceSidebarItem(DiscoveredDevice device)
     {
         var existing = FindDeviceSidebarItem(device);
 
@@ -2056,7 +2061,7 @@ public partial class MainViewModel : ViewModelBase
         NotifyPairButtonPropertiesChanged();
     }
 
-    private void RemoveDeviceSidebarItem(string instanceName)
+    internal void RemoveDeviceSidebarItem(string instanceName)
     {
         // mDNS's "goodbye" notification only ever carries the withdrawn
         // record's raw instance name, never a Fingerprint - so if two
