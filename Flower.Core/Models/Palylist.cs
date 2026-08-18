@@ -108,16 +108,42 @@ namespace Flower.Models
         }
 
         // Drag-to-reorder: move an entry to sit immediately before insertBefore,
-        // or to the end when that is null. Returns false (changing nothing, not
-        // even UpdatedAt) when the dragged track is not in this playlist.
+        // or to the end when that is null. Returns false - changing nothing,
+        // not even UpdatedAt - when the drag would not actually reorder
+        // anything: the dragged track is not in this playlist, it was dropped
+        // onto itself, or it was dropped where it already sits (onto the entry
+        // that already follows it, or at the end when it is already last).
+        //
+        // That last group matters beyond tidiness. UpdatedAt is the entire
+        // basis on which PlaylistSyncPlanner decides "did this side change?"
+        // against its per-peer baseline, so bumping it here would manufacture a
+        // sync-visible edit out of a drag that moved nothing - and a drag that
+        // lands back where it started is the single most common way a
+        // drag-reorder ends. Same reasoning as RemoveTrack's own no-op guard;
+        // see docs/ARCHITECTURE-REVIEW.md 2.4.
         public bool MoveTrack(Track dragged, Track? insertBefore)
         {
-            var next = new List<Track>(_tracks);
-            if (!next.Remove(dragged))
+            var originalIndex = _tracks.IndexOf(dragged);
+            if (originalIndex < 0)
                 return false;
 
+            // Dropped onto itself. Without this the removal below happens
+            // first, IndexOf then fails to find insertBefore in the shortened
+            // list, and the track silently lands at the end instead.
+            if (insertBefore == dragged)
+                return false;
+
+            var next = new List<Track>(_tracks);
+            next.RemoveAt(originalIndex);
+
             var index = insertBefore != null ? next.IndexOf(insertBefore) : -1;
-            next.Insert(index < 0 ? next.Count : index, dragged);
+            var targetIndex = index < 0 ? next.Count : index;
+            // Removing at originalIndex and re-inserting at the same index
+            // reproduces the list exactly.
+            if (targetIndex == originalIndex)
+                return false;
+
+            next.Insert(targetIndex, dragged);
             _tracks = next;
             Touch();
             return true;
