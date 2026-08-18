@@ -138,7 +138,11 @@ public partial class MainViewModel : ViewModelBase
     // local edits (e.g. reordering a playlist track-by-track, or a rescan
     // finding many files) settles into one sync instead of one per edit, short
     // enough that a peer notices a real change reasonably promptly.
-    private static readonly TimeSpan ContentSyncCooldown = TimeSpan.FromSeconds(5);
+    // Not const/readonly so MainViewModelSyncTriggerTests can shorten it.
+    // Waiting out the real 5s in a test is not just slow: those tests pump the
+    // shared headless Dispatcher, and occupying it for seconds at a time
+    // destabilizes every other [AvaloniaFact] in the suite.
+    internal static TimeSpan ContentSyncCooldown = TimeSpan.FromSeconds(5);
 
     // See the InMemoryLogStore.EntryAdded subscription in the constructor
     // for why this is a periodic timer, not routed through ScheduleContentSync's
@@ -2223,7 +2227,8 @@ public partial class MainViewModel : ViewModelBase
     // first one is TriggerSyncIfReady's initial sync to make, not this one's.
     // A redundant trigger is cheap anyway - LibrarySyncService sends the token
     // back as If-None-Match, so an unchanged catalog costs one 304.
-    private void TriggerSyncIfPeerCatalogChanged(DiscoveredDevice device)
+    // internal for MainViewModelSyncTriggerTests - see TriggerSyncIfReady below.
+    internal void TriggerSyncIfPeerCatalogChanged(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint) || string.IsNullOrEmpty(device.LibraryToken))
             return;
@@ -2240,7 +2245,9 @@ public partial class MainViewModel : ViewModelBase
         RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
     }
 
-    private void TriggerSyncIfReady(DiscoveredDevice device)
+    // internal for MainViewModelSyncTriggerTests - same reasoning as
+    // AddOrUpdateDeviceSidebarItem above (ARCHITECTURE-REVIEW Tier 5.6).
+    internal void TriggerSyncIfReady(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
             return;

@@ -53,17 +53,33 @@ public class LogViewModelTests : PinnedDataDirectory
     private static List<LogEntryDto> Dtos(params string[] messages) =>
         messages.Select(m => new LogEntryDto(DateTimeOffset.UtcNow, "Information", null, m, null)).ToList();
 
-    // Pumps the dispatcher until `condition` holds - the local-entry flush is
-    // posted at Background priority, so it lands whenever the loop idles.
+    // Drains the dispatcher until `condition` holds. Deliberately RunJobs and
+    // not Dispatcher.UIThread.MainLoop: running the real main loop inside a
+    // test fights Avalonia.Headless.XUnit's session management (it owns the
+    // dispatcher thread), which showed up as intermittent
+    // "the calling thread cannot access this object" failures in whichever
+    // unrelated [AvaloniaFact] happened to need a session next. Everything
+    // this class waits on is a plain Dispatcher.Post, so draining is enough.
     private static void PumpUntil(Func<bool> condition, int timeoutMs = 3000)
     {
         var deadline = Environment.TickCount64 + timeoutMs;
         while (!condition() && Environment.TickCount64 < deadline)
         {
-            using var cts = new CancellationTokenSource(30);
-            Dispatcher.UIThread.MainLoop(cts.Token);
+            Thread.Sleep(10);
+            Dispatcher.UIThread.RunJobs();
         }
         Assert.True(condition(), "the expected dispatcher work never completed");
+    }
+
+    // Drains for a fixed span, asserting nothing - for "this must NOT happen".
+    private static void Drain(int milliseconds)
+    {
+        var deadline = Environment.TickCount64 + milliseconds;
+        while (Environment.TickCount64 < deadline)
+        {
+            Thread.Sleep(10);
+            Dispatcher.UIThread.RunJobs();
+        }
     }
 
     // ── Sidebar / selection ───────────────────────────────────────────────────
@@ -359,8 +375,7 @@ public class LogViewModelTests : PinnedDataDirectory
         vm.LinesAppended += (_, _) => appended++;
 
         LogLocal("local line while a client is shown");
-        using (var cts = new CancellationTokenSource(200))
-            Dispatcher.UIThread.MainLoop(cts.Token);
+        Drain(200);
 
         Assert.Equal(0, appended);
         Assert.Equal(new[] { "client line" }, vm.DisplayLines.Select(l => l[^"client line".Length..]).ToArray());
@@ -397,8 +412,7 @@ public class LogViewModelTests : PinnedDataDirectory
         var resets = 0;
         vm.LinesReset += (_, _) => resets++;
         _clientLogStore.SetSnapshot("fp-2", "Another Phone", Dtos("theirs"), DateTimeOffset.UtcNow);
-        using (var cts = new CancellationTokenSource(200))
-            Dispatcher.UIThread.MainLoop(cts.Token);
+        Drain(200);
 
         Assert.Equal(0, resets);
         Assert.Contains("mine", Assert.Single(vm.DisplayLines));
