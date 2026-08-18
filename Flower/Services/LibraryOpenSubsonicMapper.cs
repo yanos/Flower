@@ -140,7 +140,14 @@ public static class LibraryOpenSubsonicMapper
     }
 
     private static Child ToChild(Track track, string albumId, string? artHash, string selfFingerprint) => new(
-        Id: track.SyncKey,
+        // Track.Id, this device's own stable surrogate identity for the track,
+        // not its SyncKey. SyncKey is derived from tags and a rounded duration,
+        // so editing a tag here silently invalidated every id a peer was still
+        // holding (ARCHITECTURE-REVIEW Tier 2.1); Id survives tag edits, rescans
+        // and downloads. Opaque to the receiver either way, which is what the
+        // OpenSubsonic spec requires of an id - the peer stores it verbatim as
+        // Track.OriginTrackId and hands it straight back to /rest/stream.
+        Id: track.Id.ToString("N"),
         Title: track.Title ?? "",
         Album: track.Album,
         Artist: track.Artists,
@@ -161,12 +168,12 @@ public static class LibraryOpenSubsonicMapper
         // rule), but its extension alone leaks nothing about this device's layout.
         Suffix: track.Path != null ? System.IO.Path.GetExtension(track.Path).TrimStart('.') : null,
         // Track.RoundedSeconds, not a separate inline Math.Round - must match
-        // Track.SyncKey's own rounding exactly. A receiving peer never trusts
-        // this Child's own Id field as authoritative
-        // (LibrarySyncMapper.ToPlaceholderTrack doesn't even store it) - it
-        // independently recomputes its own SyncKey later from this Duration
-        // field alone (via TimeSpan.FromSeconds(song.Duration) -> SyncKey's
-        // own rounding) to ask this same device to stream/download the track.
+        // Track.SyncKey's own rounding exactly. The receiving peer no longer
+        // needs this to address the track (it keeps Id above verbatim), but it
+        // does still rebuild a placeholder Track from these fields, and
+        // Library.MergeSyncedTracks/UpdateTracks match that placeholder against
+        // this device's library by SyncKey - so a duration that disagreed by a
+        // second would still fragment one track into two.
         Duration: Track.RoundedSeconds(track.Duration),
         BitRate: track.Bitrate > 0 ? track.Bitrate : null,
         // See AlbumId's own CoverArt above - a content hash of the album's art

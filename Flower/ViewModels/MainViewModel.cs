@@ -2157,11 +2157,19 @@ public partial class MainViewModel : ViewModelBase
             _logger.LogWarning("Cannot build a stream URL for {Title}: device identity/settings not ready yet", track.Title);
             return null;
         }
+        // The id the origin peer itself gave this track, not one recomputed
+        // here - see Track.OriginTrackId. Absent only for a track that never
+        // came from a peer at all, which has no business on this path.
+        if (track.OriginTrackId == null)
+        {
+            _logger.LogWarning("Cannot build a stream URL for {Title}: it carries no origin track id", track.Title);
+            return null;
+        }
         var peer = ResolvePeerForTrack(track);
         if (peer == null)
             return null; // ResolvePeerForTrack already logged why.
 
-        var url = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey).GetStreamUrl(track.SyncKey);
+        var url = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey).GetStreamUrl(track.OriginTrackId);
         _logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint}): {Url}", track.Title, peer.Alias, peer.EndPoint, url);
         return url;
     }

@@ -42,6 +42,15 @@ public class LibraryDownloadService
             return TrackDownloadResult.AlreadyDownloaded;
         if (peer == null)
             return TrackDownloadResult.PeerUnavailable;
+        // See Track.OriginTrackId - the peer's own id for this track, which is
+        // the only thing /rest/download will match. A placeholder always has
+        // one (LibrarySyncMapper.ToPlaceholderTrack); a track that never came
+        // from a peer isn't downloadable by definition.
+        if (track.OriginTrackId is not { } originTrackId)
+        {
+            _logger.LogWarning("Cannot download {Title}: it carries no origin track id", track.Title);
+            return TrackDownloadResult.Failed;
+        }
 
         try
         {
@@ -52,21 +61,21 @@ public class LibraryDownloadService
             var extension = string.IsNullOrEmpty(track.OriginFileExtension) ? "mp3" : track.OriginFileExtension;
             var destination = Path.Combine(folder, $"{Guid.NewGuid():N}.{extension}");
 
-            await client.DownloadTrackAsync(track.SyncKey, destination);
+            await client.DownloadTrackAsync(originTrackId, destination);
 
             track.Path = destination;
             await _libraryStore.SaveAsync(_library.Tracks);
             _library.NotifyTrackChanged();
 
-            _logger.LogInformation("Downloaded {Title} ({SyncKey}) from {Alias} to {Destination}",
-                track.Title, track.SyncKey, peer.Alias, destination);
+            _logger.LogInformation("Downloaded {Title} ({OriginTrackId}) from {Alias} to {Destination}",
+                track.Title, originTrackId, peer.Alias, destination);
 
             return TrackDownloadResult.Downloaded;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Download failed for {Title} ({SyncKey}) from {Alias} ({Fingerprint}) at {EndPoint}",
-                track.Title, track.SyncKey, peer.Alias, track.OriginDeviceFingerprint, peer.EndPoint);
+            _logger.LogWarning(ex, "Download failed for {Title} ({OriginTrackId}) from {Alias} ({Fingerprint}) at {EndPoint}",
+                track.Title, originTrackId, peer.Alias, track.OriginDeviceFingerprint, peer.EndPoint);
             return TrackDownloadResult.Failed;
         }
     }

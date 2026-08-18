@@ -317,7 +317,7 @@ public class SyncHttpServerRoundTripTests : IDisposable
         // Signed for one id, sent for another - without the query in the
         // canonical string, a captured stream URL would work for any song.
         var (signature, timestamp, nonce) = harness.PeerKey.Sign(
-            "GET", "/rest/stream", [("id", track.SyncKey)], []);
+            "GET", "/rest/stream", [("id", track.Id.ToString("N"))], []);
         using var request = new HttpRequestMessage(
             HttpMethod.Get, harness.Url("/rest/stream?id=some-other-song"));
         request.Headers.Add("X-Flower-Fingerprint", harness.PeerFingerprint);
@@ -588,7 +588,7 @@ public class SyncHttpServerRoundTripTests : IDisposable
             return;
         await harness.ApprovePeerAsync();
 
-        using var request = harness.Signed(HttpMethod.Get, "/rest/stream", [("id", track.SyncKey)]);
+        using var request = harness.Signed(HttpMethod.Get, "/rest/stream", [("id", track.Id.ToString("N"))]);
         var response = await harness.Http.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
