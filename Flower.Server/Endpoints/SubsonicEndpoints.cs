@@ -534,64 +534,13 @@ public static class SubsonicEndpoints
 
         foreach (var candidate in candidates)
         {
-            var art = TryGetLocalArtBytes(candidate.Path, out var mimeType);
+            // Shared with the client and SyncHttpServer - see
+            // LocalAlbumArtReader, which this used to be a private copy of.
+            var art = LocalAlbumArtReader.ForFile(candidate.Path);
             if (art is not null)
-                return Results.Bytes(art, mimeType);
+                return Results.Bytes(art.Bytes, art.MimeType);
         }
 
         return Results.NotFound();
-    }
-
-    // Deliberately duplicated rather than shared: Flower's own equivalent
-    // (AlbumArtLoader.TryGetLocalArtBytes) lives in the Flower project, which
-    // is Avalonia-Bitmap-coupled and out of reach here (see SYNC-PLAN.md's
-    // "Reuse boundary" note) - same embedded-tag-picture-then-cover/folder-file
-    // fallback, just returning raw bytes+mime instead of decoding a Bitmap.
-    private static byte[]? TryGetLocalArtBytes(string path, out string mimeType)
-    {
-        mimeType = "image/jpeg";
-
-        try
-        {
-            using var tagFile = TagLib.File.Create(path);
-            var pic = tagFile.Tag.Pictures.FirstOrDefault();
-            if (pic?.Data?.Data is { Length: > 0 } data)
-            {
-                if (!string.IsNullOrEmpty(pic.MimeType))
-                    mimeType = pic.MimeType;
-                return data;
-            }
-        }
-        catch
-        {
-            // Best effort - an unreadable/corrupt file just falls through to
-            // the cover/folder-file check below.
-        }
-
-        try
-        {
-            var dir = Path.GetDirectoryName(path);
-            if (dir != null)
-            {
-                var file = Directory.EnumerateFiles(dir).FirstOrDefault(f =>
-                {
-                    var stem = Path.GetFileNameWithoutExtension(f);
-                    var ext = Path.GetExtension(f).ToLowerInvariant();
-                    return (stem.Equals("cover", StringComparison.OrdinalIgnoreCase) || stem.Equals("folder", StringComparison.OrdinalIgnoreCase))
-                        && (ext is ".jpg" or ".jpeg" or ".png");
-                });
-                if (file != null)
-                {
-                    mimeType = Path.GetExtension(file).ToLowerInvariant() == ".png" ? "image/png" : "image/jpeg";
-                    return File.ReadAllBytes(file);
-                }
-            }
-        }
-        catch
-        {
-            // Best effort, same reasoning as above.
-        }
-
-        return null;
     }
 }

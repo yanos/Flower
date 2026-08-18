@@ -699,6 +699,31 @@ public class SyncHttpServerRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task GetCoverArt_serves_the_arts_own_content_type_not_a_guess()
+    {
+        var directory = Path.Combine(_tempHome, "music-cover");
+        Directory.CreateDirectory(directory);
+        var track = TrackWithFile(directory, "Song One");
+        File.WriteAllBytes(Path.Combine(directory, "cover.webp"), [1, 2, 3, 4]);
+        using var harness = new Harness([track]);
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
+        using var request = harness.Signed(HttpMethod.Get, "/rest/getCoverArt", [("id", albumId)]);
+        var response = await harness.Http.SendAsync(request);
+
+        // Two things this device used to get wrong for the same album: a
+        // cover.webp was served (the client set accepted it) but labelled
+        // image/jpeg by byte-sniffing, while a self-hosted Flower.Server
+        // serving the same library refused it outright.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("image/webp", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal<byte[]>([1, 2, 3, 4], await response.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
     public async Task GetAlbumList2_lists_this_devices_own_albums()
     {
         var directory = Path.Combine(_tempHome, "music-albums");

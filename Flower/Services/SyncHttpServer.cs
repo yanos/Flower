@@ -289,7 +289,7 @@ public class SyncHttpServer : IDisposable
             string? fingerprint = null;
             if (route.Auth == AuthMode.SelfSigned)
             {
-                fingerprint = VerifySelfSigned(context, body);
+                fingerprint = PeerSignatureAuth.VerifySelfSigned(ToSignedRequest(context, body), _nonceReplayGuard, DateTimeOffset.UtcNow);
                 if (fingerprint == null)
                 {
                     context.Response.StatusCode = 401;
@@ -299,7 +299,7 @@ public class SyncHttpServer : IDisposable
             }
             else if (route.Auth == AuthMode.TrustedPeer)
             {
-                fingerprint = VerifyTrustedPeer(context, body);
+                fingerprint = PeerSignatureAuth.VerifyTrustedPeer(ToSignedRequest(context, body), _trustedPeerStore.GetPublicKey, _nonceReplayGuard, DateTimeOffset.UtcNow);
                 if (fingerprint == null)
                 {
                     context.Response.StatusCode = 403;
@@ -356,87 +356,32 @@ public class SyncHttpServer : IDisposable
     // nothing but individual rejections.
     private static string FingerprintKey(HttpListenerContext context) => GetIdentityValue(context, "X-Flower-Fingerprint") ?? "unknown";
 
-    private static IEnumerable<(string Key, string Value)> GetQueryParams(HttpListenerContext context)
+    // Header if present, else the same name as a query param. The rule itself
+    // lives on SignedRequest.Identity (shared with Flower.Server); this is the
+    // convenience wrapper for the handlers below, which only ever want one
+    // value and have no body to canonicalize.
+    private static string? GetIdentityValue(HttpListenerContext context, string name) =>
+        ToSignedRequest(context, []).Identity(name);
+
+    // The one place an HttpListenerContext is turned into the transport-
+    // agnostic shape both servers verify against - see SignedRequest.
+    // Flower.Server has the one matching method for Kestrel and nothing else.
+    private static SignedRequest ToSignedRequest(HttpListenerContext context, byte[] body)
     {
         var qs = context.Request.QueryString;
+        var query = new List<(string Key, string Value)>();
         foreach (var key in qs.AllKeys)
         {
             if (key == null)
                 continue;
             foreach (var value in qs.GetValues(key) ?? [])
-                yield return (key, value);
+                query.Add((key, value));
         }
+
+        return new SignedRequest(
+            context.Request.HttpMethod, context.Request.Url!.AbsolutePath, query, body,
+            name => context.Request.Headers[name]);
     }
-
-    // Proof-of-possession check for pair-request/unpair-notify: the caller
-    // must hold the private key matching the public key it's offering (the
-    // fingerprint it claims must actually be that key's hash), verified
-    // against the offered key itself rather than a trust-store lookup, since
-    // there's nothing to look up yet. Returns the verified fingerprint, or
-    // null on any failure.
-    private string? VerifySelfSigned(HttpListenerContext context, byte[] body)
-    {
-        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
-        var publicKeyBase64 = GetIdentityValue(context, "X-Flower-PublicKey");
-        if (string.IsNullOrEmpty(fingerprint) || string.IsNullOrEmpty(publicKeyBase64))
-            return null;
-
-        byte[] publicKeyRaw;
-        try
-        {
-            publicKeyRaw = Convert.FromBase64String(publicKeyBase64);
-        }
-        catch (FormatException)
-        {
-            return null;
-        }
-        if (publicKeyRaw.Length != 65 || publicKeyRaw[0] != 0x04)
-            return null;
-        if (SignedRequestCanonicalizer.ComputeFingerprint(publicKeyRaw) != fingerprint)
-            return null;
-
-        var verified = SignatureVerifier.Verify(
-            context.Request.HttpMethod, context.Request.Url!.AbsolutePath, GetQueryParams(context), body,
-            GetIdentityValue(context, "X-Flower-Timestamp"), GetIdentityValue(context, "X-Flower-Nonce"),
-            GetIdentityValue(context, "X-Flower-Signature"), publicKeyBase64,
-            DateTimeOffset.UtcNow, _nonceReplayGuard, fingerprint);
-
-        return verified ? fingerprint : null;
-    }
-
-    // The gated-endpoint check: the caller must be signature-verified against
-    // the public key TrustedPeerStore captured for this fingerprint at the
-    // moment it was actually approved - never a cached /info value. A
-    // fingerprint with no usable key on file (unknown, or a pre-signing-
-    // scheme legacy entry - see TrustedPeerStore.GetPublicKey) fails exactly
-    // like an outright stranger. Returns the verified fingerprint, or null.
-    private string? VerifyTrustedPeer(HttpListenerContext context, byte[] body)
-    {
-        var fingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
-        if (string.IsNullOrEmpty(fingerprint))
-            return null;
-
-        var publicKey = _trustedPeerStore.GetPublicKey(fingerprint);
-        if (publicKey == null)
-            return null;
-
-        var verified = SignatureVerifier.Verify(
-            context.Request.HttpMethod, context.Request.Url!.AbsolutePath, GetQueryParams(context), body,
-            GetIdentityValue(context, "X-Flower-Timestamp"), GetIdentityValue(context, "X-Flower-Nonce"),
-            GetIdentityValue(context, "X-Flower-Signature"), publicKey,
-            DateTimeOffset.UtcNow, _nonceReplayGuard, fingerprint);
-
-        return verified ? fingerprint : null;
-    }
-
-    // Header if present, else the same name as a query param - see
-    // OpenSubsonicClient.BuildUrl's own doc comment: a URL handed to
-    // something else to fetch (LibVLC playing GetStreamUrl directly) can't
-    // carry custom headers, so the identity (and, now, the signature/
-    // timestamp/nonce/public key) travels as a query param there instead.
-    // Header wins when both are somehow present.
-    private static string? GetIdentityValue(HttpListenerContext context, string name) =>
-        context.Request.Headers[name] is { Length: > 0 } header ? header : context.Request.QueryString[name];
 
     private static bool IsCallerServer(HttpListenerContext context) =>
         string.Equals(GetIdentityValue(context, "X-Flower-Role"), "server", StringComparison.OrdinalIgnoreCase);
@@ -861,22 +806,20 @@ public class SyncHttpServer : IDisposable
             ? _library.Tracks.FirstOrDefault(t => t.Path != null && LibraryOpenSubsonicMapper.AlbumIdFor(t) == id)
             : null;
 
-        var bytes = track != null ? AlbumArtLoader.TryGetLocalArtBytes(track) : null;
-        if (bytes == null)
+        // The art's own MIME type, carried out of the lookup rather than
+        // sniffed back out of the bytes here - which used to mean every
+        // format that isn't PNG went out labelled as JPEG.
+        var art = track != null ? LocalAlbumArtReader.ForFile(track.Path, _logger) : null;
+        if (art == null)
         {
             context.Response.StatusCode = 404;
             return;
         }
 
-        context.Response.ContentType = SniffImageContentType(bytes);
-        context.Response.ContentLength64 = bytes.Length;
-        await context.Response.OutputStream.WriteAsync(bytes);
+        context.Response.ContentType = art.MimeType;
+        context.Response.ContentLength64 = art.Bytes.Length;
+        await context.Response.OutputStream.WriteAsync(art.Bytes);
     }
-
-    private static string SniffImageContentType(byte[] bytes) =>
-        bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47
-            ? "image/png"
-            : "image/jpeg"; // Overwhelmingly the common case for embedded/cover-file art either way.
 
     private static async Task WriteJsonAsync(HttpListenerContext context, string responseBody)
     {

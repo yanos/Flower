@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1 and 2.5 implemented. Tier 3 implemented. Tier 4.4 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2 and 2.5 implemented. Tier 3 implemented. Tier 4.4 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 545 — 475 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4) |
+| Tests at review time | 568 — 498 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -199,9 +199,13 @@ Identity is now `Track.Id` (the one identity), `SyncKey` (demoted in fact as wel
 
 **Moved rather than closed:** `TrackEntity.Starred` still has no client-side counterpart. That is not drift to deduplicate — it is a missing feature that needs UI, a persisted field and a sidebar view, and it is already tracked as part of §4.1's liked-songs/smart-playlists gap. Nothing in §2.1 depends on it.
 
-### 2.2 Auth and album-art lookup implemented two-to-three times — RECOMMENDED NEXT
+### 2.2 Auth and album-art lookup implemented two-to-three times — DONE
 
-`SyncHttpServer.VerifySelfSigned`/`VerifyTrustedPeer` vs `Flower.Server/Services/DeviceSignatureAuth` are near-identical hand copies, down to the `GetIdentityValue` header/query fallback helper written twice. Album-art file fallback exists in `AlbumArtLoader.TryGetLocalArtBytes`, `SyncHttpServer.HandleGetCoverArtAsync`'s sniffing, and `SubsonicEndpoints`' own private copy — three places to fix when someone adds a format.
+**Auth.** `SyncHttpServer.VerifySelfSigned`/`VerifyTrustedPeer` and `Flower.Server/Services/DeviceSignatureAuth` were near-identical hand copies, down to the `GetIdentityValue` header/query fallback helper written twice — security-critical code where a fix to one silently leaves the other wrong. Both now call `Flower.Core`'s `PeerSignatureAuth`, over a `SignedRequest` that carries the five things any HTTP stack can describe (method, path, query, body, header accessor). Each server keeps exactly one `ToSignedRequest` adapter — HttpListener on one side, `HttpRequest` on the other — and nothing else. The header-else-query *policy*, which decides where an attacker is allowed to put an identity, now exists once, on `SignedRequest.Identity`.
+
+**Album art.** The embedded-tag-then-`cover.*`/`folder.*` lookup existed three times, and had already drifted: `AlbumArtLoader` accepted eight image extensions, `SubsonicEndpoints`' private copy accepted three. **An album with a `cover.webp` therefore showed art in the app and 404'd from a self-hosted `Flower.Server` serving the same library.** All three now call `Flower.Core`'s `LocalAlbumArtReader.ForFile`, which returns the bytes *and* their MIME type. Carrying the type out of the lookup also deleted `SyncHttpServer.SniffImageContentType`, which read PNG magic bytes and labelled everything else `image/jpeg` — so a served WebP, GIF or TIFF was mislabelled even when it was found. It lives in `Flower.Core` rather than `Flower` because `Flower` is Avalonia-coupled and out of the server's reach (`SYNC-PLAN.md`'s "Reuse boundary"), which was the original excuse for the copy; nothing in the lookup needs Avalonia, only the `Bitmap` decoding layered on top, which stays in `AlbumArtLoader`.
+
+**Verification:** 498 passing in `Flower.Tests` (was 475), 70 in `Flower.Server.Tests`. New: `PeerSignatureAuthTests` (11 cases — self-signed happy path, a whole-query identity verifying the same as a header one, header winning over a conflicting query param, fingerprint-not-the-hash-of-the-offered-key, malformed keys, a trusted peer verified against the key on file rather than the one it offers, no key on file, nonce replay, clock skew, tampered body), `LocalAlbumArtReaderTests` (11 cases over real files, including every accepted extension and its MIME type), and a round-trip `getCoverArt` test asserting a `cover.webp` is served as `image/webp`. Confirmed to have teeth by mutation: making `Identity` prefer the query over the header fails the header-precedence test; dropping `.webp` from the accepted set fails two.
 
 ### 2.3 DI is service location, and the composition root is a 330-line method
 
@@ -213,7 +217,7 @@ Every service in `App.axaml.cs::Bootstrap` is `new`'d by hand then registered as
 
 **Event subscriptions are never unsubscribed anywhere.** `MainViewModel`'s constructor alone subscribes to eleven event sources and implements no `IDisposable`. Harmless *only* because it is a process-lifetime singleton — nothing enforces that, and it blocks per-test reconstruction.
 
-### 2.4 `Library.Playlists` is unlocked while `Library.Tracks` is locked
+### 2.4 `Library.Playlists` is unlocked while `Library.Tracks` is locked — RECOMMENDED NEXT
 
 `AddPlaylist`/`RemovePlaylist`/`ReplacePlaylists` take no lock despite `ReplacePlaylists` being called from the sync path concurrently with UI-thread mutations — the same threat model that motivated `_lock` for `Tracks`, inconsistently applied. Persistence is also caller-responsibility; nothing structurally guarantees a mutation is followed by a save.
 
@@ -366,6 +370,7 @@ Highest-value additions, roughly in priority order:
 7. ~~**Tier 5.2**~~ — done: 22 real-socket round-trip tests over `SyncHttpServer`'s whole route table.
 8. ~~**Tier 2.1**~~ — done: one shared `SubsonicIdentity`, one duration rounding, and `Child.Id` demoted from `SyncKey` to `Track.Id`.
 9. ~~**Tier 4.4** — range support on `SyncHttpServer` streaming.~~ **Done.** Ranged serving, resumable downloads, no more orphaned partials.
-10. **Tier 2.2 — the two hand-copied signature verifiers.** Recommended next. `SyncHttpServer.VerifySelfSigned`/`VerifyTrustedPeer` and `Flower.Server/Services/DeviceSignatureAuth` are near-identical copies of security-critical code, which means a fix to one silently leaves the other wrong; both now have real tests, so collapsing them into `Flower.Core` is a refactor with a net underneath it rather than a leap. The three copies of album-art file fallback ride along.
-11. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.
-12. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.
+10. ~~**Tier 2.2** — the two hand-copied signature verifiers and the three copies of album-art fallback.~~ **Done.** Both collapsed into `Flower.Core`; the album-art copies had already drifted into a real cross-implementation bug.
+11. **Tier 2.4 — `Library.Playlists` is unlocked while `Library.Tracks` is locked.** Recommended next, and small: the same threat model that motivated `_lock` for `Tracks`, inconsistently applied, with `ReplacePlaylists` called from the sync path concurrently with UI-thread mutations. §2.3's DI cleanup is the larger remaining Tier 2 item and is better done as part of 4.2, where the seams it needs become visible.
+12. **Tier 4.1** — the SQLite migration, once its consumers are actually next up.
+13. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.
