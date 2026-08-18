@@ -243,7 +243,7 @@ public partial class MusicListView : UserControl
     {
         InitializeComponent();
         _columnManager = Ioc.Default.GetService<ColumnManager>()!;
-        _panel         = new MusicListPanel
+        _panel         = new MusicListPanel(_columnManager)
         {
             ClipToBounds      = false,
             VerticalAlignment = VerticalAlignment.Top,
