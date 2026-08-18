@@ -2,15 +2,11 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 
-using Microsoft.Extensions.Logging.Abstractions;
 
-using Flower.Importer;
-using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
@@ -52,71 +48,10 @@ public class MainViewModelSidebarNavigationTests : IDisposable
     private static Track T(string title) =>
         new() { Title = title, Path = $"/music/{title}.mp3", Duration = TimeSpan.FromMinutes(3) };
 
-    private sealed class FakeMusicImporter : IMusicImporter
-    {
-        public Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null) =>
-            Task.FromResult(new List<Track>());
-    }
-
-    // Mirrors LibraryDownloadServiceTests.MakeSigningKey - a real EC key pair,
-    // just not one anything here actually signs/verifies with.
-    private static DeviceSigningKey MakeSigningKey()
-    {
-        var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var q = ecdsa.ExportParameters(false).Q;
-        var raw = new byte[65];
-        raw[0] = 0x04;
-        Buffer.BlockCopy(q.X!, 0, raw, 1, 32);
-        Buffer.BlockCopy(q.Y!, 0, raw, 33, 32);
-        return new DeviceSigningKey(ecdsa, raw);
-    }
-
-    // Every one of these dependencies is either a plain data holder or a
-    // service whose constructor only wires up event subscriptions - none of
-    // them start network listeners/timers on their own (NetworkDiscoveryService's
-    // polling and SyncHttpServer's listener both need an explicit Start(),
-    // which MainViewModel's constructor never calls), so building a full
-    // MainViewModel here doesn't touch the network or the real filesystem
-    // beyond the temp PlatformDataDirectory above.
-    private static MainViewModel MakeViewModel(Library library, MainPlaylist mainPlaylist)
-    {
-        var appSettings = new AppSettings();
-        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
-        var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
-        var playlistControl = new PlaylistControlViewModel(
-            new FakeAudioManager(), mainPlaylist, library, appSettings, libraryStore, appSettingsStore,
-            NullLogger<PlaylistControlViewModel>.Instance);
-
-        var deviceIdentity = new DeviceIdentity { Fingerprint = "test-device", Alias = "Test Device" };
-        var signingKey = MakeSigningKey();
-
-        var networkDiscovery = new NetworkDiscoveryService(deviceIdentity, NullLogger<NetworkDiscoveryService>.Instance, new FakeMdnsBackend());
-        var reachability = new PairedServerReachability(networkDiscovery, appSettings);
-        var syncStateStore = new PlaylistSyncStateStore(NullLogger<PlaylistSyncStateStore>.Instance);
-        var deviceNicknameStore = new DeviceNicknameStore(NullLogger<DeviceNicknameStore>.Instance);
-        var playlistSyncService = new PlaylistSyncService(
-            library, deviceIdentity, signingKey, appSettings, syncStateStore, deviceNicknameStore,
-            NullLogger<PlaylistSyncService>.Instance);
-        var librarySyncService = new LibrarySyncService(
-            library, deviceIdentity, signingKey, appSettings, libraryStore, InMemoryLogStore.Instance,
-            NullLogger<LibrarySyncService>.Instance);
-        var libraryDownloadService = new LibraryDownloadService(
-            library, deviceIdentity, signingKey, appSettings, libraryStore, NullLogger<LibraryDownloadService>.Instance);
-        var peerPairingService = new PeerPairingService(deviceIdentity, signingKey, NullLogger<PeerPairingService>.Instance);
-        var peerTrackResolver = new PeerTrackResolver(reachability);
-        var trustedPeerStore = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
-        var syncHttpServer = new SyncHttpServer(
-            deviceIdentity, signingKey, appSettings, library, trustedPeerStore, new ClientLogStore(),
-            NullLogger<SyncHttpServer>.Instance);
-        var deviceIdentityStore = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance);
-
-        return new MainViewModel(
-            playlistControl, library, appSettings, new FakeMusicImporter(), mainPlaylist,
-            libraryStore, appSettingsStore, deviceIdentityStore, deviceNicknameStore,
-            NullLogger<MainViewModel>.Instance,
-            networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
-            peerPairingService, peerTrackResolver, syncHttpServer, deviceIdentity, signingKey);
-    }
+    // The full-MainViewModel wiring lives in TestSupport/MainViewModelHarness
+    // now that ScreenStackPanelSwipeTests needs the same thing.
+    private static MainViewModel MakeViewModel(Library library, MainPlaylist mainPlaylist) =>
+        MainViewModelHarness.Build(library, mainPlaylist);
 
     [AvaloniaFact]
     public async Task Switching_sidebar_view_updates_Rows_well_under_the_search_debounce()
