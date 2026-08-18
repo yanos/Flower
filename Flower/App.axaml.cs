@@ -170,6 +170,12 @@ public partial class App : Application
             .AddSingleton<ColumnManager>()
             .AddSingleton<AlbumArtLoader>()
 
+            // The status bar's busy indicator, shared between MainViewModel
+            // (which surfaces it as IsBusy/BusyMessage) and the collaborators
+            // split out of it that run long operations - see BusyState.
+            .AddSingleton<BusyState>()
+            .AddSingleton<ITunesImportCoordinator>()
+
             // ViewModels are singletons for the same reason they always were:
             // they hold app-lifetime state and subscribe to events they never
             // unsubscribe from (ARCHITECTURE-REVIEW 2.3's last paragraph).

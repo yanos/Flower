@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2, 2.4 and 2.5 implemented, 2.6 half. Tier 3 implemented. Tier 4.4 implemented. Tier 5 implemented, bar two unreachable-from-a-test corners of 5.6. The rest of Tier 2 and Tier 4 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2, 2.4 and 2.5 implemented, 2.6 half. Tier 3 implemented. Tier 4.2 and 4.4 implemented. Tier 5 implemented, bar two unreachable-from-a-test corners of 5.6. Tier 4.1 and 4.3 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -282,7 +282,7 @@ Ordered by real exposure, not theoretical severity. All six landed; see *Tier 3 
 
 ---
 
-## Tier 4 — rewrite candidates — 4.4 DONE, rest NOT STARTED
+## Tier 4 — rewrite candidates — 4.2 and 4.4 DONE, 4.1/4.3 NOT STARTED
 
 ### 4.1 Persistence: JSON blobs → SQLite (client side)
 
@@ -292,22 +292,40 @@ The one genuine rewrite recommendation, deliberately sequenced late. Every Tier 
 
 Migration path: keep `library.json` as an import-once source, write SQLite alongside for one release, then drop the JSON.
 
-### 4.2 `MainViewModel` (2,573 lines) — decomposition
+### 4.2 `MainViewModel` — decomposition — DONE
 
-Six unrelated jobs in one class; roughly **900 lines are a P2P sync coordinator** living here only because `SidebarItems` does.
+**2,737 lines to 1,264.** Six unrelated jobs became six collaborators, each constructible and testable on its own. `MainViewModel` keeps a thin forwarding face for every one of them, because XAML (`MainView.axaml`, `ServerPickerView`, mobile's `SettingsView`) and `MobileMainViewModel` bind through it — the decomposition is of the implementation, not of the binding surface, which stays exactly where it was.
 
-| New class | Moves in |
-|---|---|
-| `PeerSyncCoordinator` | `RunTrackedSync`, `ScheduleContentSync`, `TriggerSyncIfReady`, `RunPendingDeviceSyncs`, pair/unpair/confirm-trust, `ForceSyncNow`, `DeviceAlias`, plus the whole device-sidebar-row state machine |
-| `LibraryBrowserViewModel` | `Rows`, `_currentFilteredTracks`, `FilterText`, the three independent sort states, `ScheduleFilter`/`RebuildRowsAsync`, grid tiles, `SubListItems`, `StatusBarText` |
-| `PlaylistManagementViewModel` | playlist CRUD + `RefreshPlaylistSidebarItems` |
-| `SidebarViewModel` | `SidebarItems`/`SelectedSidebarItem`/`BuildSidebarItems`, composed from the three above |
-| `AppSettingsViewModel` | the six-plus repetitions of the `_appSettings ??= new(); …; _ = _appSettingsStore?.SaveAsync(…)` triplet |
-| `ITunesImportCoordinator` | the two iTunes sync methods + their cooldown fields, used by both startup and Settings |
+| New class | Lines | Owns |
+|---|---|---|
+| `PeerSyncCoordinator` | 677 | sync tracking + the debounce and log-push timer, pairing/trust/unpair, `ForceSyncNow`, the discovery-driven triggers, download/stream resolution |
+| `LibraryBrowserViewModel` | 620 | `Rows`, the filter, the three sort states, both tile grids, the expanded album, the Artists sub-list, `StatusBarText` |
+| `DeviceSidebarSection` | 439 | the Devices/Server row state machine |
+| `PlaylistManagementViewModel` | 202 | playlist CRUD, membership, ordering, the Playlists sidebar section |
+| `ITunesImportCoordinator` | 89 | both iTunes imports and their shared cooldown |
+| `BusyState` | 75 | the status bar's nesting busy scope |
 
-The 20-parameter constructor (10 required, 10 defaulted-to-null purely for WASM) is the symptom: testing anything means standing up or nulling the whole graph. Relatedly, `_appSettings` is nullable and lazily `??=`'d across the entire class *only* so the Avalonia previewer's parameterless constructor works — isolate that in a design-time subclass instead.
+Each reaches back through a small purpose-named interface `MainViewModel` implements — `IPeerSyncHost` (one member: which peers are listed), `ILibraryBrowseHost` (what scope is being browsed, plus two settings writes), `IDeviceSidebarHost`, `IPlaylistManagementHost` — rather than holding a `MainViewModel` reference. That is what makes each one constructible in a test with a hand-written five-line host, which is exactly how the new tests do it.
 
-**Mobile is mostly good reuse, undermined by `private`.** `MobileMainViewModel` correctly wraps `MainViewModel` rather than re-implementing filter/sort, but duplicates what it can't reach: `PlayResolvingPlaceholder` is reimplemented inline in `PlayTrackCommand`; `SyncPlayQueueToCurrentView` is reimplemented because desktop's reads a private field — and its own comment records that gap **shipped as a real bug** ("mobile's queue stayed pinned to Importer's raw filesystem-scan order… confirmed on a real device"). Five drill-in methods hand-roll the same push-history/set-scope/rebuild/raise sequence.
+**What the decomposition also fixed.** `AppSettings` is no longer nullable-and-lazily-`??=`'d across the whole class: the design-time constructor now builds real collaborators over an empty `Library` (previously it left every field null, which worked only because the previewer never touched most of them), so the nine hand-repeated "lazily create, mutate, fire-and-forget `SaveAsync`" triplets collapsed into one `SaveSettings()` and eleven defensive `_appSettings?.`/`?? default` reads went with them. Two of the "async void on non-event-handler paths" note's cases are gone too — `ScheduleFilter` is now a `Task`-returning private with a fire-and-forget shim, and `ForceSyncNow` keeps its `async void` command signature over an awaitable `ForceSyncNowAsync` a test can drive.
+
+**Two bugs the extraction surfaced**, both caught by the existing suite rather than by inspection: pinning the paired-server sidebar row and unpinning it had been spread across `PairWithServer`/`UnpairServer`/the `IsServer` setter, and moving the pairing pointer into the coordinator dropped both until they were reunited in the single `PairingChanged` handler. That is now the one place identity is pinned, with `SyncPairedServerRow` doing only the reachability half — which is what its own doc comment always claimed.
+
+**Still open, deliberately.** `Ioc.Default` remains a service locator in the Views/Controls layer, and event subscriptions are still never unsubscribed — `MainViewModel` still subscribes to eleven sources in its constructor and implements no `IDisposable`. Both are unchanged by this work: the subscriptions moved with their owners rather than being torn down, and the extracted classes are singletons with the same process lifetime. `SidebarViewModel` was not created as a separate class — what `MainViewModel` is now *is* that class (the sidebar, playback, settings and the composition of the five above), so extracting one more layer would have left an empty shell behind rather than a seam.
+
+**Mobile's duplicated-because-`private` code is not addressed** — `MobileMainViewModel` still reimplements `PlayResolvingPlaceholder` and `SyncPlayQueueToCurrentView`, and still hand-rolls the same push-history/set-scope/rebuild sequence five times. Those are now *reachable* (the state they need sits on `Browser`), but converting them is its own change with its own mobile testing, not a side effect of this one.
+
+**Verification:** 794 passing in `Flower.Tests`, was 754 — 33 new tests in `ExtractedViewModelTests.cs` constructing `BusyState`, `PlaylistManagementViewModel`, `LibraryBrowserViewModel` and `DeviceSidebarSection` directly over hand-written hosts, with no `MainViewModel` and no service graph anywhere in them. `CompositionRootTests`' "none of the optional sync dependencies arrived as its default" invariant now walks both `MainViewModel`'s and `PeerSyncCoordinator`'s fields, since most of them moved.
+
+### Two defects found while decomposing 4.2 — both fixed
+
+Neither is a Tier 4.2 item; both surfaced writing tests against the extracted classes and are recorded here because they were live bugs, not refactor fallout.
+
+**`AtomicJsonFile` had no per-file write lock.** Every store carries its own `SemaphoreSlim` around its saves, but that lock is per *instance* while the file is per *path*. Two stores over the same path — two DI containers in one process, or any store built through the parameterless constructor several of them offer rather than resolved from the container — serialized against nothing and collided on the shared fixed `.tmp` name, throwing `IOException`. This is what made `CompositionRootTests` fail every second or third full run ("the process cannot access `settings.json.tmp` because it is being used by another process"): a previous container's fire-and-forget `SaveAsync` was still in flight as the next test's container resolved `AppSettings`, whose `Load` writes (see `AppSettingsStore.Load`'s Apple-Music-folder branch — a read that saves). The lock now lives in `AtomicJsonFile`, keyed on the full path, covering both `Write` and `WriteAsync` and therefore every store at once rather than each re-guarding itself correctly. `StoreRoundTripTests.Concurrent_saves_from_separate_store_instances_do_not_collide` interleaves sync `Save` and async `SaveAsync` across eight instances and fails reliably without it. Worth noting the production shape this also closes: `MainWindow.Closing` fires the *synchronous* `Save` exactly while `ColumnManager`'s debounced async saves can still be in flight.
+
+**`Playlist.MoveTrack` bumped `UpdatedAt` for a drag that reordered nothing.** It only returned false when the dragged track was absent; dropping a track onto the entry that already followed it, at the end when it was already last, or onto itself all rewrote the list to the identical order and called `Touch()`. Since `UpdatedAt` is the entire basis on which `PlaylistSyncPlanner` decides "did this side change?" against its per-peer baseline, every aborted drag — the single most common way a drag-reorder ends — manufactured a sync-visible edit and a round of peer traffic. Dropping onto itself was worse than a no-op: the removal happened first, `IndexOf` then failed to find the target in the shortened list, and the track silently moved to the end. Same class of bug, and same fix, as the `RemoveTrack` guard in §2.4. `MoveTrack` had no direct test coverage at all; it now has eight, three of which fail against the old implementation.
+
+---
 
 ### 4.3 Duplicated multi-select and drag gestures in `MainView.axaml.cs`
 
@@ -444,5 +462,6 @@ Highest-value additions, roughly in priority order:
 11. ~~**Tier 2.4** — `Library.Playlists` unlocked while `Library.Tracks` is locked.~~ **Done.** Copy-on-write under the same lock, persistence made structural via `Library.PlaylistsChanged`, and a silent drag-reorder-never-syncs bug fixed on the way. §2.3's DI cleanup followed and closed out Tier 2.
 12. ~~**Tier 2.3** — service-location DI and a 330-line hand-wired composition root.~~ **Done**, except the Views/Controls layer's own `Ioc.Default` use and the never-unsubscribed event handlers, which are 4.2's decomposition rather than wiring. `Bootstrap` is registration-by-type now, and `AlbumArtLoader`'s hidden dependencies became constructor parameters, which is what finally made its peer-fetch path testable.
 13. ~~**Tier 5.3/5.4/5.5/5.7** — `Importer`, `AlbumArtLoader`, `MusicListPanel`, `ColumnManager.Reorder`.~~ **Done.** 50 tests, all mutation-checked; `MusicListView`'s own selection/drag gestures and `Library.ReplacePlaylists`' short-circuit are what remains of Tier 5's mid-priority items.
-14. **Tier 4.1 — the SQLite migration.** Recommended next: it is the largest remaining correctness/performance lever (see §4.1), and 4.2/4.3 want to be done after it, not before.
-15. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.
+14. **Tier 4.1 — the SQLite migration.** Recommended next: it is the largest remaining correctness/performance lever (see §4.1). 4.2 ended up landing first, at the user's direction — kept storage-agnostic, so the migration lands underneath `LibraryBrowserViewModel`/`Library` unchanged rather than having to undo it.
+15. ~~**Tier 4.2** — `MainViewModel` decomposition.~~ **Done**, ahead of 4.1 rather than after it, and kept storage-agnostic so the SQLite migration lands underneath it unchanged. 2,737 lines to 1,264 across six collaborators; two pin/unpair bugs found on the way.
+16. **Tier 4.3** — the duplicated multi-select and drag gestures in `MainView.axaml.cs`, last.

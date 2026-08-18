@@ -50,11 +50,11 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
 
         public ShortCooldown(TimeSpan value)
         {
-            _previous = MainViewModel.ContentSyncCooldown;
-            MainViewModel.ContentSyncCooldown = value;
+            _previous = PeerSyncCoordinator.ContentSyncCooldown;
+            PeerSyncCoordinator.ContentSyncCooldown = value;
         }
 
-        public void Dispose() => MainViewModel.ContentSyncCooldown = _previous;
+        public void Dispose() => PeerSyncCoordinator.ContentSyncCooldown = _previous;
     }
 
     private static ShortCooldown Cooldown(int milliseconds = 150) =>

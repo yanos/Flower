@@ -27,18 +27,7 @@ using Material.Icons;
 
 namespace Flower.ViewModels;
 
-// Raised by DeletePlaylistAsync before it actually deletes anything - the view
-// is expected to confirm with the user and report back via Confirmed, the same
-// TaskCompletionSource-based handoff PlaylistConflictEventArgs uses (see
-// Services/PlaylistSyncService.cs) so the ViewModel never has to know a dialog
-// is involved.
-public sealed class DeletePlaylistConfirmationEventArgs : EventArgs
-{
-    public required Playlist Playlist { get; init; }
-    public required TaskCompletionSource<bool> Confirmed { get; init; }
-}
-
-public partial class MainViewModel : ViewModelBase
+public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyncHost, IPlaylistManagementHost, ILibraryBrowseHost
 {
     // Defaults to a no-op logger for the parameterless design-time constructor
     // below, which never receives one via DI - overwritten by the real
@@ -46,184 +35,23 @@ public partial class MainViewModel : ViewModelBase
     private ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
     private readonly PlaylistControlViewModel _playlistControlViewModel;
-    private AppSettings? _appSettings;
+    private AppSettings _appSettings;
     private IMusicImporter? _importer;
     private MainPlaylist?      _mainPlaylist;
-    private PlaylistSyncService? _playlistSyncService;
-    private LibrarySyncService? _librarySyncService;
-    private LibraryDownloadService? _libraryDownloadService;
-    private PeerPairingService? _peerPairingService;
-    private PeerTrackResolver? _peerTrackResolver;
     private DeviceIdentity? _deviceIdentity;
-    private DeviceSigningKey? _signingKey;
-    private NetworkDiscoveryService? _networkDiscovery;
     private PairedServerReachability? _reachability;
     private LibraryStore? _libraryStore;
     private AppSettingsStore? _appSettingsStore;
-    private DeviceIdentityStore? _deviceIdentityStore;
-    private DeviceNicknameStore? _deviceNicknameStore;
 
-    // Fingerprints of devices already sync'd (or currently syncing) this app
-    // session, so DeviceDiscovered re-firing for the same peer (e.g. once with the
-    // mDNS-name fallback alias, again once /info resolves) doesn't start a second,
-    // overlapping sync session. Cleared per-device on DeviceLost so a peer that
-    // drops off and comes back later gets a fresh sync. Concurrent dictionary
-    // because discovery events aren't guaranteed to arrive on one fixed thread.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _syncedDeviceFingerprints = new();
+    // The P2P sync coordinator - when to sync, with whom, and the
+    // pairing/trust handshake around it. Everything below that touches sync is
+    // a forwarder onto it, kept here because XAML (MainView, ServerPickerView,
+    // mobile's SettingsView) and MobileMainViewModel bind to this ViewModel.
+    public PeerSyncCoordinator Sync { get; } = null!;
 
-    // Non-zero while at least one PlaylistSyncService/LibrarySyncService call
-    // is in flight (see RunTrackedSync) - both services' merges fire
-    // Library.TracksUpdated/PlaylistsUpdated unconditionally, even when
-    // nothing actually changed (e.g. every song a peer reports already exists
-    // locally). Without this guard, the debounced resync below (ScheduleContentSync)
-    // would treat a sync's own merge as "a local change just happened" and
-    // schedule another sync, which would merge again and reschedule again,
-    // forever - two devices perpetually re-triggering each other.
-    private int _activeSyncCount;
+    public bool IsSyncing => Sync.IsSyncing;
 
-    // Drives the "syncing" spinner next to the paired server's name (desktop's
-    // ServerPickerView, mobile's SettingsView) and its sidebar device row
-    // (see NotifyIsSyncingChanged) - see RunTrackedSync. Only notifies on the
-    // 0-to-1/1-to-0 edges, not every increment/decrement, since a playlist
-    // sync and a library sync run concurrently per peer and the spinner
-    // should stay up for the whole overlapping span, not flicker between them.
-    public bool IsSyncing => _activeSyncCount > 0;
-
-    private void RunTrackedSync(Func<Task> syncCall)
-    {
-        // TriggerSyncIfReady/DebouncedContentSyncAsync can both run this from a
-        // background thread (mDNS callback, debounce timer) - see CLAUDE.md's
-        // Binding Notes on marshalling UI updates.
-        if (Interlocked.Increment(ref _activeSyncCount) == 1)
-            Dispatcher.UIThread.Post(NotifyIsSyncingChanged);
-        _ = RunTrackedSyncAsync(syncCall);
-    }
-
-    private async Task RunTrackedSyncAsync(Func<Task> syncCall)
-    {
-        try
-        {
-            await syncCall();
-        }
-        finally
-        {
-            if (Interlocked.Decrement(ref _activeSyncCount) == 0)
-                Dispatcher.UIThread.Post(NotifyIsSyncingChanged);
-        }
-    }
-
-    // Today there's only ever one sync target - the Client's one paired
-    // Server (see SyncRolePolicy) - so "is anything syncing" (IsSyncing) and
-    // "is the paired server's sidebar row syncing" are the same question;
-    // this just also pushes that same edge onto whichever SidebarItem
-    // currently represents it, for the sidebar's own spinner (see
-    // SidebarItem.IsSyncing, MainView.axaml's Device row template). Already
-    // running on the UI thread (see RunTrackedSync/RunTrackedSyncAsync's
-    // Dispatcher.UIThread.Post callers) so this can touch _sidebarItems and
-    // SidebarItem's bindable property directly.
-    private void NotifyIsSyncingChanged()
-    {
-        OnPropertyChanged(nameof(IsSyncing));
-        var pairedFingerprint = PairedServerFingerprint;
-        if (pairedFingerprint == null)
-            return;
-        var item = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == pairedFingerprint);
-        if (item != null)
-            item.IsSyncing = IsSyncing;
-    }
-
-    private CancellationTokenSource? _contentSyncCts;
-
-    // "A few seconds" per the user request - long enough that a burst of rapid
-    // local edits (e.g. reordering a playlist track-by-track, or a rescan
-    // finding many files) settles into one sync instead of one per edit, short
-    // enough that a peer notices a real change reasonably promptly.
-    // Not const/readonly so MainViewModelSyncTriggerTests can shorten it.
-    // Waiting out the real 5s in a test is not just slow: those tests pump the
-    // shared headless Dispatcher, and occupying it for seconds at a time
-    // destabilizes every other [AvaloniaFact] in the suite.
-    internal static TimeSpan ContentSyncCooldown = TimeSpan.FromSeconds(5);
-
-    // See the InMemoryLogStore.EntryAdded subscription in the constructor
-    // for why this is a periodic timer, not routed through ScheduleContentSync's
-    // debounce like everything else here.
-    private bool _hasUnpushedLogActivity;
-    private readonly DispatcherTimer _logPushTimer;
-
-    // Called whenever a genuine local change happens to this device's library
-    // or playlists: a rescan or download completing (Library.TracksUpdated),
-    // or a playlist being created/renamed/deleted/reordered/added-to (called
-    // directly at each of those call sites - unlike TracksUpdated,
-    // Library.PlaylistsUpdated only fires for a *sync's own* ReplacePlaylists
-    // call, never for these ordinary local actions, per its own doc comment,
-    // so there is no single event to hook for playlists the way there is for
-    // tracks). Debounced: every call restarts the cooldown rather than
-    // queuing another, so only the last change in a burst actually triggers
-    // a sync. New log activity does NOT go through this path - see
-    // _logPushTimer below for why a debounce cannot work for that.
-    public void ScheduleContentSync()
-    {
-        _contentSyncCts?.Cancel();
-        _contentSyncCts = new CancellationTokenSource();
-        _ = DebouncedContentSyncAsync(_contentSyncCts.Token);
-    }
-
-    private async Task DebouncedContentSyncAsync(CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(ContentSyncCooldown, token);
-        }
-        catch (OperationCanceledException)
-        {
-            return; // A newer change restarted the cooldown - that call's own delay will fire instead.
-        }
-
-        RunPendingDeviceSyncs();
-    }
-
-    // Shared by the debounced path above (genuine library/playlist changes)
-    // and _logPushTimer's independent periodic tick (new log activity) -
-    // both ultimately just need "sync with whichever peer this Client is
-    // paired to, right now."
-    private void RunPendingDeviceSyncs()
-    {
-        // Every currently-known, fingerprint-resolved peer this device should
-        // bulk-sync with per SyncRolePolicy - not gated by
-        // _syncedDeviceFingerprints (that dedup is specifically for "don't
-        // double-sync from DeviceDiscovered re-firing at first contact" - see
-        // TriggerSyncIfReady - and is orthogonal to resyncing on a later
-        // change). Collapses to at most one device (the Client's paired
-        // Server) under role gating; empty for a Server, which never initiates.
-        var isServer = _appSettings?.IsServer ?? false;
-        var pairedServerFingerprint = _appSettings?.PairedServerFingerprint;
-        var devices = _sidebarItems
-            .Where(i => i.Kind == SidebarItemKind.Device && i.Device is { Fingerprint.Length: > 0 } &&
-                        SyncRolePolicy.ShouldInitiateSync(isServer, pairedServerFingerprint, i.Device.Fingerprint))
-            .Select(i => i.Device!)
-            .ToList();
-
-        if (devices.Count == 0)
-            return;
-
-        foreach (var device in devices)
-        {
-            // forceInitiator: true - see TriggerSyncIfReady's identical
-            // reasoning; every device here is already the Client's own
-            // paired Server (ShouldInitiateSync above guarantees it).
-            RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
-            RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
-        }
-
-        // Logged after RunTrackedSync has already incremented _activeSyncCount
-        // for every device above (that increment is synchronous - see
-        // RunTrackedSync), not before, so this line itself does not get
-        // treated as new log activity by _logPushTimer while _activeSyncCount
-        // is still 0 - logging it earlier caused every completed sync to
-        // immediately re-schedule another one, forever, from its own message.
-        _logger.LogInformation("Content sync running with {Count} known device(s): {Devices}",
-            devices.Count, string.Join(", ", devices.Select(d => d.Alias)));
-    }
+    public void ScheduleContentSync() => Sync.ScheduleContentSync();
 
     public ICommand? OpenAppDataLocationCommand  { get; private set; }
     public ICommand? RebuildDatabaseCommand      { get; private set; }
@@ -281,27 +109,13 @@ public partial class MainViewModel : ViewModelBase
 
     public Library Library { get; private set; }
 
-    public IReadOnlyList<string> LibraryPaths => _appSettings?.LibraryPaths ?? [];
+    public IReadOnlyList<string> LibraryPaths => _appSettings.LibraryPaths;
 
-    // What this device calls itself to peers (shown in the sidebar's Devices
-    // section on the other end, and in the trust-gate approval prompt) - see
-    // DeviceIdentity.Alias for why this has to be user-editable rather than
-    // read from the OS. The same DeviceIdentity instance is shared with
-    // SyncHttpServer/PlaylistSyncService/LibrarySyncService/LibraryDownloadService
-    // (see App.axaml.cs), so mutating it here takes effect immediately - no
-    // restart needed for a rename to reach the next peer that asks.
+    // What this device calls itself to peers - see PeerSyncCoordinator.DeviceAlias.
     public string DeviceAlias
     {
-        get => _deviceIdentity?.Alias ?? "";
-        set
-        {
-            var trimmed = value.Trim();
-            if (_deviceIdentity == null || string.IsNullOrEmpty(trimmed) || _deviceIdentity.Alias == trimmed)
-                return;
-            _logger.LogInformation("Device renamed: {Old} -> {New}", _deviceIdentity.Alias, trimmed);
-            _deviceIdentity.Alias = trimmed;
-            _ = (_deviceIdentityStore?.SaveAsync(_deviceIdentity) ?? Task.CompletedTask);
-        }
+        get => Sync.DeviceAlias;
+        set => Sync.DeviceAlias = value;
     }
 
     // Whether to import per-track play counts from iTunes/Music.app on every
@@ -314,11 +128,10 @@ public partial class MainViewModel : ViewModelBase
     // change in Settings.
     public bool SyncPlayCountFromITunes
     {
-        get => _appSettings?.SyncPlayCountFromITunes ?? false;
+        get => _appSettings.SyncPlayCountFromITunes;
         set
         {
-            _appSettings ??= new AppSettings();
-            if (_appSettings.SyncPlayCountFromITunes == value)
+                if (_appSettings.SyncPlayCountFromITunes == value)
                 return;
             // Logged - the only writer of this flag is this setter, but a
             // user report of it having silently flipped off without them
@@ -329,7 +142,7 @@ public partial class MainViewModel : ViewModelBase
             // happens again.
             _logger.LogInformation("SyncPlayCountFromITunes changed {Old} -> {New}\n{StackTrace}", _appSettings.SyncPlayCountFromITunes, value, Environment.StackTrace);
             _appSettings.SyncPlayCountFromITunes = value;
-            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+            SaveSettings();
         }
     }
 
@@ -338,16 +151,15 @@ public partial class MainViewModel : ViewModelBase
     // OK-gated-sync pattern as SyncPlayCountFromITunes above.
     public bool SyncDateAddedFromITunes
     {
-        get => _appSettings?.SyncDateAddedFromITunes ?? false;
+        get => _appSettings.SyncDateAddedFromITunes;
         set
         {
-            _appSettings ??= new AppSettings();
-            if (_appSettings.SyncDateAddedFromITunes == value)
+                if (_appSettings.SyncDateAddedFromITunes == value)
                 return;
             // See SyncPlayCountFromITunes's own comment on this same logging.
             _logger.LogInformation("SyncDateAddedFromITunes changed {Old} -> {New}\n{StackTrace}", _appSettings.SyncDateAddedFromITunes, value, Environment.StackTrace);
             _appSettings.SyncDateAddedFromITunes = value;
-            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+            SaveSettings();
         }
     }
 
@@ -357,15 +169,14 @@ public partial class MainViewModel : ViewModelBase
     // paths in the payload). Persist-immediately, same as the two above.
     public bool ShareLogsWithPairedServer
     {
-        get => _appSettings?.ShareLogsWithPairedServer ?? false;
+        get => _appSettings.ShareLogsWithPairedServer;
         set
         {
-            _appSettings ??= new AppSettings();
-            if (_appSettings.ShareLogsWithPairedServer == value)
+                if (_appSettings.ShareLogsWithPairedServer == value)
                 return;
             _appSettings.ShareLogsWithPairedServer = value;
             OnPropertyChanged();
-            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+            SaveSettings();
         }
     }
 
@@ -378,27 +189,21 @@ public partial class MainViewModel : ViewModelBase
     // nothing here needs a restart.
     public bool IsServer
     {
-        get => _appSettings?.IsServer ?? false;
+        get => _appSettings.IsServer;
         set
         {
-            _appSettings ??= new AppSettings();
-            if (_appSettings.IsServer == value)
+                if (_appSettings.IsServer == value)
                 return;
             _appSettings.IsServer = value;
             if (value)
             {
-                // Not syncing again with the old paired server (a deliberate
-                // requirement, not an oversight) - library/playlists
-                // themselves are untouched by this flip (nothing else reads
-                // IsServer except the sync-trigger gating in
-                // TriggerSyncIfReady/DebouncedContentSyncAsync), this only
-                // clears the now-stale pairing pointer.
-                _appSettings.PairedServerFingerprint = null;
-                _appSettings.PairedServerAlias = null;
-                UnpinPairedServerRow();
+                // Nothing else reads IsServer except the sync-trigger gating
+                // in PeerSyncCoordinator - see ClearPairingForServerMode.
+                Sync.ClearPairingForServerMode();
+                _deviceSidebar.UnpinPairedServerRow();
             }
             _logger.LogInformation("IsServer changed {Old} -> {New}", !value, value);
-            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+            SaveSettings();
             OnPropertyChanged();
             OnPropertyChanged(nameof(PairedServerFingerprint));
             OnPropertyChanged(nameof(PairedServerAlias));
@@ -409,171 +214,20 @@ public partial class MainViewModel : ViewModelBase
             // Recompute() figures that out and fires Changed only if so; see
             // that method's own doc comment for why this nudge is necessary.
             _reachability?.Recompute();
-            SyncPairedServerSidebarRow();
+            _deviceSidebar.SyncPairedServerRow();
         }
     }
 
-    public string? PairedServerFingerprint => _appSettings?.PairedServerFingerprint;
-    public string? PairedServerAlias       => _appSettings?.PairedServerAlias;
+    public string? PairedServerFingerprint => Sync.PairedServerFingerprint;
+    public string? PairedServerAlias       => Sync.PairedServerAlias;
 
-    // Every currently-discovered peer advertising Server mode - the pool
-    // ServerPickerView picks a pairing from. Unrelated to trust: an
-    // untrusted server can still appear here, it just won't actually sync
-    // until it approves this device (see SyncHttpServer.AuthorizeAsync).
-    public IEnumerable<DiscoveredDevice> AvailableServers =>
-        _networkDiscovery?.KnownDevices.Where(d => d.IsServer) ?? Enumerable.Empty<DiscoveredDevice>();
+    public IEnumerable<DiscoveredDevice> AvailableServers => Sync.AvailableServers;
 
-    // Manual pairing (see decision: a Client picks its one server explicitly,
-    // no automatic first-found pairing, and no popup offering it the moment
-    // a Server is seen - the user has to go looking, via the sidebar's
-    // device-detail "Ask to pair" button or ServerPickerView) - called from
-    // either of those.
-    public void PairWithServer(DiscoveredDevice device)
-    {
-        _appSettings ??= new AppSettings();
-        _appSettings.PairedServerFingerprint = device.Fingerprint;
-        _appSettings.PairedServerAlias = device.Alias;
-        _appSettings.PairedServerTrustConfirmed = false; // a fresh request - see ConfirmServerTrust
-        _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+    public void PairWithServer(DiscoveredDevice device) => Sync.PairWithServer(device);
 
-        // Pin this device's sidebar row as the paired Server (identity only -
-        // see SyncPairedServerSidebarRow for the reachability half, and
-        // BuildSidebarItems/RemoveDeviceItem for why this is a persistent
-        // flag rather than something re-derived from Device on every pass).
-        var item = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == device.Fingerprint);
-        if (item != null)
-            item.IsPairedServer = true;
+    public void UnpairServer() => Sync.UnpairServer();
 
-        OnPropertyChanged(nameof(PairedServerFingerprint));
-        OnPropertyChanged(nameof(PairedServerAlias));
-        NotifyPairButtonPropertiesChanged();
-        // device is necessarily still live right now (it came from
-        // AvailableServers, itself sourced from KnownDevices), so
-        // Recompute() picks it up immediately rather than waiting for the
-        // next DeviceDiscovered re-fire to notice.
-        _reachability?.Recompute();
-        SyncPairedServerSidebarRow();
-
-        // The server doesn't trust us yet - that's the whole point of asking -
-        // so a bulk sync attempt right now would just get a flat 403 (see
-        // SyncHttpServer's top-of-file doc comment: a sync request is never
-        // itself treated as a pairing attempt anymore). Explicitly request
-        // pairing first and only start syncing once - if - a human on the
-        // other end actually approves it.
-        RunTrackedSync(() => RequestPairingThenSyncAsync(device));
-    }
-
-    // See PairWithServer. Runs under RunTrackedSync so the "syncing" spinner
-    // covers the wait for the other device's user to tap Allow/Deny, not just
-    // the sync that follows approval.
-    private async Task RequestPairingThenSyncAsync(DiscoveredDevice device)
-    {
-        var approved = await (_peerPairingService?.RequestPairingAsync(device) ?? Task.FromResult(false));
-
-        // The user may have unpaired, or paired with someone else, while this
-        // was in flight (approval can take up to a minute) - don't act on a
-        // stale result either way.
-        if (_appSettings?.PairedServerFingerprint != device.Fingerprint)
-            return;
-
-        if (!approved)
-        {
-            _logger.LogWarning("Pair request to {Alias} ({Fingerprint}) was denied or timed out", device.Alias, device.Fingerprint);
-            Dispatcher.UIThread.Post(UnpairServer);
-            return;
-        }
-
-        ConfirmServerTrust(device.Fingerprint);
-        // Marks this as TriggerSyncIfReady's own "first contact" so a later
-        // DeviceDiscovered re-fire for this same peer this session doesn't
-        // redundantly sync again right on top of this.
-        _syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0);
-        await (_playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
-        await SyncLibraryAndConfirmTrust(device);
-    }
-
-    // Marks the paired server as having actually approved this device - see
-    // AppSettings.PairedServerTrustConfirmed's own doc comment. Called directly
-    // once RequestPairingThenSyncAsync's own pair-request comes back approved,
-    // and again (a cheap no-op by then) after any later bulk sync attempt that
-    // reaches the server and gets past its trust gate (a 403 surfaces as
-    // LibrarySyncResult.Success == false, so a true here really does mean
-    // approved, not just reachable) - belt-and-suspenders in case trust was
-    // somehow confirmed one way but not the other. Ignores a result for anyone
-    // other than the currently-paired fingerprint (e.g. a stale in-flight sync
-    // completing just after an Unpair/re-pair to someone else).
-    private void ConfirmServerTrust(string? fingerprint)
-    {
-        if (_appSettings is not { PairedServerTrustConfirmed: false } settings)
-            return;
-        if (string.IsNullOrEmpty(fingerprint) || fingerprint != settings.PairedServerFingerprint)
-            return;
-        settings.PairedServerTrustConfirmed = true;
-        _ = (_appSettingsStore?.SaveAsync(settings) ?? Task.CompletedTask);
-        Dispatcher.UIThread.Post(NotifyPairButtonPropertiesChanged);
-    }
-
-    // Wraps LibrarySyncService.SyncWithAsync with the ConfirmServerTrust hook
-    // above - used anywhere a bulk sync is kicked off via RunTrackedSync
-    // (TriggerSyncIfReady, RunPendingDeviceSyncs), which otherwise discards
-    // the LibrarySyncResult. ForceSyncNow already awaits its own result
-    // directly and calls ConfirmServerTrust itself instead of going through
-    // this.
-    private async Task SyncLibraryAndConfirmTrust(DiscoveredDevice device)
-    {
-        var result = await (_librarySyncService?.SyncWithAsync(device) ?? Task.FromResult(new LibrarySyncResult(false, 0, 0)));
-        if (result.Success)
-            ConfirmServerTrust(device.Fingerprint);
-    }
-
-    // ServerPickerView's "Unpair" action - must be called before pairing
-    // with a different server (switching requires an explicit unpair-first
-    // step, not a direct one-click switch).
-    public void UnpairServer()
-    {
-        if (_appSettings == null)
-            return;
-        _appSettings.PairedServerFingerprint = null;
-        _appSettings.PairedServerAlias = null;
-        _appSettings.PairedServerTrustConfirmed = false;
-        _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
-        UnpinPairedServerRow();
-        OnPropertyChanged(nameof(PairedServerFingerprint));
-        OnPropertyChanged(nameof(PairedServerAlias));
-        NotifyPairButtonPropertiesChanged();
-        _reachability?.Recompute();
-        SyncPairedServerSidebarRow();
-    }
-
-    // Shared by UnpairServer and the IsServer setter's flip-to-Server-mode
-    // branch - both clear the pairing pointer and need to undo
-    // PairWithServer/BuildSidebarItems' pin on whichever row was showing it.
-    // A row with no live Device right now (BuildSidebarItems' own
-    // placeholder, or one that went offline while still pinned - see
-    // RemoveDeviceItem) has nothing left to show once unpinned, so it's
-    // removed outright; one that's still actually discovered just drops
-    // back to ordinary Devices/Server-section behavior (the next
-    // DeviceLost for it behaves like any other undiscovered peer from then
-    // on).
-    private void UnpinPairedServerRow()
-    {
-        var pinnedItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.IsPairedServer);
-        if (pinnedItem == null)
-            return;
-
-        if (pinnedItem.Device == null)
-            RemoveDeviceItem(pinnedItem, clearSyncDedup: false);
-        else
-            pinnedItem.IsPairedServer = false;
-    }
-
-    // Whether the Client's paired Server (if any) is currently reachable -
-    // a thin pass-through to PairedServerReachability, the single source of
-    // truth for this (see that class's own doc comment). Shown as "Server
-    // not reachable" under its name in mobile's SettingsView; the desktop
-    // sidebar's equivalent check/exclamation glyph reads SidebarItem.IsReachable
-    // instead, kept in sync with the same source via SyncPairedServerSidebarRow.
-    public bool IsPairedServerReachable => _reachability?.IsReachable ?? false;
+    public bool IsPairedServerReachable => Sync.IsPairedServerReachable;
 
     // Gates mobile SettingsView's "Server not reachable" line - separate
     // from IsPairedServerReachable's own negation so it only shows once
@@ -582,77 +236,11 @@ public partial class MainViewModel : ViewModelBase
     public bool ShowPairedServerUnreachableWarning =>
         !string.IsNullOrEmpty(PairedServerFingerprint) && !IsPairedServerReachable;
 
-    // "Sync Now" action (desktop's ServerPickerView, mobile's SettingsView) -
-    // bypasses both _syncedDeviceFingerprints (the once-per-session dedup
-    // TriggerSyncIfReady normally applies) and ScheduleContentSync's 5s
-    // debounce, so the user can immediately retry a sync that appears stuck
-    // or never completed (e.g. LibrarySyncService's own request timing out on
-    // a large library) without waiting for the next discovery event or
-    // relaunching the app. Requires the paired Server to be currently
-    // discovered - same condition as IsPairedServerReachable.
-    public bool CanForceSync => IsPairedServerReachable;
+    public bool CanForceSync => Sync.CanForceSync;
 
-    // Set once ForceSyncNow's own awaited calls settle - unlike the automatic
-    // trigger paths (TriggerSyncIfReady/DebouncedContentSyncAsync, which fire
-    // RunTrackedSync and move on), this is a direct user action, so it's
-    // worth reporting something more useful than silence: whether the peer
-    // was actually reachable, and how many tracks changed, distinguishing
-    // "reached the server but already up to date" from "couldn't reach it at
-    // all" - both merge zero new tracks otherwise indistinguishably. Shown
-    // next to the "Sync Now" button (desktop ServerPickerView, mobile
-    // SettingsView).
-    private string? _lastForceSyncResult;
-    public string? LastForceSyncResult
-    {
-        get => _lastForceSyncResult;
-        private set { _lastForceSyncResult = value; OnPropertyChanged(); }
-    }
+    public string? LastForceSyncResult => Sync.LastForceSyncResult;
 
-    public async void ForceSyncNow()
-    {
-        var pairedFingerprint = PairedServerFingerprint;
-        if (string.IsNullOrEmpty(pairedFingerprint))
-            return;
-        var device = _reachability?.PairedServerDevice;
-        if (device == null)
-        {
-            _logger.LogWarning("Force sync requested but paired server ({Fingerprint}) is not currently discovered", pairedFingerprint);
-            LastForceSyncResult = "Server not currently found on the network";
-            return;
-        }
-
-        _logger.LogInformation("Force sync requested with {Alias} ({Fingerprint})", device.Alias, device.Fingerprint);
-        LastForceSyncResult = null;
-
-        if (Interlocked.Increment(ref _activeSyncCount) == 1)
-            NotifyIsSyncingChanged();
-        try
-        {
-            var playlistTask = _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask;
-            var libraryTask = _librarySyncService?.SyncWithAsync(device) ?? Task.FromResult(new LibrarySyncResult(false, 0, 0));
-            await Task.WhenAll(playlistTask, libraryTask);
-
-            var libraryResult = await libraryTask;
-            if (libraryResult.Success)
-                ConfirmServerTrust(device.Fingerprint);
-            LastForceSyncResult = !libraryResult.Success
-                ? $"Could not reach {device.Alias} - check it's still on the network and paired"
-                // Unchanged means the server answered 304 - its catalog is
-                // exactly what was merged last time, so there is no fetched
-                // count to report (see LibrarySyncResult).
-                : libraryResult.Unchanged
-                    ? $"Already up to date with {device.Alias}"
-                    : libraryResult.AddedCount > 0
-                        ? $"Added {libraryResult.AddedCount} new track(s) from {device.Alias}"
-                        : $"Already up to date with {device.Alias} ({libraryResult.FetchedCount} track(s) checked)";
-            _logger.LogInformation("Force sync result: {Result}", LastForceSyncResult);
-        }
-        finally
-        {
-            if (Interlocked.Decrement(ref _activeSyncCount) == 0)
-                NotifyIsSyncingChanged();
-        }
-    }
+    public void ForceSyncNow() => Sync.ForceSyncNow();
 
     // Settings' Appearance picker (Follow System / Light / Dark) - see
     // Flower.Services.AppTheme for how this becomes an actual Avalonia
@@ -660,77 +248,23 @@ public partial class MainViewModel : ViewModelBase
     // SyncPlayCountFromITunes above.
     public AppThemePreference ThemePreference
     {
-        get => _appSettings?.ThemePreference ?? AppThemePreference.System;
+        get => _appSettings.ThemePreference;
         set
         {
-            _appSettings ??= new AppSettings();
-            if (_appSettings.ThemePreference == value)
+                if (_appSettings.ThemePreference == value)
                 return;
             _appSettings.ThemePreference = value;
-            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+            SaveSettings();
             AppTheme.Apply(value);
         }
     }
 
-    // Exports a fresh XML snapshot from Music.app (via AppleScript - see
-    // ITunesPlayCountImporter) and applies its play counts to
-    // Track.ImportedPlayCount. Shared by the SyncPlayCountFromITunes setter
-    // above (apply-immediately-on-toggle) and App.axaml.cs's startup rescan
-    // (apply-on-every-launch), both of which run this off the UI thread
-    // already - BeginBusy drives the status bar spinner either way.
-    //
-    // Both this and SyncITunesDateAddedAsync below can be triggered from more
-    // than one place in close succession - the startup rescan (App.axaml.cs)
-    // and Settings' OK button both fire unconditionally based on "is the
-    // checkbox currently checked," not "did it just run" - so opening Settings
-    // and clicking OK shortly after launch would otherwise re-run the same
-    // ~1-2s AppleScript export twice back to back. ITunesSyncCooldown skips a
-    // call that lands within a minute of the previous one finishing.
-    private static readonly TimeSpan ITunesSyncCooldown = TimeSpan.FromMinutes(1);
-    private DateTimeOffset? _lastPlayCountSyncAt;
-    private DateTimeOffset? _lastDateAddedSyncAt;
-
-    public async Task SyncITunesPlayCountAsync()
-    {
-        if (_lastPlayCountSyncAt is { } last && DateTimeOffset.UtcNow - last < ITunesSyncCooldown)
-        {
-            _logger.LogDebug("Skipping iTunes play count sync - ran {ElapsedSeconds:F0}s ago, inside the {CooldownSeconds:F0}s cooldown",
-                (DateTimeOffset.UtcNow - last).TotalSeconds, ITunesSyncCooldown.TotalSeconds);
-            return;
-        }
-        _lastPlayCountSyncAt = DateTimeOffset.UtcNow;
-
-        using var _ = BeginBusy("Syncing play counts from Music.app…");
-        await Task.Run(() => ITunesPlayCountImporter.Apply(Library.Tracks, _logger));
-        // Same list, same Track instances mutated in place - just need
-        // TracksUpdated to fire so the Plays column reflects the new
-        // ImportedPlayCount values immediately. NotifyTrackChanged (not
-        // UpdateTracks(Library.Tracks)) specifically - see its own doc
-        // comment: passing Tracks back into UpdateTracks as if it were a
-        // fresh scan result double-counts every placeholder (Path == null)
-        // track, since UpdateTracks' own carry-forward step re-adds them a
-        // second time on top of their copy already sitting in the argument.
-        Library.NotifyTrackChanged();
-        await (_libraryStore?.SaveAsync(Library.Tracks) ?? Task.CompletedTask);
-    }
-
-    // Same shape as SyncITunesPlayCountAsync above, but for Track.DateAdded via
-    // ITunesDateAddedImporter - see that class for the oldest-wins conflict rule.
-    public async Task SyncITunesDateAddedAsync()
-    {
-        if (_lastDateAddedSyncAt is { } last && DateTimeOffset.UtcNow - last < ITunesSyncCooldown)
-        {
-            _logger.LogDebug("Skipping iTunes date added sync - ran {ElapsedSeconds:F0}s ago, inside the {CooldownSeconds:F0}s cooldown",
-                (DateTimeOffset.UtcNow - last).TotalSeconds, ITunesSyncCooldown.TotalSeconds);
-            return;
-        }
-        _lastDateAddedSyncAt = DateTimeOffset.UtcNow;
-
-        using var _ = BeginBusy("Syncing date added from Music.app…");
-        await Task.Run(() => ITunesDateAddedImporter.Apply(Library.Tracks, _logger));
-        Library.NotifyTrackChanged();
-        await (_libraryStore?.SaveAsync(Library.Tracks) ?? Task.CompletedTask);
-    }
+    // Both delegate to ITunesImportCoordinator, which owns the cooldown and
+    // the apply/notify/save sequence - kept here as forwarders because
+    // App.axaml.cs's startup rescan and SettingsWindow both reach them through
+    // this ViewModel.
+    public Task SyncITunesPlayCountAsync() => ITunesImport.SyncPlayCountAsync();
+    public Task SyncITunesDateAddedAsync() => ITunesImport.SyncDateAddedAsync();
 
     // ── Selection ─────────────────────────────────────────────────────────────
 
@@ -750,165 +284,111 @@ public partial class MainViewModel : ViewModelBase
     public bool IsRepeatEnabled => _playlistControlViewModel.IsRepeatEnabled;
     public bool IsShuffleEnabled => _playlistControlViewModel.IsShuffleEnabled;
 
-    // ── Rows (flat list for MusicListView) ────────────────────────────────────
+    // Every settings-backed property below persists immediately on change
+    // rather than waiting for an OK button - this is the one place that write
+    // happens, replacing the nine hand-repeated
+    // "lazily create, mutate, fire-and-forget SaveAsync" triplets this class
+    // used to carry (ARCHITECTURE-REVIEW Tier 4.2). The store is null only for
+    // the design-time constructor, which has nothing to persist.
+    private void SaveSettings() => _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
 
-    private ObservableCollection<TrackRowViewModel> _rows = new();
-    public ObservableCollection<TrackRowViewModel> Rows
+    // ── Library browsing ──────────────────────────────────────────────
+
+    // Rows, the search filter, the three sort states, the tile grids and the
+    // Artists sub-list all live in LibraryBrowserViewModel; the members below
+    // forward onto it because MainView.axaml, MusicListView and
+    // MobileMainViewModel all bind through this ViewModel.
+    public LibraryBrowserViewModel Browser { get; } = null!;
+
+    public ObservableCollection<TrackRowViewModel> Rows => Browser.Rows;
+    public IReadOnlyList<Track> DisplayedTracks         => Browser.DisplayedTracks;
+    public string StatusBarText                         => Browser.StatusBarText;
+
+    public string? FilterText
     {
-        get => _rows;
-        private set { _rows = value; OnPropertyChanged(); OnPropertyChanged(nameof(StatusBarText)); }
+        get => Browser.FilterText;
+        set => Browser.FilterText = value;
     }
 
-    // ── Status bar ────────────────────────────────────────────────────────────
+    public string SortColumn   => Browser.SortColumn;
+    public bool   SortAscending => Browser.SortAscending;
 
-    private List<Track> _currentFilteredTracks = new();
-
-    public IReadOnlyList<Track> DisplayedTracks => _currentFilteredTracks;
-
-    public string StatusBarText
+    public bool SortArtistAlbumsByYear
     {
-        get
-        {
-            var tracks    = _currentFilteredTracks;
-            var songCount = tracks.Count;
-            var albumCount = tracks.Select(t => t.Album).Where(a => !string.IsNullOrEmpty(a)).Distinct().Count();
-            var total     = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
-            var songStr   = songCount == 1 ? "1 song"   : $"{songCount:N0} songs";
-            var albumStr  = albumCount == 1 ? "1 album" : $"{albumCount:N0} albums";
-            var durStr    = total.TotalHours >= 1
-                ? $"{(int)total.TotalHours}:{total.Minutes:D2}:{total.Seconds:D2}"
-                : $"{total.Minutes}:{total.Seconds:D2}";
-            return $"{songStr}  ·  {albumStr}  ·  {durStr}";
-        }
+        get => Browser.SortArtistAlbumsByYear;
+        set => Browser.SortArtistAlbumsByYear = value;
     }
 
-    // ── Busy state ────────────────────────────────────────────────────────────
+    public ObservableCollection<AlbumTileViewModel> AlbumGridTiles         => Browser.AlbumGridTiles;
+    public ObservableCollection<AlbumTileViewModel> RecentlyAddedGridTiles => Browser.RecentlyAddedGridTiles;
 
-    private int     _busyCount;
-    private string? _busyMessage;
+    public string? ExpandedAlbumName                     => Browser.ExpandedAlbumName;
+    public ObservableCollection<Track> ExpandedAlbumTracks => Browser.ExpandedAlbumTracks;
 
-    public bool    IsBusy      => _busyCount > 0;
-    public string? BusyMessage => _busyMessage;
+    public ObservableCollection<string> SubListItems => Browser.SubListItems;
+
+    public IReadOnlyCollection<string> SelectedSubItems => Browser.SelectedSubItems;
+
+    public string? SelectedSubItem
+    {
+        get => Browser.SelectedSubItem;
+        set => Browser.SelectedSubItem = value;
+    }
+
+    public void SetSelectedSubItems(IReadOnlyList<string> items) => Browser.SetSelectedSubItems(items);
+
+    public string CurrentViewKey => Browser.CurrentViewKey;
+
+    public IEnumerable<Track> GetTracksForSubListItems(IEnumerable<string> items) =>
+        Browser.GetTracksForSubListItems(items);
+
+    public Task<bool> RebuildRowsImmediatelyAsync(bool includeGridTiles = true) =>
+        Browser.RebuildRowsImmediatelyAsync(includeGridTiles);
+
+    private void ScheduleFilter() => Browser.ScheduleFilter();
+
+    // ── ILibraryBrowseHost ────────────────────────────────────────────────
+
+    SidebarItemKind? ILibraryBrowseHost.CurrentKind => _selectedSidebarItem?.Kind;
+    Playlist? ILibraryBrowseHost.CurrentPlaylist    => _selectedSidebarItem?.Playlist;
+
+    void ILibraryBrowseHost.PersistSort(string column, bool ascending)
+    {
+        _appSettings.SortColumn    = column;
+        _appSettings.SortAscending = ascending;
+        SaveSettings();
+    }
+
+    void ILibraryBrowseHost.PersistSortArtistAlbumsByYear(bool value)
+    {
+        _appSettings.SortArtistAlbumsByYear = value;
+        SaveSettings();
+    }
+
+    // ── Busy state ────────────────────────────────────────────────────
+
+    // The counter itself lives in BusyState, shared with the collaborators
+    // split out of this class (see ITunesImportCoordinator) so they can raise
+    // the same one status-bar spinner without a back-reference here; these two
+    // are the bindable face of it (MainView.axaml).
+    private readonly BusyState _busy;
+
+    // Owns the iTunes/Music.app play-count and Date Added imports (see that
+    // class); public so App.axaml.cs's startup rescan can drive it directly
+    // rather than through this ViewModel's own two forwarders below.
+    public ITunesImportCoordinator ITunesImport { get; }
+
+    public bool    IsBusy      => _busy.IsBusy;
+    public string? BusyMessage => _busy.Message;
 
     // Public entry point for App.axaml.cs's startup sequence, which needs to
     // keep the spinner up across the whole rescan + both iTunes syncs as one
-    // continuous scope (nesting further BeginBusy calls inside it just updates
-    // BusyMessage as each step starts - see NotifyBusyChanged) rather than
-    // relying on each step's own brief individual scope, since the rescan
-    // itself - the longest part by far, ~9s against a large real library - had
-    // no busy coverage of its own at all.
-    public IDisposable BeginBusyScope(string? message = null) => BeginBusy(message);
-
-    // The count itself is bumped synchronously (needed immediately regardless
-    // of caller thread, to correctly track overlapping scopes). The
-    // notifications used to always go through Dispatcher.UIThread.Post, even
-    // when the caller was already on the UI thread (the common case - every
-    // button-click command runs synchronously up to its first await) - a real
-    // bug once SyncITunesPlayCountAsync started also calling this from a
-    // background Task.Run (App.axaml.cs's startup rescan): IsBusy's IsVisible
-    // binding "worked" anyway (something else happened to force a UI-thread
-    // re-evaluation around the same time), but BusyMessage's TextBlock
-    // silently never updated. NotifyBusyChanged below fires the notification
-    // immediately when already on the UI thread instead of unconditionally
-    // deferring it, so the spinner/message show up as soon as this method
-    // returns rather than depending on something else happening to pump the
-    // dispatcher queue first.
-    private IDisposable BeginBusy(string? message = null)
-    {
-        Interlocked.Increment(ref _busyCount);
-        NotifyBusyChanged(message);
-        return new BusyScope(this);
-    }
-
-    private void NotifyBusyChanged(string? message)
-    {
-        void Notify()
-        {
-            _busyMessage = message;
-            OnPropertyChanged(nameof(IsBusy));
-            OnPropertyChanged(nameof(BusyMessage));
-        }
-
-        if (Dispatcher.UIThread.CheckAccess())
-            Notify();
-        else
-            Dispatcher.UIThread.Post(Notify);
-    }
-
-    private sealed class BusyScope : IDisposable
-    {
-        private readonly MainViewModel _vm;
-        internal BusyScope(MainViewModel vm) => _vm = vm;
-        public void Dispose()
-        {
-            if (Interlocked.Decrement(ref _vm._busyCount) == 0)
-                _vm.NotifyBusyChanged(null);
-        }
-    }
-
-    // ── Sort state ────────────────────────────────────────────────────────────
-
-    private string _sortColumn    = "TrackNumber";
-    private bool   _sortAscending = true;
-
-    // Recently Added has its own independent sort state (defaulting to newest-first)
-    // rather than sharing Songs/Albums/Artists' single sort column - so clicking a
-    // header there doesn't change what Songs is sorted by, and vice versa.
-    private string _recentlyAddedSortColumn    = "DateAdded";
-    private bool   _recentlyAddedSortAscending = false;
-
-    // History gets the same independent-sort-state treatment as Recently Added,
-    // and for the same reason - defaults to newest-played-first rather than
-    // sharing/clobbering Songs' sort column.
-    private string _historySortColumn    = "LastPlayed";
-    private bool   _historySortAscending = false;
-
-    private bool IsViewingRecentlyAdded => _selectedSidebarItem?.Kind == SidebarItemKind.RecentlyAdded;
-    private bool IsViewingHistory => _selectedSidebarItem?.Kind == SidebarItemKind.History;
-
-    public string SortColumn => IsViewingRecentlyAdded ? _recentlyAddedSortColumn : IsViewingHistory ? _historySortColumn : _sortColumn;
-
-    public bool SortAscending => IsViewingRecentlyAdded ? _recentlyAddedSortAscending : IsViewingHistory ? _historySortAscending : _sortAscending;
-
-    private bool _sortArtistAlbumsByYear;
-
-    // When sorting by Artist, order each artist's albums by year (then disc/
-    // track number within an album) instead of by whichever order they
-    // happened to appear in - so an artist's discography reads
-    // chronologically. Surfaced as a checkbox in ColumnSelectorWindow.
-    public bool SortArtistAlbumsByYear
-    {
-        get => _sortArtistAlbumsByYear;
-        set
-        {
-            if (_sortArtistAlbumsByYear == value)
-                return;
-            _sortArtistAlbumsByYear = value;
-            OnPropertyChanged();
-            _appSettings ??= new AppSettings();
-            _appSettings.SortArtistAlbumsByYear = value;
-            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
-            if (SortColumn == "Artist")
-                ScheduleFilter();
-        }
-    }
-
-    // ── Filter ────────────────────────────────────────────────────────────────
-
-    private List<Track> _allTracks = new();
-    private CancellationTokenSource? _filterCts;
-
-    private string? _filterText;
-    public string? FilterText
-    {
-        get => _filterText;
-        set
-        {
-            _filterText = value;
-            OnPropertyChanged();
-            ScheduleFilter();
-        }
-    }
+    // continuous scope (nesting further scopes inside it just updates
+    // BusyMessage as each step starts - see BusyState) rather than relying on
+    // each step's own brief individual scope, since the rescan itself - the
+    // longest part by far, ~9s against a large real library - had no busy
+    // coverage of its own at all.
+    public IDisposable BeginBusyScope(string? message = null) => _busy.BeginScope(message);
 
     // ── Sidebar ───────────────────────────────────────────────────────────────
 
@@ -951,52 +431,6 @@ public partial class MainViewModel : ViewModelBase
 
     public bool IsShowingTrackList => !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingRecentlyAddedGrid;
 
-    // The one album (if any) currently expanded inline within whichever grid
-    // is showing - see AlbumGridView/AlbumGridRowControl for the actual
-    // expand/collapse rendering+animation. Deliberately independent of
-    // _selectedSubItems (Ctrl/Shift multi-select for drag-to-playlist, see
-    // MainView.axaml.cs's AlbumGrid_PointerPressed) - a plain click toggles
-    // this and never touches multi-select; Ctrl/Shift-click never touches this.
-    private string? _expandedAlbumName;
-    public string? ExpandedAlbumName
-    {
-        get => _expandedAlbumName;
-        private set { _expandedAlbumName = value; OnPropertyChanged(); }
-    }
-
-    private ObservableCollection<Track> _expandedAlbumTracks = new();
-    public ObservableCollection<Track> ExpandedAlbumTracks
-    {
-        get => _expandedAlbumTracks;
-        private set { _expandedAlbumTracks = value; OnPropertyChanged(); }
-    }
-
-    // Accordion behavior - clicking the already-expanded album collapses it;
-    // clicking a different one switches straight to it. Both Albums' and
-    // Recently Added's tiles route through here (see AlbumGrid_PointerPressed),
-    // independent of which grid the click came from - the same album showing
-    // up in both is exactly the same album either way.
-    private void ToggleAlbumExpanded(string? albumName)
-    {
-        if (string.IsNullOrEmpty(albumName))
-            return;
-
-        if (_expandedAlbumName == albumName)
-        {
-            ExpandedAlbumName = null;
-            ExpandedAlbumTracks = new ObservableCollection<Track>();
-            return;
-        }
-
-        ExpandedAlbumName = albumName;
-        ExpandedAlbumTracks = BuildExpandedAlbumTracks(albumName);
-    }
-
-    private ObservableCollection<Track> BuildExpandedAlbumTracks(string albumName) =>
-        new(_allTracks.Where(t => t.Album == albumName)
-            .OrderBy(t => t.DiscNumber)
-            .ThenBy(t => t.TrackNumber));
-
     public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
     public DiscoveredDevice? SelectedDevice => _selectedSidebarItem?.Device;
 
@@ -1029,7 +463,7 @@ public partial class MainViewModel : ViewModelBase
     // name (desktop's device-detail header, via IsSelectedDeviceTrustConfirmed
     // below) and mobile's SettingsView server row, which has no concept of a
     // "selected" device to key off of.
-    public bool IsPairedServerTrustConfirmed => !string.IsNullOrEmpty(PairedServerFingerprint) && (_appSettings?.PairedServerTrustConfirmed ?? false);
+    public bool IsPairedServerTrustConfirmed => !string.IsNullOrEmpty(PairedServerFingerprint) && _appSettings.PairedServerTrustConfirmed;
 
     // Paired but not yet approved - the request has been sent and is sitting
     // at the server's own approval popup. Drives the "Waiting for server..."
@@ -1104,113 +538,6 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(PairActionHint));
     }
 
-    // Rebuilt in PopulateTracks (every TracksUpdated) - see AlbumGridBuilder/
-    // RecentlyAddedAlbumsBuilder, the same shared builders mobile's own grids
-    // use. Alphabetical for Albums, by-recency for Recently Added. Reassigned
-    // wholesale rather than Clear()+Add() in a loop - same reasoning as
-    // SubListItems below: one PropertyChanged per rebuild instead of one per
-    // item, which matters on a library with a thousand-plus albums.
-    private ObservableCollection<AlbumTileViewModel> _albumGridTiles = new();
-    public ObservableCollection<AlbumTileViewModel> AlbumGridTiles
-    {
-        get => _albumGridTiles;
-        private set { _albumGridTiles = value; OnPropertyChanged(); }
-    }
-
-    private ObservableCollection<AlbumTileViewModel> _recentlyAddedGridTiles = new();
-    public ObservableCollection<AlbumTileViewModel> RecentlyAddedGridTiles
-    {
-        get => _recentlyAddedGridTiles;
-        private set { _recentlyAddedGridTiles = value; OnPropertyChanged(); }
-    }
-
-    private void RebuildAlbumGrids()
-    {
-        AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(AlbumGridBuilder.Build(_allTracks));
-        RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(RecentlyAddedAlbumsBuilder.Build(_allTracks));
-
-        // An expanded album's tracks were resolved against the previous
-        // _allTracks snapshot - refresh them so a library change (a rescan,
-        // a download completing, a tag edit) while expanded doesn't leave it
-        // showing stale Track references.
-        if (_expandedAlbumName != null)
-            ExpandedAlbumTracks = BuildExpandedAlbumTracks(_expandedAlbumName);
-    }
-
-    // Identifies the currently displayed track list (Songs / a given album / artist / playlist)
-    // so the view can remember a separate scroll position and selection for each one.
-    public string CurrentViewKey => _selectedSidebarItem?.Kind switch
-    {
-        // Keyed on the whole set (sorted, so order doesn't matter) rather than
-        // just the primary item - otherwise two different multi-selections that
-        // happen to share the same first-selected item would collide and
-        // incorrectly share saved scroll/selection state in ApplyRows.
-        SidebarItemKind.Albums        => $"album:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
-        SidebarItemKind.Artists       => $"artist:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
-        SidebarItemKind.Playlist      => $"playlist:{_selectedSidebarItem.Playlist?.Name}",
-        SidebarItemKind.RecentlyAdded => "recently-added",
-        SidebarItemKind.History       => "history",
-        _                             => "songs"
-    };
-
-    private ObservableCollection<string> _subListItems = new();
-    public ObservableCollection<string> SubListItems
-    {
-        get => _subListItems;
-        private set { _subListItems = value; OnPropertyChanged(); }
-    }
-
-    private string? _selectedSubItem;
-    private string? _lastSelectedArtist;
-    private HashSet<string> _selectedSubItems = new();
-
-    // The full multi-selection of album/artist names in SubList - drives both
-    // the track-list union filter (GetBaseTracksForFilter) and what gets
-    // dragged onto a playlist (GetTracksForSubListItems). SelectedSubItem below
-    // stays the "primary" (first) item for single-item consumers.
-    public IReadOnlyCollection<string> SelectedSubItems => _selectedSubItems;
-
-    public string? SelectedSubItem
-    {
-        get => _selectedSubItem;
-        set => ApplySubItemSelection(value != null ? new[] { value } : Array.Empty<string>());
-    }
-
-    // Used by SubList's multi-select drag/selection-sync code in MainView.axaml.cs.
-    public void SetSelectedSubItems(IReadOnlyList<string> items) => ApplySubItemSelection(items);
-
-    private void ApplySubItemSelection(IReadOnlyList<string> items) => ApplySubItemSelection(items, immediate: false);
-
-    // immediate=true bypasses ScheduleFilter's 250ms debounce the same way
-    // RebuildRowsImmediatelyAsync's other callers do - used only by
-    // OnSidebarSelectionChanged below, a single discrete navigation (sidebar
-    // click), not the rapid-fire callers (typing a search query, sub-list
-    // drag-multi-select) that still want the debounce. Without this,
-    // switching sidebar views showed the previous view's stale rows for the
-    // debounce's own delay before the new view's rows appeared - visible as
-    // a flash of the old view on every switch, most noticeable jumping to
-    // Songs from a small filtered view.
-    private void ApplySubItemSelection(IReadOnlyList<string> items, bool immediate)
-    {
-        _selectedSubItems = new HashSet<string>(items);
-        _selectedSubItem  = items.Count > 0 ? items[0] : null;
-        RememberSubItemSelection(_selectedSubItem);
-        OnPropertyChanged(nameof(SelectedSubItem));
-        OnPropertyChanged(nameof(SelectedSubItems));
-        if (immediate)
-            _ = RebuildRowsImmediatelyAsync();
-        else
-            ScheduleFilter();
-    }
-
-    private void RememberSubItemSelection(string? value)
-    {
-        if (value == null)
-            return;
-        if (_selectedSidebarItem?.Kind == SidebarItemKind.Artists)
-            _lastSelectedArtist = value;
-    }
-
     // ── Constructors ──────────────────────────────────────────────────────────
 
     // Design-time only, so the Avalonia XAML previewer/designer can construct
@@ -1218,7 +545,18 @@ public partial class MainViewModel : ViewModelBase
     // the non-nullable fields/properties below are never actually observed
     // unpopulated.
 #pragma warning disable CS8618
-    public MainViewModel() { }
+    public MainViewModel()
+    {
+        // The collaborators this class forwards to are constructed even here:
+        // most of what MainView.axaml binds (Rows, StatusBarText, SubListItems,
+        // the tile grids) now reads through Browser, so leaving it null would
+        // make the previewer throw on the first binding rather than render an
+        // empty window. Over an empty Library, so nothing touches disk.
+        _appSettings = new AppSettings();
+        Library   = new Library(new List<Track>());
+        Browser   = new LibraryBrowserViewModel(Library, this);
+        Playlists = new PlaylistManagementViewModel(Library, _sidebarItems, this);
+    }
 #pragma warning restore CS8618
 
     public MainViewModel(
@@ -1231,6 +569,8 @@ public partial class MainViewModel : ViewModelBase
         AppSettingsStore appSettingsStore,
         DeviceIdentityStore deviceIdentityStore,
         DeviceNicknameStore deviceNicknameStore,
+        BusyState busy,
+        ITunesImportCoordinator iTunesImport,
         ILogger<MainViewModel> logger,
         // Trailing + defaulted (not just nullable-typed) deliberately: these
         // don't exist at all on Flower.Web/WASM (no P2P sync stack there - see
@@ -1260,34 +600,33 @@ public partial class MainViewModel : ViewModelBase
         _appSettings           = appSettings;
         _importer              = importer;
         _mainPlaylist          = mainPlaylist;
-        _playlistSyncService   = playlistSyncService;
-        _librarySyncService    = librarySyncService;
-        _libraryDownloadService = libraryDownloadService;
-        _peerPairingService    = peerPairingService;
-        _peerTrackResolver     = peerTrackResolver;
-        _networkDiscovery      = networkDiscovery;
         _reachability          = reachability;
         _deviceIdentity        = deviceIdentity;
-        _signingKey            = signingKey;
         PeerLibrary            = deviceIdentity != null && signingKey != null
             ? new PeerLibraryViewModel(deviceIdentity, signingKey, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>())
             : null;
         _libraryStore          = libraryStore;
         _appSettingsStore      = appSettingsStore;
-        _deviceIdentityStore   = deviceIdentityStore;
-        _deviceNicknameStore   = deviceNicknameStore;
+        _busy                  = busy;
+        ITunesImport           = iTunesImport;
         _logger                = logger;
 
-        if (appSettings.SortColumn is { } savedSortColumn)
-        {
-            _sortColumn    = savedSortColumn;
-            _sortAscending = appSettings.SortAscending;
-        }
-        _sortArtistAlbumsByYear = appSettings.SortArtistAlbumsByYear;
+        Browser = new LibraryBrowserViewModel(library, this);
+        Browser.RestoreSort(
+            appSettings.SortColumn ?? "TrackNumber",
+            appSettings.SortColumn is null || appSettings.SortAscending,
+            appSettings.SortArtistAlbumsByYear);
+
+        // The browser owns the state; these re-raise it on this ViewModel,
+        // which is what every binding actually watches.
+        Browser.PropertyChanged += (_, e) => OnPropertyChanged(e.PropertyName);
+
+        Playlists = new PlaylistManagementViewModel(library, _sidebarItems, this);
+        Playlists.DeleteConfirmationRequested += (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e);
 
         OpenAppDataLocationCommand  = new RelayCommand(OpenAppDataLocation);
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
-        SortByColumnCommand         = new RelayCommand<string>(SortByColumn);
+        SortByColumnCommand         = new RelayCommand<string>(Browser.SortByColumn);
         OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         OpenColumnSelectorCommand   = new RelayCommand(() => ColumnSelectorRequested?.Invoke(this, EventArgs.Empty));
         OpenLogWindowCommand        = new RelayCommand(() => LogWindowRequested?.Invoke(this, EventArgs.Empty));
@@ -1301,16 +640,60 @@ public partial class MainViewModel : ViewModelBase
 
         _renamePlaylistCommand = new RelayCommand(
             () => RenamePlaylistRequested?.Invoke(this, EventArgs.Empty),
-            CanRenameOrDeleteSelectedPlaylist);
+            Playlists.CanRenameOrDeleteSelected);
         RenamePlaylistCommand = _renamePlaylistCommand;
 
-        _deletePlaylistCommand = new AsyncRelayCommand(DeleteSelectedPlaylistAsync, CanRenameOrDeleteSelectedPlaylist);
+        _deletePlaylistCommand = new AsyncRelayCommand(Playlists.DeleteSelectedAsync, Playlists.CanRenameOrDeleteSelected);
         DeletePlaylistCommand = _deletePlaylistCommand;
 
-        ToggleAlbumExpandedCommand = new RelayCommand<string>(ToggleAlbumExpanded);
+        ToggleAlbumExpandedCommand = new RelayCommand<string>(Browser.ToggleAlbumExpanded);
+
+        Sync = new PeerSyncCoordinator(
+            this, appSettings, appSettingsStore, deviceIdentityStore,
+            AppLogging.CreateTypedLogger<PeerSyncCoordinator>(),
+            networkDiscovery, reachability, playlistSyncService, librarySyncService,
+            libraryDownloadService, peerPairingService, peerTrackResolver, deviceIdentity, signingKey);
+
+        _deviceSidebar = new DeviceSidebarSection(_sidebarItems, this, deviceNicknameStore, reachability);
+
+        // The coordinator owns the state; these re-raise it on this ViewModel,
+        // which is what every binding actually watches.
+        Sync.PropertyChanged += (_, e) =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(PeerSyncCoordinator.IsSyncing):
+                    OnPropertyChanged(nameof(IsSyncing));
+                    _deviceSidebar.SetPairedServerSyncing(Sync.IsSyncing);
+                    break;
+                case nameof(PeerSyncCoordinator.LastForceSyncResult):
+                    OnPropertyChanged(nameof(LastForceSyncResult));
+                    break;
+            }
+        };
+        Sync.PairingChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(PairedServerFingerprint));
+            OnPropertyChanged(nameof(PairedServerAlias));
+            NotifyPairButtonPropertiesChanged();
+            // Identity first, then the reachability glyph - SyncPairedServerRow
+            // only ever touches a row that is already pinned, so pinning has to
+            // happen here rather than inside it (see DeviceSidebarSection).
+            if (Sync.PairedServerFingerprint is { Length: > 0 } fingerprint)
+                _deviceSidebar.PinPairedServerRow(fingerprint);
+            else
+                _deviceSidebar.UnpinPairedServerRow();
+            _deviceSidebar.SyncPairedServerRow();
+        };
+
+        _busy.Changed += (_, _) =>
+        {
+            OnPropertyChanged(nameof(IsBusy));
+            OnPropertyChanged(nameof(BusyMessage));
+        };
 
         BuildSidebarItems();
-        PopulateTracks();
+        Browser.Repopulate();
 
         // Everything here runs on the UI thread, not just PopulateTracks.
         // TracksUpdated can be raised from a LibVLC decode-callback thread (see
@@ -1321,14 +704,14 @@ public partial class MainViewModel : ViewModelBase
         // AddOrUpdateDeviceSidebarItem/RemoveDeviceItem.
         library.TracksUpdated += (_, _) => Dispatcher.UIThread.Post(() =>
         {
-            PopulateTracks();
-            // _activeSyncCount > 0 means this fired because one of our own
+            Browser.Repopulate();
+            // A merge in flight means this fired because one of our own
             // syncs just merged something (see RunTrackedSync's doc comment) -
             // not a genuine local change - so don't treat it as one.
-            if (_activeSyncCount == 0)
+            if (!Sync.IsMergingOwnSync)
                 ScheduleContentSync();
             else
-                _logger.LogDebug("TracksUpdated fired mid-sync ({ActiveSyncCount} active) - not scheduling a resync", _activeSyncCount);
+                _logger.LogDebug("TracksUpdated fired mid-sync - not scheduling a resync");
         });
         // A play-count / LastPlayedAt bump used to arrive as TracksUpdated, so
         // playing a song cost a full PopulateTracks (16k row allocations, a
@@ -1337,55 +720,18 @@ public partial class MainViewModel : ViewModelBase
         // - and don't schedule a content sync at all: another device does not
         // need to hear about a local play count the moment it happens (the next
         // genuine library change carries it along anyway).
-        library.TrackStatsChanged += (_, e) => Dispatcher.UIThread.Post(() =>
-        {
-            foreach (var row in Rows)
-            {
-                if (row.Track.Id == e.Track.Id)
-                {
-                    row.NotifyStatsChanged();
-                    break;
-                }
-            }
-        });
+        library.TrackStatsChanged += (_, e) => Dispatcher.UIThread.Post(() => Browser.NotifyTrackStatsChanged(e.Track));
 
         // Same reasoning as TracksUpdated above - PlaylistsUpdated is raised
         // from the sync path, off the UI thread.
         library.PlaylistsUpdated += (_, _) => Dispatcher.UIThread.Post(() =>
         {
-            RefreshPlaylistSidebarItems();
-            if (_activeSyncCount == 0)
+            Playlists.RefreshSidebarItems();
+            if (!Sync.IsMergingOwnSync)
                 ScheduleContentSync();
             else
-                _logger.LogDebug("PlaylistsUpdated fired mid-sync ({ActiveSyncCount} active) - not scheduling a resync", _activeSyncCount);
+                _logger.LogDebug("PlaylistsUpdated fired mid-sync - not scheduling a resync");
         });
-
-        // Any new log line at all (playing a track, a setting changed, an
-        // error, routine peer-polling chatter, ...) marks that there is
-        // something new for a paired Server's Log window to pick up -
-        // _logPushTimer periodically checks this flag and syncs if it is
-        // set, entirely independent of ScheduleContentSync's debounce above.
-        // A debounce cannot work here: NetworkDiscoveryService's own routine
-        // ~5s polling chatter (and, previously, this sync path's own
-        // completion logging) fires at essentially the same cadence as
-        // ContentSyncCooldown, so a timer that resets on every log line
-        // would perpetually restart itself and never actually go quiet long
-        // enough to fire at all - confirmed in practice as "still no new log
-        // appearing after 5s" when this was first wired straight into
-        // ScheduleContentSync. A periodic tick fires on a fixed wall-clock
-        // schedule no matter how much log activity happens in between, which
-        // is what actually delivers "new lines within roughly 5s" reliably.
-        InMemoryLogStore.Instance.EntryAdded += (_, _) => _hasUnpushedLogActivity = true;
-
-        _logPushTimer = new DispatcherTimer { Interval = ContentSyncCooldown };
-        _logPushTimer.Tick += (_, _) =>
-        {
-            if (!_hasUnpushedLogActivity || _activeSyncCount != 0)
-                return;
-            _hasUnpushedLogActivity = false;
-            RunPendingDeviceSyncs();
-        };
-        _logPushTimer.Start();
 
         // Reachability itself is handled entirely by PairedServerReachability's
         // own DeviceDiscovered/DeviceLost subscription + this single Changed
@@ -1396,7 +742,7 @@ public partial class MainViewModel : ViewModelBase
         {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
-            HandlePeerTrustChanged(device);
+            Sync.HandlePeerTrustChanged(device);
             TriggerSyncIfPeerCatalogChanged(device);
             TriggerSyncIfReady(device);
         };
@@ -1414,8 +760,8 @@ public partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsPairedServerReachable));
             OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
             OnPropertyChanged(nameof(CanForceSync));
-            SyncPairedServerSidebarRow();
-            TrackAvailability.Apply(Rows, PairedServerFingerprint, reachability.IsReachable);
+            _deviceSidebar.SyncPairedServerRow();
+            Browser.ApplyTrackAvailability(PairedServerFingerprint, reachability.IsReachable);
             ReachabilityChanged?.Invoke(this, EventArgs.Empty);
         };
 
@@ -1450,14 +796,8 @@ public partial class MainViewModel : ViewModelBase
         // the meantime - both converge on the exact same check, so a revoke is
         // never missed just because the two devices happened not to be
         // "connecting" in one specific sense of the word at the right moment.
-        void HandlePeerTrustRejected(object? _, PeerTrustRejectedEventArgs e)
-        {
-            if (e.Fingerprint != PairedServerFingerprint)
-                return;
-            _logger.LogWarning("Paired server {Alias} ({Fingerprint}) no longer trusts us - clearing stale local pairing",
-                e.Alias, e.Fingerprint);
-            Dispatcher.UIThread.Post(UnpairServer);
-        }
+        void HandlePeerTrustRejected(object? _, PeerTrustRejectedEventArgs e) =>
+            Sync.HandleTrustRevoked(e.Alias, e.Fingerprint);
         playlistSyncService?.PeerTrustRejected += HandlePeerTrustRejected;
         librarySyncService?.PeerTrustRejected += HandlePeerTrustRejected;
         // Server-initiated counterpart to the two above - a peer that
@@ -1488,7 +828,7 @@ public partial class MainViewModel : ViewModelBase
             if (e.PropertyName == nameof(PlaylistControlViewModel.CurrentlyPlayingTrack))
             {
                 OnPropertyChanged(nameof(CurrentlyPlayingTrack));
-                UpdatePlayingIndicators();
+                Browser.UpdatePlayingIndicators();
             }
             if (e.PropertyName == nameof(PlaylistControlViewModel.IsRepeatEnabled))
                 OnPropertyChanged(nameof(IsRepeatEnabled));
@@ -1558,12 +898,14 @@ public partial class MainViewModel : ViewModelBase
     // ToggleAlbumExpandedCommand).
     public void PlayAlbum(string albumName)
     {
-        var tracks = BuildExpandedAlbumTracks(albumName);
+        var tracks = Browser.BuildExpandedAlbumTracks(albumName);
         if (tracks.Count == 0)
             return;
 
-        ExpandedAlbumName = albumName;
-        ExpandedAlbumTracks = tracks;
+        // Unlike a plain click's ToggleAlbumExpandedCommand, this always ends
+        // expanded rather than toggling closed.
+        if (Browser.ExpandedAlbumName != albumName)
+            Browser.ToggleAlbumExpanded(albumName);
 
         _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
         PlayResolvingPlaceholder(tracks[0]);
@@ -1573,7 +915,7 @@ public partial class MainViewModel : ViewModelBase
     // expanded album (AlbumGridRowControl), as opposed to double-clicking
     // the album tile itself (PlayAlbum above). Deliberately does NOT go
     // through PlayTrack/SyncPlayQueueToCurrentView: that sources the queue
-    // from _currentFilteredTracks, which for the Albums/Recently Added grid
+    // from DisplayedTracks, which for the Albums/Recently Added grid
     // is driven by _selectedSubItems - the Ctrl/Shift multi-select used for
     // drag-to-playlist (see ExpandedAlbumName's remarks), not by which
     // album is actually expanded on screen. Left-over multi-selected tiles
@@ -1612,7 +954,7 @@ public partial class MainViewModel : ViewModelBase
             // current view's first track happened to be an undownloaded
             // placeholder. Resolve the same "selected, or first in the
             // current view" fallback here instead.
-            var trackToPlay = _playlistControlViewModel.SelectedTrack ?? _currentFilteredTracks.FirstOrDefault();
+            var trackToPlay = _playlistControlViewModel.SelectedTrack ?? DisplayedTracks.FirstOrDefault();
             if (trackToPlay != null)
             {
                 PlayResolvingPlaceholder(trackToPlay);
@@ -1624,69 +966,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     private void SyncPlayQueueToCurrentView() =>
-        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(_currentFilteredTracks)));
-
-    // ── Sort ──────────────────────────────────────────────────────────────────
-
-    private void SortByColumn(string? columnId)
-    {
-        if (columnId == null)
-            return;
-
-        if (IsViewingRecentlyAdded)
-        {
-            if (_recentlyAddedSortColumn == columnId)
-                _recentlyAddedSortAscending = !_recentlyAddedSortAscending;
-            else
-            {
-                _recentlyAddedSortColumn    = columnId;
-                _recentlyAddedSortAscending = true;
-            }
-            OnPropertyChanged(nameof(SortColumn));
-            OnPropertyChanged(nameof(SortAscending));
-            ScheduleFilter();
-            return;
-        }
-
-        if (IsViewingHistory)
-        {
-            if (_historySortColumn == columnId)
-                _historySortAscending = !_historySortAscending;
-            else
-            {
-                _historySortColumn    = columnId;
-                _historySortAscending = true;
-            }
-            OnPropertyChanged(nameof(SortColumn));
-            OnPropertyChanged(nameof(SortAscending));
-            ScheduleFilter();
-            return;
-        }
-
-        if (_sortColumn == columnId)
-            _sortAscending = !_sortAscending;
-        else
-        {
-            _sortColumn    = columnId;
-            _sortAscending = true;
-        }
-        OnPropertyChanged(nameof(SortColumn));
-        OnPropertyChanged(nameof(SortAscending));
-        ScheduleFilter();
-        _appSettings ??= new AppSettings();
-        _appSettings.SortColumn    = _sortColumn;
-        _appSettings.SortAscending = _sortAscending;
-        _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
-    }
-
-    // ── Playing indicators ────────────────────────────────────────────────────
-
-    private void UpdatePlayingIndicators()
-    {
-        var playing = CurrentlyPlayingTrack;
-        foreach (var row in _rows)
-            row.IsCurrentlyPlaying = row.Track.Path == playing?.Path;
-    }
+        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(DisplayedTracks)));
 
     // ── Sidebar ───────────────────────────────────────────────────────────────
 
@@ -1715,7 +995,7 @@ public partial class MainViewModel : ViewModelBase
         // even if it never does, this run). AddOrUpdateDeviceSidebarItem's
         // FindDeviceSidebarItem claims this same row once the peer actually
         // is (re)discovered, rather than creating a second one for it.
-        if (_appSettings?.PairedServerFingerprint is { Length: > 0 } && _appSettings.PairedServerAlias is { } pairedAlias)
+        if (_appSettings.PairedServerFingerprint is { Length: > 0 } && _appSettings.PairedServerAlias is { } pairedAlias)
         {
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Server"));
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, pairedAlias, MaterialIconKind.Server)
@@ -1744,11 +1024,11 @@ public partial class MainViewModel : ViewModelBase
     // with the Songs view a failed restore falls back to.
     public bool WasLastViewRestored { get; private set; }
 
-    public double LastScrollOffsetY => _appSettings?.LastScrollOffsetY ?? 0;
+    public double LastScrollOffsetY => _appSettings.LastScrollOffsetY;
 
     private SidebarItem? ResolveLastSidebarItem()
     {
-        if (_appSettings?.LastSidebarKind is not { } kindText || !Enum.TryParse<SidebarItemKind>(kindText, out var kind))
+        if (_appSettings.LastSidebarKind is not { } kindText || !Enum.TryParse<SidebarItemKind>(kindText, out var kind))
             return null;
 
         if (kind == SidebarItemKind.Playlist)
@@ -1775,7 +1055,6 @@ public partial class MainViewModel : ViewModelBase
     // async write completes.
     public void SaveLastView(double scrollOffsetY)
     {
-        _appSettings ??= new AppSettings();
         _appSettings.LastSidebarKind = _selectedSidebarItem?.Kind.ToString();
         _appSettings.LastPlaylistName = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist
             ? _selectedSidebarItem.Playlist?.Name
@@ -1784,640 +1063,91 @@ public partial class MainViewModel : ViewModelBase
         _appSettingsStore?.Save(_appSettings);
     }
 
-    // Mirrors CreatePlaylistWithTrack's incremental _sidebarItems.Add(...) pattern:
-    // devices arrive one at a time from NetworkDiscoveryService, so the
-    // "Devices"/"Server" sections are built up live rather than as part of
-    // BuildSidebarItems(). A peer advertising Server mode (DiscoveredDevice.
-    // IsServer) goes under its own "Server" section instead of "Devices" -
-    // see DeviceSectionHeaderName/DeviceSidebarIcon.
+    // The Devices/Server sections of the sidebar - the whole row state machine
+    // lives in DeviceSidebarSection, which operates over _sidebarItems and
+    // reaches back here only through IDeviceSidebarHost below.
+    private DeviceSidebarSection _deviceSidebar = null!;
+
     // internal, not private, so MainViewModelDeviceSidebarTests can drive the
-    // device-row state machine directly. Reaching it through the real
-    // NetworkDiscoveryService would mean standing up an mDNS backend AND an
-    // HTTP /info endpoint per case, just to choose a Fingerprint - see
-    // ARCHITECTURE-REVIEW Tier 5.6.
-    internal void AddOrUpdateDeviceSidebarItem(DiscoveredDevice device)
-    {
-        var existing = FindDeviceSidebarItem(device);
+    // device-row state machine through this ViewModel as it always did.
+    internal void AddOrUpdateDeviceSidebarItem(DiscoveredDevice device) => _deviceSidebar.AddOrUpdate(device);
 
-        // Don't show a device under its raw mDNS instance name (e.g.
-        // "localhost-iOS._flowersync._tcp.local") while its real Alias is
-        // still unresolved - see ResolveAliasAsync, which re-fires
-        // DeviceDiscovered once /info actually answers, so the item appears
-        // here with its real name a moment later instead. Only gates
-        // creating a brand new row; an already-shown row (existing != null)
-        // still gets its Device reference refreshed below regardless, since
-        // by definition it was already resolved once to exist at all.
-        if (existing == null && string.IsNullOrEmpty(device.Fingerprint))
-            return;
+    internal void RemoveDeviceSidebarItem(string instanceName) => _deviceSidebar.Remove(instanceName);
 
-        if (existing != null)
-        {
-            existing.Device = device;
-            // A device row can be re-created (RemoveDuplicateDeviceSidebarItems)
-            // or updated while a sync with it is already in flight - carry the
-            // current state forward rather than defaulting back to false, since
-            // NotifyIsSyncingChanged only fires on IsSyncing's own edges, not
-            // whenever a sidebar row happens to change.
-            existing.IsSyncing = device.Fingerprint == PairedServerFingerprint && IsSyncing;
-            // Re-discovered after having gone offline while paired (see
-            // RemoveDeviceItem, which keeps this row's IsPairedServer set
-            // rather than removing it) - or claimed straight from
-            // BuildSidebarItems' placeholder (IsPairedServer already true)
-            // the first time this session. Either way, SyncPairedServerSidebarRow
-            // below flips its glyph back to reachable now that it's live again.
-            existing.IsPairedServer = device.Fingerprint == PairedServerFingerprint;
-            RelocateDeviceSidebarItemIfNeeded(existing, device);
-            RemoveDuplicateDeviceSidebarItems(existing, device);
-            RefreshDeviceDisplayNames();
-            SyncPairedServerSidebarRow();
-            return;
-        }
+    // Called by every place a device's nickname can change (the sidebar's own
+    // "Rename Device" context menu, TrustedDevicesView's pencil-icon rename).
+    public void RefreshDeviceDisplayNames() => _deviceSidebar.RefreshDisplayNames();
 
-        var added = new SidebarItem(SidebarItemKind.Device, ResolveDeviceDisplayName(device), DeviceSidebarIcon(device), device: device)
-        {
-            IsSyncing = device.Fingerprint == PairedServerFingerprint && IsSyncing,
-            IsPairedServer = device.Fingerprint == PairedServerFingerprint,
-        };
-        InsertDeviceSidebarItem(added, device);
-        RemoveDuplicateDeviceSidebarItems(added, device);
-        RefreshDeviceDisplayNames();
-        SyncPairedServerSidebarRow();
-    }
+    // ── IDeviceSidebarHost ────────────────────────────────────────────────
 
-    // Single place that syncs the sidebar's one pinned "paired Server" row's
-    // reachability glyph from PairedServerReachability - identity (which row,
-    // if any, IsPairedServer) is still set independently at each structural
-    // sidebar-mutation site above/below (BuildSidebarItems/PairWithServer/
-    // AddOrUpdateDeviceSidebarItem/RemoveDeviceItem), since the pinned row can
-    // exist with no live Device at all (see BuildSidebarItems' placeholder) -
-    // there's nothing to derive identity from in that case. This only ever
-    // touches whichever row already has IsPairedServer == true. Safe/cheap to
-    // call unconditionally after any of those structural changes, or from
-    // PairedServerReachability.Changed.
-    private void SyncPairedServerSidebarRow()
-    {
-        var pinnedItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.IsPairedServer);
-        if (pinnedItem != null)
-            pinnedItem.IsReachable = _reachability?.IsReachable ?? false;
-    }
+    // Where selection lands when whatever was selected disappears - shared by
+    // IDeviceSidebarHost and IPlaylistManagementHost, which ask the same
+    // question.
+    private SidebarItem? DefaultSelection =>
+        _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
 
-    private static string DeviceSectionHeaderName(DiscoveredDevice device) => device.IsServer ? "Server" : "Devices";
-    private static MaterialIconKind DeviceSidebarIcon(DiscoveredDevice device) => device.IsServer ? MaterialIconKind.Server : MaterialIconKind.Laptop;
+    SidebarItem? IDeviceSidebarHost.DefaultSelection => DefaultSelection;
+    SidebarItem? IPlaylistManagementHost.DefaultSelection => DefaultSelection;
 
-    // Inserts a brand-new Device row into the section matching the device's
-    // current role (see DeviceSectionHeaderName), creating that section's
-    // Header row first if this is its first member. Appends the section
-    // itself at the end of the sidebar the first time it's needed (same as
-    // the old single-"Devices"-section behavior), but keeps each section's
-    // own members contiguous so RelocateDeviceSidebarItemIfNeeded/
-    // SectionHeaderFor can find a row's section by walking backward to the
-    // nearest preceding Header.
-    private void InsertDeviceSidebarItem(SidebarItem item, DiscoveredDevice device)
-    {
-        var headerName = DeviceSectionHeaderName(device);
-        var headerIndex = -1;
-        for (var i = 0; i < _sidebarItems.Count; i++)
-        {
-            if (_sidebarItems[i].Kind == SidebarItemKind.Header && _sidebarItems[i].Name == headerName)
-            {
-                headerIndex = i;
-                break;
-            }
-        }
+    void IDeviceSidebarHost.ForgetSyncedDevice(string fingerprint) => Sync.ForgetSyncedDevice(fingerprint);
 
-        if (headerIndex < 0)
-        {
-            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, headerName));
-            _sidebarItems.Add(item);
-            return;
-        }
+    // ── IPeerSyncHost ─────────────────────────────────────────────────────
 
-        var insertAt = headerIndex + 1;
-        while (insertAt < _sidebarItems.Count && _sidebarItems[insertAt].Kind != SidebarItemKind.Header)
-            insertAt++;
-        _sidebarItems.Insert(insertAt, item);
-    }
-
-    // A device's advertised role can change after its sidebar row was
-    // created (e.g. the peer flips its own "Act as Server" setting) - moves
-    // the row to the section matching its current role and updates its icon
-    // to match, no-op if it's already in the right place. Preserves
-    // selection across the move since the row is the same SidebarItem
-    // instance throughout, just removed and reinserted elsewhere in
-    // _sidebarItems - Remove briefly drops it out of SelectedSidebarItem via
-    // the sidebar ListBox's two-way binding, so it's explicitly restored
-    // after Insert if it was selected going in.
-    private void RelocateDeviceSidebarItemIfNeeded(SidebarItem item, DiscoveredDevice device)
-    {
-        item.Icon = DeviceSidebarIcon(device);
-
-        var targetHeaderName = DeviceSectionHeaderName(device);
-        var currentHeader = SectionHeaderFor(item);
-        if (currentHeader?.Name == targetHeaderName)
-            return;
-
-        var wasSelected = SelectedSidebarItem == item;
-        _sidebarItems.Remove(item);
-        RemoveHeaderIfEmpty(currentHeader);
-        InsertDeviceSidebarItem(item, device);
-        if (wasSelected)
-            SelectedSidebarItem = item;
-    }
-
-    // The Header row immediately preceding a sidebar item, i.e. the section
-    // it currently belongs to - relies on InsertDeviceSidebarItem always
-    // keeping a section's members contiguous right after its Header.
-    private SidebarItem? SectionHeaderFor(SidebarItem item)
-    {
-        var index = _sidebarItems.IndexOf(item);
-        for (var i = index - 1; i >= 0; i--)
-        {
-            if (_sidebarItems[i].Kind == SidebarItemKind.Header)
-                return _sidebarItems[i];
-        }
-        return null;
-    }
-
-    // Drops a section's Header row once its last member is gone - shared by
-    // RemoveDeviceItem (a device actually left) and
-    // RelocateDeviceSidebarItemIfNeeded (a device moved to the other section).
-    private void RemoveHeaderIfEmpty(SidebarItem? header)
-    {
-        if (header == null)
-            return;
-        var index = _sidebarItems.IndexOf(header);
-        if (index < 0)
-            return;
-        var stillHasMembers = index + 1 < _sidebarItems.Count && _sidebarItems[index + 1].Kind != SidebarItemKind.Header;
-        if (!stillHasMembers)
-            _sidebarItems.Remove(header);
-    }
-
-    // A peer can transiently be discovered under more than one mDNS instance
-    // name for the same physical device - e.g. a prior run's advertisement
-    // wasn't cleanly withdrawn before a fresh one republished under an
-    // auto-renamed instance name (Bonjour's own collision-avoidance). Each
-    // shows up as its own sidebar item (via FindDeviceSidebarItem's
-    // InstanceName fallback, since neither has a resolved Fingerprint yet to
-    // match on) until one of them resolves a Fingerprint that turns out to
-    // match another already-tracked item - at which point they're revealed
-    // to be duplicates of the same device. Removes every OTHER Device
-    // sidebar item sharing that now-resolved Fingerprint, keeping only the
-    // one AddOrUpdateDeviceSidebarItem just added/updated.
-    private void RemoveDuplicateDeviceSidebarItems(SidebarItem keep, DiscoveredDevice device)
-    {
-        if (string.IsNullOrEmpty(device.Fingerprint))
-            return;
-
-        var duplicates = _sidebarItems
-            .Where(i => i.Kind == SidebarItemKind.Device && i != keep && i.Device?.Fingerprint == device.Fingerprint)
+    // The sidebar's own view of who is out there, rather than
+    // NetworkDiscoveryService.KnownDevices - see IPeerSyncHost.ListedPeers.
+    IReadOnlyList<DiscoveredDevice> IPeerSyncHost.ListedPeers =>
+        _sidebarItems.Where(i => i.Kind == SidebarItemKind.Device && i.Device != null)
+            .Select(i => i.Device!)
             .ToList();
-        foreach (var duplicate in duplicates)
-            RemoveDeviceItem(duplicate, clearSyncDedup: false);
-    }
 
-    // Matches primarily by Fingerprint - the peer's own stable per-install
-    // identity (see DeviceIdentityStore) - once its /info handshake has
-    // resolved one, since InstanceName alone ({MachineName}-{Platform} - see
-    // NetworkDiscoveryService.OwnInstanceName) can collide between two
-    // genuinely distinct devices that both happen to still have the same
-    // unrenamed default computer name. Matching on InstanceName regardless of
-    // that would silently conflate two different devices into one sidebar
-    // entry - whichever was discovered first would then keep this item's
-    // Device pinned to the wrong endpoint even after its displayed name
-    // updated to the second device's.
-    //
-    // Before a device's own Fingerprint resolves, InstanceName is the only
-    // thing to go on - but such a match is only trusted against another item
-    // that ALSO hasn't resolved a Fingerprint yet; an item that already has a
-    // different, resolved Fingerprint is treated as a distinct device that
-    // merely shares the same not-yet-renamed computer name, not the same one.
-    private SidebarItem? FindDeviceSidebarItem(DiscoveredDevice device)
+    void IDeviceSidebarHost.DeviceRowsChanged()
     {
-        var deviceItems = _sidebarItems.Where(i => i.Kind == SidebarItemKind.Device).ToList();
-
-        if (!string.IsNullOrEmpty(device.Fingerprint))
-        {
-            var byFingerprint = deviceItems.FirstOrDefault(i => i.Device?.Fingerprint == device.Fingerprint);
-            if (byFingerprint != null)
-                return byFingerprint;
-
-            // BuildSidebarItems' pinned paired-server placeholder has no
-            // Device yet the first time it's actually (re)discovered this
-            // session - claim it instead of creating a second row for the
-            // same peer.
-            if (device.Fingerprint == PairedServerFingerprint)
-            {
-                var placeholder = deviceItems.FirstOrDefault(i => i.IsPairedServer && i.Device == null);
-                if (placeholder != null)
-                    return placeholder;
-            }
-        }
-
-        return deviceItems.FirstOrDefault(i =>
-            i.Device?.InstanceName == device.InstanceName && string.IsNullOrEmpty(i.Device.Fingerprint));
-    }
-
-    // A user-set local nickname (see DeviceNicknameStore, MainView.axaml.cs's
-    // Rename Device context-menu item, TrustedDevicesView) always wins over
-    // whatever the peer itself reports - otherwise the next DeviceDiscovered
-    // re-fire (e.g. once /info resolves, or on periodic rediscovery) would
-    // silently clobber a rename back to the peer's own alias.
-    private string ResolveDeviceDisplayName(DiscoveredDevice device) =>
-        !string.IsNullOrEmpty(device.Fingerprint) && _deviceNicknameStore?.Get(device.Fingerprint) is { Length: > 0 } nickname
-            ? nickname
-            : device.Alias;
-
-    // The single place that re-derives a Device sidebar item's displayed name
-    // from ResolveDeviceDisplayName - every place a device's nickname can
-    // change (this sidebar's own "Rename Device" context menu, and
-    // TrustedDevicesView's pencil-icon rename) calls this afterward, so
-    // there is exactly one code path computing "what do we call this device"
-    // and every UI surface (the sidebar row, and the device-detail pane, which
-    // binds to SelectedSidebarItem.Name - the same SidebarItem instance)
-    // reflects it immediately rather than waiting for the next mDNS
-    // rediscovery to happen to notice.
-    public void RefreshDeviceDisplayNames()
-    {
-        var deviceItems = _sidebarItems.Where(i => i.Kind == SidebarItemKind.Device && i.Device != null).ToList();
-
-        foreach (var item in deviceItems)
-            item.Name = ResolveDeviceDisplayName(item.Device!);
-
-        // A subtitle (this device's IP) only shows when its name collides
-        // with another currently-listed device - two distinct devices
-        // legitimately sharing a display name is purely cosmetic (sync/trust
-        // both key off Fingerprint, never name), but the user still needs
-        // some way to tell them apart in the sidebar itself.
-        foreach (var group in deviceItems.GroupBy(i => i.Name))
-        {
-            var showSubtitle = group.Count() > 1;
-            foreach (var item in group)
-                item.Subtitle = showSubtitle ? item.Device!.EndPoint.Address.ToString() : null;
-        }
-
-        // SidebarItem.Device can end up re-pointed at a different
-        // DiscoveredDevice instance than the one SelectedDevice last read
-        // (see FindDeviceSidebarItem) - DiscoveredDevice itself doesn't raise
-        // property-changed, so the device-detail pane's EndPoint binding
-        // needs an explicit nudge to notice.
         OnPropertyChanged(nameof(SelectedDevice));
         NotifyPairButtonPropertiesChanged();
     }
 
-    internal void RemoveDeviceSidebarItem(string instanceName)
-    {
-        // mDNS's "goodbye" notification only ever carries the withdrawn
-        // record's raw instance name, never a Fingerprint - so if two
-        // genuinely distinct devices are colliding on InstanceName (see
-        // FindDeviceSidebarItem), there is no way to tell from this signal
-        // alone which of them actually went offline. Removing either
-        // unconditionally risks dropping the one that is still there just as
-        // easily as the one that isn't, so this deliberately does nothing
-        // rather than guess wrong in that rare case - it will get cleaned up
-        // for real the moment a Fingerprint-disambiguated event (a fresh
-        // DeviceDiscovered, or that peer eventually being forgotten) sorts it
-        // out instead.
-        var matches = _sidebarItems.Where(i =>
-            i.Kind == SidebarItemKind.Device && i.Device?.InstanceName == instanceName).ToList();
-        if (matches.Count != 1)
-            return;
+    public Task<TrackDownloadResult> DownloadTrackAsync(Track track) => Sync.DownloadTrackAsync(track);
 
-        RemoveDeviceItem(matches[0], clearSyncDedup: true);
-    }
+    public Task DeleteDownloadedFileAsync(Track track) => Sync.DeleteDownloadedFileAsync(track);
 
-    // Shared by RemoveDeviceSidebarItem (a peer actually went offline, per
-    // mDNS's own goodbye notification - clearSyncDedup: true, so a fresh
-    // sync fires if it's discovered again later this session rather than
-    // silently being ignored by the dedup check) and
-    // RemoveDuplicateDeviceSidebarItems (the peer never went offline - it
-    // just turned out to already have another sidebar item once its
-    // Fingerprint resolved, so clearSyncDedup: false: the surviving item is
-    // the exact same still-present device and shares that Fingerprint,
-    // clearing it here would just trigger a redundant resync of it for no
-    // reason). Either way: reselect away if this item was selected, remove
-    // it, and drop its section's Header row (see RemoveHeaderIfEmpty) once
-    // no other Device items remain in it.
-    private void RemoveDeviceItem(SidebarItem item, bool clearSyncDedup)
-    {
-        if (clearSyncDedup && item.Device?.Fingerprint is { Length: > 0 } fingerprint)
-            _syncedDeviceFingerprints.TryRemove(fingerprint, out _);
+    public string? GetStreamUrl(Track track) => Sync.GetStreamUrl(track);
 
-        // The paired Server's row is pinned in place instead of
-        // disappearing the moment it's no longer discovered (see
-        // BuildSidebarItems/PairWithServer) - a genuine "peer went offline"
-        // removal (clearSyncDedup: true) just flips its glyph to
-        // unreachable instead. UnpinPairedServerRow bypasses this by
-        // passing clearSyncDedup: false once the pairing itself is gone, so
-        // a since-unpaired row still gets removed for real below.
-        if (clearSyncDedup && item.IsPairedServer)
-        {
-            SyncPairedServerSidebarRow();
-            return;
-        }
+    // internal for MainViewModelSyncTriggerTests, which drive the discovery
+    // handlers directly - reaching them through the real
+    // NetworkDiscoveryService would mean standing up an mDNS backend AND an
+    // HTTP /info endpoint per case, just to choose a Fingerprint.
+    internal void TriggerSyncIfPeerCatalogChanged(DiscoveredDevice device) => Sync.TriggerSyncIfPeerCatalogChanged(device);
 
-        if (SelectedSidebarItem == item)
-            SelectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
+    internal void TriggerSyncIfReady(DiscoveredDevice device) => Sync.TriggerSyncIfReady(device);
 
-        var header = SectionHeaderFor(item);
-        _sidebarItems.Remove(item);
-        RemoveHeaderIfEmpty(header);
-        RefreshDeviceDisplayNames();
-    }
+    // Playlist CRUD, membership and the sidebar's Playlists section all live
+    // in PlaylistManagementViewModel; these forward because MainView's context
+    // menus, the Playlist main menu and MobileMainViewModel all reach them
+    // through this ViewModel.
+    public PlaylistManagementViewModel Playlists { get; } = null!;
 
-    // Shared by DownloadTrackAsync and GetStreamUrl - delegates the actual
-    // resolution (and the "only the currently paired Server" gating that goes
-    // with it) to PeerTrackResolver, the one place that logic lives - see that
-    // class's own doc comment. This wrapper only adds the warning log, since a
-    // user-initiated download/stream attempt failing is worth reporting,
-    // unlike AlbumArtLoader's own (much more frequent, per-row) calls into the
-    // same resolver.
-    private DiscoveredDevice? ResolvePeerForTrack(Track track)
-    {
-        var device = _peerTrackResolver?.Resolve(track);
-        if (device == null)
-            _logger.LogWarning("Cannot resolve a peer for {Title}: no currently paired, reachable origin device", track.Title);
-        return device;
-    }
+    public Task CreatePlaylistWithTrack(Track? track) => Playlists.CreateWithTrack(track);
 
-    // Downloads one placeholder track's audio from whichever peer currently holds
-    // it - see LibraryDownloadService, SYNC-PLAN.md Phase 3's mobile download
-    // button.
-    public Task<TrackDownloadResult> DownloadTrackAsync(Track track) =>
-        _libraryDownloadService?.DownloadAsync(track, ResolvePeerForTrack(track)) ?? Task.FromResult(TrackDownloadResult.Failed);
+    public Task CreatePlaylistWithTracks(IEnumerable<Track> tracks) => Playlists.CreateWithTracks(tracks);
 
-    // Counterpart to DownloadTrackAsync - see LibraryDownloadService.DeleteDownloadedFileAsync.
-    public Task DeleteDownloadedFileAsync(Track track) =>
-        _libraryDownloadService?.DeleteDownloadedFileAsync(track) ?? Task.CompletedTask;
+    public Task DeletePlaylistAsync(Playlist playlist) => Playlists.DeleteAsync(playlist);
 
-    // Builds an on-demand stream URL for a placeholder track from whichever
-    // peer currently holds it, for playing without downloading first - see
-    // MobileMainViewModel.PlayTrackCommand and PeerLibraryViewModel's own
-    // identical streaming approach for peer-browsed (not yet synced-in)
-    // tracks. Null if the peer isn't currently reachable (same resolution
-    // DownloadTrackAsync uses) or this device's own identity isn't ready yet.
-    public string? GetStreamUrl(Track track)
-    {
-        if (_deviceIdentity == null || _signingKey == null || _appSettings == null)
-        {
-            _logger.LogWarning("Cannot build a stream URL for {Title}: device identity/settings not ready yet", track.Title);
-            return null;
-        }
-        // The id the origin peer itself gave this track, not one recomputed
-        // here - see Track.OriginTrackId. Absent only for a track that never
-        // came from a peer at all, which has no business on this path.
-        if (track.OriginTrackId == null)
-        {
-            _logger.LogWarning("Cannot build a stream URL for {Title}: it carries no origin track id", track.Title);
-            return null;
-        }
-        var peer = ResolvePeerForTrack(track);
-        if (peer == null)
-            return null; // ResolvePeerForTrack already logged why.
+    public Task AddTrackToPlaylist(Track track, Playlist playlist) => Playlists.AddTrack(track, playlist);
 
-        var url = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey).GetStreamUrl(track.OriginTrackId);
-        _logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint}): {Url}", track.Title, peer.Alias, peer.EndPoint, url);
-        return url;
-    }
+    public Task AddTracksToPlaylist(IEnumerable<Track> tracks, Playlist playlist) => Playlists.AddTracks(tracks, playlist);
 
-    // Called on every DeviceDiscovered fire (fresh discovery, or a changed
-    // /info field on an already-known peer - see NetworkDiscoveryService.
-    // ResolveAliasAsync) to notice a paired Server has stopped trusting us -
-    // see DiscoveredDevice.TrustsUs, SyncHttpServer.HandleInfoAsync's
-    // trustsCaller. This is what actually catches a revoke that happened while
-    // this device wasn't reachable: the next time the two are back in mDNS
-    // contact, the very first /info resolve already carries the current
-    // answer, no separate "were we there for the revoke" step required. Only
-    // acts when device is the currently paired Server; PlaylistSyncService/
-    // LibrarySyncService.PeerTrustRejected covers the same outcome slightly
-    // earlier if an actual sync attempt happens to land first - see that
-    // subscription's own doc comment.
-    private void HandlePeerTrustChanged(DiscoveredDevice device)
-    {
-        if (device.Fingerprint != PairedServerFingerprint || device.TrustsUs)
-            return;
-        _logger.LogWarning("Paired server {Alias} ({Fingerprint}) no longer trusts us - clearing stale local pairing",
-            device.Alias, device.Fingerprint);
-        Dispatcher.UIThread.Post(UnpairServer);
-    }
+    public Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore) =>
+        Playlists.ReorderTrack(playlist, dragged, insertBefore);
 
-    // Runs a playlist sync session (Phase 2) and a library sync session (Phase 3 -
-    // see LibrarySyncService) with a newly (re-)discovered device once each.
-    // DeviceDiscovered fires more than once per peer (mDNS fallback alias, then
-    // the resolved /info alias+fingerprint), so this only fires once the
-    // fingerprint is known and only the first time per session. Both share this
-    // one dedup gate/trigger even though library sync itself has no initiator
-    // election (see LibrarySyncService) - there's still only one "first contact"
-    // per peer per session worth reacting to.
-    // The last Library.ChangeToken observed on each peer's /info answer (see
-    // DiscoveredDevice.LibraryToken). Purely a change detector - the value
-    // itself means nothing to this device.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _observedPeerLibraryTokens = new();
+    // ── IPlaylistManagementHost ───────────────────────────────────────────
 
-    // Closes ARCHITECTURE-REVIEW Tier 1.4's correctness gap: a change made on
-    // the Server was never noticed while both apps stayed running, because
-    // sync fired only on first mDNS contact (TriggerSyncIfReady) or a
-    // debounced *local* change (ScheduleContentSync). The ~5s /info poll every
-    // Client already runs now carries the Server's library token, so a
-    // server-side edit shows up as that token changing and syncs promptly -
-    // no new endpoint, no long-lived connection to keep alive on mobile.
-    //
-    // Runs *before* TriggerSyncIfReady in the DeviceDiscovered handler, so the
-    // first observation of a peer can be told apart from a later change: that
-    // first one is TriggerSyncIfReady's initial sync to make, not this one's.
-    // A redundant trigger is cheap anyway - LibrarySyncService sends the token
-    // back as If-None-Match, so an unchanged catalog costs one 304.
-    // internal for MainViewModelSyncTriggerTests - see TriggerSyncIfReady below.
-    internal void TriggerSyncIfPeerCatalogChanged(DiscoveredDevice device)
-    {
-        if (string.IsNullOrEmpty(device.Fingerprint) || string.IsNullOrEmpty(device.LibraryToken))
-            return;
-        if (!SyncRolePolicy.ShouldInitiateSync(_appSettings?.IsServer ?? false, _appSettings?.PairedServerFingerprint, device.Fingerprint))
-            return;
-
-        var isFirstObservation = !_observedPeerLibraryTokens.TryGetValue(device.Fingerprint, out var previousToken);
-        _observedPeerLibraryTokens[device.Fingerprint] = device.LibraryToken;
-        if (isFirstObservation || previousToken == device.LibraryToken)
-            return;
-
-        _logger.LogInformation("{Alias} ({Fingerprint}) reports a changed library ({Previous} -> {Current}), syncing",
-            device.Alias, device.Fingerprint, previousToken, device.LibraryToken);
-        RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
-    }
-
-    // internal for MainViewModelSyncTriggerTests - same reasoning as
-    // AddOrUpdateDeviceSidebarItem above (ARCHITECTURE-REVIEW Tier 5.6).
-    internal void TriggerSyncIfReady(DiscoveredDevice device)
-    {
-        if (string.IsNullOrEmpty(device.Fingerprint))
-            return;
-        // Server never initiates bulk sync; Client only ever bulk-syncs with
-        // its one paired Server - see SyncRolePolicy.
-        if (!SyncRolePolicy.ShouldInitiateSync(_appSettings?.IsServer ?? false, _appSettings?.PairedServerFingerprint, device.Fingerprint))
-            return;
-        if (!_syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0))
-            return;
-
-        _logger.LogInformation("First contact with {Alias} ({Fingerprint}) this session, triggering initial sync",
-            device.Alias, device.Fingerprint);
-        // forceInitiator: true - this is always the Client's own paired
-        // Server here (ShouldInitiateSync above already guarantees that), and
-        // a Server never calls SyncWithAsync back (its own trigger paths are
-        // gated off) - without this, PlaylistSyncService's ordinal-fingerprint
-        // election could decide the Client isn't the initiator for roughly
-        // half of all possible fingerprint pairs, and since the Server never
-        // reciprocates, that pair would permanently never sync playlists.
-        RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
-        RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
-    }
-
-    // Rebuilds just the "Playlists" section in place, preserving the current
-    // selection by playlist Id when possible - PlaylistsUpdated replaces the whole
-    // Library.Playlists list (see Library.ReplacePlaylists), so the previously
-    // selected Playlist object reference may no longer be the one shown.
-    private void RefreshPlaylistSidebarItems()
-    {
-        var selectedPlaylistId = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist
-            ? _selectedSidebarItem.Playlist?.Id
-            : null;
-
-        // A row mid-rename (see MainView.BeginRename/CommitRename) keeps its own
-        // SidebarItem/TextBox rather than being torn down and recreated below -
-        // this refresh can be triggered by a background PlaylistsUpdated (e.g. a
-        // device sync landing mid-edit) with no input from the user, and rebuilding
-        // the row would silently yank focus out of its TextBox, looking like the
-        // rename cancelled itself.
-        var editingIds = _sidebarItems
-            .Where(i => i.Kind == SidebarItemKind.Playlist && i.IsEditing && i.Playlist != null)
-            .Select(i => i.Playlist!.Id)
-            .ToHashSet();
-
-        foreach (var stale in _sidebarItems.Where(i => i.Kind == SidebarItemKind.Playlist && !editingIds.Contains(i.Playlist!.Id)).ToList())
-            _sidebarItems.Remove(stale);
-
-        var header = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Header && i.Name == "Playlists");
-        if (Library.Playlists.Count == 0)
-        {
-            if (header != null && editingIds.Count == 0)
-                _sidebarItems.Remove(header);
-            if (selectedPlaylistId != null)
-                SelectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
-            return;
-        }
-
-        var insertAt = header != null ? _sidebarItems.IndexOf(header) + 1 : _sidebarItems.Count;
-        if (header == null)
-            _sidebarItems.Insert(insertAt++, new SidebarItem(SidebarItemKind.Header, "Playlists"));
-
-        foreach (var pl in Library.Playlists)
-        {
-            if (editingIds.Contains(pl.Id))
-                continue;
-            _sidebarItems.Insert(insertAt++, new SidebarItem(SidebarItemKind.Playlist, pl.Name, MaterialIconKind.PlaylistPlay, pl));
-        }
-
-        if (selectedPlaylistId != null)
-        {
-            var reselected = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Playlist && i.Playlist?.Id == selectedPlaylistId);
-            SelectedSidebarItem = reselected ?? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
-        }
-    }
-
-    public Task CreatePlaylistWithTrack(Track? track)
-        => CreatePlaylistWithTracks(track != null ? new List<Track> { track } : new List<Track>());
-
-    public Task CreatePlaylistWithTracks(IEnumerable<Track> tracks)
-    {
-        var playlist = new Playlist("New Playlist", tracks.ToList());
-        Library.AddPlaylist(playlist);
-
-        if (_sidebarItems.All(i => i.Kind != SidebarItemKind.Playlist))
-            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Playlists"));
-
-        var sidebarItem = new SidebarItem(SidebarItemKind.Playlist, playlist.Name, MaterialIconKind.PlaylistPlay, playlist)
-        {
-            IsEditing = true
-        };
-        _sidebarItems.Add(sidebarItem);
-
-        SelectedSidebarItem = sidebarItem;
-
-        ScheduleContentSync();
-        return Task.CompletedTask;
-    }
-
-    public async Task DeletePlaylistAsync(Playlist playlist)
-    {
-        // Gated here rather than at each call site (the sidebar's context menu
-        // and the Playlist main-menu command both land here) so neither one can
-        // forget to confirm. No subscriber (e.g. no window yet) means proceed
-        // unconfirmed, matching how PlaylistConflictRequested degrades elsewhere
-        // in this class.
-        if (DeletePlaylistConfirmationRequested is { } handler)
-        {
-            var confirmed = new TaskCompletionSource<bool>();
-            handler.Invoke(this, new DeletePlaylistConfirmationEventArgs { Playlist = playlist, Confirmed = confirmed });
-            if (!await confirmed.Task)
-                return;
-        }
-
-        Library.RemovePlaylist(playlist);
-
-        // Reuses the sidebar-rebuild logic sync already needed to reflect a
-        // changed Library.Playlists (see PlaylistSyncService) - it also handles
-        // falling back to Songs if the deleted playlist was selected.
-        RefreshPlaylistSidebarItems();
-
-        ScheduleContentSync();
-    }
-
-    // Backs the "Playlist" main-menu's Rename/Delete entries, which - unlike the
-    // sidebar's own right-click menu - have no specific row to operate on, only
-    // whichever playlist is currently selected.
-    private bool CanRenameOrDeleteSelectedPlaylist() => SelectedSidebarItem?.Kind == SidebarItemKind.Playlist;
-
-    private async Task DeleteSelectedPlaylistAsync()
-    {
-        if (SelectedSidebarItem?.Playlist is { } playlist)
-            await DeletePlaylistAsync(playlist);
-    }
-
-    public Task AddTrackToPlaylist(Track track, Playlist playlist)
-        => AddTracksToPlaylist(new[] { track }, playlist);
-
-    public Task AddTracksToPlaylist(IEnumerable<Track> tracks, Playlist playlist)
-    {
-        foreach (var track in tracks)
-            playlist.AppendTrack(track);
-        if (_selectedSidebarItem?.Playlist == playlist)
-            ScheduleFilter();
-
-        ScheduleContentSync();
-        return Task.CompletedTask;
-    }
-
-    public Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore)
-    {
-        // Was an open-coded Remove()+Insert() on playlist.Tracks, which bumped
-        // neither UpdatedAt nor Changed - so a reorder was invisible to both
-        // sync and the save. See Playlist.Tracks.
-        if (!playlist.MoveTrack(dragged, insertBefore))
-            return Task.CompletedTask;
-
-        if (_selectedSidebarItem?.Playlist == playlist)
-            ScheduleFilter();
-
-        ScheduleContentSync();
-        return Task.CompletedTask;
-    }
+    // A playlist currently on screen gained/lost/reordered tracks - the debounce
+    // is right here, this is not a rapid-fire path.
+    void IPlaylistManagementHost.PlaylistContentChanged() => ScheduleFilter();
 
     private void OnSidebarSelectionChanged()
     {
-        // Every fresh visit to Albums/Recently Added starts with nothing
-        // expanded, never a remembered one - matches mobile, where switching
-        // tabs and back always starts at the flat grid too.
-        ExpandedAlbumName = null;
-        ExpandedAlbumTracks = new ObservableCollection<Track>();
+        Browser.CollapseExpandedAlbum();
 
         OnPropertyChanged(nameof(IsSubListVisible));
         OnPropertyChanged(nameof(IsShowingAlbumGrid));
@@ -2434,80 +1164,13 @@ public partial class MainViewModel : ViewModelBase
             _ = PeerLibrary?.LoadAsync(device);
         // Recently Added carries its own independent sort state (see SortColumn),
         // so switching to/from it changes what these computed properties report.
-        OnPropertyChanged(nameof(SortColumn));
-        OnPropertyChanged(nameof(SortAscending));
-        RebuildSubListItems();
+        Browser.NotifySortChanged();
+        Browser.RebuildSubListItems();
         _renamePlaylistCommand?.NotifyCanExecuteChanged();
         _deletePlaylistCommand?.NotifyCanExecuteChanged();
 
-        // Albums no longer auto-selects an album on a fresh visit - it starts
-        // at the grid instead (see IsShowingAlbumGrid), matching mobile's
-        // Albums tab. Only Artists keeps the old auto-select-first/remembered
-        // behavior, since its plain-text picker is unchanged.
-        var initial = _selectedSidebarItem?.Kind == SidebarItemKind.Artists
-            ? (_lastSelectedArtist != null && _subListItems.Contains(_lastSelectedArtist)
-                ? _lastSelectedArtist
-                : _subListItems.FirstOrDefault())
-            : null;
-        ApplySubItemSelection(initial != null ? new[] { initial } : Array.Empty<string>(), immediate: true);
-    }
-
-    private void RebuildSubListItems()
-    {
-        if (_selectedSidebarItem?.Kind == SidebarItemKind.Albums)
-            SubListItems = new ObservableCollection<string>(
-                _allTracks.Select(t => t.Album!).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
-        else if (_selectedSidebarItem?.Kind == SidebarItemKind.Artists)
-            SubListItems = new ObservableCollection<string>(
-                _allTracks.Select(t => t.Artists!).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
-        else
-            SubListItems = new ObservableCollection<string>();
-    }
-
-    // Resolves the tracks behind a set of SubListItems entries (album or artist
-    // names, depending on the current sidebar view) - used by the drag-albums/
-    // artists-onto-a-playlist gesture in MainView.axaml.cs, which drags the
-    // sub-list's selected string items rather than specific Tracks.
-    public IEnumerable<Track> GetTracksForSubListItems(IEnumerable<string> items)
-    {
-        var set = new HashSet<string>(items);
-        return _selectedSidebarItem?.Kind switch
-        {
-            // RecentlyAdded here too, not just Albums - dragging a
-            // multi-selection straight off the Recently Added grid (without
-            // a plain click ever switching the sidebar to Albums first - see
-            // SelectAlbumTile) still needs to resolve to real tracks by album
-            // name, same as Albums' own grid does.
-            SidebarItemKind.Albums or SidebarItemKind.RecentlyAdded
-                => _allTracks.Where(t => t.Album != null && set.Contains(t.Album)),
-            SidebarItemKind.Artists => _allTracks.Where(t => t.Artists != null && set.Contains(t.Artists)),
-            _ => Enumerable.Empty<Track>()
-        };
-    }
-
-    private List<Track> GetBaseTracksForFilter()
-    {
-        return _selectedSidebarItem?.Kind switch
-        {
-            SidebarItemKind.Playlist when _selectedSidebarItem.Playlist != null
-                => new List<Track>(_selectedSidebarItem.Playlist.Tracks),
-            SidebarItemKind.Albums when _selectedSubItems.Count > 0
-                => _allTracks.Where(t => t.Album != null && _selectedSubItems.Contains(t.Album)).ToList(),
-            SidebarItemKind.Albums
-                => new List<Track>(),
-            SidebarItemKind.Artists when _selectedSubItems.Count > 0
-                => _allTracks.Where(t => t.Artists != null && _selectedSubItems.Contains(t.Artists)).ToList(),
-            SidebarItemKind.Artists
-                => new List<Track>(),
-            SidebarItemKind.Device
-                => new List<Track>(),
-            // Never-played tracks would otherwise just clutter the bottom/top of
-            // a "newest played first" sort with a meaningless null - History only
-            // makes sense for tracks that actually have a LastPlayedAt.
-            SidebarItemKind.History
-                => _allTracks.Where(t => t.LastPlayedAt != null).ToList(),
-            _ => _allTracks
-        };
+        var initial = Browser.InitialSubItemForCurrentView();
+        Browser.ApplySubItemSelection(initial != null ? new[] { initial } : Array.Empty<string>(), immediate: true);
     }
 
     // ── Database ops ──────────────────────────────────────────────────────────
@@ -2528,8 +1191,8 @@ public partial class MainViewModel : ViewModelBase
     {
         if (_importer == null || _mainPlaylist == null || _libraryStore == null)
             return;
-        using var _ = BeginBusy("Rebuilding library…");
-        var libraryPaths = _appSettings?.LibraryPaths;
+        using var _ = _busy.BeginScope("Rebuilding library…");
+        var libraryPaths = _appSettings.LibraryPaths;
         var freshTracks = await _importer.ImportAsync(libraryPaths);
         _mainPlaylist.ReplaceAll(freshTracks);
         Library.UpdateTracks(freshTracks);
@@ -2542,7 +1205,6 @@ public partial class MainViewModel : ViewModelBase
     // it calls RescanLibraryAsync separately, unawaited, after closing.
     public async Task SaveLibraryPathsAsync(List<string> paths)
     {
-        _appSettings ??= new AppSettings();
         var added = paths.Except(_appSettings.LibraryPaths, StringComparer.OrdinalIgnoreCase).ToList();
         var removed = _appSettings.LibraryPaths.Except(paths, StringComparer.OrdinalIgnoreCase).ToList();
         if (added.Count > 0 || removed.Count > 0)
@@ -2558,141 +1220,6 @@ public partial class MainViewModel : ViewModelBase
     // e.g. after granting a previously-denied Android media permission.
     public Task RescanLibraryAsync() => RebuildDatabaseAsync();
 
-    private void PopulateTracks()
-    {
-        _allTracks = new List<Track>(Library.Tracks);
-        RebuildSubListItems();
-        RebuildAlbumGrids();
-        ScheduleFilter();
-    }
-
-    private async void ScheduleFilter()
-    {
-        _filterCts?.Cancel();
-        _filterCts = new CancellationTokenSource();
-        var token = _filterCts.Token;
-
-        try
-        {
-            await Task.Delay(250, token);
-            await RebuildRowsAsync(token);
-        }
-        catch (OperationCanceledException) { }
-    }
-
-    private async Task RebuildRowsAsync(CancellationToken token, bool includeGridTiles = true)
-    {
-        var text       = _filterText;
-        // Playlists have a user-defined (drag-reorderable) track order rather
-        // than a sortable one, so ignore the column sort while viewing one.
-        // Recently Added uses its own independent sort state (see SortColumn).
-        var sortCol    = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist ? "PlaylistOrder" : SortColumn;
-        var sortAsc    = SortAscending;
-        var playing    = CurrentlyPlayingTrack;
-        var baseTracks = GetBaseTracksForFilter();
-        var allTracks  = _allTracks;
-        var pairedServerFingerprint = PairedServerFingerprint;
-        var pairedServerReachable   = IsPairedServerReachable;
-
-        // Albums/Recently Added show a tile grid instead of Rows (see
-        // IsShowingAlbumGrid) built straight from _allTracks, not from
-        // GetBaseTracksForFilter's (mostly Albums-view-irrelevant) result -
-        // so without this, FilterText had no effect on either grid at all.
-        // Rebuilt here, alongside Rows, on every filter/sort/view change
-        // rather than only on a rescan (see RebuildAlbumGrids), so typing in
-        // the search box while on Albums actually narrows the grid.
-        //
-        // includeGridTiles=false skips both builds entirely - mobile (the
-        // only caller that passes false, via RebuildRowsImmediatelyAsync)
-        // has its own separate AlbumGridRows/RecentlyAddedAlbumRows on
-        // MobileMainViewModel (rebuilt only on library changes, not on every
-        // navigation - see RebuildAlbumGrid/RebuildRecentlyAddedAlbums
-        // there) and never reads AlbumGridTiles/RecentlyAddedGridTiles at
-        // all, so building two full-library tile grids on every single
-        // drill-in/back-navigation was pure wasted work there - confirmed on
-        // a real device as a large chunk of the pause after tapping Back.
-        // Desktop got the same treatment mobile already had, just derived
-        // rather than passed in: the two tile grids are only ever *painted* on
-        // the Albums and Recently Added views (see IsShowingAlbumGrid/
-        // IsShowingRecentlyAddedGrid), yet every rebuild built both - two full
-        // passes over the whole library, discarded unread, on every keystroke
-        // and every drill-in while viewing Songs, Artists or a playlist.
-        // Switching to either grid view runs OnSidebarSelectionChanged, which
-        // rebuilds through here again, so they are always built before the view
-        // that reads them appears. See ARCHITECTURE-REVIEW Tier 1.5.
-        var buildGrids = includeGridTiles && (IsShowingAlbumGrid || IsShowingRecentlyAddedGrid);
-
-        var (rows, albumTiles, recentTiles) = await Task.Run(() =>
-        {
-            var builtRows = TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
-            if (!buildGrids)
-                return (builtRows, (List<AlbumTileViewModel>?)null, (List<AlbumTileViewModel>?)null);
-
-            var filteredForGrids = TrackListBuilder.Filter(allTracks, text).ToList();
-            return (
-                builtRows,
-                AlbumGridBuilder.Build(filteredForGrids),
-                RecentlyAddedAlbumsBuilder.Build(filteredForGrids));
-        }, token);
-
-        if (token.IsCancellationRequested)
-            return;
-
-        _currentFilteredTracks = rows.Select(r => r.Track).ToList();
-
-        // The outgoing rows are dropped on the floor here, so anything they own
-        // that isn't purely managed memory has to be released explicitly - in
-        // practice the download spinner's 60fps DispatcherTimer, which
-        // otherwise outlives the row it belonged to (see TrackRowViewModel.
-        // Dispose).
-        var replaced = Rows;
-        Rows = new ObservableCollection<TrackRowViewModel>(rows);
-        foreach (var row in replaced)
-            row.Dispose();
-        if (buildGrids)
-        {
-            AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles!);
-            RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(recentTiles!);
-        }
-        OnPropertyChanged(nameof(StatusBarText));
-    }
-
-    // Bypasses ScheduleFilter's own 250ms debounce - meant for a single,
-    // discrete navigation action (mobile drilling into a specific album/
-    // playlist - see MobileMainViewModel's SelectAlbumOrArtistCore/
-    // SelectArtistAlbum/SelectRecentlyAddedAlbum/SelectPlaylist) rather than
-    // a rapid-fire one like typing a search query or desktop's own sub-list
-    // multi-select drag, which still want the debounce and so still go
-    // through SelectedSubItem's own setter/ScheduleFilter as before.
-    // Without this, drilling into an album showed the previous scope's
-    // tracks (or the whole library) for up to the debounce's own delay
-    // before the newly-scoped list actually appeared - confirmed on a real
-    // device as a ~500ms flash of a different album's songs on every
-    // drill-in. Returns false if superseded by a newer filter/navigation
-    // change before this one finished, so a caller with its own
-    // follow-up work (see GoToCurrentlyPlayingTrackAsync) can skip it.
-    //
-    // includeGridTiles defaults to true so the one desktop caller
-    // (GoToCurrentlyPlayingTrackAsync, which can run while Albums/Recently
-    // Added is the active sidebar view) keeps getting fresh grid tiles
-    // without having to know to ask for them - mobile's 5 call sites pass
-    // false explicitly instead, since mobile never reads them at all.
-    public async Task<bool> RebuildRowsImmediatelyAsync(bool includeGridTiles = true)
-    {
-        _filterCts?.Cancel();
-        _filterCts = new CancellationTokenSource();
-        var token = _filterCts.Token;
-        try
-        {
-            await RebuildRowsAsync(token, includeGridTiles);
-            return true;
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
-        }
-    }
-
     // ── Go to currently playing track (Cmd/Ctrl+L) ───────────────────────────
 
     public async Task GoToCurrentlyPlayingTrackAsync()
@@ -2701,7 +1228,7 @@ public partial class MainViewModel : ViewModelBase
         if (track == null)
             return;
 
-        if (_currentFilteredTracks.Any(t => t.Path == track.Path))
+        if (DisplayedTracks.Any(t => t.Path == track.Path))
         {
             NavigateToTrackRequested?.Invoke(this, track);
             return;

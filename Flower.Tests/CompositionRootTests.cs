@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -143,16 +143,26 @@ public class CompositionRootTests : PinnedDataDirectory
 
         Assert.NotEmpty(optionalTypes);
 
-        var fields = typeof(MainViewModel)
-            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic);
+        // Most of these are now held by PeerSyncCoordinator rather than by
+        // MainViewModel itself (ARCHITECTURE-REVIEW Tier 4.2) - the invariant
+        // is unchanged, so look in both: whichever of the two stores a given
+        // dependency, it must not have arrived as its default.
+        var holders = new (object Instance, FieldInfo[] Fields)[]
+        {
+            (mainViewModel, typeof(MainViewModel).GetFields(BindingFlags.Instance | BindingFlags.NonPublic)),
+            (mainViewModel.Sync, typeof(PeerSyncCoordinator).GetFields(BindingFlags.Instance | BindingFlags.NonPublic)),
+        };
 
         foreach (var type in optionalTypes)
         {
-            var field = fields.SingleOrDefault(f => f.FieldType == type);
-            if (field == null)
+            var match = holders
+                .Select(h => (h.Instance, Field: h.Fields.SingleOrDefault(f => f.FieldType == type)))
+                .FirstOrDefault(x => x.Field != null);
+
+            if (match.Field == null)
             {
-                // SyncHttpServer is the one optional dependency MainViewModel
-                // keeps no field for - it only subscribes to its
+                // SyncHttpServer is the one optional dependency neither class
+                // keeps a field for - MainViewModel only subscribes to its
                 // PeerUnpairNotified/PeerApprovalRequested events in the
                 // constructor and never touches it again. Named explicitly
                 // rather than skipped silently, so a future parameter that
@@ -162,7 +172,7 @@ public class CompositionRootTests : PinnedDataDirectory
                 continue;
             }
 
-            Assert.NotNull(field.GetValue(mainViewModel));
+            Assert.NotNull(match.Field.GetValue(match.Instance));
         }
     }
 

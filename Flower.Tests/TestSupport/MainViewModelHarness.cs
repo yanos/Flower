@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
@@ -109,9 +109,12 @@ public static class MainViewModelHarness
             NullLogger<SyncHttpServer>.Instance);
         var deviceIdentityStore = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance);
 
+        var busy = new BusyState();
         var main = new MainViewModel(
             playlistControl, library, appSettings, new FakeMusicImporter(), mainPlaylist,
             libraryStore, appSettingsStore, deviceIdentityStore, deviceNicknameStore,
+            busy,
+            new ITunesImportCoordinator(library, libraryStore, busy, NullLogger<ITunesImportCoordinator>.Instance),
             NullLogger<MainViewModel>.Instance,
             networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
             peerPairingService, peerTrackResolver, syncHttpServer, deviceIdentity, signingKey);
