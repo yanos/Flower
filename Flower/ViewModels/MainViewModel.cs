@@ -27,7 +27,7 @@ using Material.Icons;
 
 namespace Flower.ViewModels;
 
-public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyncHost, IPlaylistManagementHost, ILibraryBrowseHost
+public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyncHost, IPlaylistManagementHost, ILibraryBrowseHost, ISidebarRenameHost
 {
     // Defaults to a no-op logger for the parameterless design-time constructor
     // below, which never receives one via DI - overwritten by the real

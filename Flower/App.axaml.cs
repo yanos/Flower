@@ -148,6 +148,7 @@ public partial class App : Application
             .AddSingleton<DeviceKeyStore>()
             .AddSingleton<DeviceIdentityStore>()
             .AddSingleton<DeviceNicknameStore>()
+            .AddSingleton<SidebarRenameService>()
             .AddSingleton<TrustedPeerStore>()
             .AddSingleton<PlaylistSyncStateStore>()
             .AddSingleton<ClientLogStore>()

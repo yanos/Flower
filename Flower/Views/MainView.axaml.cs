@@ -31,7 +31,7 @@ public partial class MainView : UserControl
 {
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private MainViewModel? _viewModel;
-    private readonly DeviceNicknameStore _deviceNicknameStore = Ioc.Default.GetService<DeviceNicknameStore>()!;
+    private readonly SidebarRenameService _renameService = Ioc.Default.GetService<SidebarRenameService>()!;
     private readonly ILogger<MainView> _logger = Ioc.Default.GetService<ILogger<MainView>>()!;
 
     private ContextMenu _columnMenu = new();
@@ -43,13 +43,12 @@ public partial class MainView : UserControl
     // Drag album/artist names from SubList onto a sidebar playlist - mirrors
     // MusicListView's own cross-drag fields/gesture (see OnTrackDragMoved/
     // OnTrackDragEnded) but lives here since SubList is a stock ListBox with no
-    // hand-rolled panel to raise that event itself.
-    private const double SubListDragThreshold = 4.0;
-    private string? _subListDragHitItem;               // item under the pointer at press-time
-    private IReadOnlyList<string>? _subListDragItems;   // final drag set, resolved at threshold-crossing
-    private Point   _subListDragStartPoint;
-    private bool    _isSubListDragging;
-    private bool    _syncingSubListSelection; // guards against feedback loops between SubList and the VM
+    // hand-rolled panel to raise that event itself. The gesture's own state
+    // machine (selection algebra, anchor, drag threshold) lives in
+    // NameSelectionDragGesture, shared with both album grids below; only the
+    // hit-testing and the ghost/drop visuals stay here.
+    private NameSelectionDragGesture? _subListGesture;
+    private bool _syncingSubListSelection; // guards against feedback loops between SubList and the VM
 
     private DispatcherTimer? _spinTimer;
     private RotateTransform? _spinTransform;
@@ -140,6 +139,7 @@ public partial class MainView : UserControl
         }
 
         _viewModel = DataContext as MainViewModel;
+        CreateNameGestures(_viewModel);
 
         if (_viewModel != null)
         {
@@ -181,6 +181,40 @@ public partial class MainView : UserControl
             if (_viewModel.Rows.Count > 0)
                 ApplyRows();
         }
+    }
+
+    // The three name-selection gestures all read and write the same
+    // MainViewModel.SelectedSubItems, so they only exist while there is a
+    // view model to point them at - rebuilt from scratch on every DataContext
+    // change rather than re-targeted, since their Shift+click anchors mean
+    // nothing across a different library scope anyway.
+    private void CreateNameGestures(MainViewModel? vm)
+    {
+        if (vm == null)
+        {
+            _subListGesture = null;
+            _albumGridGesture = null;
+            _recentlyAddedGridGesture = null;
+            return;
+        }
+
+        _subListGesture = new NameSelectionDragGesture(
+            () => vm.SubListItems,
+            () => vm.SelectedSubItems,
+            vm.SetSelectedSubItems,
+            selectOnPlainPress: true);
+
+        _albumGridGesture = new NameSelectionDragGesture(
+            () => vm.AlbumGridTiles.Select(t => t.Name).ToList(),
+            () => vm.SelectedSubItems,
+            vm.SetSelectedSubItems,
+            selectOnPlainPress: false);
+
+        _recentlyAddedGridGesture = new NameSelectionDragGesture(
+            () => vm.RecentlyAddedGridTiles.Select(t => t.Name).ToList(),
+            () => vm.SelectedSubItems,
+            vm.SetSelectedSubItems,
+            selectOnPlainPress: false);
     }
 
     // See OnDataContextChanged's own comment for why this only matters at
@@ -257,13 +291,15 @@ public partial class MainView : UserControl
     // constructor), and `sender`/pointer capture tell them apart - a plain
     // click on either activates via the same MainViewModel.ToggleAlbumExpandedCommand,
     // which is shared by both grids too (only one album can be expanded at a
-    // time, regardless of which grid it was clicked in).
+    // time, regardless of which grid it was clicked in). Each grid gets its
+    // own NameSelectionDragGesture, because a Shift+click range only means
+    // anything against one particular ordering - Albums is alphabetical,
+    // Recently Added is by-recency (see MainViewModel.AlbumGridTiles/
+    // RecentlyAddedGridTiles) - even though the selection they both drive is
+    // the one shared MainViewModel.SelectedSubItems.
+    private NameSelectionDragGesture? _albumGridGesture;
+    private NameSelectionDragGesture? _recentlyAddedGridGesture;
 
-    private string? _albumGridAnchor; // Shift+click range-select anchor
-    private string? _albumGridDragHitItem;
-    private IReadOnlyList<string>? _albumGridDragItems;
-    private Point _albumGridDragStartPoint;
-    private bool _isAlbumGridDragging;
     // A plain (unmodified) press on a not-yet-selected tile might still turn
     // into a drag - see AlbumGrid_PointerMoved/Released. Toggling the
     // expansion immediately on press (what this used to do, back when a
@@ -273,18 +309,14 @@ public partial class MainView : UserControl
     // only actually toggles if no drag occurred.
     private bool _albumGridPendingActivate;
 
-    // The grid ordering to range-select against depends on which of the two
-    // instances is mid-gesture - Albums is alphabetical, Recently Added is
-    // by-recency (see MainViewModel.AlbumGridTiles/RecentlyAddedGridTiles).
-    private List<string> TileNamesFor(AlbumGridView grid) =>
-        _viewModel == null
-            ? new List<string>()
-            : (ReferenceEquals(grid, AlbumGrid) ? _viewModel.AlbumGridTiles : _viewModel.RecentlyAddedGridTiles)
-                .Select(t => t.Name).ToList();
+    private NameSelectionDragGesture? GestureFor(AlbumGridView grid) =>
+        ReferenceEquals(grid, AlbumGrid) ? _albumGridGesture : _recentlyAddedGridGesture;
 
     private void AlbumGrid_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not AlbumGridView grid || _viewModel is not { } vm)
+            return;
+        if (GestureFor(grid) is not { } gesture)
             return;
         if (!e.GetCurrentPoint(grid).Properties.IsLeftButtonPressed)
             return;
@@ -304,100 +336,42 @@ public partial class MainView : UserControl
             vm.PlayAlbum(tile.Name);
             e.Handled = true;
             e.Pointer.Capture(null);
-            EndAlbumGridDrag();
+            EndAlbumGridDrag(gesture);
             return;
         }
 
-        bool alreadySelected = vm.SelectedSubItems.Contains(tile.Name);
-
-        if (shift)
-            SelectAlbumGridRange(grid, tile.Name);
-        else if (toggle)
-            ToggleAlbumGridItem(tile.Name);
-        // else: leave selection/view alone for now - AlbumGrid_PointerMoved's
-        // drag-threshold check already falls back to just this one tile if
-        // it turns out not to be part of the current selection, so nothing
-        // here needs to pre-select it for that to work correctly.
+        // A plain press deliberately leaves the selection alone (the gesture
+        // is constructed with selectOnPlainPress: false) - the drag path
+        // falls back to just this tile on its own if it isn't selected.
+        bool alreadySelected = gesture.Press(tile.Name, e.GetPosition(grid), shift, toggle);
 
         e.Handled = true;
 
         _albumGridPendingActivate = !shift && !toggle && !alreadySelected;
-        _albumGridDragHitItem = tile.Name;
-        _albumGridDragStartPoint = e.GetPosition(grid);
         e.Pointer.Capture(grid);
-    }
-
-    private void ToggleAlbumGridItem(string name)
-    {
-        if (_viewModel is not { } vm)
-            return;
-        var current = vm.SelectedSubItems.ToList();
-        if (!current.Remove(name))
-            current.Add(name);
-        vm.SetSelectedSubItems(current);
-        _albumGridAnchor = name;
-    }
-
-    private void SelectAlbumGridRange(AlbumGridView grid, string name)
-    {
-        if (_viewModel is not { } vm)
-            return;
-        var items = TileNamesFor(grid);
-        int anchorIdx = _albumGridAnchor != null ? items.IndexOf(_albumGridAnchor) : -1;
-        int clickIdx  = items.IndexOf(name);
-        if (anchorIdx < 0)
-            anchorIdx = clickIdx;
-        int lo = Math.Min(anchorIdx, clickIdx);
-        int hi = Math.Max(anchorIdx, clickIdx);
-
-        var range = new List<string>();
-        for (int i = lo; i <= hi; i++)
-            range.Add(items[i]);
-        // Anchor deliberately left untouched so repeated Shift+clicks keep
-        // extending/shrinking the range from the same starting point.
-        vm.SetSelectedSubItems(range);
     }
 
     private void AlbumGrid_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (sender is not AlbumGridView grid || _albumGridDragHitItem == null)
+        if (sender is not AlbumGridView grid || GestureFor(grid) is not { } gesture)
             return;
 
         var pt = e.GetPosition(grid);
-        if (!_isAlbumGridDragging)
-        {
-            var dx = pt.X - _albumGridDragStartPoint.X;
-            var dy = pt.Y - _albumGridDragStartPoint.Y;
-            if (dx * dx + dy * dy < SubListDragThreshold * SubListDragThreshold)
-                return;
-            _isAlbumGridDragging = true;
-            // Selection is final by now (AlbumGrid_PointerPressed above already
-            // resolved it for this press).
-            _albumGridDragItems = _viewModel?.SelectedSubItems.Contains(_albumGridDragHitItem) == true
-                ? _viewModel.SelectedSubItems.ToList()
-                : new List<string> { _albumGridDragHitItem };
-        }
+        if (!gesture.Move(pt))
+            return;
 
-        ShowDragGhost(grid, pt, DragGhostLabel(_albumGridDragItems!));
+        ShowDragGhost(grid, pt, DragGhostLabel(gesture.DragItems!));
         SetSidebarDropHighlight(HitTestSidebarDrop(grid, pt));
     }
 
     private void AlbumGrid_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (sender is not AlbumGridView grid)
+        if (sender is not AlbumGridView grid || GestureFor(grid) is not { } gesture)
             return;
 
-        if (_isAlbumGridDragging && _albumGridDragItems is { } items)
-        {
-            var target = HitTestSidebarDrop(grid, e.GetPosition(grid));
-            var tracks = _viewModel?.GetTracksForSubListItems(items) ?? Enumerable.Empty<Track>();
-
-            if (target?.PlaylistItem?.Playlist is { } playlist)
-                _ = _viewModel?.AddTracksToPlaylist(tracks, playlist);
-            else if (target?.CreateNew == true)
-                _ = _viewModel?.CreatePlaylistWithTracks(tracks);
-        }
-        else if (_albumGridPendingActivate && _albumGridDragHitItem is { } name)
+        if (gesture is { IsDragging: true, DragItems: { } items })
+            CompleteNameDrop(grid, e.GetPosition(grid), items);
+        else if (_albumGridPendingActivate && gesture.PressedItem is { } name)
         {
             // No drag happened - a genuine plain click, now safe to
             // expand/collapse (see _albumGridPendingActivate's doc comment).
@@ -405,17 +379,18 @@ public partial class MainView : UserControl
         }
 
         e.Pointer.Capture(null);
-        EndAlbumGridDrag();
+        EndAlbumGridDrag(gesture);
     }
 
     private void AlbumGrid_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
-        => EndAlbumGridDrag();
-
-    private void EndAlbumGridDrag()
     {
-        _albumGridDragHitItem = null;
-        _albumGridDragItems = null;
-        _isAlbumGridDragging = false;
+        if (sender is AlbumGridView grid && GestureFor(grid) is { } gesture)
+            EndAlbumGridDrag(gesture);
+    }
+
+    private void EndAlbumGridDrag(NameSelectionDragGesture gesture)
+    {
+        gesture.End();
         _albumGridPendingActivate = false;
         ResetDragVisuals();
     }
@@ -671,115 +646,51 @@ public partial class MainView : UserControl
     // control-owned event to subscribe to - the pointer sequence is handled
     // directly here instead.
 
-    private string? _subListAnchor; // Shift+click range-select anchor, analogous to MusicListView's _anchorPath
-
     private void SubList_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (_subListGesture is not { } gesture)
+            return;
         if (!e.GetCurrentPoint(SubList).Properties.IsLeftButtonPressed)
             return;
         var container = (SubList.InputHitTest(e.GetPosition(SubList)) as Visual)
             ?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
         if (container?.DataContext is not string item)
             return;
-        if (_viewModel is not { } vm)
-            return;
 
-        // SubList's selection is fully owned here rather than left to
-        // ListBoxItem's native SelectionMode="Multiple" click handling, which
-        // doesn't give the plain-click-collapses-everything-else / Ctrl-toggle /
-        // Shift-range semantics this needs - mirrors MusicListView's own
-        // hand-rolled Panel_PointerPressed selection logic.
-        bool alreadySelected = vm.SelectedSubItems.Contains(item);
-        bool shift  = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        bool toggle = e.KeyModifiers.HasFlag(PlatformShortcuts.Primary);
-
-        if (shift)
-            SelectSubListRange(item);
-        else if (toggle)
-            ToggleSubListItem(item);
-        else if (!alreadySelected)
-        {
-            vm.SetSelectedSubItems(new[] { item });
-            _subListAnchor = item;
-        }
-        // else: item already selected, no modifier - preserve the whole
-        // selection so it can be dragged or right-clicked as a batch.
+        // SubList's selection is fully owned by the gesture rather than left
+        // to ListBoxItem's native SelectionMode="Multiple" click handling,
+        // which doesn't give the plain-click-collapses-everything-else /
+        // Ctrl-toggle / Shift-range semantics this needs - mirrors
+        // MusicListView's own hand-rolled Panel_PointerPressed selection logic.
+        gesture.Press(
+            item,
+            e.GetPosition(SubList),
+            e.KeyModifiers.HasFlag(KeyModifiers.Shift),
+            e.KeyModifiers.HasFlag(PlatformShortcuts.Primary));
 
         container.Focus();
         e.Handled = true;
 
-        _subListDragHitItem = item;
-        _subListDragStartPoint = e.GetPosition(SubList);
         e.Pointer.Capture(SubList);
-    }
-
-    private void ToggleSubListItem(string item)
-    {
-        if (_viewModel is not { } vm)
-            return;
-        var current = vm.SelectedSubItems.ToList();
-        if (!current.Remove(item))
-            current.Add(item);
-        vm.SetSelectedSubItems(current);
-        _subListAnchor = item;
-    }
-
-    private void SelectSubListRange(string item)
-    {
-        if (_viewModel is not { } vm)
-            return;
-        var items = vm.SubListItems;
-        int anchorIdx = _subListAnchor != null ? items.IndexOf(_subListAnchor) : -1;
-        int clickIdx  = items.IndexOf(item);
-        if (anchorIdx < 0)
-            anchorIdx = clickIdx;
-        int lo = Math.Min(anchorIdx, clickIdx);
-        int hi = Math.Max(anchorIdx, clickIdx);
-
-        var range = new List<string>();
-        for (int i = lo; i <= hi; i++)
-            range.Add(items[i]);
-        // Anchor deliberately left untouched so repeated Shift+clicks keep
-        // extending/shrinking the range from the same starting point.
-        vm.SetSelectedSubItems(range);
     }
 
     private void SubList_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (_subListDragHitItem == null)
+        if (_subListGesture is not { } gesture)
             return;
 
         var pt = e.GetPosition(SubList);
-        if (!_isSubListDragging)
-        {
-            var dx = pt.X - _subListDragStartPoint.X;
-            var dy = pt.Y - _subListDragStartPoint.Y;
-            if (dx * dx + dy * dy < SubListDragThreshold * SubListDragThreshold)
-                return;
-            _isSubListDragging = true;
-            // Selection is final by now (SubList_PointerPressed above already
-            // resolved it for this press).
-            _subListDragItems = _viewModel?.SelectedSubItems.Contains(_subListDragHitItem) == true
-                ? _viewModel.SelectedSubItems.ToList()
-                : new List<string> { _subListDragHitItem };
-        }
+        if (!gesture.Move(pt))
+            return;
 
-        ShowDragGhost(SubList, pt, DragGhostLabel(_subListDragItems!));
+        ShowDragGhost(SubList, pt, DragGhostLabel(gesture.DragItems!));
         SetSidebarDropHighlight(HitTestSidebarDrop(SubList, pt));
     }
 
     private void SubList_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (_isSubListDragging && _subListDragItems is { } items)
-        {
-            var target = HitTestSidebarDrop(SubList, e.GetPosition(SubList));
-            var tracks = _viewModel?.GetTracksForSubListItems(items) ?? Enumerable.Empty<Track>();
-
-            if (target?.PlaylistItem?.Playlist is { } playlist)
-                _ = _viewModel?.AddTracksToPlaylist(tracks, playlist);
-            else if (target?.CreateNew == true)
-                _ = _viewModel?.CreatePlaylistWithTracks(tracks);
-        }
+        if (_subListGesture is { IsDragging: true, DragItems: { } items })
+            CompleteNameDrop(SubList, e.GetPosition(SubList), items);
 
         e.Pointer.Capture(null);
         EndSubListDrag();
@@ -793,10 +704,22 @@ public partial class MainView : UserControl
 
     private void EndSubListDrag()
     {
-        _subListDragHitItem = null;
-        _subListDragItems = null;
-        _isSubListDragging = false;
+        _subListGesture?.End();
         ResetDragVisuals();
+    }
+
+    // The drop half of the name-drag gesture, shared by SubList and both
+    // album grids - identical for all three, since what's dropped is always a
+    // set of album/artist names resolved to tracks the same way.
+    private void CompleteNameDrop(Visual source, Point position, IReadOnlyList<string> items)
+    {
+        var target = HitTestSidebarDrop(source, position);
+        var tracks = _viewModel?.GetTracksForSubListItems(items) ?? Enumerable.Empty<Track>();
+
+        if (target?.PlaylistItem?.Playlist is { } playlist)
+            _ = _viewModel?.AddTracksToPlaylist(tracks, playlist);
+        else if (target?.CreateNew == true)
+            _ = _viewModel?.CreatePlaylistWithTracks(tracks);
     }
 
     private void ShowDragGhost(Visual source, Point sourcePosition, string text)
@@ -1221,69 +1144,36 @@ public partial class MainView : UserControl
             infoWindow.Show();
     }
 
-    // Cmd/Ctrl+I on Albums/Recently Added (see MainView_PreviewKeyDown) - acts
-    // on the multi-selected album(s) (Ctrl/Shift-click, see AlbumGrid_
-    // PointerPressed) if there is one, otherwise falls back to whichever
-    // single album is currently expanded (the common case: a plain click
-    // expands without touching SelectedSubItems at all - see ToggleAlbumGrid
-    // Item's own doc comment). Always batch mode, even for one album's worth
-    // of tracks - there's no meaningful single-track Prev/Next context here
-    // the way there is for a MusicListView row.
+    // Cmd/Ctrl+I on Albums/Recently Added (see MainView_PreviewKeyDown). Which
+    // tracks that acts on is AlbumTrackInfoSelection.Resolve's decision - see
+    // its own doc comment for the precedence rules; all that's left here is
+    // reading the two grids' expanded-row selection and opening the window.
     private void OpenTrackInfoForSelectedAlbums()
     {
         if (_viewModel is not MainViewModel vm)
             return;
 
-        // A specific song (or songs) selected within the currently-expanded
-        // album's own track list (click/Ctrl/Shift/arrow-keys - see
-        // AlbumGridRowControl) takes priority over album-tile-level
-        // selection below - otherwise this always fell back to "the whole
-        // expanded album," even with just one particular song selected.
         var songSelection = AlbumGrid.GetExpandedRowSelectedTracks();
         if (songSelection.Count == 0)
             songSelection = RecentlyAddedGrid.GetExpandedRowSelectedTracks();
 
-        TrackInfoWindow infoWindow;
-        if (songSelection.Count == 1)
-        {
-            // Single-track mode, with Prev/Next through the expanded album's
-            // own track list - same as AlbumGridRowControl's own row context
-            // menu's "Get Info" gives a single selected track, for the same
-            // reason: there's a specific, coherent list to browse here that
-            // the "multiple albums selected" case below doesn't have.
-            var track = songSelection[0];
-            var albumTracks = vm.ExpandedAlbumTracks.ToList();
-            var index = albumTracks.IndexOf(track);
-            if (index < 0)
-                index = 0;
-            infoWindow = new TrackInfoWindow(albumTracks, index, vm.Library) { ShowInTaskbar = false };
-        }
-        else
-        {
-            var tracks = songSelection.Count > 0 ? songSelection : ResolveSelectedAlbumTracks(vm);
-            if (tracks.Count == 0)
-                return;
-            infoWindow = new TrackInfoWindow(tracks, vm.Library) { ShowInTaskbar = false };
-        }
+        var target = AlbumTrackInfoSelection.Resolve(
+            songSelection,
+            vm.ExpandedAlbumTracks,
+            vm.SelectedSubItems,
+            vm.ExpandedAlbumName,
+            vm.GetTracksForSubListItems);
+        if (target.IsEmpty)
+            return;
+
+        var infoWindow = target.FocusIndex is { } index
+            ? new TrackInfoWindow(target.Tracks, index, vm.Library) { ShowInTaskbar = false }
+            : new TrackInfoWindow(target.Tracks, vm.Library) { ShowInTaskbar = false };
 
         if (TopLevel.GetTopLevel(this) is Window owner)
             infoWindow.Show(owner);
         else
             infoWindow.Show();
-    }
-
-    // Fallback for OpenTrackInfoForSelectedAlbums above when no specific song
-    // is selected within the expanded album's track list - the multi-selected
-    // album tile(s) (Ctrl/Shift-click, see AlbumGrid_PointerPressed) if there
-    // are any, otherwise whichever single album is currently expanded (the
-    // common case: a plain click expands without touching SelectedSubItems
-    // at all - see ToggleAlbumGridItem's own doc comment).
-    private static IReadOnlyList<Track> ResolveSelectedAlbumTracks(MainViewModel vm)
-    {
-        var albumNames = vm.SelectedSubItems.Count > 0
-            ? vm.SelectedSubItems
-            : vm.ExpandedAlbumName is { } expanded ? new[] { expanded } : Array.Empty<string>();
-        return albumNames.Count == 0 ? Array.Empty<Track>() : vm.GetTracksForSubListItems(albumNames).ToList();
     }
 
     private void LocateFile()
@@ -1411,38 +1301,10 @@ public partial class MainView : UserControl
         _ = CommitRename(editing);
     }
 
-    private async Task CommitRename(SidebarItem item)
-    {
-        if (!item.IsEditing)
-            return;
-
-        var name = item.Name?.Trim();
-
-        if (item.Device is { Fingerprint.Length: > 0 } device)
-        {
-            item.IsEditing = false;
-            _logger.LogInformation("Device nickname set for {Alias} ({Fingerprint}): {Nickname}", device.Alias, device.Fingerprint, name ?? "(cleared)");
-            await _deviceNicknameStore.SetAsync(device.Fingerprint, name ?? "");
-
-            // Re-derives item.Name (and every other Device row's) from
-            // MainViewModel.ResolveDeviceDisplayName - the one place that
-            // decides what a device is called - rather than duplicating its
-            // empty-falls-back-to-device.Alias logic here too.
-            _viewModel?.RefreshDeviceDisplayNames();
-            return;
-        }
-
-        item.Name = string.IsNullOrEmpty(name) ? "New Playlist" : name;
-        item.IsEditing = false;
-
-        if (item.Playlist == null || _viewModel == null)
-            return;
-        _logger.LogInformation("Playlist renamed: {Old} -> {New}", item.Playlist.Name, item.Name);
-        // No save here: setting Name raises Playlist.Changed, which Library
-        // relays as PlaylistsChanged, which App.axaml.cs persists.
-        item.Playlist.Name = item.Name;
-        _viewModel.ScheduleContentSync();
-    }
+    // Teardown-and-persist for an in-place sidebar rename. The rules for what
+    // an empty name means, and what a commit writes, live in
+    // SidebarRenameService; this is only the call into it.
+    private Task CommitRename(SidebarItem item) => _renameService.CommitAsync(item, _viewModel);
 
     // ── Drag-to-reorder (playlist view only) ────────────────────────────────────
 
