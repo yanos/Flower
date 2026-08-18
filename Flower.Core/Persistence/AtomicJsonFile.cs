@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -41,7 +43,43 @@ namespace Flower.Persistence
 
         private static string TempPath(string path) => path + ".tmp";
 
+        // One writer at a time per file, process-wide.
+        //
+        // Every store already has its own SemaphoreSlim around its saves, but
+        // those are per *instance* while the file is per *path* - two stores
+        // built over the same path (two DI containers in one process; any store
+        // constructed directly rather than resolved, which several of them offer
+        // a parameterless constructor for) serialize against nothing, and both
+        // land on the same fixed .tmp name. That is not hypothetical: it is what
+        // made CompositionRootTests fail intermittently with "the process cannot
+        // access settings.json.tmp because it is being used by another process",
+        // when a previous container's fire-and-forget SaveAsync was still in
+        // flight as the next test's container resolved AppSettings (whose Load
+        // writes, see AppSettingsStore.Load's Apple-Music-folder branch).
+        //
+        // Keyed on the full path so a relative and an absolute spelling of the
+        // same file still share a lock. Never evicted - one semaphore per JSON
+        // file this app owns is a handful of objects for the process lifetime.
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> WriteLocks = new(StringComparer.Ordinal);
+
+        private static SemaphoreSlim WriteLockFor(string path) =>
+            WriteLocks.GetOrAdd(Path.GetFullPath(path), _ => new SemaphoreSlim(1, 1));
+
         public static void Write<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly = false)
+        {
+            var writeLock = WriteLockFor(path);
+            writeLock.Wait();
+            try
+            {
+                WriteCore(path, value, typeInfo, ownerOnly);
+            }
+            finally
+            {
+                writeLock.Release();
+            }
+        }
+
+        private static void WriteCore<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly)
         {
             var temp = PrepareWrite(path);
             using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -60,6 +98,20 @@ namespace Flower.Persistence
         }
 
         public static async Task WriteAsync<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly = false)
+        {
+            var writeLock = WriteLockFor(path);
+            await writeLock.WaitAsync();
+            try
+            {
+                await WriteAsyncCore(path, value, typeInfo, ownerOnly);
+            }
+            finally
+            {
+                writeLock.Release();
+            }
+        }
+
+        private static async Task WriteAsyncCore<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly)
         {
             var temp = PrepareWrite(path);
             await using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))

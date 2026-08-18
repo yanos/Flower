@@ -960,6 +960,37 @@ public class StoreRoundTripTests : IDisposable
         Assert.False(reloaded.SortAscending);
     }
 
+    // The test above only proves one store instance serializes its own saves.
+    // The lock that does that is per-instance while the file is per-path, so
+    // two stores over the same path - two DI containers in one process, or any
+    // store built through its parameterless constructor rather than resolved -
+    // serialized against nothing and collided on the shared fixed .tmp name.
+    // That is what made CompositionRootTests fail every second or third run
+    // with "the process cannot access settings.json.tmp because it is being
+    // used by another process"; the lock now lives in AtomicJsonFile, keyed on
+    // the path.
+    [Fact]
+    public async Task Concurrent_saves_from_separate_store_instances_do_not_collide()
+    {
+        var stores = Enumerable.Range(0, 8)
+            .Select(_ => new AppSettingsStore(NullLogger<AppSettingsStore>.Instance))
+            .ToList();
+        var settings = new AppSettings { SortColumn = "Album", SortAscending = false };
+
+        // Sync Save and async SaveAsync interleaved deliberately - they are
+        // different code paths into the same file, and MainWindow.Closing fires
+        // the synchronous one exactly while debounced async saves are in flight.
+        await Task.WhenAll(stores.SelectMany(store => new[]
+        {
+            store.SaveAsync(settings),
+            Task.Run(() => store.Save(settings)),
+        }));
+
+        Assert.False(File.Exists(AppSettingsStore.StorePath + ".tmp"));
+        var reloaded = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance).Load();
+        Assert.Equal("Album", reloaded.SortColumn);
+    }
+
     // Half a file is the realistic crash shape: valid JSON prefix, no closing
     // bracket. An empty file would also fail to parse, but wouldn't prove the
     // recovery path handles partial content.
