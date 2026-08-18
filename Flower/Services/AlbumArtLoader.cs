@@ -32,9 +32,6 @@ public static class AlbumArtLoader
     // two loggers-for-non-DI-classes patterns it offers.
     private static readonly ILogger Logger = AppLogging.CreateLogger("Flower.Services.AlbumArtLoader");
 
-    private static readonly string[] ImageExtensions =
-        [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"];
-
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     // Disk cache for art fetched from a peer, content-addressed by
@@ -206,57 +203,14 @@ public static class AlbumArtLoader
         }
     }
 
-    // Raw art bytes for a track this device actually has a file for - embedded
-    // tag picture first, falling back to a cover.*/folder.* file in the same
-    // directory. Shared with LibraryOpenSubsonicMapper (to hash for CoverArt) and
-    // SyncHttpServer (to serve /rest/getCoverArt), not just this loader's own
-    // Bitmap decoding, so all three agree on exactly what "this album's art" means.
-    public static byte[]? TryGetLocalArtBytes(Track track)
-    {
-        if (track.Path == null)
-            return null;
-
-        // 1. Embedded tag art
-        try
-        {
-            using var tagFile = TagLib.File.Create(track.Path);
-            var pic = tagFile.Tag.Pictures.FirstOrDefault();
-            if (pic?.Data?.Data is { Length: > 0 } data)
-                return data;
-        }
-        catch (Exception ex)
-        {
-            // Debug, not Warning - TagLib failing to open a file's tags entirely
-            // is routine for oddball/corrupt files scattered through a large real
-            // library, not something worth a warning on its own for every one.
-            Logger.LogDebug(ex, "Could not read embedded art tag for {Path}", track.Path);
-        }
-
-        // 2. cover.*/folder.* in the same directory
-        try
-        {
-            var dir = Path.GetDirectoryName(track.Path);
-            if (dir != null)
-            {
-                var file = Directory.EnumerateFiles(dir).FirstOrDefault(f =>
-                {
-                    var stem = Path.GetFileNameWithoutExtension(f);
-                    var ext  = Path.GetExtension(f).ToLowerInvariant();
-                    return (stem.Equals("cover",  StringComparison.OrdinalIgnoreCase) ||
-                            stem.Equals("folder", StringComparison.OrdinalIgnoreCase))
-                        && ImageExtensions.Contains(ext);
-                });
-                if (file != null)
-                    return File.ReadAllBytes(file);
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogDebug(ex, "Could not read a cover/folder image next to {Path}", track.Path);
-        }
-
-        return null;
-    }
+    // Raw art bytes for a track this device actually has a file for - see
+    // LocalAlbumArtReader, which is the one implementation of the embedded-
+    // tag-then-cover-file lookup and is shared with SyncHttpServer (serving
+    // /rest/getCoverArt), LibraryOpenSubsonicMapper (hashing for CoverArt) and
+    // Flower.Server. Callers that also need to know what to serve the bytes
+    // *as* should use LocalAlbumArtReader.ForFile directly rather than sniff.
+    public static byte[]? TryGetLocalArtBytes(Track track) =>
+        LocalAlbumArtReader.ForFile(track.Path, Logger)?.Bytes;
 
     // Fetches a placeholder track's album art from its origin peer, content-
     // addressed on disk by OriginAlbumArtHash so a restart (or the peer going
