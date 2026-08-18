@@ -30,7 +30,18 @@ namespace Flower.Models
         private readonly object _lock = new();
 
         public List<Track> Tracks { get; private set; }
-        public List<Playlist> Playlists { get; private set; } = new List<Playlist>();
+        // Same copy-on-write discipline as Tracks, and for the same reason:
+        // ReplacePlaylists runs on the sync path (PlaylistSyncService's poll
+        // loop, and SyncHttpServer on an HttpListener thread) concurrently with
+        // UI-thread create/delete, and every mutation below is a
+        // read-modify-write. Guarded by the same _lock, and - critically -
+        // exposed as IReadOnlyList over a list that is never mutated in place,
+        // so a reader enumerating Playlists (MainViewModel rebuilding the
+        // sidebar, PlaylistSyncMapper.ToManifest) can never have the collection
+        // change underneath it. Locking the mutators alone would not have been
+        // enough for that; it would only have moved the tear from lost updates
+        // to InvalidOperationException in the reader.
+        public IReadOnlyList<Playlist> Playlists { get; private set; } = [];
 
         // Path -> Track lookup for IncrementPlayCount/RecordPlayed, which run
         // twice per song change and used to do an O(n) FirstOrDefault over the
@@ -93,6 +104,21 @@ namespace Flower.Models
         // actions (create/rename/add-track) manage sidebar state inline instead of
         // relying on this event, so this only needs to cover the sync path.
         public event EventHandler? PlaylistsUpdated;
+
+        // Fired after *any* change to the playlist set or to a playlist in it -
+        // create, delete, sync replace, rename, track add/remove/reorder. This
+        // exists to make persistence structural: saving used to be each call
+        // site's own responsibility (six separate
+        // "_playlistStore.SaveAsync(Library.Playlists)" calls scattered across
+        // MainViewModel and MainView's code-behind), so nothing stopped a new
+        // mutation path from simply forgetting and losing the user's edit at
+        // exit. App.axaml.cs now subscribes once, here, and every path is
+        // covered by construction. Deliberately separate from PlaylistsUpdated:
+        // that one means "the sidebar must be rebuilt" and must NOT fire for
+        // local edits (it would tear down the row the user is mid-rename in -
+        // see ReplacePlaylists), whereas this one means "the on-disk copy is
+        // stale" and must fire for exactly those.
+        public event EventHandler? PlaylistsChanged;
 
         // Convenience overload for the many call sites (mostly tests) that don't
         // care about log output - production code always goes through the other
@@ -460,14 +486,29 @@ namespace Flower.Models
 
         public void AddPlaylist(Playlist playlist)
         {
-            Playlists.Add(playlist);
+            lock (_lock)
+            {
+                var next = new List<Playlist>(Playlists) { playlist };
+                SwapPlaylists(next);
+            }
+
             _logger.LogInformation("Playlist created: {Name} ({TrackCount} track(s))", playlist.Name, playlist.Tracks.Count);
+            PlaylistsChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void RemovePlaylist(Playlist playlist)
         {
-            Playlists.Remove(playlist);
+            lock (_lock)
+            {
+                var next = new List<Playlist>(Playlists);
+                if (!next.Remove(playlist))
+                    return;
+
+                SwapPlaylists(next);
+            }
+
             _logger.LogInformation("Playlist deleted: {Name}", playlist.Name);
+            PlaylistsChanged?.Invoke(this, EventArgs.Empty);
         }
 
         // Atomically swaps in a merged playlist set from a sync session and notifies
@@ -480,18 +521,46 @@ namespace Flower.Models
         // every single poll even when nothing actually changed.
         public void ReplacePlaylists(List<Playlist> playlists)
         {
-            if (PlaylistsUnchanged(Playlists, playlists))
-                return;
+            lock (_lock)
+            {
+                if (PlaylistsUnchanged(Playlists, playlists))
+                    return;
 
-            Playlists = new List<Playlist>(playlists);
+                SwapPlaylists(new List<Playlist>(playlists));
+            }
+
+            // Outside the lock: both of these run arbitrary subscriber code
+            // (a sidebar rebuild, a store write), and holding _lock across that
+            // would let a subscriber that touches the library re-enter and
+            // deadlock or, worse, observe a half-applied state.
             PlaylistsUpdated?.Invoke(this, EventArgs.Empty);
+            PlaylistsChanged?.Invoke(this, EventArgs.Empty);
         }
+
+        // Installs a new playlist list, moving the Playlist.Changed subscription
+        // from the outgoing set to the incoming one. That subscription is what
+        // makes an *in-place* edit - a rename, a track added, a drag-reorder -
+        // reach PlaylistsChanged at all; without it, persistence would still be
+        // the caller announcing its own mutation, just under a new name.
+        // Callers hold _lock.
+        private void SwapPlaylists(List<Playlist> next)
+        {
+            foreach (var playlist in Playlists)
+                playlist.Changed -= OnPlaylistChanged;
+
+            Playlists = next;
+
+            foreach (var playlist in Playlists)
+                playlist.Changed += OnPlaylistChanged;
+        }
+
+        private void OnPlaylistChanged(object? sender, EventArgs e) => PlaylistsChanged?.Invoke(this, EventArgs.Empty);
 
         // Id+UpdatedAt (bumped by Playlist on every rename/track add/remove/reorder -
         // see Playlist.UpdatedAt) is enough to tell "identical" apart from "changed"
         // without a deep track-by-track comparison. Order matters too, since the
         // sidebar renders playlists in list order.
-        private static bool PlaylistsUnchanged(List<Playlist> a, List<Playlist> b)
+        private static bool PlaylistsUnchanged(IReadOnlyList<Playlist> a, IReadOnlyList<Playlist> b)
         {
             if (a.Count != b.Count)
                 return false;

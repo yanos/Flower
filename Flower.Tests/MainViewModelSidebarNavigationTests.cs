@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -92,11 +92,10 @@ public class MainViewModelSidebarNavigationTests : IDisposable
 
         var networkDiscovery = new NetworkDiscoveryService(deviceIdentity, NullLogger<NetworkDiscoveryService>.Instance, new FakeMdnsBackend());
         var reachability = new PairedServerReachability(networkDiscovery, appSettings);
-        var playlistStore = new PlaylistStore(NullLogger<PlaylistStore>.Instance);
         var syncStateStore = new PlaylistSyncStateStore(NullLogger<PlaylistSyncStateStore>.Instance);
         var deviceNicknameStore = new DeviceNicknameStore(NullLogger<DeviceNicknameStore>.Instance);
         var playlistSyncService = new PlaylistSyncService(
-            library, deviceIdentity, signingKey, appSettings, playlistStore, syncStateStore, deviceNicknameStore,
+            library, deviceIdentity, signingKey, appSettings, syncStateStore, deviceNicknameStore,
             NullLogger<PlaylistSyncService>.Instance);
         var librarySyncService = new LibrarySyncService(
             library, deviceIdentity, signingKey, appSettings, libraryStore, InMemoryLogStore.Instance,
@@ -107,13 +106,13 @@ public class MainViewModelSidebarNavigationTests : IDisposable
         var peerTrackResolver = new PeerTrackResolver(reachability);
         var trustedPeerStore = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
         var syncHttpServer = new SyncHttpServer(
-            deviceIdentity, signingKey, appSettings, library, playlistStore, trustedPeerStore, new ClientLogStore(),
+            deviceIdentity, signingKey, appSettings, library, trustedPeerStore, new ClientLogStore(),
             NullLogger<SyncHttpServer>.Instance);
         var deviceIdentityStore = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance);
 
         return new MainViewModel(
             playlistControl, library, appSettings, new FakeMusicImporter(), mainPlaylist,
-            libraryStore, appSettingsStore, playlistStore, deviceIdentityStore, deviceNicknameStore,
+            libraryStore, appSettingsStore, deviceIdentityStore, deviceNicknameStore,
             NullLogger<MainViewModel>.Instance,
             networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
             peerPairingService, peerTrackResolver, syncHttpServer, deviceIdentity, signingKey);
@@ -126,7 +125,7 @@ public class MainViewModelSidebarNavigationTests : IDisposable
         var trackB = T("B");
         var trackC = T("C");
         var library = new Library(new List<Track> { trackA, trackB, trackC });
-        library.Playlists.Add(new Playlist("Just A", new List<Track> { trackA }));
+        library.AddPlaylist(new Playlist("Just A", new List<Track> { trackA }));
         var mainPlaylist = new MainPlaylist(library.Tracks);
 
         var vm = MakeViewModel(library, mainPlaylist);

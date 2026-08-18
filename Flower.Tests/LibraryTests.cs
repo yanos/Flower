@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Flower.Models;
 
@@ -558,6 +559,174 @@ public class LibraryTests
         library.RemovePlaylist(new Playlist("Not Present", new List<Track>()));
 
         Assert.Single(library.Playlists);
+    }
+
+    // ── Playlist change notification and concurrency (Tier 2.4) ─────────────
+
+    [Fact]
+    public void AddPlaylist_raises_PlaylistsChanged()
+    {
+        var library = new Library(new List<Track>());
+        var raised = 0;
+        library.PlaylistsChanged += (_, _) => raised++;
+
+        library.AddPlaylist(new Playlist("Mix", new List<Track>()));
+
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void RemovePlaylist_raises_PlaylistsChanged_only_when_it_removed_something()
+    {
+        var library = new Library(new List<Track>());
+        var playlist = new Playlist("Mix", new List<Track>());
+        library.AddPlaylist(playlist);
+
+        var raised = 0;
+        library.PlaylistsChanged += (_, _) => raised++;
+
+        library.RemovePlaylist(new Playlist("Not Present", new List<Track>()));
+        Assert.Equal(0, raised);
+
+        library.RemovePlaylist(playlist);
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void ReplacePlaylists_raises_both_events_when_the_set_actually_changed()
+    {
+        var library = new Library(new List<Track>());
+        var updated = 0;
+        var changed = 0;
+        library.PlaylistsUpdated += (_, _) => updated++;
+        library.PlaylistsChanged += (_, _) => changed++;
+
+        library.ReplacePlaylists(new List<Playlist> { new Playlist("From Peer", new List<Track>()) });
+
+        Assert.Equal(1, updated);
+        Assert.Equal(1, changed);
+    }
+
+    [Fact]
+    public void ReplacePlaylists_with_an_identical_set_raises_neither_event()
+    {
+        var library = new Library(new List<Track>());
+        var playlist = new Playlist("Mix", new List<Track>());
+        library.AddPlaylist(playlist);
+
+        var updated = 0;
+        var changed = 0;
+        library.PlaylistsUpdated += (_, _) => updated++;
+        library.PlaylistsChanged += (_, _) => changed++;
+
+        library.ReplacePlaylists(new List<Playlist> { playlist });
+
+        Assert.Equal(0, updated);
+        Assert.Equal(0, changed);
+    }
+
+    // The point of the whole exercise: an in-place edit to a playlist the
+    // library holds has to reach PlaylistsChanged too, or persistence is still
+    // the caller remembering to announce its own mutation.
+    [Theory]
+    [InlineData("rename")]
+    [InlineData("append")]
+    [InlineData("remove")]
+    [InlineData("reorder")]
+    public void Editing_a_held_playlist_in_place_raises_PlaylistsChanged(string edit)
+    {
+        var a = new Track { Title = "A" };
+        var b = new Track { Title = "B" };
+        var library = new Library(new List<Track> { a, b });
+        var playlist = new Playlist("Mix", new List<Track> { a, b });
+        library.AddPlaylist(playlist);
+
+        var raised = 0;
+        library.PlaylistsChanged += (_, _) => raised++;
+
+        switch (edit)
+        {
+            case "rename":
+                playlist.Name = "Renamed";
+                break;
+            case "append":
+                playlist.AppendTrack(new Track { Title = "C" });
+                break;
+            case "remove":
+                playlist.RemoveTrack(a);
+                break;
+            case "reorder":
+                playlist.MoveTrack(b, a);
+                break;
+        }
+
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void A_playlist_dropped_by_ReplacePlaylists_no_longer_raises_PlaylistsChanged()
+    {
+        var library = new Library(new List<Track>());
+        var dropped = new Playlist("Dropped", new List<Track>());
+        library.AddPlaylist(dropped);
+        library.ReplacePlaylists(new List<Playlist> { new Playlist("Kept", new List<Track>()) });
+
+        var raised = 0;
+        library.PlaylistsChanged += (_, _) => raised++;
+
+        dropped.Name = "Renamed after being dropped";
+
+        Assert.Equal(0, raised);
+    }
+
+    // Guards the copy-on-write half of the fix: a reader enumerating Playlists
+    // must never see the collection mutate underneath it. With Playlists a
+    // plain List<Playlist> mutated in place, this threw
+    // InvalidOperationException ("Collection was modified").
+    [Fact]
+    public void Enumerating_Playlists_is_unaffected_by_a_concurrent_mutation()
+    {
+        var library = new Library(new List<Track>());
+        for (var i = 0; i < 50; i++)
+            library.AddPlaylist(new Playlist($"P{i}", new List<Track>()));
+
+        var stop = false;
+        var writer = Task.Run(() =>
+        {
+            while (!Volatile.Read(ref stop))
+            {
+                var extra = new Playlist("Extra", new List<Track>());
+                library.AddPlaylist(extra);
+                library.RemovePlaylist(extra);
+            }
+        });
+
+        try
+        {
+            for (var i = 0; i < 2000; i++)
+            {
+                foreach (var playlist in library.Playlists)
+                    _ = playlist.Name;
+            }
+        }
+        finally
+        {
+            Volatile.Write(ref stop, true);
+            writer.Wait();
+        }
+    }
+
+    // Concurrent AddPlaylist calls are a read-modify-write over the whole list;
+    // unlocked, they lose entries outright.
+    [Fact]
+    public void Concurrent_AddPlaylist_calls_do_not_lose_playlists()
+    {
+        var library = new Library(new List<Track>());
+
+        Parallel.For(0, 500, i => library.AddPlaylist(new Playlist($"P{i}", new List<Track>())));
+
+        Assert.Equal(500, library.Playlists.Count);
+        Assert.Equal(500, library.Playlists.Select(p => p.Name).Distinct().Count());
     }
 
     // ── Rescan carry-forward and playlist rebinding ──────────────────────────

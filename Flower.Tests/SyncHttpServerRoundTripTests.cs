@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -34,8 +34,11 @@ namespace Flower.Tests;
 // races the client's own send.
 //
 // Pinned to an isolated PlatformDataDirectory (see StoreRoundTripTests' own
-// comment): TrustedPeerStore and PlaylistStore both write real files, and
-// pairing tests here approve/deny peers.
+// comment): TrustedPeerStore writes real files, and pairing tests here
+// approve/deny peers. This used to matter for playlists.json too - the
+// harness handed SyncHttpServer a real PlaylistStore - but the server no
+// longer persists playlists itself (Library.PlaylistsChanged does, wired in
+// App.axaml.cs), so that store is gone from the harness entirely.
 [Collection("PlatformDataDirectory")]
 public class SyncHttpServerRoundTripTests : IDisposable
 {
@@ -96,7 +99,6 @@ public class SyncHttpServerRoundTripTests : IDisposable
 
             Server = new SyncHttpServer(
                 Identity, OwnKey, Settings, Library,
-                new PlaylistStore(NullLogger<PlaylistStore>.Instance),
                 TrustedPeers, ClientLogs,
                 NullLogger<SyncHttpServer>.Instance);
             Server.Start();

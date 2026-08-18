@@ -144,6 +144,35 @@ public partial class App : Application
         foreach (var playlist in playlistStore.Load(library.Tracks))
             library.AddPlaylist(playlist);
 
+        // The one place playlists.json is written. Persisting used to be each
+        // mutation site's own job - six SaveAsync calls across MainViewModel,
+        // MainView's code-behind, PlaylistSyncService and SyncHttpServer - so a
+        // new mutation path only had to forget one line to silently lose the
+        // user's edit. Library.PlaylistsChanged fires for every one of them,
+        // including in-place renames and reorders (see Playlist.Changed), so
+        // this subscription covers them all by construction.
+        //
+        // Subscribed after the load loop above so replaying the on-disk state
+        // back into Library does not immediately write it straight back out.
+        // Fire-and-forget because the event is synchronous and some of its
+        // sources are UI-thread click handlers; PlaylistStore.SaveAsync
+        // serializes concurrent writers itself.
+        var playlistSaveLogger = AppLogging.CreateTypedLogger<PlaylistStore>();
+        library.PlaylistsChanged += (_, _) =>
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await playlistStore.SaveAsync(library.Playlists);
+                }
+                catch (Exception ex)
+                {
+                    playlistSaveLogger.LogError(ex, "Failed to persist playlists after a change");
+                }
+            });
+        };
+
         var deviceKeyStore = new DeviceKeyStore(AppLogging.CreateTypedLogger<DeviceKeyStore>());
         var deviceIdentityStore = new DeviceIdentityStore(AppLogging.CreateTypedLogger<DeviceIdentityStore>());
         var deviceNicknameStore = new DeviceNicknameStore(AppLogging.CreateTypedLogger<DeviceNicknameStore>());
@@ -194,8 +223,8 @@ public partial class App : Application
             // /info poll now, not just gated sync requests (see
             // NetworkDiscoveryService.ResolveAliasAsync, DiscoveredDevice.TrustsUs).
             networkDiscovery = new NetworkDiscoveryService(deviceIdentity, AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
-            syncHttpServer = new SyncHttpServer(deviceIdentity, signingKey, appSettings, library, playlistStore, trustedPeerStore, clientLogStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
-            playlistSyncService = new PlaylistSyncService(library, deviceIdentity, signingKey, appSettings, playlistStore, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
+            syncHttpServer = new SyncHttpServer(deviceIdentity, signingKey, appSettings, library, trustedPeerStore, clientLogStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
+            playlistSyncService = new PlaylistSyncService(library, deviceIdentity, signingKey, appSettings, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
             librarySyncService = new LibrarySyncService(library, deviceIdentity, signingKey, appSettings, libraryStore, InMemoryLogStore.Instance, AppLogging.CreateTypedLogger<LibrarySyncService>());
             libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, signingKey, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
             peerPairingService = new PeerPairingService(deviceIdentity, signingKey, AppLogging.CreateTypedLogger<PeerPairingService>());
