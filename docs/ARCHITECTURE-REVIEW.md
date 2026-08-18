@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 754 (was 629) — 559 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
+| Tests at review time | 824 — 754 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
