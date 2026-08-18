@@ -625,6 +625,156 @@ public class LibraryTests
         Assert.Equal(0, changed);
     }
 
+    // The rest of the PlaylistsUnchanged short-circuit (ARCHITECTURE-REVIEW
+    // §5.7). Id+UpdatedAt is the whole comparison, so each of the four ways a
+    // set can differ has to be told apart from "identical" on its own - and
+    // "identical" has to mean *equal*, not the same instance, since the merge
+    // on the sync path rebuilds Playlist objects from a peer's manifest rather
+    // than handing back the ones already held.
+    private static Library LibraryHolding(params Playlist[] playlists)
+    {
+        var library = new Library(new List<Track>());
+        foreach (var playlist in playlists)
+            library.AddPlaylist(playlist);
+        return library;
+    }
+
+    private static (int updated, int changed) CountEventsFrom(Library library, List<Playlist> replacement)
+    {
+        var updated = 0;
+        var changed = 0;
+        library.PlaylistsUpdated += (_, _) => updated++;
+        library.PlaylistsChanged += (_, _) => changed++;
+        library.ReplacePlaylists(replacement);
+        return (updated, changed);
+    }
+
+    // The case the short-circuit actually has to handle on the sync path: an
+    // equal-but-not-identical set. A reference comparison would treat this as a
+    // change and rebuild the sidebar on every single poll.
+    [Fact]
+    public void ReplacePlaylists_short_circuits_on_an_equal_set_of_different_instances()
+    {
+        var id = Guid.NewGuid();
+        var updatedAt = DateTimeOffset.UtcNow;
+        var library = LibraryHolding(new Playlist(id, "Mix", new List<Track>(), updatedAt));
+
+        var (updated, changed) = CountEventsFrom(library,
+            new List<Playlist> { new Playlist(id, "Mix", new List<Track>(), updatedAt) });
+
+        Assert.Equal(0, updated);
+        Assert.Equal(0, changed);
+    }
+
+    [Fact]
+    public void ReplacePlaylists_does_not_short_circuit_when_a_playlist_was_added()
+    {
+        var kept = new Playlist("Mix", new List<Track>());
+        var library = LibraryHolding(kept);
+
+        var (updated, changed) = CountEventsFrom(library,
+            new List<Playlist> { kept, new Playlist("From Peer", new List<Track>()) });
+
+        Assert.Equal(1, updated);
+        Assert.Equal(1, changed);
+    }
+
+    [Fact]
+    public void ReplacePlaylists_does_not_short_circuit_when_a_playlist_was_removed()
+    {
+        var kept    = new Playlist("Mix", new List<Track>());
+        var dropped = new Playlist("Gone", new List<Track>());
+        var library = LibraryHolding(kept, dropped);
+
+        var (updated, changed) = CountEventsFrom(library, new List<Playlist> { kept });
+
+        Assert.Equal(1, updated);
+        Assert.Equal(1, changed);
+    }
+
+    // Same count, same ids, but one was edited on the peer - UpdatedAt is the
+    // only thing that says so, since the comparison never looks at tracks.
+    [Fact]
+    public void ReplacePlaylists_does_not_short_circuit_when_only_UpdatedAt_moved()
+    {
+        var id = Guid.NewGuid();
+        var updatedAt = DateTimeOffset.UtcNow;
+        var library = LibraryHolding(new Playlist(id, "Mix", new List<Track>(), updatedAt));
+
+        var (updated, changed) = CountEventsFrom(library,
+            new List<Playlist> { new Playlist(id, "Mix", new List<Track>(), updatedAt.AddSeconds(1)) });
+
+        Assert.Equal(1, updated);
+        Assert.Equal(1, changed);
+    }
+
+    // Same count and same UpdatedAt, but a different playlist entirely - so the
+    // comparison cannot rest on UpdatedAt alone.
+    [Fact]
+    public void ReplacePlaylists_does_not_short_circuit_when_only_the_Id_differs()
+    {
+        var updatedAt = DateTimeOffset.UtcNow;
+        var library = LibraryHolding(new Playlist(Guid.NewGuid(), "Mix", new List<Track>(), updatedAt));
+
+        var (updated, changed) = CountEventsFrom(library,
+            new List<Playlist> { new Playlist(Guid.NewGuid(), "Mix", new List<Track>(), updatedAt) });
+
+        Assert.Equal(1, updated);
+        Assert.Equal(1, changed);
+    }
+
+    // Order is part of the comparison because the sidebar renders playlists in
+    // list order - a pure reordering is a real, visible change.
+    [Fact]
+    public void ReplacePlaylists_does_not_short_circuit_on_a_pure_reordering()
+    {
+        var first  = new Playlist("First", new List<Track>());
+        var second = new Playlist("Second", new List<Track>());
+        var library = LibraryHolding(first, second);
+
+        var (updated, changed) = CountEventsFrom(library, new List<Playlist> { second, first });
+
+        Assert.Equal(1, updated);
+        Assert.Equal(1, changed);
+        Assert.Equal(new[] { second.Id, first.Id }, library.Playlists.Select(p => p.Id).ToArray());
+    }
+
+    // A short-circuited call must leave the held instances alone, not just skip
+    // the events: swapping in the equal copy would silently detach the Changed
+    // subscription that makes in-place edits persist.
+    [Fact]
+    public void A_short_circuited_ReplacePlaylists_keeps_the_held_instance_and_its_subscription()
+    {
+        var id = Guid.NewGuid();
+        var updatedAt = DateTimeOffset.UtcNow;
+        var held = new Playlist(id, "Mix", new List<Track>(), updatedAt);
+        var library = LibraryHolding(held);
+
+        library.ReplacePlaylists(new List<Playlist> { new Playlist(id, "Mix", new List<Track>(), updatedAt) });
+
+        Assert.Same(held, Assert.Single(library.Playlists));
+
+        var raised = 0;
+        library.PlaylistsChanged += (_, _) => raised++;
+        held.Name = "Renamed";
+
+        Assert.Equal(1, raised);
+    }
+
+    // The replacement list is copied in, so a caller reusing its list after the
+    // call cannot mutate the library's set behind its back.
+    [Fact]
+    public void ReplacePlaylists_copies_the_list_it_was_given()
+    {
+        var library = new Library(new List<Track>());
+        var replacement = new List<Playlist> { new Playlist("Mix", new List<Track>()) };
+        library.ReplacePlaylists(replacement);
+
+        replacement.Add(new Playlist("Added behind the library's back", new List<Track>()));
+
+        Assert.Single(library.Playlists);
+    }
+
     // The point of the whole exercise: an in-place edit to a playlist the
     // library holds has to reach PlaylistsChanged too, or persistence is still
     // the caller remembering to announce its own mutation.
