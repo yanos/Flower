@@ -59,7 +59,13 @@ public class LibraryDownloadService
             var folder = ResolveDownloadFolder();
             Directory.CreateDirectory(folder);
             var extension = string.IsNullOrEmpty(track.OriginFileExtension) ? "mp3" : track.OriginFileExtension;
-            var destination = Path.Combine(folder, $"{Guid.NewGuid():N}.{extension}");
+            // Deterministic per track, not a fresh Guid per attempt: an
+            // interrupted download leaves a "<destination>.part" beside it,
+            // and OpenSubsonicClient.DownloadTrackAsync can only resume from
+            // that if the next attempt picks the same name. A random name per
+            // attempt orphaned every partial instead, in a folder nothing
+            // ever cleans up.
+            var destination = Path.Combine(folder, $"{track.Id:N}.{extension}");
 
             await client.DownloadTrackAsync(originTrackId, destination);
 

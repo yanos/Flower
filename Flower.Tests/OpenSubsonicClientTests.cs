@@ -179,10 +179,150 @@ public class OpenSubsonicClientTests
         try
         {
             await Assert.ThrowsAsync<HttpRequestException>(() => client.DownloadTrackAsync("sg-1", destination));
+
+            // The destination itself must not exist - a truncated file under
+            // the name the library records would be indistinguishable from a
+            // playable download. The bytes that did arrive are kept beside it
+            // instead, which is what the next attempt resumes from.
+            Assert.False(File.Exists(destination));
+            Assert.True(new FileInfo(destination + OpenSubsonicClient.PartialSuffix).Length > 0);
         }
         finally
         {
             File.Delete(destination);
+            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+        }
+    }
+
+    // The point of Tier 4.4: on flaky wifi a large track otherwise restarts
+    // at byte 0 every attempt and may never finish.
+    [Fact]
+    public async Task DownloadTrackAsync_resumes_from_the_bytes_a_failed_attempt_already_wrote()
+    {
+        var fullPayload = new byte[64 * 1024];
+        Random.Shared.NextBytes(fullPayload);
+        var sent = 0;
+        var rangesSeen = new List<string?>();
+        using var server = new FakePeerHttpServer(async ctx =>
+        {
+            rangesSeen.Add(ctx.Request.Headers["Range"]);
+            if (Interlocked.Increment(ref sent) == 1)
+            {
+                ctx.Response.ContentLength64 = fullPayload.Length;
+                await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory(0, fullPayload.Length / 4));
+                await ctx.Response.OutputStream.FlushAsync();
+                ctx.Response.Abort();
+                return;
+            }
+
+            var from = int.Parse(ctx.Request.Headers["Range"]!["bytes=".Length..].TrimEnd('-'));
+            ctx.Response.StatusCode = 206;
+            ctx.Response.Headers["Content-Range"] = $"bytes {from}-{fullPayload.Length - 1}/{fullPayload.Length}";
+            ctx.Response.ContentLength64 = fullPayload.Length - from;
+            await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory(from));
+        });
+        var client = new OpenSubsonicClient($"http://127.0.0.1:{server.Port}", "alice", "hunter2");
+        var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
+
+        try
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(() => client.DownloadTrackAsync("sg-1", destination));
+            var partial = new FileInfo(destination + OpenSubsonicClient.PartialSuffix).Length;
+
+            await client.DownloadTrackAsync("sg-1", destination);
+
+            Assert.Equal(fullPayload, File.ReadAllBytes(destination));
+            // Not just "the file is right at the end" - the second attempt
+            // asked for the remainder rather than the whole thing again.
+            Assert.Equal([null, $"bytes={partial}-"], rangesSeen);
+        }
+        finally
+        {
+            File.Delete(destination);
+            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+        }
+    }
+
+    // The partial is longer than the track now is (the file changed on the
+    // serving device between attempts), so the server answers 416 - retrying
+    // the same request forever would never recover.
+    [Fact]
+    public async Task DownloadTrackAsync_discards_an_unsatisfiable_partial_and_refetches_the_whole_track()
+    {
+        var fullPayload = new byte[8 * 1024];
+        Random.Shared.NextBytes(fullPayload);
+        var requests = 0;
+        using var server = new FakePeerHttpServer(async ctx =>
+        {
+            Interlocked.Increment(ref requests);
+            if (ctx.Request.Headers["Range"] != null)
+            {
+                ctx.Response.StatusCode = 416;
+                ctx.Response.Headers["Content-Range"] = $"bytes */{fullPayload.Length}";
+                ctx.Response.ContentLength64 = 0;
+                ctx.Response.Close();
+                return;
+            }
+
+            ctx.Response.ContentLength64 = fullPayload.Length;
+            await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory());
+        });
+        var client = new OpenSubsonicClient($"http://127.0.0.1:{server.Port}", "alice", "hunter2");
+        var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
+        File.WriteAllBytes(destination + OpenSubsonicClient.PartialSuffix, new byte[fullPayload.Length * 2]);
+
+        try
+        {
+            await client.DownloadTrackAsync("sg-1", destination);
+
+            Assert.Equal(fullPayload, File.ReadAllBytes(destination));
+            Assert.Equal(2, requests);
+        }
+        finally
+        {
+            File.Delete(destination);
+            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+        }
+    }
+
+    // A peer running an older build, or any server that simply ignores Range,
+    // answers 200 with the whole body - which cannot be appended to a partial
+    // without corrupting it, so the partial is overwritten instead.
+    [Fact]
+    public async Task DownloadTrackAsync_overwrites_the_partial_when_the_server_ignores_the_resume_range()
+    {
+        var fullPayload = new byte[32 * 1024];
+        Random.Shared.NextBytes(fullPayload);
+        var sent = 0;
+        using var server = new FakePeerHttpServer(async ctx =>
+        {
+            if (Interlocked.Increment(ref sent) == 1)
+            {
+                ctx.Response.ContentLength64 = fullPayload.Length;
+                await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory(0, fullPayload.Length / 4));
+                await ctx.Response.OutputStream.FlushAsync();
+                ctx.Response.Abort();
+                return;
+            }
+
+            ctx.Response.ContentLength64 = fullPayload.Length;
+            await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory());
+        });
+        var client = new OpenSubsonicClient($"http://127.0.0.1:{server.Port}", "alice", "hunter2");
+        var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
+
+        try
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(() => client.DownloadTrackAsync("sg-1", destination));
+
+            await client.DownloadTrackAsync("sg-1", destination);
+
+            Assert.Equal(fullPayload, File.ReadAllBytes(destination));
+        }
+        finally
+        {
+            File.Delete(destination);
+            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
         }
     }
 
