@@ -63,8 +63,19 @@ public partial class App : Application
         // app below; only the final Ioc.Default.ConfigureServices(...) call
         // actually builds and hands off the finished container, since
         // CommunityToolkit.Mvvm's Ioc.Default can only be configured once.
-        var services = new ServiceCollection().AddLogging(builder => builder.AddSerilog());
-        AppLogging.UseLoggerFactory(services.BuildServiceProvider().GetRequiredService<ILoggerFactory>());
+        // One factory, registered as the container's ILoggerFactory rather
+        // than built from a throwaway provider of its own - the previous
+        // BuildServiceProvider() here produced a second, never-disposed
+        // container that existed solely to fetch this (ARCHITECTURE-REVIEW 2.3).
+        // Registering the instance after AddLogging makes it win resolution, so
+        // every injected ILogger<T> comes from the very same factory the
+        // non-DI, static-field loggers in Flower.Core use.
+        var loggerFactory = LoggerFactory.Create(builder => builder.AddSerilog());
+        AppLogging.UseLoggerFactory(loggerFactory);
+
+        var services = new ServiceCollection()
+            .AddLogging(builder => builder.AddSerilog())
+            .AddSingleton(loggerFactory);
 
         var logger = AppLogging.CreateLogger<App>();
 
@@ -124,23 +135,167 @@ public partial class App : Application
         }
     }
 
+    // Registration only - nothing here constructs a service; the container
+    // does that when it is resolved.
+    internal static void RegisterServices(IServiceCollection services)
+    {
+        services
+            // Persistence. Every store takes only an ILogger<T>, so the
+            // container builds them outright.
+            .AddSingleton<LibraryStore>()
+            .AddSingleton<AppSettingsStore>()
+            .AddSingleton<PlaylistStore>()
+            .AddSingleton<DeviceKeyStore>()
+            .AddSingleton<DeviceIdentityStore>()
+            .AddSingleton<DeviceNicknameStore>()
+            .AddSingleton<TrustedPeerStore>()
+            .AddSingleton<PlaylistSyncStateStore>()
+            .AddSingleton<ClientLogStore>()
+            .AddSingleton(InMemoryLogStore.Instance)
+
+            // Loaded-from-disk state. AppSettings and the cached library are
+            // values a store produces, not services, so they need a factory -
+            // resolving either one is what reads the file.
+            .AddSingleton(sp => sp.GetRequiredService<AppSettingsStore>().Load())
+            .AddSingleton(sp => new Library(
+                sp.GetRequiredService<LibraryStore>().Load(),
+                sp.GetRequiredService<ILogger<Library>>()))
+            .AddSingleton(sp => new MainPlaylist(sp.GetRequiredService<Library>().Tracks))
+
+            // The platform hook wins when a head has installed one (Android's
+            // MediaStore importer); otherwise the shared filesystem scanner.
+            .AddSingleton(sp => Importer.PlatformMusicImporter.Current
+                                ?? new Importer.Importer(sp.GetRequiredService<ILogger<Importer.Importer>>()))
+
+            .AddSingleton<ColumnManager>()
+            .AddSingleton<AlbumArtLoader>()
+
+            // ViewModels are singletons for the same reason they always were:
+            // they hold app-lifetime state and subscribe to events they never
+            // unsubscribe from (ARCHITECTURE-REVIEW 2.3's last paragraph).
+            .AddSingleton<PlaylistControlViewModel>()
+            .AddSingleton<MainViewModel>()
+            .AddSingleton<VolumeControlViewModel>()
+            .AddSingleton<CurrentlyPlayingControlViewModel>()
+            .AddSingleton<MobileMainViewModel>()
+            .AddSingleton<LogViewModel>()
+            .AddSingleton<EqualizerViewModel>()
+            .AddSingleton<NowPlayingIntegrationService>();
+
+        RegisterAudio(services);
+
+        // Flower.Web/WASM has no P2P sync stack at all: .NET-for-WASM's crypto
+        // backend has no asymmetric crypto support whatsoever (verified
+        // directly - ECDsa.Create()/RSA.Create() both throw
+        // PlatformNotSupportedException for every curve/key size), so
+        // DeviceSigningKey - and every service below, which all depend on it
+        // transitively - simply cannot be constructed there. They are left
+        // unregistered rather than registered-as-null; MainViewModel takes all
+        // of them as nullable, defaulted constructor parameters specifically to
+        // accommodate that (see its own doc comment).
+        if (OperatingSystem.IsBrowser())
+            return;
+
+        services
+            // This device's cryptographic identity (see DeviceSigningKey/
+            // SignatureVerifier). DeviceIdentity is derived from it, since
+            // Fingerprint is the public key's hash rather than an independent
+            // random value (see DeviceIdentityStore.Load).
+            .AddSingleton(sp =>
+            {
+                var (deviceKey, devicePublicKeyRaw) = sp.GetRequiredService<DeviceKeyStore>().Load();
+                return new DeviceSigningKey(deviceKey, devicePublicKeyRaw);
+            })
+            // One shared, mutable identity object rather than separate
+            // fingerprint/alias strings handed to each service - MainViewModel.
+            // DeviceAlias edits it in place (and persists via
+            // DeviceIdentityStore) when the user renames this device in
+            // Settings, and every service below reads .Alias live off the same
+            // instance, so the new name takes effect immediately without
+            // needing to reconstruct or restart anything.
+            .AddSingleton(sp => sp.GetRequiredService<DeviceIdentityStore>()
+                .Load(sp.GetRequiredService<DeviceSigningKey>().Fingerprint))
+
+            .AddSingleton<NetworkDiscoveryService>()
+            .AddSingleton<SyncHttpServer>()
+            .AddSingleton<PlaylistSyncService>()
+            .AddSingleton<LibrarySyncService>()
+            .AddSingleton<LibraryDownloadService>()
+            .AddSingleton<PeerPairingService>()
+            .AddSingleton<PeerUnpairNotifier>()
+            .AddSingleton<PairedServerReachability>()
+            .AddSingleton<PeerTrackResolver>();
+    }
+
+    // The one platform fork the audio pipeline needs.
+    //
+    // LibVLC is only needed for decode now (GaplessAudioManager's
+    // TrackDecoders) - the render sink on every platform is MiniaudioSink, a
+    // dedicated miniaudio playback device reading the shared ring buffer
+    // directly, replacing LibVlcRawStreamSink's synthetic-stream-through-
+    // LibVLC's-rawaud-demuxer approach after that proved to be the source of a
+    // real playback bug (a decode-side seek could freeze the render side solid
+    // for several seconds - see git history). Android/iOS use their vendored
+    // native miniaudio builds (native/miniaudio/android, native/miniaudio/ios)
+    // - see LibVlcRawStreamSink's own remarks for why it is kept around
+    // unreferenced rather than deleted yet.
+    //
+    // Neither LibVLC nor miniaudio ships a browser/WASM build (see
+    // SYNC-PLAN.md's Flower.Web section) - VlcNativeSetup.Initialize()/
+    // `new LibVLC()` would throw immediately there, so Flower.Web gets
+    // WebAudioManager instead, driving a browser <audio> element via [JSImport]
+    // rather than going through IAudioSink/GaplessCoordinator at all (see its
+    // own remarks for why).
+    internal static void RegisterAudio(IServiceCollection services)
+    {
+        if (OperatingSystem.IsBrowser())
+        {
+            services.AddSingleton<IAudioManager>(_ => new Manager.WebAudioManager());
+            return;
+        }
+
+        services
+            .AddSingleton(_ =>
+            {
+                VlcNativeSetup.Initialize();
+                return new LibVLC();
+            })
+            .AddSingleton(sp => PlatformAudioManager.Current
+                                ?? new MiniaudioSink(sp.GetRequiredService<ILogger<MiniaudioSink>>()))
+            .AddSingleton<IAudioManager>(sp => new GaplessAudioManager(
+                sp.GetRequiredService<LibVLC>(),
+                sp.GetRequiredService<IAudioSink>(),
+                sp.GetRequiredService<ILogger<GaplessAudioManager>>(),
+                sp.GetRequiredService<ILogger<GaplessCoordinator>>(),
+                sp.GetRequiredService<ILogger<TrackDecoder>>()));
+    }
+
+    // The composition root. Every service is registered by *type* (or by a
+    // factory when it needs something the container cannot produce on its own -
+    // a platform hook, a loaded-from-disk value), and the container does the
+    // constructing. Adding a dependency to an existing service is therefore an
+    // edit to that service's constructor and nothing else; this method only
+    // changes when a genuinely new service appears. It used to `new` all ~30 of
+    // them by hand in dependency order and register them as instances, which
+    // meant constructor injection was bypassed everywhere and every new
+    // dependency was also an edit here (docs/ARCHITECTURE-REVIEW.md 2.3).
     private Control? Bootstrap(Microsoft.Extensions.Logging.ILogger logger, IServiceCollection services)
     {
-        var libraryStore = new LibraryStore(AppLogging.CreateTypedLogger<LibraryStore>());
-        var appSettingsStore = new AppSettingsStore(AppLogging.CreateTypedLogger<AppSettingsStore>());
-        var appSettings = appSettingsStore.Load();
+        RegisterServices(services);
+
+        // CommunityToolkit.Mvvm's Ioc.Default can only be configured once, so
+        // this is the single hand-off point from registration to resolution.
+        var provider = services.BuildServiceProvider();
+        Ioc.Default.ConfigureServices(provider);
+
+        var appSettings = provider.GetRequiredService<AppSettings>();
         // Before any window is created, so the very first frame already
         // renders in the saved variant instead of flashing OS-default then
         // switching.
         AppTheme.Apply(appSettings.ThemePreference);
-        var importer = Importer.PlatformMusicImporter.Current ?? new Importer.Importer(AppLogging.CreateTypedLogger<Importer.Importer>());
 
-        // Load cached library synchronously so the UI shows immediately with data
-        var cachedTracks = libraryStore.Load();
-        var library = new Library(cachedTracks, AppLogging.CreateTypedLogger<Library>());
-        var mainPlaylist = new MainPlaylist(library.Tracks);
-
-        var playlistStore = new PlaylistStore(AppLogging.CreateTypedLogger<PlaylistStore>());
+        var library = provider.GetRequiredService<Library>();
+        var playlistStore = provider.GetRequiredService<PlaylistStore>();
         foreach (var playlist in playlistStore.Load(library.Tracks))
             library.AddPlaylist(playlist);
 
@@ -157,7 +312,7 @@ public partial class App : Application
         // Fire-and-forget because the event is synchronous and some of its
         // sources are UI-thread click handlers; PlaylistStore.SaveAsync
         // serializes concurrent writers itself.
-        var playlistSaveLogger = AppLogging.CreateTypedLogger<PlaylistStore>();
+        var playlistSaveLogger = provider.GetRequiredService<ILogger<PlaylistStore>>();
         library.PlaylistsChanged += (_, _) =>
         {
             _ = Task.Run(async () =>
@@ -173,169 +328,25 @@ public partial class App : Application
             });
         };
 
-        var deviceKeyStore = new DeviceKeyStore(AppLogging.CreateTypedLogger<DeviceKeyStore>());
-        var deviceIdentityStore = new DeviceIdentityStore(AppLogging.CreateTypedLogger<DeviceIdentityStore>());
-        var deviceNicknameStore = new DeviceNicknameStore(AppLogging.CreateTypedLogger<DeviceNicknameStore>());
-        var trustedPeerStore = new TrustedPeerStore(AppLogging.CreateTypedLogger<TrustedPeerStore>());
-        var playlistSyncStateStore = new PlaylistSyncStateStore(AppLogging.CreateTypedLogger<PlaylistSyncStateStore>());
-        var clientLogStore = new ClientLogStore();
+        // Resolving IAudioManager is what actually opens LibVLC/miniaudio (see
+        // AddAudio), so it happens here rather than lazily under the first
+        // ViewModel that happens to want it.
+        var audioManager = provider.GetRequiredService<IAudioManager>();
+        // Re-apply the persisted EQ curve before the very first frame of audio
+        // plays, rather than waiting for the user to open the Equalizer window
+        // this session - see EqualizerViewModel.
+        if (audioManager is GaplessAudioManager gapless && appSettings.EqualizerSettings is { Enabled: true } eqSettings)
+            gapless.ApplyEqualizer(Manager.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
 
-        // Flower.Web/WASM has no P2P sync stack at all: .NET-for-WASM's crypto
-        // backend has no asymmetric crypto support whatsoever (verified
-        // directly - ECDsa.Create()/RSA.Create() both throw
-        // PlatformNotSupportedException for every curve/key size; only
-        // symmetric crypto and hashing work), so DeviceSigningKey - and every
-        // one of these services below, which all depend on it transitively -
-        // simply cannot be constructed there. MainViewModel takes all of
-        // these as nullable, defaulted constructor parameters specifically to
-        // accommodate this (see its own doc comment); every other platform
-        // still gets the exact same non-null instances as before.
-        DeviceIdentity? deviceIdentity = null;
-        DeviceSigningKey? signingKey = null;
-        NetworkDiscoveryService? networkDiscovery = null;
-        SyncHttpServer? syncHttpServer = null;
-        PlaylistSyncService? playlistSyncService = null;
-        LibrarySyncService? librarySyncService = null;
-        LibraryDownloadService? libraryDownloadService = null;
-        PeerPairingService? peerPairingService = null;
-        PeerUnpairNotifier? peerUnpairNotifier = null;
-        PairedServerReachability? pairedServerReachability = null;
-        PeerTrackResolver? peerTrackResolver = null;
-
-        if (!OperatingSystem.IsBrowser())
-        {
-            // This device's cryptographic identity (see DeviceSigningKey/
-            // SignatureVerifier) - loaded before DeviceIdentity, since Fingerprint
-            // is now derived from the public key here rather than an independent
-            // random value (see DeviceIdentityStore.Load).
-            var (deviceKey, devicePublicKeyRaw) = deviceKeyStore.Load();
-            signingKey = new DeviceSigningKey(deviceKey, devicePublicKeyRaw);
-
-            // One shared, mutable identity object rather than separate fingerprint/
-            // alias strings handed to each service - MainViewModel.DeviceAlias edits
-            // it in place (and persists via DeviceIdentityStore) when the user renames
-            // this device in Settings, and every service below reads .Alias live off
-            // the same instance, so the new name takes effect immediately without
-            // needing to reconstruct or restart anything.
-            deviceIdentity = deviceIdentityStore.Load(signingKey.Fingerprint);
-
-            // Needs deviceIdentity constructed first - it identifies us on every
-            // /info poll now, not just gated sync requests (see
-            // NetworkDiscoveryService.ResolveAliasAsync, DiscoveredDevice.TrustsUs).
-            networkDiscovery = new NetworkDiscoveryService(deviceIdentity, AppLogging.CreateTypedLogger<NetworkDiscoveryService>());
-            syncHttpServer = new SyncHttpServer(deviceIdentity, signingKey, appSettings, library, trustedPeerStore, clientLogStore, AppLogging.CreateTypedLogger<SyncHttpServer>());
-            playlistSyncService = new PlaylistSyncService(library, deviceIdentity, signingKey, appSettings, playlistSyncStateStore, deviceNicknameStore, AppLogging.CreateTypedLogger<PlaylistSyncService>());
-            librarySyncService = new LibrarySyncService(library, deviceIdentity, signingKey, appSettings, libraryStore, InMemoryLogStore.Instance, AppLogging.CreateTypedLogger<LibrarySyncService>());
-            libraryDownloadService = new LibraryDownloadService(library, deviceIdentity, signingKey, appSettings, libraryStore, AppLogging.CreateTypedLogger<LibraryDownloadService>());
-            peerPairingService = new PeerPairingService(deviceIdentity, signingKey, AppLogging.CreateTypedLogger<PeerPairingService>());
-            peerUnpairNotifier = new PeerUnpairNotifier(networkDiscovery, deviceIdentity, signingKey, AppLogging.CreateTypedLogger<PeerUnpairNotifier>());
-            pairedServerReachability = new PairedServerReachability(networkDiscovery, appSettings);
-            peerTrackResolver = new PeerTrackResolver(pairedServerReachability);
-        }
-
-        // LibVLC is only needed for decode now (GaplessAudioManager's
-        // TrackDecoders) - the render sink on every platform is MiniaudioSink,
-        // a dedicated miniaudio playback device reading the shared ring
-        // buffer directly, replacing LibVlcRawStreamSink's synthetic-stream-
-        // through-LibVLC's-rawaud-demuxer approach after that proved to be
-        // the source of a real playback bug (a decode-side seek could
-        // freeze the render side solid for several seconds - see git
-        // history). Android/iOS use their vendored native miniaudio builds
-        // (native/miniaudio/android, native/miniaudio/ios) - see
-        // LibVlcRawStreamSink's own remarks for why it's kept around
-        // unreferenced rather than deleted yet.
-        //
-        // Neither LibVLC nor miniaudio ships a browser/WASM build (see
-        // SYNC-PLAN.md's Flower.Web section) - VlcNativeSetup.Initialize()/
-        // `new LibVLC()` would throw immediately there, so Flower.Web gets
-        // WebAudioManager instead, driving a browser <audio> element via
-        // [JSImport] rather than going through IAudioSink/GaplessCoordinator
-        // at all (see its own remarks for why). Everything else in Bootstrap
-        // below (DI, Views/ViewModels, the library/settings stores) is
-        // unaffected - this is the only platform fork the audio pipeline
-        // needs.
-        IAudioManager audioManager;
-        if (OperatingSystem.IsBrowser())
-        {
-            audioManager = new Manager.WebAudioManager();
-        }
-        else
-        {
-            VlcNativeSetup.Initialize();
-            var libVLC = new LibVLC();
-            var audioSink = PlatformAudioManager.Current ?? new MiniaudioSink(AppLogging.CreateTypedLogger<MiniaudioSink>());
-
-            var gaplessAudioManager = new GaplessAudioManager(
-                libVLC,
-                audioSink,
-                AppLogging.CreateTypedLogger<GaplessAudioManager>(),
-                AppLogging.CreateTypedLogger<GaplessCoordinator>(),
-                AppLogging.CreateTypedLogger<TrackDecoder>());
-
-            // Re-apply the persisted EQ curve before the very first frame of
-            // audio plays, rather than waiting for the user to open the
-            // Equalizer window this session - see EqualizerViewModel.
-            if (appSettings.EqualizerSettings is { Enabled: true } eqSettings)
-                gaplessAudioManager.ApplyEqualizer(Manager.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
-
-            audioManager = gaplessAudioManager;
-        }
-
-        // AddSingleton(instance) throws on a null instance, unlike a
-        // constructor parameter default (see MainViewModel's own doc comment) -
-        // these ten are only ever null on Flower.Web/WASM, where nothing else
-        // in the container needs them resolvable at all, so they're simply
-        // left unregistered there rather than registered-as-null.
-        if (deviceIdentity != null)
-            services.AddSingleton(deviceIdentity);
-        if (signingKey != null)
-            services.AddSingleton(signingKey);
-        if (networkDiscovery != null)
-            services.AddSingleton(networkDiscovery);
-        if (pairedServerReachability != null)
-            services.AddSingleton(pairedServerReachability);
-        if (syncHttpServer != null)
-            services.AddSingleton(syncHttpServer);
-        if (playlistSyncService != null)
-            services.AddSingleton(playlistSyncService);
-        if (librarySyncService != null)
-            services.AddSingleton(librarySyncService);
-        if (libraryDownloadService != null)
-            services.AddSingleton(libraryDownloadService);
-        if (peerPairingService != null)
-            services.AddSingleton(peerPairingService);
-        if (peerUnpairNotifier != null)
-            services.AddSingleton(peerUnpairNotifier);
-        if (peerTrackResolver != null)
-            services.AddSingleton(peerTrackResolver);
-
-        Ioc.Default.ConfigureServices(
-            services
-                .AddSingleton<IAudioManager>(audioManager)
-                .AddSingleton<PlaylistControlViewModel>()
-                .AddSingleton(library)
-                .AddSingleton(mainPlaylist)
-                .AddSingleton(appSettings)
-                .AddSingleton<ColumnManager>()
-                .AddSingleton(importer)
-                .AddSingleton(libraryStore)
-                .AddSingleton(appSettingsStore)
-                .AddSingleton(playlistStore)
-                .AddSingleton(deviceKeyStore)
-                .AddSingleton(deviceIdentityStore)
-                .AddSingleton(deviceNicknameStore)
-                .AddSingleton(trustedPeerStore)
-                .AddSingleton(playlistSyncStateStore)
-                .AddSingleton(clientLogStore)
-                .AddSingleton(InMemoryLogStore.Instance)
-                .AddSingleton<MainViewModel>()
-                .AddSingleton<VolumeControlViewModel>()
-                .AddSingleton<CurrentlyPlayingControlViewModel>()
-                .AddSingleton<MobileMainViewModel>()
-                .AddSingleton<LogViewModel>()
-                .AddSingleton<EqualizerViewModel>()
-                .AddSingleton<NowPlayingIntegrationService>()
-                .BuildServiceProvider());
+        // AlbumArtLoader is reached from `init`-only ViewModels built by static
+        // builders (TrackListBuilder, AlbumGridBuilder), which have no
+        // container and no constructor to inject through - so its dependencies
+        // are handed to one instance here instead of it reaching into
+        // Ioc.Default from inside a static method, which is what made it
+        // untestable. Threading the instance the rest of the way down to
+        // TrackRowViewModel/AlbumTileViewModel belongs with their decomposition
+        // (docs/ARCHITECTURE-REVIEW.md 4.2).
+        AlbumArtLoader.Current = provider.GetRequiredService<AlbumArtLoader>();
 
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
 
@@ -421,12 +432,14 @@ public partial class App : Application
         // peer-to-peer sync is a desktop/mobile-only feature.
         if (!OperatingSystem.IsBrowser())
         {
-            // Non-null here by construction - both were built in the matching
-            // !IsBrowser() branch above, just too far away for flow analysis
-            // to see across.
+            // Registered only on the matching !IsBrowser() branch of
+            // RegisterServices, so resolving them is safe exactly here.
+            var syncHttpServer = provider.GetRequiredService<SyncHttpServer>();
+            var networkDiscovery = provider.GetRequiredService<NetworkDiscoveryService>();
+
             PlatformMulticastLock.Current?.Acquire();
-            syncHttpServer!.Start();
-            networkDiscovery!.Start(syncHttpServer.BoundPort ?? SyncHttpServer.DefaultPort);
+            syncHttpServer.Start();
+            networkDiscovery.Start(syncHttpServer.BoundPort ?? SyncHttpServer.DefaultPort);
         }
 
         // Rescan the music folder in the background while the UI is already
@@ -437,6 +450,10 @@ public partial class App : Application
         // with an empty library rather than running this against nothing.
         if (!OperatingSystem.IsBrowser())
         {
+            var importer = provider.GetRequiredService<Importer.IMusicImporter>();
+            var libraryStore = provider.GetRequiredService<LibraryStore>();
+            var mainPlaylist = provider.GetRequiredService<MainPlaylist>();
+
             _ = Task.Run(async () =>
             {
                 var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");

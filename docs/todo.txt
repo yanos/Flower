@@ -47,3 +47,16 @@ details:
 server / client overhaul:
  on desktop sidebar: checkmark on devices that are paired.
  what happens to the library if the client cancel the pairing
+ 
+ 
+ │                                                     Item                                                     │               Size                │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+│ 2.6 guard half — reflection test that fails when a new persisted Track field isn't carried forward in rescan │ small                             │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+│ 1.5 leftovers — shared animation clock (8+ timers app-wide); row diffing deliberately deferred               │ small/medium                      │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+│ 4.1 — JSON → SQLite on the client                                                                            │ large, the doc's recommended next │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+│ 4.2 / 4.3 — MainViewModel (2,573 lines) + MainView.axaml.cs decomposition                                    │ large, after 4.1                  │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+│ Tier 5.3–5.9 — Importer, AlbumArtLoader, MusicListView, sync state machine, misc VMs                         │ medium each

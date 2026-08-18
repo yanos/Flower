@@ -9,8 +9,6 @@ using System.Threading.Tasks;
 
 using Avalonia.Media.Imaging;
 
-using CommunityToolkit.Mvvm.DependencyInjection;
-
 using Microsoft.Extensions.Logging;
 
 using Flower.Logging;
@@ -25,14 +23,47 @@ namespace Flower.Services;
 // one implementation instead of two copies drifting apart. Also handles art for
 // a placeholder track known via library sync (Path == null, no local file to
 // read) by fetching it from the origin peer - see SYNC-PLAN.md Phase 3.
-public static class AlbumArtLoader
+public class AlbumArtLoader
 {
-    // A static class (called directly, not DI-resolved) uses AppLogging.CreateLogger
-    // rather than constructor injection - see AppLogging's own doc comment on the
-    // two loggers-for-non-DI-classes patterns it offers.
-    private static readonly ILogger Logger = AppLogging.CreateLogger("Flower.Services.AlbumArtLoader");
+    // The instance the ViewModels use. Set once by App.Bootstrap from the
+    // container; the fallback covers heads and tests that never build one, and
+    // behaves exactly like the old static class did with nothing registered
+    // (no peer to fetch from, so remote art resolves to null).
+    //
+    // This is a seam, not a service locator: LoadAsync's dependencies are
+    // constructor parameters that a test can supply, instead of two
+    // Ioc.Default.GetService calls buried inside a static method that no test
+    // could reach past. Threading the instance down to the ViewModels that
+    // call it is docs/ARCHITECTURE-REVIEW.md 4.2's job - they are built by
+    // static builders through `init` properties today.
+    private static AlbumArtLoader? _current;
+    public static AlbumArtLoader Current
+    {
+        get => _current ??= new AlbumArtLoader(null, null, AppLogging.CreateTypedLogger<AlbumArtLoader>());
+        set => _current = value;
+    }
+
+    // Static because the pure helpers below (TryGetLocalArtBytes) are shared
+    // with callers that have no instance - see AppLogging's own doc comment on
+    // the loggers-for-non-DI-classes patterns it offers.
+    private static readonly ILogger StaticLogger = AppLogging.CreateLogger("Flower.Services.AlbumArtLoader");
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+
+    private readonly PeerTrackResolver? _peerResolver;
+    private readonly DeviceIdentity? _deviceIdentity;
+    private readonly ILogger _logger;
+
+    // Both peer dependencies are nullable and unregistered on Flower.Web/WASM,
+    // which has no P2P sync stack at all (see App.RegisterServices) - a null
+    // either way means the same thing the old Ioc.Default.GetService returning
+    // null meant: there is no peer to fetch remote art from.
+    public AlbumArtLoader(PeerTrackResolver? peerResolver, DeviceIdentity? deviceIdentity, ILogger<AlbumArtLoader> logger)
+    {
+        _peerResolver = peerResolver;
+        _deviceIdentity = deviceIdentity;
+        _logger = logger;
+    }
 
     // Disk cache for art fetched from a peer, content-addressed by
     // Track.OriginAlbumArtHash - see HandleGetCoverArtAsync/LibraryOpenSubsonicMapper
@@ -58,7 +89,7 @@ public static class AlbumArtLoader
     // Also prunes cache entries whose bitmap has already been collected -
     // without this the dictionary only ever grows, one dead entry per album
     // ever displayed, for the life of the process.
-    private static void Retain(string key, Bitmap bitmap)
+    private void Retain(string key, Bitmap bitmap)
     {
         Cache[key] = new WeakReference<Bitmap>(bitmap);
 
@@ -92,7 +123,7 @@ public static class AlbumArtLoader
 
     // Refreshes LRU position on a hit, so the strong cache tracks what is
     // actually being displayed rather than what was displayed first.
-    private static bool TryGetCached(string key, out Bitmap bitmap)
+    private bool TryGetCached(string key, out Bitmap bitmap)
     {
         if (Cache.TryGetValue(key, out var weak) && weak.TryGetTarget(out bitmap!))
         {
@@ -139,7 +170,7 @@ public static class AlbumArtLoader
         return Bitmap.DecodeToWidth(stream, MaxArtPixels);
     }
 
-    public static async Task<Bitmap?> LoadAsync(Track track)
+    public async Task<Bitmap?> LoadAsync(Track track)
     {
         if (track.Path != null)
             return await LoadLocalAsync(track);
@@ -164,7 +195,7 @@ public static class AlbumArtLoader
             ? $"album:{track.Album}|{track.EffectiveAlbumArtist}"
             : $"dir:{Path.GetDirectoryName(track.Path ?? "") ?? ""}";
 
-    private static async Task<Bitmap?> LoadLocalAsync(Track track)
+    private async Task<Bitmap?> LoadLocalAsync(Track track)
     {
         var key = LocalCacheKey(track);
 
@@ -178,7 +209,7 @@ public static class AlbumArtLoader
         return bmp;
     }
 
-    private static Bitmap? LoadLocalBitmap(Track track)
+    private Bitmap? LoadLocalBitmap(Track track)
     {
         var data = TryGetLocalArtBytes(track);
         if (data == null)
@@ -197,7 +228,7 @@ public static class AlbumArtLoader
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Could not decode embedded album art for {Title} ({Path}); showing the placeholder icon instead",
+            _logger.LogWarning(ex, "Could not decode embedded album art for {Title} ({Path}); showing the placeholder icon instead",
                 track.Title, track.Path);
             return null;
         }
@@ -210,14 +241,14 @@ public static class AlbumArtLoader
     // Flower.Server. Callers that also need to know what to serve the bytes
     // *as* should use LocalAlbumArtReader.ForFile directly rather than sniff.
     public static byte[]? TryGetLocalArtBytes(Track track) =>
-        LocalAlbumArtReader.ForFile(track.Path, Logger)?.Bytes;
+        LocalAlbumArtReader.ForFile(track.Path, StaticLogger)?.Bytes;
 
     // Fetches a placeholder track's album art from its origin peer, content-
     // addressed on disk by OriginAlbumArtHash so a restart (or the peer going
     // offline) doesn't mean re-fetching - and so an album's art changing on the
     // origin device is picked up automatically (new hash -> cache miss -> re-fetch)
     // without any separate invalidation logic.
-    private static async Task<Bitmap?> LoadRemoteAsync(Track track)
+    private async Task<Bitmap?> LoadRemoteAsync(Track track)
     {
         var hash = track.OriginAlbumArtHash;
         if (string.IsNullOrEmpty(hash) || string.IsNullOrEmpty(track.OriginDeviceFingerprint))
@@ -238,19 +269,12 @@ public static class AlbumArtLoader
             }
         }
 
-        // Ioc.Default is used as a service locator elsewhere in this codebase
-        // (Views/Controls resolving their ViewModels) - the same pattern here
-        // keeps LoadAsync(track) a simple static call for its three existing
-        // callers rather than threading a peer-resolution dependency through
-        // TrackRowViewModel/AlbumTileViewModel/TrackInfoWindow. PeerTrackResolver
-        // is what actually decides whether track's origin peer is someone this
+        // PeerTrackResolver is what actually decides whether track's origin peer is someone this
         // device may still talk to at all (only the currently paired Server -
         // see that class's own doc comment) - this call site doesn't need to
         // know that rule exists, just that null means "don't fetch."
-        var peerResolver = Ioc.Default.GetService<PeerTrackResolver>();
-        var deviceIdentity = Ioc.Default.GetService<DeviceIdentity>();
-        var peer = peerResolver?.Resolve(track);
-        if (peer == null || deviceIdentity == null)
+        var peer = _peerResolver?.Resolve(track);
+        if (peer == null || _deviceIdentity == null)
             return null;
 
         try
@@ -258,8 +282,8 @@ public static class AlbumArtLoader
             var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
             using var request = new HttpRequestMessage(HttpMethod.Get,
                 $"http://{peer.EndPoint}/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}");
-            request.Headers.Add("X-Flower-Fingerprint", deviceIdentity.Fingerprint);
-            request.Headers.Add("X-Flower-Alias", deviceIdentity.Alias);
+            request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
+            request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
             request.Headers.ConnectionClose = true;
 
             using var response = await Http.SendAsync(request);
@@ -288,13 +312,13 @@ public static class AlbumArtLoader
             // Debug, not Warning - peer unreachable/offline or not (yet) trusted
             // is routine, not a real error (SyncHttpServer/NetworkDiscoveryService
             // log the actual trust/reachability decisions themselves already).
-            Logger.LogDebug(ex, "Could not fetch remote album art for {Album} from {Fingerprint}; showing the placeholder icon instead",
+            _logger.LogDebug(ex, "Could not fetch remote album art for {Album} from {Fingerprint}; showing the placeholder icon instead",
                 track.Album, track.OriginDeviceFingerprint);
             return null;
         }
     }
 
-    private static Bitmap? TryDecodeBytes(byte[] bytes)
+    private Bitmap? TryDecodeBytes(byte[] bytes)
     {
         try
         {
@@ -303,12 +327,12 @@ public static class AlbumArtLoader
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Could not decode {ByteCount} bytes of downloaded remote album art; showing the placeholder icon instead", bytes.Length);
+            _logger.LogWarning(ex, "Could not decode {ByteCount} bytes of downloaded remote album art; showing the placeholder icon instead", bytes.Length);
             return null;
         }
     }
 
-    private static Bitmap? TryDecodeFile(string path)
+    private Bitmap? TryDecodeFile(string path)
     {
         try
         {
@@ -317,7 +341,7 @@ public static class AlbumArtLoader
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Could not decode cached remote album art at {Path}; showing the placeholder icon instead", path);
+            _logger.LogWarning(ex, "Could not decode cached remote album art at {Path}; showing the placeholder icon instead", path);
             return null;
         }
     }
