@@ -14,6 +14,11 @@
 
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
+    <!-- Real Skia image decoding under the headless platform: without it,
+         headless stubs every Bitmap to 1x1 regardless of the bytes fed to it,
+         which makes AlbumArtLoaderTests (decode-scaling, corrupt-image
+         fallback) meaningless. See TestAppBuilder. -->
+    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
     <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.0" />
     <PackageReference Include="coverlet.collector" Version="10.0.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />

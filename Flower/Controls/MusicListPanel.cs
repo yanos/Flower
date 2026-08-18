@@ -26,9 +26,14 @@ public class MusicListPanel : Panel
     // Index of each active child's source row; parallel to Children.
     private readonly List<int> _activeIndex = new();
 
-    public MusicListPanel()
+    // The ColumnManager is passed in by MusicListView (which has already
+    // resolved it) rather than service-located here; the Ioc fallback stays
+    // only for a panel constructed without one. See ARCHITECTURE-REVIEW.md
+    // Tier 2.3 - and it is what lets MusicListPanelTests exercise this
+    // without a live container.
+    public MusicListPanel(ColumnManager? columnManager = null)
     {
-        _columnManager = Ioc.Default.GetService<ColumnManager>()!;
+        _columnManager = columnManager ?? Ioc.Default.GetService<ColumnManager>()!;
 
         // Column reorder/hide-show changes the set of visible columns (and
         // hence total content width); resize changes width directly. Either

@@ -15,5 +15,7 @@ namespace Flower.Tests.TestSupport;
 public class TestAppBuilder
 {
     public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<Application>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+        AppBuilder.Configure<Application>()
+            .UseSkia()
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
 }

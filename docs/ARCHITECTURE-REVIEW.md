@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2, 2.4 and 2.5 implemented. Tier 3 implemented. Tier 4.4 implemented. Tier 5.1 and 5.2 implemented. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2, 2.4 and 2.5 implemented, 2.6 half. Tier 3 implemented. Tier 4.4 implemented. Tier 5.1–5.5 implemented and 5.7 half. The rest of Tier 2, Tier 4, and the rest of Tier 5 documented, not started.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 579 — 509 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4) |
+| Tests at review time | 629 — 559 in `Flower.Tests`, 70 in `Flower.Server.Tests` (393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -242,6 +242,16 @@ Backward compatibility was ad hoc sentinel detection invented independently thre
 
 ---
 
+### 2.6 Rescan carry-forward has no guard against a forgotten field — HALF DONE
+
+Carried over from the original review draft, where it was §2.5 and was lost in a renumber (this document's §2.5 is that draft's §2.6).
+
+The refactor half landed: `Library.UpdateTracks` used to repeat the same five assignments in both of its match branches, and they are now one `CarryForwardMutableState(previous, track)` called from both, so adding a persisted-but-not-rescannable field is one edit rather than two.
+
+The guard half did not. `LibraryTests` pins the *current* fields one test at a time (`DateAdded`, `PlayCount`/`ImportedPlayCount`, `LastPlayedAt`, the sync-placeholder set), so nothing fails when someone adds `Starred`, `Rating` or a provider `Source` tag and forgets to list it. That is exactly the failure mode the method was introduced to prevent, and it is silent: the field just resets to its default on the next launch, on every launch. The original ask was a test that fails when a new such field is added and not carried forward — which means enumerating `Track`'s persisted properties by reflection and asserting each is either carried forward or explicitly named as rescannable, rather than another per-field test.
+
+Small, and worth doing opportunistically rather than as its own scheduled item; it is not in the Suggested order below for that reason.
+
 ## Tier 3 — security — DONE
 
 Ordered by real exposure, not theoretical severity. All six landed; see *Tier 3 execution* below for what each fix actually is.
@@ -313,7 +323,7 @@ Two pieces of genuine business logic also sit in code-behind and should move whe
 
 ---
 
-## Tier 5 — test coverage — 5.1 and 5.2 DONE, rest NOT STARTED
+## Tier 5 — test coverage — 5.1–5.5 DONE and 5.7 half, rest NOT STARTED
 
 CI ran `dotnet test Flower.Tests`, which builds only `Flower.Tests → Flower → Flower.Core`: **`Flower.Server` and `Flower.CLI` were never compiled by CI**, let alone tested. (The `tests.yml` comment claiming `Flower.csproj` multi-targets `net10.0;net9.0` was stale — it targets `net10.0` only. Corrected.)
 
@@ -333,11 +343,27 @@ Highest-value additions, roughly in priority order:
    Confirmed to have teeth by mutation: making `VerifyTrustedPeer` return its fingerprint without checking the signature fails four of them.
 
    Two branches are deliberately not covered here. The non-LAN `LanGuard` rejection cannot be produced from a single-machine test (`LanGuardTests` covers the predicate instead), and the 20 MB body cap would mean uploading 20 MB into a server that closes the connection partway, racing the client's own send (`RequestBodyReaderTests` covers the cap logic instead). On Windows the wildcard `http://+:{port}/` bind needs a `netsh http add urlacl` reservation, so `BoundPort` stays null and every test early-returns rather than failing — the same known gap `SyncHttpServer.Start` documents.
-3. **`Importer`** — zero coverage. Dedup across overlapping paths, extension filtering, `IsCompilation` per-format branching, skip-unreadable-file behaviour.
-4. **`AlbumArtLoader`** — zero coverage, despite carrying the most "confirmed on a real device" bug narratives in the codebase (cache-key collision, corrupt-image fallback, remote fetch/disk cache).
-5. **`MusicListView`/`MusicListPanel`** — the highest-risk untested UI surface given it is entirely hand-rolled: virtualization range math, album-group-leader spanning, shift-range/ctrl-toggle selection, header drag-reorder.
+3. ~~**`Importer`** — zero coverage.~~ **DONE** — `ImporterTests`, 11 tests: recursive walk, extension filtering (including case-insensitivity and rejecting a supported-looking `.ogg`), dedup across overlapping configured paths, blank/duplicate/nonexistent configured paths, skip-unreadable-file, the full tag→`Track` mapping (multi-value flattening, `FirstGenre`, year 0 → null), audio properties, and `IsCompilation`.
+
+   Fixtures are real files read through real TagLib#, generated at test time by `SyntheticWav` — no binary fixtures in the repo. That constrains them to WAV, which TagLib# reads as a `TagLib.Riff.File` supporting a real ID3v2 tag, so the mapping and the Id3v2 branch of `ReadIsCompilation` are exercised for real; the Apple (m4a) and Xiph (flac) branches of that method are not reachable this way and stay uncovered. No test calls `Import()` with an unresolvable path set, because that falls back to `ResolveMusicPath` and would walk the developer's real `~/Music`.
+
+   Confirmed to have teeth by mutation: dropping the `seenFiles` dedup, the `ToLower()` on the extension match, or the `Year > 0` guard each fails a test.
+4. ~~**`AlbumArtLoader`** — zero coverage, despite carrying the most "confirmed on a real device" bug narratives in the codebase.~~ **DONE** — `AlbumArtLoaderTests`, 15 tests: embedded art decoded, no-art → null, undecodable art → placeholder rather than an unobserved fault, decode-down to `MaxArtPixels` and never scaling *up*, the cache-key collision itself (two albums in one flat downloads folder keeping their own covers; one album across two directories sharing a single decoded `Bitmap` by reference), the blank-`Album` fallback to a directory key, and the placeholder-track paths (missing hash, missing origin device, disk-cache hit, corrupt cache file falling through, in-memory hit keyed by hash across origin devices).
+
+   Two pieces of test infrastructure came with this. `SyntheticPng` builds a real decodable PNG of an exact pixel size in memory — the image counterpart of `SyntheticWav`, and needed because these assertions are all about the *intrinsic* size of the art. And `TestAppBuilder` now configures the headless platform with real Skia drawing (`UseSkia()` + `UseHeadlessDrawing = false`, plus an `Avalonia.Skia` reference): headless's own drawing stub reports every image as 1×1 whatever bytes it is handed and never rejects garbage, which would have made the scaling and corrupt-input cases assert nothing at all. The whole suite runs on the Skia-backed headless platform now; nothing else changed behaviour under it.
+
+   Not covered: the actual peer HTTP fetch, because `AlbumArtLoader` is a static class that service-locates `PeerTrackResolver`/`DeviceIdentity` out of the process-wide `Ioc.Default` — a test cannot hand it a peer pointed at a local fake server without fixing the entire process's container for the run (`TestSupport/TestIoc` is the one shared configuration every such test has to live with). That is §2.3 stated as a concrete cost rather than a principle.
+
+   Confirmed to have teeth by mutation: collapsing `LocalCacheKey` back to directory-only, removing the `PixelSize.Width <= MaxArtPixels` guard, or dropping `LoadLocalBitmap`'s try/catch each fails a test.
+5. **`MusicListView`/`MusicListPanel`** — **`MusicListPanel` DONE**, `MusicListView` still open. `MusicListPanelTests`, 15 tests over the real panel: the realized window (viewport + 3-row overdraw, partially-scrolled rows, clamping at both ends), album-group-leader retention (a leader scrolled off the top still realized so its art spans down, no double-realization when the leader is already on screen, only the *visible* groups' leaders pulled in), the grow-only row pool (extras hidden rather than destroyed, and never arranged), `SetItems` re-binding every slot when the new list reuses the old indices, and the measure/arrange contract (full list height so the scrollbar is sized for every row, total column width so a horizontal scrollbar can appear, viewport width when the columns don't fill it, absolute per-row Y offsets).
+
+   Assertions read the panel's real `Children`/`DataContext`/`Bounds` after a real measure-arrange pass, not an extracted copy of the arithmetic. `MusicListPanel` now takes its `ColumnManager` as an optional constructor parameter (`MusicListView` already had one resolved and passes it in) instead of service-locating it — one fewer `Ioc.Default` call site, and what makes the panel testable at all.
+
+   Confirmed to have teeth by mutation: removing the overdraw, the group-leader `set.Add(leader)`, the `SetItems` index reset, or reporting the pool's height instead of the list's each fails between one and three tests.
+
+   Still open: `MusicListView` itself — shift-range/ctrl-toggle selection and header drag-reorder.
 6. **`MainViewModel`'s sync/pairing/device-row state machine** (~900 lines) — `MainViewModelSidebarNavigationTests` is a single debounce-timing regression test and touches none of it.
-7. **`Library.ReplacePlaylists`' `PlaylistsUnchanged` short-circuit** and **`ColumnManager.Reorder`** — nontrivial algorithms, no tests.
+7. **`Library.ReplacePlaylists`' `PlaylistsUnchanged` short-circuit** — still open. ~~**`ColumnManager.Reorder`**~~ **DONE** — `ColumnManagerTests`, 9 tests: moving a column later/earlier/onto its own position/past the end, that the index is expressed in *visible* columns and skips hidden ones, that a hidden column keeps its position relative to its neighbours across a reorder that never mentions it, that `Order` is renumbered contiguously, and that a `Width` change does not raise `ColumnsChanged` (the header rebuild that used to kill a resize drag mid-gesture) while `IsVisible` does.
 8. **No dedicated tests** for `CurrentlyPlayingControlViewModel`, `TrackRowViewModel`, `VolumeControlViewModel`, `EqualizerViewModel`, `LogViewModel`, `SidebarItem`, or `ScreenStackPanel`'s swipe state machine.
 9. **UI tests** (already on `todo.txt`): `Avalonia.Headless` can drive `MusicListView` virtualization and `ScreenStackPanel` navigation without a display.
 
@@ -378,5 +404,6 @@ Highest-value additions, roughly in priority order:
 9. ~~**Tier 4.4** — range support on `SyncHttpServer` streaming.~~ **Done.** Ranged serving, resumable downloads, no more orphaned partials.
 10. ~~**Tier 2.2** — the two hand-copied signature verifiers and the three copies of album-art fallback.~~ **Done.** Both collapsed into `Flower.Core`; the album-art copies had already drifted into a real cross-implementation bug.
 11. ~~**Tier 2.4** — `Library.Playlists` unlocked while `Library.Tracks` is locked.~~ **Done.** Copy-on-write under the same lock, persistence made structural via `Library.PlaylistsChanged`, and a silent drag-reorder-never-syncs bug fixed on the way. §2.3's DI cleanup is the remaining Tier 2 item and is better done as part of 4.2, where the seams it needs become visible.
-12. **Tier 4.1 — the SQLite migration.** Recommended next: it is the largest remaining correctness/performance lever (see §4.1), and 4.2/4.3 want to be done after it, not before.
-13. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.
+12. ~~**Tier 5.3/5.4/5.5/5.7** — `Importer`, `AlbumArtLoader`, `MusicListPanel`, `ColumnManager.Reorder`.~~ **Done.** 50 tests, all mutation-checked; `MusicListView`'s own selection/drag gestures and `Library.ReplacePlaylists`' short-circuit are what remains of Tier 5's mid-priority items.
+13. **Tier 4.1 — the SQLite migration.** Recommended next: it is the largest remaining correctness/performance lever (see §4.1), and 4.2/4.3 want to be done after it, not before.
+14. **Tier 4.2/4.3** — ViewModel and code-behind decomposition, last, when the seams are visible.
