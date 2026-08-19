@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -163,14 +165,41 @@ public class StreamingNetworkOutageTests : IDisposable
         var sharedRing = new GaplessRingBuffer(8 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
         var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
 
-        Track? endReachedTrack = null;
-        coordinator.EndReached += t => endReachedTrack = t;
+        // A queue of every settle event, not a "last track seen" field,
+        // and both events rather than only EndReached. Two races made the
+        // simpler version fail about one run in four, always waiting out
+        // its full timeout while the coordinator had in fact done
+        // everything right:
+        //
+        // 1. Whether LibVLC reports an abrupt mid-stream cutoff as an error
+        //    or as a track quietly ending is genuinely non-deterministic
+        //    for the same fixture - it depends on how much of the stream
+        //    got through before the reset. Which of the two fires is
+        //    deliberately not this test's business, for the reason
+        //    A_network_outage_mid_stream_settles_instead_of_hanging_forever
+        //    above spells out; that the handover happens either way is.
+        // 2. Nothing drains the shared ring here, and trackB is a 1s local
+        //    file that decodes ahead to completion in microseconds - so B
+        //    routinely cascades through its own EndReached immediately
+        //    after A's, overwriting a single-field capture and leaving
+        //    CurrentTrack back at null.
+        var settled = new ConcurrentQueue<Track>();
+        coordinator.EndReached += settled.Enqueue;
+        coordinator.TrackFailed += settled.Enqueue;
 
         coordinator.Play(trackA);
         coordinator.SetUpcoming(trackB);
 
-        WaitUntil(() => endReachedTrack == trackA, "the dropped-connection track should still reach EndReached");
-        WaitUntil(() => coordinator.CurrentTrack == trackB, "the armed next track should be promoted after the outage, same as a normal handover");
+        WaitUntil(() => settled.Contains(trackA), "the dropped-connection track should still settle (EndReached or TrackFailed)");
+
+        // B having become current, or B having settled in its own right,
+        // are the same fact seen at two moments - only the current decoder
+        // raises these events, so B could not have reached one without
+        // first being promoted. Which one this observes depends purely on
+        // how fast B's already-finished decode cascades.
+        WaitUntil(
+            () => coordinator.CurrentTrack == trackB || settled.Contains(trackB),
+            "the armed next track should be promoted after the outage, same as a normal handover");
 
         coordinator.Dispose();
     }
