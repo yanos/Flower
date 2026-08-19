@@ -55,8 +55,11 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
             Fingerprint  = fingerprint,
         };
 
-    private static MainViewModel Make(AppSettings? settings = null) =>
-        MainViewModelHarness.Build(new Library(new List<Track>()), new MainPlaylist(new List<Track>()), settings);
+    // Owned by the fixture (not static any more) so the log-push timer inside
+    // every one of these MainViewModels is stopped at teardown - see
+    // MainViewModelHarness.Parts.
+    private MainViewModel Make(AppSettings? settings = null) =>
+        Own(MainViewModelHarness.Build(new Library(new List<Track>()), new MainPlaylist(new List<Track>()), settings)).Main;
 
     private static List<SidebarItem> DeviceRows(MainViewModel vm) =>
         vm.SidebarItems.Where(i => i.Kind == SidebarItemKind.Device).ToList();

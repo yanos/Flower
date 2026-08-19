@@ -47,7 +47,13 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
     {
         public Window Window { get; }
         public ScreenStackPanel Panel { get; }
-        public MobileMainViewModel Vm { get; }
+        public MobileMainViewModel Vm => _vm.Mobile;
+
+        // Held so it can be disposed with the window: the MainViewModel this
+        // mobile shell wraps starts a periodic log-push DispatcherTimer that
+        // would otherwise keep ticking for the rest of the run - see
+        // MainViewModelHarness.Parts.
+        private readonly MainViewModelHarness.MobileParts _vm;
 
         public Harness()
         {
@@ -56,7 +62,7 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
                 Title = $"Track {i}", Path = $"/music/{i}.mp3", Album = $"Album {i / 4}", Artists = "An Artist",
             }).ToList();
 
-            Vm    = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+            _vm   = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
             // Transparent (not null) background purely so the panel is
             // hit-testable here. In the app each screen paints its own opaque
             // AppBackgroundBrush, but that is an App.axaml resource and this
@@ -137,7 +143,11 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         // navigation callback.
         public void LetEasingFinish() => Pump(600);
 
-        public void Dispose() => Window.Close();
+        public void Dispose()
+        {
+            Window.Close();
+            _vm.Dispose();
+        }
     }
 
     // ── Direction detection ───────────────────────────────────────────────────

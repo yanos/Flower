@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 using Flower.Persistence;
@@ -15,6 +16,14 @@ public abstract class PinnedDataDirectory : IDisposable
 
     private readonly string? _previous;
 
+    // Things built by a test that must not outlive it - above all a
+    // MainViewModel, whose PeerSyncCoordinator starts a periodic DispatcherTimer
+    // that keeps ticking on the shared headless dispatcher until it is disposed
+    // (see MainViewModelHarness.Parts and TestSupport/AssemblySetup.cs). Owning
+    // them here rather than at the end of each test body also means a failing
+    // assertion cannot skip the teardown.
+    private readonly List<IDisposable> _owned = new();
+
     protected PinnedDataDirectory()
     {
         DataDirectory = Directory.CreateTempSubdirectory("flower-test-appdata").FullName;
@@ -22,8 +31,18 @@ public abstract class PinnedDataDirectory : IDisposable
         PlatformDataDirectory.Current = DataDirectory;
     }
 
+    protected T Own<T>(T disposable) where T : IDisposable
+    {
+        _owned.Add(disposable);
+        return disposable;
+    }
+
     public virtual void Dispose()
     {
+        for (var i = _owned.Count - 1; i >= 0; i--)
+            _owned[i].Dispose();
+        _owned.Clear();
+
         PlatformDataDirectory.Current = _previous;
         try
         {

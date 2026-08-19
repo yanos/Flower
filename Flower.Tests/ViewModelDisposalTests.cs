@@ -32,7 +32,7 @@ public class ViewModelDisposalTests : PinnedDataDirectory
     [AvaloniaFact]
     public void A_disposed_MainViewModel_stops_re_raising_what_it_no_longer_listens_to()
     {
-        var parts = MainViewModelHarness.BuildParts(
+        using var parts = MainViewModelHarness.BuildParts(
             new Library(new List<Track> { T("First") }), new MainPlaylist(new List<Track>()));
         var raised = new List<string?>();
         parts.Main.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
@@ -48,7 +48,7 @@ public class ViewModelDisposalTests : PinnedDataDirectory
     [AvaloniaFact]
     public void An_undisposed_MainViewModel_does_re_raise_it()
     {
-        var parts = MainViewModelHarness.BuildParts(
+        using var parts = MainViewModelHarness.BuildParts(
             new Library(new List<Track> { T("First") }), new MainPlaylist(new List<Track>()));
         var raised = new List<string?>();
         parts.Main.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
@@ -56,8 +56,6 @@ public class ViewModelDisposalTests : PinnedDataDirectory
         parts.PlaylistControl.SelectedTrack = T("Second");
 
         Assert.Contains(nameof(MainViewModel.SelectedTrack), raised);
-
-        parts.Main.Dispose();
     }
 
     // The rest of the ViewModel layer got the same treatment - see
@@ -68,7 +66,7 @@ public class ViewModelDisposalTests : PinnedDataDirectory
     [AvaloniaFact]
     public void A_disposed_PlaylistControlViewModel_stops_listening_to_the_audio_manager()
     {
-        var parts = MainViewModelHarness.BuildParts(
+        using var parts = MainViewModelHarness.BuildParts(
             new Library(new List<Track> { T("First") }), new MainPlaylist(new List<Track>()));
         var raised = new List<string?>();
         parts.PlaylistControl.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
@@ -87,7 +85,7 @@ public class ViewModelDisposalTests : PinnedDataDirectory
     [AvaloniaFact]
     public void A_disposed_CurrentlyPlayingControlViewModel_stops_listening_to_the_audio_manager()
     {
-        var parts = MainViewModelHarness.BuildParts(
+        using var parts = MainViewModelHarness.BuildParts(
             new Library(new List<Track> { T("First") }), new MainPlaylist(new List<Track>()));
         var raised = new List<string?>();
         parts.CurrentlyPlaying.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
@@ -110,7 +108,7 @@ public class ViewModelDisposalTests : PinnedDataDirectory
     [AvaloniaFact]
     public void A_disposed_MobileMainViewModel_stops_listening_to_the_one_it_wraps()
     {
-        var parts = MainViewModelHarness.BuildParts(
+        using var parts = MainViewModelHarness.BuildParts(
             new Library(new List<Track> { T("First") }), new MainPlaylist(new List<Track>()));
         var mobile = new Flower.ViewModels.Mobile.MobileMainViewModel(
             parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
@@ -129,8 +127,6 @@ public class ViewModelDisposalTests : PinnedDataDirectory
         Dispatcher.UIThread.RunJobs();
 
         Assert.Empty(raised);
-
-        parts.Main.Dispose();
     }
 
     [Fact]

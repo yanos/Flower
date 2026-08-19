@@ -36,11 +36,12 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     // The real cooldown is 5s, which is far too slow to wait out per test.
     //
     // Shortened only around the ScheduleContentSync call itself, never while a
-    // MainViewModel is being constructed. That matters: MainViewModel's
-    // constructor starts a periodic _logPushTimer at this same interval and
-    // never stops it, so a MainViewModel built while this is 150ms leaks a
-    // 150ms DispatcherTimer onto the shared headless dispatcher for the rest of
-    // the run. Doing that destabilized the whole suite - unrelated
+    // MainViewModel is being constructed. That matters: PeerSyncCoordinator's
+    // constructor starts a periodic _logPushTimer at this same interval, so a
+    // MainViewModel built while this is 150ms runs one for as long as it lives.
+    // It is disposed at teardown now (see Make below), but keeping the
+    // construction out of the shortened window keeps that window at one test
+    // rather than the rest of the run. Doing that destabilized the whole suite - unrelated
     // [AvaloniaFact] tests failing in Avalonia's own session setup, a different
     // one each run, about 1 run in 3. DebouncedContentSyncAsync reads the value
     // when it is called, so scoping it this way still exercises the debounce.
@@ -81,11 +82,14 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         LibraryToken = libraryToken,
     };
 
-    private static MainViewModel Make(AppSettings? settings = null) =>
-        MainViewModelHarness.Build(new Library(new List<Track>()), new MainPlaylist(new List<Track>()), settings);
+    // Owned by the fixture (not static any more) so the log-push timer inside
+    // every one of these MainViewModels is stopped at teardown - see
+    // MainViewModelHarness.Parts.
+    private MainViewModel Make(AppSettings? settings = null) =>
+        Own(MainViewModelHarness.Build(new Library(new List<Track>()), new MainPlaylist(new List<Track>()), settings)).Main;
 
     // A Client already paired to fp-server, with that server discovered.
-    private static MainViewModel PairedClient(out DiscoveredDevice server)
+    private MainViewModel PairedClient(out DiscoveredDevice server)
     {
         var vm = Make(new AppSettings
         {

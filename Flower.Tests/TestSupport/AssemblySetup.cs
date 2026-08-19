@@ -59,8 +59,15 @@ internal static class AssemblySetup
 //   - What DID take it from about 1 run in 3 down to 1 in 8: not letting a
 //     MainViewModel be constructed while MainViewModel.ContentSyncCooldown is
 //     shortened. Its constructor starts a periodic _logPushTimer at that
-//     interval and never stops it, so such a MainViewModel leaks a 150ms
-//     DispatcherTimer onto the shared dispatcher for the rest of the run. See
+//     interval, so such a MainViewModel used to leak a 150ms DispatcherTimer
+//     onto the shared dispatcher for the rest of the run. See
 //     MainViewModelSyncTriggerTests.ShortCooldown.
-// The leaked _logPushTimer (MainViewModel has no Dispose) is the most promising
-// thread to pull on next.
+//
+// The timer leak itself is now closed: the timer lives on PeerSyncCoordinator,
+// MainViewModel.Dispose stops it, and no test drops a MainViewModel without
+// disposing it any more - MainViewModelHarness.Parts is IDisposable and every
+// caller either scopes it with `using` or hands it to PinnedDataDirectory.Own.
+// It does NOT settle the intermittent failure above: 8 consecutive full runs
+// after the fix still produced 2 with the identical signature, on an unrelated
+// [AvaloniaFact] each time. So the leak was worth closing on its own merits,
+// but it is not the cause of this.
