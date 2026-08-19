@@ -90,7 +90,7 @@ public class MusicListPanel : Panel
         while (Children.Count < indices.Count)
         {
             int slot = Children.Count;
-            var ctrl = new TrackRowControl();
+            var ctrl = new TrackRowControl(_columnManager);
             ctrl.DataContext = _items[indices[slot]];
             _activeIndex.Add(indices[slot]);
             Children.Add(ctrl);

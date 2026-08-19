@@ -115,6 +115,28 @@ public class CompositionRootTests : PinnedDataDirectory
         Assert.NotNull(provider.GetRequiredService<NowPlayingIntegrationService>());
     }
 
+    // The Views/Controls layer used to resolve each of these out of Ioc.Default
+    // from its own constructor (docs/ARCHITECTURE-REVIEW.md Tier 2.3); it now
+    // reaches them through the one DataContext it is given. That only works if
+    // what MainViewModel exposes really is the container's instance rather than
+    // a second one, which is what this pins - the failure mode otherwise is two
+    // live PlaylistControlViewModels disagreeing about what is playing.
+    [AvaloniaFact]
+    public void MainViewModel_exposes_the_container_instances_the_view_layer_used_to_resolve()
+    {
+        using var provider = BuildContainer();
+
+        var mainViewModel = provider.GetRequiredService<MainViewModel>();
+
+        Assert.Same(provider.GetRequiredService<PlaylistControlViewModel>(), mainViewModel.PlaybackControls);
+        Assert.Same(provider.GetRequiredService<VolumeControlViewModel>(), mainViewModel.Volume);
+        Assert.Same(provider.GetRequiredService<CurrentlyPlayingControlViewModel>(), mainViewModel.NowPlaying);
+        Assert.Same(provider.GetRequiredService<EqualizerViewModel>(), mainViewModel.Equalizer);
+        Assert.Same(provider.GetRequiredService<LogViewModel>(), mainViewModel.Log);
+        Assert.Same(provider.GetRequiredService<SidebarRenameService>(), mainViewModel.Rename);
+        Assert.Same(provider.GetRequiredService<LibraryStore>(), mainViewModel.LibraryStore);
+    }
+
     // MainViewModel's ten sync-stack parameters are nullable *and defaulted*,
     // so the container is free to pick that constructor and pass null for every
     // one of them - which would compile, resolve, start, and leave the entire

@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 using Flower.Converters;
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
@@ -24,11 +25,14 @@ public partial class TrackInfoWindow : Window
     // Only meaningful in single-track/navigable mode (see the two constructors below).
     private readonly IReadOnlyList<Track> _tracks = Array.Empty<Track>();
     private readonly Library _library;
-    // Resolved via the service locator (see MainWindow.axaml.cs for the same
-    // pattern) rather than threaded through both constructors below as an
-    // explicit parameter, same as every existing caller of them.
-    private readonly LibraryStore _libraryStore = Ioc.Default.GetService<LibraryStore>()!;
-    private readonly ILogger<TrackInfoWindow> _logger = Ioc.Default.GetService<ILogger<TrackInfoWindow>>()!;
+    // Handed in by whoever opens this window, alongside the Library it edits -
+    // both come off the MainViewModel that caller already has, rather than
+    // from a second lookup in the container (docs/ARCHITECTURE-REVIEW.md
+    // Tier 2.3). The logger is the one exception: a Window has no constructor
+    // the container reaches, which is exactly the case AppLogging's
+    // typed-logger helper exists for.
+    private readonly LibraryStore? _libraryStore;
+    private readonly ILogger<TrackInfoWindow> _logger = AppLogging.CreateTypedLogger<TrackInfoWindow>();
     private int _index;
 
     // The set of tracks being edited: exactly one in navigable mode (re-seeded
@@ -50,11 +54,12 @@ public partial class TrackInfoWindow : Window
 
     // Single-track mode: tracks/index is the full displayed list, so Prev/Next
     // can browse through it one at a time.
-    public TrackInfoWindow(IReadOnlyList<Track> tracks, int index, Library library)
+    public TrackInfoWindow(IReadOnlyList<Track> tracks, int index, Library library, LibraryStore? libraryStore)
     {
         InitializeComponent();
         _tracks    = tracks;
         _library   = library;
+        _libraryStore = libraryStore;
         _index     = index;
         PopulateSuggestions();
         BuildFields();
@@ -66,10 +71,11 @@ public partial class TrackInfoWindow : Window
 
     // Batch mode: edit this exact set of tracks together. No Prev/Next - there's
     // no "next" when editing a fixed set as one.
-    public TrackInfoWindow(IReadOnlyList<Track> editTracks, Library library)
+    public TrackInfoWindow(IReadOnlyList<Track> editTracks, Library library, LibraryStore? libraryStore)
     {
         InitializeComponent();
         _library    = library;
+        _libraryStore = libraryStore;
         _editTracks = editTracks;
         PopulateSuggestions();
         BuildFields();
@@ -310,7 +316,8 @@ public partial class TrackInfoWindow : Window
         // Tracks back into UpdateTracks as a "fresh scan" silently doubles
         // every placeholder track.
         _library.NotifyTrackChanged();
-        await _libraryStore.SaveAsync(_library.Tracks);
+        if (_libraryStore is { } libraryStore)
+            await libraryStore.SaveAsync(_library.Tracks);
     }
 
     private static string? NullIfEmpty(string? s) =>

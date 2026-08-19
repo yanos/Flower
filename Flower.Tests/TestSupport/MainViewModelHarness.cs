@@ -116,6 +116,10 @@ public static class MainViewModelHarness
             busy,
             new ITunesImportCoordinator(library, libraryStore, busy, NullLogger<ITunesImportCoordinator>.Instance),
             new AnimationClock(),
+            new VolumeControlViewModel(audio),
+            new CurrentlyPlayingControlViewModel(playlistControl, audio, library, NullLogger<CurrentlyPlayingControlViewModel>.Instance),
+            new EqualizerViewModel(audio, appSettings, appSettingsStore),
+            new SidebarRenameService(deviceNicknameStore, NullLogger<SidebarRenameService>.Instance),
             NullLogger<MainViewModel>.Instance,
             networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
             peerPairingService, peerTrackResolver, syncHttpServer, deviceIdentity, signingKey);

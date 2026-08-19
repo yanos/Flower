@@ -177,7 +177,7 @@ public partial class AlbumGridRowControl : UserControl
                 break;
             case Key.Enter:
                 if (row.CurrentTrack is { } track)
-                    Ioc.Default.GetService<MainViewModel>()?.PlayTrackInExpandedAlbum(track);
+                    this.FindDataContext<MainViewModel>()?.PlayTrackInExpandedAlbum(track);
                 e.Handled = true;
                 break;
         }
@@ -186,7 +186,7 @@ public partial class AlbumGridRowControl : UserControl
     private void TrackRow_DoubleTapped(object? sender, TappedEventArgs e)
     {
         if ((sender as Border)?.DataContext is ExpandedTrackRowViewModel row)
-            Ioc.Default.GetService<MainViewModel>()?.PlayTrackInExpandedAlbum(row.Track);
+            this.FindDataContext<MainViewModel>()?.PlayTrackInExpandedAlbum(row.Track);
     }
 
     // Get Info / Add To Playlist / Locate File - the same three actions
@@ -201,7 +201,7 @@ public partial class AlbumGridRowControl : UserControl
     {
         if (sender is not Border border || border.DataContext is not ExpandedTrackRowViewModel row)
             return;
-        if (_row is not { } gridRow || Ioc.Default.GetService<MainViewModel>() is not { } vm)
+        if (_row is not { } gridRow || this.FindDataContext<MainViewModel>() is not { } vm)
             return;
 
         if (!row.IsSelected)
@@ -263,7 +263,7 @@ public partial class AlbumGridRowControl : UserControl
         TrackInfoWindow infoWindow;
         if (selectedTracks.Count > 1)
         {
-            infoWindow = new TrackInfoWindow(selectedTracks, vm.Library) { ShowInTaskbar = false };
+            infoWindow = new TrackInfoWindow(selectedTracks, vm.Library, vm.LibraryStore) { ShowInTaskbar = false };
         }
         else
         {
@@ -274,7 +274,7 @@ public partial class AlbumGridRowControl : UserControl
             var index = tracks.IndexOf(track);
             if (index < 0)
                 index = 0;
-            infoWindow = new TrackInfoWindow(tracks, index, vm.Library) { ShowInTaskbar = false };
+            infoWindow = new TrackInfoWindow(tracks, index, vm.Library, vm.LibraryStore) { ShowInTaskbar = false };
         }
 
         if (TopLevel.GetTopLevel(this) is Window owner)
