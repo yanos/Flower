@@ -91,7 +91,11 @@ public class LibrarySyncService
         _logger = logger;
     }
 
-    public async Task<LibrarySyncResult> SyncWithAsync(DiscoveredDevice device)
+    // Virtual for the same reason PeerTrackResolver.Resolve is: it is the seam
+    // a test needs to drive PeerSyncCoordinator.ForceSyncNowAsync's *reachable*
+    // path - the result strings, the trust confirmation - without standing up
+    // a real peer to sync against. See docs/ARCHITECTURE-REVIEW.md Tier 5.6.
+    public virtual async Task<LibrarySyncResult> SyncWithAsync(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
         {

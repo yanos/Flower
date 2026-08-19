@@ -86,7 +86,9 @@ public class PlaylistSyncService
     // initiator regardless of the ordinal comparison below, which would
     // otherwise (for roughly half of all possible fingerprint pairs) decide
     // the Client isn't the initiator and leave that pair permanently unsynced.
-    public async Task SyncWithAsync(DiscoveredDevice device, bool forceInitiator = false)
+    // Virtual for the same reason as LibrarySyncService.SyncWithAsync - see
+    // its comment, and docs/ARCHITECTURE-REVIEW.md Tier 5.6.
+    public virtual async Task SyncWithAsync(DiscoveredDevice device, bool forceInitiator = false)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
         {
