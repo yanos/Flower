@@ -9,6 +9,8 @@ using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Xunit;
 
 namespace Flower.Tests;
@@ -111,7 +113,8 @@ public class ViewModelDisposalTests : PinnedDataDirectory
         var parts = MainViewModelHarness.BuildParts(
             new Library(new List<Track> { T("First") }), new MainPlaylist(new List<Track>()));
         var mobile = new Flower.ViewModels.Mobile.MobileMainViewModel(
-            parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying);
+            parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
+            NullLogger<Flower.ViewModels.Mobile.MobileMainViewModel>.Instance);
         var raised = new List<string?>();
         mobile.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 

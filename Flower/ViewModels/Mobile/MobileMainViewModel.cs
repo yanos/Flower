@@ -14,6 +14,8 @@ using CommunityToolkit.Mvvm.Input;
 
 using Material.Icons;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Models;
 using Flower.Services;
 
@@ -36,6 +38,8 @@ public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlayli
 // (album/artist names, or playlist entries) until the user taps into one.
 public class MobileMainViewModel : ViewModelBase, IDisposable
 {
+    private readonly ILogger _logger;
+
     public MainViewModel Main { get; }
     public PlaylistControlViewModel PlaylistControl { get; }
     public CurrentlyPlayingControlViewModel CurrentlyPlaying { get; }
@@ -633,11 +637,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public MobileMainViewModel(
         MainViewModel main,
         PlaylistControlViewModel playlistControl,
-        CurrentlyPlayingControlViewModel currentlyPlaying)
+        CurrentlyPlayingControlViewModel currentlyPlaying,
+        ILogger<MobileMainViewModel> logger)
     {
         Main = main;
         PlaylistControl = playlistControl;
         CurrentlyPlaying = currentlyPlaying;
+        _logger = logger;
 
         _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
@@ -1158,12 +1164,12 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // SelectArtist below instead, so tapping an artist lands on that artist's
     // album grid rather than straight into every one of their songs as one
     // flat list.
-    private async void SelectAlbumOrArtist(string? name)
+    private void SelectAlbumOrArtist(string? name)
     {
         if (name == null)
             return;
         PushHistory();
-        await SelectAlbumOrArtistCore(name);
+        SelectAlbumOrArtistCore(name).Forget(_logger, "Album/artist drill-in");
     }
 
     private Task SelectAlbumOrArtistCore(string name) => DrillIntoAsync(subItem: name);
@@ -1236,12 +1242,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // A tile in that artist's album grid -> that album's tracks, reusing the
     // Albums tab's own filtering the same way SelectRecentlyAddedAlbum does
     // (see its comment) rather than a separate artist+album-scoped track list.
-    private async void SelectArtistAlbum(string? albumName)
+    private void SelectArtistAlbum(string? albumName)
     {
         if (albumName == null)
             return;
         PushHistory();
-        await DrillIntoAsync(AlbumsScope, albumName, DrillLevel.ArtistAlbum);
+        DrillIntoAsync(AlbumsScope, albumName, DrillLevel.ArtistAlbum)
+            .Forget(_logger, "Artist album drill-in");
     }
 
     // Tapping a tile in the Recently Added grid drills into that album's
@@ -1251,20 +1258,20 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // (the un-drilled-in grid renders its own RecentlyAddedAlbumRows collection,
     // not Main.Rows), so it is set explicitly here instead. SelectedTab stays
     // RecentlyAdded so Back returns to this grid, not to the Albums picker.
-    private async void SelectRecentlyAddedAlbum(string? albumName)
+    private void SelectRecentlyAddedAlbum(string? albumName)
     {
         if (albumName == null)
             return;
         PushHistory();
-        await DrillIntoAsync(AlbumsScope, albumName);
+        DrillIntoAsync(AlbumsScope, albumName).Forget(_logger, "Recently Added drill-in");
     }
 
-    private async void SelectPlaylist(SidebarItem? item)
+    private void SelectPlaylist(SidebarItem? item)
     {
         if (item == null)
             return;
         PushHistory();
-        await DrillIntoAsync(item);
+        DrillIntoAsync(item).Forget(_logger, "Playlist drill-in");
     }
 
     private async Task GoBack()
@@ -1366,7 +1373,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // next tab. Tab-paging is clamped, not wrapping, at either end of the
     // bar - a swipe past Recently Added or past Search is just a no-op
     // rather than an unexpected jump to the other end.
-    public async void SwipeBack()
+    public void SwipeBack() => SwipeBackAsync().Forget(_logger, "Swipe back");
+
+    private async Task SwipeBackAsync()
     {
         if (CanGoBack)
         {
@@ -1377,7 +1386,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             SelectedTab = SelectedTab - 1;
     }
 
-    public async void SwipeForward()
+    public void SwipeForward() => SwipeForwardAsync().Forget(_logger, "Swipe forward");
+
+    private async Task SwipeForwardAsync()
     {
         if (CanGoForward)
         {
@@ -1434,9 +1445,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
     // Driven by the track list's touch drag-to-reorder gesture (see MobileMainView's
     // code-behind); a no-op if the user isn't currently viewing a playlist's tracks.
-    public async void ReorderCurrentPlaylistTrack(Track dragged, Track? insertBefore)
+    public void ReorderCurrentPlaylistTrack(Track dragged, Track? insertBefore)
     {
-        if (CurrentPlaylist is { } playlist)
-            await Main.ReorderPlaylistTrack(playlist, dragged, insertBefore);
+        if (CurrentPlaylist is not { } playlist)
+            return;
+        Main.ReorderPlaylistTrack(playlist, dragged, insertBefore)
+            .Forget(_logger, "Playlist track reorder");
     }
 }

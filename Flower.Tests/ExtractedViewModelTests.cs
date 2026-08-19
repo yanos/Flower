@@ -11,6 +11,8 @@ using Flower.Models;
 using Flower.Services;
 using Flower.ViewModels;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Xunit;
 
 namespace Flower.Tests;
@@ -223,7 +225,7 @@ public class LibraryBrowserViewModelTests
     private static (LibraryBrowserViewModel Vm, Host Host) Make(params Track[] tracks)
     {
         var host = new Host();
-        return (new LibraryBrowserViewModel(new Library(tracks.ToList()), host), host);
+        return (new LibraryBrowserViewModel(new Library(tracks.ToList()), host, NullLogger<LibraryBrowserViewModel>.Instance), host);
     }
 
     [AvaloniaFact]

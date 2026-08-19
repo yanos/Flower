@@ -594,7 +594,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // empty window. Over an empty Library, so nothing touches disk.
         _appSettings = new AppSettings();
         Library   = new Library(new List<Track>());
-        Browser   = new LibraryBrowserViewModel(Library, this);
+        Browser   = new LibraryBrowserViewModel(Library, this, AppLogging.CreateTypedLogger<LibraryBrowserViewModel>());
         Playlists = new PlaylistManagementViewModel(Library, _sidebarItems, this);
     }
 #pragma warning restore CS8618
@@ -672,7 +672,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         ITunesImport           = iTunesImport;
         _logger                = logger;
 
-        Browser = new LibraryBrowserViewModel(library, this, animationClock);
+        Browser = new LibraryBrowserViewModel(library, this, AppLogging.CreateTypedLogger<LibraryBrowserViewModel>(), animationClock);
         Browser.RestoreSort(
             appSettings.SortColumn ?? "TrackNumber",
             appSettings.SortColumn is null || appSettings.SortAscending,
