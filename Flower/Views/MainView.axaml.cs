@@ -50,7 +50,7 @@ public partial class MainView : UserControl
     private NameSelectionDragGesture? _subListGesture;
     private bool _syncingSubListSelection; // guards against feedback loops between SubList and the VM
 
-    private DispatcherTimer? _spinTimer;
+    private IDisposable? _spin;
     private RotateTransform? _spinTransform;
 
     // Per-view (Songs / album / artist / playlist) scroll position + selection memory
@@ -517,21 +517,22 @@ public partial class MainView : UserControl
 
     private void StartSpinner()
     {
-        if (_spinTimer != null)
+        if (_spin != null)
             return;
-        
-        _spinTransform = new RotateTransform();
+
+        var transform = new RotateTransform();
+        _spinTransform = transform;
         SpinnerIcon.RenderTransformOrigin = RelativePoint.Center;
-        SpinnerIcon.RenderTransform = _spinTransform;
-        _spinTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
-        _spinTimer.Tick += (_, _) => _spinTransform.Angle = (_spinTransform.Angle + 6) % 360;
-        _spinTimer.Start();
+        SpinnerIcon.RenderTransform = transform;
+        // Shared 60Hz clock rather than a timer of its own - see AnimationClock.
+        _spin = AnimationClock.Current.Subscribe(
+            elapsed => transform.Angle = elapsed.TotalSeconds * 360 % 360);
     }
 
     private void StopSpinner()
     {
-        _spinTimer?.Stop();
-        _spinTimer = null;
+        _spin?.Dispose();
+        _spin = null;
         _spinTransform = null;
         
         if (SpinnerIcon != null)

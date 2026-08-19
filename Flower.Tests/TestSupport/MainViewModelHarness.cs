@@ -115,6 +115,7 @@ public static class MainViewModelHarness
             libraryStore, appSettingsStore, deviceIdentityStore, deviceNicknameStore,
             busy,
             new ITunesImportCoordinator(library, libraryStore, busy, NullLogger<ITunesImportCoordinator>.Instance),
+            new AnimationClock(),
             NullLogger<MainViewModel>.Instance,
             networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
             peerPairingService, peerTrackResolver, syncHttpServer, deviceIdentity, signingKey);

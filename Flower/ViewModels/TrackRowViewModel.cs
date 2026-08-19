@@ -2,7 +2,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 using Flower.Models;
 using Flower.Services;
 
@@ -16,10 +15,96 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
-    public Track Track { get; init; } = null!;
+    // Settable rather than init-only because a rebuild reuses this instance
+    // instead of allocating a fresh one (see TrackRowMerge): a rescan hands the
+    // same track a brand-new Track object, and a filter or sort moves it into a
+    // different album run. Only ApplyPlan writes them, and only on the UI
+    // thread.
+    private Track _track = null!;
+    public Track Track
+    {
+        get => _track;
+        init => _track = value;
+    }
 
-    public bool IsFirstInAlbumGroup { get; init; }
-    public int  AlbumGroupSize      { get; init; }
+    private bool _isFirstInAlbumGroup;
+    public bool IsFirstInAlbumGroup
+    {
+        get => _isFirstInAlbumGroup;
+        init => _isFirstInAlbumGroup = value;
+    }
+
+    private int _albumGroupSize;
+    public int AlbumGroupSize
+    {
+        get => _albumGroupSize;
+        init => _albumGroupSize = value;
+    }
+
+    internal static TrackRowViewModel FromPlan(in TrackRowPlan plan, AnimationClock? clock) => new()
+    {
+        Clock               = clock,
+        Track               = plan.Track,
+        IsFirstInAlbumGroup = plan.IsFirstInAlbumGroup,
+        AlbumGroupSize      = plan.AlbumGroupSize,
+        IsCurrentlyPlaying  = plan.IsCurrentlyPlaying,
+        IsAvailable         = plan.IsAvailable,
+    };
+
+    // Re-points a surviving row at what the rebuild says it should now be,
+    // raising PropertyChanged only for what actually moved. UI thread only.
+    internal void ApplyPlan(in TrackRowPlan plan)
+    {
+        if (!ReferenceEquals(_track, plan.Track))
+        {
+            var previous = _track;
+            _track = plan.Track;
+
+            // Everything bound through the Track.* paths TrackRowControl
+            // builds (Track.Title, Track.Artists, ...) re-reads off this one
+            // notification; the rest are this class's own derived displays.
+            OnPropertyChanged(nameof(Track));
+            OnPropertyChanged(nameof(TrackNumberDisplay));
+            OnPropertyChanged(nameof(PlayCountDisplay));
+            OnPropertyChanged(nameof(DateAddedDisplay));
+            OnPropertyChanged(nameof(LastPlayedDisplay));
+            OnPropertyChanged(nameof(DurationDisplay));
+            OnPropertyChanged(nameof(IsPlaceholder));
+            OnPropertyChanged(nameof(IsUnavailable));
+            OnPropertyChanged(nameof(IsDownloadable));
+
+            // The whole point of reuse is that the already-decoded bitmap
+            // survives instead of being discarded and re-fetched. It only
+            // stops being the right image if what AlbumArtLoader would key on
+            // changed under us - an edited album tag, or a placeholder that
+            // has since been downloaded and now has a real file to read art
+            // from.
+            if (!ArtSourceMatches(previous, plan.Track))
+                ResetAlbumArt();
+        }
+
+        if (_isFirstInAlbumGroup != plan.IsFirstInAlbumGroup)
+        {
+            _isFirstInAlbumGroup = plan.IsFirstInAlbumGroup;
+            OnPropertyChanged(nameof(IsFirstInAlbumGroup));
+        }
+
+        if (_albumGroupSize != plan.AlbumGroupSize)
+        {
+            _albumGroupSize = plan.AlbumGroupSize;
+            OnPropertyChanged(nameof(AlbumGroupSize));
+            OnPropertyChanged(nameof(AlbumArtDisplaySize));
+        }
+
+        IsCurrentlyPlaying = plan.IsCurrentlyPlaying;
+        IsAvailable        = plan.IsAvailable;
+    }
+
+    private static bool ArtSourceMatches(Track a, Track b) =>
+        a.Album == b.Album &&
+        a.Path == b.Path &&
+        a.OriginAlbumArtHash == b.OriginAlbumArtHash &&
+        a.OriginDeviceFingerprint == b.OriginDeviceFingerprint;
 
     // Height of the album art image — capped at ArtMaxSize so it never bleeds into the next group.
     // For short albums (1–2 tracks) the image is proportionally smaller; for 3+ tracks it's square.
@@ -139,7 +224,18 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private DispatcherTimer? _spinTimer;
+    // Supplied by whoever built this row (LibraryBrowserViewModel threads the
+    // container's instance down through TrackRowMerge). Null only for a row
+    // built by a static builder with no container behind it - mobile's search
+    // results, the previewer, a test - which falls back to the shared default.
+    private AnimationClock? _clock;
+    public AnimationClock? Clock
+    {
+        get => _clock;
+        init => _clock = value;
+    }
+
+    private IDisposable? _spin;
     private double _spinAngle;
     public double SpinAngle
     {
@@ -149,27 +245,27 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
 
     private void StartSpin()
     {
-        _spinTimer?.Stop();
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
-        _spinTimer = timer;
-        timer.Tick += (_, _) => SpinAngle = (SpinAngle + 6) % 360; // ~1 revolution/second.
-        timer.Start();
+        _spin?.Dispose();
+        // ~1 revolution/second, derived from elapsed time rather than
+        // accumulated per tick, so several rows downloading at once stay in
+        // phase and a dropped frame doesn't leave one lagging behind forever.
+        _spin = (_clock ?? AnimationClock.Current).Subscribe(
+            elapsed => SpinAngle = elapsed.TotalSeconds * 360 % 360);
     }
 
     private void StopSpin()
     {
-        _spinTimer?.Stop();
-        _spinTimer = null;
+        _spin?.Dispose();
+        _spin = null;
         SpinAngle = 0;
     }
 
-    // Rows are thrown away wholesale and rebuilt on every rescan, search
-    // keystroke and track change (see MainViewModel.RebuildRowsAsync), and
-    // StopSpin above only ever ran from the IsDownloading setter - so a row
-    // discarded mid-download left its 16ms DispatcherTimer registered on the
-    // dispatcher forever, with the Tick closure keeping this view-model alive
-    // and burning a 60fps wakeup per orphaned row. Batch-downloading an album
-    // on a phone accumulated one per track.
+    // A row that does not survive a rebuild (see TrackRowMerge) is dropped, and
+    // StopSpin above only ever ran from the IsDownloading setter - so a
+    // discarded row left its animation subscription registered forever, with
+    // the callback keeping this view-model alive and keeping the shared clock
+    // awake. Rows that *are* reused must not be disposed: their spinner is
+    // still on screen and still downloading.
     public void Dispose() => StopSpin();
 
     private bool _isDownloadUnavailable;
@@ -197,24 +293,45 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
 
     // ── Selection / playing ───────────────────────────────────────────────────
 
+    // Both guard on the value rather than raising unconditionally: a rebuild
+    // now re-applies these to every surviving row (see ApplyPlan), and an
+    // unguarded setter would invalidate a binding on all ~16k of them to say
+    // nothing changed.
     private bool _isSelected;
     public bool IsSelected
     {
         get => _isSelected;
-        set { _isSelected = value; OnPropertyChanged(); }
+        set
+        {
+            if (_isSelected == value)
+                return;
+            _isSelected = value;
+            OnPropertyChanged();
+        }
     }
 
     private bool _isCurrentlyPlaying;
     public bool IsCurrentlyPlaying
     {
         get => _isCurrentlyPlaying;
-        set { _isCurrentlyPlaying = value; OnPropertyChanged(); }
+        set
+        {
+            if (_isCurrentlyPlaying == value)
+                return;
+            _isCurrentlyPlaying = value;
+            OnPropertyChanged();
+        }
     }
 
     // ── Album art (lazy, async) ───────────────────────────────────────────────
 
     private Bitmap? _albumArt;
     private int     _artState; // 0=idle, 1=loading, 2=done
+    // Bumped by ResetAlbumArt so a load already in flight for the *previous*
+    // track can tell it has been superseded and drop its result, rather than
+    // publishing the old album's cover and parking _artState at "done" where
+    // nothing would ever reload it.
+    private int     _artGeneration;
 
     // Loads regardless of IsFirstInAlbumGroup - desktop's MusicListView only
     // ever shows this for the group leader (IsVisible="{Binding
@@ -233,9 +350,22 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
         private set { _albumArt = value; OnPropertyChanged(); }
     }
 
+    // Back to state 0 (idle) rather than straight to a reload: nothing may ever
+    // read AlbumArt on this row again (it can be scrolled far off screen), and
+    // the getter is what decides that.
+    private void ResetAlbumArt()
+    {
+        Interlocked.Increment(ref _artGeneration);
+        Interlocked.Exchange(ref _artState, 0);
+        AlbumArt = null;
+    }
+
     private async Task LoadArtAsync()
     {
+        var generation = Volatile.Read(ref _artGeneration);
         var bmp = await AlbumArtLoader.Current.LoadAsync(Track);
+        if (Volatile.Read(ref _artGeneration) != generation)
+            return;
         Interlocked.Exchange(ref _artState, 2);
         AlbumArt = bmp;
     }

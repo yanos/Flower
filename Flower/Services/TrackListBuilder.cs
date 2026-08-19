@@ -8,7 +8,30 @@ namespace Flower.Services;
 
 public static class TrackListBuilder
 {
+    // Builds a standalone row list with nothing to reuse. Callers on the hot
+    // rebuild path (LibraryBrowserViewModel.RebuildRowsAsync) call Plan on a
+    // background thread and TrackRowMerge.Apply on the UI thread instead, so
+    // the rows already on screen survive the rebuild - see TrackRowMerge.
     public static List<TrackRowViewModel> Build(
+        IEnumerable<Track> tracks,
+        string? filterText,
+        string sortColumn,
+        bool sortAscending,
+        Track? currentlyPlayingTrack = null,
+        bool sortArtistAlbumsByYear = false,
+        string? pairedServerFingerprint = null,
+        bool pairedServerReachable = false)
+    {
+        var plan = Plan(tracks, filterText, sortColumn, sortAscending, currentlyPlayingTrack,
+            sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
+
+        return TrackRowMerge.Apply(null, plan, out _);
+    }
+
+    // The whole filter/sort/group pass, stopping just short of any view-model:
+    // safe to run off the UI thread even while the rows it will be merged into
+    // are live and bound, because it touches none of them.
+    public static List<TrackRowPlan> Plan(
         IEnumerable<Track> tracks,
         string? filterText,
         string sortColumn,
@@ -21,7 +44,7 @@ public static class TrackListBuilder
         var filtered = Filter(tracks, filterText).ToList();
         var sorted   = Sort(filtered, sortColumn, sortAscending, sortArtistAlbumsByYear).ToList();
 
-        return BuildRows(sorted, currentlyPlayingTrack, pairedServerFingerprint, pairedServerReachable);
+        return PlanRows(sorted, currentlyPlayingTrack, pairedServerFingerprint, pairedServerReachable);
     }
 
     // Public so MainViewModel can also filter the Albums/Recently Added tile
@@ -119,13 +142,13 @@ public static class TrackListBuilder
     // render a single spanning album-art cell for the whole run, no matter what
     // produced the adjacency (an explicit album sort, or another sort/column
     // whose secondary keys happen to keep an album's tracks together).
-    private static List<TrackRowViewModel> BuildRows(
+    private static List<TrackRowPlan> PlanRows(
         List<Track> tracks,
         Track? currentlyPlaying,
         string? pairedServerFingerprint,
         bool pairedServerReachable)
     {
-        var result = new List<TrackRowViewModel>(tracks.Count);
+        var result = new List<TrackRowPlan>(tracks.Count);
 
         int i = 0;
         while (i < tracks.Count)
@@ -137,24 +160,22 @@ public static class TrackListBuilder
 
             for (int k = i; k < j; k++)
             {
-                result.Add(new TrackRowViewModel
-                {
-                    Track              = tracks[k],
-                    IsFirstInAlbumGroup = k == i,
-                    AlbumGroupSize     = groupSize,
+                result.Add(new TrackRowPlan(
+                    Track: tracks[k],
+                    IsFirstInAlbumGroup: k == i,
+                    AlbumGroupSize: groupSize,
                     // tracks[k].Path == currentlyPlaying?.Path alone is wrong
                     // whenever nothing is playing (currentlyPlaying == null):
                     // null == null is true, so every not-yet-downloaded track
                     // (Path == null too) matched "currently playing" and got
                     // the bold/accent-color styling (Button.trackRow.playing)
                     // meant for an actual playing row.
-                    IsCurrentlyPlaying = tracks[k].Path != null && currentlyPlaying != null && tracks[k].Path == currentlyPlaying.Path,
+                    IsCurrentlyPlaying: tracks[k].Path != null && currentlyPlaying != null && tracks[k].Path == currentlyPlaying.Path,
                     // See TrackAvailability.IsAvailable - computed here so a
                     // freshly-built row is correct from the moment it exists,
                     // rather than starting from a default and waiting for a
                     // separate post-build pass to catch up.
-                    IsAvailable = TrackAvailability.IsAvailable(tracks[k], pairedServerFingerprint, pairedServerReachable),
-                });
+                    IsAvailable: TrackAvailability.IsAvailable(tracks[k], pairedServerFingerprint, pairedServerReachable)));
             }
             i = j;
         }

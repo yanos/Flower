@@ -571,6 +571,7 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
         DeviceNicknameStore deviceNicknameStore,
         BusyState busy,
         ITunesImportCoordinator iTunesImport,
+        AnimationClock animationClock,
         ILogger<MainViewModel> logger,
         // Trailing + defaulted (not just nullable-typed) deliberately: these
         // don't exist at all on Flower.Web/WASM (no P2P sync stack there - see
@@ -611,7 +612,7 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
         ITunesImport           = iTunesImport;
         _logger                = logger;
 
-        Browser = new LibraryBrowserViewModel(library, this);
+        Browser = new LibraryBrowserViewModel(library, this, animationClock);
         Browser.RestoreSort(
             appSettings.SortColumn ?? "TrackNumber",
             appSettings.SortColumn is null || appSettings.SortAscending,
