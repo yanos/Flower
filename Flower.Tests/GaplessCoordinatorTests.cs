@@ -345,4 +345,74 @@ public class GaplessCoordinatorTests
         h.SharedRing.Read(new byte[300]);
         Assert.Equal(targetBytes + 300, h.Coordinator.CurrentTrackBytesProduced);
     }
+
+    [Fact]
+    public void A_settled_seek_re_anchors_position_onto_where_the_demuxer_actually_landed()
+    {
+        var h = new Harness();
+        var a = T("A");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+
+        h.Coordinator.Seek(0.5f);
+        var targetBytes = (long)(90 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        Assert.Equal(targetBytes, h.Coordinator.CurrentTrackBytesProduced);
+
+        // The demuxer put it two seconds short of the request - a lossy
+        // seek landing on the nearest frame boundary it could use.
+        var landedBytes = targetBytes - (long)(2 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        h.LatestDecoderFor(a).RaiseSeekSettled(landedBytes);
+
+        Assert.Equal(landedBytes, h.Coordinator.CurrentTrackBytesProduced);
+
+        // And it grows from the real landing point, not the request.
+        h.SharedRing.TryWrite(new byte[300]);
+        h.SharedRing.Read(new byte[300]);
+        Assert.Equal(landedBytes + 300, h.Coordinator.CurrentTrackBytesProduced);
+    }
+
+    [Fact]
+    public void A_settled_seek_accounts_for_audio_the_sink_already_drained_since_the_flush()
+    {
+        var h = new Harness();
+        var a = T("A");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+
+        h.Coordinator.Seek(0.5f);
+
+        // The settle arrives after the sink has already consumed 500 bytes
+        // of post-seek audio, so the landing point is 500 bytes back from
+        // where the ring is now - not where it is now.
+        h.SharedRing.TryWrite(new byte[500]);
+        h.SharedRing.Read(new byte[500]);
+
+        var landedBytes = (long)(88 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        h.LatestDecoderFor(a).RaiseSeekSettled(landedBytes);
+
+        Assert.Equal(landedBytes + 500, h.Coordinator.CurrentTrackBytesProduced);
+    }
+
+    [Fact]
+    public void A_settled_seek_from_a_decoder_that_is_no_longer_current_is_ignored()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = T("B");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+
+        var staleDecoder = h.LatestDecoderFor(a);
+        h.Coordinator.Seek(0.5f);
+
+        // A hard flush onto B lands before A's seek settles - B's own
+        // baseline (a fresh ring, zero elapsed) must survive it.
+        h.Coordinator.Play(b);
+        WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should start");
+        Assert.Equal(0, h.Coordinator.CurrentTrackBytesProduced);
+
+        staleDecoder.RaiseSeekSettled((long)(88 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame));
+
+        Assert.Equal(0, h.Coordinator.CurrentTrackBytesProduced);
+    }
 }

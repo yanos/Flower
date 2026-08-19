@@ -23,6 +23,7 @@ public sealed class FakeTrackDecoder : ITrackDecoder
 
     public event Action? Drained;
     public event Action? Faulted;
+    public event Action<long>? SeekSettled;
 
     public FakeTrackDecoder(Track track) => Track = track;
 
@@ -37,4 +38,9 @@ public sealed class FakeTrackDecoder : ITrackDecoder
 
     public void RaiseDrained() => Drained?.Invoke();
     public void RaiseFaulted() => Faulted?.Invoke();
+
+    // Stands in for the real decoder discovering, once the seek's flush
+    // has landed, that the demuxer put it somewhere other than where it
+    // was asked to go.
+    public void RaiseSeekSettled(long landedBytes) => SeekSettled?.Invoke(landedBytes);
 }

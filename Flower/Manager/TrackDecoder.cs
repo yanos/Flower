@@ -77,6 +77,23 @@ namespace Flower.Manager
         // mid-decode.
         public event Action? Faulted;
 
+        // See ITrackDecoder.SeekSettled. Resolved from the decode player's
+        // own clock at the first sample delivered after the seek's flush,
+        // which is the earliest moment LibVLC can report where it actually
+        // landed - MediaPlayer.Position is set asynchronously, so reading
+        // it back inside Seek() just returns the request.
+        public event Action<long>? SeekSettled;
+
+        // Seek() -> OnFlush -> OnPlay, as two one-shot handoffs. The flush
+        // is what marks the boundary the landing offset is measured from
+        // (it's the same boundary the coordinator's ring reset uses), and
+        // OnPlay is the first moment the player's clock reflects the new
+        // position. Two seeks in quick succession collapse into a single
+        // resolution against whichever one the player settled on, which is
+        // the right answer for both.
+        private int _seekRequested;
+        private int _seekAwaitingFirstSample;
+
         public TrackDecoder(LibVLC libVLC, Track track, GaplessRingBuffer initialTarget, ILogger<TrackDecoder>? logger = null)
         {
             _libVLC = libVLC;
@@ -213,7 +230,10 @@ namespace Flower.Manager
 
         // Seeks this decoder's own demux/decode to the given position
         // (0..1) and resets the byte-produced counter to match, so
-        // Time/Position stay correct across the seek. LibVLC's own flush
+        // Time/Position stay correct across the seek. The counter is set
+        // to the *requested* offset here and corrected to the offset the
+        // demuxer actually landed on once the seek settles - see
+        // ResolveSeekLanding and SeekSettled. LibVLC's own flush
         // callback (OnFlush) fires as a side effect, discarding whatever
         // pre-seek audio was already sitting in this decoder's current
         // target ring.
@@ -222,10 +242,9 @@ namespace Flower.Manager
             _logger?.LogInformation(
                 "Seek({Position}) on {Path}: State={State} IsPlaying={IsPlaying} before seek",
                 position, Track.Path, _mediaPlayer.State, _mediaPlayer.IsPlaying);
+            Interlocked.Exchange(ref _seekRequested, 1);
             _mediaPlayer.Position = position;
-            var targetSeconds = Track.Duration.TotalSeconds * position;
-            var targetBytes = (long)(targetSeconds * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-            Interlocked.Exchange(ref _bytesProduced, targetBytes);
+            Interlocked.Exchange(ref _bytesProduced, BytesForSeconds(Track.Duration.TotalSeconds * position));
 
             // Defensive: if LibVLC's seek sequence internally pauses the
             // decode pipeline as part of repositioning and never resumes it
@@ -331,6 +350,12 @@ namespace Flower.Manager
             if (Volatile.Read(ref _retired) == 1)
                 return;
 
+            // Before anything is written for this buffer, so the landing
+            // offset lines up with the ring position this buffer starts at
+            // rather than the one after it.
+            if (Interlocked.Exchange(ref _seekAwaitingFirstSample, 0) == 1)
+                ResolveSeekLanding();
+
             var byteCount = checked((int)count * GaplessFormat.BytesPerFrame);
             if (_scratch.Length < byteCount)
                 _scratch = new byte[byteCount];
@@ -364,6 +389,9 @@ namespace Flower.Manager
 
             _logger?.LogInformation("OnFlush for {Path} - resetting target ring", Track.Path);
 
+            if (Interlocked.Exchange(ref _seekRequested, 0) == 1)
+                Interlocked.Exchange(ref _seekAwaitingFirstSample, 1);
+
             _writer.ResetTarget();
         }
 
@@ -377,6 +405,32 @@ namespace Flower.Manager
             _logger?.LogInformation("OnDrain for {Path}", Track.Path);
             Drained?.Invoke();
         }
+
+        // Takes the decode player's own clock as the truth about where the
+        // seek landed and republishes it. Time is in milliseconds and is
+        // -1 when the player has no usable clock at all, in which case the
+        // requested target Seek() already published stands - a stale
+        // target is a better answer than a wrong one.
+        private void ResolveSeekLanding()
+        {
+            var timeMs = _mediaPlayer.Time;
+            if (timeMs < 0)
+                return;
+
+            var landedBytes = Math.Clamp(BytesForSeconds(timeMs / 1000.0), 0, BytesForSeconds(Track.Duration.TotalSeconds));
+
+            _logger?.LogInformation(
+                "Seek settled for {Path}: landed at {LandedMs}ms ({LandedBytes} bytes), was reporting {ReportedBytes}",
+                Track.Path, timeMs, landedBytes, BytesProduced);
+
+            Interlocked.Exchange(ref _bytesProduced, landedBytes);
+            SeekSettled?.Invoke(landedBytes);
+        }
+
+        // Frame-aligned, because a byte offset that lands mid-frame is not
+        // a position any part of the pipeline can act on.
+        private static long BytesForSeconds(double seconds) =>
+            (long)(seconds * GaplessFormat.SampleRate) * GaplessFormat.BytesPerFrame;
 
         // Retire() is the single end-of-life path and now releases the native
         // handles itself, so this is just the IDisposable spelling of it.

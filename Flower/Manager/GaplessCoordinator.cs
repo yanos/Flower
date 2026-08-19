@@ -95,7 +95,9 @@ namespace Flower.Manager
         // moment of promotion for a natural handover (the byte offset where
         // the new track's audio begins in the ring's stream - see the
         // promotion branch of HandleDrainedOrFaulted), or a negative offset
-        // equal to the seek target for Seek() (see its remarks).
+        // equal to the seek target for Seek() (see its remarks), re-anchored
+        // onto the real landing point by HandleSeekSettled once the seek
+        // settles.
         private long _currentTrackReadSplit;
 
         private ITrackDecoder? _armed;
@@ -211,6 +213,7 @@ namespace Flower.Manager
                 var decoder = _currentDecoderFactory(track, _sharedRing);
                 decoder.Drained += () => HandleDrainedOrFaulted(decoder, faulted: false);
                 decoder.Faulted += () => HandleDrainedOrFaulted(decoder, faulted: true);
+                decoder.SeekSettled += landedBytes => HandleSeekSettled(decoder, landedBytes);
                 _current = decoder;
                 _currentPath = track.Path;
                 _currentTrackReadSplit = 0;
@@ -290,12 +293,56 @@ namespace Flower.Manager
                     // immediately, then grows from there as playback
                     // resumes, without waiting on the decoder to report
                     // anything about the seek itself.
+                    //
+                    // That target is a provisional answer, not the final
+                    // one: a lossy stream is seeked to a frame/keyframe
+                    // boundary, so LibVLC routinely lands somewhere near
+                    // the request rather than on it, and nothing here can
+                    // know where. HandleSeekSettled re-anchors the split
+                    // onto the real landing point once the decoder reports
+                    // it (ITrackDecoder.SeekSettled), which is what stops
+                    // the scrubber drifting away from the audio across
+                    // repeated seeks.
                     var targetSeconds = _current.Track.Duration.TotalSeconds * position;
                     var targetBytes = (long)(targetSeconds * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
                     _currentTrackReadSplit = -targetBytes;
                 }
 
                 _current?.Seek(position);
+            }
+        }
+
+        // Re-anchors the elapsed-time baseline onto where a seek actually
+        // landed, replacing the requested target Seek() published
+        // provisionally - see its remarks.
+        //
+        // landedBytes is the offset into the track of the first sample
+        // decoded after the seek's flush, so the split is a flat
+        // -landedBytes for exactly the reason Seek() pre-negates by the
+        // target: that flush is what resets the ring's generation, and
+        // TotalBytesRead counts from zero at the same sample landedBytes
+        // describes. Anything the sink has already drained by the time
+        // this arrives is real playback past the landing point and has to
+        // keep counting - re-baselining against TotalBytesRead here would
+        // silently discard it.
+        //
+        // Ignored for anything that is no longer current: a Play() or a
+        // natural handover in between has already set its own split, and a
+        // late settle from the decoder it replaced must not stomp it.
+        private void HandleSeekSettled(ITrackDecoder decoder, long landedBytes)
+        {
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_current, decoder))
+                {
+                    _logger?.LogDebug("HandleSeekSettled for {Path}: stale decoder, ignoring", decoder.Track.Path);
+                    return;
+                }
+
+                _currentTrackReadSplit = -landedBytes;
+                _logger?.LogInformation(
+                    "Seek settled on {Path} at {LandedBytes} bytes - split re-anchored to {Split}",
+                    _currentPath, landedBytes, _currentTrackReadSplit);
             }
         }
 
@@ -451,6 +498,11 @@ namespace Flower.Manager
                     // this subscribes to it once it's no longer "armed".
                     promoted.Drained += () => HandleDrainedOrFaulted(promoted, faulted: false);
                     promoted.Faulted += () => HandleDrainedOrFaulted(promoted, faulted: true);
+
+                    // Only now: an armed decoder is never seeked, so this
+                    // is the first point at which the promoted one can be
+                    // asked to.
+                    promoted.SeekSettled += landedBytes => HandleSeekSettled(promoted, landedBytes);
 
                     ClearArmedSlot(retireDecoder: false);
                     _logger?.LogInformation("{Finished} drained - promoting armed {Next}", finishedTrack.Path, promoted.Track.Path);
