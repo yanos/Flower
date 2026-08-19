@@ -34,7 +34,14 @@ namespace Flower.Manager
         // well ahead of playback without unbounded memory growth. Doesn't
         // rely on any assumption about how fast LibVLC's callback-mode
         // decode paces itself relative to real time.
-        private const int StagingCapacityBytes = 60 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
+        public const int DefaultStagingCapacityBytes = 60 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
+
+        // Only ever non-default in tests, which shrink it so decode-ahead
+        // fills it in a fraction of a second - the "staging ring already
+        // full when the handover arrives" case, which at 60s would need a
+        // minute-long fixture to reach. See
+        // GaplessCoordinatorRealDecodeTests.
+        private readonly int _stagingCapacityBytes;
 
         private readonly GaplessRingBuffer _sharedRing;
         private readonly Func<Track, GaplessRingBuffer, ITrackDecoder> _currentDecoderFactory;
@@ -125,8 +132,9 @@ namespace Flower.Manager
             LibVLC libVLC,
             GaplessRingBuffer sharedRing,
             ILogger<GaplessCoordinator>? logger = null,
-            ILogger<TrackDecoder>? trackDecoderLogger = null)
-            : this(sharedRing, (track, ring) => new TrackDecoder(libVLC, track, ring, trackDecoderLogger), logger)
+            ILogger<TrackDecoder>? trackDecoderLogger = null,
+            int stagingCapacityBytes = DefaultStagingCapacityBytes)
+            : this(sharedRing, (track, ring) => new TrackDecoder(libVLC, track, ring, trackDecoderLogger), logger, stagingCapacityBytes)
         {
             _secondCore = new LibVLC();
             _cores = [libVLC, _secondCore];
@@ -138,8 +146,13 @@ namespace Flower.Manager
         // class's handover/idempotency/generation logic without touching
         // real LibVLC decode. Current and armed share the same factory here
         // - there's no real core contention to isolate in the fake path.
-        public GaplessCoordinator(GaplessRingBuffer sharedRing, Func<Track, GaplessRingBuffer, ITrackDecoder> decoderFactory, ILogger<GaplessCoordinator>? logger = null)
+        public GaplessCoordinator(
+            GaplessRingBuffer sharedRing,
+            Func<Track, GaplessRingBuffer, ITrackDecoder> decoderFactory,
+            ILogger<GaplessCoordinator>? logger = null,
+            int stagingCapacityBytes = DefaultStagingCapacityBytes)
         {
+            _stagingCapacityBytes = stagingCapacityBytes;
             _sharedRing = sharedRing;
             _currentDecoderFactory = decoderFactory;
             _armedDecoderFactory = decoderFactory;
@@ -246,7 +259,7 @@ namespace Flower.Manager
 
                 ClearArmedSlot(retireDecoder: true);
 
-                var stagingRing = new GaplessRingBuffer(StagingCapacityBytes);
+                var stagingRing = new GaplessRingBuffer(_stagingCapacityBytes);
                 var decoder = _armedDecoderFactory(next, stagingRing);
                 _stagingRing = stagingRing;
                 _armed = decoder;
@@ -460,7 +473,7 @@ namespace Flower.Manager
             // outside _gate: PromoteTarget's Write() calls are paced by the
             // shared ring's real-time playback backpressure (bounded by
             // however much decode-ahead managed to buffer, up to
-            // StagingCapacityBytes - tens of seconds), so holding _gate for
+            // DefaultStagingCapacityBytes - tens of seconds), so holding _gate for
             // it would freeze every other coordinator call for just as long,
             // including the UI thread itself synchronously blocked inside
             // the Dispatcher-posted Play() from PlaylistControlViewModel's

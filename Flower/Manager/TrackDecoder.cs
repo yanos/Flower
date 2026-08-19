@@ -20,18 +20,22 @@ namespace Flower.Manager
     // The decode-ahead role starts out writing into its own private staging
     // ring (so its output can't interleave with the still-playing current
     // track), then gets PromoteTarget()'d onto the shared ring at handover
-    // time. The _targetGate lock makes "drain whatever's in the old target,
-    // then start writing to the new one" atomic with respect to this
-    // decoder's own producer thread, so no bytes can be produced into a
-    // target that's mid-retarget and get lost or duplicated.
+    // time. RetargetableRingWriter makes "drain whatever's in the old
+    // target, then start writing to the new one" atomic with respect to
+    // this decoder's own producer thread, so no bytes can be produced into
+    // a target that's mid-retarget and get lost or duplicated - see it for
+    // why that is more than a plain lock around a blocking write.
     public sealed class TrackDecoder : ITrackDecoder
     {
         private readonly LibVLC _libVLC;
         private readonly MediaPlayer _mediaPlayer;
-        private readonly object _targetGate = new();
+        private readonly RetargetableRingWriter _writer;
+
+        // Cached because it is handed to the writer on every single audio
+        // callback - see OnPlay.
+        private readonly Func<bool> _isRetired;
         private Media? _media;
         private byte[] _scratch = [];
-        private GaplessRingBuffer _target;
         private long _bytesProduced;
         private int _retired;
 
@@ -77,7 +81,8 @@ namespace Flower.Manager
         {
             _libVLC = libVLC;
             Track = track;
-            _target = initialTarget;
+            _writer = new RetargetableRingWriter(initialTarget);
+            _isRetired = () => Volatile.Read(ref _retired) == 1;
             _logger = logger;
 
             _mediaPlayer = new MediaPlayer(_libVLC);
@@ -232,20 +237,8 @@ namespace Flower.Manager
 
         // Drains everything currently buffered in this decoder's target
         // ring into newTarget, then switches future output to newTarget -
-        // done under _targetGate so the switch is atomic relative to this
-        // decoder's own OnPlay callback, which also takes _targetGate.
-        public void PromoteTarget(GaplessRingBuffer newTarget)
-        {
-            lock (_targetGate)
-            {
-                Span<byte> chunk = stackalloc byte[4096];
-                int read;
-                while ((read = _target.Read(chunk)) > 0)
-                    newTarget.Write(chunk[..read]);
-
-                _target = newTarget;
-            }
-        }
+        // see RetargetableRingWriter.
+        public void PromoteTarget(GaplessRingBuffer newTarget) => _writer.PromoteTarget(newTarget);
 
         // Marks this decoder retired - its in-flight/late callbacks become
         // no-ops - then stops the underlying MediaPlayer. Used when
@@ -344,10 +337,12 @@ namespace Flower.Manager
 
             Marshal.Copy(samples, _scratch, 0, byteCount);
 
-            lock (_targetGate)
-            {
-                _target.Write(_scratch.AsSpan(0, byteCount));
-            }
+            // The retire check is handed over as a callback rather than
+            // being tested once up front: this can park for as long as the
+            // target ring stays full (a whole track's worth, for a decoder
+            // that filled its staging ring long before handover), and a
+            // Retire() landing in the middle of that has to get out.
+            _writer.Write(_scratch.AsSpan(0, byteCount), _isRetired);
 
             Interlocked.Add(ref _bytesProduced, byteCount);
         }
@@ -369,10 +364,7 @@ namespace Flower.Manager
 
             _logger?.LogInformation("OnFlush for {Path} - resetting target ring", Track.Path);
 
-            lock (_targetGate)
-            {
-                _target.Reset();
-            }
+            _writer.ResetTarget();
         }
 
         private void OnDrain(IntPtr data)

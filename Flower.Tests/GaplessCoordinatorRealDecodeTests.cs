@@ -51,7 +51,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
     // 2. That fix then reliably exposed a second, genuine bug it had been
     //    masking: a 1s armed track decodes fully in well under a
     //    millisecond once nothing throttles it (no real playback pacing on
-    //    the decode-ahead side - see StagingCapacityBytes' remarks), so it
+    //    the decode-ahead side - see DefaultStagingCapacityBytes' remarks), so it
     //    routinely finished - and got promoted to current - before its own
     //    ArmAsync had even finished awaiting PrepareAsync. StartDecoding()
     //    only ever got called from ArmAsync's completion, which bailed out
@@ -129,6 +129,88 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         Assert.NotNull(firstBFrame);
         Assert.True(firstBFrame > 0, "expected to capture some of A before B appears");
+
+        coordinator.Dispose();
+        sink.Dispose();
+    }
+    // The deadlock this covers, seen in a real session log: the armed
+    // decoder had six minutes of decode-ahead, so it filled its 60s staging
+    // ring and parked inside the ring's blocking write - while holding the
+    // lock that the handover's own PromoteTarget needed. Promotion never
+    // completed, so the shared ring was never fed again: the next track
+    // showed as playing, the sink underran forever, and the music simply
+    // stopped. Any current track longer than the staging ring hits it.
+    //
+    // Reproduced here by shrinking the staging ring to a fraction of a
+    // second rather than by using a minute-long fixture - the ratio of
+    // staging capacity to current-track length is the only thing that
+    // matters. RetargetableRingWriterTests covers the same collision
+    // deterministically at the unit level; this proves the whole real
+    // pipeline (two LibVLC cores, real PCM, a real-time-paced sink) still
+    // gets from A to B when it happens.
+    [Fact]
+    public void Handover_still_completes_when_decode_ahead_filled_the_staging_ring()
+    {
+        var durationA = TimeSpan.FromSeconds(2);
+        var durationB = TimeSpan.FromSeconds(2);
+        const byte markerA = 33;
+        const byte markerB = 44;
+        var trackA = MakeTrack(SyntheticWav.CreateFile(_tempDir, "full-a.wav", durationA, SyntheticWav.Marker(markerA)), durationA);
+        var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "full-b.wav", durationB, SyntheticWav.Marker(markerB)), durationB);
+
+        // A tenth of a second of staging against a two-second current
+        // track: B's decode-ahead fills it and parks long before A ends.
+        var stagingCapacity = (int)GaplessFormat.SampleRate / 10 * GaplessFormat.BytesPerFrame;
+        var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var coordinator = new GaplessCoordinator(
+            _libVLC,
+            sharedRing,
+            NullLogger<GaplessCoordinator>.Instance,
+            NullLogger<TrackDecoder>.Instance,
+            stagingCapacity);
+        var sink = new FakeAudioSink();
+        sink.Start(sharedRing);
+        sink.Resume();
+
+        coordinator.Play(trackA);
+        coordinator.SetUpcoming(trackB);
+
+        // Deliberately well past the 0.1s of B that was staged at the
+        // moment of promotion: before the fix the parked write never
+        // resumed, so playback stopped at the end of that backlog. Getting
+        // a full second of B out the other side is the actual proof that
+        // the promoted decoder kept producing.
+        var targetBytes = (long)((durationA.TotalSeconds + 1.0) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        Assert.True(
+            SpinWait.SpinUntil(() => sink.CapturedCount >= targetBytes, TimeSpan.FromSeconds(15)),
+            "playback stalled after the handover - the promoted decoder never resumed feeding the shared ring");
+
+        sink.Pause();
+
+        var captured = sink.Captured;
+        var frameCount = captured.Length / GaplessFormat.BytesPerFrame;
+        int? firstBFrame = null;
+        var bFrames = 0;
+        for (var i = 0; i < frameCount; i++)
+        {
+            var sample = BinaryPrimitives.ReadInt16LittleEndian(captured.AsSpan(i * GaplessFormat.BytesPerFrame, 2));
+            Assert.True(sample is markerA or markerB, $"frame {i} had unexpected sample {sample}, splice likely corrupted");
+
+            if (sample == markerB)
+            {
+                firstBFrame ??= i;
+                bFrames++;
+            }
+            else if (firstBFrame != null)
+            {
+                Assert.Fail($"frame {i} reverted back to A's marker after B had already started at frame {firstBFrame} - a repeated/rewound tail at the splice");
+            }
+        }
+
+        Assert.NotNull(firstBFrame);
+        Assert.True(
+            bFrames > stagingCapacity / GaplessFormat.BytesPerFrame * 2,
+            $"only {bFrames} frames of B came through - about the size of the staged backlog, so the promoted decoder stopped producing after the handover");
 
         coordinator.Dispose();
         sink.Dispose();

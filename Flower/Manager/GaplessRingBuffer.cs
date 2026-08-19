@@ -98,6 +98,13 @@ namespace Flower.Manager
             }
         }
 
+        // Bumped by every Reset(). A caller that writes in several steps
+        // (see TrackDecoder.OnPlay, which pauses between them so a
+        // retarget can get in) reads this before it starts and abandons
+        // the rest of its data if it changes underneath - a flush/seek
+        // means those bytes belong to a stream nobody wants anymore.
+        public int Generation => Volatile.Read(ref _generation);
+
         // Reads up to dest.Length bytes without blocking. Returns the number
         // of bytes actually copied - 0 means the buffer is currently empty,
         // not end-of-stream (callers decide what "empty" means for them).
