@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -102,7 +102,7 @@ public class StoreRoundTripTests : IDisposable
     // see PlaylistControlViewModelTests.FakeAudioManager for why that test
     // class never raises EndReached itself (needs a live Avalonia dispatcher).
     // This test avoids that by giving PlaylistControlViewModel an empty
-    // current playlist, so GetNextTrack returns null and the handler never
+    // current playlist, so there is no next track and the handler never
     // reaches its Dispatcher.UIThread.Post call - this test lives here (not
     // there) because it does touch LibraryStore for real and needs this
     // class's HOME redirection.

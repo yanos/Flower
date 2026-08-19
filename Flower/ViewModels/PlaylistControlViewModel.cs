@@ -18,6 +18,19 @@ namespace Flower.ViewModels
 
         private Playlist _currentPlaylist;
         private Track? _currentlyPlayingTrack;
+
+        // Where CurrentlyPlayingTrack sits in _currentPlaylist, as a position
+        // rather than a value to search for. Track equality is by Id (see
+        // Track.Equals), so the same track queued twice - "add to playlist"
+        // twice, or an album that repeats a song - is genuinely the same object
+        // in two slots, and every IndexOf over the queue resolved to the first
+        // of them: playing the second copy then advanced from the first, so
+        // Next jumped backwards and auto-advance replayed a chunk of the queue.
+        // -1 means "not known", which is every path that starts playback from a
+        // bare Track (see Play(Track)) plus anything that invalidates the
+        // position; ResolveQueueIndex falls back to IndexOf there, which is no
+        // worse than what this replaced. See docs/ARCHITECTURE-REVIEW.md 0.2.
+        private int _queueIndex = -1;
         private Track? _selectedTrack;
         private bool _isRepeatEnabled;
         private bool _isShuffleEnabled;
@@ -145,11 +158,11 @@ namespace Flower.ViewModels
                     _library.IncrementPlayCount(finishedTrack);
                     _libraryStore.ScheduleSave(_library.Tracks);
 
-                    var nextTrack = GetUpcomingTrack(finishedTrack);
-                    if (nextTrack != null)
+                    var next = GetUpcomingEntry(finishedTrack, ResolveQueueIndex(finishedTrack));
+                    if (next.Track != null)
                     {
-                        _logger.LogDebug("Auto-advancing to {Title} (repeat={Repeat}, shuffle={Shuffle})", nextTrack.Title, IsRepeatEnabled, IsShuffleEnabled);
-                        Dispatcher.UIThread.Post(() => Play(nextTrack));
+                        _logger.LogDebug("Auto-advancing to {Title} (repeat={Repeat}, shuffle={Shuffle})", next.Track.Title, IsRepeatEnabled, IsShuffleEnabled);
+                        Dispatcher.UIThread.Post(() => Play(next.Track, next.Index));
                     }
                 }
             },
@@ -169,9 +182,9 @@ namespace Flower.ViewModels
                 // Repeat would re-attempt the same broken file forever, so the
                 // next track here is always the *next* one, never a repeat of
                 // this one.
-                var nextTrack = GetNextTrack(e.Track);
-                if (nextTrack != null && nextTrack != e.Track)
-                    Dispatcher.UIThread.Post(() => Play(nextTrack));
+                var next = GetNextEntry(e.Track, ResolveQueueIndex(e.Track));
+                if (next.Track != null && next.Track != e.Track)
+                    Dispatcher.UIThread.Post(() => Play(next.Track, next.Index));
             },
                 h => _audioManager.TrackFailed += h, h => _audioManager.TrackFailed -= h);
         }
@@ -201,6 +214,47 @@ namespace Flower.ViewModels
         public void SetCurrentPlaylist(Playlist playlist)
         {
             _currentPlaylist = playlist;
+
+            // A position into the old queue means nothing in the new one. Every
+            // caller re-anchors the queue immediately before starting a track,
+            // so this is normally overwritten by the Play that follows; when it
+            // isn't (the queue changed under a track that keeps playing),
+            // ResolveQueueIndex searches the new list instead.
+            _queueIndex = -1;
+        }
+
+        // The slot CurrentlyPlayingTrack occupies in the queue, or -1 when it
+        // isn't in there at all. Exposed so a test can assert that playing the
+        // second of two identical entries actually anchors to the second.
+        public int QueueIndex => ResolveQueueIndex(CurrentlyPlayingTrack);
+
+        // Trusts the remembered position only while it still holds the track it
+        // was recorded for - the queue can be replaced wholesale (a rescan
+        // rebinding instances, SetCurrentPlaylist, a playlist edit) between the
+        // Play that recorded it and the advance that reads it.
+        private int ResolveQueueIndex(Track? track)
+        {
+            if (track == null)
+                return -1;
+
+            var tracks = _currentPlaylist.Tracks;
+            if (_queueIndex >= 0 && _queueIndex < tracks.Count && tracks[_queueIndex] == track)
+                return _queueIndex;
+
+            return IndexOfInQueue(track);
+        }
+
+        // Playlist.Tracks is an IReadOnlyList, which has no IndexOf of its own.
+        private int IndexOfInQueue(Track track)
+        {
+            var tracks = _currentPlaylist.Tracks;
+            for (var i = 0; i < tracks.Count; i++)
+            {
+                if (tracks[i] == track)
+                    return i;
+            }
+
+            return -1;
         }
 
         public void ToggleRepeat()
@@ -214,7 +268,7 @@ namespace Flower.ViewModels
             // gapless IAudioManager needs to hear about it even though the
             // currently playing track itself isn't changing.
             if (CurrentlyPlayingTrack is { } currentTrack)
-                _audioManager.SetUpcoming(GetUpcomingTrack(currentTrack));
+                _audioManager.SetUpcoming(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track);
         }
 
         public void ToggleShuffle()
@@ -225,28 +279,54 @@ namespace Flower.ViewModels
             _ = _appSettingsStore.SaveAsync(_appSettings);
 
             if (CurrentlyPlayingTrack is { } currentTrack)
-                _audioManager.SetUpcoming(GetUpcomingTrack(currentTrack));
+                _audioManager.SetUpcoming(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track);
         }
 
-        // Matches the EndReached handler's own nextTrack computation above -
-        // what should play after currentTrack, given the current
-        // repeat/shuffle state.
-        private Track? GetUpcomingTrack(Track currentTrack) =>
-            IsRepeatEnabled ? currentTrack : GetNextTrack(currentTrack);
+        // What should play after the entry at currentIndex, given the current
+        // repeat/shuffle state - carrying the position along with the track so
+        // the advance lands on a slot rather than on the first entry that
+        // happens to hold the same track.
+        private (Track? Track, int Index) GetUpcomingEntry(Track currentTrack, int currentIndex) =>
+            IsRepeatEnabled ? (currentTrack, currentIndex) : GetNextEntry(currentTrack, currentIndex);
 
-        private Track? GetNextTrack(Track currentTrack)
+        private (Track? Track, int Index) GetNextEntry(Track currentTrack, int currentIndex)
         {
-            if (IsShuffleEnabled && _currentPlaylist.Tracks.Count > 1)
+            var tracks = _currentPlaylist.Tracks;
+            if (tracks.Count == 0)
+                return (null, -1);
+
+            if (IsShuffleEnabled && tracks.Count > 1)
             {
-                Track candidate;
+                // Re-rolls on the current *slot*, not the current track: with
+                // duplicates in the queue, excluding by value would refuse to
+                // shuffle into the other copy, and a queue of nothing but
+                // copies of one track would spin here forever.
+                int index;
                 do
                 {
-                    candidate = _currentPlaylist.Tracks[_random.Next(_currentPlaylist.Tracks.Count)];
-                } while (candidate == currentTrack);
-                return candidate;
+                    index = _random.Next(tracks.Count);
+                } while (index == currentIndex);
+                return (tracks[index], index);
             }
 
-            return _currentPlaylist.GetNextTrack(currentTrack);
+            // Off the end, or playing something that isn't in this queue at
+            // all, both wrap round to the front - the behaviour the old
+            // Playlist.GetNextTrack had, moved here with it.
+            var next = currentIndex < 0 || currentIndex + 1 >= tracks.Count ? 0 : currentIndex + 1;
+            return (tracks[next], next);
+        }
+
+        private (Track? Track, int Index) GetPreviousEntry(int currentIndex)
+        {
+            var tracks = _currentPlaylist.Tracks;
+            if (tracks.Count == 0)
+                return (null, -1);
+
+            // Previous from the first entry stays on the first entry, and an
+            // unknown position starts there too - deliberately not wrapping
+            // backwards to the end the way Next wraps forwards.
+            var previous = currentIndex <= 0 ? 0 : currentIndex - 1;
+            return (tracks[previous], previous);
         }
 
         public void PlayOrPause()
@@ -259,8 +339,22 @@ namespace Flower.ViewModels
             }
         }
 
-        public void Play(Track track)
+        // Starts a track whose position in the queue the caller doesn't know -
+        // the position is searched for, so a duplicated track resolves to its
+        // first copy. Prefer the overload below wherever the caller activated a
+        // specific row and therefore does know.
+        public void Play(Track track) => Play(track, -1);
+
+        // queueIndex is where in CurrentPlaylist this track was activated from,
+        // or -1 for "work it out". It is validated rather than trusted: callers
+        // hand over an index into the list they were displaying, which is only
+        // the queue because they re-anchored it immediately beforehand.
+        public void Play(Track track, int queueIndex)
         {
+            _queueIndex = queueIndex >= 0 && queueIndex < _currentPlaylist.Tracks.Count && _currentPlaylist.Tracks[queueIndex] == track
+                ? queueIndex
+                : IndexOfInQueue(track);
+
             _logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, track.Path);
             SelectedTrack = track;
             CurrentlyPlayingTrack = track;
@@ -268,7 +362,7 @@ namespace Flower.ViewModels
 
             // Arms decode-ahead for whichever track should follow this one,
             // so the gapless pipeline can splice it in with no gap.
-            _audioManager.SetUpcoming(GetUpcomingTrack(track));
+            _audioManager.SetUpcoming(GetUpcomingEntry(track, _queueIndex).Track);
 
             // Drives the History sidebar view - see Track.LastPlayedAt/
             // Library.RecordPlayed for why this stamps here rather than
@@ -302,10 +396,10 @@ namespace Flower.ViewModels
         {
             if (CurrentlyPlayingTrack != null)
             {
-                var nextTrack = GetNextTrack(CurrentlyPlayingTrack);
-                if (nextTrack != null)
+                var next = GetNextEntry(CurrentlyPlayingTrack, ResolveQueueIndex(CurrentlyPlayingTrack));
+                if (next.Track != null)
                 {
-                    Play(nextTrack);
+                    Play(next.Track, next.Index);
                 }
             }
         }
@@ -314,10 +408,10 @@ namespace Flower.ViewModels
         {
             if (CurrentlyPlayingTrack != null)
             {
-                var previousTrack = _currentPlaylist.GetPreviousTrack(CurrentlyPlayingTrack);
-                if (previousTrack != null)
+                var previous = GetPreviousEntry(ResolveQueueIndex(CurrentlyPlayingTrack));
+                if (previous.Track != null)
                 {
-                    Play(previousTrack);
+                    Play(previous.Track, previous.Index);
                 }
             }
         }

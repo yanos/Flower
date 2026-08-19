@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -158,7 +158,7 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
         h.PlaylistControl.Previous();
         Assert.Same(a, h.PlaylistControl.CurrentlyPlayingTrack);
 
-        // Palylist.GetPreviousTrack's documented no-wrap-at-start behavior.
+        // the documented no-wrap-at-start behavior of Previous().
         h.PlaylistControl.Previous();
         Assert.Same(a, h.PlaylistControl.CurrentlyPlayingTrack);
     }
@@ -186,7 +186,7 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
     public void Scrubbing_seeks_the_current_decoder_after_the_real_debounce()
     {
         // Two tracks, not one - a single-track playlist wraps to itself as
-        // its own upcoming track (Palylist.GetNextTrack falls back to
+        // its own upcoming track (queue navigation falls back to
         // FirstOrDefault), which would arm a *second* decoder instance for
         // "A" that never gets seeked, and LatestDecoderFor(a) would then
         // point at that one instead of the one actually playing.

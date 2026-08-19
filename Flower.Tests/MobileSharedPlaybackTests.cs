@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -46,7 +46,7 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
         var (mobile, parts) = Build(first, second);
         await parts.Main.Browser.RebuildRowsImmediatelyAsync();
 
-        mobile.PlayTrackCommand.Execute(second);
+        mobile.PlayTrackCommand.Execute(parts.Main.Rows.Single(r => r.Track == second));
 
         var queue = parts.PlaylistControl.CurrentPlaylist.Tracks;
         Assert.Equal(parts.Main.Rows.Select(r => r.Track.Title), queue.Select(t => t.Title));
@@ -67,7 +67,7 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
         var (mobile, parts) = Build(placeholder);
         await parts.Main.Browser.RebuildRowsImmediatelyAsync();
 
-        mobile.PlayTrackCommand.Execute(placeholder);
+        mobile.PlayTrackCommand.Execute(parts.Main.Rows.Single(r => r.Track == placeholder));
 
         Assert.Null(parts.PlaylistControl.CurrentlyPlayingTrack);
         // The queue is still re-anchored: what was declined is the playback,
@@ -92,7 +92,7 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
         Assert.True(await WaitFor(() => mobile.SearchSongResults.Count == 1),
             "the search results never arrived");
 
-        mobile.PlayTrackCommand.Execute(inView);
+        mobile.PlayTrackCommand.Execute(mobile.SearchSongResults.Single(r => r.Track == inView));
 
         var queue = parts.PlaylistControl.CurrentPlaylist.Tracks;
         Assert.Equal(new[] { "Aurora" }, queue.Select(t => t.Title));

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using Flower.Models;
 using Xunit;
@@ -76,57 +76,10 @@ public class PlaylistTests
         Assert.NotNull(playlist.GetTrack(0));
     }
 
-    [Fact]
-    public void GetNextTrack_returns_the_following_track()
-    {
-        var a = T("A");
-        var b = T("B");
-        var c = T("C");
-        var playlist = new Playlist("My Mix", new List<Track> { a, b, c });
 
-        Assert.Same(c, playlist.GetNextTrack(b));
-    }
 
-    [Fact]
-    public void GetNextTrack_wraps_to_first_track_after_the_last()
-    {
-        var a = T("A");
-        var b = T("B");
-        var playlist = new Playlist("My Mix", new List<Track> { a, b });
 
-        Assert.Same(a, playlist.GetNextTrack(b));
-    }
 
-    [Fact]
-    public void GetNextTrack_for_a_track_not_in_the_playlist_returns_the_first_track()
-    {
-        var a = T("A");
-        var playlist = new Playlist("My Mix", new List<Track> { a, T("B") });
-
-        Assert.Same(a, playlist.GetNextTrack(T("Not In Playlist")));
-    }
-
-    [Fact]
-    public void GetPreviousTrack_returns_the_preceding_track()
-    {
-        var a = T("A");
-        var b = T("B");
-        var c = T("C");
-        var playlist = new Playlist("My Mix", new List<Track> { a, b, c });
-
-        Assert.Same(b, playlist.GetPreviousTrack(c));
-    }
-
-    [Fact]
-    public void GetPreviousTrack_at_the_start_stays_on_the_first_track()
-    {
-        var a = T("A");
-        var playlist = new Playlist("My Mix", new List<Track> { a, T("B") });
-
-        // Existing behavior: index-1 underflows to -1, which falls back to
-        // FirstOrDefault() rather than wrapping to the last track.
-        Assert.Same(a, playlist.GetPreviousTrack(a));
-    }
 
     // ── Identity ─────────────────────────────────────────────────────────────
     //
@@ -135,32 +88,12 @@ public class PlaylistTests
     // untagged rips, "Track 01", the silence tracks on a lot of CDs - were
     // indistinguishable, so next/previous/remove all silently acted on
     // whichever one appeared first in the list. These pin the Id-based
-    // identity that replaced it.
+    // identity that replaced it; the next/previous half of it now lives in
+    // PlaylistControlViewModelTests, which owns queue navigation.
 
     private static Track Untagged() => new Track { Title = null, Artists = null, Album = null, Path = null };
 
-    [Fact]
-    public void GetNextTrack_distinguishes_two_tracks_with_identical_metadata()
-    {
-        var first  = Untagged();
-        var second = Untagged();
-        var third  = Untagged();
-        var playlist = new Playlist("My Mix", new List<Track> { first, second, third });
 
-        Assert.Same(second, playlist.GetNextTrack(first));
-        Assert.Same(third,  playlist.GetNextTrack(second));
-    }
-
-    [Fact]
-    public void GetPreviousTrack_distinguishes_two_tracks_with_identical_metadata()
-    {
-        var first  = Untagged();
-        var second = Untagged();
-        var third  = Untagged();
-        var playlist = new Playlist("My Mix", new List<Track> { first, second, third });
-
-        Assert.Same(second, playlist.GetPreviousTrack(third));
-    }
 
     [Fact]
     public void RemoveTrack_removes_the_requested_instance_not_the_first_lookalike()

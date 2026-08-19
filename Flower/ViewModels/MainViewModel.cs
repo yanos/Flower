@@ -951,10 +951,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // current order as the Next/Previous queue - see PlaylistControlViewModel's
     // SetCurrentPlaylist. Unconditional: activating a row is always "start a new
     // queue from here," regardless of what was playing before.
-    public void PlayTrack(Track track)
+    public void PlayTrack(Track track) => PlayTrack(track, -1);
+
+    // queueIndex is the row's position in the list the user activated it from,
+    // which SyncPlayQueueToCurrentView has just made the queue - Rows and
+    // DisplayedTracks are both built from the same TrackListBuilder plan, in
+    // the same order, so a row index is a queue index. Passing it through is
+    // what lets the second of two identical playlist entries play as the second
+    // entry rather than re-anchoring onto the first (ARCHITECTURE-REVIEW 0.2).
+    public void PlayTrack(Track track, int queueIndex)
     {
         SyncPlayQueueToCurrentView();
-        PlayResolvingPlaceholder(track);
+        PlayResolvingPlaceholder(track, queueIndex);
     }
 
     // Shared by every internal caller that hands a Track straight to
@@ -971,21 +979,23 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // Public because mobile calls it too - MobileMainViewModel.PlayTrackCommand
     // used to reimplement it line for line, because this was private (see
     // docs/ARCHITECTURE-REVIEW.md Tier 4.2's parked mobile work).
-    public void PlayResolvingPlaceholder(Track track)
+    public void PlayResolvingPlaceholder(Track track) => PlayResolvingPlaceholder(track, -1);
+
+    public void PlayResolvingPlaceholder(Track track, int queueIndex)
     {
         if (track.Path == null)
         {
             if (GetStreamUrl(track) is { } streamUrl)
-                _playlistControlViewModel.Play(WithStreamUrl(track, streamUrl));
+                _playlistControlViewModel.Play(WithStreamUrl(track, streamUrl), queueIndex);
             return;
         }
 
-        _playlistControlViewModel.Play(track);
+        _playlistControlViewModel.Play(track, queueIndex);
     }
 
     // The transient stream-URL copy of a placeholder track. Clone() keeps
     // Track.Id, so the copy is still the same track as far as the play queue
-    // is concerned - Playlist.GetNextTrack can find it, which it could not
+    // is concerned - the queue can still find it, which it could not
     // when this was a `with` expression on a record (the differing Path made
     // the copy compare unequal to the queued placeholder, so IndexOf returned
     // -1 and auto-advance jumped back to the front of the queue). Path here is
@@ -1017,7 +1027,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             Browser.ToggleAlbumExpanded(albumName);
 
         _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
-        PlayResolvingPlaceholder(tracks[0]);
+        PlayResolvingPlaceholder(tracks[0], 0);
     }
 
     // Enter/double-click on an individual track row inside the inline-
@@ -1039,7 +1049,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             return;
 
         _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(ExpandedAlbumTracks)));
-        PlayResolvingPlaceholder(track);
+        PlayResolvingPlaceholder(track, ExpandedAlbumTracks.IndexOf(track));
     }
 
     // Space bar / toolbar play-pause button. Only snapshots a fresh queue when

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -145,7 +145,7 @@ public sealed class PeerLibraryViewModel : ViewModelBase
             return;
 
         _playlistControlViewModel.SetCurrentPlaylist(new Playlist($"{_peer?.Alias}: {SelectedAlbum.Name}", tracks));
-        _playlistControlViewModel.Play(tracks[index]);
+        _playlistControlViewModel.Play(tracks[index], index);
     }
 
     private Track ToTransientTrack(Child song) => new()

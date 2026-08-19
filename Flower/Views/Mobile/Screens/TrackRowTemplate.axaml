@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="https://github.com/avaloniaui"
+﻿<ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:controls="clr-namespace:Flower.Controls"
                     xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
@@ -27,7 +27,7 @@
             Classes.playing="{Binding IsCurrentlyPlaying}"
             Classes.placeholder="{Binding IsUnavailable}"
             Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).PlayTrackCommand}"
-            CommandParameter="{Binding Track}">
+            CommandParameter="{Binding}">
       <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
         <!-- Pointer wiring for drag-to-reorder is NOT attached here as XAML
              event attributes - this file is a class-less ResourceDictionary
