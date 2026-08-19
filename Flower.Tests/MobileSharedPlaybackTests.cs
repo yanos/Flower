@@ -28,12 +28,15 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
     private static Track T(string title, string album = "Album", string? path = "/music/x.mp3") =>
         new() { Title = title, Album = album, Artists = "Artist", Path = path == null ? null : $"/music/{title}.mp3" };
 
-    private static (MobileMainViewModel Mobile, MainViewModelHarness.Parts Parts) Build(params Track[] tracks)
+    // Returns the disposable pair rather than a bare ViewModel: the
+    // MainViewModel underneath owns a periodic log-push DispatcherTimer that
+    // has to be stopped when the test ends - see MainViewModelHarness.Parts.
+    private static MainViewModelHarness.MobileParts Build(params Track[] tracks)
     {
         var parts = MainViewModelHarness.BuildParts(new Library(tracks.ToList()), new MainPlaylist(new List<Track>()));
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
         Dispatcher.UIThread.RunJobs();
-        return (mobile, parts);
+        return new MainViewModelHarness.MobileParts(mobile, parts);
     }
 
     // Mobile's queue used to stay pinned to the Importer's raw filesystem-scan
@@ -45,7 +48,8 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
     {
         var first = T("First");
         var second = T("Second");
-        var (mobile, parts) = Build(first, second);
+        using var scope = Build(first, second);
+        var (mobile, parts) = (scope.Mobile, scope.Parts);
         await parts.Main.Browser.RebuildRowsImmediatelyAsync();
 
         mobile.PlayTrackCommand.Execute(parts.Main.Rows.Single(r => r.Track == second));
@@ -53,8 +57,6 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
         var queue = parts.PlaylistControl.CurrentPlaylist.Tracks;
         Assert.Equal(parts.Main.Rows.Select(r => r.Track.Title), queue.Select(t => t.Title));
         Assert.Equal("Second", parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
-
-        parts.Main.Dispose();
     }
 
     // A placeholder (not yet downloaded) with no peer to stream from must be
@@ -66,7 +68,8 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
     public async Task Tapping_a_placeholder_with_nowhere_to_stream_from_plays_nothing()
     {
         var placeholder = new Track { Title = "Remote", Album = "Album", Artists = "Artist", Path = null };
-        var (mobile, parts) = Build(placeholder);
+        using var scope = Build(placeholder);
+        var (mobile, parts) = (scope.Mobile, scope.Parts);
         await parts.Main.Browser.RebuildRowsImmediatelyAsync();
 
         mobile.PlayTrackCommand.Execute(parts.Main.Rows.Single(r => r.Track == placeholder));
@@ -75,8 +78,6 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
         // The queue is still re-anchored: what was declined is the playback,
         // not the navigation.
         Assert.NotEmpty(parts.PlaylistControl.CurrentPlaylist.Tracks);
-
-        parts.Main.Dispose();
     }
 
     // The one reason mobile could not simply call
@@ -87,7 +88,8 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
     {
         var inView = T("Aurora");
         var elsewhere = T("Zephyr");
-        var (mobile, parts) = Build(inView, elsewhere);
+        using var scope = Build(inView, elsewhere);
+        var (mobile, parts) = (scope.Mobile, scope.Parts);
 
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Search));
         mobile.SearchQuery = "Aurora";
@@ -98,8 +100,6 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
 
         var queue = parts.PlaylistControl.CurrentPlaylist.Tracks;
         Assert.Equal(new[] { "Aurora" }, queue.Select(t => t.Title));
-
-        parts.Main.Dispose();
     }
 
     // Awaited rather than spun on: the work being waited for finishes on this

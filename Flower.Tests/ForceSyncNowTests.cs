@@ -48,7 +48,7 @@ public class ForceSyncNowTests : PinnedDataDirectory
     // A Client paired with a Server that is actually on the network.
     private static MainViewModelHarness.Parts PairedWithADiscoveredServer()
     {
-        var parts = MainViewModelHarness.BuildParts(
+        using var parts = MainViewModelHarness.BuildParts(
             new Library(new List<Track>()),
             new MainPlaylist(new List<Track>()),
             new AppSettings
@@ -95,13 +95,12 @@ public class ForceSyncNowTests : PinnedDataDirectory
     [AvaloniaFact]
     public async Task A_sync_that_fetched_new_tracks_reports_how_many()
     {
-        var parts = PairedWithADiscoveredServer();
+        using var parts = PairedWithADiscoveredServer();
         parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: true, FetchedCount: 40, AddedCount: 3);
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
         Assert.Equal("Added 3 new track(s) from Living Room", parts.Main.LastForceSyncResult);
-        parts.Main.Dispose();
     }
 
     // A 304 from the server: its catalog is exactly what was merged last time,
@@ -109,25 +108,23 @@ public class ForceSyncNowTests : PinnedDataDirectory
     [AvaloniaFact]
     public async Task A_server_that_answered_unchanged_reports_no_counts_at_all()
     {
-        var parts = PairedWithADiscoveredServer();
+        using var parts = PairedWithADiscoveredServer();
         parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: true, FetchedCount: 0, AddedCount: 0, Unchanged: true);
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
         Assert.Equal("Already up to date with Living Room", parts.Main.LastForceSyncResult);
-        parts.Main.Dispose();
     }
 
     [AvaloniaFact]
     public async Task A_sync_that_checked_tracks_but_added_none_says_how_many_it_checked()
     {
-        var parts = PairedWithADiscoveredServer();
+        using var parts = PairedWithADiscoveredServer();
         parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: true, FetchedCount: 40, AddedCount: 0);
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
         Assert.Equal("Already up to date with Living Room (40 track(s) checked)", parts.Main.LastForceSyncResult);
-        parts.Main.Dispose();
     }
 
     // Discovered but not actually answering - the peer went away between the
@@ -135,14 +132,13 @@ public class ForceSyncNowTests : PinnedDataDirectory
     [AvaloniaFact]
     public async Task A_failed_sync_says_so_rather_than_claiming_to_be_up_to_date()
     {
-        var parts = PairedWithADiscoveredServer();
+        using var parts = PairedWithADiscoveredServer();
         parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: false, FetchedCount: 0, AddedCount: 0);
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
         Assert.Equal("Could not reach Living Room - check it's still on the network and paired",
             parts.Main.LastForceSyncResult);
-        parts.Main.Dispose();
     }
 
     // Force sync is the user saying "sync with this one, now": it deliberately
@@ -152,14 +148,13 @@ public class ForceSyncNowTests : PinnedDataDirectory
     [AvaloniaFact]
     public async Task Forcing_a_sync_makes_this_device_the_initiator()
     {
-        var parts = PairedWithADiscoveredServer();
+        using var parts = PairedWithADiscoveredServer();
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
         var (device, forceInitiator) = Assert.Single(parts.StubPlaylistSync!.SyncedWith);
         Assert.Equal(ServerFingerprint, device.Fingerprint);
         Assert.True(forceInitiator);
-        parts.Main.Dispose();
     }
 
     // A successful sync is proof the server still trusts us, which is what
@@ -167,24 +162,22 @@ public class ForceSyncNowTests : PinnedDataDirectory
     [AvaloniaFact]
     public async Task A_successful_sync_confirms_the_server_still_trusts_us()
     {
-        var parts = PairedWithADiscoveredServer();
+        using var parts = PairedWithADiscoveredServer();
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
         Assert.True(parts.Main.IsPairedServerTrustConfirmed);
-        parts.Main.Dispose();
     }
 
     [AvaloniaFact]
     public async Task A_failed_sync_does_not_confirm_trust()
     {
-        var parts = PairedWithADiscoveredServer();
+        using var parts = PairedWithADiscoveredServer();
         parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: false, FetchedCount: 0, AddedCount: 0);
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
         Assert.False(parts.Main.IsPairedServerTrustConfirmed);
-        parts.Main.Dispose();
     }
 
     // IsSyncing drives the sidebar spinner, and it has to be back off by the
@@ -192,11 +185,10 @@ public class ForceSyncNowTests : PinnedDataDirectory
     [AvaloniaFact]
     public async Task The_syncing_indicator_is_cleared_when_a_forced_sync_finishes()
     {
-        var parts = PairedWithADiscoveredServer();
+        using var parts = PairedWithADiscoveredServer();
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
         Assert.False(parts.Main.IsSyncing);
-        parts.Main.Dispose();
     }
 }

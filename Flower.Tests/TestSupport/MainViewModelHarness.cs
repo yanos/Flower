@@ -55,6 +55,16 @@ public static class MainViewModelHarness
 
     // The pieces a test may want to reach past MainViewModel for - it does not
     // expose its own collaborators.
+    //
+    // Disposable, and every caller must dispose it: PeerSyncCoordinator's
+    // constructor starts a periodic _logPushTimer, so a MainViewModel that is
+    // built and dropped leaves a DispatcherTimer ticking on the shared headless
+    // dispatcher for the rest of the run - the leak written up in
+    // AssemblySetup.cs, and the reason a leaked short-interval timer could
+    // destabilize unrelated [AvaloniaFact]s. Disposal is also what takes back
+    // MainViewModel's sixteen event subscriptions and PlaylistControl's/
+    // CurrentlyPlaying's handlers on the shared FakeAudioManager, so one test's
+    // ViewModels stop reacting to the next test's events.
     public sealed record Parts(
         MainViewModel Main,
         PlaylistControlViewModel PlaylistControl,
@@ -70,7 +80,37 @@ public static class MainViewModelHarness
         // Non-null only when the caller asked for stubbed sync services - see
         // BuildParts' stubSyncServices.
         StubLibrarySyncService? StubLibrarySync = null,
-        StubPlaylistSyncService? StubPlaylistSync = null);
+        StubPlaylistSyncService? StubPlaylistSync = null) : IDisposable
+    {
+        // Disposes everything BuildParts constructed that owns a timer, a
+        // socket or a subscription - MainViewModel.Dispose already covers its
+        // own bag and PeerSyncCoordinator (hence the log-push timer), but the
+        // two other ViewModels and the three services were built here and are
+        // owned by nobody else. Every member is individually idempotent, so a
+        // test that disposes one of them itself (ViewModelDisposalTests does)
+        // can still dispose the Parts.
+        public void Dispose()
+        {
+            Main.Dispose();
+            PlaylistControl.Dispose();
+            CurrentlyPlaying.Dispose();
+            SyncHttpServer.Dispose();
+            Reachability.Dispose();
+            NetworkDiscovery.Dispose();
+        }
+    }
+
+    // The mobile shell plus the desktop Parts underneath it, so a test that
+    // only wants MobileMainViewModel still has something to dispose - the
+    // MainViewModel it wraps is what owns the log-push timer.
+    public sealed record MobileParts(MobileMainViewModel Mobile, Parts Parts) : IDisposable
+    {
+        public void Dispose()
+        {
+            Mobile.Dispose();
+            Parts.Dispose();
+        }
+    }
 
     // Canned answers for the two sync entry points, so a test can drive
     // ForceSyncNow's reachable path (its result strings, the trust
@@ -109,8 +149,10 @@ public static class MainViewModelHarness
         }
     }
 
-    public static MainViewModel Build(Library library, MainPlaylist mainPlaylist, AppSettings? appSettings = null) =>
-        BuildParts(library, mainPlaylist, appSettings).Main;
+    // Deliberately returns Parts rather than a bare MainViewModel: the caller
+    // has to hold something disposable, or the log-push timer leaks (see Parts).
+    public static Parts Build(Library library, MainPlaylist mainPlaylist, AppSettings? appSettings = null) =>
+        BuildParts(library, mainPlaylist, appSettings);
 
     // appSettings is injectable so a test can construct a MainViewModel that
     // already has, say, a saved PairedServerFingerprint - several things
@@ -193,9 +235,10 @@ public static class MainViewModelHarness
             networkDiscovery, reachability, mdnsBackend, syncHttpServer, stubLibrarySync, stubPlaylistSync);
     }
 
-    public static MobileMainViewModel BuildMobile(Library library, MainPlaylist mainPlaylist)
+    public static MobileParts BuildMobile(Library library, MainPlaylist mainPlaylist)
     {
         var parts = BuildParts(library, mainPlaylist);
-        return new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
+        var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
+        return new MobileParts(mobile, parts);
     }
 }

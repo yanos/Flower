@@ -84,7 +84,7 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
     [AvaloniaFact]
     public void An_attached_server_picker_picks_up_a_newly_discovered_server()
     {
-        var parts = BuildClient();
+        using var parts = BuildClient();
         var view = new ServerPickerView(parts.Main);
         var window = Show(view);
 
@@ -94,7 +94,6 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         Assert.Equal(1, RowCount(view));
 
         window.Close();
-        parts.Main.Dispose();
     }
 
     // The leak this fixes: every Settings window ever opened left another live
@@ -103,7 +102,7 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
     [AvaloniaFact]
     public void A_detached_server_picker_stops_listening_to_discovery()
     {
-        var parts = BuildClient();
+        using var parts = BuildClient();
         var view = new ServerPickerView(parts.Main);
         var window = Show(view);
 
@@ -115,7 +114,6 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         Assert.Equal(0, RowCount(view));
 
         window.Close();
-        parts.Main.Dispose();
     }
 
     // TabControl detaches the content of a tab the user switches away from and
@@ -125,7 +123,7 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
     [AvaloniaFact]
     public void A_re_attached_server_picker_listens_again_and_catches_up()
     {
-        var parts = BuildClient();
+        using var parts = BuildClient();
         var view = new ServerPickerView(parts.Main);
         var window = Show(view);
 
@@ -140,7 +138,6 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         Assert.Equal(1, RowCount(view));
 
         window.Close();
-        parts.Main.Dispose();
     }
 
     // Both views reach their services through the one MainViewModel they are
@@ -150,7 +147,7 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
     [AvaloniaFact]
     public async Task A_trusted_devices_view_lists_the_peers_its_view_model_was_given()
     {
-        var parts = BuildClient();
+        using var parts = BuildClient();
         await parts.Main.TrustedPeers.ApproveAsync(ServerFingerprint, "Living Room", "test-public-key");
 
         var view = new TrustedDevicesView(parts.Main);
@@ -163,6 +160,5 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         Assert.Equal("Living Room", Assert.Single(rows).Alias);
 
         window.Close();
-        parts.Main.Dispose();
     }
 }

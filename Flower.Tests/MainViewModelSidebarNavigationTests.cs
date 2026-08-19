@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -8,7 +7,6 @@ using Avalonia.Headless.XUnit;
 
 
 using Flower.Models;
-using Flower.Persistence;
 using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
@@ -28,30 +26,18 @@ namespace Flower.Tests;
 // LibraryDownloadServiceTests are - MainViewModel's constructor wires up
 // LibraryStore/AppSettingsStore, which resolve their on-disk path from it.
 [Collection("PlatformDataDirectory")]
-public class MainViewModelSidebarNavigationTests : IDisposable
+// PinnedDataDirectory does the temp-directory pinning this used to hand-roll,
+// and owns the MainViewModels built below so their log-push timers are stopped
+// at teardown rather than left ticking on the shared headless dispatcher.
+public class MainViewModelSidebarNavigationTests : PinnedDataDirectory
 {
-    private readonly string _tempHome;
-
-    public MainViewModelSidebarNavigationTests()
-    {
-        _tempHome = Path.Combine(Path.GetTempPath(), "flower-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(_tempHome);
-        PlatformDataDirectory.Current = _tempHome;
-    }
-
-    public void Dispose()
-    {
-        PlatformDataDirectory.Current = null;
-        try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
-    }
-
     private static Track T(string title) =>
         new() { Title = title, Path = $"/music/{title}.mp3", Duration = TimeSpan.FromMinutes(3) };
 
     // The full-MainViewModel wiring lives in TestSupport/MainViewModelHarness
     // now that ScreenStackPanelSwipeTests needs the same thing.
-    private static MainViewModel MakeViewModel(Library library, MainPlaylist mainPlaylist) =>
-        MainViewModelHarness.Build(library, mainPlaylist);
+    private MainViewModel MakeViewModel(Library library, MainPlaylist mainPlaylist) =>
+        Own(MainViewModelHarness.Build(library, mainPlaylist)).Main;
 
     [AvaloniaFact]
     public async Task Switching_sidebar_view_updates_Rows_well_under_the_search_debounce()
