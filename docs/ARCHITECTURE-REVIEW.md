@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented, 1.5 included. Tier 2 implemented. Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented, bar two unreachable-from-a-test corners of 5.6. Tier 4.1 documented, not started — deliberately gated on a roadmap item that needs queryable state.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented, 1.5 included. Tier 2 implemented. Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented. Tier 4.1 documented, not started — deliberately gated on a roadmap item that needs queryable state.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 960 — 890 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (848 before Tier 2.6's guard, 844 before Tier 2.3 was finished, 823 before Tier 1.5 was finished, 795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
+| Tests at review time | 972 — 902 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (890 before Tier 5.6 was finished, 848 before Tier 2.6's guard, 844 before Tier 2.3 was finished, 823 before Tier 1.5 was finished, 795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -378,7 +378,7 @@ Roughly 400 lines implemented shift-range / ctrl-toggle / drag-threshold / drop-
 
 ---
 
-## Tier 5 — test coverage — DONE, except ForceSyncNow's reachable path and peer approval in 5.6
+## Tier 5 — test coverage — DONE
 
 CI ran `dotnet test Flower.Tests`, which builds only `Flower.Tests → Flower → Flower.Core`: **`Flower.Server` and `Flower.CLI` were never compiled by CI**, let alone tested. (The `tests.yml` comment claiming `Flower.csproj` multi-targets `net10.0;net9.0` was stale — it targets `net10.0` only. Corrected.)
 
@@ -424,6 +424,12 @@ Highest-value additions, roughly in priority order:
 
    **One mutation survives, and it is a finding rather than a test gap:** removing the `_isRaisingSelectedTrack` echo guard in `SetSelectedTrack` breaks nothing, even with the selection driven through a real TwoWay binding to a source that re-raises unconditionally (`MultiSelectionSurvivesTheRealTwoWayBindingRoundTrip` reproduces `PlaylistControlViewModel`'s setter). Every path that raises the property assigns `_selectedRow` *before* raising, so the write-back always finds `row == _selectedRow` and returns without collapsing anything. The guard is dead defensive code against an ordering that no longer exists — worth deleting along with its comment, but that is a behaviour change and is left for a deliberate pass rather than folded into a test commit.
 6. ~~**`MainViewModel`'s sync/pairing/device-row state machine** (~900 lines)~~ **Device rows and pairing DONE** — `MainViewModelDeviceSidebarTests`, 23 tests: the Devices/Server sections (which row lands where, the icon that goes with it, a peer that starts advertising Server mode relocating in place, the vacated header disappearing with its last member), identity matching (the same fingerprint under a new instance name updating one row; two devices sharing an unrenamed computer name staying separate; an unresolved arrival neither claiming an already-resolved row nor being shown under its raw mDNS name; duplicate rows collapsing once the `/info` handshake mutates a `DiscoveredDevice` into a fingerprint already tracked), display names (the IP subtitle appearing only on a genuine collision and going away again), and the pairing lifecycle (pinning on pair, unpinning on unpair, the pinned row surviving the server going offline and flipping to unreachable while an ordinary peer's row is removed outright, the launch placeholder for a paired server never discovered this session being claimed by the real peer rather than duplicated — and not claimed by an unrelated one, the ambiguous mDNS goodbye deliberately removing nothing, and becoming a Server yourself clearing a held pairing).
+
+   ~~Still open: `ForceSyncNow`'s reachable path and peer approval.~~ **DONE** — both, and neither needed the workaround the old note assumed. `ForceSyncNowTests` (8) makes the paired server *genuinely* reachable by driving the real discovery pipeline: `FakeMdnsBackend` raises `InstanceFound`, a fake `HttpMessageHandler` answers the `/info` handshake, and `PairedServerReachability.Recompute` then finds it in `KnownDevices` exactly as it would on a real LAN. Only the two sync entry points themselves are stubbed (`LibrarySyncService.SyncWithAsync` and `PlaylistSyncService.SyncWithAsync` are now `virtual`, same seam and same reasoning as `PeerTrackResolver.Resolve`), because what is under test is the reporting around a sync, not the sync: all four result strings (added N, unchanged/304, checked-but-added-none, could-not-reach), that success confirms server trust and failure does not, that a forced sync bypasses the initiator election, and that the spinner is cleared however it ends. One thing writing them surfaced: discovery is *itself* a sync trigger, so the first-contact sync has to be failed and settled before any of these assertions, or every one of them reads that sync's result instead.
+
+   `PeerApprovalRoutingTests` (4) covers the other half - not the server side, which `SyncHttpServerRoundTripTests` already drives over a real socket, but `MainViewModel`'s handler above it: an approval nobody is listening for is *denied* rather than left to time out (not hypothetical - on mobile `MainViewModel` is constructed but `MainView`, its only subscriber, never is), a granted one comes back granted, a refused one refused, and a disposed `MainViewModel` no longer answers for the server at all. `SyncHttpServer.RequestApprovalAsync` is `internal` rather than `private` for this, so reaching the subscriber does not mean standing up a socket and a keypair to test a branch that involves neither.
+
+   Confirmed to have teeth by mutation: collapsing the `Unchanged` branch of the result string, or confirming trust regardless of success, each fails one.
 
    `AddOrUpdateDeviceSidebarItem`/`RemoveDeviceSidebarItem` are `internal` rather than `private` for this (`InternalsVisibleTo Flower.Tests` was already in place). Driving them through the real `NetworkDiscoveryService` would mean standing up an mDNS backend *and* an HTTP `/info` endpoint per case purely to choose a `Fingerprint`, since the handshake is the only thing that ever sets one — and `NetworkDiscoveryServiceTests` already covers that handshake. What was untested is what `MainViewModel` does with the resulting `DiscoveredDevice`.
 
