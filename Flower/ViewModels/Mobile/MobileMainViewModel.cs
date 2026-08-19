@@ -414,13 +414,10 @@ public class MobileMainViewModel : ViewModelBase
     // needs its own branch here; every other screen (Songs, an album/
     // artist-album/Recently-Added drill-in, or a playlist) renders straight
     // from Main.Rows, whatever MainViewModel already narrowed it to.
-    private void SyncPlayQueueToCurrentView()
-    {
-        var tracks = IsShowingSearchResults
-            ? SearchSongResults.Select(r => r.Track).ToList()
-            : Main.Rows.Select(r => r.Track).ToList();
-        PlaylistControl.SetCurrentPlaylist(new Playlist("Now Playing Queue", tracks));
-    }
+    private void SyncPlayQueueToCurrentView() =>
+        Main.SetPlayQueue(IsShowingSearchResults
+            ? SearchSongResults.Select(r => r.Track)
+            : Main.Rows.Select(r => r.Track));
 
     // Shared by DownloadTrackCommand (one row) and DownloadAllVisibleCommand
     // (every not-yet-downloaded row in view) - same per-row idle/in-flight/
@@ -735,23 +732,11 @@ public class MobileMainViewModel : ViewModelBase
             // came from - confirmed on a real device as Next/Previous
             // advancing through what looked like an arbitrary/random order.
             SyncPlayQueueToCurrentView();
-            if (track.Path != null)
-            {
-                PlaylistControl.Play(track);
-                return;
-            }
-
-            // Path == null means not yet downloaded (see SYNC-PLAN.md Phase 3) -
-            // stream it on demand from whichever peer currently holds it rather
-            // than requiring an explicit download first (still available via the
-            // row's own download icon/DownloadTrackCommand, for offline listening
-            // later). A transient copy, not the placeholder itself - Path here is
-            // a stream URL, not a real local file, and must never be persisted
-            // back into Library.Tracks (see TrackDecoder.EnsureMedia's "://" check,
-            // which already knows how to play any URL-shaped Path).
-            var streamUrl = Main.GetStreamUrl(track);
-            if (streamUrl != null)
-                PlaylistControl.Play(MainViewModel.WithStreamUrl(track, streamUrl));
+            // Handles the not-yet-downloaded case (Path == null) by streaming
+            // from whichever peer holds it - this was a line-for-line copy of
+            // MainViewModel.PlayResolvingPlaceholder, duplicated only because
+            // that method was private. See its doc comment.
+            Main.PlayResolvingPlaceholder(track);
         });
         ToggleMiniPlayerCommand = new RelayCommand(() =>
         {
@@ -1154,21 +1139,50 @@ public class MobileMainViewModel : ViewModelBase
         await SelectAlbumOrArtistCore(name);
     }
 
-    // Sets Main.SelectedSubItem then rebuilds Main.Rows immediately (see
-    // MainViewModel.RebuildRowsImmediatelyAsync) rather than trusting
-    // SelectedSubItem's own setter to get there eventually via its normal
-    // 250ms-debounced ScheduleFilter - without this, RaiseNavigationChanged
-    // below would already have made the track list visible showing the
-    // PREVIOUS scope's tracks for up to that debounce's own delay before the
-    // correct, newly-scoped list actually appeared.
-    private async Task SelectAlbumOrArtistCore(string name)
+    private Task SelectAlbumOrArtistCore(string name) => DrillIntoAsync(subItem: name);
+
+    // Which drill-in level a navigation lands on - the one thing that differs
+    // between the four track-list drill-ins below.
+    private enum DrillLevel { TrackList, ArtistAlbum }
+
+    // The scope-then-show sequence every drill-in shares, written once.
+    //
+    // Rows are rebuilt *immediately* (see MainViewModel.RebuildRowsImmediatelyAsync)
+    // rather than trusting SelectedSidebarItem/SelectedSubItem's own setters to
+    // get there eventually via their normal 250ms-debounced ScheduleFilter -
+    // without that, RaiseNavigationChanged would already have made the track
+    // list visible showing the PREVIOUS scope's tracks for up to the debounce's
+    // delay before the correct, newly-scoped list appeared. And
+    // includeGridTiles: false because mobile never reads Main.AlbumGridTiles/
+    // RecentlyAddedGridTiles at all - it has its own AlbumGridRows/
+    // RecentlyAddedAlbumRows - so building two full-library tile grids on every
+    // drill-in was pure wasted work, confirmed on a real device as a large
+    // chunk of the pause after tapping Back.
+    //
+    // This was five hand-rolled copies of the same five lines
+    // (docs/ARCHITECTURE-REVIEW.md Tier 4.2's parked mobile work); the comments
+    // above were duplicated with them, three times each.
+    private async Task DrillIntoAsync(SidebarItem? sidebarItem = null, string? subItem = null, DrillLevel level = DrillLevel.TrackList)
     {
-        Main.SelectedSubItem = name;
-        // includeGridTiles: false - see SelectAlbumOrArtistCore's own comment on why.
+        if (sidebarItem != null)
+            Main.SelectedSidebarItem = sidebarItem;
+        if (subItem != null)
+            Main.SelectedSubItem = subItem;
+
         await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false);
-        _hasDrilledIn = true;
+
+        if (level == DrillLevel.ArtistAlbum)
+            _hasDrilledIntoArtistAlbum = true;
+        else
+            _hasDrilledIn = true;
         RaiseNavigationChanged();
     }
+
+    // The Albums sidebar scope, which three of the drill-ins below borrow:
+    // they render an album's tracks by reusing the Albums tab's own filtering
+    // rather than each maintaining a separately-scoped track list.
+    private SidebarItem? AlbumsScope =>
+        Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
 
     // Artists tab name picker -> that artist's own album grid (IsShowingArtistAlbumGrid).
     // Deliberately does not touch Main.SelectedSidebarItem/SelectedSubItem - this
@@ -1200,15 +1214,7 @@ public class MobileMainViewModel : ViewModelBase
         if (albumName == null)
             return;
         PushHistory();
-        Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
-        Main.SelectedSubItem = albumName;
-        // includeGridTiles: false - mobile never reads Main.AlbumGridTiles/
-        // RecentlyAddedGridTiles (it has its own AlbumGridRows/
-        // RecentlyAddedAlbumRows - see those), so building them here on
-        // every drill-in was pure wasted work.
-        await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false); // see SelectAlbumOrArtistCore's own comment on why.
-        _hasDrilledIntoArtistAlbum = true;
-        RaiseNavigationChanged();
+        await DrillIntoAsync(AlbumsScope, albumName, DrillLevel.ArtistAlbum);
     }
 
     // Tapping a tile in the Recently Added grid drills into that album's
@@ -1223,15 +1229,7 @@ public class MobileMainViewModel : ViewModelBase
         if (albumName == null)
             return;
         PushHistory();
-        Main.SelectedSidebarItem = Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums);
-        Main.SelectedSubItem = albumName;
-        // includeGridTiles: false - mobile never reads Main.AlbumGridTiles/
-        // RecentlyAddedGridTiles (it has its own AlbumGridRows/
-        // RecentlyAddedAlbumRows - see those), so building them here on
-        // every drill-in was pure wasted work.
-        await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false); // see SelectAlbumOrArtistCore's own comment on why.
-        _hasDrilledIn = true;
-        RaiseNavigationChanged();
+        await DrillIntoAsync(AlbumsScope, albumName);
     }
 
     private async void SelectPlaylist(SidebarItem? item)
@@ -1239,14 +1237,7 @@ public class MobileMainViewModel : ViewModelBase
         if (item == null)
             return;
         PushHistory();
-        Main.SelectedSidebarItem = item;
-        // includeGridTiles: false - mobile never reads Main.AlbumGridTiles/
-        // RecentlyAddedGridTiles (it has its own AlbumGridRows/
-        // RecentlyAddedAlbumRows - see those), so building them here on
-        // every drill-in was pure wasted work.
-        await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false); // see SelectAlbumOrArtistCore's own comment on why.
-        _hasDrilledIn = true;
-        RaiseNavigationChanged();
+        await DrillIntoAsync(item);
     }
 
     private async Task GoBack()
