@@ -171,21 +171,23 @@ public static class MainViewModelHarness
             deviceIdentity, signingKey, appSettings, library, trustedPeerStore, new ClientLogStore(),
             NullLogger<SyncHttpServer>.Instance);
         var deviceIdentityStore = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance);
+        var peerUnpairNotifier = new PeerUnpairNotifier(
+            networkDiscovery, deviceIdentity, signingKey, NullLogger<PeerUnpairNotifier>.Instance);
 
         var busy = new BusyState();
         var main = new MainViewModel(
             playlistControl, library, appSettings, new FakeMusicImporter(), mainPlaylist,
-            libraryStore, appSettingsStore, deviceIdentityStore, deviceNicknameStore,
+            libraryStore, appSettingsStore, deviceIdentityStore, deviceNicknameStore, trustedPeerStore,
             busy,
             new ITunesImportCoordinator(library, libraryStore, busy, NullLogger<ITunesImportCoordinator>.Instance),
             new AnimationClock(),
             new VolumeControlViewModel(audio),
-            new CurrentlyPlayingControlViewModel(playlistControl, audio, library, NullLogger<CurrentlyPlayingControlViewModel>.Instance),
+            currentlyPlaying,
             new EqualizerViewModel(audio, appSettings, appSettingsStore),
             new SidebarRenameService(deviceNicknameStore, NullLogger<SidebarRenameService>.Instance),
             NullLogger<MainViewModel>.Instance,
             networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
-            peerPairingService, peerTrackResolver, syncHttpServer, deviceIdentity, signingKey);
+            peerPairingService, peerTrackResolver, peerUnpairNotifier, syncHttpServer, deviceIdentity, signingKey);
 
         return new Parts(main, playlistControl, currentlyPlaying, audio, appSettings, library, mainPlaylist,
             networkDiscovery, reachability, mdnsBackend, syncHttpServer, stubLibrarySync, stubPlaylistSync);

@@ -35,7 +35,7 @@ namespace Flower.ViewModels
     // class pushes changes via two events the View drives the editor
     // control from directly: LinesReset (replace the whole document) and
     // LinesAppended (append one batch to the end).
-    public class LogViewModel : ViewModelBase
+    public class LogViewModel : ViewModelBase, IDisposable
     {
         private readonly InMemoryLogStore _localLogStore;
         private readonly ClientLogStore _clientLogStore;
@@ -192,11 +192,20 @@ namespace Flower.ViewModels
             _minimumLevel = appSettings.LogMinimumLevel;
             _isWordWrapEnabled = appSettings.LogWordWrapEnabled;
 
-            _localLogStore.EntryAdded += OnLocalEntryAdded;
-            _clientLogStore.SnapshotUpdated += OnClientSnapshotUpdated;
+            _subscriptions.Add<EventHandler<InMemoryLogEntry>>(OnLocalEntryAdded,
+                h => _localLogStore.EntryAdded += h, h => _localLogStore.EntryAdded -= h);
+            _subscriptions.Add<EventHandler<string>>(OnClientSnapshotUpdated,
+                h => _clientLogStore.SnapshotUpdated += h, h => _clientLogStore.SnapshotUpdated -= h);
 
             RefreshSidebarItems();
         }
+
+        // Every event this class attaches to in its constructor, paired with
+        // its teardown - see SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md
+        // Tier 2.3.
+        private readonly SubscriptionBag _subscriptions = new();
+
+        public void Dispose() => _subscriptions.Dispose();
 
         // Rebuilds the sidebar from current AppSettings.IsServer/trusted-peer
         // state - called once here and again from LogWindow's constructor

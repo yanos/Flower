@@ -8,8 +8,6 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
-using CommunityToolkit.Mvvm.DependencyInjection;
-
 using Flower.Persistence;
 using Flower.Services;
 using Flower.ViewModels;
@@ -61,10 +59,12 @@ public sealed class DeniedPeerRow
 // Lists peers approved via the trust gate (see SyncHttpServer.AuthorizeAsync,
 // SYNC-PLAN.md Phase 3) and lets the user revoke one - the "forget this
 // device" action the plan calls for. Embedded directly in Settings' Devices
-// tab (SettingsWindow.axaml) rather than its own separate window - resolving
-// MainViewModel itself via the service locator (see PlaylistControls.axaml.cs
-// for the same pattern) means SettingsWindow doesn't need to wire anything up
-// to host it, just place the control.
+// tab (SettingsWindow.axaml) rather than its own separate window, and built in
+// code (SettingsWindow.RefreshDevicesTab) rather than declared in XAML - which
+// is what lets it take what it needs as a constructor parameter instead of
+// reaching into Ioc.Default for each one, as it used to. It asks for the one
+// MainViewModel and reads the rest off that; see docs/ARCHITECTURE-REVIEW.md
+// Tier 2.3.
 //
 // Forgetting a device here doesn't need to actively notify it (compare an
 // earlier version of this method, which POSTed to the forgotten device
@@ -74,14 +74,25 @@ public sealed class DeniedPeerRow
 // longer trusts it - see DiscoveredDevice.TrustsUs.
 public partial class TrustedDevicesView : UserControl
 {
-    private readonly TrustedPeerStore _store = Ioc.Default.GetService<TrustedPeerStore>()!;
-    private readonly DeviceNicknameStore _nicknames = Ioc.Default.GetService<DeviceNicknameStore>()!;
-    private readonly MainViewModel _mainViewModel = Ioc.Default.GetService<MainViewModel>()!;
-    private readonly PeerUnpairNotifier _unpairNotifier = Ioc.Default.GetService<PeerUnpairNotifier>()!;
+    private readonly TrustedPeerStore _store;
+    private readonly DeviceNicknameStore _nicknames;
+    private readonly MainViewModel _mainViewModel;
+    private readonly PeerUnpairNotifier? _unpairNotifier;
 
-    public TrustedDevicesView()
+    // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) -
+    // never called directly; the real constructor below is what's used. Same
+    // shape (and same pragma) as SettingsWindow, which hosts this control.
+#pragma warning disable CS8618
+    public TrustedDevicesView() => InitializeComponent();
+#pragma warning restore CS8618
+
+    public TrustedDevicesView(MainViewModel mainViewModel)
     {
         InitializeComponent();
+        _mainViewModel  = mainViewModel;
+        _store          = mainViewModel.TrustedPeers;
+        _nicknames      = mainViewModel.DeviceNicknames;
+        _unpairNotifier = mainViewModel.PeerUnpair;
         Refresh();
     }
 
@@ -208,7 +219,7 @@ public partial class TrustedDevicesView : UserControl
         // if it's currently reachable; harmless no-op otherwise, since it
         // falls back to discovering the revoke passively either way (see
         // PeerUnpairNotifier's own doc comment).
-        _unpairNotifier.NotifyFireAndForget(row.Fingerprint);
+        _unpairNotifier?.NotifyFireAndForget(row.Fingerprint);
         Refresh();
     }
 

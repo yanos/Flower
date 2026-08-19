@@ -12,7 +12,7 @@ namespace Flower.Services
     // PlatformNowPlaying.cs) and routes commands it raises back into the same
     // PlaylistControlViewModel methods the in-app transport controls use.
     // A no-op everywhere PlatformNowPlaying.Current is left null.
-    public sealed class NowPlayingIntegrationService
+    public sealed class NowPlayingIntegrationService : IDisposable
     {
         private readonly PlaylistControlViewModel _playlistControl;
         private readonly IAudioManager _audioManager;
@@ -32,19 +32,32 @@ namespace Flower.Services
             if (_platform == null)
                 return;
 
-            _platform.CommandReceived += OnCommandReceived;
+            _subscriptions.Add<EventHandler<NowPlayingCommand>>(OnCommandReceived,
+                h => _platform.CommandReceived += h, h => _platform.CommandReceived -= h);
 
-            _playlistControl.PropertyChanged += (_, e) =>
+            _subscriptions.Add<System.ComponentModel.PropertyChangedEventHandler>((_, e) =>
             {
                 if (e.PropertyName == nameof(PlaylistControlViewModel.CurrentlyPlayingTrack))
                     PushMetadata();
-            };
+            },
+                h => _playlistControl.PropertyChanged += h, h => _playlistControl.PropertyChanged -= h);
 
-            _audioManager.Playing += (_, _) => PushPlaybackState();
-            _audioManager.Paused += (_, _) => PushPlaybackState();
-            _audioManager.PositionChanged += (_, _) => PushPlaybackState();
-            _audioManager.Stopped += (_, _) => _platform.Clear();
+            _subscriptions.Add<EventHandler>((_, _) => PushPlaybackState(),
+                h => _audioManager.Playing += h, h => _audioManager.Playing -= h);
+            _subscriptions.Add<EventHandler>((_, _) => PushPlaybackState(),
+                h => _audioManager.Paused += h, h => _audioManager.Paused -= h);
+            _subscriptions.Add<EventHandler>((_, _) => PushPlaybackState(),
+                h => _audioManager.PositionChanged += h, h => _audioManager.PositionChanged -= h);
+            _subscriptions.Add<EventHandler>((_, _) => _platform.Clear(),
+                h => _audioManager.Stopped += h, h => _audioManager.Stopped -= h);
         }
+
+        // Every event this class attaches to in its constructor, paired with
+        // its teardown - see SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md
+        // Tier 2.3.
+        private readonly SubscriptionBag _subscriptions = new();
+
+        public void Dispose() => _subscriptions.Dispose();
 
         private void OnCommandReceived(object? sender, NowPlayingCommand command)
         {

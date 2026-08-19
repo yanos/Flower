@@ -6,12 +6,13 @@ using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 
 using Flower.Manager;
+using Flower.Services;
 using Flower.Models;
 using Flower.Persistence;
 
 namespace Flower.ViewModels
 {
-    public class PlaylistControlViewModel : ViewModelBase
+    public class PlaylistControlViewModel : ViewModelBase, IDisposable
     {
         private readonly ILogger<PlaylistControlViewModel> _logger;
 
@@ -95,26 +96,29 @@ namespace Flower.ViewModels
             _isRepeatEnabled = appSettings.IsRepeatEnabled;
             _isShuffleEnabled = appSettings.IsShuffleEnabled;
 
-            _audioManager.Playing += (s, e) =>
+            _subscriptions.Add<EventHandler>((s, e) =>
             {
                 OnPropertyChanged(nameof(IsPlaying));
-            };
+            },
+                h => _audioManager.Playing += h, h => _audioManager.Playing -= h);
 
-            _audioManager.Stopped += (s, e) =>
+            _subscriptions.Add<EventHandler>((s, e) =>
             {
                 OnPropertyChanged(nameof(IsPlaying));
                 CurrentlyPlayingTrack = null;
-            };
+            },
+                h => _audioManager.Stopped += h, h => _audioManager.Stopped -= h);
 
-            _audioManager.Paused += (s, e) =>
+            _subscriptions.Add<EventHandler>((s, e) =>
             {
                 OnPropertyChanged(nameof(IsPlaying));
-            };
+            },
+                h => _audioManager.Paused += h, h => _audioManager.Paused -= h);
 
             // Synchronous now that the play-count save is coalesced rather than
             // awaited here - this used to be async void over an await on
             // LibraryStore.SaveAsync, on a LibVLC callback thread.
-            _audioManager.EndReached += (s, e) =>
+            _subscriptions.Add<EventHandler>((s, e) =>
             {
                 if (CurrentlyPlayingTrack != null)
                 {
@@ -148,7 +152,8 @@ namespace Flower.ViewModels
                         Dispatcher.UIThread.Post(() => Play(nextTrack));
                     }
                 }
-            };
+            },
+                h => _audioManager.EndReached += h, h => _audioManager.EndReached -= h);
 
             // A track that couldn't be decoded (corrupt file, unsupported
             // format, unreadable path) used to arrive on EndReached like any
@@ -156,7 +161,7 @@ namespace Flower.ViewModels
             // was indistinguishable from one the user actually listened to.
             // Advance the same way, but count nothing and don't stamp
             // LastPlayedAt - and re-raise for whoever wants to tell the user.
-            _audioManager.TrackFailed += (_, e) =>
+            _subscriptions.Add<EventHandler<TrackFailedEventArgs>>((_, e) =>
             {
                 _logger.LogWarning("Skipping {Title} ({Path}) - it could not be played", e.Track.Title, e.Track.Path);
                 PlaybackFailed?.Invoke(this, e);
@@ -167,8 +172,21 @@ namespace Flower.ViewModels
                 var nextTrack = GetNextTrack(e.Track);
                 if (nextTrack != null && nextTrack != e.Track)
                     Dispatcher.UIThread.Post(() => Play(nextTrack));
-            };
+            },
+                h => _audioManager.TrackFailed += h, h => _audioManager.TrackFailed -= h);
         }
+
+        // Every event this class attaches to in its constructor, paired with
+        // its teardown - see SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md
+        // Tier 2.3.
+        private readonly SubscriptionBag _subscriptions = new();
+
+        // A singleton in the app, so in practice this runs at process exit and
+        // never matters. It exists so a test can build one, use it, and let go
+        // without leaving five handlers attached to a shared IAudioManager -
+        // which is exactly how one test's ViewModel used to keep reacting to
+        // the next test's playback events.
+        public void Dispose() => _subscriptions.Dispose();
 
         // Surfaced for the UI to show a "couldn't play this" message. Nothing
         // consumes it yet - see docs/ARCHITECTURE-REVIEW.md - so today the Log

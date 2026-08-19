@@ -1,10 +1,11 @@
+using System;
+using System.ComponentModel;
 using System.Linq;
 
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
-
-using CommunityToolkit.Mvvm.DependencyInjection;
+using Avalonia;
 
 using Flower.Services;
 using Flower.ViewModels;
@@ -59,25 +60,71 @@ public sealed class ServerRow : ViewModelBase
 // SettingsWindow's Devices tab when this device is a Client, not a Server -
 // see SettingsWindow.RefreshDevicesTab): lets the user pick which one
 // discovered Server to bulk-sync with, mirroring TrustedDevicesView's own
-// service-locator/embedded-control pattern.
+// injected/embedded-control pattern.
+//
+// Unlike TrustedDevicesView this one listens to two app-lifetime sources
+// (mDNS discovery, and the ViewModel's sync/pairing state) while being itself
+// transient - a fresh instance every time Settings opens, or the Server
+// checkbox is toggled. Those subscriptions used to be attached in the
+// constructor and never detached, so each dead instance went on rebuilding
+// its own detached row list on every discovery packet for the rest of the
+// process. They are attached/detached with the visual tree now - see
+// docs/ARCHITECTURE-REVIEW.md Tier 2.3/4.2.
 public partial class ServerPickerView : UserControl
 {
-    private readonly MainViewModel _mainViewModel = Ioc.Default.GetService<MainViewModel>()!;
-    private readonly NetworkDiscoveryService _networkDiscovery = Ioc.Default.GetService<NetworkDiscoveryService>()!;
+    private readonly MainViewModel _mainViewModel;
+    private readonly NetworkDiscoveryService? _networkDiscovery;
+    private readonly SubscriptionBag _subscriptions = new();
 
-    public ServerPickerView()
+    // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) -
+    // never called directly; the real constructor below is what's used. Same
+    // shape (and same pragma) as SettingsWindow, which hosts this control.
+#pragma warning disable CS8618
+    public ServerPickerView() => InitializeComponent();
+#pragma warning restore CS8618
+
+    public ServerPickerView(MainViewModel mainViewModel)
     {
         InitializeComponent();
+        _mainViewModel    = mainViewModel;
+        _networkDiscovery = mainViewModel.NetworkDiscovery;
         Refresh();
-        _networkDiscovery.DeviceDiscovered += (_, _) => Dispatcher.UIThread.Post(Refresh);
-        _networkDiscovery.DeviceLost += (_, _) => Dispatcher.UIThread.Post(Refresh);
-        _mainViewModel.PropertyChanged += (_, e) =>
+    }
+
+    // TabControl detaches the content of a tab the user switches away from and
+    // re-attaches the same instance on the way back, so this is a subscribe/
+    // unsubscribe pair rather than a one-way teardown - a Dispose-on-detach
+    // would leave the control alive but deaf the second time it is shown.
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+
+        if (_networkDiscovery != null)
         {
-            if (e.PropertyName == nameof(MainViewModel.IsSyncing) || e.PropertyName == nameof(MainViewModel.IsPairedServerTrustConfirmed))
+            _subscriptions.Add<EventHandler<DiscoveredDevice>>((_, _) => Dispatcher.UIThread.Post(Refresh),
+                h => _networkDiscovery.DeviceDiscovered += h, h => _networkDiscovery.DeviceDiscovered -= h);
+            _subscriptions.Add<EventHandler<string>>((_, _) => Dispatcher.UIThread.Post(Refresh),
+                h => _networkDiscovery.DeviceLost += h, h => _networkDiscovery.DeviceLost -= h);
+        }
+
+        _subscriptions.Add<PropertyChangedEventHandler>((_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.IsSyncing) || args.PropertyName == nameof(MainViewModel.IsPairedServerTrustConfirmed))
                 Dispatcher.UIThread.Post(Refresh);
-            if (e.PropertyName == nameof(MainViewModel.LastForceSyncResult))
+            if (args.PropertyName == nameof(MainViewModel.LastForceSyncResult))
                 Dispatcher.UIThread.Post(RefreshSyncResultText);
-        };
+        },
+            h => _mainViewModel.PropertyChanged += h, h => _mainViewModel.PropertyChanged -= h);
+
+        // Anything that changed while this control was detached (or before it
+        // was first shown) is picked up here rather than being missed.
+        Refresh();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _subscriptions.Dispose();
+        base.OnDetachedFromVisualTree(e);
     }
 
     private void RefreshSyncResultText()
