@@ -170,7 +170,10 @@ public class AlbumArtLoader
         return Bitmap.DecodeToWidth(stream, MaxArtPixels);
     }
 
-    public async Task<Bitmap?> LoadAsync(Track track)
+    // Virtual for the same reason PeerTrackResolver.Resolve is: it is the one
+    // seam a test needs to count how often a row actually asks for its art
+    // (see TrackRowMergeTests) without standing up real files and a decoder.
+    public virtual async Task<Bitmap?> LoadAsync(Track track)
     {
         if (track.Path != null)
             return await LoadLocalAsync(track);

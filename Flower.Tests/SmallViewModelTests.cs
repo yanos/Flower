@@ -201,6 +201,10 @@ public class TrackRowViewModelTests
         LetTheSpinnerTick();
 
         Assert.True(row.SpinAngle > 0, "the spinner never advanced while downloading");
+
+        // AnimationClock.Current is process-wide; leaving this row subscribed
+        // would leave it running for every later test in the assembly.
+        row.Dispose();
     }
 
     // A row discarded mid-download used to leave its timer registered on the

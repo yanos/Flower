@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 
+using Flower.Services;
 using Flower.ViewModels.Mobile;
 using Flower.Views.Mobile.Screens;
 
@@ -85,7 +86,7 @@ public sealed class ScreenStackPanel : Panel
     // with nothing to reveal in that direction) stays exactly as discrete as
     // before, decided only on release past SwipeThreshold.
     private SwipeDirection _interactiveDirection = SwipeDirection.None;
-    private DispatcherTimer? _easingTimer;
+    private IDisposable? _easing;
 
     public ScreenStackPanel()
     {
@@ -405,28 +406,27 @@ public sealed class ScreenStackPanel : Panel
 
     private void EaseTransform(TranslateTransform transform, double target, Action? onFinished)
     {
-        _easingTimer?.Stop();
+        _easing?.Dispose();
 
         var from = transform.X;
-        var start = DateTime.UtcNow;
         var duration = TimeSpan.FromMilliseconds(EasingDurationMs);
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
-        _easingTimer = timer;
-        timer.Tick += (_, _) =>
+        // Shared 60Hz clock rather than a timer per easing - see AnimationClock.
+        IDisposable? easing = null;
+        easing = AnimationClock.Current.Subscribe(elapsed =>
         {
-            var t = Math.Min(1.0, (DateTime.UtcNow - start).TotalMilliseconds / duration.TotalMilliseconds);
+            var t = Math.Min(1.0, elapsed.TotalMilliseconds / duration.TotalMilliseconds);
             transform.X = from + (target - from) * EaseOut(t);
 
             if (t >= 1.0)
             {
                 transform.X = target;
-                timer.Stop();
-                if (ReferenceEquals(_easingTimer, timer))
-                    _easingTimer = null;
+                easing!.Dispose();
+                if (ReferenceEquals(_easing, easing))
+                    _easing = null;
                 onFinished?.Invoke();
             }
-        };
-        timer.Start();
+        });
+        _easing = easing;
     }
 
     private static double EaseOut(double t) => 1 - Math.Pow(1 - t, 3);

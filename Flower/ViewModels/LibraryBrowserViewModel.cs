@@ -43,11 +43,17 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 {
     private readonly Library _library;
     private readonly ILibraryBrowseHost _host;
+    // Threaded down to every row this builds so the download spinner animates
+    // on the container's clock. Optional because the rows are also built by
+    // static builders that have no container behind them - see
+    // TrackRowViewModel.Clock.
+    private readonly AnimationClock? _animationClock;
 
-    public LibraryBrowserViewModel(Library library, ILibraryBrowseHost host)
+    public LibraryBrowserViewModel(Library library, ILibraryBrowseHost host, AnimationClock? animationClock = null)
     {
-        _library = library;
-        _host    = host;
+        _library        = library;
+        _host           = host;
+        _animationClock = animationClock;
     }
 
     // ── Rows (flat list for MusicListView) ────────────────────────────────
@@ -521,15 +527,20 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var buildGrids = includeGridTiles &&
             _host.CurrentKind is SidebarItemKind.Albums or SidebarItemKind.RecentlyAdded;
 
-        var (rows, albumTiles, recentTiles) = await Task.Run(() =>
+        // Only the plan - filter, sort and album grouping over plain Tracks -
+        // runs off the UI thread. Turning it into rows is a UI-thread job now
+        // that rows are reused rather than reallocated (see TrackRowMerge):
+        // ApplyPlan writes to instances that are live and bound, and raises
+        // PropertyChanged on them.
+        var (plan, albumTiles, recentTiles) = await Task.Run(() =>
         {
-            var builtRows = TrackListBuilder.Build(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
+            var builtPlan = TrackListBuilder.Plan(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
             if (!buildGrids)
-                return (builtRows, (List<AlbumTileViewModel>?)null, (List<AlbumTileViewModel>?)null);
+                return (builtPlan, (List<AlbumTileViewModel>?)null, (List<AlbumTileViewModel>?)null);
 
             var filteredForGrids = TrackListBuilder.Filter(allTracks, text).ToList();
             return (
-                builtRows,
+                builtPlan,
                 AlbumGridBuilder.Build(filteredForGrids),
                 RecentlyAddedAlbumsBuilder.Build(filteredForGrids));
         }, token);
@@ -537,16 +548,21 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         if (token.IsCancellationRequested)
             return;
 
-        _currentFilteredTracks = rows.Select(r => r.Track).ToList();
+        var rows = TrackRowMerge.Apply(_rows, plan, out var retired, _animationClock);
 
-        // The outgoing rows are dropped on the floor here, so anything they own
-        // that isn't purely managed memory has to be released explicitly - in
-        // practice the download spinner's 60fps DispatcherTimer, which
-        // otherwise outlives the row it belonged to (see TrackRowViewModel.
-        // Dispose).
-        var replaced = Rows;
+        _currentFilteredTracks = new List<Track>(plan.Count);
+        foreach (var entry in plan)
+            _currentFilteredTracks.Add(entry.Track);
+
+        // Only the rows that did *not* survive the merge are dropped on the
+        // floor here, so anything they own that isn't purely managed memory has
+        // to be released explicitly - in practice the download spinner's
+        // animation-clock subscription, which otherwise outlives the row it
+        // belonged to (see TrackRowViewModel.Dispose). Disposing the reused
+        // ones would kill a spinner that is still on screen and still
+        // downloading.
         Rows = new ObservableCollection<TrackRowViewModel>(rows);
-        foreach (var row in replaced)
+        foreach (var row in retired)
             row.Dispose();
         if (buildGrids)
         {

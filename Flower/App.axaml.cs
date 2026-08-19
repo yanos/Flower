@@ -171,6 +171,12 @@ public partial class App : Application
             .AddSingleton<ColumnManager>()
             .AddSingleton<AlbumArtLoader>()
 
+            // One 60Hz timer for every animation in the app - see
+            // AnimationClock. Injected into MainViewModel (which threads it
+            // down to the track rows); the Controls that also animate reach it
+            // through AnimationClock.Current, set from this instance below.
+            .AddSingleton<AnimationClock>()
+
             // The status bar's busy indicator, shared between MainViewModel
             // (which surfaces it as IsBusy/BusyMessage) and the collaborators
             // split out of it that run long operations - see BusyState.
@@ -354,6 +360,13 @@ public partial class App : Application
         // TrackRowViewModel/AlbumTileViewModel belongs with their decomposition
         // (docs/ARCHITECTURE-REVIEW.md 4.2).
         AlbumArtLoader.Current = provider.GetRequiredService<AlbumArtLoader>();
+
+        // Same seam, same reason: MainView, ScreenStackPanel and
+        // RubberBandScroll animate from code-behind, where there is no
+        // constructor to inject through. Everything with a constructor gets
+        // the instance handed to it instead (MainViewModel ->
+        // LibraryBrowserViewModel -> TrackRowViewModel).
+        AnimationClock.Current = provider.GetRequiredService<AnimationClock>();
 
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
 

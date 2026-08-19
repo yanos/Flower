@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented except two deferred 1.5 items. Tier 2.1, 2.2, 2.4 and 2.5 implemented, 2.6 half. Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented, bar two unreachable-from-a-test corners of 5.6. Tier 4.1 documented, not started — deliberately gated on a roadmap item that needs queryable state.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented, 1.5 included. Tier 2.1, 2.2, 2.4 and 2.5 implemented, 2.6 half. Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented, bar two unreachable-from-a-test corners of 5.6. Tier 4.1 documented, not started — deliberately gated on a roadmap item that needs queryable state.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 893 — 823 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
+| Tests at review time | 913 — 843 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (823 before Tier 1.5 was finished, 795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -98,7 +98,7 @@ Both single-sided branches decided `Delete` whenever a baseline existed, without
 
 ---
 
-## Tier 1 — performance — DONE (two 1.5 items deferred)
+## Tier 1 — performance — DONE
 
 ### 1.1 A full 17.9 MB library serialization on every track change — DONE
 
@@ -148,19 +148,31 @@ Why a session id rather than a bare counter or a content hash: a bare counter co
 
 **Verification:** `SyncHttpServerRoundTripTests` (ETag matches `ChangeToken`, 304 with an empty body, a changed catalog invalidating a stale token, `/info` advertising the same token and moving it when the library changes with no request from the peer), `LibrarySyncConditionalPullTests` (no condition on the first pull then the served token on the second, a 304 leaving every placeholder alone, a failed pull not poisoning the next one), and `LibraryTests`' `ChangeToken` cases (stable while idle, moves for every manifest-visible mutation including in-place `NotifyTrackChanged`, never shared between two libraries with identical contents).
 
-### 1.5 Repeated O(n) passes with no incrementality — MOSTLY DONE
+### 1.5 Repeated O(n) passes with no incrementality — DONE
 
 - **Done** — `Track.SyncKey` is cached, invalidated by the setters of the four fields it derives from (`Title`/`Artists`/`Album`/`Duration`, now backed properties), so a tag edit still takes effect.
 - **Done** — `Library` keeps a lazily-built path index. Built lazily and invalidated rather than maintained incrementally, because `Path` is not immutable: `LibraryDownloadService` sets it on a placeholder in place, so `NotifyTrackChanged` invalidates too.
-- **Partly done** — `TrackListBuilder.SortKey` now counts then fills exactly once via `string.Create`, and returns the input untouched when there is nothing to strip (allocating nothing at all). `Build` still reallocates all 16k row view-models per rebuild rather than diffing — **deferred**, see below.
+- **Done** — `TrackListBuilder.SortKey` now counts then fills exactly once via `string.Create`, and returns the input untouched when there is nothing to strip (allocating nothing at all). `Build`'s wholesale reallocation of all 16k row view-models is gone too — see *Row diffing* below.
 - **Done** — `TrustedPeerStore` caches both lists in memory, invalidated by its own writes. The only way to observe a stale value is editing `trusted-peers.json` under a running app, which was never supported.
 - **Done** — `MusicListPanel` precomputes a group-leader index array in `SetItems`, making the per-scroll cost O(viewport).
 - **Done** — `RebuildRowsAsync` derives `buildGrids` from `IsShowingAlbumGrid`/`IsShowingRecentlyAddedGrid`, so the two tile grids are built only for the views that paint them. Switching to either runs `OnSidebarSelectionChanged`, which rebuilds through here again, so they are always ready before the view appears.
-- **Mitigated, not fixed** — 1.2's strong LRU means the re-triggered loads now hit a live cache instead of re-decoding, but the `Task.Run` per row still happens. Properly fixing it means row diffing — **deferred**, same as `Build` above.
+- **Done** — the re-triggered album-art loads are gone with the reallocation that caused them (1.2's strong LRU had reduced them to a cache hit per row, but the `Task.Run` per row still happened). A reused row keeps the bitmap it already has, so nothing is asked for twice — see *Row diffing*.
 - **Done** — `NotifyPairButtonPropertiesChanged` diffs against the last-notified tuple and returns early when nothing changed, which is every firing of the 5s peer poll.
-- **Not started** — the shared animation clock. At least eight timers run app-wide, four at 60 Hz (busy spinner, per-row download spinner, swipe easing, scroll-into-view), so a batch download still runs one dispatcher timer *per row*.
+- **Done** — the shared animation clock, `Flower/Services/AnimationClock.cs`. The four 60 Hz `DispatcherTimer`s (status-bar busy spinner, per-row download spinner, `ScreenStackPanel`'s swipe easing, `RubberBandScroll`'s spring-back) now share one timer that runs *only while something is subscribed*, so an idle app has no 60 Hz wakeup at all rather than several. The per-row case was the bad one: a batch download ran one dispatcher timer per downloading row, each a full dispatcher iteration and render pass 60 times a second on a phone. Each subscriber is handed the time elapsed since its own subscription rather than a bare tick, which is what both kinds of consumer actually want — and it fixes a real artifact along the way, since the spinners accumulated a fixed +6° per tick and so visibly lagged behind (permanently, not transiently) whenever a frame was dropped. The two long-interval timers, `AlbumGridRowControl`'s 260 ms scroll-into-view one-shot and `PeerSyncCoordinator`'s content-sync debounce, are left alone: they are not animations, and one wakeup per navigation or per sync window is not a cost worth pooling.
 
-**Deferred deliberately:** row diffing in `TrackListBuilder.Build` (and the `AlbumArt` discard that rides on it). It is the largest remaining Tier 1 item and the only one that needs real structural change to a hot, well-covered path rather than a local fix; the cheaper wins above land first precisely so its benefit can be measured against them.
+**Row diffing — DONE.** `TrackListBuilder.Build` threw away and re-allocated all ~16k `TrackRowViewModel`s on every rebuild — every search keystroke, every sort, every sidebar navigation, and above all the background rescan that fires on every single launch — whether or not anything about any row had changed. It is now split: `TrackListBuilder.Plan` does the filter/sort/group pass down to a `List<TrackRowPlan>` of plain structs over `Track`s, and `TrackRowMerge.Apply` reconciles that against the rows already on screen, reusing the instance already showing a track.
+
+Two consequences beyond the allocation. A reused row keeps its decoded `AlbumArt`, so the visible window no longer re-enters `AlbumArtLoader` (one `Task.Run` per row) to arrive back at the bitmap it had just discarded — the `AlbumArt` discard this item always said rode on the diffing. And per-row transient UI state survives a rebuild: an in-flight download's spinner used to die on the next keystroke, because the row that owned it was gone.
+
+Three details worth recording:
+
+- **Rows match on `Track.Id`, not on the `Track` reference.** A rescan builds brand-new `Track` instances straight from file tags and `Library.CarryForwardMutableState` copies the old `Id` onto them, so reference equality would miss on every rescan — precisely the case this exists for. The reused row is re-pointed at the *new* instance; keeping the old one would leave the list holding a different object graph than `Library.Tracks`, which is Tier 0.3's orphaned-playlist-tracks defect again.
+- **The merge runs on the UI thread, the plan does not.** `ApplyPlan` writes to instances that are live and bound and raises `PropertyChanged` on them, so it cannot run inside `RebuildRowsAsync`'s `Task.Run` the way row *construction* used to. Only the filter/sort/group pass — which touches no view-model at all — stays on the background thread.
+- **Reuse forced two real fixes.** `IsSelected`/`IsCurrentlyPlaying` raised `PropertyChanged` unconditionally, which was invisible while every rebuild produced fresh rows and would now invalidate a binding on all 16k of them to announce that nothing changed; both guard on the value now. And the art a row already holds is only kept while `Album`/`Path`/the two origin-art fields are unchanged — an edited album tag or a placeholder that has since been downloaded resets it — with a generation counter so a load already in flight for the *previous* track drops its result instead of publishing the old cover and parking the state machine at "done", where nothing would ever reload it.
+
+**Verification:** 843 passing in `Flower.Tests`, was 823. `TrackRowMergeTests` (12) covers the rescan case end to end through the real `Plan`/`Apply` pair, art kept vs. reloaded, retirement (including both duplicate-track directions, since a playlist may hold the same track twice), regrouping, and that an identical rebuild raises nothing at all. `AnimationClockTests` (8) drives the clock through its internal time-injecting constructor rather than sleeping for real frames: per-subscriber elapsed time, unsubscribe, disposing from inside a callback (which the easings do on their final frame) and disposing *another* subscriber from one, and that the clock stops when the last animation ends. Confirmed to have teeth by mutation: never reusing a row fails 10 of the 12, never resetting art on a changed album fails 2, ticking a disposed subscription fails 1, and never stopping the idle clock fails 1.
+
+One thing the clock had to be defensive about, found by the suite rather than by inspection: `AnimationClock.Current` is process-wide while Avalonia's headless platform stands up a fresh `Dispatcher` per test session, and a `DispatcherTimer` belongs to the dispatcher it was created on. Caching one for the process meant every animation in every later test silently never ticked. The timer is now created per idle→running transition, plus a staleness check for the case where the subscriber count never reaches zero to trigger that — one animation left running (a row abandoned mid-download) would otherwise pin a dead timer in place and take every later animation down with it.
 
 ---
 

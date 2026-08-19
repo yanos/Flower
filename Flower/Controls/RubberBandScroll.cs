@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Flower.Services;
 
 using Microsoft.Extensions.Logging;
 
@@ -35,9 +36,10 @@ namespace Flower.Controls;
 // finger while still touching, springing back only once the gesture actually
 // ends (InputElement.ScrollGestureEndedEvent).
 //
-// The spring-back (and the live drag itself) is driven by a DispatcherTimer
-// stepping RenderTransform.Y frame by frame (the same manual-tween approach
-// MainView.axaml.cs's status-bar spinner uses), NOT Avalonia's Animation/
+// The spring-back (and the live drag itself) is driven by the shared 60Hz
+// AnimationClock, stepping RenderTransform.Y frame by frame (the same
+// manual-tween approach MainView.axaml.cs's status-bar spinner uses), NOT
+// Avalonia's Animation/
 // RunAsync machinery: running an Animation whose keyframes target
 // TranslateTransform.YProperty routes through TransformAnimator, which
 // expects a TransformOperations-shaped RenderTransform and throws
@@ -79,7 +81,7 @@ public static class RubberBandScroll
     {
         public ScrollViewer? ScrollViewer;
         public readonly TranslateTransform Transform = new();
-        public DispatcherTimer? Timer;
+        public IDisposable? Animation;
 
         // The offset the current gesture would have reached if ScrollViewer
         // didn't clamp it - null between gestures. Re-seeded from the real,
@@ -140,12 +142,14 @@ public static class RubberBandScroll
 
             if (state.LogicalOffset < 0)
             {
-                state.Timer?.Stop();
+                state.Animation?.Dispose();
+                state.Animation = null;
                 state.Transform.Y = Damp(-state.LogicalOffset.Value);
             }
             else if (state.LogicalOffset > max)
             {
-                state.Timer?.Stop();
+                state.Animation?.Dispose();
+                state.Animation = null;
                 state.Transform.Y = -Damp(state.LogicalOffset.Value - max);
             }
             else if (state.Transform.Y != 0)
@@ -182,32 +186,30 @@ public static class RubberBandScroll
     }
 
     // Eases whatever the live drag left RenderTransform.Y at back down to 0 -
-    // driven by a per-control DispatcherTimer (restarted, not stacked, if
-    // another gesture ends mid-animation) rather than Avalonia's Animation
-    // machinery, see this class's own doc comment for why.
+    // driven by the shared AnimationClock (restarted, not stacked, if another
+    // gesture ends mid-animation) rather than Avalonia's Animation machinery,
+    // see this class's own doc comment for why.
     private static void SpringBackToZero(State state)
     {
-        state.Timer?.Stop();
+        state.Animation?.Dispose();
 
         var from = state.Transform.Y;
-        var start = DateTime.UtcNow;
         var duration = TimeSpan.FromMilliseconds(280);
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
-        state.Timer = timer;
-        timer.Tick += (_, _) =>
+        IDisposable? animation = null;
+        animation = AnimationClock.Current.Subscribe(elapsed =>
         {
-            var t = Math.Min(1.0, (DateTime.UtcNow - start).TotalMilliseconds / duration.TotalMilliseconds);
+            var t = Math.Min(1.0, elapsed.TotalMilliseconds / duration.TotalMilliseconds);
             state.Transform.Y = from * (1 - EaseOut(t));
 
             if (t >= 1.0)
             {
                 state.Transform.Y = 0;
-                timer.Stop();
-                if (ReferenceEquals(state.Timer, timer))
-                    state.Timer = null;
+                animation!.Dispose();
+                if (ReferenceEquals(state.Animation, animation))
+                    state.Animation = null;
             }
-        };
-        timer.Start();
+        });
+        state.Animation = animation;
     }
 
     private static double EaseOut(double t) => 1 - Math.Pow(1 - t, 3);
