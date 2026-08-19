@@ -10,6 +10,8 @@ using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Xunit;
 
 namespace Flower.Tests;
@@ -29,7 +31,7 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
     private static (MobileMainViewModel Mobile, MainViewModelHarness.Parts Parts) Build(params Track[] tracks)
     {
         var parts = MainViewModelHarness.BuildParts(new Library(tracks.ToList()), new MainPlaylist(new List<Track>()));
-        var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying);
+        var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
         Dispatcher.UIThread.RunJobs();
         return (mobile, parts);
     }

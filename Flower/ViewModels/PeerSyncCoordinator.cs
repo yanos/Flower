@@ -501,11 +501,12 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         private set { _lastForceSyncResult = value; OnPropertyChanged(); }
     }
 
-    // Bound directly to a command, so a throw here would tear the process down
-    // (TaskScheduler.UnobservedTaskException does not observe async void) -
-    // ForceSyncNow below is the async-void shim, ForceSyncNowAsync the
-    // awaitable body a test can drive.
-    public async void ForceSyncNow() => await ForceSyncNowAsync();
+    // Bound directly to a command, so it has to be callable without an await -
+    // hence the shim here over ForceSyncNowAsync, the awaitable body a test can
+    // drive. Not `async void`: a throw on that path is unobserved by
+    // TaskScheduler.UnobservedTaskException and tears the process down. Forget()
+    // observes the fault and logs it instead.
+    public void ForceSyncNow() => ForceSyncNowAsync().Forget(_logger, "Forced sync");
 
     public async Task ForceSyncNowAsync()
     {

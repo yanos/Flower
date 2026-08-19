@@ -196,6 +196,6 @@ public static class MainViewModelHarness
     public static MobileMainViewModel BuildMobile(Library library, MainPlaylist mainPlaylist)
     {
         var parts = BuildParts(library, mainPlaylist);
-        return new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying);
+        return new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
     }
 }

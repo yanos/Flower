@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 
 using Flower.Controls;
 using Flower.Models;
+using Microsoft.Extensions.Logging;
+
 using Flower.Services;
 using Flower.ViewModels.Mobile;
 
@@ -49,12 +51,19 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // TrackRowViewModel.Clock.
     private readonly AnimationClock? _animationClock;
 
-    public LibraryBrowserViewModel(Library library, ILibraryBrowseHost host, AnimationClock? animationClock = null)
+    public LibraryBrowserViewModel(
+        Library library,
+        ILibraryBrowseHost host,
+        ILogger<LibraryBrowserViewModel> logger,
+        AnimationClock? animationClock = null)
     {
         _library        = library;
         _host           = host;
+        _logger         = logger;
         _animationClock = animationClock;
     }
+
+    private readonly ILogger _logger;
 
     // ── Rows (flat list for MusicListView) ────────────────────────────────
 
@@ -464,12 +473,14 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         ScheduleFilter();
     }
 
-    public void ScheduleFilter() => _ = ScheduleFilterAsync();
-
     // Was async void - a throw here (rather than the OperationCanceledException
     // it already handles) would tear the process down, since
     // TaskScheduler.UnobservedTaskException does not observe async void. See
     // ARCHITECTURE-REVIEW's "async void on non-event-handler paths" note.
+    // Forget() rather than a bare `_ =` so an unexpected fault is observed and
+    // logged rather than vanishing into a Task nobody awaits.
+    public void ScheduleFilter() => ScheduleFilterAsync().Forget(_logger, "Filter rebuild");
+
     private async Task ScheduleFilterAsync()
     {
         _filterCts?.Cancel();
