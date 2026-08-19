@@ -16,6 +16,7 @@ using Flower.Logging;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Persistence.Sql;
 using Flower.Services;
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
@@ -140,8 +141,27 @@ public partial class App : Application
     internal static void RegisterServices(IServiceCollection services)
     {
         services
-            // Persistence. Every store takes only an ILogger<T>, so the
-            // container builds them outright.
+            // The database itself, shared by every repository-backed store.
+            // Registered as a singleton so one FlowerDb governs the process's
+            // connection settings (see FlowerDb.Open's pragmas) - and, for a
+            // test pointing at an in-memory database, so its keep-alive
+            // connection outlives the individual repository calls.
+            //
+            // The one-time JSON import happens in the factory, before this
+            // instance is handed to anything - the Library registration below
+            // reads through LibraryStore the moment it is resolved, so there
+            // is no later point at which it would still be safe to do. (The
+            // schema itself is FlowerDb's own responsibility - see its
+            // constructor.)
+            .AddSingleton(sp =>
+            {
+                var db = FlowerDb.OpenDefault();
+                JsonLibraryImport.RunIfNeeded(db, sp.GetRequiredService<ILogger<FlowerDb>>());
+                return db;
+            })
+
+            // Persistence. Every store takes an ILogger<T> and the FlowerDb
+            // above, so the container builds them outright.
             .AddSingleton<LibraryStore>()
             .AddSingleton<AppSettingsStore>()
             .AddSingleton<PlaylistStore>()
