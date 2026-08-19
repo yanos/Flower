@@ -183,9 +183,11 @@ public partial class App : Application
             .AddSingleton<BusyState>()
             .AddSingleton<ITunesImportCoordinator>()
 
-            // ViewModels are singletons for the same reason they always were:
-            // they hold app-lifetime state and subscribe to events they never
-            // unsubscribe from (ARCHITECTURE-REVIEW 2.3's last paragraph).
+            // ViewModels are singletons because they hold app-lifetime state,
+            // not because they cannot be let go of any more: every one of them
+            // below now pairs each "+=" with its "-=" through a SubscriptionBag
+            // and disposes it (ARCHITECTURE-REVIEW 2.3/4.2), so the container
+            // disposing this provider really does detach them.
             .AddSingleton<PlaylistControlViewModel>()
             .AddSingleton<MainViewModel>()
             .AddSingleton<VolumeControlViewModel>()

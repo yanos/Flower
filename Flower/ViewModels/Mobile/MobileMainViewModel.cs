@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,7 +34,7 @@ public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlayli
 // navigation model into tab+drill-down navigation for a phone screen, without changing
 // MainViewModel itself. Songs is a flat list; Albums/Artists/Playlists show a picker
 // (album/artist names, or playlist entries) until the user taps into one.
-public class MobileMainViewModel : ViewModelBase
+public class MobileMainViewModel : ViewModelBase, IDisposable
 {
     public MainViewModel Main { get; }
     public PlaylistControlViewModel PlaylistControl { get; }
@@ -619,6 +621,15 @@ public class MobileMainViewModel : ViewModelBase
         RaiseEmptyStateChanged();
     }
 
+    // Every event this class attaches to in its constructor, paired with its
+    // teardown - see SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md Tier 2.3.
+    // It outlives nothing here in the app (it is a container singleton, like
+    // the MainViewModel it wraps), but a test that builds one no longer leaves
+    // six handlers attached to the shared Library/PlaylistControlViewModel.
+    private readonly SubscriptionBag _subscriptions = new();
+
+    public void Dispose() => _subscriptions.Dispose();
+
     public MobileMainViewModel(
         MainViewModel main,
         PlaylistControlViewModel playlistControl,
@@ -628,23 +639,26 @@ public class MobileMainViewModel : ViewModelBase
         PlaylistControl = playlistControl;
         CurrentlyPlaying = currentlyPlaying;
 
-        PlaylistControl.PropertyChanged += (_, e) =>
+        _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
             if (e.PropertyName == nameof(PlaylistControlViewModel.CurrentlyPlayingTrack) &&
                 PlaylistControl.CurrentlyPlayingTrack == null)
                 ActiveSheet = MobileSheet.None;
-        };
+        },
+            h => PlaylistControl.PropertyChanged += h, h => PlaylistControl.PropertyChanged -= h);
 
-        Main.PeerApprovalRequested += (_, e) =>
+        _subscriptions.Add<EventHandler<PeerApprovalRequestedEventArgs>>((_, e) =>
         {
             _pendingPeerApproval = e;
             OnPropertyChanged(nameof(PeerApprovalAlias));
             OnPropertyChanged(nameof(PeerApprovalMessage));
             ActiveSheet = MobileSheet.PeerApproval;
-        };
+        },
+            h => Main.PeerApprovalRequested += h, h => Main.PeerApprovalRequested -= h);
 
-        Main.SidebarItems.CollectionChanged += (_, _) => RebuildPlaylistPicker();
-        Main.Library.TracksUpdated += (_, _) => Dispatcher.UIThread.Post(() =>
+        _subscriptions.Add<NotifyCollectionChangedEventHandler>((_, _) => RebuildPlaylistPicker(),
+            h => Main.SidebarItems.CollectionChanged += h, h => Main.SidebarItems.CollectionChanged -= h);
+        _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
         {
             RebuildRecentlyAddedAlbums();
             RebuildAlbumGrid();
@@ -657,22 +671,25 @@ public class MobileMainViewModel : ViewModelBase
             // computed artist/year underneath it.
             _currentAlbumHeaderName = null;
             OnPropertyChanged(nameof(CurrentAlbumHeader));
-        });
-        Main.PropertyChanged += (_, e) =>
+        }),
+            h => Main.Library.TracksUpdated += h, h => Main.Library.TracksUpdated -= h);
+        _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
             // Songs/Albums/Artists picker empty-states only - Search has its
             // own SearchQuery-driven path (see that property's setter) and no
             // longer touches Main.Rows at all.
             if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems))
                 RaiseEmptyStateChanged();
-        };
+        },
+            h => Main.PropertyChanged += h, h => Main.PropertyChanged -= h);
         // SearchSongResults is a separate TrackRowViewModel list from
         // Main.Rows (see RebuildSearchResultsAsync's own doc comment), so it
         // needs its own live-update subscription to stay correct after the
         // paired server's reachability changes - MainViewModel.Rows gets this
         // for free from its own subscription to the same signal.
-        Main.ReachabilityChanged += (_, _) =>
-            TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+        _subscriptions.Add<EventHandler>((_, _) =>
+            TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable),
+            h => Main.ReachabilityChanged += h, h => Main.ReachabilityChanged -= h);
         RebuildPlaylistPicker();
         RebuildRecentlyAddedAlbums();
         RebuildAlbumGrid();

@@ -135,6 +135,14 @@ public class CompositionRootTests : PinnedDataDirectory
         Assert.Same(provider.GetRequiredService<LogViewModel>(), mainViewModel.Log);
         Assert.Same(provider.GetRequiredService<SidebarRenameService>(), mainViewModel.Rename);
         Assert.Same(provider.GetRequiredService<LibraryStore>(), mainViewModel.LibraryStore);
+
+        // Settings' Devices tab (TrustedDevicesView, ServerPickerView) reads
+        // these four off the same face - the last of the Views/Controls layer's
+        // own Ioc.Default calls.
+        Assert.Same(provider.GetRequiredService<DeviceNicknameStore>(), mainViewModel.DeviceNicknames);
+        Assert.Same(provider.GetRequiredService<TrustedPeerStore>(), mainViewModel.TrustedPeers);
+        Assert.Same(provider.GetRequiredService<PeerUnpairNotifier>(), mainViewModel.PeerUnpair);
+        Assert.Same(provider.GetRequiredService<NetworkDiscoveryService>(), mainViewModel.NetworkDiscovery);
     }
 
     // MainViewModel's ten sync-stack parameters are nullable *and defaulted*,

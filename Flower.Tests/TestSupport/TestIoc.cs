@@ -16,8 +16,10 @@ namespace Flower.Tests.TestSupport;
 //
 // That one shared, immutable container is the *only* thing such a test can
 // set up, which is the point of docs/ARCHITECTURE-REVIEW.md §2.3: code
-// reaching into Ioc.Default cannot be given per-test dependencies. Controls
-// resolving their own ViewModels are what is left of that pattern - see §4.2.
+// reaching into Ioc.Default cannot be given per-test dependencies. The
+// ColumnManager below is all that is left of the pattern - MusicListView is
+// built by XAML and has no DataContext by the time its panel must exist, so
+// it is the one deliberate exception; see its own constructor comment.
 internal static class TestIoc
 {
     private static readonly object Gate = new();

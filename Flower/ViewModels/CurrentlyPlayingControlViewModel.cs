@@ -10,11 +10,12 @@ using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 
 using Flower.Manager;
+using Flower.Services;
 using Flower.Models;
 
 namespace Flower.ViewModels
 {
-    public class CurrentlyPlayingControlViewModel : ViewModelBase
+    public class CurrentlyPlayingControlViewModel : ViewModelBase, IDisposable
     {
         private readonly PlaylistControlViewModel _playlistControlViewModel;
         private readonly IAudioManager _audioManager;
@@ -209,7 +210,7 @@ namespace Flower.ViewModels
             _seekDebounceTimer = new Timer(150) { AutoReset = false };
             _seekDebounceTimer.Elapsed += (_, _) => _audioManager.Position = _pendingSeekPosition;
 
-            _playlistControlViewModel.PropertyChanged += (s, e) =>
+            _subscriptions.Add<System.ComponentModel.PropertyChangedEventHandler>((s, e) =>
             {
                 if (e.PropertyName == nameof(_playlistControlViewModel.CurrentlyPlayingTrack))
                 {
@@ -226,9 +227,10 @@ namespace Flower.ViewModels
                 {
                     OnPropertyChanged(nameof(IsShuffleEnabled));
                 }
-            };
+            },
+                h => _playlistControlViewModel.PropertyChanged += h, h => _playlistControlViewModel.PropertyChanged -= h);
 
-            _audioManager.PositionChanged += (s, e) =>
+            _subscriptions.Add<EventHandler>((s, e) =>
             {
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -238,9 +240,10 @@ namespace Flower.ViewModels
                     OnPropertyChanged(nameof(ElapsedTime));
                     OnPropertyChanged(nameof(TotalTime));
                 });
-            };
+            },
+                h => _audioManager.PositionChanged += h, h => _audioManager.PositionChanged -= h);
 
-            _audioManager.Stopped += (s, e) =>
+            _subscriptions.Add<EventHandler>((s, e) =>
             {
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -250,7 +253,20 @@ namespace Flower.ViewModels
                     OnPropertyChanged(nameof(ElapsedTime));
                     OnPropertyChanged(nameof(TotalTime));
                 });
-            };
+            },
+                h => _audioManager.Stopped += h, h => _audioManager.Stopped -= h);
+        }
+
+        // Every event this class attaches to in its constructor, paired with
+        // its teardown - see SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md
+        // Tier 2.3. The seek-debounce Timer is owned outright rather than
+        // subscribed to, so it is disposed rather than unsubscribed.
+        private readonly SubscriptionBag _subscriptions = new();
+
+        public void Dispose()
+        {
+            _subscriptions.Dispose();
+            _seekDebounceTimer.Dispose();
         }
     }
 }

@@ -80,7 +80,9 @@ public partial class SettingsWindow : Window
     // feature, nothing about SyncHttpServer/mDNS needs a restart, so there's
     // no stale-content window to worry about.
     private void RefreshDevicesTab() =>
-        DevicesTabItem.Content = (IsServerCheckBox.IsChecked ?? false) ? new TrustedDevicesView() : new ServerPickerView();
+        DevicesTabItem.Content = (IsServerCheckBox.IsChecked ?? false)
+            ? new TrustedDevicesView(_viewModel)
+            : new ServerPickerView(_viewModel);
 
     // The Library tab's *content* (folders list, Add/Remove, Rebuild
     // Database, iTunes sync) only stops making sense once this device is

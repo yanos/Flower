@@ -24,7 +24,7 @@ namespace Flower.Services;
 // since NetworkDiscoveryService's events fire off-thread - so every consumer
 // gets an already UI-safe signal rather than each doing its own
 // Dispatcher.UIThread.Post.
-public class PairedServerReachability
+public class PairedServerReachability : IDisposable
 {
     private readonly NetworkDiscoveryService _networkDiscovery;
     private readonly AppSettings _appSettings;
@@ -39,9 +39,17 @@ public class PairedServerReachability
     {
         _networkDiscovery = networkDiscovery;
         _appSettings = appSettings;
-        networkDiscovery.DeviceDiscovered += (_, _) => Recompute();
-        networkDiscovery.DeviceLost += (_, _) => Recompute();
+        _subscriptions.Add<EventHandler<DiscoveredDevice>>((_, _) => Recompute(),
+            h => networkDiscovery.DeviceDiscovered += h, h => networkDiscovery.DeviceDiscovered -= h);
+        _subscriptions.Add<EventHandler<string>>((_, _) => Recompute(),
+            h => networkDiscovery.DeviceLost += h, h => networkDiscovery.DeviceLost -= h);
     }
+
+    // Both events this class attaches to, paired with their teardown - see
+    // SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md Tier 2.3.
+    private readonly SubscriptionBag _subscriptions = new();
+
+    public void Dispose() => _subscriptions.Dispose();
 
     // Call after any AppSettings mutation that can change PairedServerFingerprint
     // or IsServer (pairing, unpairing, a role flip) - AppSettings itself isn't

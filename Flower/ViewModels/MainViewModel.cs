@@ -294,6 +294,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public EqualizerViewModel Equalizer { get; }
     public SidebarRenameService Rename { get; }
 
+    // Settings' Devices tab (TrustedDevicesView on a Server, ServerPickerView
+    // on a Client) used to resolve these four out of Ioc.Default in its own
+    // field initializers. They arrive the same way as everything above now -
+    // through the one object the view is handed - which is what lets a test
+    // build that view against fakes. The two nullable ones are the P2P stack
+    // that does not exist on WASM at all; the views that read them are only
+    // ever constructed on a platform that has it.
+    public DeviceNicknameStore DeviceNicknames { get; }
+    public TrustedPeerStore TrustedPeers { get; }
+    public PeerUnpairNotifier? PeerUnpair { get; }
+    public NetworkDiscoveryService? NetworkDiscovery { get; }
+
     // ── Selection ─────────────────────────────────────────────────────────────
 
     public Track? SelectedTrack
@@ -597,6 +609,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         AppSettingsStore appSettingsStore,
         DeviceIdentityStore deviceIdentityStore,
         DeviceNicknameStore deviceNicknameStore,
+        TrustedPeerStore trustedPeerStore,
         BusyState busy,
         ITunesImportCoordinator iTunesImport,
         AnimationClock animationClock,
@@ -624,6 +637,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         LibraryDownloadService? libraryDownloadService = null,
         PeerPairingService? peerPairingService = null,
         PeerTrackResolver? peerTrackResolver = null,
+        PeerUnpairNotifier? peerUnpairNotifier = null,
         SyncHttpServer? syncHttpServer = null,
         DeviceIdentity? deviceIdentity = null,
         DeviceSigningKey? signingKey = null,
@@ -649,6 +663,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             ? new PeerLibraryViewModel(deviceIdentity, signingKey, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>())
             : null;
         _libraryStore          = libraryStore;
+        DeviceNicknames        = deviceNicknameStore;
+        TrustedPeers           = trustedPeerStore;
+        PeerUnpair             = peerUnpairNotifier;
+        NetworkDiscovery       = networkDiscovery;
         _appSettingsStore      = appSettingsStore;
         _busy                  = busy;
         ITunesImport           = iTunesImport;
