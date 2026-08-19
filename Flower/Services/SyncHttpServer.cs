@@ -421,7 +421,14 @@ public class SyncHttpServer : IDisposable
     // rather than surfacing the approve/deny dialog twice. Only the caller that
     // actually creates the pending entry raises the event and starts the
     // timeout; every other concurrent caller just awaits the same task.
-    private async Task<bool> RequestApprovalAsync(string fingerprint, string alias)
+    // internal rather than private so a test can drive the *subscriber* side -
+    // MainViewModel's handler, which fails closed when no UI is listening to
+    // its own PeerApprovalRequested and otherwise marshals the prompt to the UI
+    // thread. Reaching it through a real pair request means standing up a
+    // socket and a keypair to test a branch that has nothing to do with either
+    // (SyncHttpServerRoundTripTests already covers that path). See
+    // docs/ARCHITECTURE-REVIEW.md Tier 5.6.
+    internal async Task<bool> RequestApprovalAsync(string fingerprint, string alias)
     {
         var newTcs = new TaskCompletionSource<bool>();
         var tcs = _pendingApprovals.GetOrAdd(fingerprint, newTcs);
