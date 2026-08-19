@@ -31,7 +31,7 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(AppSettings))]
     [JsonSerializable(typeof(List<Track>), TypeInfoPropertyName = "TrackList")]
     [JsonSerializable(typeof(IEnumerable<Track>), TypeInfoPropertyName = "TrackEnumerable")]
-    [JsonSerializable(typeof(List<PlaylistStore.PlaylistRecord>), TypeInfoPropertyName = "PlaylistRecordList")]
+    [JsonSerializable(typeof(List<JsonLibraryImport.PlaylistRecord>), TypeInfoPropertyName = "PlaylistRecordList")]
     [JsonSerializable(typeof(DeviceIdentity))]
     [JsonSerializable(typeof(PlaylistSyncStateStore.SyncStateRecord))]
     [JsonSerializable(typeof(List<DeviceNickname>), TypeInfoPropertyName = "DeviceNicknameList")]

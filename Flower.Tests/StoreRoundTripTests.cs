@@ -8,6 +8,7 @@ using Flower.Controls;
 using Flower.Importer;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Persistence.Sql;
 using Flower.ViewModels;
 
 namespace Flower.Tests;
@@ -867,81 +868,215 @@ public class StoreRoundTripTests : IDisposable
         Assert.Same(kept, Assert.Single(playlist.Tracks));
     }
 
+    // ── Tier 4.1: one-time import of the pre-SQLite JSON stores ──────────────
+
+    [Fact]
+    public void The_JSON_library_and_playlists_are_imported_once_and_renamed_aside()
+    {
+        var track = new Track
+        {
+            Title = "Imported", Artists = "X", Path = "/music/a.mp3",
+            PlayCount = 12, ImportedPlayCount = 3,
+            DateAdded = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+        WriteLegacyJson([track], [("Old Mix", [track])]);
+
+        var db = new FlowerDb(FlowerDb.DefaultPath);
+        JsonLibraryImport.RunIfNeeded(db, NullLogger.Instance);
+
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
+        var imported = Assert.Single(libraryStore.Load());
+        Assert.Equal("Imported", imported.Title);
+        // The stats that exist nowhere else are the whole reason this is an
+        // import rather than a rescan.
+        Assert.Equal(12, imported.PlayCount);
+        Assert.Equal(3, imported.ImportedPlayCount);
+        Assert.Equal(track.DateAdded, imported.DateAdded);
+
+        var playlist = Assert.Single(new PlaylistStore(NullLogger<PlaylistStore>.Instance, db).Load(libraryStore.Load()));
+        Assert.Equal("Old Mix", playlist.Name);
+        Assert.Equal("Imported", Assert.Single(playlist.Tracks).Title);
+
+        // Renamed aside, not deleted - and its absence is what stops a second
+        // import from running.
+        Assert.False(File.Exists(Path.Combine(_tempHome, "library.json")));
+        Assert.True(File.Exists(Path.Combine(_tempHome, "library.json" + JsonLibraryImport.ImportedSuffix)));
+        Assert.False(File.Exists(Path.Combine(_tempHome, "playlists.json")));
+    }
+
+    [Fact]
+    public async Task A_second_import_does_not_run_and_cannot_resurrect_deleted_tracks()
+    {
+        var track = new Track { Title = "Old", Path = "/music/a.mp3" };
+        WriteLegacyJson([track], []);
+
+        var db = new FlowerDb(FlowerDb.DefaultPath);
+        JsonLibraryImport.RunIfNeeded(db, NullLogger.Instance);
+
+        // The user then deletes that track and adds another.
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
+        await store.SaveAsync([new Track { Title = "New", Path = "/music/b.mp3" }]);
+
+        JsonLibraryImport.RunIfNeeded(db, NullLogger.Instance);
+
+        Assert.Equal("New", Assert.Single(store.Load()).Title);
+    }
+
+    [Fact]
+    public void An_unreadable_JSON_library_is_not_imported_as_an_empty_one()
+    {
+        // AtomicJsonFile.Read catches a bad parse, quarantines the file and
+        // returns null rather than throwing - so an import that treated null
+        // as "no tracks" would write an empty library, rename the source aside
+        // as though it had worked, and leave the next rescan to reset every
+        // play count to zero. The file must end up quarantined by the JSON
+        // layer, never marked imported.
+        var libraryJson = Path.Combine(_tempHome, "library.json");
+        File.WriteAllText(libraryJson, "{ not json");
+
+        var db = new FlowerDb(FlowerDb.DefaultPath);
+        JsonLibraryImport.RunIfNeeded(db, NullLogger.Instance);
+
+        Assert.False(File.Exists(libraryJson + JsonLibraryImport.ImportedSuffix));
+        Assert.True(File.Exists(AtomicJsonFile.CorruptPath(libraryJson)));
+        Assert.Empty(new LibraryStore(NullLogger<LibraryStore>.Instance, db).Load());
+    }
+
+    [Fact]
+    public void Importing_with_no_JSON_present_is_a_no_op()
+    {
+        var db = new FlowerDb(FlowerDb.DefaultPath);
+        JsonLibraryImport.RunIfNeeded(db, NullLogger.Instance);
+
+        Assert.Empty(new LibraryStore(NullLogger<LibraryStore>.Instance, db).Load());
+    }
+
+    // Writes the two legacy files in exactly the shape the JSON stores used to
+    // produce, so the import is exercised against the real format rather than
+    // against a hand-built approximation of it.
+    private void WriteLegacyJson(List<Track> tracks, List<(string Name, List<Track> Tracks)> playlists)
+    {
+        AtomicJsonFile.Write(
+            Path.Combine(_tempHome, "library.json"),
+            tracks,
+            FlowerJsonContext.Default.TrackEnumerable);
+
+        var records = playlists
+            .Select(p => new JsonLibraryImport.PlaylistRecord(
+                p.Name,
+                Guid.NewGuid(),
+                DateTimeOffset.UtcNow,
+                p.Tracks.Select(t => new JsonLibraryImport.PlaylistTrackRecord(t.Id)).ToList()))
+            .ToList();
+
+        AtomicJsonFile.Write(
+            Path.Combine(_tempHome, "playlists.json"),
+            records,
+            FlowerJsonContext.Default.PlaylistRecordList);
+    }
+
     // ── Crash-safety (AtomicJsonFile) ────────────────────────────────────────
     //
     // Before AtomicJsonFile, every store wrote straight over its live file, so
     // a crash mid-write truncated it - and every Load() catches a bad parse and
-    // returns "empty". For library.json that isn't a degraded read, it's total
-    // loss: the startup rescan then rewrites the file with DateAdded defaulted
-    // to now and every PlayCount back to 0, and play counts/DateAdded/
-    // LastPlayedAt/RemotePlayCounts exist nowhere else. These pin the recovery.
+    // returns "empty", silently discarding the user's state. These pin the
+    // recovery.
+    //
+    // Driven through AppSettingsStore rather than LibraryStore: the library
+    // moved to SQLite in Tier 4.1 and no longer goes through AtomicJsonFile at
+    // all, but settings.json, device.json, trusted-peers.json and the rest
+    // still do, so the machinery still needs covering - just not via a store
+    // that stopped using it.
 
     [Fact]
-    public async Task LibraryStore_recovers_play_counts_from_the_backup_when_the_live_file_is_truncated()
+    public async Task AppSettingsStore_recovers_from_the_backup_when_the_live_file_is_truncated()
     {
-        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
-        var tracks = new List<Track>
-        {
-            new Track { Title = "A", Artists = "X", PlayCount = 7, Path = "/music/a.mp3" },
-        };
+        var store = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        var settings = new AppSettings { SortColumn = "Album", SortAscending = false };
 
         // Two saves: the first creates the file, the second rotates it into .bak.
-        await store.SaveAsync(tracks);
-        await store.SaveAsync(tracks);
+        await store.SaveAsync(settings);
+        await store.SaveAsync(settings);
 
-        Truncate(LibraryStore.StorePath);
+        Truncate(AppSettingsStore.StorePath);
 
         var loaded = store.Load();
 
-        Assert.Single(loaded);
-        Assert.Equal(7, loaded[0].PlayCount);
+        Assert.Equal("Album", loaded.SortColumn);
+        Assert.False(loaded.SortAscending);
     }
 
     // The recovered contents go back to the live path, so a user who quits
     // before the next save still keeps them.
     [Fact]
-    public async Task LibraryStore_writes_the_recovered_contents_back_to_the_live_file()
+    public async Task AppSettingsStore_writes_the_recovered_contents_back_to_the_live_file()
     {
-        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
-        var tracks = new List<Track> { new Track { Title = "A", PlayCount = 3, Path = "/music/a.mp3" } };
+        var store = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        var settings = new AppSettings { SortColumn = "Year" };
 
-        await store.SaveAsync(tracks);
-        await store.SaveAsync(tracks);
-        Truncate(LibraryStore.StorePath);
+        await store.SaveAsync(settings);
+        await store.SaveAsync(settings);
+        Truncate(AppSettingsStore.StorePath);
 
         store.Load();
 
         // A second, independent store instance reads the live file with no
         // recovery step of its own.
-        var reloaded = new LibraryStore(NullLogger<LibraryStore>.Instance).Load();
-        Assert.Single(reloaded);
-        Assert.Equal(3, reloaded[0].PlayCount);
+        var reloaded = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance).Load();
+        Assert.Equal("Year", reloaded.SortColumn);
     }
 
     // With no backup to fall back on the data really is gone, but the bad file
     // is preserved for a bug report rather than being silently overwritten by
     // the next save.
     [Fact]
-    public async Task LibraryStore_quarantines_an_unreadable_file_when_there_is_no_backup()
+    public async Task AppSettingsStore_quarantines_an_unreadable_file_when_there_is_no_backup()
     {
-        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
-        await store.SaveAsync(new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } });
-        Truncate(LibraryStore.StorePath);
+        var store = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        await store.SaveAsync(new AppSettings { SortColumn = "Album" });
+        Truncate(AppSettingsStore.StorePath);
 
         var loaded = store.Load();
 
-        Assert.Empty(loaded);
-        Assert.True(File.Exists(AtomicJsonFile.CorruptPath(LibraryStore.StorePath)));
+        Assert.Null(loaded.SortColumn);
+        Assert.True(File.Exists(AtomicJsonFile.CorruptPath(AppSettingsStore.StorePath)));
     }
 
     [Fact]
     public async Task AtomicJsonFile_leaves_no_temp_file_behind_after_a_successful_write()
     {
-        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
-        await store.SaveAsync(new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } });
+        var store = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        await store.SaveAsync(new AppSettings { SortColumn = "Album" });
 
-        Assert.False(File.Exists(LibraryStore.StorePath + ".tmp"));
-        Assert.True(File.Exists(LibraryStore.StorePath));
+        Assert.False(File.Exists(AppSettingsStore.StorePath + ".tmp"));
+        Assert.True(File.Exists(AppSettingsStore.StorePath));
+    }
+
+    // The SQLite counterpart of the quarantine case above: a database file
+    // that isn't one must degrade to "empty library" rather than take the
+    // process down. This runs from the DI factory on the startup path, before
+    // there is any UI to report an error through, so an escaping exception is
+    // a crash on launch with no way back - which is what it did until FlowerDb
+    // learned to quarantine.
+    [Fact]
+    public void LibraryStore_Load_returns_empty_when_the_database_file_is_corrupt()
+    {
+        File.WriteAllText(FlowerDb.DefaultPath, "this is not a database");
+
+        Assert.Empty(new LibraryStore(NullLogger<LibraryStore>.Instance).Load());
+        Assert.True(File.Exists(FlowerDb.CorruptPath(FlowerDb.DefaultPath)));
+    }
+
+    // ...and the replacement database is a working one, not a second casualty.
+    [Fact]
+    public async Task A_quarantined_database_is_replaced_by_a_usable_one()
+    {
+        File.WriteAllText(FlowerDb.DefaultPath, "this is not a database");
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+
+        await store.SaveAsync([new Track { Title = "After", Path = "/music/a.mp3" }]);
+
+        Assert.Equal("After", Assert.Single(store.Load()).Title);
     }
 
     // AppSettingsStore was the one store with no write lock, while
@@ -1023,28 +1158,28 @@ public class StoreRoundTripTests : IDisposable
         </plist>
         """;
 
-    // ── Tier 1.1: coalesced library saves ─────────────────────────────────────
+    // ── Tier 4.1: SQLite-backed library ───────────────────────────────────────
 
     [Fact]
-    public async Task ScheduleSave_coalesces_a_burst_into_a_single_write()
+    public void ScheduleStatsSave_coalesces_a_burst_into_a_single_write()
     {
-        var store  = new LibraryStore(NullLogger<LibraryStore>.Instance);
-        var tracks = new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } };
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        store.Save([track]);
 
         // Playing one song fires two of these (RecordPlayed on Play,
-        // IncrementPlayCount on EndReached). Neither should hit the disk on its
-        // own - that write-per-event, over the whole library, is what Tier 1.1
-        // set out to remove.
-        store.ScheduleSave(tracks);
-        store.ScheduleSave(tracks);
+        // IncrementPlayCount on EndReached). Neither should hit the disk on
+        // its own.
+        track.PlayCount = 1;
+        store.ScheduleStatsSave(track);
+        track.PlayCount = 2;
+        store.ScheduleStatsSave(track);
 
-        Assert.False(File.Exists(LibraryStore.StorePath));
+        Assert.Equal(0, Assert.Single(store.Load()).PlayCount);
 
         store.Flush();
 
-        Assert.True(File.Exists(LibraryStore.StorePath));
-        var reloaded = store.Load();
-        Assert.Equal("A", Assert.Single(reloaded).Title);
+        Assert.Equal(2, Assert.Single(store.Load()).PlayCount);
     }
 
     [Fact]
@@ -1054,38 +1189,210 @@ public class StoreRoundTripTests : IDisposable
 
         store.Flush();
 
-        Assert.False(File.Exists(LibraryStore.StorePath));
+        Assert.Empty(store.Load());
     }
 
     [Fact]
-    public async Task Save_supersedes_a_pending_ScheduleSave_rather_than_being_overwritten_by_it()
+    public async Task Save_supersedes_a_pending_ScheduleStatsSave_rather_than_being_overwritten_by_it()
     {
         var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var track = new Track { Title = "Song", Path = "/music/a.mp3", PlayCount = 1 };
+        store.Save([track]);
 
-        store.ScheduleSave(new List<Track> { new Track { Title = "Stale" } });
+        store.ScheduleStatsSave(track);
         // The app-exit path (MainWindow's Closing handler): an explicit
-        // synchronous save while a debounced one is still queued. The queued one
-        // must not fire afterwards and put the older snapshot back.
-        store.Save(new List<Track> { new Track { Title = "Current" } });
+        // synchronous save while a debounced one is still queued. The queued
+        // one must not fire afterwards and put the older state back.
+        track.PlayCount = 9;
+        store.Save([track]);
 
         await Task.Delay(200);
 
-        Assert.Equal("Current", Assert.Single(store.Load()).Title);
+        Assert.Equal(9, Assert.Single(store.Load()).PlayCount);
     }
 
     [Fact]
-    public async Task Library_json_is_written_without_indentation_or_null_properties()
+    public async Task Every_persisted_Track_field_round_trips_through_SQLite()
     {
         var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
-        await store.SaveAsync(new List<Track> { new Track { Title = "A", Path = "/music/a.mp3" } });
+        var track = new Track
+        {
+            Title = "T", Subtitle = "S", Artists = "A", AlbumArtists = "AA", IsCompilation = true,
+            Album = "Al", AlbumSort = "AlS", Year = "1999",
+            TrackNumber = 3, TrackCount = 12, DiscNumber = 2, DiscCount = 2,
+            Composers = "C", Conductor = "Cond", RemixedBy = "R",
+            Genre = "G", BeatsPerMinute = 128, InitialKey = "Am", Grouping = "Gr",
+            Publisher = "P", ISRC = "ISRC1",
+            Comment = "Cm", Description = "D", Copyright = "Co", Lyrics = "L",
+            Duration = TimeSpan.FromSeconds(123.456), Bitrate = 320, SampleRate = 44100,
+            Channels = 2, BitsPerSample = 16, Codec = "flac",
+            Path = "/music/a.flac",
+            OriginDeviceFingerprint = "fp", OriginTrackId = "otid",
+            OriginFileExtension = "flac", OriginAlbumArtHash = "hash",
+            PlayCount = 4, ImportedPlayCount = 7,
+            LastPlayedAt = new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero),
+            DateAdded = new DateTimeOffset(2025, 1, 2, 3, 4, 5, TimeSpan.Zero),
+        };
+        track.RemotePlayCounts["peer-a"] = 11;
+        track.RemotePlayCounts["peer-b"] = 22;
 
-        var json = await File.ReadAllTextAsync(LibraryStore.StorePath);
+        await store.SaveAsync([track]);
+        var reloaded = Assert.Single(store.Load());
 
-        // Tier 1.1's cheap size win - roughly 60% of the old file was
-        // indentation and null-valued properties spelled out in full.
-        Assert.DoesNotContain("\n  ", json);
-        Assert.DoesNotContain("null", json);
-        // Still round-trips, which is the only thing that actually matters.
-        Assert.Equal("A", Assert.Single(store.Load()).Title);
+        Assert.Equal(track.Id, reloaded.Id);
+        Assert.Equal("T", reloaded.Title);
+        Assert.Equal("S", reloaded.Subtitle);
+        Assert.Equal("A", reloaded.Artists);
+        Assert.Equal("AA", reloaded.AlbumArtists);
+        Assert.True(reloaded.IsCompilation);
+        Assert.Equal("Al", reloaded.Album);
+        Assert.Equal("AlS", reloaded.AlbumSort);
+        Assert.Equal("1999", reloaded.Year);
+        Assert.Equal(3u, reloaded.TrackNumber);
+        Assert.Equal(12u, reloaded.TrackCount);
+        Assert.Equal(2u, reloaded.DiscNumber);
+        Assert.Equal(2u, reloaded.DiscCount);
+        Assert.Equal("C", reloaded.Composers);
+        Assert.Equal("Cond", reloaded.Conductor);
+        Assert.Equal("R", reloaded.RemixedBy);
+        Assert.Equal("G", reloaded.Genre);
+        Assert.Equal(128u, reloaded.BeatsPerMinute);
+        Assert.Equal("Am", reloaded.InitialKey);
+        Assert.Equal("Gr", reloaded.Grouping);
+        Assert.Equal("P", reloaded.Publisher);
+        Assert.Equal("ISRC1", reloaded.ISRC);
+        Assert.Equal("Cm", reloaded.Comment);
+        Assert.Equal("D", reloaded.Description);
+        Assert.Equal("Co", reloaded.Copyright);
+        Assert.Equal("L", reloaded.Lyrics);
+        Assert.Equal(track.Duration, reloaded.Duration);
+        Assert.Equal(320, reloaded.Bitrate);
+        Assert.Equal(44100, reloaded.SampleRate);
+        Assert.Equal(2, reloaded.Channels);
+        Assert.Equal(16, reloaded.BitsPerSample);
+        Assert.Equal("flac", reloaded.Codec);
+        Assert.Equal("/music/a.flac", reloaded.Path);
+        Assert.Equal("fp", reloaded.OriginDeviceFingerprint);
+        Assert.Equal("otid", reloaded.OriginTrackId);
+        Assert.Equal("flac", reloaded.OriginFileExtension);
+        Assert.Equal("hash", reloaded.OriginAlbumArtHash);
+        Assert.Equal(4, reloaded.PlayCount);
+        Assert.Equal(7, reloaded.ImportedPlayCount);
+        Assert.Equal(track.LastPlayedAt, reloaded.LastPlayedAt);
+        Assert.Equal(track.DateAdded, reloaded.DateAdded);
+        Assert.Equal(11, reloaded.RemotePlayCounts["peer-a"]);
+        Assert.Equal(22, reloaded.RemotePlayCounts["peer-b"]);
+    }
+
+    [Fact]
+    public async Task Saving_the_library_removes_rows_for_tracks_no_longer_present()
+    {
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var kept = new Track { Title = "Kept", Path = "/music/kept.mp3" };
+        var dropped = new Track { Title = "Dropped", Path = "/music/dropped.mp3" };
+
+        await store.SaveAsync([kept, dropped]);
+        Assert.Equal(2, store.Load().Count);
+
+        // A rescan after the file was deleted on disk.
+        await store.SaveAsync([kept]);
+
+        Assert.Equal("Kept", Assert.Single(store.Load()).Title);
+    }
+
+    [Fact]
+    public async Task A_removed_track_takes_its_remote_play_counts_with_it()
+    {
+        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var track = new Track { Title = "Gone", Path = "/music/gone.mp3" };
+        track.RemotePlayCounts["peer"] = 5;
+        await store.SaveAsync([track]);
+
+        await store.SaveAsync([]);
+        // Re-adding a track that reuses the id must not inherit the old rows -
+        // the child table cascades on delete (see Schema.V1).
+        var reused = new Track { Id = track.Id, Title = "Gone", Path = "/music/gone.mp3" };
+        await store.SaveAsync([reused]);
+
+        Assert.Empty(Assert.Single(store.Load()).RemotePlayCounts);
+    }
+
+    [Fact]
+    public async Task Playlists_round_trip_with_their_order_and_resolve_against_the_library()
+    {
+        var db = new FlowerDb(Path.Combine(PlatformDataDirectory.Current!, "flower.db"));
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
+        var playlistStore = new PlaylistStore(NullLogger<PlaylistStore>.Instance, db);
+
+        var a = new Track { Title = "A", Path = "/music/a.mp3" };
+        var b = new Track { Title = "B", Path = "/music/b.mp3" };
+        var c = new Track { Title = "C", Path = "/music/c.mp3" };
+        await libraryStore.SaveAsync([a, b, c]);
+
+        var playlist = new Playlist("Mix", [c, a, b]);
+        await playlistStore.SaveAsync([playlist]);
+
+        var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
+        Assert.Equal(playlist.Id, reloaded.Id);
+        Assert.Equal("Mix", reloaded.Name);
+        Assert.Equal(["C", "A", "B"], reloaded.Tracks.Select(t => t.Title));
+    }
+
+    [Fact]
+    public async Task A_playlist_entry_whose_track_left_the_library_is_dropped_on_load()
+    {
+        var db = new FlowerDb(Path.Combine(PlatformDataDirectory.Current!, "flower.db"));
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
+        var playlistStore = new PlaylistStore(NullLogger<PlaylistStore>.Instance, db);
+
+        var kept = new Track { Title = "Kept", Path = "/music/kept.mp3" };
+        var gone = new Track { Title = "Gone", Path = "/music/gone.mp3" };
+        await libraryStore.SaveAsync([kept, gone]);
+        await playlistStore.SaveAsync([new Playlist("Mix", [kept, gone])]);
+
+        // The file was deleted and a rescan dropped it from the library, but
+        // the playlist row still references it.
+        await libraryStore.SaveAsync([kept]);
+
+        var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
+        Assert.Equal("Kept", Assert.Single(reloaded.Tracks).Title);
+    }
+
+    [Fact]
+    public async Task Deleting_a_playlist_removes_its_membership_rows()
+    {
+        var db = new FlowerDb(Path.Combine(PlatformDataDirectory.Current!, "flower.db"));
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
+        var playlistStore = new PlaylistStore(NullLogger<PlaylistStore>.Instance, db);
+
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        await libraryStore.SaveAsync([track]);
+
+        var kept = new Playlist("Kept", [track]);
+        var deleted = new Playlist("Deleted", [track]);
+        await playlistStore.SaveAsync([kept, deleted]);
+        await playlistStore.SaveAsync([kept]);
+
+        var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
+        Assert.Equal("Kept", reloaded.Name);
+
+        using var connection = db.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM playlist_tracks;";
+        Assert.Equal(1L, command.ExecuteScalar());
+    }
+
+    [Fact]
+    public void The_schema_is_created_at_the_latest_version_and_migrating_again_is_a_no_op()
+    {
+        var path = Path.Combine(PlatformDataDirectory.Current!, "versioned.db");
+
+        using (var connection = new FlowerDb(path).Open())
+            Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
+
+        // Re-opening an existing database must not re-run a script - every one
+        // of them starts with CREATE TABLE and would throw.
+        using (var connection = new FlowerDb(path).Open())
+            Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
     }
 }

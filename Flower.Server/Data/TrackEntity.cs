@@ -1,9 +1,14 @@
 namespace Flower.Server.Data;
 
-// Server-internal row, one per imported file - deliberately not Flower.Core's
-// own Track record (see SYNC-PLAN.md's "Reuse boundary" note): this is the
-// seam that keeps SQLite/EF Core concerns (a stable row Id, indexed Path,
-// denormalized ArtistId/AlbumId) out of the shared client-side model.
+// Server-internal row, one per imported file.
+//
+// This used to be justified as a deliberate seam keeping SQLite/EF Core
+// concerns out of the shared client-side model. That held while the client
+// was JSON; it no longer does. The client moved to raw SQLite in
+// ARCHITECTURE-REVIEW.md Tier 4.1, sharing one schema and one set of
+// repositories (Flower.Core/Persistence/Sql/), and this class is what still
+// has to be ported onto them - at which point it goes away rather than being
+// preserved. Do not add fields here that belong in the shared schema.
 //
 // ArtistId/AlbumId are deterministic hashes of the normalized artist/album
 // name (see SubsonicIdentity), not real foreign keys into separate

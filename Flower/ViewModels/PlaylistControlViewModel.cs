@@ -155,8 +155,8 @@ namespace Flower.ViewModels
                     // list hasn't changed, only one track's counter, and
                     // TracksUpdated means a full UI rebuild plus a peer library
                     // sync - twice per song. See ARCHITECTURE-REVIEW Tier 1.1.
-                    _library.IncrementPlayCount(finishedTrack);
-                    _libraryStore.ScheduleSave(_library.Tracks);
+                    var counted = _library.IncrementPlayCount(finishedTrack);
+                    _libraryStore.ScheduleStatsSave(counted);
 
                     var next = GetUpcomingEntry(finishedTrack, ResolveQueueIndex(finishedTrack));
                     if (next.Track != null)
@@ -369,8 +369,7 @@ namespace Flower.ViewModels
             // alongside IncrementPlayCount in the EndReached handler below.
             // Raises TrackStatsChanged, not TracksUpdated - same reasoning as
             // the EndReached handler above.
-            _library.RecordPlayed(track);
-            _libraryStore.ScheduleSave(_library.Tracks);
+            _libraryStore.ScheduleStatsSave(_library.RecordPlayed(track));
         }
 
         public void PlayOrPause(Track track)
