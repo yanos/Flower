@@ -284,13 +284,13 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         Assert.False(vm.IsSyncing);
     }
 
-    // ForceSyncNow's *reachable* path - the actual sync, the result strings for
-    // reached-but-unchanged vs. could-not-reach, and the deliberate bypass of
-    // the first-contact dedup - is not reachable from here. It reads
-    // PairedServerReachability.PairedServerDevice, which is only ever populated
-    // from NetworkDiscoveryService.KnownDevices, i.e. by a real mDNS
-    // announcement plus a real /info handshake. Adding a device to the sidebar
-    // does not put it there. See ARCHITECTURE-REVIEW Tier 5.6.
+    // ForceSyncNow's *reachable* path - the actual sync, the result strings,
+    // the trust confirmation, the deliberate bypass of the initiator election -
+    // lives in ForceSyncNowTests, which drives the real discovery pipeline
+    // (a FakeMdnsBackend announcement plus a fake /info handshake) to make the
+    // paired server genuinely reachable, since PairedServerReachability reads
+    // NetworkDiscoveryService.KnownDevices and adding a device to the sidebar
+    // does not put it there.
 
     // ── Debounced content sync ────────────────────────────────────────────────
 
