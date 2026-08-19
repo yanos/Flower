@@ -478,7 +478,11 @@ Highest-value additions, roughly in priority order:
 
   Deliberately left as `async void`: the `*_Click`/`*_Changed` handlers in the `Views` code-behind. Those are genuine event handlers — the signature is imposed by the framework, and Avalonia's dispatcher already routes their exceptions.
 - **`IAudioManager` is silently partial on WASM**: `WebAudioManager` no-ops `SetUpcoming` and `ApplyEqualizer` with no compile-time or runtime signal that a platform drops those features. Worth a capability flag before `Flower.Web` grows.
-- **Seek drift**: `GaplessCoordinator.Seek` pre-negates the read split by the *requested* target; if LibVLC lands elsewhere (non-keyframe-aligned lossy seek) nothing re-synchronizes, so the scrubber can drift from the audio.
+- ~~**Seek drift**~~ — **DONE.** `GaplessCoordinator.Seek` still pre-negates the read split by the *requested* target, because that is the only value available synchronously, but the target is now provisional rather than final. `ITrackDecoder` gained a `SeekSettled` event carrying the byte offset decode genuinely resumed from; `TrackDecoder` resolves it from the decode player's own clock at the first sample after the seek's flush — the earliest moment LibVLC can report where it landed, since `MediaPlayer.Position` is set asynchronously and reading it back inside `Seek()` just returns the request. `GaplessCoordinator.HandleSeekSettled` re-anchors `_currentTrackReadSplit` onto that, ignoring a settle from a decoder that is no longer current (a `Play()` or a handover in between has already set its own split).
+
+  The split is re-anchored to a flat `-landedBytes`, *not* rebaselined against the ring's current `TotalBytesRead`: the flush that resets the ring generation is the same boundary `landedBytes` is measured from, so anything the sink has already drained by the time the settle arrives is real playback past the landing point and must keep counting. The first draft got this wrong in the direction of silently discarding it, and the test written for that case is what caught it.
+
+  Three tests in `GaplessCoordinatorTests`, driven through `FakeTrackDecoder.RaiseSeekSettled`. Confirmed to have teeth by mutation: ignoring the settle outright fails two, dropping the stale-decoder guard fails one.
 - **No connection reuse in the sync path** — `ConnectionClose = true` on every request, a documented workaround for `HttpListener`/iOS-backgrounding quirks. Even a three-request sync session pays three full handshakes. A permanent cost of the current transport, not a bug to fix in place.
 
 ---
@@ -513,4 +517,4 @@ Highest-value additions, roughly in priority order:
 13. ~~**Tier 5.3/5.4/5.5/5.7** — `Importer`, `AlbumArtLoader`, `MusicListPanel`, `ColumnManager.Reorder`.~~ **Done.** 50 tests, all mutation-checked; `MusicListView`'s own selection/drag gestures and `Library.ReplacePlaylists`' short-circuit are what remains of Tier 5's mid-priority items.
 14. **Tier 4.1 — the SQLite migration.** Recommended next: it is the largest remaining correctness/performance lever (see §4.1). 4.2 ended up landing first, at the user's direction — kept storage-agnostic, so the migration lands underneath `LibraryBrowserViewModel`/`Library` unchanged rather than having to undo it.
 15. ~~**Tier 4.2** — `MainViewModel` decomposition.~~ **Done**, ahead of 4.1 rather than after it, and kept storage-agnostic so the SQLite migration lands underneath it unchanged. 2,737 lines to 1,264 across six collaborators; two pin/unpair bugs found on the way.
-16. **Tier 4.3** — the duplicated multi-select and drag gestures in `MainView.axaml.cs`, last.
+16. ~~**Tier 4.3** — the duplicated multi-select and drag gestures in `MainView.axaml.cs`, last.~~ **Done** — see §4.3.
