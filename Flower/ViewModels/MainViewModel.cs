@@ -950,8 +950,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // Streams the track on demand from whichever peer currently holds it
     // rather than requiring an explicit download first - a transient copy,
     // not the placeholder itself. See GetStreamUrl's own doc comment and
-    // MobileMainViewModel.PlayTrackCommand's identical mobile-side handling.
-    private void PlayResolvingPlaceholder(Track track)
+    // Public because mobile calls it too - MobileMainViewModel.PlayTrackCommand
+    // used to reimplement it line for line, because this was private (see
+    // docs/ARCHITECTURE-REVIEW.md Tier 4.2's parked mobile work).
+    public void PlayResolvingPlaceholder(Track track)
     {
         if (track.Path == null)
         {
@@ -1054,8 +1056,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _playlistControlViewModel.PlayOrPause();
     }
 
-    private void SyncPlayQueueToCurrentView() =>
-        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(DisplayedTracks)));
+    private void SyncPlayQueueToCurrentView() => SetPlayQueue(DisplayedTracks);
+
+    // Re-anchors Next/Previous/auto-advance to a specific list of tracks.
+    // Public because mobile needs the same thing over a different source: its
+    // search results are a separate mirror of Rows rather than Rows itself, so
+    // it cannot just call SyncPlayQueueToCurrentView above - which is what left
+    // it with its own copy of this until now.
+    public void SetPlayQueue(IEnumerable<Track> tracks) =>
+        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
 
     // ── Sidebar ───────────────────────────────────────────────────────────────
 

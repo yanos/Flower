@@ -175,6 +175,11 @@ namespace Flower.ViewModels
         // window is where a failed track shows up.
         public event EventHandler<TrackFailedEventArgs>? PlaybackFailed;
 
+        // The queue Next/Previous/auto-advance walk. Exposed read-only so a
+        // test can assert what a view actually anchored it to - see
+        // MainViewModel.SetPlayQueue.
+        public Playlist CurrentPlaylist => _currentPlaylist;
+
         public void SetCurrentPlaylist(Playlist playlist)
         {
             _currentPlaylist = playlist;
