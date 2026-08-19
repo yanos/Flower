@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented, 1.5 included. Tier 2 implemented bar 2.6's guard half. Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented, bar two unreachable-from-a-test corners of 5.6. Tier 4.1 documented, not started — deliberately gated on a roadmap item that needs queryable state.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented, 1.5 included. Tier 2 implemented. Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented, bar two unreachable-from-a-test corners of 5.6. Tier 4.1 documented, not started — deliberately gated on a roadmap item that needs queryable state.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 918 — 848 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (844 before Tier 2.3 was finished, 823 before Tier 1.5 was finished, 795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
+| Tests at review time | 960 — 890 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (848 before Tier 2.6's guard, 844 before Tier 2.3 was finished, 823 before Tier 1.5 was finished, 795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -176,7 +176,7 @@ One thing the clock had to be defensive about, found by the suite rather than by
 
 ---
 
-## Tier 2 — structural: multiple sources of truth — DONE (2.6 half) (was: 2.3 all but the Views-layer service location, deferred to 4.2)
+## Tier 2 — structural: multiple sources of truth — DONE (was: 2.3 all but the Views-layer service location, deferred to 4.2)
 
 ### 2.1 Four track models and five identity schemes — DONE
 
@@ -271,15 +271,19 @@ Backward compatibility was ad hoc sentinel detection invented independently thre
 
 ---
 
-### 2.6 Rescan carry-forward has no guard against a forgotten field — HALF DONE
+### 2.6 Rescan carry-forward has no guard against a forgotten field — DONE
 
 Carried over from the original review draft, where it was §2.5 and was lost in a renumber (this document's §2.5 is that draft's §2.6).
 
 The refactor half landed: `Library.UpdateTracks` used to repeat the same five assignments in both of its match branches, and they are now one `CarryForwardMutableState(previous, track)` called from both, so adding a persisted-but-not-rescannable field is one edit rather than two.
 
-The guard half did not. `LibraryTests` pins the *current* fields one test at a time (`DateAdded`, `PlayCount`/`ImportedPlayCount`, `LastPlayedAt`, the sync-placeholder set), so nothing fails when someone adds `Starred`, `Rating` or a provider `Source` tag and forgets to list it. That is exactly the failure mode the method was introduced to prevent, and it is silent: the field just resets to its default on the next launch, on every launch. The original ask was a test that fails when a new such field is added and not carried forward — which means enumerating `Track`'s persisted properties by reflection and asserting each is either carried forward or explicitly named as rescannable, rather than another per-field test.
+The guard half has now landed too. `LibraryTests` pinned the *current* fields one test at a time (`DateAdded`, `PlayCount`/`ImportedPlayCount`, `LastPlayedAt`, the sync-placeholder set), so nothing failed when someone added `Starred`, `Rating` or a provider `Source` tag and forgot to list it — the exact failure mode the method was introduced to prevent, and a silent one: the field just resets to its default on the next launch, on every launch.
 
-Small, and worth doing opportunistically rather than as its own scheduled item; it is not in the Suggested order below for that reason.
+`RescanCarryForwardGuardTests` enumerates `Track`'s persisted properties (public, settable, not `[JsonIgnore]`) as a `[Theory]` and requires each to be *either* named in an explicit `Rescannable` set *or* observably carried forward. Adding a persisted field to `Track` and nothing else fails it, naming the field.
+
+Deliberately behavioural rather than a source scan: a distinctive value is set on a previous track, a fresh default-valued track for the same `Path` goes through the real `UpdateTracks`, and the survivor is inspected. That also catches a field that *is* listed in `CarryForwardMutableState` but assigned from the wrong side. Two details the shape forced: `RemotePlayCounts` is *merged* rather than assigned (per-key max — see `MergeRemotePlayCounts`), so the survivor is a different dictionary holding the same entries and the comparison is by content; and the distinctive-value generator throws on a type it does not know rather than skipping, so a new field of an unhandled type fails loudly instead of silently passing.
+
+Confirmed to have teeth by mutation: adding a `Starred` field to `Track` fails it, and so does dropping the existing `LastPlayedAt` line from `CarryForwardMutableState`.
 
 ## Tier 3 — security — DONE
 
