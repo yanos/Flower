@@ -21,6 +21,7 @@ public sealed class FakePeerHttpServer : IDisposable
 {
     private const int BasePort = 48700;
     private const int MaxPortAttempts = 50;
+    private const int UnboundBasePort = BasePort + MaxPortAttempts;
 
     private readonly HttpListener _listener;
     private readonly Func<HttpListenerContext, Task> _handle;
@@ -54,13 +55,37 @@ public sealed class FakePeerHttpServer : IDisposable
         throw new InvalidOperationException($"Could not bind any port in {BasePort}..{BasePort + MaxPortAttempts - 1}");
     }
 
-    // A free port that had a listener on it a moment ago but doesn't
-    // anymore - used by tests simulating a peer that's simply not there
-    // (connection refused), as opposed to one that's there but misbehaving.
+    // A port nothing is listening on - used by tests simulating a peer that's
+    // simply not there (connection refused), as opposed to one that's there
+    // but misbehaving.
+    //
+    // Deliberately drawn from a range disjoint from the one live servers bind
+    // (BasePort..BasePort+MaxPortAttempts): tests run in parallel, so handing
+    // back a port a live server could bind the instant we release it made the
+    // "connection refused" tests intermittently hit another test's server and
+    // parse its response body instead.
     public static int GetUnboundPort()
     {
-        using var server = new FakePeerHttpServer(_ => Task.CompletedTask);
-        return server.Port;
+        for (var port = UnboundBasePort; port < UnboundBasePort + MaxPortAttempts; port++)
+        {
+            var listener = new HttpListener();
+            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            try
+            {
+                listener.Start();
+            }
+            catch (HttpListenerException)
+            {
+                continue;
+            }
+
+            // Held only long enough to prove the port is free, then released
+            // so a connect to it is refused.
+            listener.Close();
+            return port;
+        }
+
+        throw new InvalidOperationException($"Could not find a free port in {UnboundBasePort}..{UnboundBasePort + MaxPortAttempts - 1}");
     }
 
     private async Task AcceptLoopAsync()
