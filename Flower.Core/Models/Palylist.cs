@@ -169,31 +169,5 @@ namespace Flower.Models
         {
             return Tracks.ElementAtOrDefault(index);
         }
-
-        public Track? GetPreviousTrack(Track currentTrack)
-        {
-            int index = _tracks.IndexOf(currentTrack);
-            if (index == -1)
-            {
-                return Tracks.FirstOrDefault();
-            }
-            else
-            {
-                return Tracks.ElementAtOrDefault(index - 1) ?? Tracks.FirstOrDefault();
-            }
-        }
-
-        public Track? GetNextTrack(Track currentTrack)
-        {
-            int index = _tracks.IndexOf(currentTrack);
-            if (index == -1)
-            {
-                return Tracks.FirstOrDefault();
-            }
-            else
-            {
-                return Tracks.ElementAtOrDefault(index + 1) ?? Tracks.FirstOrDefault();
-            }
-        }
     }
 }

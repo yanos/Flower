@@ -538,8 +538,10 @@ public partial class MainView : UserControl
 
     // ── MusicListView event handlers ──────────────────────────────────────────
 
+    // The row's own position is the queue position - see MainViewModel.PlayTrack's
+    // queueIndex overload for why handing it over matters with duplicate entries.
     private void OnRowActivated(object? sender, TrackRowViewModel row)
-        => _viewModel?.PlayTrack(row.Track);
+        => _viewModel?.PlayTrack(row.Track, _viewModel.Rows.IndexOf(row));
 
     private void OnRowContextMenu(object? sender, TrackRowViewModel row)
     {

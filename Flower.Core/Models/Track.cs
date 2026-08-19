@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -12,7 +12,7 @@ namespace Flower.Models
     // A record synthesizes value-based Equals/GetHashCode across *every*
     // property, and that synthesized equality is what List<Track>.IndexOf/
     // Contains/Remove and HashSet<Track> actually use - so Playlist.
-    // GetNextTrack/GetPreviousTrack/RemoveTrack, the Track Info window's
+    // Playlist navigation/RemoveTrack, the Track Info window's
     // prev/next navigation, PlaylistControlViewModel's shuffle re-roll, and
     // Library.MergeSyncedTracks were all silently deciding "same track?" by
     // comparing ~40 fields including a Dictionary (which compares by
@@ -304,7 +304,7 @@ namespace Flower.Models
         // MainViewModel/MobileMainViewModel) is still *the same track* as far
         // as the play queue is concerned - which the record-equality version
         // was not, since the differing Path made it compare unequal and
-        // Playlist.GetNextTrack then fell back to the front of the queue.
+        // queue navigation then fell back to the front of the queue.
         public Track Clone()
         {
             var copy = (Track)MemberwiseClone();

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -732,8 +732,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         SelectRecentlyAddedAlbumCommand = new RelayCommand<string>(SelectRecentlyAddedAlbum);
         SelectPlaylistCommand = new RelayCommand<SidebarItem>(SelectPlaylist);
         BackCommand = new RelayCommand(async () => await GoBack());
-        PlayTrackCommand = new RelayCommand<Track>(track =>
+        // Takes the row rather than its Track: the row's position in the list
+        // on screen is the queue position, and two rows can hold the same
+        // Track (a playlist with the same song added twice), which a Track
+        // alone cannot tell apart - see MainViewModel.PlayTrack's queueIndex
+        // overload and docs/ARCHITECTURE-REVIEW.md 0.2.
+        PlayTrackCommand = new RelayCommand<TrackRowViewModel>(row =>
         {
+            var track = row?.Track;
             // Always starts this track, mirroring desktop's row-activation handler
             // (MainView.axaml.cs calls Play, not PlayOrPause, on Enter/double-click).
             // PlayOrPause ignores its track argument whenever something is already
@@ -748,12 +754,16 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             // list (Songs/album/playlist/search) the tapped track actually
             // came from - confirmed on a real device as Next/Previous
             // advancing through what looked like an arbitrary/random order.
+            var queueIndex = IsShowingSearchResults
+                ? SearchSongResults.IndexOf(row!)
+                : Main.Rows.IndexOf(row!);
+
             SyncPlayQueueToCurrentView();
             // Handles the not-yet-downloaded case (Path == null) by streaming
             // from whichever peer holds it - this was a line-for-line copy of
             // MainViewModel.PlayResolvingPlaceholder, duplicated only because
             // that method was private. See its doc comment.
-            Main.PlayResolvingPlaceholder(track);
+            Main.PlayResolvingPlaceholder(track, queueIndex);
         });
         ToggleMiniPlayerCommand = new RelayCommand(() =>
         {

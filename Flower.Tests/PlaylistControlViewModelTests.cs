@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -225,6 +225,117 @@ public class PlaylistControlViewModelTests : IDisposable
         Assert.Same(only, vm.CurrentlyPlayingTrack);
     }
 
+    // ── Duplicate queue entries (ARCHITECTURE-REVIEW 0.2) ─────────────────
+    //
+    // Track equality is by Id, so the same song queued twice - added to a
+    // playlist twice, or an album that repeats a track - is the same object in
+    // two slots. Every advance used to resolve the current track by IndexOf,
+    // which always found the first slot: playing the second copy then advanced
+    // from the first, so Next went backwards and auto-advance replayed the
+    // stretch in between. Play now carries the position the caller activated.
+
+    [Fact]
+    public void Next_from_the_second_of_two_identical_entries_advances_past_that_entry()
+    {
+        var dup = T("Dup");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { dup, b, dup, c }, out _);
+
+        vm.Play(dup, 2);
+        vm.Next();
+
+        Assert.Same(c, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Previous_from_the_second_of_two_identical_entries_steps_back_from_that_entry()
+    {
+        var dup = T("Dup");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { dup, b, dup }, out _);
+
+        vm.Play(dup, 2);
+        vm.Previous();
+
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Play_arms_the_entry_after_the_activated_slot_as_upcoming()
+    {
+        var dup = T("Dup");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { dup, b, dup, c }, out var audio);
+
+        vm.Play(dup, 2);
+
+        Assert.Same(c, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void Play_without_a_position_still_resolves_the_first_matching_entry()
+    {
+        var dup = T("Dup");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { dup, b, dup }, out _);
+
+        vm.Play(dup);
+
+        Assert.Equal(0, vm.QueueIndex);
+    }
+
+    [Fact]
+    public void Play_ignores_a_position_that_does_not_hold_the_given_track()
+    {
+        // Callers hand over an index into the list they were displaying, which
+        // is only the queue because they re-anchored it first - a stale or
+        // mismatched one falls back to searching rather than anchoring to the
+        // wrong song entirely.
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out _);
+
+        vm.Play(b, 0);
+
+        Assert.Equal(1, vm.QueueIndex);
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Replacing_the_queue_under_a_playing_track_re_resolves_its_position()
+    {
+        var a = T("A");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { a, b, c }, out _);
+        vm.Play(c, 2);
+
+        vm.SetCurrentPlaylist(new Playlist("Other", new List<Track> { c, a }));
+
+        Assert.Equal(0, vm.QueueIndex);
+        vm.Next();
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Shuffle_over_a_queue_of_identical_entries_still_advances()
+    {
+        // The re-roll excludes the current *slot*, not the current track -
+        // excluding by value here would never find a candidate and spin
+        // forever.
+        var dup = T("Dup");
+        var vm = MakeViewModel(new List<Track> { dup, dup, dup }, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(dup, 0);
+
+        vm.Next();
+
+        Assert.Same(dup, vm.CurrentlyPlayingTrack);
+        Assert.NotEqual(0, vm.QueueIndex);
+    }
+
     [Fact]
     public void Previous_moves_to_the_preceding_track_in_playlist_order()
     {
@@ -241,7 +352,7 @@ public class PlaylistControlViewModelTests : IDisposable
     [Fact]
     public void Previous_at_the_start_of_the_playlist_does_not_wrap_to_the_last_track()
     {
-        // Matches Palylist.GetPreviousTrack's documented behavior - unlike
+        // Matches PlaylistControlViewModel.GetPreviousEntry - unlike
         // Next() wrapping forward, Previous() at track 0 stays put rather
         // than wrapping to the end.
         var a = T("A");
