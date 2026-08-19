@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -27,7 +28,7 @@ using Material.Icons;
 
 namespace Flower.ViewModels;
 
-public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyncHost, IPlaylistManagementHost, ILibraryBrowseHost, ISidebarRenameHost
+public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarHost, IPeerSyncHost, IPlaylistManagementHost, ILibraryBrowseHost, ISidebarRenameHost
 {
     // Defaults to a no-op logger for the parameterless design-time constructor
     // below, which never receives one via DI - overwritten by the real
@@ -265,6 +266,33 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
     // this ViewModel.
     public Task SyncITunesPlayCountAsync() => ITunesImport.SyncPlayCountAsync();
     public Task SyncITunesDateAddedAsync() => ITunesImport.SyncDateAddedAsync();
+
+    // ── Child ViewModels the top bar and status bar bind to ───────────────────
+
+    // Exposed so MainView.axaml can hand each control its DataContext
+    // declaratively ({Binding PlaybackControls} and friends) instead of the
+    // control reaching into Ioc.Default for its own ViewModel from its
+    // constructor - see docs/ARCHITECTURE-REVIEW.md Tier 2.3. Same forwarding
+    // face 4.2 gave the collaborators split out of this class: the container
+    // is consulted once, here, and everything below flows down the visual tree.
+    public PlaylistControlViewModel PlaybackControls => _playlistControlViewModel;
+    public VolumeControlViewModel Volume { get; }
+    public CurrentlyPlayingControlViewModel NowPlaying { get; }
+
+    // The two non-modal windows MainView opens on command (Log, Equalizer) and
+    // the sidebar rename service it drives from a TextBox teardown. Same
+    // reasoning as the three above: MainView is instantiated by XAML and has no
+    // constructor to inject through, so what it needs arrives through the one
+    // object it is already given - its DataContext.
+    // The tag-edit views (TrackInfoWindow, mobile's TrackInfoView) persist
+    // through this after writing tags back to disk. Exposed for the same
+    // reason as the rest of this block - they are windows and screens with no
+    // constructor the container reaches.
+    public LibraryStore? LibraryStore => _libraryStore;
+
+    public LogViewModel? Log { get; }
+    public EqualizerViewModel Equalizer { get; }
+    public SidebarRenameService Rename { get; }
 
     // ── Selection ─────────────────────────────────────────────────────────────
 
@@ -572,6 +600,10 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
         BusyState busy,
         ITunesImportCoordinator iTunesImport,
         AnimationClock animationClock,
+        VolumeControlViewModel volume,
+        CurrentlyPlayingControlViewModel nowPlaying,
+        EqualizerViewModel equalizer,
+        SidebarRenameService rename,
         ILogger<MainViewModel> logger,
         // Trailing + defaulted (not just nullable-typed) deliberately: these
         // don't exist at all on Flower.Web/WASM (no P2P sync stack there - see
@@ -594,10 +626,20 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
         PeerTrackResolver? peerTrackResolver = null,
         SyncHttpServer? syncHttpServer = null,
         DeviceIdentity? deviceIdentity = null,
-        DeviceSigningKey? signingKey = null)
+        DeviceSigningKey? signingKey = null,
+        // Trailing + defaulted for the same reason as the sync stack above,
+        // though for a different reason on the other side: LogViewModel pulls
+        // in six stores, and a test that only wants a MainViewModel should not
+        // have to stand all of them up to get one.
+        LogViewModel? log = null)
     {
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
+        Volume                 = volume;
+        NowPlaying             = nowPlaying;
+        Log                    = log;
+        Equalizer              = equalizer;
+        Rename                 = rename;
         _appSettings           = appSettings;
         _importer              = importer;
         _mainPlaylist          = mainPlaylist;
@@ -620,10 +662,14 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
 
         // The browser owns the state; these re-raise it on this ViewModel,
         // which is what every binding actually watches.
-        Browser.PropertyChanged += (_, e) => OnPropertyChanged(e.PropertyName);
+        _subscriptions.Add<PropertyChangedEventHandler>(
+            (_, e) => OnPropertyChanged(e.PropertyName),
+            h => Browser.PropertyChanged += h, h => Browser.PropertyChanged -= h);
 
         Playlists = new PlaylistManagementViewModel(library, _sidebarItems, this);
-        Playlists.DeleteConfirmationRequested += (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e);
+        _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>(
+            (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e),
+            h => Playlists.DeleteConfirmationRequested += h, h => Playlists.DeleteConfirmationRequested -= h);
 
         OpenAppDataLocationCommand  = new RelayCommand(OpenAppDataLocation);
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
@@ -659,7 +705,8 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
 
         // The coordinator owns the state; these re-raise it on this ViewModel,
         // which is what every binding actually watches.
-        Sync.PropertyChanged += (_, e) =>
+        _subscriptions.Add<PropertyChangedEventHandler>(
+            (_, e) =>
         {
             switch (e.PropertyName)
             {
@@ -671,8 +718,10 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
                     OnPropertyChanged(nameof(LastForceSyncResult));
                     break;
             }
-        };
-        Sync.PairingChanged += (_, _) =>
+        },
+            h => Sync.PropertyChanged += h, h => Sync.PropertyChanged -= h);
+
+        _subscriptions.Add<EventHandler>((_, _) =>
         {
             OnPropertyChanged(nameof(PairedServerFingerprint));
             OnPropertyChanged(nameof(PairedServerAlias));
@@ -685,13 +734,15 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
             else
                 _deviceSidebar.UnpinPairedServerRow();
             _deviceSidebar.SyncPairedServerRow();
-        };
+        },
+            h => Sync.PairingChanged += h, h => Sync.PairingChanged -= h);
 
-        _busy.Changed += (_, _) =>
+        _subscriptions.Add<EventHandler>((_, _) =>
         {
             OnPropertyChanged(nameof(IsBusy));
             OnPropertyChanged(nameof(BusyMessage));
-        };
+        },
+            h => _busy.Changed += h, h => _busy.Changed -= h);
 
         BuildSidebarItems();
         Browser.Repopulate();
@@ -703,7 +754,7 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
         // continuation goes on to enumerate _sidebarItems - a plain
         // ObservableCollection the UI thread mutates through
         // AddOrUpdateDeviceSidebarItem/RemoveDeviceItem.
-        library.TracksUpdated += (_, _) => Dispatcher.UIThread.Post(() =>
+        _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
         {
             Browser.Repopulate();
             // A merge in flight means this fired because one of our own
@@ -713,7 +764,8 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
                 ScheduleContentSync();
             else
                 _logger.LogDebug("TracksUpdated fired mid-sync - not scheduling a resync");
-        });
+        }),
+            h => library.TracksUpdated += h, h => library.TracksUpdated -= h);
         // A play-count / LastPlayedAt bump used to arrive as TracksUpdated, so
         // playing a song cost a full PopulateTracks (16k row allocations, a
         // full album regroup) plus a peer sync, twice. Only two columns can
@@ -721,42 +773,52 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
         // - and don't schedule a content sync at all: another device does not
         // need to hear about a local play count the moment it happens (the next
         // genuine library change carries it along anyway).
-        library.TrackStatsChanged += (_, e) => Dispatcher.UIThread.Post(() => Browser.NotifyTrackStatsChanged(e.Track));
+        _subscriptions.Add<EventHandler<TrackStatsChangedEventArgs>>(
+            (_, e) => Dispatcher.UIThread.Post(() => Browser.NotifyTrackStatsChanged(e.Track)),
+            h => library.TrackStatsChanged += h, h => library.TrackStatsChanged -= h);
 
         // Same reasoning as TracksUpdated above - PlaylistsUpdated is raised
         // from the sync path, off the UI thread.
-        library.PlaylistsUpdated += (_, _) => Dispatcher.UIThread.Post(() =>
+        _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
         {
             Playlists.RefreshSidebarItems();
             if (!Sync.IsMergingOwnSync)
                 ScheduleContentSync();
             else
                 _logger.LogDebug("PlaylistsUpdated fired mid-sync - not scheduling a resync");
-        });
+        }),
+            h => library.PlaylistsUpdated += h, h => library.PlaylistsUpdated -= h);
 
         // Reachability itself is handled entirely by PairedServerReachability's
         // own DeviceDiscovered/DeviceLost subscription + this single Changed
         // handler below - these two lambdas keep only their other,
         // unrelated responsibilities (general device-list sidebar upkeep,
         // trust-change handling, sync triggering).
-        networkDiscovery?.DeviceDiscovered += (_, device) =>
+        if (networkDiscovery != null)
+        {
+            _subscriptions.Add<EventHandler<DiscoveredDevice>>((_, device) =>
         {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
             Sync.HandlePeerTrustChanged(device);
             TriggerSyncIfPeerCatalogChanged(device);
             TriggerSyncIfReady(device);
-        };
-        networkDiscovery?.DeviceLost += (_, instanceName) =>
+        },
+                h => networkDiscovery.DeviceDiscovered += h, h => networkDiscovery.DeviceDiscovered -= h);
+
+            _subscriptions.Add<EventHandler<string>>((_, instanceName) =>
         {
             Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
             Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
-        };
+        },
+                h => networkDiscovery.DeviceLost += h, h => networkDiscovery.DeviceLost -= h);
+        }
 
         // The one place reachability propagates outward - see
         // PairedServerReachability's own doc comment. Fires already on the UI
         // thread.
-        reachability?.Changed += (_, _) =>
+        if (reachability != null)
+            _subscriptions.Add<EventHandler>((_, _) =>
         {
             OnPropertyChanged(nameof(IsPairedServerReachable));
             OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
@@ -764,7 +826,8 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
             _deviceSidebar.SyncPairedServerRow();
             Browser.ApplyTrackAvailability(PairedServerFingerprint, reachability.IsReachable);
             ReachabilityChanged?.Invoke(this, EventArgs.Empty);
-        };
+        },
+                h => reachability.Changed += h, h => reachability.Changed -= h);
 
         // On mobile, MainViewModel is still constructed (App.axaml.cs resolves it
         // unconditionally) but MainView - the only subscriber to
@@ -772,7 +835,8 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
         // instead. Without this check, a conflict during a mobile-initiated sync
         // would await e.Resolution forever. Until mobile gets its own conflict UI,
         // fail safe by keeping the local version rather than hanging the sync.
-        playlistSyncService?.ConflictDetected += (_, e) =>
+        if (playlistSyncService != null)
+            _subscriptions.Add<EventHandler<PlaylistConflictEventArgs>>((_, e) =>
         {
             if (PlaylistConflictRequested == null)
             {
@@ -780,7 +844,8 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
                 return;
             }
             Dispatcher.UIThread.Post(() => PlaylistConflictRequested?.Invoke(this, e));
-        };
+        },
+                h => playlistSyncService.ConflictDetected += h, h => playlistSyncService.ConflictDetected -= h);
 
         // A paired Server no longer trusting us surfaces here every time this
         // device is in any kind of contact with it - not just while actively
@@ -799,20 +864,27 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
         // "connecting" in one specific sense of the word at the right moment.
         void HandlePeerTrustRejected(object? _, PeerTrustRejectedEventArgs e) =>
             Sync.HandleTrustRevoked(e.Alias, e.Fingerprint);
-        playlistSyncService?.PeerTrustRejected += HandlePeerTrustRejected;
-        librarySyncService?.PeerTrustRejected += HandlePeerTrustRejected;
+        if (playlistSyncService != null)
+            _subscriptions.Add<EventHandler<PeerTrustRejectedEventArgs>>(HandlePeerTrustRejected,
+                h => playlistSyncService.PeerTrustRejected += h, h => playlistSyncService.PeerTrustRejected -= h);
+        if (librarySyncService != null)
+            _subscriptions.Add<EventHandler<PeerTrustRejectedEventArgs>>(HandlePeerTrustRejected,
+                h => librarySyncService.PeerTrustRejected += h, h => librarySyncService.PeerTrustRejected -= h);
         // Server-initiated counterpart to the two above - a peer that
         // proactively told us (via SyncHttpServer's unpair-notify endpoint)
         // it revoked our trust, rather than us finding out from a 403/poll -
         // see PeerUnpairNotifier. Same handler, same effect either way.
-        syncHttpServer?.PeerUnpairNotified += HandlePeerTrustRejected;
+        if (syncHttpServer != null)
+            _subscriptions.Add<EventHandler<PeerTrustRejectedEventArgs>>(HandlePeerTrustRejected,
+                h => syncHttpServer.PeerUnpairNotified += h, h => syncHttpServer.PeerUnpairNotified -= h);
 
         // Same no-UI-listening fallback shape as ConflictDetected above, but fails
         // *closed* (deny) rather than defaulting to "keep local" - granting a
         // stranger access to this device's playlists/library is a security
         // decision, not a content merge, so an unattended device shouldn't ever
         // silently trust an unrecognized peer. See SyncHttpServer.AuthorizeAsync.
-        syncHttpServer?.PeerApprovalRequested += (_, e) =>
+        if (syncHttpServer != null)
+            _subscriptions.Add<EventHandler<PeerApprovalRequestedEventArgs>>((_, e) =>
         {
             if (PeerApprovalRequested == null)
             {
@@ -820,9 +892,10 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
                 return;
             }
             Dispatcher.UIThread.Post(() => PeerApprovalRequested?.Invoke(this, e));
-        };
+        },
+                h => syncHttpServer.PeerApprovalRequested += h, h => syncHttpServer.PeerApprovalRequested -= h);
 
-        _playlistControlViewModel.PropertyChanged += (_, e) =>
+        _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
             if (e.PropertyName == nameof(PlaylistControlViewModel.SelectedTrack))
                 OnPropertyChanged(nameof(SelectedTrack));
@@ -835,7 +908,22 @@ public partial class MainViewModel : ViewModelBase, IDeviceSidebarHost, IPeerSyn
                 OnPropertyChanged(nameof(IsRepeatEnabled));
             if (e.PropertyName == nameof(PlaylistControlViewModel.IsShuffleEnabled))
                 OnPropertyChanged(nameof(IsShuffleEnabled));
-        };
+        },
+            h => _playlistControlViewModel.PropertyChanged += h, h => _playlistControlViewModel.PropertyChanged -= h);
+    }
+
+    // Every event this class attaches to in its constructor, paired with its
+    // teardown - see SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md Tier 2.3.
+    private readonly SubscriptionBag _subscriptions = new();
+
+    // Registered in the container as a singleton, so in the app this runs at
+    // process exit and never matters. It exists for the case that used to be
+    // impossible: constructing a MainViewModel, using it, and letting go of it
+    // without leaving sixteen handlers attached to services that outlive it.
+    public void Dispose()
+    {
+        _subscriptions.Dispose();
+        Sync.Dispose();
     }
 
     // ── Playback ─────────────────────────────────────────────────────────────

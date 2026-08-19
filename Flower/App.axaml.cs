@@ -373,7 +373,12 @@ public partial class App : Application
         Control? mainView = null;
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var window = new MainWindow
+            var window = new MainWindow(
+                appSettings,
+                provider.GetRequiredService<ColumnManager>(),
+                provider.GetRequiredService<Library>(),
+                provider.GetRequiredService<LibraryStore>(),
+                provider.GetRequiredService<AppSettingsStore>())
             {
                 DataContext = mainViewModel
             };

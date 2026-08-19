@@ -33,15 +33,29 @@ public partial class MainWindow : Window
     private double     _normalHeight;
     private PixelPoint _normalPosition;
 
-    public MainWindow()
+    // Parameterless for Avalonia's XAML compiler, which resolves a constructor
+    // by arity - it does not consider optional parameters, and this window has
+    // its own .axaml. Every real construction goes through the overload below,
+    // from App.Bootstrap, which is where the container lives.
+    // See docs/ARCHITECTURE-REVIEW.md Tier 2.3.
+#pragma warning disable CS8618
+    public MainWindow() : this(null, null, null, null, null) { }
+#pragma warning restore CS8618
+
+    public MainWindow(
+        AppSettings? appSettings,
+        ColumnManager? columnManager,
+        Library? library,
+        LibraryStore? libraryStore,
+        AppSettingsStore? appSettingsStore)
     {
         InitializeComponent();
 
-        _appSettings    = Ioc.Default.GetService<AppSettings>()!;
-        _columnManager  = Ioc.Default.GetService<ColumnManager>()!;
-        _library        = Ioc.Default.GetService<Library>()!;
-        _libraryStore   = Ioc.Default.GetService<LibraryStore>()!;
-        _appSettingsStore = Ioc.Default.GetService<AppSettingsStore>()!;
+        _appSettings    = appSettings!;
+        _columnManager  = columnManager!;
+        _library        = library!;
+        _libraryStore   = libraryStore!;
+        _appSettingsStore = appSettingsStore!;
         _normalWidth    = Width;
         _normalHeight   = Height;
         _normalPosition = Position;
@@ -141,8 +155,11 @@ public partial class MainWindow : Window
                     Gesture = new KeyGesture(Key.OemComma, PlatformShortcuts.Primary),
                     Icon = CreateMenuIcon(MaterialIconKind.CogOutline),
                 };
+                // The window's own DataContext is the MainViewModel (set by
+                // App.Bootstrap), so the menu reaches it the same way every
+                // binding in the XAML does.
                 settingsMenuItem.Click += (_, _) =>
-                    Ioc.Default.GetRequiredService<ViewModels.MainViewModel>().OpenSettingsCommand?.Execute(null);
+                    (DataContext as ViewModels.MainViewModel)?.OpenSettingsCommand?.Execute(null);
 
                 var flowerMenu = new NativeMenuItem("Flower") { Menu = new NativeMenu() };
                 flowerMenu.Menu.Items.Add(aboutItem);

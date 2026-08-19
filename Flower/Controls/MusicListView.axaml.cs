@@ -30,6 +30,11 @@ namespace Flower.Controls;
 public partial class MusicListView : UserControl
 {
     private readonly ColumnManager _columnManager;
+
+    // Exposed so MainView's column menu and Column Selector window use this
+    // control's instance instead of resolving a second reference to the same
+    // singleton.
+    public ColumnManager ColumnManager => _columnManager;
     private readonly MusicListPanel _panel;
 
     private IReadOnlyList<TrackRowViewModel> _items = Array.Empty<TrackRowViewModel>();
@@ -242,6 +247,13 @@ public partial class MusicListView : UserControl
     public MusicListView()
     {
         InitializeComponent();
+        // The one container read left in this layer, and deliberately so: this
+        // control is instantiated by XAML (MainView.axaml), which offers no
+        // constructor to inject through and no DataContext until well after
+        // the panel below has to exist. Everything under it - the panel, every
+        // row - is handed the instance rather than resolving its own, and
+        // MainView reads it back off ColumnManager here rather than making its
+        // own call. See docs/ARCHITECTURE-REVIEW.md Tier 2.3.
         _columnManager = Ioc.Default.GetService<ColumnManager>()!;
         _panel         = new MusicListPanel(_columnManager)
         {

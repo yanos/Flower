@@ -39,7 +39,7 @@ public interface IPeerSyncHost
 // Raises PropertyChanged for the handful of values MainViewModel re-surfaces
 // to XAML (IsSyncing, the paired-server pointer, reachability, force-sync
 // state); MainViewModel forwards those onto its own bindable properties.
-public sealed class PeerSyncCoordinator : ViewModelBase
+public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 {
     private readonly IPeerSyncHost _host;
     private readonly AppSettings _appSettings;
@@ -104,7 +104,11 @@ public sealed class PeerSyncCoordinator : ViewModelBase
         // ScheduleContentSync. A periodic tick fires on a fixed wall-clock
         // schedule no matter how much log activity happens in between, which
         // is what actually delivers "new lines within roughly 5s" reliably.
-        InMemoryLogStore.Instance.EntryAdded += (_, _) => _hasUnpushedLogActivity = true;
+        // InMemoryLogStore.Instance is a process-wide singleton, so this is the
+        // one subscription here that genuinely outlives this object if it is
+        // never taken back - see Dispose and SubscriptionBag.
+        _subscriptions.Add<EventHandler<InMemoryLogEntry>>((_, _) => _hasUnpushedLogActivity = true,
+            h => InMemoryLogStore.Instance.EntryAdded += h, h => InMemoryLogStore.Instance.EntryAdded -= h);
 
         _logPushTimer = new DispatcherTimer { Interval = ContentSyncCooldown };
         _logPushTimer.Tick += (_, _) =>
@@ -673,5 +677,16 @@ public sealed class PeerSyncCoordinator : ViewModelBase
         var url = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey).GetStreamUrl(track.OriginTrackId);
         _logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint}): {Url}", track.Title, peer.Alias, peer.EndPoint, url);
         return url;
+    }
+
+    private readonly SubscriptionBag _subscriptions = new();
+
+    // Stops the log-push timer and detaches from the process-wide log store.
+    // Owned by MainViewModel, which disposes this alongside its own
+    // subscriptions - see docs/ARCHITECTURE-REVIEW.md Tier 2.3.
+    public void Dispose()
+    {
+        _logPushTimer.Stop();
+        _subscriptions.Dispose();
     }
 }

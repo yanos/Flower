@@ -1,31 +1,29 @@
 using Avalonia.Controls;
 
-using CommunityToolkit.Mvvm.DependencyInjection;
-
 using Flower.ViewModels;
 
 namespace Flower.UserControls
 {
+    // DataContext is supplied by whoever hosts this control - MainView.axaml
+    // binds it to MainViewModel.NowPlaying. Nothing here reaches into the
+    // container: see docs/ARCHITECTURE-REVIEW.md Tier 2.3.
     public partial class CurrentlyPlayingControl : UserControl
     {
-        private readonly CurrentlyPlayingControlViewModel _vm;
-
         public CurrentlyPlayingControl()
         {
             InitializeComponent();
-
-            _vm = Ioc.Default.GetService<CurrentlyPlayingControlViewModel>()!;
-            DataContext = _vm;
         }
+
+        private CurrentlyPlayingControlViewModel? ViewModel => DataContext as CurrentlyPlayingControlViewModel;
 
         private void Shuffle(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
-            _vm.ToggleShuffle();
+            ViewModel?.ToggleShuffle();
         }
 
         private void Repeat(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
-            _vm.ToggleRepeat();
+            ViewModel?.ToggleRepeat();
         }
     }
 }

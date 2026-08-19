@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 using Flower.Converters;
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.ViewModels.Mobile;
@@ -25,8 +26,12 @@ public partial class TrackInfoView : UserControl
     private static readonly DurationConverter _durationConverter = new();
     // Resolved via the service locator - see desktop TrackInfoWindow's own
     // field for the same pattern.
-    private readonly LibraryStore _libraryStore = Ioc.Default.GetService<LibraryStore>()!;
-    private readonly ILogger<TrackInfoView> _logger = Ioc.Default.GetService<ILogger<TrackInfoView>>()!;
+    // This screen is instantiated by XAML and reaches its dependencies through
+    // the ViewModel it is given, not through the container - see
+    // docs/ARCHITECTURE-REVIEW.md Tier 2.3. The logger is the one exception:
+    // there is no constructor for the container to inject one into, which is
+    // exactly the case AppLogging's typed-logger helper exists for.
+    private readonly ILogger<TrackInfoView> _logger = AppLogging.CreateTypedLogger<TrackInfoView>();
     private Track? _track;
 
     public TrackInfoView()
@@ -179,7 +184,8 @@ public partial class TrackInfoView : UserControl
         // Tracks back into UpdateTracks as a "fresh scan" silently doubles
         // every placeholder track.
         vm.Main.Library.NotifyTrackChanged();
-        await _libraryStore.SaveAsync(vm.Main.Library.Tracks);
+        if (vm.Main.LibraryStore is { } libraryStore)
+            await libraryStore.SaveAsync(vm.Main.Library.Tracks);
     }
 
     private static string? NullIfEmpty(string? s) =>

@@ -22,10 +22,20 @@ public partial class TrackRowControl : UserControl
     // Store actual handler delegates so we can remove them properly
     private readonly List<(MusicColumnDefinition Col, PropertyChangedEventHandler Handler)> _widthSubs = new();
 
-    public TrackRowControl()
+    // The ColumnManager is passed in by MusicListPanel, which pools these and
+    // already has the instance MusicListView handed it - see
+    // docs/ARCHITECTURE-REVIEW.md Tier 2.3. The fallback covers the XAML
+    // previewer, which constructs this control with no arguments.
+    // Explicitly parameterless as well as the real one below: Avalonia's XAML
+    // compiler resolves a constructor by arity and does not consider optional
+    // parameters, so a single (ColumnManager? = null) overload fails the build
+    // of this control's own .axaml.
+    public TrackRowControl() : this(null) { }
+
+    public TrackRowControl(ColumnManager? columnManager)
     {
         InitializeComponent();
-        _columnManager = Ioc.Default.GetService<ColumnManager>()!;
+        _columnManager = columnManager ?? Ioc.Default.GetService<ColumnManager>()!;
         _columnManager.ColumnsChanged += OnColumnsChanged;
         DataContextChanged += (_, _) =>
         {

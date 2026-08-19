@@ -29,10 +29,7 @@ namespace Flower.Views;
 
 public partial class MainView : UserControl
 {
-    private readonly PlaylistControlViewModel _playlistControlViewModel;
     private MainViewModel? _viewModel;
-    private readonly SidebarRenameService _renameService = Ioc.Default.GetService<SidebarRenameService>()!;
-    private readonly ILogger<MainView> _logger = Ioc.Default.GetService<ILogger<MainView>>()!;
 
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
@@ -62,8 +59,8 @@ public partial class MainView : UserControl
     public MainView()
     {
         InitializeComponent();
-        _playlistControlViewModel = Ioc.Default.GetService<PlaylistControlViewModel>()!;
         DataContextChanged += OnDataContextChanged;
+        PlaybackControls.PlayOrPauseRequested += (_, _) => _viewModel?.PlayOrPauseFromCurrentView();
 
         // Wire MusicListView events
         MusicList.RowActivated    += OnRowActivated;
@@ -841,7 +838,7 @@ public partial class MainView : UserControl
     {
         if (_viewModel == null)
             return;
-        var columnManager = Ioc.Default.GetService<ColumnManager>()!;
+        var columnManager = MusicList.ColumnManager;
 
         _columnMenu = new ContextMenu();
         foreach (var col in columnManager.Columns)
@@ -1086,8 +1083,7 @@ public partial class MainView : UserControl
     {
         if (_viewModel == null)
             return;
-        var columnManager = Ioc.Default.GetService<ColumnManager>()!;
-        var columnSelectorWindow = new ColumnSelectorWindow(columnManager, _viewModel);
+        var columnSelectorWindow = new ColumnSelectorWindow(MusicList.ColumnManager, _viewModel);
         if (TopLevel.GetTopLevel(this) is Window owner)
             columnSelectorWindow.ShowDialog(owner);
         else
@@ -1099,7 +1095,8 @@ public partial class MainView : UserControl
     // activity while the user keeps using the rest of the app.
     private void OpenLogWindow()
     {
-        var logViewModel = Ioc.Default.GetRequiredService<LogViewModel>();
+        if (_viewModel?.Log is not { } logViewModel)
+            return;
         var logWindow = new LogWindow(logViewModel);
         logWindow.Show();
     }
@@ -1108,8 +1105,9 @@ public partial class MainView : UserControl
     // and live-adjustable while music keeps playing.
     private void OpenEqualizerWindow()
     {
-        var equalizerViewModel = Ioc.Default.GetRequiredService<EqualizerViewModel>();
-        var equalizerWindow = new EqualizerWindow(equalizerViewModel);
+        if (_viewModel == null)
+            return;
+        var equalizerWindow = new EqualizerWindow(_viewModel.Equalizer);
         equalizerWindow.Show();
     }
 
@@ -1125,7 +1123,7 @@ public partial class MainView : UserControl
         if (selected.Count > 1)
         {
             // Batch mode: edit the whole multi-selection together, no Prev/Next.
-            infoWindow = new TrackInfoWindow(selected, vm.Library) { ShowInTaskbar = false };
+            infoWindow = new TrackInfoWindow(selected, vm.Library, vm.LibraryStore) { ShowInTaskbar = false };
         }
         else
         {
@@ -1135,7 +1133,7 @@ public partial class MainView : UserControl
             var index  = tracks.ToList().IndexOf(track);
             if (index < 0)
                 index = 0;
-            infoWindow = new TrackInfoWindow(tracks, index, vm.Library) { ShowInTaskbar = false };
+            infoWindow = new TrackInfoWindow(tracks, index, vm.Library, vm.LibraryStore) { ShowInTaskbar = false };
             infoWindow.TrackNavigated += (_, t) => MusicList.SelectedTrack = t;
         }
 
@@ -1168,8 +1166,8 @@ public partial class MainView : UserControl
             return;
 
         var infoWindow = target.FocusIndex is { } index
-            ? new TrackInfoWindow(target.Tracks, index, vm.Library) { ShowInTaskbar = false }
-            : new TrackInfoWindow(target.Tracks, vm.Library) { ShowInTaskbar = false };
+            ? new TrackInfoWindow(target.Tracks, index, vm.Library, vm.LibraryStore) { ShowInTaskbar = false }
+            : new TrackInfoWindow(target.Tracks, vm.Library, vm.LibraryStore) { ShowInTaskbar = false };
 
         if (TopLevel.GetTopLevel(this) is Window owner)
             infoWindow.Show(owner);
@@ -1305,7 +1303,8 @@ public partial class MainView : UserControl
     // Teardown-and-persist for an in-place sidebar rename. The rules for what
     // an empty name means, and what a commit writes, live in
     // SidebarRenameService; this is only the call into it.
-    private Task CommitRename(SidebarItem item) => _renameService.CommitAsync(item, _viewModel);
+    private Task CommitRename(SidebarItem item) =>
+        _viewModel == null ? Task.CompletedTask : _viewModel.Rename.CommitAsync(item, _viewModel);
 
     // ── Drag-to-reorder (playlist view only) ────────────────────────────────────
 
