@@ -20,6 +20,19 @@ namespace Flower.Models
     {
         private readonly ILogger<Library> _logger;
 
+        // Where a mutation made here is persisted - see ITrackStore. Both
+        // hosts hand in the same TrackRepository; it is optional only for the
+        // tests and the handful of call sites that build a throwaway Library
+        // with no database behind it at all.
+        private readonly ITrackStore? _store;
+
+        // The playlist counterpart of _store - see IPlaylistStore. Same
+        // arrangement, same reason: every path that changes a playlist already
+        // funnels through PlaylistsChanged, so persisting there covers renames
+        // and drag-reorders too, which no call site can be relied on to
+        // remember.
+        private readonly IPlaylistStore? _playlistStore;
+
         // Guards every read-modify-write of Tracks. EndReached fires on a LibVLC
         // callback thread (see CLAUDE.md's Binding Notes) while the startup/rescan
         // Task.Run (App.axaml.cs) runs on a threadpool thread - both touch this
@@ -57,6 +70,33 @@ namespace Flower.Models
         // including NotifyTrackChanged, which is exactly the "a Track you
         // already hold was mutated in place" signal.
         private Dictionary<string, Track>? _byPath;
+
+        // Grouped-album / by-id / by-artist indexes for the OpenSubsonic
+        // surface - see LibrarySnapshot. Built lazily and thrown away rather
+        // than maintained incrementally, exactly like _byPath above and
+        // invalidated at the same points, because the same "a Track was
+        // mutated in place without going through this class" case applies:
+        // a tag edit changes which album a track groups into.
+        private LibrarySnapshot? _snapshot;
+
+        // Lock-free for readers: the field is only ever assigned a fully-built
+        // snapshot, so a caller either sees the previous one or the next one,
+        // never a half-populated dictionary. Two threads racing to rebuild
+        // will each build one and the loser's is discarded - cheaper than
+        // holding _lock across the grouping while requests are being served.
+        public LibrarySnapshot Snapshot
+        {
+            get
+            {
+                var current = Volatile.Read(ref _snapshot);
+                if (current is not null)
+                    return current;
+
+                var built = LibrarySnapshot.Build(Tracks);
+                Volatile.Write(ref _snapshot, built);
+                return built;
+            }
+        }
 
         // Opaque "has the track catalog changed" token, handed to peers as the
         // ETag on GET /api/flower/v1/library and advertised on /info so a
@@ -126,10 +166,16 @@ namespace Flower.Models
         // DI-configured ILogger<Library>.
         public Library(List<Track> tracks) : this(tracks, NullLogger<Library>.Instance) { }
 
-        public Library(List<Track> tracks, ILogger<Library> logger)
+        public Library(
+            List<Track> tracks,
+            ILogger<Library> logger,
+            ITrackStore? store = null,
+            IPlaylistStore? playlistStore = null)
         {
             Tracks = new List<Track>(tracks);
             _logger = logger;
+            _store = store;
+            _playlistStore = playlistStore;
         }
 
         // A rescan (see Importer) produces brand-new Track instances read straight
@@ -137,6 +183,26 @@ namespace Flower.Models
         // ImportedPlayCount to 0 - so without this, every track would look
         // freshly added, and all play counts would silently reset, on every
         // launch/rescan. Carry these forward for any track already known by Path.
+        // Replaces the contents wholesale, treating the incoming list as
+        // authoritative - the post-construction form of the constructor, for a
+        // load straight out of the database.
+        //
+        // Deliberately not UpdateTracks: that reconciles a fresh *filesystem*
+        // scan against what is resident and carries in-memory mutable state
+        // forward over it, which is right for a rescan and exactly wrong for a
+        // reload, where the stored rows are the newer truth and carrying
+        // memory over them would mask a value that never reached disk.
+        public void Reset(List<Track> tracks)
+        {
+            lock (_lock)
+            {
+                Tracks = tracks;
+                InvalidateIndexes();
+            }
+
+            TracksUpdated?.Invoke(this, EventArgs.Empty);
+        }
+
         public void UpdateTracks(List<Track> tracks)
         {
             int beforeCount, afterCount, carriedForwardCount;
@@ -200,11 +266,22 @@ namespace Flower.Models
                     .ToList();
 
                 Tracks = tracks.Concat(carriedForwardSyncTracks).ToList();
-                InvalidatePathIndex();
+                InvalidateIndexes();
                 afterCount = Tracks.Count;
                 carriedForwardCount = carriedForwardSyncTracks.Count;
 
                 RebindPlaylistTracks();
+
+                // Inside the lock, deliberately. Rescans, sync merges and
+                // imports are triggered from independent sites with no
+                // ordering between them, so two can overlap; writing here
+                // means the rows go out in the same order the swaps happened
+                // and an earlier reconciliation cannot land on top of a later
+                // one. This is the ordering LibraryStore's own write lock used
+                // to provide, back when remembering to call it was each
+                // caller's job. Readers are unaffected - Tracks is
+                // copy-on-write and read without the lock.
+                Persist(() => _store!.ReplaceAll(Tracks));
             }
 
             _logger.LogInformation("Library updated: {FreshCount} track(s) from scan, {CarriedForwardCount} synced-only track(s) carried forward, {TotalBefore} -> {TotalAfter}",
@@ -368,8 +445,14 @@ namespace Flower.Models
                 merged.RemoveAll(stale.Contains);
 
                 Tracks = merged;
-                InvalidatePathIndex();
+                InvalidateIndexes();
                 removedCount = stale.Count;
+
+                // See UpdateTracks - same write, same reason for being under
+                // the lock. Without it a merge only lived in memory, and a
+                // relaunched app (mobile has no always-on background process)
+                // lost every not-yet-downloaded placeholder learned this way.
+                Persist(() => _store!.ReplaceAll(Tracks));
             }
 
             TracksUpdated?.Invoke(this, EventArgs.Empty);
@@ -398,17 +481,22 @@ namespace Flower.Models
         // since it may not be playedTrack.
         public Track IncrementPlayCount(Track playedTrack)
         {
-            Track current;
+            var current = BumpPlayCount(playedTrack);
+            Persist(() => _store!.UpdateStats(current));
+            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
+            return current;
+        }
+
+        private Track BumpPlayCount(Track playedTrack)
+        {
             lock (_lock)
             {
-                current = ResolveCurrent(playedTrack);
+                var current = ResolveCurrent(playedTrack);
                 current.PlayCount++;
                 BumpChangeToken();
                 _logger.LogDebug("PlayCount incremented to {NewCount} for {Title} ({Path})", current.PlayCount, current.Title, current.Path);
+                return current;
             }
-
-            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
-            return current;
         }
 
         // Whichever Track object currently represents playedTrack's file.
@@ -441,9 +529,10 @@ namespace Flower.Models
         }
 
         // Callers must hold _lock, except NotifyTrackChanged - see its comment.
-        private void InvalidatePathIndex()
+        private void InvalidateIndexes()
         {
             _byPath = null;
+            Volatile.Write(ref _snapshot, null);
             BumpChangeToken();
         }
 
@@ -457,16 +546,132 @@ namespace Flower.Models
         // different triggers.
         public Track RecordPlayed(Track playedTrack)
         {
-            Track current;
+            var current = StampLastPlayed(playedTrack);
+            Persist(() => _store!.UpdateStats(current));
+            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
+            return current;
+        }
+
+        private Track StampLastPlayed(Track playedTrack)
+        {
             lock (_lock)
             {
-                current = ResolveCurrent(playedTrack);
+                var current = ResolveCurrent(playedTrack);
                 current.LastPlayedAt = DateTimeOffset.UtcNow;
+                BumpChangeToken();
+                return current;
+            }
+        }
+
+        // Whichever Track a Subsonic-style id names, or null. The id
+        // vocabulary is the wire's, not this class's, which is why this
+        // parses rather than taking a Guid: it is the boundary, and having
+        // exactly one of them is the point (the playlist half has its own,
+        // ResolveTracks below).
+        public Track? Find(string? id) =>
+            EntityId.FromWire(id) is { } parsed ? Snapshot.ById.GetValueOrDefault(parsed) : null;
+
+        // "This track finished playing", by id - Subsonic's scrobble, and
+        // what the client's own end-of-track path does in two calls.
+        //
+        // Both halves, because a scrobble is both: the count bump and the
+        // played-at stamp live on separate methods above only because the
+        // client triggers them at different moments (see Track.LastPlayedAt),
+        // which a single request does not. One stats write covers the pair
+        // rather than one per half.
+        public bool RecordPlay(string? id)
+        {
+            if (Find(id) is not { } track)
+                return false;
+
+            var current = BumpPlayCount(track);
+            current = StampLastPlayed(current);
+            Persist(() => _store!.UpdateStats(current));
+
+            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
+            return true;
+        }
+
+        // Stars or unstars every track behind one Subsonic id - a song, or every
+        // track on an album or by an album artist - and hands back the tracks
+        // it touched so the caller can persist them and report a count.
+        //
+        // Resolved through Snapshot rather than a scan: an album or artist id
+        // is already a key in those indexes. Mutation is in place on the Track
+        // objects, so the snapshot itself does not have to be rebuilt - Starred
+        // is not part of what it indexes.
+        //
+        // Returns how many tracks were affected, so a caller can tell
+        // "starred nothing" (a bad id) from a real change.
+        public int SetStarred(StarTarget target, string value, bool starred)
+        {
+            var snapshot = Snapshot;
+            var matches = target switch
+            {
+                StarTarget.Song => Find(value) is { } track ? (IReadOnlyList<Track>)[track] : [],
+                StarTarget.Album => snapshot.AlbumTracks(value),
+                _ => snapshot.ArtistTracks(value),
+            };
+
+            if (matches.Count == 0)
+                return 0;
+
+            var starredAt = starred ? DateTimeOffset.UtcNow : (DateTimeOffset?)null;
+            lock (_lock)
+            {
+                foreach (var track in matches)
+                {
+                    track.Starred = starred;
+                    track.StarredAt = starredAt;
+                }
+
                 BumpChangeToken();
             }
 
-            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
-            return current;
+            // One indexed UPDATE over the matching rows rather than one per
+            // track: the in-memory mutation is what reads will see, and the
+            // database only has to end up agreeing.
+            //
+            // For a song, the store is told the id of the track that was
+            // actually matched rather than the string the caller passed:
+            // EntityId.FromWire accepts a dashed Guid, the id column holds
+            // EntityId.ToKey's hex, and forwarding the caller's spelling would
+            // resolve in memory and then update no row at all. Album and
+            // artist ids are content-derived hashes with a single spelling, so
+            // they pass through unchanged.
+            var stored = target == StarTarget.Song ? matches[0].Id.ToKey() : value;
+            Persist(() => _store!.SetStarred(target, stored, starred, starredAt));
+            return matches.Count;
+        }
+
+        // The write half of a mutation, and the one part of it allowed to
+        // fail without taking the mutation with it. Two reasons it is caught
+        // here rather than left to the caller: the in-memory change has
+        // already been applied and is what every reader sees, so a failed
+        // write means the database is behind, not that the change did not
+        // happen; and these run on threads where an escaping exception is
+        // fatal rather than handled - IncrementPlayCount is called from
+        // LibVLC's EndReached callback (see CLAUDE.md's Binding Notes), where
+        // an unobserved throw takes the process down over a play count. This
+        // is what LibraryStore.WriteStats used to catch on the client's
+        // behalf, moved to where the write now happens so both hosts get it.
+        private void Persist(Action write)
+        {
+            if (_store is null)
+                return;
+
+            try
+            {
+                write();
+            }
+            catch (Exception ex)
+            {
+                // Deliberately broad: the store is an interface here, so the
+                // specific storage failures (a locked database, a data
+                // directory deleted out from under a test) are not types this
+                // class can name.
+                _logger.LogError(ex, "Could not persist a library change; the in-memory library is ahead of the database");
+            }
         }
 
         // Notifies listeners that a Track already in Tracks was mutated in place -
@@ -480,11 +685,34 @@ namespace Flower.Models
         // about to be told to re-read anyway, or rebuilds it fresh); what
         // matters is that the next resolve rebuilds rather than trusting an
         // index that predates the new Path.
+        // The whole-library form, for a mutation applied across every track at
+        // once - the iTunes play-count/date-added sync. Rewrites the table,
+        // because that is genuinely what changed.
         public void NotifyTrackChanged()
         {
-            InvalidatePathIndex();
+            InvalidateIndexes();
+            Persist(() => _store!.ReplaceAll(Tracks));
             TracksUpdated?.Invoke(this, EventArgs.Empty);
         }
+
+        // The same signal for a known, bounded set of changed tracks - a
+        // placeholder's Path after a download, a tag edit - which is one
+        // upsert each rather than a rewrite of the whole table. Every one of
+        // these call sites used to persist by saving the entire library: four
+        // separate 16k-row writes to push one changed row.
+        public void NotifyTracksChanged(IReadOnlyList<Track> changed)
+        {
+            InvalidateIndexes();
+            Persist(() =>
+            {
+                foreach (var track in changed)
+                    _store!.Upsert(track);
+            });
+
+            TracksUpdated?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void NotifyTrackChanged(Track changed) => NotifyTracksChanged([changed]);
 
         public void AddPlaylist(Playlist playlist)
         {
@@ -495,7 +723,7 @@ namespace Flower.Models
             }
 
             _logger.LogInformation("Playlist created: {Name} ({TrackCount} track(s))", playlist.Name, playlist.Tracks.Count);
-            PlaylistsChanged?.Invoke(this, EventArgs.Empty);
+            RaisePlaylistsChanged();
         }
 
         public void RemovePlaylist(Playlist playlist)
@@ -510,7 +738,7 @@ namespace Flower.Models
             }
 
             _logger.LogInformation("Playlist deleted: {Name}", playlist.Name);
-            PlaylistsChanged?.Invoke(this, EventArgs.Empty);
+            RaisePlaylistsChanged();
         }
 
         // Atomically swaps in a merged playlist set from a sync session and notifies
@@ -536,7 +764,7 @@ namespace Flower.Models
             // would let a subscriber that touches the library re-enter and
             // deadlock or, worse, observe a half-applied state.
             PlaylistsUpdated?.Invoke(this, EventArgs.Empty);
-            PlaylistsChanged?.Invoke(this, EventArgs.Empty);
+            RaisePlaylistsChanged();
         }
 
         // Installs a new playlist list, moving the Playlist.Changed subscription
@@ -556,7 +784,77 @@ namespace Flower.Models
                 playlist.Changed += OnPlaylistChanged;
         }
 
-        private void OnPlaylistChanged(object? sender, EventArgs e) => PlaylistsChanged?.Invoke(this, EventArgs.Empty);
+        private void OnPlaylistChanged(object? sender, EventArgs e) => RaisePlaylistsChanged();
+
+        // Persists first, then announces. Every playlist mutation ends here -
+        // create, delete, sync replace, and (via Playlist.Changed above) an
+        // in-place rename, track add/remove or drag-reorder - which is what
+        // makes "the on-disk copy is stale" and "the write" the same event
+        // rather than a rule each of the ~six call sites had to remember. The
+        // whole set goes out, not one row: PlaylistRepository.Save is an
+        // upsert plus a delete-not-in in one transaction, and a library has
+        // tens of playlists.
+        private void RaisePlaylistsChanged()
+        {
+            if (_playlistStore is not null)
+            {
+                try
+                {
+                    _playlistStore.Save(Playlists);
+                }
+                catch (Exception ex)
+                {
+                    // Same rule as Persist: the in-memory set is already
+                    // changed and is what every reader sees, and a failed
+                    // write is not a reason to take a rename down with it.
+                    _logger.LogError(ex, "Could not persist playlists; the in-memory set is ahead of the database");
+                }
+            }
+
+            PlaylistsChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Replaces the playlist set as loaded from storage - no write back, and
+        // no PlaylistsChanged. The tracks counterpart of Reset: replaying what
+        // is already on disk is not a change to persist, and announcing it as
+        // one would have every startup write the set straight back out.
+        public void ResetPlaylists(List<Playlist> playlists)
+        {
+            lock (_lock)
+            {
+                SwapPlaylists(new List<Playlist>(playlists));
+            }
+        }
+
+        // The playlist a Subsonic id names, or null - the playlist half of
+        // Find above.
+        public Playlist? FindPlaylist(string? id) =>
+            EntityId.FromWire(id) is { } parsed ? Playlists.FirstOrDefault(p => p.Id == parsed) : null;
+
+        // Wire track ids -> the live Tracks they name, for a playlist built or
+        // edited over the protocol. The only place ids are converted in bulk,
+        // and deliberately so: past this point everything - Library, the
+        // repository, the client, the server's endpoints - deals in Track
+        // references, so both hosts agree on what a playlist *is* rather than
+        // each holding it in the shape its own storage happened to want.
+        //
+        // An id that does not resolve is skipped rather than blocked by a
+        // foreign key: a rescan can legitimately drop a track whose file was
+        // deleted without that having to cascade through every playlist
+        // referencing it. Same rule PlaylistRepository.Load applies on the way
+        // back in.
+        public List<Track> ResolveTracks(IEnumerable<string?> ids)
+        {
+            var byId = Snapshot.ById;
+            var tracks = new List<Track>();
+            foreach (var id in ids)
+            {
+                if (EntityId.FromWire(id) is { } parsed && byId.TryGetValue(parsed, out var track))
+                    tracks.Add(track);
+            }
+
+            return tracks;
+        }
 
         // Id+UpdatedAt (bumped by Playlist on every rename/track add/remove/reorder -
         // see Playlist.UpdatedAt) is enough to tell "identical" apart from "changed"

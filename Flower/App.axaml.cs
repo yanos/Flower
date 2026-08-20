@@ -162,6 +162,8 @@ public partial class App : Application
 
             // Persistence. Every store takes an ILogger<T> and the FlowerDb
             // above, so the container builds them outright.
+            .AddSingleton<TrackRepository>()
+            .AddSingleton<PlaylistRepository>()
             .AddSingleton<LibraryStore>()
             .AddSingleton<AppSettingsStore>()
             .AddSingleton<PlaylistStore>()
@@ -178,9 +180,19 @@ public partial class App : Application
             // values a store produces, not services, so they need a factory -
             // resolving either one is what reads the file.
             .AddSingleton(sp => sp.GetRequiredService<AppSettingsStore>().Load())
+            // The repositories are handed in as Library's ITrackStore and
+            // IPlaylistStore, so a play count, a star or a playlist edit is
+            // written the moment it is applied -
+            // exactly how Flower.Server registers the same type. It used to be
+            // the caller's job here (PlaylistControlViewModel bumping the count
+            // and then remembering to call LibraryStore.SaveStats), which is
+            // the same structural problem Library.PlaylistsChanged exists to
+            // solve for playlists: a new mutation path could simply forget.
             .AddSingleton(sp => new Library(
                 sp.GetRequiredService<LibraryStore>().Load(),
-                sp.GetRequiredService<ILogger<Library>>()))
+                sp.GetRequiredService<ILogger<Library>>(),
+                sp.GetRequiredService<TrackRepository>(),
+                sp.GetRequiredService<PlaylistRepository>()))
             .AddSingleton(sp => new MainPlaylist(sp.GetRequiredService<Library>().Tracks))
 
             // The platform hook wins when a head has installed one (Android's
@@ -331,37 +343,20 @@ public partial class App : Application
 
         var library = provider.GetRequiredService<Library>();
         var playlistStore = provider.GetRequiredService<PlaylistStore>();
-        foreach (var playlist in playlistStore.Load(library.Tracks))
-            library.AddPlaylist(playlist);
 
-        // The one place playlists.json is written. Persisting used to be each
-        // mutation site's own job - six SaveAsync calls across MainViewModel,
-        // MainView's code-behind, PlaylistSyncService and SyncHttpServer - so a
-        // new mutation path only had to forget one line to silently lose the
-        // user's edit. Library.PlaylistsChanged fires for every one of them,
-        // including in-place renames and reorders (see Playlist.Changed), so
-        // this subscription covers them all by construction.
+        // ResetPlaylists, not a loop of AddPlaylist: replaying the on-disk set
+        // back into Library is not a change, and every mutation path persists
+        // itself now (see Library's IPlaylistStore), so adding them one at a
+        // time would write the whole set back out once per playlist.
         //
-        // Subscribed after the load loop above so replaying the on-disk state
-        // back into Library does not immediately write it straight back out.
-        // Fire-and-forget because the event is synchronous and some of its
-        // sources are UI-thread click handlers; PlaylistStore.SaveAsync
-        // serializes concurrent writers itself.
-        var playlistSaveLogger = provider.GetRequiredService<ILogger<PlaylistStore>>();
-        library.PlaylistsChanged += (_, _) =>
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await playlistStore.SaveAsync(library.Playlists);
-                }
-                catch (Exception ex)
-                {
-                    playlistSaveLogger.LogError(ex, "Failed to persist playlists after a change");
-                }
-            });
-        };
+        // This subscription used to live here - the one place playlists were
+        // written, covering the ~six mutation sites that each used to save by
+        // hand. It moved into Library for the same reason the track writes
+        // did: a rule the composition root enforces is still a rule something
+        // else has to be wired up to, and Flower.Server had to wire up its own
+        // equivalent separately. Library.RaisePlaylistsChanged is now the
+        // single place a playlist set reaches disk, for both hosts.
+        library.ResetPlaylists(playlistStore.Load(library.Tracks));
 
         // Resolving IAudioManager is what actually opens LibVLC/miniaudio (see
         // AddAudio), so it happens here rather than lazily under the first
@@ -398,8 +393,6 @@ public partial class App : Application
             var window = new MainWindow(
                 appSettings,
                 provider.GetRequiredService<ColumnManager>(),
-                provider.GetRequiredService<Library>(),
-                provider.GetRequiredService<LibraryStore>(),
                 provider.GetRequiredService<AppSettingsStore>())
             {
                 DataContext = mainViewModel
@@ -498,7 +491,6 @@ public partial class App : Application
         if (!OperatingSystem.IsBrowser())
         {
             var importer = provider.GetRequiredService<Importer.IMusicImporter>();
-            var libraryStore = provider.GetRequiredService<LibraryStore>();
             var mainPlaylist = provider.GetRequiredService<MainPlaylist>();
 
             _ = Task.Run(async () =>
@@ -519,9 +511,10 @@ public partial class App : Application
 
                     // Update the playlist first so navigation is consistent when TracksUpdated fires
                     mainPlaylist.ReplaceAll(freshTracks);
+                    // Persisted by UpdateTracks itself - see Library's
+                    // ITrackStore. Flower.Server's rescan is the same two
+                    // lines for the same reason.
                     library.UpdateTracks(freshTracks);
-
-                    await libraryStore.SaveAsync(library.Tracks);
                     rescanLogger.LogInformation("Library saved ({TrackCount} tracks)", library.Tracks.Count);
 
                     // SyncITunesPlayCountAsync/SyncITunesDateAddedAsync each do their

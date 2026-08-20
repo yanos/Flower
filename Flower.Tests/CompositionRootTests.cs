@@ -134,7 +134,6 @@ public class CompositionRootTests : PinnedDataDirectory
         Assert.Same(provider.GetRequiredService<EqualizerViewModel>(), mainViewModel.Equalizer);
         Assert.Same(provider.GetRequiredService<LogViewModel>(), mainViewModel.Log);
         Assert.Same(provider.GetRequiredService<SidebarRenameService>(), mainViewModel.Rename);
-        Assert.Same(provider.GetRequiredService<LibraryStore>(), mainViewModel.LibraryStore);
 
         // Settings' Devices tab (TrustedDevicesView, ServerPickerView) reads
         // these four off the same face - the last of the Views/Controls layer's

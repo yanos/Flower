@@ -92,7 +92,7 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
             var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
 
             PlaylistControl = new PlaylistControlViewModel(
-                audioManager, playlist, library, new AppSettings(), libraryStore, appSettingsStore,
+                audioManager, playlist, library, new AppSettings(), appSettingsStore,
                 NullLogger<PlaylistControlViewModel>.Instance);
             CurrentlyPlaying = new CurrentlyPlayingControlViewModel(
                 PlaylistControl, audioManager, library, NullLogger<CurrentlyPlayingControlViewModel>.Instance);

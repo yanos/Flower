@@ -31,7 +31,6 @@ public partial class TrackInfoWindow : Window
     // Tier 2.3). The logger is the one exception: a Window has no constructor
     // the container reaches, which is exactly the case AppLogging's
     // typed-logger helper exists for.
-    private readonly LibraryStore? _libraryStore;
     private readonly ILogger<TrackInfoWindow> _logger = AppLogging.CreateTypedLogger<TrackInfoWindow>();
     private int _index;
 
@@ -54,12 +53,11 @@ public partial class TrackInfoWindow : Window
 
     // Single-track mode: tracks/index is the full displayed list, so Prev/Next
     // can browse through it one at a time.
-    public TrackInfoWindow(IReadOnlyList<Track> tracks, int index, Library library, LibraryStore? libraryStore)
+    public TrackInfoWindow(IReadOnlyList<Track> tracks, int index, Library library)
     {
         InitializeComponent();
         _tracks    = tracks;
         _library   = library;
-        _libraryStore = libraryStore;
         _index     = index;
         PopulateSuggestions();
         BuildFields();
@@ -71,11 +69,10 @@ public partial class TrackInfoWindow : Window
 
     // Batch mode: edit this exact set of tracks together. No Prev/Next - there's
     // no "next" when editing a fixed set as one.
-    public TrackInfoWindow(IReadOnlyList<Track> editTracks, Library library, LibraryStore? libraryStore)
+    public TrackInfoWindow(IReadOnlyList<Track> editTracks, Library library)
     {
         InitializeComponent();
         _library    = library;
-        _libraryStore = libraryStore;
         _editTracks = editTracks;
         PopulateSuggestions();
         BuildFields();
@@ -310,14 +307,15 @@ public partial class TrackInfoWindow : Window
             }
         }
 
-        // Refresh views bound to the library and persist the change to disk.
-        // NotifyTrackChanged, not UpdateTracks(_library.Tracks) - see
+        // Refreshes views bound to the library and persists the edited tracks
+        // - one upsert each, where this used to rewrite the whole library to
+        // push a handful of changed rows.
+        //
+        // NotifyTracksChanged, not UpdateTracks(_library.Tracks) - see
         // MainViewModel.SyncITunesPlayCountAsync's comment on why passing
         // Tracks back into UpdateTracks as a "fresh scan" silently doubles
         // every placeholder track.
-        _library.NotifyTrackChanged();
-        if (_libraryStore is { } libraryStore)
-            await libraryStore.SaveAsync(_library.Tracks);
+        _library.NotifyTracksChanged(_editTracks);
     }
 
     private static string? NullIfEmpty(string? s) =>

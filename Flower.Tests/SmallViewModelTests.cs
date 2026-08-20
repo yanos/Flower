@@ -492,7 +492,6 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         var library = new Library(tracks.ToList());
         playback = new PlaylistControlViewModel(
             audio, new MainPlaylist(tracks.ToList()), library, new AppSettings(),
-            new LibraryStore(NullLogger<LibraryStore>.Instance),
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance),
             NullLogger<PlaylistControlViewModel>.Instance);
         return new CurrentlyPlayingControlViewModel(
@@ -707,7 +706,6 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         var library = new Library(new List<Track> { streamed });
         var playback = new PlaylistControlViewModel(
             audio, new MainPlaylist(new List<Track> { streamed }), library, new AppSettings(),
-            new LibraryStore(NullLogger<LibraryStore>.Instance),
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance),
             NullLogger<PlaylistControlViewModel>.Instance);
         var logger = new RecordingLogger<CurrentlyPlayingControlViewModel>();

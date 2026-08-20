@@ -75,7 +75,7 @@ public sealed class SidebarRenameService
 
         _logger.LogInformation("Playlist renamed: {Old} -> {New}", item.Playlist.Name, item.Name);
         // No save here: setting Name raises Playlist.Changed, which Library
-        // relays as PlaylistsChanged, which App.axaml.cs persists.
+        // relays as PlaylistsChanged, which is where Library persists it.
         item.Playlist.Name = item.Name;
         host.ScheduleContentSync();
         return item.Name;

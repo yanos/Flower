@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Options;
 
 using Flower.Models;
+using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
-using Flower.Server.Data;
 using Flower.Server.Services;
 using Flower.Services;
 
@@ -16,9 +16,14 @@ namespace Flower.Server.Endpoints;
 // multi-client Subsonic server would also need XML - deliberately deferred,
 // same "known v1 simplification" spirit as GET-only (no POST) routes below.
 //
-// Data access is LibraryQueries/PlaylistQueries over the schema shared with
-// the client (Flower.Core/Persistence/Sql/), not EF Core - see LibraryQueries'
-// own remarks and ARCHITECTURE-REVIEW Tier 4.1. Handlers are synchronous
+// Track reads come from the resident Flower.Core Library the client also runs
+// on - the same LibrarySnapshot its own embedded sync server reads through -
+// and writes go through the same Library, which mutates it and persists the
+// change in the same call. Playlists are the same story one level down: these
+// handlers edit the library's own resident Playlist objects - the very objects
+// the client's sidebar edits - and Library turns that into the write. There is
+// no server-side library or playlist type at all. See ARCHITECTURE-REVIEW
+// Tier 4.1. Handlers are synchronous
 // because SQLite is: Microsoft.Data.Sqlite's *Async methods block on the same
 // native calls, so awaiting them bought nothing but a state machine.
 public static class SubsonicEndpoints
@@ -79,8 +84,8 @@ public static class SubsonicEndpoints
         Map("/download", Download);
         Map("/getCoverArt", GetCoverArt);
 
-        Map("/star", (HttpRequest r, LibraryQueries q) => SetStarred(true, r, q));
-        Map("/unstar", (HttpRequest r, LibraryQueries q) => SetStarred(false, r, q));
+        Map("/star", (HttpRequest r, Library l) => SetStarred(true, r, l));
+        Map("/unstar", (HttpRequest r, Library l) => SetStarred(false, r, l));
 
         // Every Subsonic route answers under both its bare name and the legacy
         // ".view" suffix real clients still send. Registering the pair in one
@@ -92,9 +97,9 @@ public static class SubsonicEndpoints
         }
     }
 
-    private static IResult GetArtists(LibraryQueries queries)
+    private static IResult GetArtists(Library library)
     {
-        var artists = FoldArtists(queries.ArtistAlbumPairs())
+        var artists = FoldArtists(library.Snapshot.Albums)
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -107,13 +112,13 @@ public static class SubsonicEndpoints
         return SubsonicResults.Ok(artists: new ArtistsID3(indices));
     }
 
-    // (artist, album) pairs -> one entry per artist with its album count. The
-    // pairs are already collapsed SQL-side, so this is a fold over ~one row per
-    // album rather than one per track.
-    private static IEnumerable<(string Id, string Name, int AlbumCount)> FoldArtists(IEnumerable<ArtistAlbumPair> pairs) =>
-        pairs
-            .GroupBy(p => p.ArtistId)
-            .Select(g => (Id: g.Key, Name: g.Min(p => p.Name) ?? "Unknown Artist", AlbumCount: g.Count()));
+    // Albums -> one entry per artist with its album count. Folding the
+    // pre-grouped albums means this walks ~one entry per album rather than one
+    // per track, the same shape the SQL version's GROUP BY produced.
+    private static IEnumerable<(string Id, string Name, int AlbumCount)> FoldArtists(IEnumerable<AlbumEntry> albums) =>
+        albums
+            .GroupBy(a => a.Summary.ArtistId!)
+            .Select(g => (Id: g.Key, Name: g.Min(a => a.Summary.AlbumArtist) ?? "Unknown Artist", AlbumCount: g.Count()));
 
     private static string IndexLetter(string name)
     {
@@ -122,65 +127,82 @@ public static class SubsonicEndpoints
         return char.IsLetter(c) ? c.ToString() : "#";
     }
 
-    private static IResult GetArtist(string? id, LibraryQueries queries)
+    private static IResult GetArtist(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))
             return SubsonicResults.Failed(10, "Required parameter 'id' missing.");
 
-        var tracks = queries.TracksByArtist(id);
-        if (tracks.Count == 0)
-            return SubsonicResults.Failed(70, "Artist not found.");
-
-        var albums = tracks
-            .GroupBy(t => SubsonicIdentity.AlbumId(t.EffectiveAlbumArtist, t.Album))
-            .Select(SubsonicMapper.ToAlbumId3)
-            .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+        // The artist's albums come straight off the snapshot's grouping rather
+        // than being re-derived from its tracks - one rule, applied once per
+        // rescan.
+        var albums = library.Snapshot.Albums
+            .Where(a => a.Summary.ArtistId == id)
+            .OrderBy(a => a.Summary.Album, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var artist = new ArtistWithAlbumsID3(id, tracks[0].EffectiveAlbumArtist, null, albums.Count, albums);
+        if (albums.Count == 0)
+            return SubsonicResults.Failed(70, "Artist not found.");
+
+        var artist = new ArtistWithAlbumsID3(
+            id, albums[0].Summary.AlbumArtist ?? "Unknown Artist", null, albums.Count,
+            albums.Select(a => SubsonicMapper.ToAlbumId3(a.Summary)).ToList());
+
         return SubsonicResults.Ok(artist: artist);
     }
 
-    private static IResult GetAlbum(string? id, LibraryQueries queries)
+    private static IResult GetAlbum(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))
             return SubsonicResults.Failed(10, "Required parameter 'id' missing.");
 
-        var tracks = queries.TracksByAlbum(id);
-        if (tracks.Count == 0)
+        if (library.Snapshot.Album(id) is not { } album)
             return SubsonicResults.Failed(70, "Album not found.");
 
-        var first = tracks[0];
-        var album = new AlbumWithSongsID3(
+        var summary = album.Summary;
+        var dto = new AlbumWithSongsID3(
             // id is already an "al-..." SubsonicIdentity.AlbumId value (see
             // GetCoverArt's own "al-" prefix check below) - not re-prefixed here.
-            id, first.Album ?? "Unknown Album", first.EffectiveAlbumArtist,
-            SubsonicIdentity.ArtistId(first.EffectiveAlbumArtist),
-            id, tracks.Count, (long)tracks.Sum(t => t.Duration.TotalSeconds),
-            ParseYear(first.Year), first.Genre,
-            tracks.Select(SubsonicMapper.ToChild).ToList());
+            id, summary.Album ?? "Unknown Album", summary.AlbumArtist,
+            summary.ArtistId ?? "",
+            id, summary.SongCount, (long)summary.TotalDuration.TotalSeconds,
+            summary.Year, summary.Genre,
+            album.Tracks.Select(SubsonicMapper.ToChild).ToList());
 
-        return SubsonicResults.Ok(album: album);
+        return SubsonicResults.Ok(album: dto);
     }
 
     private static IResult GetAlbumList2(
-        LibraryQueries queries, string type = "alphabeticalByName", int size = 500, int offset = 0)
+        Library library, string type = "alphabeticalByName", int size = 500, int offset = 0)
     {
-        // Grouped, ordered and paginated entirely in SQL, including "newest" -
-        // which under EF Core had to fall back to aggregating in memory,
-        // because that provider refuses MAX() over a DateTimeOffset. The shared
-        // schema stores timestamps as INTEGER ticks, so it is now just an
-        // integer sort. Returning one page of albums touches one page of rows.
-        var page = queries.AlbumSummaries(type, take: size <= 0 ? 500 : size, offset: offset);
-        return SubsonicResults.Ok(albumList2: new AlbumList2(page.Select(SubsonicMapper.ToAlbumId3).ToList()));
+        // Sorting ~1.4k pre-grouped albums, not grouping ~16k rows. The
+        // grouping happened once, at the last rescan; this request only picks
+        // an order and a page.
+        var albums = library.Snapshot.Albums;
+        IEnumerable<AlbumEntry> ordered = type switch
+        {
+            "newest" => albums.OrderByDescending(a => a.NewestDateAdded),
+            "alphabeticalByArtist" => albums.OrderBy(a => a.Summary.AlbumArtist, StringComparer.OrdinalIgnoreCase),
+            // Shuffled per request, as the protocol intends - a stable order
+            // here would make repeated calls return the same "random" page.
+            "random" => albums.OrderBy(_ => Random.Shared.Next()),
+            _ => albums.OrderBy(a => a.Summary.Album, StringComparer.OrdinalIgnoreCase),
+        };
+
+        var page = ordered
+            .Skip(Math.Max(offset, 0))
+            .Take(size <= 0 ? 500 : size)
+            .Select(a => SubsonicMapper.ToAlbumId3(a.Summary))
+            .ToList();
+
+        return SubsonicResults.Ok(albumList2: new AlbumList2(page));
     }
 
-    private static IResult GetSong(string? id, LibraryQueries queries)
+    private static IResult GetSong(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))
             return SubsonicResults.Failed(10, "Required parameter 'id' missing.");
 
-        var track = queries.Find(id);
+        var track = library.Find(id);
         if (track is null)
             return SubsonicResults.Failed(70, "Song not found.");
 
@@ -188,23 +210,33 @@ public static class SubsonicEndpoints
     }
 
     private static IResult Search3(
-        LibraryQueries queries,
+        Library library,
         string query = "", int artistCount = 20, int albumCount = 20, int songCount = 20)
     {
-        // Three targeted, individually-limited queries rather than one
-        // unbounded fetch of every SQL-side match followed by a second,
-        // in-memory re-filter.
-        //
-        // The two passes did not agree: SQL's LIKE and .NET's
-        // OrdinalIgnoreCase have different case semantics, so a match SQLite
-        // accepted could be dropped again in memory (and the SQL pass was the
-        // one deciding how much got materialized). There is now one filter, in
-        // SQL, and the limit is applied there too - so a one-character query
-        // stops pulling most of the library back to discard it. See
-        // ARCHITECTURE-REVIEW Tier 1.3.
-        var songs = queries.SearchSongs(query, songCount).Select(SubsonicMapper.ToChild).ToList();
-        var albums = queries.SearchAlbums(query, albumCount).Select(SubsonicMapper.ToAlbumId3).ToList();
-        var artists = FoldArtists(queries.ArtistAlbumPairs(matching: query))
+        // One filter, in one place. This was two disagreeing passes under EF
+        // (a SQL LIKE plus an in-memory re-filter with different case
+        // semantics - Tier 1.3), then one SQL LIKE with hand-escaped
+        // wildcards. Matching in memory retires the escaping problem outright:
+        // there is no LIKE, so a query containing % or _ is just a query
+        // containing % or _. It also fixes what escaping could not - LIKE's
+        // case-insensitivity is ASCII-only, so a lowercase accented letter
+        // never matched its uppercase form.
+        var snapshot = library.Snapshot;
+
+        var songs = snapshot.Tracks
+            .Where(t => Matches(t.Title, query))
+            .Take(songCount)
+            .Select(SubsonicMapper.ToChild)
+            .ToList();
+
+        var albums = snapshot.Albums
+            .Where(a => Matches(a.Summary.Album, query))
+            .OrderBy(a => a.Summary.Album, StringComparer.OrdinalIgnoreCase)
+            .Take(albumCount)
+            .Select(a => SubsonicMapper.ToAlbumId3(a.Summary))
+            .ToList();
+
+        var artists = FoldArtists(snapshot.Albums.Where(a => Matches(a.Summary.AlbumArtist, query)))
             .Take(artistCount)
             .Select(a => SubsonicMapper.ToArtistId3(a.Id, a.Name, a.AlbumCount))
             .ToList();
@@ -212,63 +244,73 @@ public static class SubsonicEndpoints
         return SubsonicResults.Ok(searchResult3: new SearchResult3(artists, albums, songs));
     }
 
-    private static IResult GetPlaylists(PlaylistQueries playlists, LibraryQueries queries)
+    // An empty query matches nothing rather than everything: Subsonic clients
+    // send search3 on every keystroke, and returning the whole library for the
+    // empty string is not a search result.
+    private static bool Matches(string? value, string query) =>
+        !string.IsNullOrEmpty(query) && value is not null &&
+        value.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+    private static IResult GetPlaylists(Library library)
     {
-        var rows = playlists.All();
-        var byId = queries.ByIds(rows.SelectMany(p => p.TrackIds).Distinct().ToList());
-
-        var dtos = rows.Select(p => new PlaylistDto(
-            p.Id, p.Name, p.Comment,
-            p.TrackIds.Count,
-            (long)p.TrackIds.Sum(id => byId.TryGetValue(id, out var t) ? t.Duration.TotalSeconds : 0),
-            null, p.IsPublic)).ToList();
-
+        var dtos = library.Playlists.Select(ToDto).ToList();
         return SubsonicResults.Ok(playlists: new Flower.Services.Playlists(dtos));
     }
 
-    private static IResult GetPlaylist(string? id, PlaylistQueries playlists, LibraryQueries queries)
+    // Membership is already resolved to live Tracks by the time it is resident
+    // - PlaylistRepository.Load drops an id the library no longer has, and
+    // Library.ResolveTracks does the same on the way in - so there is no
+    // second "skip what does not resolve" pass here any more.
+    private static PlaylistDto ToDto(Playlist playlist) => new(
+        playlist.Id.ToKey(),
+        playlist.Name,
+        playlist.Comment,
+        playlist.Tracks.Count,
+        (long)playlist.Tracks.Sum(t => t.Duration.TotalSeconds),
+        // Owner. Flower has no user model - see the auth notes above - so
+        // there is nobody to name. Playlist.CreatedAt is stored and loaded but
+        // has no field on PlaylistDto to surface it through.
+        null,
+        playlist.IsPublic);
+
+    private static IResult GetPlaylist(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))
             return SubsonicResults.Failed(10, "Required parameter 'id' missing.");
 
-        var playlist = playlists.Find(id);
-        if (playlist is null)
+        if (library.FindPlaylist(id) is not { } playlist)
             return SubsonicResults.Failed(70, "Playlist not found.");
 
-        var byId = queries.ByIds(playlist.TrackIds.Distinct().ToList());
-
-        // An entry whose id no longer resolves is skipped rather than blocked
-        // by a foreign key - see PlaylistQueries' remarks and Schema.V1.
-        var entries = playlist.TrackIds
-            .Where(byId.ContainsKey)
-            .Select(trackId => SubsonicMapper.ToChild(byId[trackId]))
-            .ToList();
+        var entries = playlist.Tracks.Select(SubsonicMapper.ToChild).ToList();
+        var summary = ToDto(playlist);
 
         var dto = new PlaylistWithSongsDto(
-            playlist.Id, playlist.Name, playlist.Comment, entries.Count,
-            (long)entries.Sum(e => e.Duration ?? 0), null, playlist.IsPublic, entries);
+            summary.Id, summary.Name, summary.Comment, summary.SongCount,
+            summary.Duration, summary.Owner, summary.Public, entries);
 
         return SubsonicResults.Ok(playlist: dto);
     }
 
-    private static IResult CreatePlaylist(HttpRequest request, PlaylistQueries playlists, LibraryQueries queries)
+    private static IResult CreatePlaylist(HttpRequest request, Library library)
     {
         var name = request.Query["name"].ToString();
         if (string.IsNullOrEmpty(name))
             return SubsonicResults.Failed(10, "Required parameter 'name' missing.");
 
-        var id = playlists.Create(name, ParseIds(request.Query["songId"]));
-        return GetPlaylist(id, playlists, queries);
+        // AddPlaylist persists, exactly as it does for a playlist created from
+        // the client's sidebar - see Library's IPlaylistStore.
+        var created = new Playlist(name, library.ResolveTracks(request.Query["songId"]));
+        library.AddPlaylist(created);
+        return GetPlaylist(created.Id.ToKey(), library);
     }
 
-    private static IResult UpdatePlaylist(HttpRequest request, PlaylistQueries playlists)
+    private static IResult UpdatePlaylist(HttpRequest request, Library library)
     {
         var playlistId = request.Query["playlistId"].ToString();
         if (string.IsNullOrEmpty(playlistId))
             return SubsonicResults.Failed(10, "Required parameter 'playlistId' missing.");
 
-        var ordered = playlists.Membership(playlistId);
-        if (ordered is null)
+        if (library.FindPlaylist(playlistId) is not { } existing)
             return SubsonicResults.Failed(70, "Playlist not found.");
 
         var removeIndexes = request.Query["songIndexToRemove"]
@@ -276,10 +318,14 @@ public static class SubsonicEndpoints
             .Select(s => int.Parse(s!))
             .ToHashSet();
 
+        // Applied to the resident Tracks directly. This used to project them
+        // out to ids and resolve them straight back - a round trip that existed
+        // only because the server's old storage-shaped view of a playlist was a
+        // list of ids.
         var updated = removeIndexes.Count == 0
-            ? ordered.ToList()
-            : ordered.Where((_, i) => !removeIndexes.Contains(i)).ToList();
-        updated.AddRange(ParseIds(request.Query["songIdToAdd"]));
+            ? existing.Tracks.ToList()
+            : existing.Tracks.Where((_, i) => !removeIndexes.Contains(i)).ToList();
+        updated.AddRange(library.ResolveTracks(request.Query["songIdToAdd"]));
 
         request.Query.TryGetValue("name", out var name);
         request.Query.TryGetValue("comment", out var comment);
@@ -287,114 +333,125 @@ public static class SubsonicEndpoints
             ? string.Equals(publicValue, "true", StringComparison.OrdinalIgnoreCase)
             : (bool?)null;
 
-        if (!playlists.Update(
-                playlistId,
-                string.IsNullOrEmpty(name) ? null : name.ToString(),
-                comment.Count == 0 ? null : comment.ToString(),
-                isPublic,
-                updated))
-        {
-            return SubsonicResults.Failed(70, "Playlist not found.");
-        }
+        // Set on the Playlist itself, which is the same object the client
+        // edits from its sidebar: each setter bumps UpdatedAt and raises
+        // Playlist.Changed, which Library turns into one write of the set (see
+        // RaisePlaylistsChanged). Only the attributes Subsonic actually sent -
+        // updatePlaylist omits the ones it is not changing, and an absent one
+        // has to leave the stored value alone.
+        if (!string.IsNullOrEmpty(name))
+            existing.Name = name.ToString();
 
+        if (comment.Count > 0)
+            existing.Comment = comment.ToString();
+
+        if (isPublic is not null)
+            existing.IsPublic = isPublic.Value;
+
+        existing.ReplaceAll(updated);
         return SubsonicResults.Ok();
     }
 
-    private static IResult DeletePlaylist(string? id, PlaylistQueries playlists)
+    private static IResult DeletePlaylist(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))
             return SubsonicResults.Failed(10, "Required parameter 'id' missing.");
 
-        return playlists.Delete(id)
-            ? SubsonicResults.Ok()
-            : SubsonicResults.Failed(70, "Playlist not found.");
+        if (library.FindPlaylist(id) is not { } playlist)
+            return SubsonicResults.Failed(70, "Playlist not found.");
+
+        library.RemovePlaylist(playlist);
+        return SubsonicResults.Ok();
     }
 
     // A song id that isn't a Guid can never match a row, so it is dropped here
     // rather than stored as membership that would silently never resolve.
-    private static List<Guid> ParseIds(IEnumerable<string?> values) =>
-        values.Where(s => Guid.TryParse(s, out _)).Select(s => Guid.Parse(s!)).ToList();
-
-    private static IResult SetStarred(bool starred, HttpRequest request, LibraryQueries queries)
+    private static IResult SetStarred(bool starred, HttpRequest request, Library library)
     {
-        var (column, value) = Target(request);
-        if (column is null)
+        var (target, value) = Target(request);
+        if (value is null)
             return SubsonicResults.Failed(10, "One of id/albumId/artistId is required.");
 
-        // Starring is one UPDATE over the matching rows - by row id, by
-        // album_id or by artist_id, all three indexed - rather than loading
-        // every matching track, mutating it and writing it back.
-        queries.SetStarred(column, value!, starred);
+        // Applied to the resident tracks and persisted in the same call - see
+        // Library.SetStarred. Starring a whole album or artist is one
+        // indexed UPDATE, not one write per track.
+        library.SetStarred(target, value, starred);
         return SubsonicResults.Ok();
 
-        static (string? Column, string? Value) Target(HttpRequest request)
+        static (StarTarget Target, string? Value) Target(HttpRequest request)
         {
             var id = request.Query["id"].ToString();
             if (!string.IsNullOrEmpty(id))
-                return (LibraryQueries.IdColumn, Guid.TryParse(id, out var parsed) ? parsed.ToString("N") : id);
+                // Passed through exactly as the client sent it. Canonicalising
+                // it here was this file's own id conversion, and it existed for
+                // the *write*: the id column stores 32-char hex, so a dashed
+                // Guid would resolve in memory and then match no row. Library
+                // now hands the store the id of the track it actually matched,
+                // which is the only value guaranteed to agree with the row.
+                return (StarTarget.Song, id);
 
             var albumId = request.Query["albumId"].ToString();
             if (!string.IsNullOrEmpty(albumId))
-                return (LibraryQueries.AlbumIdColumn, albumId);
+                return (StarTarget.Album, albumId);
 
             var artistId = request.Query["artistId"].ToString();
             if (!string.IsNullOrEmpty(artistId))
-                return (LibraryQueries.ArtistIdColumn, artistId);
+                return (StarTarget.Artist, artistId);
 
-            return (null, null);
+            return (StarTarget.Song, null);
         }
     }
 
-    private static IResult Scrobble(string? id, LibraryQueries queries, bool submission = true)
+    private static IResult Scrobble(string? id, Library library, bool submission = true)
     {
         if (string.IsNullOrEmpty(id))
             return SubsonicResults.Failed(10, "Required parameter 'id' missing.");
 
         if (submission)
-            queries.IncrementPlayCount(id);
+            library.RecordPlay(id);
 
         return SubsonicResults.Ok();
     }
 
-    private static IResult Stream(string? id, LibraryQueries queries)
+    private static IResult Stream(string? id, Library library)
     {
-        var track = FindPlayable(id, queries);
+        var track = FindPlayable(id, library);
         return track is null
             ? Results.NotFound()
             : Results.File(track.Path!, SubsonicMapper.ContentTypeOf(track), enableRangeProcessing: true);
     }
 
-    private static IResult Download(string? id, LibraryQueries queries)
+    private static IResult Download(string? id, Library library)
     {
-        var track = FindPlayable(id, queries);
+        var track = FindPlayable(id, library);
         return track is null
             ? Results.NotFound()
             : Results.File(track.Path!, SubsonicMapper.ContentTypeOf(track),
                 fileDownloadName: Path.GetFileName(track.Path!), enableRangeProcessing: true);
     }
 
-    private static Track? FindPlayable(string? id, LibraryQueries queries)
+    private static Track? FindPlayable(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))
             return null;
 
-        var track = queries.Find(id);
+        var track = library.Find(id);
         return track?.Path is not null && File.Exists(track.Path) ? track : null;
     }
 
-    private static IResult GetCoverArt(string? id, LibraryQueries queries)
+    private static IResult GetCoverArt(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))
             return Results.NotFound();
 
-        List<Track> candidates;
+        IReadOnlyList<Track> candidates;
         if (id.StartsWith("al-", StringComparison.Ordinal))
         {
-            candidates = queries.TracksByAlbum(id);
+            candidates = library.Snapshot.AlbumTracks(id);
         }
         else
         {
-            var track = queries.Find(id);
+            var track = library.Find(id);
             candidates = track is null ? [] : [track];
         }
 
@@ -410,5 +467,4 @@ public static class SubsonicEndpoints
         return Results.NotFound();
     }
 
-    private static int? ParseYear(string? year) => int.TryParse(year, out var parsed) ? parsed : null;
 }

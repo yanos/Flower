@@ -1,5 +1,4 @@
 using Flower.Models;
-using Flower.Server.Data;
 using Flower.Services;
 
 namespace Flower.Server.Services;
@@ -10,7 +9,7 @@ namespace Flower.Server.Services;
 // than defining a server-side duplicate of the same fields).
 //
 // The input is Flower.Core's Track now, not a server-private TrackEntity - see
-// LibraryQueries for why that seam went away.
+// Library.Snapshot for why that seam went away.
 public static class SubsonicMapper
 {
     private static readonly Dictionary<string, string> ContentTypesBySuffix = new(StringComparer.OrdinalIgnoreCase)
@@ -34,7 +33,7 @@ public static class SubsonicMapper
         var suffix = SuffixOf(track);
 
         return new Child(
-            Id: track.Id.ToString("N"),
+            Id: track.Id.ToKey(),
             Title: track.Title ?? (track.Path is null ? "" : Path.GetFileNameWithoutExtension(track.Path)),
             Album: track.Album,
             Artist: track.Artists,

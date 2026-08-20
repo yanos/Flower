@@ -56,7 +56,7 @@ public class PlaylistAutoAdvanceTests : IDisposable
         var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
         var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
         return new PlaylistControlViewModel(
-            audio, playlist, library, new AppSettings(), libraryStore, appSettingsStore,
+            audio, playlist, library, new AppSettings(), appSettingsStore,
             NullLogger<PlaylistControlViewModel>.Instance);
     }
 

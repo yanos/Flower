@@ -22,8 +22,6 @@ public partial class MainWindow : Window
 {
     private readonly AppSettings _appSettings;
     private readonly ColumnManager _columnManager;
-    private readonly Library _library;
-    private readonly LibraryStore _libraryStore;
     private readonly AppSettingsStore _appSettingsStore;
 
     // Tracks the window's bounds while in WindowState.Normal, since that's
@@ -39,22 +37,18 @@ public partial class MainWindow : Window
     // from App.Bootstrap, which is where the container lives.
     // See docs/ARCHITECTURE-REVIEW.md Tier 2.3.
 #pragma warning disable CS8618
-    public MainWindow() : this(null, null, null, null, null) { }
+    public MainWindow() : this(null, null, null) { }
 #pragma warning restore CS8618
 
     public MainWindow(
         AppSettings? appSettings,
         ColumnManager? columnManager,
-        Library? library,
-        LibraryStore? libraryStore,
         AppSettingsStore? appSettingsStore)
     {
         InitializeComponent();
 
         _appSettings    = appSettings!;
         _columnManager  = columnManager!;
-        _library        = library!;
-        _libraryStore   = libraryStore!;
         _appSettingsStore = appSettingsStore!;
         _normalWidth    = Width;
         _normalHeight   = Height;
@@ -94,11 +88,13 @@ public partial class MainWindow : Window
             SaveWindowGeometry();
             _columnManager.Flush();
 
-            // A track that just naturally finished (PlaylistControlViewModel.EndReached
-            // increments PlayCount and kicks off a fire-and-forget SaveAsync) may not
-            // have hit disk yet - flush the in-memory state synchronously so quitting
-            // right after a play doesn't silently lose that increment. See LibraryStore.Save.
-            _libraryStore.Save(_library.Tracks);
+            // No library save here any more. This existed to catch a play
+            // count that a debounced stats write had not flushed yet, and it
+            // paid for two rows with a whole-library upsert; Library writes
+            // every mutation through on the spot now (see its ITrackStore), so
+            // by the time we get here there is nothing outstanding to rescue.
+            // iOS and Android never had this hook to begin with, which is the
+            // other half of why the deferred write had to go.
 
             // Serilog buffers writes - flush them so the last few lines of this
             // session (often the most useful ones, if something just went wrong)

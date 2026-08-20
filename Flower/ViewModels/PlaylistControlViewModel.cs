@@ -37,7 +37,6 @@ namespace Flower.ViewModels
         private readonly Random _random = new();
         private readonly Library _library;
         private readonly AppSettings _appSettings;
-        private readonly LibraryStore _libraryStore;
         private readonly AppSettingsStore _appSettingsStore;
 
         private IAudioManager _audioManager { get; }
@@ -95,7 +94,6 @@ namespace Flower.ViewModels
             MainPlaylist playlist,
             Library library,
             AppSettings appSettings,
-            LibraryStore libraryStore,
             AppSettingsStore appSettingsStore,
             ILogger<PlaylistControlViewModel> logger)
         {
@@ -103,7 +101,6 @@ namespace Flower.ViewModels
             _currentPlaylist = playlist;
             _library = library;
             _appSettings = appSettings;
-            _libraryStore = libraryStore;
             _appSettingsStore = appSettingsStore;
             _logger = logger;
             _isRepeatEnabled = appSettings.IsRepeatEnabled;
@@ -128,9 +125,10 @@ namespace Flower.ViewModels
             },
                 h => _audioManager.Paused += h, h => _audioManager.Paused -= h);
 
-            // Synchronous now that the play-count save is coalesced rather than
-            // awaited here - this used to be async void over an await on
-            // LibraryStore.SaveAsync, on a LibVLC callback thread.
+            // Synchronous: the play-count write is one indexed UPDATE issued
+            // by Library itself (see its ITrackStore). This used to be async
+            // void over an await on LibraryStore.SaveAsync, on a LibVLC
+            // callback thread.
             _subscriptions.Add<EventHandler>((s, e) =>
             {
                 if (CurrentlyPlayingTrack != null)
@@ -150,13 +148,12 @@ namespace Flower.ViewModels
                     // rescan runs on a threadpool thread - see Library._lock) can't land
                     // between "resolve" and "increment" and silently discard it the way a
                     // plain find-then-increment here already proved it could.
-                    // IncrementPlayCount raises Library.TrackStatsChanged
-                    // itself. Deliberately *not* NotifyTrackChanged: the track
+                    // IncrementPlayCount raises Library.TrackStatsChanged and
+                    // persists the new count itself. Deliberately *not* NotifyTrackChanged: the track
                     // list hasn't changed, only one track's counter, and
                     // TracksUpdated means a full UI rebuild plus a peer library
                     // sync - twice per song. See ARCHITECTURE-REVIEW Tier 1.1.
-                    var counted = _library.IncrementPlayCount(finishedTrack);
-                    _libraryStore.ScheduleStatsSave(counted);
+                    _library.IncrementPlayCount(finishedTrack);
 
                     var next = GetUpcomingEntry(finishedTrack, ResolveQueueIndex(finishedTrack));
                     if (next.Track != null)
@@ -369,7 +366,7 @@ namespace Flower.ViewModels
             // alongside IncrementPlayCount in the EndReached handler below.
             // Raises TrackStatsChanged, not TracksUpdated - same reasoning as
             // the EndReached handler above.
-            _libraryStore.ScheduleStatsSave(_library.RecordPlayed(track));
+            _library.RecordPlayed(track);
         }
 
         public void PlayOrPause(Track track)

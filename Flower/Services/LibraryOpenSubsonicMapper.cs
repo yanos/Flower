@@ -17,9 +17,9 @@ namespace Flower.Services;
 // directly rather than trusting any one peer to relay what it heard secondhand).
 public static class LibraryOpenSubsonicMapper
 {
-    public static List<AlbumID3> BuildAlbumList(IReadOnlyList<Track> tracks) =>
-        GroupByAlbum(tracks)
-            .Select(g => { var list = g.ToList(); return ToAlbumID3(g.Key, list, ComputeAlbumArtHash(list)); })
+    public static List<AlbumID3> BuildAlbumList(LibrarySnapshot snapshot) =>
+        GroupByAlbum(snapshot)
+            .Select(g => ToAlbumID3(g.Key, g.Value, ComputeAlbumArtHash(g.Value)))
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -28,23 +28,23 @@ public static class LibraryOpenSubsonicMapper
     // rather than the OpenSubsonic-shaped one-request-per-album pair above.
     // selfFingerprint is this device's own DeviceIdentity.Fingerprint - see
     // ToChild's PlayCounts field.
-    public static List<Child> BuildAllSongs(IReadOnlyList<Track> tracks, string selfFingerprint) =>
-        GroupByAlbum(tracks)
+    public static List<Child> BuildAllSongs(LibrarySnapshot snapshot, string selfFingerprint) =>
+        GroupByAlbum(snapshot)
             .SelectMany(g =>
             {
-                var list = g.ToList();
-                var artHash = ComputeAlbumArtHash(list);
-                return list.Select(t => ToChild(t, g.Key, artHash, selfFingerprint));
+                var artHash = ComputeAlbumArtHash(g.Value);
+                return g.Value.Select(t => ToChild(t, g.Key, artHash, selfFingerprint));
             })
             .ToList();
 
-    public static AlbumWithSongsID3? FindAlbum(IReadOnlyList<Track> tracks, string albumId, string selfFingerprint)
+    public static AlbumWithSongsID3? FindAlbum(LibrarySnapshot snapshot, string albumId, string selfFingerprint)
     {
-        var group = GroupByAlbum(tracks).FirstOrDefault(g => g.Key == albumId);
-        if (group == null)
+        // One dictionary lookup. This used to group the entire library and then
+        // take the single matching entry off the front of it, on every request.
+        var list = LocalTracks(snapshot.AlbumTracks(albumId));
+        if (list.Count == 0)
             return null;
 
-        var list = group.ToList();
         var artHash = ComputeAlbumArtHash(list);
         var songs = list.Select(t => ToChild(t, albumId, artHash, selfFingerprint)).ToList();
         var summary = ToAlbumID3(albumId, list, artHash);
@@ -109,20 +109,22 @@ public static class LibraryOpenSubsonicMapper
     private const int MaxCachedArtHashes = 5000;
     private static readonly ConcurrentDictionary<string, string?> ArtHashCache = new();
 
-    // Grouped by (Album, EffectiveAlbumArtist) rather than Album alone, so two
-    // different artists' same-named album ("Greatest Hits") don't collide into
-    // one entry. EffectiveAlbumArtist rather than raw per-track Artists keeps a
-    // various-artists compilation - same Album, differing per-track Artists,
-    // but a consistent (or absent) AlbumArtists tag - as one entry instead of
-    // fragmenting into one per distinct track artist (see Track.EffectiveAlbumArtist).
-    private static IEnumerable<IGrouping<string, Track>> GroupByAlbum(IReadOnlyList<Track> tracks) =>
-        tracks.Where(t => t.Path != null).GroupBy(t => AlbumIdFor(t));
+    // The albums are already grouped - by (Album, EffectiveAlbumArtist), once
+    // per library change, in LibrarySnapshot.Build, which the standalone server
+    // reads through too. All that is left here is this surface's own rule that
+    // placeholder tracks are never served, and dropping an album that has
+    // nothing but placeholders left in it.
+    private static IEnumerable<KeyValuePair<string, List<Track>>> GroupByAlbum(LibrarySnapshot snapshot) =>
+        snapshot.Albums
+            .Select(album => new KeyValuePair<string, List<Track>>(album.Id, LocalTracks(album.Tracks)))
+            .Where(entry => entry.Value.Count > 0);
 
-    // The grouping key for one track, in one place, so no call site has to
-    // remember that it is the *album* artist that identifies an album (see
-    // SubsonicIdentity's own comment - getting this wrong silently 404'd
-    // cover art for every compilation).
-    public static string AlbumIdFor(Track track) => SubsonicIdentity.AlbumId(track.EffectiveAlbumArtist, track.Album);
+    // A real OpenSubsonic server only reports tracks it actually has, and so
+    // does this one - see the class comment on placeholders.
+    private static List<Track> LocalTracks(IReadOnlyList<Track> tracks) =>
+        tracks.Where(t => t.Path != null).ToList();
+
+    public static string AlbumIdFor(Track track) => SubsonicIdentity.AlbumIdFor(track);
 
     private static AlbumID3 ToAlbumID3(string albumId, List<Track> tracks, string? artHash)
     {
@@ -147,7 +149,7 @@ public static class LibraryOpenSubsonicMapper
         // and downloads. Opaque to the receiver either way, which is what the
         // OpenSubsonic spec requires of an id - the peer stores it verbatim as
         // Track.OriginTrackId and hands it straight back to /rest/stream.
-        Id: track.Id.ToString("N"),
+        Id: track.Id.ToKey(),
         Title: track.Title ?? "",
         Album: track.Album,
         Artist: track.Artists,
