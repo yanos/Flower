@@ -58,10 +58,12 @@ public static class SubsonicEndpoints
             if (!FailedAuthLimiter.WouldAllow(key, now) || !RequestLimiter.TryAcquire(key, now))
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
 
-            // Two ways in, deliberately unequal in power. A path-B credential
+            // Three ways in, deliberately unequal in power. A path-B credential
             // (SubsonicCredentialStore) authenticates the whole /rest surface,
-            // which is what a third-party Subsonic client needs. A stream
-            // ticket authenticates one track, because that is all an <audio>
+            // which is what a third-party Subsonic client needs. A path-A
+            // device signature does the same for a paired Flower device, which
+            // never holds a username/password at all. A stream ticket
+            // authenticates one track, because that is all an <audio>
             // element's unsignable request should ever be able to reach - see
             // StreamTicketService.
             var credentials = services.GetRequiredService<SubsonicCredentialStore>();
@@ -75,12 +77,32 @@ public static class SubsonicEndpoints
                 return await next(context);
             }
 
+            // Path A: another Flower device browsing/streaming this server the
+            // same way it browses a peer's embedded SyncHttpServer, which gates
+            // its own /rest routes on exactly this check. Without it, pairing
+            // succeeded (TrustedPeerStore) but every /rest call the client made
+            // afterwards came back "Wrong username or password", because
+            // PeerOpenSubsonicClientFactory deliberately sends empty u/p and
+            // signs instead. GETs only here, so the signed body is always
+            // empty.
+            var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
+            var replayGuard = services.GetRequiredService<NonceReplayGuard>();
+            if (DeviceSignatureAuth.VerifyTrustedPeer(context.HttpContext.Request, [], trustedPeers, replayGuard) != null)
+                return await next(context);
+
             var tickets = services.GetRequiredService<StreamTicketService>();
             if (tickets.TryRedeem(query["ticket"].ToString(), query["id"].ToString(), now))
                 return await next(context);
 
             FailedAuthLimiter.TryAcquire(key, now);
-            return SubsonicResults.Failed(40, "Wrong username or password.");
+            // A Flower device that signed but is not trusted is a pairing
+            // problem, not a password problem, and saying "wrong username or
+            // password" to a client that holds neither sends the user looking
+            // for a credential that does not exist. Third-party clients still
+            // get the protocol's own wording.
+            return DeviceSignatureAuth.GetIdentityValue(context.HttpContext.Request, "X-Flower-Fingerprint") != null
+                ? SubsonicResults.Failed(40, "This device is not paired with this server.")
+                : SubsonicResults.Failed(40, "Wrong username or password.");
         });
 
         rest.MapGet("/ping", () => SubsonicResults.Ok());

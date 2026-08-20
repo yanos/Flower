@@ -43,6 +43,43 @@ public class SignatureVerifierTests
         Assert.True(ok);
     }
 
+    // The regression behind "Could not reach <server>: Wrong username or
+    // password": a caller signs its identity params (see
+    // PeerOpenSubsonicClientFactory) regardless of how they travel, but a
+    // server only sees them in the query when the caller put them there
+    // (BuildUrl's LibVLC case) - never when they went out as headers
+    // (SendAsync). So the canonical query must ignore X-Flower-* entirely,
+    // making both transports verify against the same bytes.
+    [Fact]
+    public void A_signature_over_identity_params_verifies_whether_they_travel_as_headers_or_query()
+    {
+        var (signer, publicKeyBase64) = MakeSigner();
+        (string Key, string Value)[] request = [("id", "42"), ("f", "json")];
+        (string Key, string Value)[] identity =
+        [
+            ("X-Flower-Fingerprint", signer.Fingerprint),
+            ("X-Flower-PublicKey", publicKeyBase64),
+        ];
+        var (signature, timestamp, nonce) = signer.Sign("GET", "/rest/stream", [.. request, .. identity], []);
+
+        // Headers: the server's query has the request params only.
+        var asHeaders = SignatureVerifier.Verify(
+            "GET", "/rest/stream", request, [],
+            timestamp, nonce, signature, publicKeyBase64,
+            DateTimeOffset.UtcNow, new NonceReplayGuard(), signer.Fingerprint);
+
+        // Query string: the same identity, plus the signature params, all in
+        // the URL the server parses.
+        var asQuery = SignatureVerifier.Verify(
+            "GET", "/rest/stream",
+            [.. request, .. identity, ("X-Flower-Signature", signature), ("X-Flower-Timestamp", timestamp), ("X-Flower-Nonce", nonce)],
+            [], timestamp, nonce, signature, publicKeyBase64,
+            DateTimeOffset.UtcNow, new NonceReplayGuard(), signer.Fingerprint);
+
+        Assert.True(asHeaders);
+        Assert.True(asQuery);
+    }
+
     [Fact]
     public void Verify_fails_when_the_method_differs_from_what_was_signed()
     {
