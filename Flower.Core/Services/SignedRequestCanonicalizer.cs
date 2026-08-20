@@ -15,22 +15,32 @@ namespace Flower.Services;
 // captured signed GET could be replayed against a different id/parameter.
 public static class SignedRequestCanonicalizer
 {
-    // The transport parameters that carry the signature itself never sign
-    // themselves - excluded from the canonical query so this works
-    // identically whether they travel as headers or (the LibVLC/
-    // OpenSubsonicClient.BuildUrl case - see SyncHttpServer.GetIdentityValue)
-    // as query-string fallbacks alongside everything else in the URL.
-    private static readonly HashSet<string> TransportParams = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "X-Flower-Signature", "X-Flower-Timestamp", "X-Flower-Nonce",
-    };
+    // Every X-Flower-* transport parameter - the signature itself, and the
+    // identity it is signed under - is excluded from the canonical query, so
+    // the canonical form is identical whether those values travel as headers
+    // (OpenSubsonicClient.SendAsync, SyncHttpServer's own API calls) or as
+    // query-string fallbacks alongside everything else in the URL (the
+    // LibVLC/OpenSubsonicClient.BuildUrl case - see SignedRequest.Identity).
+    //
+    // Only the three signature params used to be excluded, which made the two
+    // transports sign *different* strings: a caller signs its identity params
+    // (see PeerOpenSubsonicClientFactory) either way, but a server only sees
+    // them in the query when they were sent in the query, so every
+    // header-authenticated peer call verified against a canonical query the
+    // caller had never signed and was rejected. Nothing is weakened by
+    // dropping them: an unsigned X-Flower-Fingerprint only selects which
+    // trusted key the signature is checked against (VerifyTrustedPeer), and
+    // an unsigned X-Flower-PublicKey is checked against the fingerprint it
+    // hashes to (VerifySelfSigned) - swapping either just fails the check.
+    private static bool IsTransportParam(string key) =>
+        key.StartsWith("X-Flower-", StringComparison.OrdinalIgnoreCase);
 
     public static byte[] Build(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body,
         string timestamp, string nonce)
     {
         var canonicalQuery = string.Join("&",
-            query.Where(p => !TransportParams.Contains(p.Key))
+            query.Where(p => !IsTransportParam(p.Key))
                  .OrderBy(p => p.Key, StringComparer.Ordinal)
                  .Select(p => $"{p.Key}={p.Value}"));
         var bodyHash = Convert.ToHexStringLower(SHA256.HashData(body));

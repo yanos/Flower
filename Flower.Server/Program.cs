@@ -72,6 +72,7 @@ builder.Services.AddSingleton<StreamTicketService>();
 builder.Services.AddSingleton<NonceReplayGuard>();
 builder.Services.AddSingleton<TrustedPeerStore>();
 builder.Services.AddSingleton<SubsonicCredentialStore>();
+builder.Services.AddSingleton<LibraryManifestCache>();
 builder.Services.AddSingleton<DeviceKeyStore>();
 
 // Announces the server on the LAN so it shows up in a client's sidebar without
@@ -103,11 +104,20 @@ var app = builder.Build();
 // This replaces both the old startup check that refused to boot without a
 // configured Flower:AdminPassword and the separate "first-run claim window"
 // an earlier design had: there is no separate claim mechanism, just the first
-// pairing code. The same call is what an operator locked out of their own
-// server re-runs (see the CLI note below).
+// pairing code.
+//
+// `--pairing-code` forces the same print even when an admin is already on
+// file, which is the way back in for an operator who cannot reach /api/admin
+// any more - a lost browser profile, a device key regenerated underneath the
+// app, an admin peer nothing holds the key to. Codes are in-memory
+// (PairingCodeService), so this has to be a flag on the process that will
+// answer the redeem, not a separate command against a running one. The only
+// alternative was hand-editing trusted-peers.json to make HasAdmin() false
+// again.
 {
+    var forcePairingCode = args.Contains("--pairing-code");
     var trustedPeers = app.Services.GetRequiredService<TrustedPeerStore>();
-    if (!trustedPeers.HasAdmin())
+    if (forcePairingCode || !trustedPeers.HasAdmin())
     {
         var pairing = app.Services.GetRequiredService<PairingCodeService>();
         var signingKey = app.Services.GetRequiredService<DeviceSigningKey>();
@@ -122,7 +132,9 @@ var app = builder.Build();
             ? "<this-server>:4533"
             : serverOptions.AdvertisedHost;
         Console.WriteLine();
-        Console.WriteLine("  No device can administer this server yet.");
+        Console.WriteLine(forcePairingCode
+            ? "  Issuing an admin pairing code (--pairing-code)."
+            : "  No device can administer this server yet.");
         Console.WriteLine($"  Pair one with this code (valid until {expiresAt.ToLocalTime():HH:mm:ss}): {code}");
         Console.WriteLine($"  Or open: {new PairingInvite(host, code, signingKey.Fingerprint)}");
         Console.WriteLine();
@@ -158,6 +170,7 @@ using (var scope = app.Services.CreateScope())
 app.MapSubsonicEndpoints();
 app.MapAdminEndpoints();
 app.MapPairingEndpoints();
+app.MapSyncEndpoints();
 app.MapStreamTicketEndpoints();
 app.MapDiscoveryEndpoints();
 

@@ -6,7 +6,8 @@ using Flower.Models;
 namespace Flower.Services;
 
 // Conversions between Flower.Models.Playlist and the sync wire DTOs, shared by
-// SyncHttpServer (handling GET/POST) and PlaylistSyncService (driving a sync
+// SyncHttpServer (handling GET/POST), Flower.Server's SyncEndpoints (the same
+// two routes on a headless server) and PlaylistSyncService (driving a sync
 // session as the initiator).
 public static class PlaylistSyncMapper
 {

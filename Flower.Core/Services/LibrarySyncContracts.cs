@@ -12,4 +12,8 @@ namespace Flower.Services;
 // log churn (and, more importantly, the real network/battery cost behind
 // it). This single bulk endpoint returns every real track in one response
 // instead, the same way /api/flower/v1/playlists already does for playlists.
+//
+// In Flower.Core, not the app project, because both hosts serve this endpoint:
+// the app's SyncHttpServer and Flower.Server's SyncEndpoints. A client paired
+// to a headless server pulls its catalog through exactly this shape.
 public sealed record LibrarySyncManifestDto(string DeviceFingerprint, List<Child> Songs);

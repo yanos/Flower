@@ -87,7 +87,14 @@ public sealed class PeerLibraryViewModel : ViewModelBase
         {
             _logger.LogWarning(ex, "Failed to load peer library for {Alias}", peer.Alias);
             if (requestId == _requestId)
-                ErrorMessage = $"Could not reach {peer.Alias}: {ex.Message}";
+                ErrorMessage = ex is SubsonicException { Code: 40 }
+                    // Reached it fine - it just doesn't know this device yet.
+                    // Browsing a peer needs no pairing between two apps (they
+                    // trust each other from the approval prompt), but a
+                    // headless server only trusts a device that redeemed one
+                    // of its pairing codes.
+                    ? $"{peer.Alias} hasn't authorized this device - pair with it in Settings > Devices."
+                    : $"Could not reach {peer.Alias}: {ex.Message}";
         }
         finally
         {
