@@ -352,11 +352,28 @@
                  is a Client (see MainViewModel.CanPairWithSelectedDevice) - mirrors
                  ServerPickerView's Pair/Unpair button (Settings' Devices tab) so
                  pairing doesn't require a trip to Settings. -->
+            <!-- Pairing code, for a headless Flower.Server only (see
+                 MainViewModel.IsPairingCodeRequired): there is nobody in front
+                 of a server to tap Allow, so an admin issues a one-time code
+                 out of band and this redeems it. An app peer keeps the live
+                 approval prompt and shows no box at all. -->
+            <TextBox Text="{Binding PairingCode}"
+                     PlaceholderText="Pairing code"
+                     IsVisible="{Binding IsPairingCodeRequired}"
+                     Width="140" MaxLength="20"
+                     KeyDown="PairingCodeBox_KeyDown"
+                     Margin="12,0,0,0" VerticalAlignment="Center"/>
             <Button Content="{Binding PairActionLabel}"
                     IsVisible="{Binding CanPairWithSelectedDevice}"
                     IsEnabled="{Binding IsPairActionEnabled}"
                     Click="PairActionButton_Click"
-                    Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    Margin="8,0,0,0" VerticalAlignment="Center"/>
+            <!-- A wrong or expired code is an ordinary outcome, so it is said
+                 plainly next to the box rather than raised as a dialog. -->
+            <TextBlock Text="{Binding PairingCodeError}"
+                       IsVisible="{Binding PairingCodeError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                       Foreground="#E57373" FontSize="12"
+                       VerticalAlignment="Center" Margin="8,0,0,0"/>
             <!-- Spinner while a pairing request has been sent but the server
                  hasn't approved it yet - see MainViewModel.IsPairAwaitingApproval.
                  Same "MaterialIcon Kind=Sync, spinning" visual as the sidebar's

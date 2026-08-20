@@ -22,7 +22,6 @@ namespace Flower.Services
         PropertyNameCaseInsensitive = true,
         NumberHandling = JsonNumberHandling.AllowReadingFromString)]
     [JsonSerializable(typeof(SubsonicEnvelope))]
-    [JsonSerializable(typeof(SyncHttpServer.SyncInfoResponseDto))]
     internal partial class ExternalProtocolJsonContext : JsonSerializerContext
     {
     }

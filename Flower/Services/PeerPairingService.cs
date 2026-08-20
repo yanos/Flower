@@ -32,6 +32,57 @@ public class PeerPairingService
         _logger = logger;
     }
 
+    // The headless-server half of pairing: no live approval prompt, because
+    // there is nobody in front of a server to tap Allow. Instead an admin
+    // issues a one-time code out of band (a QR, or read out over the phone)
+    // and this redeems it - see Flower.Server's PairingEndpoints and
+    // SYNC-PLAN.md's "Passwordless by design", path A. Only reachable for a
+    // peer whose handshake said deviceType=server (DiscoveredDevice.
+    // PairsByCode); an app peer has no code to give.
+    //
+    // Same self-signed request shape as RequestPairingAsync - the server has
+    // never seen this key before, so the signature proves only that the
+    // sender holds the key it is presenting, and the code is what supplies
+    // the authorization.
+    public async Task<bool> RedeemPairingCodeAsync(DiscoveredDevice device, string code)
+    {
+        try
+        {
+            const string path = "/api/flower/v1/pair-redeem";
+            var (signature, timestamp, nonce) = _signingKey.Sign("POST", path, [], body: []);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}{path}");
+            request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
+            request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
+            request.Headers.Add("X-Flower-PublicKey", _signingKey.PublicKeyBase64);
+            request.Headers.Add("X-Flower-PairingCode", code);
+            request.Headers.Add("X-Flower-Signature", signature);
+            request.Headers.Add("X-Flower-Timestamp", timestamp);
+            request.Headers.Add("X-Flower-Nonce", nonce);
+            request.Headers.ConnectionClose = true;
+
+            using var response = await Http.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                // A wrong or expired code is the ordinary case here, not an
+                // exceptional one - the user mistyped, or took too long - so
+                // it is logged at Information and reported back as a plain
+                // false for the UI to phrase.
+                _logger.LogInformation(
+                    "Pairing code rejected by {Alias} ({EndPoint}): {Status}",
+                    device.Alias, device.EndPoint, response.StatusCode);
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Pair redeem to {Alias} ({EndPoint}) failed", device.Alias, device.EndPoint);
+            return false;
+        }
+    }
+
     public async Task<bool> RequestPairingAsync(DiscoveredDevice device)
     {
         try

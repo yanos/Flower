@@ -7,7 +7,10 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Flower.Models;
+using Flower.Persistence;
 using Flower.Persistence.Sql;
 using Flower.Server.Services;
 using Flower.Services;
@@ -44,16 +47,24 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
 
         builder.UseSetting("Flower:DataDirectory", _dataDirectory);
         builder.UseSetting("Flower:LibraryPaths:0", _emptyLibrary);
-        builder.UseSetting("Flower:AdminUsername", "admin");
-        builder.UseSetting("Flower:AdminPassword", "hunter2");
     }
+
+    // The credential every /rest request in these tests authenticates with.
+    // There is no configured admin password to use any more (SYNC-PLAN.md,
+    // "Passwordless by design"): third-party Subsonic clients get per-client
+    // credentials the server generates at runtime, so the fixture issues
+    // itself one exactly the way the admin UI would.
+    private SubsonicCredential? _credential;
 
     public async ValueTask InitializeAsync()
     {
-        // Forces the host to build (and so the schema to be created and the
-        // startup rescan to run) before any test seeds rows.
-        await SendAsync("/rest/ping" + Auth());
+        // Resolving from Services forces the host to build - and so the schema
+        // to be created and the startup rescan to run - before any test seeds
+        // rows. It also has to happen before the first authenticated request,
+        // since that request is what the credential authenticates.
+        _credential = await Services.GetRequiredService<SubsonicCredentialStore>().IssueAsync("tests");
 
+        await SendAsync("/rest/ping" + AuthQuery);
         await SeedAsync();
     }
 
@@ -116,13 +127,23 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
             DateAdded = DateTimeOffset.UtcNow.AddDays(-days),
         };
 
-    // Classic Subsonic token auth - the only scheme the server accepts.
-    public static string Auth(string password = "hunter2")
+    // Classic Subsonic token auth against this fixture's own issued
+    // credential. Built at runtime rather than being a shared constant: the
+    // username and password are generated when the fixture starts, so there is
+    // no compile-time credential left to hard-code.
+    public string AuthQuery => AuthAs(Credential.Username, Credential.Password);
+
+    // For the negative cases - a valid-looking request carrying the wrong
+    // secret, or a username that was never issued.
+    public static string AuthAs(string username, string password)
     {
         const string salt = "testsalt";
         var token = OpenSubsonicClient.ComputeToken(password, salt);
-        return $"?u=admin&t={token}&s={salt}&f=json&v=1.16.1&c=tests";
+        return $"?u={Uri.EscapeDataString(username)}&t={token}&s={salt}&f=json&v=1.16.1&c=tests";
     }
+
+    public SubsonicCredential Credential =>
+        _credential ?? throw new InvalidOperationException("InitializeAsync has not run yet.");
 
     // Requests go through TestServer.SendAsync rather than an HttpClient
     // specifically so the connection's remote address can be set.
@@ -166,12 +187,10 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
 
 public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
 {
-    private static string Auth() => SubsonicServerFixture.Auth();
-
     [Fact]
     public async Task Ping_succeeds_with_valid_credentials()
     {
-        var response = await server.GetAsync("/rest/ping" + Auth());
+        var response = await server.GetAsync("/rest/ping" + server.AuthQuery);
 
         Assert.Equal("ok", response.GetProperty("status").GetString());
     }
@@ -188,7 +207,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task A_request_with_the_wrong_password_is_refused()
     {
-        var response = await server.GetAsync("/rest/getAlbumList2" + SubsonicServerFixture.Auth("wrong"));
+        var response = await server.GetAsync("/rest/getAlbumList2" + SubsonicServerFixture.AuthAs(server.Credential.Username, "wrong"));
 
         Assert.Equal(40, response.GetProperty("error").GetProperty("code").GetInt32());
     }
@@ -207,7 +226,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
         // in any single one is invisible to a test that only covers the
         // default. "newest" (MAX(date_added)) and "random" (RANDOM()) are the
         // two that are not a plain column sort.
-        var response = await server.GetAsync($"/rest/getAlbumList2{Auth()}&type={type}&size=10");
+        var response = await server.GetAsync($"/rest/getAlbumList2{server.AuthQuery}&type={type}&size=10");
 
         Assert.Equal("ok", response.GetProperty("status").GetString());
         var albums = response.GetProperty("albumList2").GetProperty("album");
@@ -217,7 +236,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task getAlbumList2_aggregates_song_count_and_duration_per_album()
     {
-        var response = await server.GetAsync($"/rest/getAlbumList2{Auth()}&type=alphabeticalByName&size=10");
+        var response = await server.GetAsync($"/rest/getAlbumList2{server.AuthQuery}&type=alphabeticalByName&size=10");
 
         var alpha = response.GetProperty("albumList2").GetProperty("album")
             .EnumerateArray().Single(a => a.GetProperty("name").GetString() == "Alpha Album");
@@ -232,7 +251,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task getAlbumList2_orders_newest_by_most_recently_added_album()
     {
-        var response = await server.GetAsync($"/rest/getAlbumList2{Auth()}&type=newest&size=10");
+        var response = await server.GetAsync($"/rest/getAlbumList2{server.AuthQuery}&type=newest&size=10");
 
         var names = response.GetProperty("albumList2").GetProperty("album")
             .EnumerateArray().Select(a => a.GetProperty("name").GetString()).ToList();
@@ -247,8 +266,8 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task getAlbumList2_paginates()
     {
-        var first = await server.GetAsync($"/rest/getAlbumList2{Auth()}&type=alphabeticalByName&size=2&offset=0");
-        var second = await server.GetAsync($"/rest/getAlbumList2{Auth()}&type=alphabeticalByName&size=2&offset=2");
+        var first = await server.GetAsync($"/rest/getAlbumList2{server.AuthQuery}&type=alphabeticalByName&size=2&offset=0");
+        var second = await server.GetAsync($"/rest/getAlbumList2{server.AuthQuery}&type=alphabeticalByName&size=2&offset=2");
 
         Assert.Equal(2, first.GetProperty("albumList2").GetProperty("album").GetArrayLength());
         // Skip/Take now happen in SQL rather than over a fully materialized list.
@@ -258,7 +277,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task getArtists_counts_distinct_albums_per_artist()
     {
-        var response = await server.GetAsync("/rest/getArtists" + Auth());
+        var response = await server.GetAsync("/rest/getArtists" + server.AuthQuery);
 
         var artists = response.GetProperty("artists").GetProperty("index")
             .EnumerateArray()
@@ -276,7 +295,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task search3_matches_songs_albums_and_artists()
     {
-        var response = await server.GetAsync($"/rest/search3{Auth()}&query=Love");
+        var response = await server.GetAsync($"/rest/search3{server.AuthQuery}&query=Love");
 
         var result = response.GetProperty("searchResult3");
         Assert.Equal("Love Song", result.GetProperty("song")
@@ -290,8 +309,8 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
         // OrdinalIgnoreCase re-filter - that genuinely disagreed, so a match
         // SQLite accepted could be dropped again afterwards. One filter now
         // decides, and it must be case-insensitive.
-        var lower = await server.GetAsync($"/rest/search3{Auth()}&query=love");
-        var upper = await server.GetAsync($"/rest/search3{Auth()}&query=LOVE");
+        var lower = await server.GetAsync($"/rest/search3{server.AuthQuery}&query=love");
+        var upper = await server.GetAsync($"/rest/search3{server.AuthQuery}&query=LOVE");
 
         Assert.Equal(
             lower.GetProperty("searchResult3").GetProperty("song").GetArrayLength(),
@@ -301,7 +320,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task search3_honours_its_result_limits()
     {
-        var response = await server.GetAsync($"/rest/search3{Auth()}&query=Song&songCount=2");
+        var response = await server.GetAsync($"/rest/search3{server.AuthQuery}&query=Song&songCount=2");
 
         // The Take now happens in SQL, so this pins that it still applies at
         // all rather than returning everything that matched.
@@ -313,7 +332,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     {
         var albumId = SubsonicIdentity.AlbumId("Aurora", "Alpha Album");
 
-        var response = await server.GetAsync($"/rest/getAlbum{Auth()}&id={Uri.EscapeDataString(albumId)}");
+        var response = await server.GetAsync($"/rest/getAlbum{server.AuthQuery}&id={Uri.EscapeDataString(albumId)}");
 
         Assert.Equal(2, response.GetProperty("album").GetProperty("song").GetArrayLength());
     }
@@ -321,7 +340,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task An_unknown_album_reports_not_found_rather_than_throwing()
     {
-        var response = await server.GetAsync($"/rest/getAlbum{Auth()}&id=al-nope");
+        var response = await server.GetAsync($"/rest/getAlbum{server.AuthQuery}&id=al-nope");
 
         Assert.Equal(70, response.GetProperty("error").GetProperty("code").GetInt32());
     }
@@ -329,7 +348,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task A_missing_required_id_is_a_parameter_error()
     {
-        var response = await server.GetAsync("/rest/getAlbum" + Auth());
+        var response = await server.GetAsync("/rest/getAlbum" + server.AuthQuery);
 
         Assert.Equal(10, response.GetProperty("error").GetProperty("code").GetInt32());
     }
@@ -349,7 +368,7 @@ public class LanGuardTests(SubsonicServerFixture server) : IClassFixture<Subsoni
     [InlineData("100.101.102.103")] // Tailscale CGNAT
     public async Task A_private_or_loopback_client_is_allowed_through(string ip)
     {
-        var (status, _) = await server.SendAsync("/rest/ping" + SubsonicServerFixture.Auth(), ip);
+        var (status, _) = await server.SendAsync("/rest/ping" + server.AuthQuery, ip);
 
         Assert.Equal(HttpStatusCode.OK, status);
     }
@@ -362,7 +381,7 @@ public class LanGuardTests(SubsonicServerFixture server) : IClassFixture<Subsoni
     {
         // 403 from the middleware, not a Subsonic error body - the request
         // never reaches the route table or the auth filter.
-        var (status, body) = await server.SendAsync("/rest/ping" + SubsonicServerFixture.Auth(), ip);
+        var (status, body) = await server.SendAsync("/rest/ping" + server.AuthQuery, ip);
 
         Assert.Equal(HttpStatusCode.Forbidden, status);
         Assert.Empty(body);
@@ -400,7 +419,7 @@ public class SubsonicRateLimitTests(SubsonicServerFixture server) : IClassFixtur
     public async Task Repeated_failed_logins_from_one_source_are_locked_out()
     {
         const string ip = "10.20.30.40";
-        var wrong = "/rest/ping" + SubsonicServerFixture.Auth("wrong");
+        var wrong = "/rest/ping" + SubsonicServerFixture.AuthAs(server.Credential.Username, "wrong");
 
         for (var i = 0; i < 10; i++)
         {
@@ -419,7 +438,7 @@ public class SubsonicRateLimitTests(SubsonicServerFixture server) : IClassFixtur
     public async Task A_locked_out_source_is_refused_even_with_correct_credentials()
     {
         const string ip = "10.20.30.41";
-        var wrong = "/rest/ping" + SubsonicServerFixture.Auth("wrong");
+        var wrong = "/rest/ping" + SubsonicServerFixture.AuthAs(server.Credential.Username, "wrong");
 
         for (var i = 0; i < 11; i++)
         {
@@ -428,7 +447,7 @@ public class SubsonicRateLimitTests(SubsonicServerFixture server) : IClassFixtur
 
         // The lockout is on the source, not on the guess - otherwise finally
         // landing the right password would clear the penalty.
-        var (status, _) = await server.SendAsync("/rest/ping" + SubsonicServerFixture.Auth(), ip);
+        var (status, _) = await server.SendAsync("/rest/ping" + server.AuthQuery, ip);
         Assert.Equal(HttpStatusCode.TooManyRequests, status);
     }
 
@@ -437,14 +456,14 @@ public class SubsonicRateLimitTests(SubsonicServerFixture server) : IClassFixtur
     {
         const string attacker = "10.20.30.42";
         const string bystander = "10.20.30.43";
-        var wrong = "/rest/ping" + SubsonicServerFixture.Auth("wrong");
+        var wrong = "/rest/ping" + SubsonicServerFixture.AuthAs(server.Credential.Username, "wrong");
 
         for (var i = 0; i < 11; i++)
         {
             await server.SendAsync(wrong, attacker);
         }
 
-        var (status, body) = await server.SendAsync("/rest/ping" + SubsonicServerFixture.Auth(), bystander);
+        var (status, body) = await server.SendAsync("/rest/ping" + server.AuthQuery, bystander);
         Assert.Equal(HttpStatusCode.OK, status);
         using var document = JsonDocument.Parse(body);
         Assert.Equal("ok", document.RootElement.GetProperty("subsonic-response").GetProperty("status").GetString());
@@ -460,50 +479,98 @@ public class SubsonicRateLimitTests(SubsonicServerFixture server) : IClassFixtur
         // browsing slowly.
         for (var i = 0; i < 50; i++)
         {
-            var (status, _) = await server.SendAsync("/rest/ping" + SubsonicServerFixture.Auth(), ip);
+            var (status, _) = await server.SendAsync("/rest/ping" + server.AuthQuery, ip);
             Assert.Equal(HttpStatusCode.OK, status);
         }
     }
 }
 
-// AdminPassword guards /api/admin *and*, through SubsonicAuth, every /rest
-// route, so booting on the shipped placeholder meant one well-known
-// credential in front of the whole library (ARCHITECTURE-REVIEW Tier 3.1).
-public class AdminPasswordStartupTests
+// A server nobody has ever paired with cannot be administered: pairing codes
+// are issued from /api/admin, and /api/admin only admits a device that already
+// paired as an admin. Program.cs breaks that circularity by minting one
+// admin-granting code itself at startup and printing it, which on a headless
+// box means it lands in `docker logs`.
+//
+// This replaces the old "refuse to boot without a configured admin password"
+// check - there is no admin password any more (SYNC-PLAN.md, "Passwordless by
+// design"), so the failure mode it guarded against no longer exists.
+public class BootstrapPairingCodeTests
 {
-    private sealed class Factory(string? password) : WebApplicationFactory<Program>
+    private sealed class Factory : WebApplicationFactory<Program>
     {
+        public string DataDirectory { get; } =
+            Path.Combine(Path.GetTempPath(), "flower-server-bootstrap-" + Guid.NewGuid());
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            var dataDirectory = Path.Combine(Path.GetTempPath(), "flower-server-pw-" + Guid.NewGuid());
-            var emptyLibrary = Path.Combine(Path.GetTempPath(), "flower-server-pw-lib-" + Guid.NewGuid());
-            Directory.CreateDirectory(dataDirectory);
+            var emptyLibrary = Path.Combine(DataDirectory, "lib");
+            Directory.CreateDirectory(DataDirectory);
             Directory.CreateDirectory(emptyLibrary);
 
-            builder.UseSetting("Flower:DataDirectory", dataDirectory);
+            builder.UseSetting("Flower:DataDirectory", DataDirectory);
             builder.UseSetting("Flower:LibraryPaths:0", emptyLibrary);
-            builder.UseSetting("Flower:AdminPassword", password ?? "");
         }
     }
 
-    [Theory]
-    [InlineData("changeme")]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void The_server_refuses_to_start_without_a_real_admin_password(string password)
+    [Fact]
+    public void A_server_with_no_admin_prints_a_pairing_code_at_startup()
     {
-        using var factory = new Factory(password);
+        var previous = Console.Out;
+        var captured = new StringWriter();
+        Console.SetOut(captured);
+        try
+        {
+            using var factory = new Factory();
+            _ = factory.Services;
+        }
+        finally
+        {
+            Console.SetOut(previous);
+        }
 
-        var ex = Assert.Throws<InvalidOperationException>(() => factory.Services);
-        Assert.Contains("AdminPassword", ex.Message);
+        var output = captured.ToString();
+        Assert.Contains("No device can administer this server yet", output);
+        // The invite, not just the bare code: it carries the server's own
+        // fingerprint, which is what lets the pairing device pin the key
+        // rather than trusting whatever answers at that address.
+        Assert.Contains("flower://pair?", output);
+        Assert.Contains("fp=", output);
     }
 
     [Fact]
-    public void A_real_password_starts_normally()
+    public void A_server_that_already_has_an_admin_does_not_print_one()
     {
-        using var factory = new Factory("a-real-password");
+        // Otherwise every restart would broadcast a live admin-granting
+        // credential to the logs of an already-configured server.
+        var factory = new Factory();
+        var previousDataDirectory = PlatformDataDirectory.Current;
+        try
+        {
+            PlatformDataDirectory.Current = factory.DataDirectory;
+            Directory.CreateDirectory(factory.DataDirectory);
+            new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance)
+                .ApproveAsync("fingerprint", "Existing admin", "public-key", isAdmin: true)
+                .GetAwaiter().GetResult();
+        }
+        finally
+        {
+            PlatformDataDirectory.Current = previousDataDirectory;
+        }
 
-        Assert.NotNull(factory.Services);
+        var previous = Console.Out;
+        var captured = new StringWriter();
+        Console.SetOut(captured);
+        try
+        {
+            _ = factory.Services;
+        }
+        finally
+        {
+            Console.SetOut(previous);
+            factory.Dispose();
+        }
+
+        Assert.DoesNotContain("No device can administer this server yet", captured.ToString());
     }
 }
 
@@ -514,8 +581,6 @@ public class AdminPasswordStartupTests
 // statements this project has to get right itself.
 public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
 {
-    private static string Auth() => SubsonicServerFixture.Auth();
-
     private string SongId(string title) =>
         server.Seeded.Single(t => t.Title == title).Id.ToString("N");
 
@@ -537,7 +602,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
     {
         var songs = new[] { SongId("Alpha Song"), SongId("Beta Song") };
         var created = await server.GetAsync(
-            $"/rest/createPlaylist{Auth()}&name=Road+Trip&songId={songs[0]}&songId={songs[1]}");
+            $"/rest/createPlaylist{server.AuthQuery}&name=Road+Trip&songId={songs[0]}&songId={songs[1]}");
 
         var playlist = created.GetProperty("playlist");
         Assert.Equal("Road Trip", playlist.GetProperty("name").GetString());
@@ -550,63 +615,63 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
             ["Alpha Song", "Beta Song"],
             playlist.GetProperty("entry").EnumerateArray().Select(e => e.GetProperty("title").GetString()));
 
-        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={playlist.GetProperty("id").GetString()}");
+        await server.GetAsync($"/rest/deletePlaylist{server.AuthQuery}&id={playlist.GetProperty("id").GetString()}");
     }
 
     [Fact]
     public async Task Updating_a_playlist_removes_by_index_and_appends_by_id()
     {
         var created = await server.GetAsync(
-            $"/rest/createPlaylist{Auth()}&name=Edited&songId={SongId("Alpha Song")}&songId={SongId("Beta Song")}");
+            $"/rest/createPlaylist{server.AuthQuery}&name=Edited&songId={SongId("Alpha Song")}&songId={SongId("Beta Song")}");
         var id = created.GetProperty("playlist").GetProperty("id").GetString();
 
         // Drop position 0 and append another - the two operations Subsonic
         // sends together, and the reason membership is rewritten wholesale
         // rather than diffed (removing an entry shifts every position after it).
         var updated = await server.GetAsync(
-            $"/rest/updatePlaylist{Auth()}&playlistId={id}&songIndexToRemove=0&songIdToAdd={SongId("Love Song")}");
+            $"/rest/updatePlaylist{server.AuthQuery}&playlistId={id}&songIndexToRemove=0&songIdToAdd={SongId("Love Song")}");
         Assert.Equal("ok", updated.GetProperty("status").GetString());
 
-        var reread = await server.GetAsync($"/rest/getPlaylist{Auth()}&id={id}");
+        var reread = await server.GetAsync($"/rest/getPlaylist{server.AuthQuery}&id={id}");
         Assert.Equal(
             ["Beta Song", "Love Song"],
             reread.GetProperty("playlist").GetProperty("entry")
                 .EnumerateArray().Select(e => e.GetProperty("title").GetString()));
 
-        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}");
+        await server.GetAsync($"/rest/deletePlaylist{server.AuthQuery}&id={id}");
     }
 
     [Fact]
     public async Task A_playlist_name_survives_an_update_that_does_not_mention_it()
     {
-        var created = await server.GetAsync($"/rest/createPlaylist{Auth()}&name=Keep+My+Name");
+        var created = await server.GetAsync($"/rest/createPlaylist{server.AuthQuery}&name=Keep+My+Name");
         var id = created.GetProperty("playlist").GetProperty("id").GetString();
 
         // updatePlaylist sends only what changed, so an absent attribute must
         // leave the stored value alone rather than null it - which is what a
         // naive "UPDATE ... SET name = $name" would have done.
-        await server.GetAsync($"/rest/updatePlaylist{Auth()}&playlistId={id}&comment=later");
+        await server.GetAsync($"/rest/updatePlaylist{server.AuthQuery}&playlistId={id}&comment=later");
 
-        var reread = await server.GetAsync($"/rest/getPlaylist{Auth()}&id={id}");
+        var reread = await server.GetAsync($"/rest/getPlaylist{server.AuthQuery}&id={id}");
         Assert.Equal("Keep My Name", reread.GetProperty("playlist").GetProperty("name").GetString());
         Assert.Equal("later", reread.GetProperty("playlist").GetProperty("comment").GetString());
 
-        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}");
+        await server.GetAsync($"/rest/deletePlaylist{server.AuthQuery}&id={id}");
     }
 
     [Fact]
     public async Task A_deleted_playlist_is_gone_and_deleting_it_again_reports_not_found()
     {
-        var created = await server.GetAsync($"/rest/createPlaylist{Auth()}&name=Temporary");
+        var created = await server.GetAsync($"/rest/createPlaylist{server.AuthQuery}&name=Temporary");
         var id = created.GetProperty("playlist").GetProperty("id").GetString();
 
-        Assert.Equal("ok", (await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}"))
+        Assert.Equal("ok", (await server.GetAsync($"/rest/deletePlaylist{server.AuthQuery}&id={id}"))
             .GetProperty("status").GetString());
 
-        var gone = await server.GetAsync($"/rest/getPlaylist{Auth()}&id={id}");
+        var gone = await server.GetAsync($"/rest/getPlaylist{server.AuthQuery}&id={id}");
         Assert.Equal(70, gone.GetProperty("error").GetProperty("code").GetInt32());
 
-        var again = await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}");
+        var again = await server.GetAsync($"/rest/deletePlaylist{server.AuthQuery}&id={id}");
         Assert.Equal(70, again.GetProperty("error").GetProperty("code").GetInt32());
     }
 
@@ -618,13 +683,13 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
         // cascade through every playlist referencing it. The unresolvable
         // entry is dropped on read instead.
         var created = await server.GetAsync(
-            $"/rest/createPlaylist{Auth()}&name=Half+Missing"
+            $"/rest/createPlaylist{server.AuthQuery}&name=Half+Missing"
             + $"&songId={SongId("Alpha Song")}&songId={Guid.NewGuid():N}");
 
         var playlist = created.GetProperty("playlist");
         Assert.Equal(1, playlist.GetProperty("songCount").GetInt32());
 
-        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={playlist.GetProperty("id").GetString()}");
+        await server.GetAsync($"/rest/deletePlaylist{server.AuthQuery}&id={playlist.GetProperty("id").GetString()}");
     }
 
     [Fact]
@@ -632,14 +697,14 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
     {
         var albumId = SubsonicIdentity.AlbumId("Aurora", "Alpha Album");
 
-        await server.GetAsync($"/rest/star{Auth()}&albumId={Uri.EscapeDataString(albumId)}");
-        var starred = await server.GetAsync($"/rest/getAlbum{Auth()}&id={Uri.EscapeDataString(albumId)}");
+        await server.GetAsync($"/rest/star{server.AuthQuery}&albumId={Uri.EscapeDataString(albumId)}");
+        var starred = await server.GetAsync($"/rest/getAlbum{server.AuthQuery}&id={Uri.EscapeDataString(albumId)}");
         Assert.All(
             starred.GetProperty("album").GetProperty("song").EnumerateArray(),
             song => Assert.True(song.GetProperty("starred").GetBoolean()));
 
-        await server.GetAsync($"/rest/unstar{Auth()}&albumId={Uri.EscapeDataString(albumId)}");
-        var cleared = await server.GetAsync($"/rest/getAlbum{Auth()}&id={Uri.EscapeDataString(albumId)}");
+        await server.GetAsync($"/rest/unstar{server.AuthQuery}&albumId={Uri.EscapeDataString(albumId)}");
+        var cleared = await server.GetAsync($"/rest/getAlbum{server.AuthQuery}&id={Uri.EscapeDataString(albumId)}");
         Assert.All(
             cleared.GetProperty("album").GetProperty("song").EnumerateArray(),
             song => Assert.False(song.GetProperty("starred").GetBoolean()));
@@ -654,14 +719,14 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
         // empty artist_id and match nothing.
         var artistId = SubsonicIdentity.ArtistId("Aurora");
 
-        await server.GetAsync($"/rest/star{Auth()}&artistId={Uri.EscapeDataString(artistId)}");
+        await server.GetAsync($"/rest/star{server.AuthQuery}&artistId={Uri.EscapeDataString(artistId)}");
 
         var beta = await server.GetAsync(
-            $"/rest/getAlbum{Auth()}&id={Uri.EscapeDataString(SubsonicIdentity.AlbumId("Aurora", "Beta Album"))}");
+            $"/rest/getAlbum{server.AuthQuery}&id={Uri.EscapeDataString(SubsonicIdentity.AlbumId("Aurora", "Beta Album"))}");
         Assert.True(beta.GetProperty("album").GetProperty("song")
             .EnumerateArray().Single().GetProperty("starred").GetBoolean());
 
-        await server.GetAsync($"/rest/unstar{Auth()}&artistId={Uri.EscapeDataString(artistId)}");
+        await server.GetAsync($"/rest/unstar{server.AuthQuery}&artistId={Uri.EscapeDataString(artistId)}");
     }
 
     // The write-through property itself: since reads come from the resident
@@ -673,9 +738,9 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
     {
         var id = SongId("Love Song");
 
-        await server.GetAsync($"/rest/star{Auth()}&id={id}");
+        await server.GetAsync($"/rest/star{server.AuthQuery}&id={id}");
 
-        var song = await server.GetAsync($"/rest/getSong{Auth()}&id={id}");
+        var song = await server.GetAsync($"/rest/getSong{server.AuthQuery}&id={id}");
         Assert.True(song.GetProperty("song").GetProperty("starred").GetBoolean());
 
         using (var connection = server.Db.Open())
@@ -691,7 +756,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
             Assert.False(reader.IsDBNull(1));
         }
 
-        await server.GetAsync($"/rest/unstar{Auth()}&id={id}");
+        await server.GetAsync($"/rest/unstar{server.AuthQuery}&id={id}");
     }
 
     // A song id is a Guid, and Guid.TryParse accepts the dashed spelling as
@@ -709,7 +774,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
         var dashed = Guid.Parse(id).ToString("D");
         Assert.NotEqual(id, dashed);
 
-        await server.GetAsync($"/rest/star{Auth()}&id={dashed}");
+        await server.GetAsync($"/rest/star{server.AuthQuery}&id={dashed}");
 
         using (var connection = server.Db.Open())
         {
@@ -719,17 +784,17 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
             Assert.Equal(1L, Assert.IsType<long>(command.ExecuteScalar()));
         }
 
-        await server.GetAsync($"/rest/unstar{Auth()}&id={dashed}");
+        await server.GetAsync($"/rest/unstar{server.AuthQuery}&id={dashed}");
     }
 
     [Fact]
     public async Task Reloading_rebuilds_a_playlist_created_through_the_API_from_the_database()
     {
         var created = await server.GetAsync(
-            $"/rest/createPlaylist{Auth()}&name=Survivor&songId={SongId("Alpha Song")}&songId={SongId("Beta Song")}");
+            $"/rest/createPlaylist{server.AuthQuery}&name=Survivor&songId={SongId("Alpha Song")}&songId={SongId("Beta Song")}");
         var id = created.GetProperty("playlist").GetProperty("id").GetString();
 
-        await server.GetAsync($"/rest/updatePlaylist{Auth()}&playlistId={id}&comment=kept&public=true");
+        await server.GetAsync($"/rest/updatePlaylist{server.AuthQuery}&playlistId={id}&comment=kept&public=true");
 
         // Playlists are resident now, so a write that only reached memory would
         // still read back correctly - this is what tells the two apart. It also
@@ -741,7 +806,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
             scope.ServiceProvider.GetRequiredService<LibraryImportService>().LoadStored();
         }
 
-        var reread = await server.GetAsync($"/rest/getPlaylist{Auth()}&id={id}");
+        var reread = await server.GetAsync($"/rest/getPlaylist{server.AuthQuery}&id={id}");
         var playlist = reread.GetProperty("playlist");
         Assert.Equal("Survivor", playlist.GetProperty("name").GetString());
         Assert.Equal("kept", playlist.GetProperty("comment").GetString());
@@ -750,14 +815,14 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
             ["Alpha Song", "Beta Song"],
             playlist.GetProperty("entry").EnumerateArray().Select(e => e.GetProperty("title").GetString()));
 
-        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}");
+        await server.GetAsync($"/rest/deletePlaylist{server.AuthQuery}&id={id}");
     }
 
     [Fact]
     public async Task Reloading_the_stored_library_keeps_a_star_that_was_set_through_the_API()
     {
         var id = SongId("Beta Song");
-        await server.GetAsync($"/rest/star{Auth()}&id={id}");
+        await server.GetAsync($"/rest/star{server.AuthQuery}&id={id}");
 
         // Rebuilds the resident snapshot from the database alone, which is what
         // a restart does. A star held only in memory would not survive this.
@@ -766,10 +831,10 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
             scope.ServiceProvider.GetRequiredService<LibraryImportService>().LoadStored();
         }
 
-        var song = await server.GetAsync($"/rest/getSong{Auth()}&id={id}");
+        var song = await server.GetAsync($"/rest/getSong{server.AuthQuery}&id={id}");
         Assert.True(song.GetProperty("song").GetProperty("starred").GetBoolean());
 
-        await server.GetAsync($"/rest/unstar{Auth()}&id={id}");
+        await server.GetAsync($"/rest/unstar{server.AuthQuery}&id={id}");
     }
 
     [Fact]
@@ -777,7 +842,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
     {
         // Clients call search3 on every keystroke, so the empty string has to
         // mean "no results", not "everything".
-        var response = await server.GetAsync($"/rest/search3{Auth()}&query=");
+        var response = await server.GetAsync($"/rest/search3{server.AuthQuery}&query=");
         var result = response.GetProperty("searchResult3");
 
         Assert.False(result.TryGetProperty("song", out var songs) && songs.GetArrayLength() > 0);
@@ -788,7 +853,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
     [Fact]
     public async Task Starring_with_no_target_is_a_parameter_error()
     {
-        var response = await server.GetAsync("/rest/star" + Auth());
+        var response = await server.GetAsync("/rest/star" + server.AuthQuery);
 
         Assert.Equal(10, response.GetProperty("error").GetProperty("code").GetInt32());
     }
@@ -803,8 +868,8 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
             Assert.Equal(0, PlayCount(connection, id));
         }
 
-        await server.GetAsync($"/rest/scrobble{Auth()}&id={id}");
-        await server.GetAsync($"/rest/scrobble{Auth()}&id={id}");
+        await server.GetAsync($"/rest/scrobble{server.AuthQuery}&id={id}");
+        await server.GetAsync($"/rest/scrobble{server.AuthQuery}&id={id}");
 
         using (var connection = server.Db.Open())
         {
@@ -820,7 +885,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
     {
         var id = SongId("Beta Song");
 
-        await server.GetAsync($"/rest/scrobble{Auth()}&id={id}&submission=false");
+        await server.GetAsync($"/rest/scrobble{server.AuthQuery}&id={id}&submission=false");
 
         using var connection = server.Db.Open();
         Assert.Equal(0, PlayCount(connection, id));
@@ -843,7 +908,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
         // pattern was interpolated straight into LIKE - a user searching for
         // "50%" got every title starting "50". The wildcards are escaped now,
         // with an explicit ESCAPE clause (SQLite has no default one).
-        var response = await server.GetAsync($"/rest/search3{Auth()}&query={Uri.EscapeDataString(query)}");
+        var response = await server.GetAsync($"/rest/search3{server.AuthQuery}&query={Uri.EscapeDataString(query)}");
 
         Assert.Equal(0, response.GetProperty("searchResult3").GetProperty("song").GetArrayLength());
         Assert.Equal(0, response.GetProperty("searchResult3").GetProperty("album").GetArrayLength());
@@ -854,7 +919,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
     {
         // The seeded rows point at paths that do not exist, which is exactly
         // the state a library left behind by deleted files is in.
-        var (status, _) = await server.SendAsync($"/rest/stream{Auth()}&id={SongId("Alpha Song")}");
+        var (status, _) = await server.SendAsync($"/rest/stream{server.AuthQuery}&id={SongId("Alpha Song")}");
 
         Assert.Equal(HttpStatusCode.NotFound, status);
     }
@@ -867,7 +932,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
         // Ids are 32-char hex in the shared schema, and a Subsonic client is
         // free to send anything at all - including an id minted by a different
         // server. Parsed before it reaches SQL so it stays a clean "not found".
-        var response = await server.GetAsync($"/rest/getSong{Auth()}&id={id}");
+        var response = await server.GetAsync($"/rest/getSong{server.AuthQuery}&id={id}");
 
         Assert.Contains(
             response.GetProperty("error").GetProperty("code").GetInt32(),

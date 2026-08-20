@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 
+using Flower.Persistence;
 using Flower.Services;
 
 namespace Flower.Server.Services;
@@ -10,14 +11,24 @@ namespace Flower.Server.Services;
 // SyncHttpServer's copy, which is what it used to be. All that is left here
 // is turning an HttpRequest into a SignedRequest.
 //
-// Used only by PairingEndpoints' pair-redeem route - every other
-// Flower.Server route either needs no device identity (getCoverArt, ping) or
-// uses the classic Subsonic admin token (SubsonicAuth).
+// Two callers, one mechanism: PairingEndpoints' pair-redeem uses the
+// self-signed form (there is nothing to look up yet for a device that has not
+// paired), and everything under /api/admin uses the trusted-peer form. There
+// is no third admin-only authentication scheme - see SYNC-PLAN.md's
+// "Passwordless by design": the browser holds a non-extractable WebCrypto
+// keypair and signs like any other device, so the admin API is gated by the
+// same signature check as the rest, plus a capability flag on the peer.
 public static class DeviceSignatureAuth
 {
     // Returns the verified fingerprint, or null on any failure.
     public static string? VerifySelfSigned(HttpRequest request, byte[] body, NonceReplayGuard replayGuard) =>
         PeerSignatureAuth.VerifySelfSigned(ToSignedRequest(request, body), replayGuard, DateTimeOffset.UtcNow);
+
+    // The gated form: verified against the public key captured when this
+    // fingerprint was approved, never against a key offered on the request.
+    public static string? VerifyTrustedPeer(HttpRequest request, byte[] body, TrustedPeerStore trustedPeers, NonceReplayGuard replayGuard) =>
+        PeerSignatureAuth.VerifyTrustedPeer(
+            ToSignedRequest(request, body), trustedPeers.GetPublicKey, replayGuard, DateTimeOffset.UtcNow);
 
     // For the values a handler wants *after* the request is verified (pairing
     // code, alias). Same header-else-query rule, because it is the same rule.

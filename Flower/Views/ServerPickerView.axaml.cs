@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Collections.Generic;
 using System.Linq;
 
 using Avalonia.Controls;
@@ -27,6 +28,30 @@ public sealed class ServerRow : ViewModelBase
     public required string Alias { get; init; }
     public required bool IsPaired { get; init; }
 
+    // Whether this server pairs by redeeming an admin-issued code rather than
+    // by waiting on a live approval prompt - true for a headless
+    // Flower.Server, which has nobody in front of it to tap Allow. See
+    // DiscoveredDevice.PairsByCode.
+    public required bool PairsByCode { get; init; }
+
+    // What the user typed into this row's code box. Per-row rather than
+    // per-view: the list can show several servers, and a code is only valid
+    // for the one it was issued by.
+    public string PairingCode
+    {
+        get => _pairingCode;
+        set
+        {
+            if (_pairingCode == value)
+                return;
+            _pairingCode = value;
+            OnPropertyChanged();
+        }
+    }
+    private string _pairingCode = "";
+
+    public bool IsPairingCodeRequired => PairsByCode && !IsPaired;
+
     // True only for the paired row while MainViewModel.IsSyncing is set - see
     // ServerPickerView's PropertyChanged subscription, which re-runs Refresh()
     // (rebuilding this snapshot) on every IsSyncing edge.
@@ -48,7 +73,7 @@ public sealed class ServerRow : ViewModelBase
     public required string? BlockedByAlias { get; init; }
 
     public string ActionLabel =>
-        !IsPaired ? "Ask to pair" :
+        !IsPaired ? (PairsByCode ? "Pair" : "Ask to pair") :
         IsTrustConfirmed ? "Unpair" :
         "Waiting for server...";
     public bool IsAwaitingApproval => IsPaired && !IsTrustConfirmed;
@@ -138,6 +163,15 @@ public partial class ServerPickerView : UserControl
         var pairedFingerprint = _mainViewModel.PairedServerFingerprint;
         var pairedAlias = _mainViewModel.PairedServerAlias;
 
+        // Refresh() rebuilds every row from scratch and runs off the ~5s peer
+        // poll, so a half-typed pairing code would be wiped out from under the
+        // user mid-keystroke. Carry it across by fingerprint - the row objects
+        // are snapshots, but what the user typed into one is not.
+        var typedCodes = (ServersList.ItemsSource as IEnumerable<ServerRow>)?
+            .Where(r => !string.IsNullOrEmpty(r.PairingCode))
+            .ToDictionary(r => r.Fingerprint, r => r.PairingCode)
+            ?? [];
+
         var rows = _mainViewModel.AvailableServers
             .Select(d => new ServerRow
             {
@@ -148,6 +182,8 @@ public partial class ServerPickerView : UserControl
                 IsTrustConfirmed = d.Fingerprint == pairedFingerprint && _mainViewModel.IsPairedServerTrustConfirmed,
                 CanForceSync = d.Fingerprint == pairedFingerprint && _mainViewModel.CanForceSync,
                 BlockedByAlias = pairedFingerprint != null && d.Fingerprint != pairedFingerprint ? pairedAlias : null,
+                PairsByCode = d.PairsByCode,
+                PairingCode = typedCodes.GetValueOrDefault(d.Fingerprint, ""),
             })
             .ToList();
 
@@ -165,6 +201,9 @@ public partial class ServerPickerView : UserControl
                 IsTrustConfirmed = _mainViewModel.IsPairedServerTrustConfirmed,
                 CanForceSync = _mainViewModel.CanForceSync,
                 BlockedByAlias = null,
+                // Already paired, so there is nothing left to redeem - the
+                // box never shows on this row regardless.
+                PairsByCode = false,
             });
         }
 
@@ -207,15 +246,26 @@ public partial class ServerPickerView : UserControl
             // worth a clear warning before it happens, and an explicit
             // reassurance that this is only about the synced *view*, not
             // about deleting anything already on disk.
+            //
+            // A headless server takes an admin-issued code rather than a live
+            // approval (ServerRow.PairsByCode), so the copy and the button
+            // change with it: nothing is being asked.
+            var byCode = row.IsPairingCodeRequired;
+            if (byCode && string.IsNullOrWhiteSpace(row.PairingCode))
+                return;
+
+            var approvalSentence = byCode
+                ? $"The pairing code you entered authorizes this device on \"{row.Alias}\" immediately."
+                : $"\"{row.Alias}\" will need to approve the request before syncing begins.";
             var confirmed = await ConfirmDialogWindow.ShowAsync(
                 owner,
-                $"Ask \"{row.Alias}\" To Pair?",
-                $"This device's library view will be replaced by \"{row.Alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. \"{row.Alias}\" will need to approve the request before syncing begins.",
-                "Ask to pair");
+                byCode ? $"Pair With \"{row.Alias}\"?" : $"Ask \"{row.Alias}\" To Pair?",
+                $"This device's library view will be replaced by \"{row.Alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. {approvalSentence}",
+                byCode ? "Pair" : "Ask to pair");
             if (!confirmed)
                 return;
 
-            _mainViewModel.PairWithServer(device);
+            _mainViewModel.PairWithServer(device, byCode ? row.PairingCode.Trim() : null);
         }
 
         Refresh();

@@ -10,8 +10,6 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
-using Makaretu.Dns;
-
 using Flower.Persistence;
 
 namespace Flower.Services;
@@ -36,6 +34,20 @@ public class DiscoveredDevice
     // MainViewModel.AvailableServers; unrelated to trust/pairing.
     public bool IsServer { get; set; }
 
+    // The peer's self-reported kind - "desktop"/"mobile" for another Flower
+    // app, "server" for a headless Flower.Server. Resolved via the same /info
+    // handshake as the rest. Empty until that resolves, which reads as "an
+    // app" - the conservative default, since it keeps the live-approval flow
+    // rather than demanding a code nobody can produce.
+    public string DeviceType { get; set; } = "";
+
+    // Whether pairing with this peer means redeeming an admin-issued code
+    // rather than waiting on a live approval prompt. A headless server has no
+    // one sitting in front of it to tap Allow, which is exactly why it issues
+    // codes instead (SYNC-PLAN.md, "Passwordless by design"); an app peer has
+    // no way to produce one. See PeerPairingService.
+    public bool PairsByCode => DeviceType == "server";
+
     // Whether this peer currently trusts *us* (see SyncHttpServer.
     // HandleInfoAsync's trustsCaller field and AuthorizeAsync/TrustedPeerStore)
     // - resolved alongside the rest via the same /info handshake, since
@@ -57,66 +69,13 @@ public class DiscoveredDevice
     public string LibraryToken { get; set; } = "";
 }
 
-// Default IMdnsBackend (see PlatformMdns.cs): raw multicast via
-// Makaretu.Dns.Multicast. Works everywhere except real iOS hardware - see
-// PlatformMdns's own doc comment for why - where Flower.iOS overrides
-// PlatformMdns.Current with a Bonjour-API-backed implementation instead.
-internal sealed class MakaretuMdnsBackend : IMdnsBackend
-{
-    private readonly MulticastService _mdns = new();
-    private readonly ServiceDiscovery _serviceDiscovery;
-
-    public event EventHandler<MdnsInstanceFound>? InstanceFound;
-    public event EventHandler<string>? InstanceLost;
-
-    public MakaretuMdnsBackend()
-    {
-        _serviceDiscovery = new ServiceDiscovery(_mdns);
-        _serviceDiscovery.ServiceInstanceDiscovered += (_, e) =>
-        {
-            var name = e.ServiceInstanceName.ToString();
-
-            // No separate resolve round-trip needed: the discovery answer already
-            // carries the sender's real address (RemoteEndPoint) and, per DNS-SD
-            // convention, the SRV record with the service port in AdditionalRecords.
-            var srv = e.Message.AdditionalRecords.OfType<SRVRecord>().FirstOrDefault();
-            var port = srv?.Port ?? (ushort)SyncHttpServer.DefaultPort;
-            var endpoint = new IPEndPoint(e.RemoteEndPoint.Address, port);
-            InstanceFound?.Invoke(this, new MdnsInstanceFound { InstanceName = name, EndPoint = endpoint });
-        };
-        _serviceDiscovery.ServiceInstanceShutdown += (_, e) =>
-            InstanceLost?.Invoke(this, e.ServiceInstanceName.ToString());
-    }
-
-    public void Advertise(string instanceName, string serviceType, int port)
-    {
-        _serviceDiscovery.Advertise(new ServiceProfile(instanceName, serviceType, (ushort)port));
-        _mdns.Start();
-    }
-
-    public void Browse(string serviceType) => _serviceDiscovery.QueryServiceInstances(serviceType);
-
-    public void Stop()
-    {
-        _serviceDiscovery.Unadvertise();
-        _mdns.Stop();
-    }
-
-    public void Dispose()
-    {
-        Stop();
-        _serviceDiscovery.Dispose();
-        _mdns.Dispose();
-    }
-}
-
 // See SYNC-PLAN.md: mDNS discovery (proven working macOS <-> iOS Simulator, and -
 // via Flower.iOS's Bonjour-API backend, see PlatformMdns.cs - real iOS hardware
 // too) plus the start of the real sync protocol - device identity exchange over
 // plain HTTP (see SyncHttpServer). File transfer itself is a later phase.
 public class NetworkDiscoveryService : IDisposable
 {
-    private const string ServiceType = "_flowersync._tcp";
+    private const string ServiceType = SyncProtocol.ServiceType;
 
     // How often an already-known peer's /info is re-fetched, independent of
     // any fresh mDNS announcement - see PollKnownDevicesAsync. A peer that
@@ -437,6 +396,19 @@ public class NetworkDiscoveryService : IDisposable
                     device.IsServer = isServer;
                     changed = true;
                 }
+            }
+            // What kind of peer this is, straight from the handshake's
+            // deviceType field: "desktop"/"mobile" for another Flower app,
+            // "server" for a headless Flower.Server. Distinct from IsServer,
+            // which an app in Server role also sets - this is what decides
+            // *how* pairing works, since only the headless server has an
+            // admin issuing pairing codes and only an app has a human sitting
+            // in front of an approval prompt. See DiscoveredDevice.PairsByCode.
+            if (doc.RootElement.TryGetProperty("deviceType", out var deviceTypeProp) &&
+                deviceTypeProp.GetString() is { } deviceType && deviceType != device.DeviceType)
+            {
+                device.DeviceType = deviceType;
+                changed = true;
             }
             // Present-and-boolean only - absent (older peer) or explicit JSON
             // null (this peer didn't recognize our identity headers) both leave

@@ -86,7 +86,7 @@ public sealed class PeerApprovalRequestedEventArgs : EventArgs
 // "reachable from the internet if the port is ever forwarded."
 public class SyncHttpServer : IDisposable
 {
-    public const int DefaultPort = 53317;
+    public const int DefaultPort = SyncProtocol.DefaultPort;
     private const int MaxPortAttempts = 10;
     private static readonly TimeSpan ApprovalTimeout = TimeSpan.FromSeconds(60);
 
@@ -162,7 +162,7 @@ public class SyncHttpServer : IDisposable
 
         _routes =
         [
-            new Route("GET", "/api/localsend/v2/info", AuthMode.Open, RateLimitCategory.Info, false, false, HandleInfoAsync),
+            new Route("GET", SyncProtocol.InfoPath, AuthMode.Open, RateLimitCategory.Info, false, false, HandleInfoAsync),
             new Route("POST", "/api/flower/v1/pair-request", AuthMode.SelfSigned, RateLimitCategory.Pair, false, false, HandlePairRequestAsync),
             new Route("POST", "/api/flower/v1/unpair-notify", AuthMode.SelfSigned, RateLimitCategory.Pair, false, false, HandleUnpairNotifyAsync),
             new Route("GET", "/api/flower/v1/playlists", AuthMode.TrustedPeer, RateLimitCategory.Bulk, false, true, HandleGetPlaylistsAsync),
@@ -469,13 +469,6 @@ public class SyncHttpServer : IDisposable
         return Task.CompletedTask;
     }
 
-    // Wire shape for HandleInfoAsync below - camelCase field names come from
-    // ExternalProtocolJsonContext's naming policy, matching what the previous
-    // anonymous-type response produced.
-    internal sealed record SyncInfoResponseDto(
-        string Alias, string Version, string? DeviceModel, string DeviceType,
-        string Fingerprint, string PublicKey, bool IsServer, bool Download, bool? TrustsCaller,
-        string LibraryToken);
 
     // Deliberately ungated (see the route table's AuthMode.Open: a peer has to
     // learn our fingerprint+public key here before either side can evaluate
@@ -515,7 +508,7 @@ public class SyncHttpServer : IDisposable
             // a changed server catalog promptly without a new connection, a
             // new endpoint, or anything long-lived to keep alive on mobile.
             _library.ChangeToken);
-        var responseBody = JsonSerializer.Serialize(responseDto, ExternalProtocolJsonContext.Default.SyncInfoResponseDto);
+        var responseBody = JsonSerializer.Serialize(responseDto, SyncProtocolJsonContext.Default.SyncInfoResponseDto);
         await WriteJsonAsync(context, responseBody);
     }
 

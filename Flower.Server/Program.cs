@@ -67,28 +67,65 @@ builder.Services.AddSingleton(services => new Library(
     services.GetRequiredService<PlaylistRepository>()));
 
 builder.Services.AddScoped<LibraryImportService>();
-builder.Services.AddSingleton<AdminAuthService>();
 builder.Services.AddSingleton<PairingCodeService>();
+builder.Services.AddSingleton<StreamTicketService>();
 builder.Services.AddSingleton<NonceReplayGuard>();
 builder.Services.AddSingleton<TrustedPeerStore>();
+builder.Services.AddSingleton<SubsonicCredentialStore>();
+builder.Services.AddSingleton<DeviceKeyStore>();
+
+// Announces the server on the LAN so it shows up in a client's sidebar without
+// anyone typing an address. Registered as a lifecycle service because the port
+// it advertises has to be the one Kestrel actually bound - see MdnsAdvertiser.
+builder.Services.AddSingleton<MdnsAdvertiser>();
+builder.Services.AddHostedService(services => services.GetRequiredService<MdnsAdvertiser>());
+
+// This server's own keypair, loaded once for the process exactly as the client
+// does it in App.axaml.cs. It is not used to sign anything outbound here - what
+// the server needs is its Fingerprint, which goes into every pairing invite so
+// the redeeming device can pin the server's key instead of trusting whatever
+// answers at that address. See PairingInvite.
+builder.Services.AddSingleton(services =>
+{
+    var (key, publicKeyRaw) = services.GetRequiredService<DeviceKeyStore>().Load();
+    return new DeviceSigningKey(key, publicKeyRaw);
+});
 
 var app = builder.Build();
 
-// Fail fast rather than boot an open server: AdminPassword guards the admin
-// API *and*, via SubsonicAuth, every /rest route, so shipping a usable
-// placeholder meant a self-hoster who never edited the config had one
-// well-known credential in front of their whole library. Checked after
-// Build() so it reads the fully-composed configuration (env vars, user
-// secrets, Docker secrets) and not just appsettings.json.
+// Break the bootstrap circularity: pairing codes are issued from /api/admin,
+// and /api/admin can only be reached by a device that already paired as an
+// admin, so a server nobody has ever administered can't be administered at
+// all. Fix it where the circle is thinnest - if there is no admin peer on
+// file, the server mints one admin-granting code itself and prints it, which
+// on a headless box means it lands in `docker logs`.
+//
+// This replaces both the old startup check that refused to boot without a
+// configured Flower:AdminPassword and the separate "first-run claim window"
+// an earlier design had: there is no separate claim mechanism, just the first
+// pairing code. The same call is what an operator locked out of their own
+// server re-runs (see the CLI note below).
 {
-    var configured = app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
-    if (string.IsNullOrWhiteSpace(configured.AdminPassword)
-        || configured.AdminPassword == FlowerServerOptions.PlaceholderAdminPassword)
+    var trustedPeers = app.Services.GetRequiredService<TrustedPeerStore>();
+    if (!trustedPeers.HasAdmin())
     {
-        throw new InvalidOperationException(
-            "Flower:AdminPassword is unset or still the placeholder. Set a real password before starting the server "
-            + "- e.g. Flower__AdminPassword=<password> in the environment, or the Flower:AdminPassword key in appsettings.json. "
-            + "It protects both /api/admin and the whole /rest Subsonic API.");
+        var pairing = app.Services.GetRequiredService<PairingCodeService>();
+        var signingKey = app.Services.GetRequiredService<DeviceSigningKey>();
+        var serverOptions = app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
+        var (code, expiresAt) = pairing.GenerateCode(grantsAdmin: true);
+
+        // Deliberately not the ILogger: this is meant for a human reading a
+        // terminal or `docker logs` right now, and it must not be swallowed by
+        // a log level, routed to a file, or shipped off to a log aggregator
+        // where a live credential has no business being.
+        var host = string.IsNullOrWhiteSpace(serverOptions.AdvertisedHost)
+            ? "<this-server>:4533"
+            : serverOptions.AdvertisedHost;
+        Console.WriteLine();
+        Console.WriteLine("  No device can administer this server yet.");
+        Console.WriteLine($"  Pair one with this code (valid until {expiresAt.ToLocalTime():HH:mm:ss}): {code}");
+        Console.WriteLine($"  Or open: {new PairingInvite(host, code, signingKey.Fingerprint)}");
+        Console.WriteLine();
     }
 }
 
@@ -121,6 +158,8 @@ using (var scope = app.Services.CreateScope())
 app.MapSubsonicEndpoints();
 app.MapAdminEndpoints();
 app.MapPairingEndpoints();
+app.MapStreamTicketEndpoints();
+app.MapDiscoveryEndpoints();
 
 app.Run();
 

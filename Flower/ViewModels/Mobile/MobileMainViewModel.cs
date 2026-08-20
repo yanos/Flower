@@ -500,9 +500,45 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // straight through to Main.PairWithServer).
     private DiscoveredDevice? _pendingServerToPair;
     public string PendingServerToPairAlias => _pendingServerToPair?.Alias ?? "";
-    public string ConfirmPairServerTitle => $"Ask \"{PendingServerToPairAlias}\" To Pair?";
+
+    // A headless Flower.Server has nobody in front of it to tap Allow, so it
+    // pairs by redeeming an admin-issued code instead of by raising a live
+    // approval prompt - which changes the sheet's title, its closing sentence
+    // and its button, and adds the code box. See DiscoveredDevice.PairsByCode.
+    public bool IsPendingServerPairedByCode => _pendingServerToPair?.PairsByCode ?? false;
+
+    public string ConfirmPairServerTitle => IsPendingServerPairedByCode
+        ? $"Pair With \"{PendingServerToPairAlias}\"?"
+        : $"Ask \"{PendingServerToPairAlias}\" To Pair?";
+
+    public string ConfirmPairServerActionLabel => IsPendingServerPairedByCode ? "Pair" : "Ask to pair";
+
     public string ConfirmPairServerMessage =>
-        $"This device's library view will be replaced by \"{PendingServerToPairAlias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. \"{PendingServerToPairAlias}\" will need to approve the request before syncing begins.";
+        $"This device's library view will be replaced by \"{PendingServerToPairAlias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. "
+        + (IsPendingServerPairedByCode
+            ? "The pairing code below authorizes this device immediately."
+            : $"\"{PendingServerToPairAlias}\" will need to approve the request before syncing begins.");
+
+    // What the user typed into the sheet's code box. Reset every time the
+    // sheet opens, so a code left from an abandoned attempt is never
+    // submitted against a different server.
+    private string _pendingPairingCode = "";
+    public string PendingPairingCode
+    {
+        get => _pendingPairingCode;
+        set
+        {
+            if (_pendingPairingCode == value)
+                return;
+            _pendingPairingCode = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsConfirmPairServerEnabled));
+        }
+    }
+
+    // "Pair" on an empty box would only round-trip to be rejected.
+    public bool IsConfirmPairServerEnabled =>
+        !IsPendingServerPairedByCode || !string.IsNullOrWhiteSpace(PendingPairingCode);
 
     // Android's media-access permission can be permanently denied, in which case the
     // only way back in is the system app-settings screen; desktop/iOS have nothing
@@ -932,9 +968,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (device == null)
                 return;
             _pendingServerToPair = device;
+            PendingPairingCode = "";
             OnPropertyChanged(nameof(PendingServerToPairAlias));
+            OnPropertyChanged(nameof(IsPendingServerPairedByCode));
             OnPropertyChanged(nameof(ConfirmPairServerTitle));
+            OnPropertyChanged(nameof(ConfirmPairServerActionLabel));
             OnPropertyChanged(nameof(ConfirmPairServerMessage));
+            OnPropertyChanged(nameof(IsConfirmPairServerEnabled));
             ActiveSheet = MobileSheet.ConfirmPairServer;
         });
         UnpairServerCommand = new RelayCommand(Main.UnpairServer);
@@ -942,8 +982,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         ConfirmPairServerCommand = new RelayCommand(() =>
         {
             if (_pendingServerToPair is { } device)
-                Main.PairWithServer(device);
+            {
+                Main.PairWithServer(
+                    device,
+                    device.PairsByCode ? PendingPairingCode.Trim() : null);
+            }
             _pendingServerToPair = null;
+            PendingPairingCode = "";
             ActiveSheet = MobileSheet.None;
         });
         CancelPairServerCommand = new RelayCommand(() =>

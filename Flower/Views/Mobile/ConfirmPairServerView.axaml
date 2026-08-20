@@ -21,7 +21,7 @@
     <!-- Deliberately no backdrop-tap-to-dismiss, same as PeerApprovalView -
          an unattended dismissal should not silently start replacing this
          device's library view, so the explicit Cancel button below is the
-         only way out other than Ask to pair. -->
+         only way out other than the pair button. -->
     <Border Background="#66000000" />
 
     <Border VerticalAlignment="Bottom"
@@ -38,7 +38,16 @@
         <TextBlock Text="{Binding ConfirmPairServerMessage}"
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
-        <Button Classes="peerAction" Content="Ask to pair" Command="{Binding ConfirmPairServerCommand}"
+        <!-- Only for a headless server (IsPendingServerPairedByCode) - an app
+             peer has no code to give and keeps the live approval prompt. -->
+        <TextBox Text="{Binding PendingPairingCode}"
+                 PlaceholderText="Pairing code"
+                 IsVisible="{Binding IsPendingServerPairedByCode}"
+                 MaxLength="20" FontSize="16" Padding="12,10" />
+
+        <Button Classes="peerAction" Content="{Binding ConfirmPairServerActionLabel}"
+                Command="{Binding ConfirmPairServerCommand}"
+                IsEnabled="{Binding IsConfirmPairServerEnabled}"
                 Background="{DynamicResource SystemAccentColor}" />
         <Button Classes="peerAction" Content="Cancel" Command="{Binding CancelPairServerCommand}"
                 Background="Transparent" />

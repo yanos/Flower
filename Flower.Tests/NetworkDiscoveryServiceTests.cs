@@ -121,6 +121,64 @@ public class NetworkDiscoveryServiceTests : IDisposable
     }
 
     [Fact]
+    public void Resolves_a_headless_server_as_pairing_by_code()
+    {
+        // deviceType is what separates a headless Flower.Server from a Flower
+        // app running in Server role - both report isServer, but only the
+        // server issues pairing codes, and only the app has a human who can
+        // answer a live approval prompt. See DiscoveredDevice.PairsByCode.
+        var endpoint = Routable(30);
+        _handler.RespondWith(endpoint.Port,
+            """{"alias":"Basement NAS","fingerprint":"server-fp","deviceType":"server","isServer":true}""");
+
+        DiscoveredDevice? discovered = null;
+        _service.DeviceDiscovered += (_, d) => discovered = d;
+
+        _backend.RaiseInstanceFound(InstanceName("Basement-NAS"), endpoint);
+
+        WaitUntil(() => discovered?.Fingerprint == "server-fp", "the server's info should resolve");
+        Assert.Equal("server", discovered!.DeviceType);
+        Assert.True(discovered.PairsByCode);
+    }
+
+    [Fact]
+    public void Resolves_an_app_peer_in_server_role_as_pairing_by_approval()
+    {
+        // The distinction that matters: isServer alone must not put the UI
+        // into the code-entry flow, because this peer has no code to give.
+        var endpoint = Routable(31);
+        _handler.RespondWith(endpoint.Port,
+            """{"alias":"Studio Mac","fingerprint":"app-fp","deviceType":"desktop","isServer":true}""");
+
+        DiscoveredDevice? discovered = null;
+        _service.DeviceDiscovered += (_, d) => discovered = d;
+
+        _backend.RaiseInstanceFound(InstanceName("Studio-Mac"), endpoint);
+
+        WaitUntil(() => discovered?.Fingerprint == "app-fp", "the peer's info should resolve");
+        Assert.True(discovered!.IsServer);
+        Assert.False(discovered.PairsByCode);
+    }
+
+    [Fact]
+    public void Treats_a_peer_that_reports_no_deviceType_as_an_app()
+    {
+        // The conservative default: keep the live-approval flow rather than
+        // demanding a code nobody on the other end can produce.
+        var endpoint = Routable(32);
+        _handler.RespondWith(endpoint.Port,
+            """{"alias":"Old Peer","fingerprint":"old-fp","isServer":true}""");
+
+        DiscoveredDevice? discovered = null;
+        _service.DeviceDiscovered += (_, d) => discovered = d;
+
+        _backend.RaiseInstanceFound(InstanceName("Old-Peer"), endpoint);
+
+        WaitUntil(() => discovered?.Fingerprint == "old-fp", "the peer's info should resolve");
+        Assert.False(discovered!.PairsByCode);
+    }
+
+    [Fact]
     public void OnInstanceFound_ignores_announcements_of_a_different_service_type()
     {
         _backend.RaiseInstanceFound("SomeAirplayDevice._airplay._tcp.local", Routable(11));
