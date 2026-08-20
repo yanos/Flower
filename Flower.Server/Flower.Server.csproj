@@ -8,15 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
-    <!-- EF Core 10.0.10 pulls SQLitePCLRaw 2.1.11, whose bundled SQLite has NU1903
-         (GHSA-2m69-gcr7-jv3q). Pin the patched 2.1.12 until EF Core ships it itself. -->
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
-    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <!-- No EF Core, and no SQLite package reference of its own: Microsoft.Data.Sqlite
+         (and the SQLitePCLRaw vulnerability pin that goes with it) comes through
+         Flower.Core, which owns the schema and the connection. See
+         Flower.Core/Persistence/Sql/FlowerDb.cs for why EF Core was dropped. -->
   </ItemGroup>
 
   <ItemGroup>

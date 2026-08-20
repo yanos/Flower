@@ -1,100 +1,56 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 using Flower.Models;
+using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
-using Flower.Server.Data;
-using Flower.Services;
 
 namespace Flower.Server.Services;
 
 // Flower.Server's scanner reuses the exact same Flower.Core.Importer.Importer
-// desktop uses (see SYNC-PLAN.md's "Reuse boundary" note) - only what happens
-// to the resulting List<Track> differs: desktop hands them to an in-memory
-// Library, this upserts them into SQLite via TrackEntity.
+// the desktop app uses (see SYNC-PLAN.md's "Reuse boundary" note) - and, since
+// Tier 4.1, the same Library reconciliation and the same TrackRepository write
+// that desktop performs after a rescan.
+//
+// This used to be ~60 lines of hand-written upsert: load every row into a
+// path-keyed dictionary, copy 15 fields across one at a time, work out what to
+// delete. All of that already existed, twice as carefully, in
+// Library.UpdateTracks (which knows that a rescan mints fresh Track instances
+// and must not reset Id, DateAdded, play counts, starred or sync origin) and
+// TrackRepository.ReplaceAll (one transaction, one prepared upsert, delete
+// what is gone). Calling those instead is not just less code - it is what
+// makes a server-served track keep the same id across a rescan, which the
+// hand-written version got right only by accident of matching on path, and
+// what makes Starred survive one at all.
 public class LibraryImportService(
-    IDbContextFactory<FlowerDbContext> dbFactory,
+    FlowerDb db,
     IOptions<FlowerServerOptions> options,
     ILogger<Flower.Importer.Importer> importerLogger,
+    ILogger<Library> libraryLogger,
     ILogger<LibraryImportService> logger)
 {
-    private static readonly Dictionary<string, string> ContentTypesBySuffix = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["mp3"] = "audio/mpeg",
-        ["m4a"] = "audio/mp4",
-        ["wav"] = "audio/wav",
-        ["flac"] = "audio/flac",
-        ["alac"] = "audio/mp4",
-    };
-
     public async Task RescanAsync(CancellationToken ct = default)
     {
         var importer = new Flower.Importer.Importer(importerLogger);
         var libraryPaths = options.Value.LibraryPaths;
         var imported = await importer.ImportAsync(libraryPaths);
-        logger.LogInformation("Importer found {Count} tracks across {PathCount} configured path(s)", imported.Count, libraryPaths.Count);
+        logger.LogInformation(
+            "Importer found {Count} tracks across {PathCount} configured path(s)", imported.Count, libraryPaths.Count);
 
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var existingByPath = await db.Tracks.ToDictionaryAsync(t => t.Path, StringComparer.OrdinalIgnoreCase, ct);
-        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        ct.ThrowIfCancellationRequested();
 
-        foreach (var track in imported)
-        {
-            if (track.Path == null)
-                continue;
+        var repository = new TrackRepository(db);
 
-            seenPaths.Add(track.Path);
-            ApplyTrack(db, existingByPath, track);
-        }
+        // Loaded, reconciled and written back rather than upserted row by row.
+        // At the 16k-track scale SYNC-PLAN.md targets this is one full read and
+        // one transaction at startup, not per request, and it is the only way
+        // to get UpdateTracks' carry-forward rules applied - they compare each
+        // fresh track against the stored one.
+        var library = new Library(repository.LoadAll(), libraryLogger);
+        var before = library.Tracks.Count;
+        library.UpdateTracks(imported);
+        repository.ReplaceAll(library.Tracks);
 
-        var removed = existingByPath.Where(kv => !seenPaths.Contains(kv.Key)).Select(kv => kv.Value).ToList();
-        if (removed.Count > 0)
-            db.Tracks.RemoveRange(removed);
-
-        await db.SaveChangesAsync(ct);
-        logger.LogInformation("Library sync complete: {New} new/updated, {Removed} removed", seenPaths.Count, removed.Count);
-    }
-
-    private static void ApplyTrack(FlowerDbContext db, Dictionary<string, TrackEntity> existingByPath, Track track)
-    {
-        var artistName = track.EffectiveAlbumArtist;
-        var artistId = SubsonicIdentity.ArtistId(artistName);
-        var albumId = SubsonicIdentity.AlbumId(artistName, track.Album);
-        var fileInfo = new FileInfo(track.Path!);
-        var suffix = Path.GetExtension(track.Path!).TrimStart('.').ToLowerInvariant();
-
-        if (!existingByPath.TryGetValue(track.Path!, out var entity))
-        {
-            entity = new TrackEntity
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                Path = track.Path!,
-                ArtistId = artistId,
-                AlbumId = albumId,
-                DateAdded = track.DateAdded,
-            };
-            db.Tracks.Add(entity);
-        }
-        else
-        {
-            // Carried forward across rescans - same reasoning as Flower.Core's
-            // Library.UpdateTracks matching on Path (see its own remarks).
-            entity.ArtistId = artistId;
-            entity.AlbumId = albumId;
-        }
-
-        entity.Title = track.Title;
-        entity.Artist = track.Artists;
-        entity.AlbumArtist = artistName;
-        entity.Album = track.Album;
-        entity.Year = int.TryParse(track.Year, out var year) ? year : null;
-        entity.Genre = track.Genre;
-        entity.TrackNumber = (int)track.TrackNumber;
-        entity.DiscNumber = (int)track.DiscNumber;
-        entity.DurationSeconds = track.Duration.TotalSeconds;
-        entity.Bitrate = track.Bitrate;
-        entity.Size = fileInfo.Exists ? fileInfo.Length : 0;
-        entity.Suffix = suffix;
-        entity.ContentType = ContentTypesBySuffix.GetValueOrDefault(suffix, "application/octet-stream");
+        logger.LogInformation(
+            "Library sync complete: {Before} -> {After} track(s)", before, library.Tracks.Count);
     }
 }

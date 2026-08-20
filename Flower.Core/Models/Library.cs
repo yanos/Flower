@@ -270,6 +270,8 @@ namespace Flower.Models
             track.PlayCount               = previous.PlayCount;
             track.ImportedPlayCount       = previous.ImportedPlayCount;
             track.LastPlayedAt            = previous.LastPlayedAt;
+            track.Starred                 = previous.Starred;
+            track.StarredAt               = previous.StarredAt;
             track.OriginDeviceFingerprint = previous.OriginDeviceFingerprint;
             track.OriginTrackId           = previous.OriginTrackId;
             track.OriginFileExtension     = previous.OriginFileExtension;

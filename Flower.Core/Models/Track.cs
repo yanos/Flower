@@ -184,6 +184,16 @@ namespace Flower.Models
         // rescans the same way DateAdded/PlayCount are.
         public DateTimeOffset? LastPlayedAt { get; set; }
 
+        // Subsonic's "starred" flag, set through /rest/star and /rest/unstar
+        // (see Flower.Server's SubsonicEndpoints) and reported back on every
+        // song it serves. On the Track model rather than in a server-only
+        // table because it is a property of the track everywhere - the client
+        // has no UI for it yet, but a liked-songs view is the obvious next
+        // consumer, and CarryForwardMutableState already named Starred as the
+        // example of the kind of field a rescan must not reset.
+        public bool Starred { get; set; }
+        public DateTimeOffset? StarredAt { get; set; }
+
         // Latest known play count reported by each OTHER device, keyed by
         // DeviceIdentity.Fingerprint - see LibraryOpenSubsonicMapper.ToChild's
         // PlayCounts field and Library.MergeSyncedTracks. Never contains this

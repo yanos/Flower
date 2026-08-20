@@ -29,6 +29,17 @@ namespace Flower.Persistence.Sql
                 artists                   TEXT,
                 album_artists             TEXT,
                 is_compilation            INTEGER NOT NULL DEFAULT 0,
+
+                -- Track.EffectiveAlbumArtist, materialized. Not the same thing
+                -- as album_artists above: that is the raw tag, and the
+                -- effective value is a three-way fallback through the
+                -- compilation flag to the track artist. Reproducing that
+                -- expression in SQL is exactly the kind of second copy
+                -- SubsonicIdentity's own comment records going wrong, and it
+                -- has to agree with artist_id/album_id below, which are
+                -- computed from it. Written by the same code, at the same time.
+                album_artist              TEXT    NOT NULL DEFAULT '',
+
                 album                     TEXT,
                 album_sort                TEXT,
                 year                      TEXT,
@@ -68,7 +79,20 @@ namespace Flower.Persistence.Sql
                 play_count                INTEGER NOT NULL DEFAULT 0,
                 imported_play_count       INTEGER NOT NULL DEFAULT 0,
                 last_played_at            INTEGER,
-                date_added                INTEGER NOT NULL
+                date_added                INTEGER NOT NULL,
+
+                -- Stored, not computed on read, even though both are a pure
+                -- function of album_artist/album via SubsonicIdentity. The
+                -- server looks tracks up *by* them - getArtist, getAlbum,
+                -- getCoverArt and star are all "WHERE artist_id = ?" - and a
+                -- hash computed in C# is not something SQLite can index or
+                -- filter on. TrackRepository recomputes both on every write,
+                -- so they cannot drift from the tags they derive from.
+                artist_id                 TEXT    NOT NULL DEFAULT '',
+                album_id                  TEXT    NOT NULL DEFAULT '',
+
+                starred                   INTEGER NOT NULL DEFAULT 0,
+                starred_at                INTEGER
             );
 
             -- Not unique: two library entries for one path is not supposed to
@@ -83,6 +107,10 @@ namespace Flower.Persistence.Sql
 
             -- Album grouping (see TrackListBuilder / AlbumGridBuilder).
             CREATE INDEX ix_tracks_album ON tracks (album);
+
+            -- The server's browse surface filters on these two directly.
+            CREATE INDEX ix_tracks_artist_id ON tracks (artist_id);
+            CREATE INDEX ix_tracks_album_id  ON tracks (album_id);
 
             -- Track.RemotePlayCounts: the latest play count each OTHER device
             -- has reported for a track, keyed by DeviceIdentity.Fingerprint.
@@ -101,14 +129,21 @@ namespace Flower.Persistence.Sql
             CREATE TABLE playlists (
                 id         TEXT    NOT NULL PRIMARY KEY,
                 name       TEXT    NOT NULL,
-                updated_at INTEGER NOT NULL
+                updated_at INTEGER NOT NULL,
+
+                -- Subsonic playlist attributes. The client's Playlist model has
+                -- no equivalent, so its own writes leave these alone (the
+                -- upsert in PlaylistRepository names only the columns it owns)
+                -- rather than resetting a comment or a public flag set through
+                -- the server.
+                comment    TEXT,
+                is_public  INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT 0
             );
 
-            -- track_id is deliberately NOT a foreign key into tracks, matching
-            -- the reasoning already recorded on Flower.Server's
-            -- PlaylistTrackEntity: a rescan can legitimately drop a track whose
-            -- file was deleted without that having to cascade through every
-            -- playlist referencing it. Resolution is done on load, and an entry
+            -- track_id is deliberately NOT a foreign key into tracks: a rescan
+            -- can legitimately drop a track whose file was deleted without that
+            -- having to cascade through every playlist referencing it. Resolution is done on load, and an entry
             -- that no longer resolves is skipped.
             CREATE TABLE playlist_tracks (
                 playlist_id TEXT    NOT NULL,
@@ -119,5 +154,6 @@ namespace Flower.Persistence.Sql
                 FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
             );
             """;
+
     }
 }

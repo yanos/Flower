@@ -1,5 +1,4 @@
 using Flower.Models;
-using Flower.Server.Data;
 using Flower.Server.Services;
 using Flower.Services;
 
@@ -17,17 +16,17 @@ namespace Flower.Server.Tests;
 // project this one deliberately does not depend on.
 public class IdentityParityTests
 {
-    private static TrackEntity Entity(string artist, string album, double durationSeconds) => new()
+    // Flower.Core's Track, not a server-private entity: the server now maps
+    // straight off the shared model (see LibraryQueries), which is one fewer
+    // place for the two sides to disagree about what a track even is.
+    private static Track Song(string artist, string album, double durationSeconds) => new()
     {
-        Id = "row-1",
         Path = "/music/song.mp3",
         Title = "Song",
-        Artist = artist,
-        AlbumArtist = artist,
+        Artists = artist,
+        AlbumArtists = artist,
         Album = album,
-        ArtistId = SubsonicIdentity.ArtistId(artist),
-        AlbumId = SubsonicIdentity.AlbumId(artist, album),
-        DurationSeconds = durationSeconds,
+        Duration = TimeSpan.FromSeconds(durationSeconds),
     };
 
     [Fact]
@@ -37,7 +36,7 @@ public class IdentityParityTests
         // request carry a SyncKey the serving device could never match, back
         // when one side truncated and the other rounded (see
         // Track.RoundedSeconds).
-        var child = SubsonicMapper.ToChild(Entity("Angine de Poitrine", "Vol.II", 369.888));
+        var child = SubsonicMapper.ToChild(Song("Angine de Poitrine", "Vol.II", 369.888));
 
         Assert.Equal(370, child.Duration);
         Assert.Equal(Track.RoundedSeconds(369.888), child.Duration);
@@ -54,7 +53,7 @@ public class IdentityParityTests
     [InlineData(201.5, 202)]
     public void Rounding_is_round_not_truncate_on_both_sides(double seconds, int expected)
     {
-        Assert.Equal(expected, SubsonicMapper.ToChild(Entity("A", "B", seconds)).Duration);
+        Assert.Equal(expected, SubsonicMapper.ToChild(Song("A", "B", seconds)).Duration);
         Assert.Equal(expected, Track.RoundedSeconds(seconds));
     }
 }
