@@ -5,12 +5,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-using Flower.Server.Data;
+using Flower.Models;
+using Flower.Persistence.Sql;
 using Flower.Server.Services;
-using Flower.Services;
 using Flower.Services;
 
 namespace Flower.Server.Tests;
@@ -18,12 +17,14 @@ namespace Flower.Server.Tests;
 // Boots the real server in-process against a throwaway SQLite file and an
 // empty library, then drives the real routes over HTTP.
 //
-// This is the harness ARCHITECTURE-REVIEW Tier 5.1 called for, and Tier 1.3 is
-// why it is worth the setup cost rather than testing the query shapes through
-// a seam: both defects that work found - SQLite refusing Max() over a
-// DateTimeOffset, and EF translating a grouped aggregate projection only as a
-// member initializer - compiled cleanly and threw only when a real request hit
-// a real provider. Nothing short of executing the query catches either.
+// This is the harness ARCHITECTURE-REVIEW Tier 5.1 called for, and it is worth
+// the setup cost rather than testing the query shapes through a seam: hand-
+// written SQL is a string until something runs it, so a wrong column name or a
+// GROUP BY that does not match the SELECT compiles perfectly and fails only
+// when a real request reaches a real database. (The EF version had the same
+// property for a different reason - its two known defects, SQLite refusing
+// Max() over a DateTimeOffset and a grouped aggregate translating only as a
+// member initializer, also compiled cleanly and threw at request time.)
 public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly string _dataDirectory =
@@ -67,38 +68,41 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
     // DateAdded so "newest" has something real to order by, and one album
     // whose tracks disagree on Genre/Year so the Min()-based aggregation in
     // AlbumSummaries is actually exercised rather than trivially satisfied.
-    private async Task SeedAsync()
+    // Seeded through the same TrackRepository.ReplaceAll the real rescan uses,
+    // over the same FlowerDb the app resolved - so these tests exercise the
+    // production write path, including the derived album_artist/artist_id/
+    // album_id columns every browse query groups by. Writing rows by hand
+    // would let a test pass against columns the app never actually fills.
+    public Track[] Seeded { get; private set; } = [];
+
+    private Task SeedAsync()
     {
-        var factory = Services.GetRequiredService<IDbContextFactory<FlowerDbContext>>();
-        await using var db = await factory.CreateDbContextAsync();
+        Seeded =
+        [
+            Song("/m/a1.mp3", "Alpha Song", "Aurora", "Alpha Album", "2001", "Rock", days: 30),
+            Song("/m/a2.mp3", "Second Song", "Aurora", "Alpha Album", "2002", "Pop", days: 30),
+            Song("/m/b1.mp3", "Beta Song", "Aurora", "Beta Album", "2010", "Jazz", days: 5),
+            Song("/m/c1.mp3", "Love Song", "Zephyr", "Gamma Album", "1999", "Folk", days: 1),
+        ];
 
-        db.Tracks.RemoveRange(db.Tracks);
-        await db.SaveChangesAsync();
-
-        db.Tracks.AddRange(
-            Track("/m/a1.mp3", "Alpha Song", "Aurora", "Alpha Album", 2001, "Rock", days: 30),
-            Track("/m/a2.mp3", "Second Song", "Aurora", "Alpha Album", 2002, "Pop", days: 30),
-            Track("/m/b1.mp3", "Beta Song", "Aurora", "Beta Album", 2010, "Jazz", days: 5),
-            Track("/m/c1.mp3", "Love Song", "Zephyr", "Gamma Album", 1999, "Folk", days: 1));
-
-        await db.SaveChangesAsync();
+        new TrackRepository(Services.GetRequiredService<FlowerDb>()).ReplaceAll(Seeded);
+        return Task.CompletedTask;
     }
 
-    private static TrackEntity Track(
-        string path, string title, string artist, string album, int year, string genre, int days) =>
+    public FlowerDb Db => Services.GetRequiredService<FlowerDb>();
+
+    private static Track Song(
+        string path, string title, string artist, string album, string year, string genre, int days) =>
         new()
         {
-            Id = path,
             Path = path,
             Title = title,
-            Artist = artist,
-            AlbumArtist = artist,
+            Artists = artist,
+            AlbumArtists = artist,
             Album = album,
-            ArtistId = SubsonicIdentity.ArtistId(artist),
-            AlbumId = SubsonicIdentity.AlbumId(artist, album),
             Year = year,
             Genre = genre,
-            DurationSeconds = 100,
+            Duration = TimeSpan.FromSeconds(100),
             DateAdded = DateTimeOffset.UtcNow.AddDays(-days),
         };
 
@@ -188,10 +192,11 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [InlineData("random")]
     public async Task Every_getAlbumList2_sort_type_executes(string type)
     {
-        // Each of these is a separately-translated query. "newest" in
-        // particular is the one SQLite cannot aggregate server-side, and
-        // "random" is the only one using EF.Functions.Random - a regression in
-        // any single one is invisible to a test that only covers the default.
+        // Each type is a different ORDER BY spliced into the same aggregate,
+        // and none of them is validated until SQLite parses it - a regression
+        // in any single one is invisible to a test that only covers the
+        // default. "newest" (MAX(date_added)) and "random" (RANDOM()) are the
+        // two that are not a plain column sort.
         var response = await server.GetAsync($"/rest/getAlbumList2{Auth()}&type={type}&size=10");
 
         Assert.Equal("ok", response.GetProperty("status").GetString());
@@ -222,9 +227,10 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
         var names = response.GetProperty("albumList2").GetProperty("album")
             .EnumerateArray().Select(a => a.GetProperty("name").GetString()).ToList();
 
-        // Gamma (1 day) then Beta (5) then Alpha (30). This ordering is
-        // re-imposed in memory after a WHERE ... IN that does not preserve it,
-        // so it is worth asserting rather than assuming.
+        // Gamma (1 day) then Beta (5) then Alpha (30). Ordered by
+        // MAX(date_added) in SQL - possible only because the shared schema
+        // stores timestamps as INTEGER ticks; EF had to aggregate this one in
+        // memory because the provider refuses MAX() over a DateTimeOffset.
         Assert.Equal(["Gamma Album", "Beta Album", "Alpha Album"], names);
     }
 
@@ -488,5 +494,251 @@ public class AdminPasswordStartupTests
         using var factory = new Factory("a-real-password");
 
         Assert.NotNull(factory.Services);
+    }
+}
+
+// The surface that moved from EF Core's change tracker to hand-written SQL and
+// had no coverage at all before: playlist CRUD, star/unstar, scrobble and the
+// stream/download lookup. Each of these used to be "load the entity, mutate a
+// property, SaveChanges", where the mapping was EF's problem; they are now
+// statements this project has to get right itself.
+public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
+{
+    private static string Auth() => SubsonicServerFixture.Auth();
+
+    private string SongId(string title) =>
+        server.Seeded.Single(t => t.Title == title).Id.ToString("N");
+
+    [Fact]
+    public void The_schema_is_at_the_latest_migration()
+    {
+        // The server no longer creates its own schema: it shares Flower.Core's
+        // migration runner, which is the whole of ARCHITECTURE-REVIEW Tier
+        // 2.5's server half. Before this it called EnsureCreatedAsync(), which
+        // stamps no version at all - so a self-hoster's only upgrade path
+        // after a schema change was deleting flower.db.
+        using var connection = server.Db.Open();
+
+        Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
+    }
+
+    [Fact]
+    public async Task A_playlist_round_trips_through_create_and_get()
+    {
+        var songs = new[] { SongId("Alpha Song"), SongId("Beta Song") };
+        var created = await server.GetAsync(
+            $"/rest/createPlaylist{Auth()}&name=Road+Trip&songId={songs[0]}&songId={songs[1]}");
+
+        var playlist = created.GetProperty("playlist");
+        Assert.Equal("Road Trip", playlist.GetProperty("name").GetString());
+        Assert.Equal(2, playlist.GetProperty("songCount").GetInt32());
+        // Two 100s tracks - summed from the resolved tracks, not stored.
+        Assert.Equal(200, playlist.GetProperty("duration").GetInt64());
+
+        // Order is membership order, not the order rows happen to come back in.
+        Assert.Equal(
+            ["Alpha Song", "Beta Song"],
+            playlist.GetProperty("entry").EnumerateArray().Select(e => e.GetProperty("title").GetString()));
+
+        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={playlist.GetProperty("id").GetString()}");
+    }
+
+    [Fact]
+    public async Task Updating_a_playlist_removes_by_index_and_appends_by_id()
+    {
+        var created = await server.GetAsync(
+            $"/rest/createPlaylist{Auth()}&name=Edited&songId={SongId("Alpha Song")}&songId={SongId("Beta Song")}");
+        var id = created.GetProperty("playlist").GetProperty("id").GetString();
+
+        // Drop position 0 and append another - the two operations Subsonic
+        // sends together, and the reason membership is rewritten wholesale
+        // rather than diffed (removing an entry shifts every position after it).
+        var updated = await server.GetAsync(
+            $"/rest/updatePlaylist{Auth()}&playlistId={id}&songIndexToRemove=0&songIdToAdd={SongId("Love Song")}");
+        Assert.Equal("ok", updated.GetProperty("status").GetString());
+
+        var reread = await server.GetAsync($"/rest/getPlaylist{Auth()}&id={id}");
+        Assert.Equal(
+            ["Beta Song", "Love Song"],
+            reread.GetProperty("playlist").GetProperty("entry")
+                .EnumerateArray().Select(e => e.GetProperty("title").GetString()));
+
+        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}");
+    }
+
+    [Fact]
+    public async Task A_playlist_name_survives_an_update_that_does_not_mention_it()
+    {
+        var created = await server.GetAsync($"/rest/createPlaylist{Auth()}&name=Keep+My+Name");
+        var id = created.GetProperty("playlist").GetProperty("id").GetString();
+
+        // updatePlaylist sends only what changed, so an absent attribute must
+        // leave the stored value alone rather than null it - which is what a
+        // naive "UPDATE ... SET name = $name" would have done.
+        await server.GetAsync($"/rest/updatePlaylist{Auth()}&playlistId={id}&comment=later");
+
+        var reread = await server.GetAsync($"/rest/getPlaylist{Auth()}&id={id}");
+        Assert.Equal("Keep My Name", reread.GetProperty("playlist").GetProperty("name").GetString());
+        Assert.Equal("later", reread.GetProperty("playlist").GetProperty("comment").GetString());
+
+        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}");
+    }
+
+    [Fact]
+    public async Task A_deleted_playlist_is_gone_and_deleting_it_again_reports_not_found()
+    {
+        var created = await server.GetAsync($"/rest/createPlaylist{Auth()}&name=Temporary");
+        var id = created.GetProperty("playlist").GetProperty("id").GetString();
+
+        Assert.Equal("ok", (await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}"))
+            .GetProperty("status").GetString());
+
+        var gone = await server.GetAsync($"/rest/getPlaylist{Auth()}&id={id}");
+        Assert.Equal(70, gone.GetProperty("error").GetProperty("code").GetInt32());
+
+        var again = await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}");
+        Assert.Equal(70, again.GetProperty("error").GetProperty("code").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_playlist_entry_whose_track_is_gone_is_skipped_rather_than_failing()
+    {
+        // playlist_tracks.track_id is deliberately not a foreign key (see
+        // Schema.V1), so a rescan dropping a deleted file does not have to
+        // cascade through every playlist referencing it. The unresolvable
+        // entry is dropped on read instead.
+        var created = await server.GetAsync(
+            $"/rest/createPlaylist{Auth()}&name=Half+Missing"
+            + $"&songId={SongId("Alpha Song")}&songId={Guid.NewGuid():N}");
+
+        var playlist = created.GetProperty("playlist");
+        Assert.Equal(1, playlist.GetProperty("songCount").GetInt32());
+
+        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={playlist.GetProperty("id").GetString()}");
+    }
+
+    [Fact]
+    public async Task Starring_an_album_stars_every_track_on_it_and_unstarring_clears_them()
+    {
+        var albumId = SubsonicIdentity.AlbumId("Aurora", "Alpha Album");
+
+        await server.GetAsync($"/rest/star{Auth()}&albumId={Uri.EscapeDataString(albumId)}");
+        var starred = await server.GetAsync($"/rest/getAlbum{Auth()}&id={Uri.EscapeDataString(albumId)}");
+        Assert.All(
+            starred.GetProperty("album").GetProperty("song").EnumerateArray(),
+            song => Assert.True(song.GetProperty("starred").GetBoolean()));
+
+        await server.GetAsync($"/rest/unstar{Auth()}&albumId={Uri.EscapeDataString(albumId)}");
+        var cleared = await server.GetAsync($"/rest/getAlbum{Auth()}&id={Uri.EscapeDataString(albumId)}");
+        Assert.All(
+            cleared.GetProperty("album").GetProperty("song").EnumerateArray(),
+            song => Assert.False(song.GetProperty("starred").GetBoolean()));
+    }
+
+    [Fact]
+    public async Task Starring_by_artist_reaches_every_album_that_artist_has()
+    {
+        // Only works because album_artist/artist_id are written by the same
+        // production path that writes the tags (TrackRepository, via
+        // Track.EffectiveAlbumArtist) - a row seeded past that would have an
+        // empty artist_id and match nothing.
+        var artistId = SubsonicIdentity.ArtistId("Aurora");
+
+        await server.GetAsync($"/rest/star{Auth()}&artistId={Uri.EscapeDataString(artistId)}");
+
+        var beta = await server.GetAsync(
+            $"/rest/getAlbum{Auth()}&id={Uri.EscapeDataString(SubsonicIdentity.AlbumId("Aurora", "Beta Album"))}");
+        Assert.True(beta.GetProperty("album").GetProperty("song")
+            .EnumerateArray().Single().GetProperty("starred").GetBoolean());
+
+        await server.GetAsync($"/rest/unstar{Auth()}&artistId={Uri.EscapeDataString(artistId)}");
+    }
+
+    [Fact]
+    public async Task Starring_with_no_target_is_a_parameter_error()
+    {
+        var response = await server.GetAsync("/rest/star" + Auth());
+
+        Assert.Equal(10, response.GetProperty("error").GetProperty("code").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_scrobble_submission_increments_that_tracks_play_count()
+    {
+        var id = SongId("Love Song");
+
+        using (var connection = server.Db.Open())
+        {
+            Assert.Equal(0, PlayCount(connection, id));
+        }
+
+        await server.GetAsync($"/rest/scrobble{Auth()}&id={id}");
+        await server.GetAsync($"/rest/scrobble{Auth()}&id={id}");
+
+        using (var connection = server.Db.Open())
+        {
+            // Incremented in SQL rather than read-modify-write, so two
+            // scrobbles are two increments and neither reads a stale value.
+            Assert.Equal(2, PlayCount(connection, id));
+        }
+    }
+
+    [Fact]
+    public async Task A_scrobble_with_submission_false_is_accepted_but_records_nothing()
+    {
+        var id = SongId("Beta Song");
+
+        await server.GetAsync($"/rest/scrobble{Auth()}&id={id}&submission=false");
+
+        using var connection = server.Db.Open();
+        Assert.Equal(0, PlayCount(connection, id));
+    }
+
+    private static int PlayCount(Microsoft.Data.Sqlite.SqliteConnection connection, string id)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT play_count FROM tracks WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    [Theory]
+    [InlineData("%")]
+    [InlineData("_")]
+    public async Task A_query_of_only_LIKE_wildcards_matches_nothing(string query)
+    {
+        // "%" as a search term used to match the entire library, because the
+        // pattern was interpolated straight into LIKE - a user searching for
+        // "50%" got every title starting "50". The wildcards are escaped now,
+        // with an explicit ESCAPE clause (SQLite has no default one).
+        var response = await server.GetAsync($"/rest/search3{Auth()}&query={Uri.EscapeDataString(query)}");
+
+        Assert.Equal(0, response.GetProperty("searchResult3").GetProperty("song").GetArrayLength());
+        Assert.Equal(0, response.GetProperty("searchResult3").GetProperty("album").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Streaming_a_track_whose_file_is_missing_is_a_404_not_a_500()
+    {
+        // The seeded rows point at paths that do not exist, which is exactly
+        // the state a library left behind by deleted files is in.
+        var (status, _) = await server.SendAsync($"/rest/stream{Auth()}&id={SongId("Alpha Song")}");
+
+        Assert.Equal(HttpStatusCode.NotFound, status);
+    }
+
+    [Theory]
+    [InlineData("not-a-guid")]
+    [InlineData("")]
+    public async Task A_malformed_song_id_is_handled_rather_than_thrown_on(string id)
+    {
+        // Ids are 32-char hex in the shared schema, and a Subsonic client is
+        // free to send anything at all - including an id minted by a different
+        // server. Parsed before it reaches SQL so it stays a clean "not found".
+        var response = await server.GetAsync($"/rest/getSong{Auth()}&id={id}");
+
+        Assert.Contains(
+            response.GetProperty("error").GetProperty("code").GetInt32(),
+            (int[])[10, 70]);
     }
 }

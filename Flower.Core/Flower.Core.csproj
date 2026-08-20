@@ -7,6 +7,14 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <!-- Microsoft.Data.Sqlite 10.0.10 pulls SQLitePCLRaw 2.1.11, whose bundled
+         SQLite has NU1903 (GHSA-2m69-gcr7-jv3q). Pin the patched 2.1.12 until
+         it ships that itself. This pin used to live in Flower.Server.csproj,
+         where it only covered the server; the client took the same dependency
+         when Tier 4.1 moved it to SQLite, so it belongs here, where every head
+         (desktop, iOS, Android, server) inherits it. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.10" />
     <PackageReference Include="plist-cil" Version="2.3.1" />
     <PackageReference Include="Serilog" Version="4.4.0" />

@@ -15,10 +15,17 @@ namespace Flower.Persistence.Sql
     // down-migration and no model-diffing - a schema change is a new entry
     // appended to Scripts, written by hand.
     //
-    // Note what this fixes on the server side when Flower.Server is ported
-    // over: it currently calls EnsureCreatedAsync() with no migrations at all,
-    // so any schema change silently wipes a self-hoster's database
-    // (ARCHITECTURE-REVIEW Tier 2.5).
+    // Note what this fixes on the server side: Flower.Server used to call
+    // EnsureCreatedAsync() with no migrations at all, so any schema change
+    // silently wiped a self-hoster's database (ARCHITECTURE-REVIEW Tier 2.5).
+    //
+    // There is exactly one script today, and that is the point: with no
+    // released users there is nothing to migrate *from*, so every schema change
+    // so far has been folded straight into V1 rather than appended as a step
+    // that only ever runs against a developer's own scratch database. The
+    // runner exists for the first change made after a release, not before it -
+    // and until then the honest upgrade path for a stale local flower.db is to
+    // delete it and rescan.
     public static class SqliteMigrations
     {
         // Index + 1 is the schema version a script brings the database to, so

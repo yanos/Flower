@@ -2,7 +2,7 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented, 1.5 included. Tier 2 implemented, including 2.3's two deferred halves (the settings-tab views' service location, and unsubscription across the rest of the ViewModel layer). Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented. Tier 4.1 implemented for the client (raw Microsoft.Data.Sqlite, not EF Core — see the item for why EF cannot run on iOS); porting `Flower.Server` onto the same shared layer is outstanding.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**Status: Tier 0 implemented. Tier 1 implemented, 1.5 included. Tier 2 implemented, including 2.3's two deferred halves (the settings-tab views' service location, and unsubscription across the rest of the ViewModel layer). Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented. Tier 4.1 implemented, client and server (raw Microsoft.Data.Sqlite, not EF Core — see the item for why EF cannot run on iOS). EF Core is gone from the repository entirely.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
 
 ## Scale reality check
 
@@ -14,7 +14,7 @@ Measured against the real 16k-track development library, not estimated:
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
-| Tests at review time | 1006 — 936 in `Flower.Tests` (fast filter), 70 in `Flower.Server.Tests` (924 before Tier 4.1; net zero across 0.2's duplicate-queue-entry follow-up: 7 new queue-position tests in, 7 tests of the deleted `Playlist.GetNextTrack`/`GetPreviousTrack` out; 905 before 905 before 2.3/4.2's last two halves, 902 before 4.2's parked mobile work, 890 before Tier 5.6 was finished, 848 before Tier 2.6's guard, 844 before Tier 2.3 was finished, 823 before Tier 1.5 was finished, 795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
+| Tests at review time | 1024 — 938 in `Flower.Tests` (fast filter), 86 in `Flower.Server.Tests` (1006 before Tier 4.1's server half, 924 before its client half; net zero across 0.2's duplicate-queue-entry follow-up: 7 new queue-position tests in, 7 tests of the deleted `Playlist.GetNextTrack`/`GetPreviousTrack` out; 905 before 905 before 2.3/4.2's last two halves, 902 before 4.2's parked mobile work, 890 before Tier 5.6 was finished, 848 before Tier 2.6's guard, 844 before Tier 2.3 was finished, 823 before Tier 1.5 was finished, 795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -128,7 +128,7 @@ The lost-update race was already closed in Tier 0 (`SaveAsync` now serializes in
 
 **Fixed.** `GetAlbumList2` and `Search3` share an `AlbumSummaries` projection that groups and aggregates in SQL and paginates there too; `GetArtists` collapses to one row per distinct (artist, album) pair SQL-side (~1.4k rows rather than ~16k) and counts in memory; `Search3` is now three individually-limited SQL queries with the disagreeing in-memory re-filter removed, so one filter decides matching and the `Take` happens in the database.
 
-Two things only a real run would have caught, and there is still no `Flower.Server` test project to catch them (Tier 5.1): SQLite refuses `Max()` over a `DateTimeOffset`, so `type=newest` — which orders by each album's most recent `DateAdded` — aggregates client-side over a two-column projection instead, pending the value converter that belongs with Tier 4.1's schema work; and EF Core can only translate a grouped aggregate projection written as a **member initializer**, never a constructor call, so `AlbumSummary` is an init-property class rather than the positional record it started as (which compiled fine and threw at request time).
+Two things only a real run would have caught, at a point when there was still no `Flower.Server` test project to catch them (Tier 5.1): SQLite refuses `Max()` over a `DateTimeOffset`, so `type=newest` — which orders by each album's most recent `DateAdded` — had to aggregate client-side over a two-column projection; and EF Core can only translate a grouped aggregate projection written as a **member initializer**, never a constructor call, so `AlbumSummary` was an init-property class rather than the positional record it started as (which compiled fine and threw at request time). **Both are gone with Tier 4.1's server port**: timestamps are INTEGER ticks, so `newest` is `ORDER BY MAX(date_added) DESC` in SQL, and with no EF there is no translation constraint on the projection shape.
 
 Verified against the real 16,116-track library, all five `getAlbumList2` sort types plus `search3` and `getArtists`, zero server-side exceptions. Warm timings, before → after: `getAlbumList2` 187ms → 29ms, `search3` 172ms → 31ms, `getArtists` 37ms → 33ms.
 
@@ -209,7 +209,7 @@ That removed a **second latent bug** on the way: a standalone `Flower.Server`'s 
 
 Identity is now `Track.Id` (the one identity), `SyncKey` (demoted in fact as well as in comment: a *matching* heuristic for rescans, sync merges and the iTunes importers, no longer addressing anything), and one shared opaque `SubsonicIdentity` for albums and artists.
 
-**Moved rather than closed:** `TrackEntity.Starred` still has no client-side counterpart. That is not drift to deduplicate — it is a missing feature that needs UI, a persisted field and a sidebar view, and it is already tracked as part of §4.1's liked-songs/smart-playlists gap. Nothing in §2.1 depends on it.
+**Since closed by §4.1:** `TrackEntity.Starred` had no client-side counterpart. `TrackEntity` is gone; `Starred`/`StarredAt` are fields on the shared `Track` and columns on the shared table, carried forward across rescans like any other. What is still missing is only the UI — a liked-songs view — which stays with the §4.1 smart-playlists gap.
 
 ### 2.2 Auth and album-art lookup implemented two-to-three times — DONE
 
@@ -273,7 +273,7 @@ Backward compatibility was ad hoc sentinel detection invented independently thre
 - `DeviceIdentityStore.Load` no longer backfills a missing alias. The fingerprint correction *stays* — it is not a migration, it's the runtime response to a regenerated signing key (`DeviceKeyStore`), and its comment now says so.
 - `Track.Id`'s initializer stays for the same reason (every `Track` needs an id from construction); only its "the initializer is also the migration" comment went.
 
-`Flower.Server` got the real thing instead: `Microsoft.EntityFrameworkCore.Design` was already referenced, so `Data/Migrations/` now holds an `InitialCreate` migration plus the model snapshot, and startup calls `MigrateAsync()` instead of `EnsureCreatedAsync()`. Subsequent entity changes go through `dotnet ef migrations add <Name> -p Flower.Server -s Flower.Server -o Data/Migrations`. **An existing dev `flower.db` created by `EnsureCreated` has no `__EFMigrationsHistory` table and must be deleted once** — `MigrateAsync` would otherwise try to create tables that already exist.
+`Flower.Server` got the real thing instead: first EF migrations replacing `EnsureCreatedAsync()`, and then — when Tier 4.1 moved both sides onto one shared SQLite layer — `Flower.Core`'s `SqliteMigrations`, an ordered list of scripts applied against `PRAGMA user_version`. `Data/Migrations/` and the EF dependency are deleted. A schema change is now an appended script in `Schema`, applied by `FlowerDb`'s own constructor on both client and server, with no separate startup call to forget. There is deliberately only one script so far: with no released users there is nothing to migrate *from*, so the server's extra columns were folded into `V1` rather than appended as a step that would only ever run against a developer's scratch database. The runner is there for the first change made *after* a release.
 
 ---
 
@@ -317,9 +317,9 @@ Ordered by real exposure, not theoretical severity. All six landed; see *Tier 3 
 
 ---
 
-## Tier 4 — rewrite candidates — 4.2, 4.3 and 4.4 DONE, 4.1 DONE (client; server port outstanding)
+## Tier 4 — rewrite candidates — DONE
 
-### 4.1 Persistence: JSON blobs → SQLite (client side) — DONE for the client
+### 4.1 Persistence: JSON blobs → SQLite — DONE
 
 Every Tier 0/1 data problem traced to "the whole library is one JSON document": non-atomic writes, whole-file rewrites per play, no partial reads, no indices, no migrations. `library.json` and `playlists.json` are now SQLite; the small whole-file-by-nature stores (`settings.json`, `config.json`, `device.json`, `trusted-peers.json`) deliberately stay JSON, since rows buy them nothing.
 
@@ -335,7 +335,7 @@ EF also annotates itself `IL2026` ("EF Core isn't fully compatible with trimming
 
 **This reverses the `TrackEntity` seam** recorded in `SYNC-PLAN.md`'s "Reuse boundary" note and in `TrackEntity.cs` itself ("deliberately not Flower.Core's own Track... keeps SQLite/EF Core concerns out of the shared client-side model"). That reasoning held while the client was JSON and the server was EF; with both on one raw-SQLite layer the seam only duplicates SQL. The deliberate goal now is maximum sharing of DB read/write code between client and server.
 
-**The shared layer** (`Flower.Core/Persistence/Sql/`), written to be used by `Flower.Server` unchanged once it is ported:
+**The shared layer** (`Flower.Core/Persistence/Sql/`), used by both the client and `Flower.Server`:
 
 | File | Owns |
 |---|---|
@@ -357,7 +357,32 @@ EF also annotates itself `IL2026` ("EF Core isn't fully compatible with trimming
 
 Confirmed on real devices, which is the whole reason EF was rejected: **Android** imported a real 33-track `library.json`, renamed it aside, created `flower.db` with WAL, and rendered the identical library from SQLite. **iOS** (Release, full AOT, simulator) created the database, ran the migration to `user_version=1` with all four tables, and ran the import — verified by querying the resulting file directly.
 
-**Outstanding: `Flower.Server` is still on EF Core.** Sequenced deliberately after the client, so the shared layer was proven on the harder target first. Its surface is ~28 LINQ operations in `SubsonicEndpoints.cs`, plus `LibraryImportService`, `PairingCodeService`, `Program.cs` wiring, the `Migrations/` folder and `SubsonicEndpointTests`. Porting it also closes Tier 2.5's remaining server half: it currently calls `EnsureCreatedAsync()` with no migrations at all, so any schema change silently wipes a self-hoster's database — `SqliteMigrations` is what replaces that. Two schema questions come with the port and are deliberately not pre-empted here: `ArtistId`/`AlbumId` (deterministic hashes, derivable rather than stored) and the server-only `size`/`suffix`/`content_type` columns. `starred`/`starred_at` are wanted on both sides — `docs/todo.txt` already asks for a liked-songs tab and smart playlists — so they belong in the shared table when it happens.
+**The server port — done, and EF Core is now gone from the repository.** Sequenced after the client so the shared layer was proven on the harder target first. `FlowerDbContext`, `TrackEntity`, `PlaylistEntity`, `PlaylistTrackEntity` and `Data/Migrations/` are deleted; `Flower.Server.csproj` references no data package of its own, taking `Microsoft.Data.Sqlite` through `Flower.Core`.
+
+What is shared and what is not is a deliberate line rather than an accident. Shared: the schema, the migration runner, the row mapper (`TrackRepository.Columns`/`ReadTrack`) and the write path. Not shared: the queries. The server's are aggregate ones a client never issues — one page of albums grouped, ordered and paginated in SQL — and `TrackRepository.LoadAll` cannot serve those without materializing 16k tracks per browse request, which is exactly what Tier 1.3 removed. Those live in `Flower.Server/Data/LibraryQueries.cs` and `PlaylistQueries.cs`.
+
+| Was | Now |
+|---|---|
+| `FlowerDbContext` + `AddDbContextFactory` | one `FlowerDb` singleton, which migrates itself in its constructor |
+| `MigrateAsync()` / `EnsureCreatedAsync()` | nothing at startup — see above |
+| `TrackEntity` (25 duplicated fields) | `Flower.Core`'s `Track` |
+| `LibraryImportService`'s hand-written upsert (~60 lines) | `Library.UpdateTracks` + `TrackRepository.ReplaceAll` |
+| ~28 LINQ operations across the endpoints | raw SQL in `LibraryQueries`/`PlaylistQueries` |
+| 15 hand-duplicated `.view` route registrations | one local `Map` helper registering both |
+
+Three things the port fixed rather than merely moved:
+
+- **`type=newest` is a SQL sort again.** §1.3 had to aggregate it in memory because the EF provider refuses `MAX()` over a `DateTimeOffset`. Timestamps are INTEGER ticks in the shared schema, so it is now `ORDER BY MAX(date_added) DESC` — the fix that section explicitly deferred to here.
+- **`LIKE` wildcards in a search query are escaped.** `EF.Functions.Like` passed the user's string straight through, so searching `%` matched the whole library and `50%` matched every title starting `50`. Now escaped, with an explicit `ESCAPE` clause at each call site — SQLite has no default one.
+- **A track keeps its id across a rescan, and `Starred` survives one.** The old service matched on `Path` and copied 15 fields by hand; going through `Library.UpdateTracks` gets the same carry-forward rules the client has (and the `RescanCarryForwardGuardTests` guard that enforces them).
+
+The schema questions this item deferred are settled. `album_artist`, `artist_id` and `album_id` are **stored**, not computed on read: the server looks tracks up *by* them (`getArtist`, `getAlbum`, `getCoverArt`, `star` are all `WHERE artist_id = ?`), and a hash computed in C# is not something SQLite can index or filter on. They are recomputed by `TrackRepository` on every write, from `Track.EffectiveAlbumArtist` and `SubsonicIdentity`, so they cannot drift from the tags. `size`/`suffix`/`content_type` got no columns at all — they are derived from the file and its path in `SubsonicMapper`, which describes the file as it is now rather than as it was when last scanned, and keeps three columns the client would never fill out of the shared table. `starred`/`starred_at` are on the shared table and on `Track`, per the liked-songs item in `docs/todo.txt`.
+
+This also closes **Tier 2.5's server half**: `EnsureCreatedAsync()`/EF migrations are replaced by `SqliteMigrations`, with everything the server needed on top of what the client already stored folded into `V1` rather than appended as a second script — there are no users to migrate, and a migration that only ever runs against a developer's own scratch database is ceremony, not coverage. Deleting a stale local `flower.db` and rescanning is the honest upgrade path until there is a release to be compatible with.
+
+**Server verification.** 86 passing in `Flower.Server.Tests` (was 70). The fixture now seeds through the production `TrackRepository.ReplaceAll` over the app's own `FlowerDb`, so a test cannot pass against columns the app never fills. New coverage for the surface that had none and that moved from EF's change tracker to hand-written statements: playlist create/update/delete round trips including remove-by-index and append-by-id, an update leaving unmentioned attributes alone, an unresolvable playlist entry being skipped, star/unstar by album and by artist, scrobble incrementing (and `submission=false` not), `LIKE`-wildcard-only queries matching nothing, a missing file being 404 rather than 500, malformed ids, and the schema sitting at the latest migration.
+
+One wiring detail worth recording: the `FlowerDb` path comes from the host's own configured `DataDirectory`, not `FlowerDb.DefaultPath`. Both resolve to `<DataDirectory>/flower.db`, but `DefaultPath` goes through the process-global `PlatformDataDirectory.Current`, and the test suite boots several hosts with different data directories in one process, where whichever ran `Program` last would win for all of them.
 
 **Smart playlists**, the roadmap item this unblocks, are better served by raw SQL than by EF: a user-authored rule tree has to become a query *at runtime*, which under EF means dynamically built LINQ `Expression` trees — precisely the dynamic-codegen path that fails on iOS above. Compiled to a parameterized `WHERE` clause instead, it is a string and bound parameters, and works identically under full AOT.
 
@@ -531,8 +556,8 @@ Highest-value additions, roughly in priority order:
 |---|---|---|
 | Streaming providers (`IMusicProvider`, `Track.Source`) — `STREAMING-SERVICES-PLAN.md` | `Path` as identity; no `Source` field; credentials would land in `settings.json` | §0.2 (done), §4.1, a new `ISecretStore` |
 | Push sync instead of polling — `todo.txt` | Full-manifest-only protocol, no version/ETag, sync triggered only by local events | §1.4 (done) — token as ETag, and the existing `/info` poll carries it |
-| Family/friends read-only accounts — `todo.txt` | `Flower.Server` has no `User` table; `PlayCount` is a single global column | §4.1 shared schema, per-user play counts |
-| Liked songs / smart playlists / "downloaded only" | No queryable store; `Starred` exists server-side only | §4.1 |
+| Family/friends read-only accounts — `todo.txt` | `Flower.Server` has no `User` table; `play_count` is a single global column | per-user play counts on the (now shared) §4.1 schema |
+| Liked songs / smart playlists / "downloaded only" | Store and `starred` column are in place since §4.1; the UI is not | §4.1's remaining UI half |
 | Track last-played per song — `todo.txt` | `LastPlayedAt` exists but every write rewrites 17.9 MB | §1.1 |
 | Export playlist with actual songs, playlist folders | Playlists persisted by `Path` and dropped placeholder tracks | §0.3 (done) |
 | AirPlay/Bluetooth device picker — `AIRPLAY-BLUETOOTH-PLAN.md` | `IAudioSink` has no device-enumeration concept | Additive; design the seam when §4.2 touches the audio manager |
@@ -553,6 +578,6 @@ Highest-value additions, roughly in priority order:
 11. ~~**Tier 2.4** — `Library.Playlists` unlocked while `Library.Tracks` is locked.~~ **Done.** Copy-on-write under the same lock, persistence made structural via `Library.PlaylistsChanged`, and a silent drag-reorder-never-syncs bug fixed on the way. §2.3's DI cleanup followed and closed out Tier 2.
 12. ~~**Tier 2.3** — service-location DI and a 330-line hand-wired composition root.~~ **Done**, and the two halves once deferred to 4.2 are done too: the settings-tab views take a `MainViewModel` instead of locating four services each (which is what finally gave them tests), and the remaining six subscribing ViewModels are `IDisposable` over a `SubscriptionBag` — one of which, `ServerPickerView`, was leaking a live listener per Settings window. `Bootstrap` is registration-by-type now, and `AlbumArtLoader`'s hidden dependencies became constructor parameters, which is what finally made its peer-fetch path testable.
 13. ~~**Tier 5.3/5.4/5.5/5.7** — `Importer`, `AlbumArtLoader`, `MusicListPanel`, `ColumnManager.Reorder`.~~ **Done.** 50 tests, all mutation-checked; `MusicListView`'s own selection/drag gestures and `Library.ReplacePlaylists`' short-circuit are what remains of Tier 5's mid-priority items.
-14. **Tier 4.1 — the SQLite migration.** Recommended next: it is the largest remaining correctness/performance lever (see §4.1). 4.2 ended up landing first, at the user's direction — kept storage-agnostic, so the migration lands underneath `LibraryBrowserViewModel`/`Library` unchanged rather than having to undo it.
+14. ~~**Tier 4.1** — the SQLite migration.~~ **Done**, client and server, on raw `Microsoft.Data.Sqlite` rather than the EF Core this item originally specified (see §4.1). 4.2 ended up landing first, at the user's direction — kept storage-agnostic, so the migration lands underneath `LibraryBrowserViewModel`/`Library` unchanged rather than having to undo it.
 15. ~~**Tier 4.2** — `MainViewModel` decomposition.~~ **Done**, ahead of 4.1 rather than after it, and kept storage-agnostic so the SQLite migration lands underneath it unchanged. 2,737 lines to 1,264 across six collaborators; two pin/unpair bugs found on the way.
 16. ~~**Tier 4.3** — the duplicated multi-select and drag gestures in `MainView.axaml.cs`, last.~~ **Done** — see §4.3.

@@ -89,11 +89,16 @@ namespace Flower.Persistence.Sql
             {
                 upsert.Transaction = transaction;
                 upsert.CommandText = """
-                    INSERT INTO playlists (id, name, updated_at)
-                    VALUES ($id, $name, $updated_at)
+                    INSERT INTO playlists (id, name, updated_at, created_at)
+                    VALUES ($id, $name, $updated_at, $updated_at)
                     ON CONFLICT (id) DO UPDATE SET
                         name = excluded.name,
                         updated_at = excluded.updated_at;
+                    -- created_at, comment and is_public (see Schema.V1) are set on
+                    -- insert or not at all: they are Subsonic-side attributes
+                    -- the client's Playlist model has no field for, so naming
+                    -- them in the DO UPDATE would let a client save silently
+                    -- reset a comment or public flag set through the server.
                     """;
                 var upsertId = upsert.Parameters.Add("$id", SqliteType.Text);
                 var upsertName = upsert.Parameters.Add("$name", SqliteType.Text);

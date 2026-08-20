@@ -1,7 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 using Flower.Persistence;
+using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
 using Flower.Server.Data;
 using Flower.Server.Endpoints;
@@ -30,17 +30,25 @@ PlatformDataDirectory.Current = Path.GetFullPath(dataDirectory);
 // Per-endpoint caps still apply on top; this is the backstop.
 builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 20 * 1024 * 1024);
 
-builder.Services.AddDbContextFactory<FlowerDbContext>((services, options) =>
+// One FlowerDb for the process, exactly as the client registers it. It owns
+// the connection string, the WAL/synchronous/foreign-key pragmas and the busy
+// timeout, and it migrates itself on construction - so there is no separate
+// "create the schema" step here to forget, and the server picks up a schema
+// change the same way and at the same time the client does.
+//
+// The path is built from this app's own configured DataDirectory rather than
+// FlowerDb.DefaultPath. Both resolve to <DataDirectory>/flower.db - the same
+// file EF Core used - but DefaultPath goes through the process-global
+// PlatformDataDirectory.Current, and the test suite boots several hosts with
+// different data directories in one process, where whichever ran Program last
+// would win for all of them.
+builder.Services.AddSingleton(services =>
 {
     var serverOptions = services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
-    Directory.CreateDirectory(serverOptions.DataDirectory);
-    var dbPath = Path.Combine(serverOptions.DataDirectory, "flower.db");
-    // Default Timeout is Microsoft.Data.Sqlite's busy-timeout knob (seconds) -
-    // EF Core 7+ no longer auto-retries SQLITE_BUSY itself (see SYNC-PLAN.md's
-    // "Recommended stack" note), so this is what actually absorbs a writer
-    // colliding with another connection under WAL.
-    options.UseSqlite($"Data Source={dbPath};Cache=Shared;Default Timeout=30");
+    return new FlowerDb(Path.Combine(serverOptions.DataDirectory, "flower.db"));
 });
+builder.Services.AddSingleton<LibraryQueries>();
+builder.Services.AddSingleton<PlaylistQueries>();
 
 builder.Services.AddScoped<LibraryImportService>();
 builder.Services.AddSingleton<AdminAuthService>();
@@ -83,21 +91,12 @@ app.Use(async (context, next) =>
 
 using (var scope = app.Services.CreateScope())
 {
-    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FlowerDbContext>>();
-    await using var db = await dbFactory.CreateDbContextAsync();
-    // MigrateAsync, not EnsureCreatedAsync: EnsureCreated stamps no schema
-    // version, so any later change to an entity left a self-hoster with a
-    // silently stale table and no upgrade path but deleting flower.db. Real
-    // migrations (Data/Migrations) apply incrementally and are the whole
-    // reason the DB can evolve without data loss - add one with
-    // `dotnet ef migrations add <Name> -p Flower.Server -s Flower.Server -o Data/Migrations`
-    // whenever an entity changes.
-    await db.Database.MigrateAsync();
-    // WAL requires local storage, not NFS/SMB (see SYNC-PLAN.md) - a pragma,
-    // not a connection-string option, and persists in the db file itself once
-    // set, but cheap enough to re-issue on every startup rather than track.
-    await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
-
+    // No migration call here: FlowerDb applies SqliteMigrations in its own
+    // constructor, so the schema is current before the first query can be
+    // issued. This used to be EnsureCreatedAsync(), which stamps no schema
+    // version at all and left a self-hoster with a silently stale table and no
+    // upgrade path but deleting flower.db (ARCHITECTURE-REVIEW Tier 2.5); a
+    // schema change is now an appended script in Flower.Core's Schema.
     var importService = scope.ServiceProvider.GetRequiredService<LibraryImportService>();
     await importService.RescanAsync();
 }

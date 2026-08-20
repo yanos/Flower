@@ -5,6 +5,7 @@ using System.Data;
 using Microsoft.Data.Sqlite;
 
 using Flower.Models;
+using Flower.Services;
 
 namespace Flower.Persistence.Sql
 {
@@ -14,7 +15,10 @@ namespace Flower.Persistence.Sql
     {
         // Every column in declaration order, reused by both the reader and the
         // upsert so the two cannot drift apart in ordering.
-        private const string Columns = """
+        // Public so Flower.Server can build its own predicates over the same
+        // column list and row mapper instead of keeping a second copy of both
+        // (see Flower.Server/Data/LibraryQueries.cs).
+        public const string Columns = """
             id, path, title, subtitle, artists, album_artists, is_compilation,
             album, album_sort, year, track_number, track_count, disc_number, disc_count,
             composers, conductor, remixed_by,
@@ -22,7 +26,8 @@ namespace Flower.Persistence.Sql
             comment, description, copyright, lyrics,
             duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
             origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_hash,
-            play_count, imported_play_count, last_played_at, date_added
+            play_count, imported_play_count, last_played_at, date_added,
+            album_artist, artist_id, album_id, starred, starred_at
             """;
 
         public List<Track> LoadAll()
@@ -231,7 +236,8 @@ namespace Flower.Persistence.Sql
                 comment, description, copyright, lyrics,
                 duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
                 origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_hash,
-                play_count, imported_play_count, last_played_at, date_added
+                play_count, imported_play_count, last_played_at, date_added,
+                album_artist, artist_id, album_id, starred, starred_at
             ) VALUES (
                 $id, $path, $title, $subtitle, $artists, $album_artists, $is_compilation,
                 $album, $album_sort, $year, $track_number, $track_count, $disc_number, $disc_count,
@@ -240,7 +246,8 @@ namespace Flower.Persistence.Sql
                 $comment, $description, $copyright, $lyrics,
                 $duration_ticks, $bitrate, $sample_rate, $channels, $bits_per_sample, $codec,
                 $origin_device_fingerprint, $origin_track_id, $origin_file_extension, $origin_album_art_hash,
-                $play_count, $imported_play_count, $last_played_at, $date_added
+                $play_count, $imported_play_count, $last_played_at, $date_added,
+                $album_artist, $artist_id, $album_id, $starred, $starred_at
             )
             ON CONFLICT (id) DO UPDATE SET
                 path = excluded.path,
@@ -282,7 +289,12 @@ namespace Flower.Persistence.Sql
                 play_count = excluded.play_count,
                 imported_play_count = excluded.imported_play_count,
                 last_played_at = excluded.last_played_at,
-                date_added = excluded.date_added;
+                date_added = excluded.date_added,
+                album_artist = excluded.album_artist,
+                artist_id = excluded.artist_id,
+                album_id = excluded.album_id,
+                starred = excluded.starred,
+                starred_at = excluded.starred_at;
             """;
 
         private static readonly string[] UpsertParameterNames =
@@ -295,6 +307,7 @@ namespace Flower.Persistence.Sql
             "$duration_ticks", "$bitrate", "$sample_rate", "$channels", "$bits_per_sample", "$codec",
             "$origin_device_fingerprint", "$origin_track_id", "$origin_file_extension", "$origin_album_art_hash",
             "$play_count", "$imported_play_count", "$last_played_at", "$date_added",
+            "$album_artist", "$artist_id", "$album_id", "$starred", "$starred_at",
         ];
 
         // Parameters are added once and then only have their Value reassigned
@@ -352,11 +365,21 @@ namespace Flower.Persistence.Sql
             p["$imported_play_count"].Value = track.ImportedPlayCount;
             p["$last_played_at"].Value = (object?)track.LastPlayedAt?.UtcTicks ?? DBNull.Value;
             p["$date_added"].Value = track.DateAdded.UtcTicks;
+            // Derived on write, never read back into a Track: these exist so
+            // Flower.Server can filter and index on them (see Schema.V1).
+            // Recomputing here rather than storing whatever a caller passed
+            // means they cannot go stale against a retagged album.
+            var albumArtist = track.EffectiveAlbumArtist;
+            p["$album_artist"].Value = albumArtist;
+            p["$artist_id"].Value = SubsonicIdentity.ArtistId(albumArtist);
+            p["$album_id"].Value = SubsonicIdentity.AlbumId(albumArtist, track.Album);
+            p["$starred"].Value = track.Starred ? 1 : 0;
+            p["$starred_at"].Value = (object?)track.StarredAt?.UtcTicks ?? DBNull.Value;
         }
 
         private static object Nullable(string? value) => (object?)value ?? DBNull.Value;
 
-        private static Track ReadTrack(SqliteDataReader reader) => new()
+        public static Track ReadTrack(SqliteDataReader reader) => new()
         {
             Id = Guid.Parse(reader.GetString(0)),
             Path = Text(reader, 1),
@@ -399,6 +422,13 @@ namespace Flower.Persistence.Sql
             ImportedPlayCount = (int)reader.GetInt64(38),
             LastPlayedAt = reader.IsDBNull(39) ? null : new DateTimeOffset(reader.GetInt64(39), TimeSpan.Zero),
             DateAdded = new DateTimeOffset(reader.GetInt64(40), TimeSpan.Zero),
+            // 41 (album_artist), 42 (artist_id) and 43 (album_id) are
+            // deliberately not read back: all three are derived from the tag
+            // columns on write (Track.EffectiveAlbumArtist and SubsonicIdentity)
+            // and exist only so the server can group, index and filter on them.
+            // See Schema.V1.
+            Starred = reader.GetInt64(44) != 0,
+            StarredAt = reader.IsDBNull(45) ? null : new DateTimeOffset(reader.GetInt64(45), TimeSpan.Zero),
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>
