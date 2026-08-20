@@ -31,6 +31,18 @@ public partial class SettingsWindow : Window
     private readonly List<string> _paths;
     private readonly List<string> _originalPaths;
 
+    // Music.app's own configured media folder, or null when there isn't one
+    // (not macOS, Music.app never set up). This is the path AppSettingsStore.
+    // Load auto-registers while the integration is on, so it's also the path
+    // the master checkbox adds/drops from the pending list below.
+    private readonly string? _appleMusicFolder = Flower.Importer.Importer.TryResolveAppleMusicFolder();
+
+    // False until the constructor has finished wiring up the controls -
+    // setting IsChecked raises IsCheckedChanged, and the iTunes master
+    // checkbox's handler edits the pending paths list, which must not happen
+    // while merely restoring the persisted state.
+    private readonly bool _loaded;
+
     // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) -
     // never called directly; the real constructor below is what's actually used.
 #pragma warning disable CS8618
@@ -45,9 +57,11 @@ public partial class SettingsWindow : Window
         _originalPaths = new List<string>(_paths);
         RefreshPathRows();
         DeviceAliasTextBox.Text = viewModel.DeviceAlias;
+        IntegrateWithITunesCheckBox.IsChecked = viewModel.IntegrateWithITunes;
         SyncPlayCountCheckBox.IsChecked = viewModel.SyncPlayCountFromITunes;
         SyncDateAddedCheckBox.IsChecked = viewModel.SyncDateAddedFromITunes;
         ITunesLibraryPathText.Text = DescribeITunesLibrarySource();
+        UpdateITunesSubOptionsEnabled();
         ThemeComboBox.SelectedIndex = viewModel.ThemePreference switch
         {
             AppThemePreference.Light => 1,
@@ -66,6 +80,7 @@ public partial class SettingsWindow : Window
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         Closed += (_, _) => _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         NativeMenuHelper.InheritFromMainWindow(this);
+        _loaded = true;
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -199,6 +214,46 @@ public partial class SettingsWindow : Window
             Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { path } });
     }
 
+    private bool IntegrateWithITunes => IntegrateWithITunesCheckBox.IsChecked ?? false;
+
+    // The two per-track imports only mean anything while the integration as a
+    // whole is on. Disabled rather than unchecked, so each keeps whatever the
+    // user had already chosen for when it's switched back on - same reasoning
+    // as UpdateLibraryTabEnabled's own note about not clearing them.
+    private void UpdateITunesSubOptionsEnabled()
+    {
+        SyncPlayCountCheckBox.IsEnabled = IntegrateWithITunes;
+        SyncDateAddedCheckBox.IsEnabled = IntegrateWithITunes;
+        ITunesLibraryPathText.IsEnabled = IntegrateWithITunes;
+    }
+
+    // Turning the integration off also drops Music.app's media folder from the
+    // pending paths list (and turning it back on restores it), so the change is
+    // visible right here in the folders list instead of only taking effect on
+    // some later launch. Editing the pending _paths rather than saving directly
+    // keeps it Cancel-able and routes it through SaveButton_Click's existing
+    // "did the paths change" rescan, same as Add/Remove Folder.
+    private void IntegrateWithITunesCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+    {
+        _viewModel.IntegrateWithITunes = IntegrateWithITunes;
+        UpdateITunesSubOptionsEnabled();
+
+        if (!_loaded || _appleMusicFolder is not string folder)
+            return;
+
+        if (IntegrateWithITunes)
+        {
+            if (!_paths.Contains(folder, StringComparer.OrdinalIgnoreCase))
+                _paths.Add(folder);
+        }
+        else
+        {
+            _paths.RemoveAll(p => string.Equals(p, folder, StringComparison.OrdinalIgnoreCase));
+        }
+
+        RefreshPathRows();
+    }
+
     private void SyncPlayCountCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
         _viewModel.SyncPlayCountFromITunes = SyncPlayCountCheckBox.IsChecked ?? false;
 
@@ -267,8 +322,8 @@ public partial class SettingsWindow : Window
         // IsChecked - see UpdateLibraryTabEnabled's doc comment on why a
         // disabled CheckBox alone doesn't stop this: it still reports
         // whatever IsChecked it had before going disabled.
-        var syncPlayCount = CanManageLocalLibrary && (SyncPlayCountCheckBox.IsChecked ?? false);
-        var syncDateAdded = CanManageLocalLibrary && (SyncDateAddedCheckBox.IsChecked ?? false);
+        var syncPlayCount = CanManageLocalLibrary && IntegrateWithITunes && (SyncPlayCountCheckBox.IsChecked ?? false);
+        var syncDateAdded = CanManageLocalLibrary && IntegrateWithITunes && (SyncDateAddedCheckBox.IsChecked ?? false);
 
         Close();
 

@@ -521,10 +521,16 @@ public partial class App : Application
                     // own save (either may run again later via its own Settings
                     // checkbox, independent of this startup rescan) and layer their
                     // own more specific BusyMessage on top of this outer scope's.
-                    if (appSettings.SyncPlayCountFromITunes)
-                        await mainViewModel.SyncITunesPlayCountAsync();
-                    if (appSettings.SyncDateAddedFromITunes)
-                        await mainViewModel.SyncITunesDateAddedAsync();
+                    // Both gated on the master IntegrateWithITunes switch first
+                    // (see AppSettings) - with it off, Flower ignores Music.app
+                    // entirely, whatever these two remember individually.
+                    if (appSettings.IntegrateWithITunes)
+                    {
+                        if (appSettings.SyncPlayCountFromITunes)
+                            await mainViewModel.SyncITunesPlayCountAsync();
+                        if (appSettings.SyncDateAddedFromITunes)
+                            await mainViewModel.SyncITunesDateAddedAsync();
+                    }
                 }
                 catch (Exception ex)
                 {

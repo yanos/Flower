@@ -25,8 +25,10 @@ namespace Flower.Tests;
 // Xiph (flac) branches of that method are not reachable this way and stay
 // uncovered.
 //
-// No test here calls Import() with an empty/unresolvable path set: that falls
-// back to ResolveMusicPath, which would walk the developer's real ~/Music.
+// Import() with an empty/unresolvable path set scans nothing at all (it used to
+// fall back to the platform music folder, which both walked the developer's real
+// ~/Music from a test and made removing the last library folder impossible in
+// the app) - see ImportsNothingWhenNoFoldersAreConfigured below.
 public class ImporterTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("flower-importer-tests").FullName;
@@ -64,6 +66,26 @@ public class ImporterTests : IDisposable
         tag(file);
         file.Save();
         return path;
+    }
+
+    // The empty case has to stay empty rather than guessing a default music
+    // folder: unchecking Settings > Library's iTunes integration works by
+    // dropping Music.app's media folder from the configured list, and on a
+    // default Mac that folder lives under ~/Music - so a fallback here would
+    // re-scan exactly the tracks that were just removed. Both spellings of
+    // "nothing configured" (no list at all, and a list of paths that don't
+    // exist) go down the same branch. Skipped on iOS, where the sandboxed
+    // Documents directory is scanned unconditionally instead - see Import.
+    [Fact]
+    public void ImportsNothingWhenNoFoldersAreConfigured()
+    {
+        if (OperatingSystem.IsIOS())
+            return;
+        Audio(_root, "ignored.wav");
+
+        Assert.Empty(NewImporter().Import([]));
+        Assert.Empty(NewImporter().Import(null));
+        Assert.Empty(NewImporter().Import([Path.Combine(_root, "does-not-exist")]));
     }
 
     [Fact]

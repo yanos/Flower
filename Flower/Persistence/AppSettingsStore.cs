@@ -53,6 +53,18 @@ namespace Flower.Persistence
         // however they happened to appear - see MainViewModel.SortArtistAlbumsByYear.
         public bool SortArtistAlbumsByYear { get; set; }
 
+        // Master switch for every way Flower reaches into a local
+        // iTunes/Music.app installation: auto-registering Music.app's own
+        // configured media folder as a library path (see Load below) and the
+        // two per-track imports underneath. On by default - on a Mac with a
+        // Music.app library, having Flower pick that library up on its own is
+        // what most people want; turning this off makes Flower ignore
+        // Music.app entirely and leaves the library purely whatever folders
+        // were added by hand. The two flags below stay independently
+        // meaningful (and keep their own persisted values) but are inert
+        // while this is false.
+        public bool IntegrateWithITunes { get; set; } = true;
+
         // Whether to import per-track play counts from iTunes/Music.app's
         // optional library XML export on every launch - see
         // ITunesPlayCountImporter and Track.ImportedPlayCount. On by default;
@@ -170,23 +182,52 @@ namespace Flower.Persistence
 
         public AppSettings Load()
         {
-            var settings = LoadFromDisk();
+            var stored = LoadFromDisk();
+            var settings = stored ?? new AppSettings();
+            var changed = false;
 
             // Auto-register Apple Music's configured media folder, if found and not
             // already present, so it shows up in Settings without the user having to
-            // browse for a folder they've already pointed Music.app at.
-            if (Importer.Importer.TryResolveAppleMusicFolder(_logger) is string appleMusicFolder &&
+            // browse for a folder they've already pointed Music.app at. Skipped
+            // entirely when the iTunes integration is off - that switch is also what
+            // makes removing this folder in Settings stick, since otherwise the next
+            // launch just puts it back.
+            if (settings.IntegrateWithITunes &&
+                Importer.Importer.TryResolveAppleMusicFolder(_logger) is string appleMusicFolder &&
                 !settings.LibraryPaths.Any(p => string.Equals(p, appleMusicFolder, StringComparison.OrdinalIgnoreCase)))
             {
                 settings.LibraryPaths.Add(appleMusicFolder);
-                Save(settings);
+                changed = true;
             }
+
+            // First run only (no settings file on disk yet), and only if nothing
+            // above already gave this device a folder: start from the platform's
+            // own music folder so a fresh install has something to scan. Seeded
+            // into the persisted list rather than applied as a scan-time default,
+            // so that it is visible in Settings and - unlike the invisible
+            // fallback Importer used to have - stays removed once removed. Mobile
+            // is excluded: Android scans via MediaStore rather than a path, and
+            // iOS's own Documents directory is handled inside Importer, since its
+            // absolute path can change across a reinstall and so must not be
+            // persisted here.
+            if (stored is null && settings.LibraryPaths.Count == 0 &&
+                !OperatingSystem.IsIOS() && !OperatingSystem.IsAndroid() &&
+                Environment.GetFolderPath(Environment.SpecialFolder.MyMusic) is { Length: > 0 } musicFolder &&
+                Directory.Exists(musicFolder))
+            {
+                _logger.LogInformation("First run - seeding library folders with {MusicFolder}", musicFolder);
+                settings.LibraryPaths.Add(musicFolder);
+                changed = true;
+            }
+
+            if (changed)
+                Save(settings);
 
             return settings;
         }
 
-        private AppSettings LoadFromDisk() =>
-            AtomicJsonFile.Read(StorePath, FlowerJsonContext.Default.AppSettings, _logger) ?? new AppSettings();
+        private AppSettings? LoadFromDisk() =>
+            AtomicJsonFile.Read(StorePath, FlowerJsonContext.Default.AppSettings, _logger);
 
         // ColumnManager's debounced save fires on every column resize/reorder/
         // hide, so overlapping writes to settings.json are routine rather than

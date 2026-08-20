@@ -34,7 +34,35 @@ namespace Flower.Importer
                 .Where(p => !string.IsNullOrWhiteSpace(p) && Directory.Exists(p))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            var paths = configured is { Count: > 0 } ? configured : new List<string> { ResolveMusicPath(_logger) };
+            // No configured folders means an empty library, not "guess the
+            // user's music folder". The folder list (Settings > Library) is the
+            // whole of what the user has asked Flower to scan, so emptying it -
+            // by removing the last folder, or by turning off the iTunes
+            // integration, which drops Music.app's own media folder from the
+            // list (see AppSettingsStore.Load) - has to actually empty the
+            // library. Guessing here defeated both: on a default Mac setup
+            // Music.app's media folder sits *under* ~/Music, so falling back to
+            // ~/Music re-scanned exactly the tracks that had just been removed.
+            // The default folder a first run starts with is seeded into the
+            // settings instead (again AppSettingsStore.Load), where it is
+            // visible and removable rather than an invisible floor.
+            //
+            // iOS is the one exception, and isn't really a fallback: the app's
+            // sandboxed Documents directory is the only place it can read files
+            // from at all (see Info.plist UIFileSharingEnabled), not a user
+            // choice, and its absolute path is deliberately not persisted - the
+            // container UUID can change across a reinstall (see
+            // Library.UpdateTracks' SyncKey fallback).
+            List<string> paths;
+            if (configured is { Count: > 0 })
+                paths = configured;
+            else if (OperatingSystem.IsIOS())
+                paths = [Environment.GetFolderPath(Environment.SpecialFolder.Personal)];
+            else
+            {
+                _logger.LogInformation("No library folders configured - nothing to scan");
+                return tracks;
+            }
 
             foreach (var path in paths)
             {
@@ -138,24 +166,13 @@ namespace Flower.Importer
             || tagFile.GetTag(TagLib.TagTypes.Apple, false) is TagLib.Mpeg4.AppleTag apple && apple.IsCompilation
             || tagFile.GetTag(TagLib.TagTypes.Xiph, false) is TagLib.Ogg.XiphComment xiph && xiph.IsCompilation;
 
-        private static string ResolveMusicPath(ILogger logger)
-        {
-            // iOS has no shared Music folder; the app's sandboxed Documents directory
-            // (populated via Finder file sharing, see Info.plist UIFileSharingEnabled)
-            // is the only place it can read files from.
-            if (OperatingSystem.IsIOS())
-                return Environment.GetFolderPath(Environment.SpecialFolder.Personal);
-
-            return TryResolveAppleMusicFolder(logger) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
-        }
-
         // Reads the media folder Apple Music is configured to use, straight from its
         // preferences plist. Public so it can also be used to auto-populate the
         // configured library paths (see AppSettingsStore) rather than only as a silent
         // fallback when nothing is configured - called from there before any Importer
         // instance necessarily exists, so this takes an explicit logger from whichever
-        // caller already has one (AppSettingsStore's own _logger, or Importer's via
-        // ResolveMusicPath above) rather than reaching for a static/global one.
+        // caller already has one (AppSettingsStore's own _logger) rather than reaching
+        // for a static/global one.
         public static string? TryResolveAppleMusicFolder(ILogger? logger = null)
         {
             if (!OperatingSystem.IsMacOS())
