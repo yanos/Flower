@@ -14,12 +14,16 @@ public sealed class FlowerServerOptions
 {
     public const string SectionName = "Flower";
 
-    // Where flower.db and the log files live. Deliberately its own setting
-    // rather than reusing Flower.Core's AppDataDirectory/PlatformDataDirectory -
-    // those resolve a per-OS user profile directory, which makes no sense for
-    // a headless server a user points at an arbitrary data volume (a NAS
-    // share, a Docker volume mount, etc).
-    public string DataDirectory { get; set; } = "./data";
+    // Where flower.db, the device key, the peer files, the logs and
+    // flower-server.json live. Empty means the per-OS user data location
+    // (see ServerDataDirectory.Resolve) - the point of the setting is the
+    // deployment that wants an arbitrary data volume instead: a NAS share, a
+    // Docker volume mount, a dedicated disk.
+    //
+    // Read by Program.cs before the container exists, and written back there
+    // as an absolute path - so by the time this is bound it is never relative
+    // and never empty, whatever was configured.
+    public string DataDirectory { get; set; } = "";
 
     public List<string> LibraryPaths { get; set; } = [];
 
