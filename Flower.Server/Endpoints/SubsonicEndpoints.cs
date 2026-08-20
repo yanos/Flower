@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 
 using Flower.Models;
+using Flower.Persistence;
 using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
 using Flower.Server.Services;
@@ -49,20 +50,37 @@ public static class SubsonicEndpoints
     {
         var rest = app.MapGroup("/rest").AddEndpointFilter(async (context, next) =>
         {
-            var options = context.HttpContext.RequestServices.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
+            var services = context.HttpContext.RequestServices;
+            var query = context.HttpContext.Request.Query;
             var key = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
             var now = DateTimeOffset.UtcNow;
 
             if (!FailedAuthLimiter.WouldAllow(key, now) || !RequestLimiter.TryAcquire(key, now))
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
 
-            if (!SubsonicAuth.Validate(context.HttpContext.Request.Query, options))
+            // Two ways in, deliberately unequal in power. A path-B credential
+            // (SubsonicCredentialStore) authenticates the whole /rest surface,
+            // which is what a third-party Subsonic client needs. A stream
+            // ticket authenticates one track, because that is all an <audio>
+            // element's unsignable request should ever be able to reach - see
+            // StreamTicketService.
+            var credentials = services.GetRequiredService<SubsonicCredentialStore>();
+            var username = SubsonicAuth.Validate(query, credentials);
+            if (username != null)
             {
-                FailedAuthLimiter.TryAcquire(key, now);
-                return SubsonicResults.Failed(40, "Wrong username or password.");
+                // Fire-and-forget, and rate-limited inside the store itself:
+                // last-seen is an admin convenience, not something a stream
+                // request should wait on a file write for.
+                _ = credentials.TouchAsync(username, now);
+                return await next(context);
             }
 
-            return await next(context);
+            var tickets = services.GetRequiredService<StreamTicketService>();
+            if (tickets.TryRedeem(query["ticket"].ToString(), query["id"].ToString(), now))
+                return await next(context);
+
+            FailedAuthLimiter.TryAcquire(key, now);
+            return SubsonicResults.Failed(40, "Wrong username or password.");
         });
 
         rest.MapGet("/ping", () => SubsonicResults.Ok());

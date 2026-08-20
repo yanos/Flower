@@ -5,7 +5,7 @@ using Flower.Services;
 namespace Flower.Server.Endpoints;
 
 // New-device half of the admin-issued pairing-code flow (SYNC-PLAN.md's
-// "Pairing redesign" section). Kept as its own route, separate from
+// "Passwordless by design", path A). Kept as its own route, separate from
 // SyncHttpServer's existing device-to-device /api/flower/v1/pair-request, so
 // that flow's semantics (live 60-second approval prompt) don't change at all -
 // this one trades the prompt for a code the admin already vetted out-of-band.
@@ -45,7 +45,10 @@ public static class PairingEndpoints
                 return Results.Unauthorized();
 
             var code = DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-PairingCode");
-            if (!pairingCodes.TryConsume(code))
+            // grantsAdmin comes back from the code itself, not from anything
+            // the redeeming device said: a device asking to be an admin is not
+            // evidence that it should be one. See PairingCodeService.
+            if (!pairingCodes.TryConsume(code, out var grantsAdmin))
                 return Results.BadRequest(new { error = "Invalid, expired, or already-used pairing code." });
 
             var publicKeyBase64 = DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-PublicKey")!;
@@ -53,8 +56,11 @@ public static class PairingEndpoints
             if (string.IsNullOrEmpty(alias))
                 alias = fingerprint;
 
-            await trustedPeerStore.ApproveAsync(fingerprint, alias, publicKeyBase64);
-            return Results.NoContent();
+            await trustedPeerStore.ApproveAsync(fingerprint, alias, publicKeyBase64, grantsAdmin);
+            // The redeemer needs to know whether it may show the admin UI, and
+            // this is the only moment it can learn that without already being
+            // able to call an admin route.
+            return Results.Ok(new { fingerprint, isAdmin = grantsAdmin });
         });
     }
 }

@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Makaretu.Dns.Multicast.New" Version="0.38.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
     <!-- Microsoft.Data.Sqlite 10.0.10 pulls SQLitePCLRaw 2.1.11, whose bundled
          SQLite has NU1903 (GHSA-2m69-gcr7-jv3q). Pin the patched 2.1.12 until

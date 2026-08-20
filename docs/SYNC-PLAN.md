@@ -23,7 +23,7 @@ Peer-to-peer WiFi sync and self-hosted-server support were originally scoped as 
 
 **The insight that reshapes both halves of this doc:** once Flower speaks OpenSubsonic as a client, the server on the other end can be a third-party Navidrome/Jellyfin instance, a first-party headless `Flower.Server`, or **another Flower app on the network hosting the protocol embedded, in-process, no separate server**. All three look identical to the client.
 
-- **Flower.Desktop hosts the OpenSubsonic API itself, in-process, with no database** — a thin mapping layer over the `Library` already loaded in memory. Unlike a standalone `Flower.Server`, which needs SQLite/EF Core because it's headless.
+- **Flower.Desktop hosts the OpenSubsonic API itself, in-process, with no database** — a thin mapping layer over the `Library` already loaded in memory. Unlike a standalone `Flower.Server`, which needs SQLite because it's headless — though both ended up on the same `Flower.Core` persistence layer in the end, see the Tier 4.1 note below.
 - **Mobile's sync client and the self-hosting client are the same code** — just two different base URLs.
 
 ### Staged path to "always available to sync with"
@@ -136,10 +136,12 @@ local screen to pop a dialog on. Speaks OpenSubsonic itself so the existing clie
 third-party Subsonic mobile client — works against it for free.
 
 **Recommended stack:** ASP.NET Core Minimal API + Kestrel (range-request streaming via
-`Results.File(..., enableRangeProcessing: true)`, no custom code, uses `sendfile`); SQLite via
-EF Core (same as Navidrome — needs WAL mode + explicit `busy_timeout` + `IDbContextFactory<T>`
-per request, since EF Core 7+ no longer auto-retries `SQLITE_BUSY`, and WAL requires local
-storage, not NFS/SMB); single admin password + long-lived JWT/API tokens (no OAuth);
+`Results.File(..., enableRangeProcessing: true)`, no custom code, uses `sendfile`); SQLite
+(WAL mode + an explicit `busy_timeout`; WAL requires local storage, not NFS/SMB). **Superseded
+on both counts since this was written:** the EF Core layer this originally specified is gone —
+the server runs on `Flower.Core`'s raw-SQLite layer, the same one the client uses, see the Tier
+4.1 note below — and the "single admin password + long-lived tokens" line is replaced by the
+passwordless design in "Passwordless by design" above. No OAuth either way;
 multi-arch Docker image via `dotnet publish -a $TARGETARCH` + `docker buildx`; no transcoding
 in v1 (stream originals with range support only, matching Navidrome's default).
 
@@ -211,47 +213,220 @@ ACME library, one `AddLettuceEncrypt()` call, no custom ACME plumbing.
 - **`LanGuard` must stop being hardcoded RFC1918-only.** Add Tailscale's CGNAT range
   (`100.64.0.0/10`) to the allowed set, and make the allow-list a config option rather than a
   fixed constant, so a user behind a trusted tunnel/proxy can widen it without a code change.
-- **The browser UI and its admin API routes need their own auth**, separate from the
-  device-signed P2P scheme (a browser tab isn't a device with a keypair) — single admin
-  password, `Flower.Web` logs in via a REST call and holds a token/cookie for subsequent
-  calls. Rate-limit/lock the login route (reuse `RateLimiter`); if cookie-based, apply the
-  usual CSRF mitigations, or use a bearer token in memory instead of a cookie to avoid the
-  CSRF surface entirely.
-- **The in-browser player needs its own stream-auth bridge** — `/rest/stream`-equivalent
-  routes are gated by the device-signed `TrustedPeer` mode today, which a browser tab can't
-  produce. Route the web player's audio requests through the same admin session instead, as a
-  distinct auth mode, not a relaxation of the existing one.
+- **The browser UI does *not* need its own auth** — this doc used to claim it did, on the
+  grounds that "a browser tab isn't a device with a keypair." That premise is false: WebCrypto
+  can generate a non-extractable P-256 keypair in IndexedDB, so the browser is a device with a
+  keypair, and it pairs and signs like any other. See "Passwordless by design" below. The
+  configured admin password goes away entirely rather than being replaced.
+- **The in-browser player still needs a stream-auth bridge**, but for a narrower reason than
+  the one given here before: not "a browser tab can't produce a `TrustedPeer` signature" (it
+  can), but that an `<audio>` element can't attach a signature *header* to the request it
+  issues. Short-lived stream tickets, minted by a normally-signed call, cover that gap — see
+  below.
 - **Pairing codes need brute-force resistance** (below): short expiry, single-use, hard
   per-IP attempt cap on the redeem endpoint.
 
-### Pairing redesign: admin-issued one-time codes
+### Passwordless by design: two paths, because only two are possible
 
-Today's flow (`SyncHttpServer.PeerApprovalRequested`, raised from `HandlePairRequestAsync`)
-holds an incoming pair request open for 60 seconds waiting on a human to click Approve in a
-popup, and fails closed if nobody's listening — fine when the admin is at the machine, a bad
-fit for a headless box nobody's watching. Replace it for `Flower.Server` with an **admin-issued,
-one-time pairing code**, proactive instead of reactive:
+**No accounts, no registration, and no password the user has to invent or remember.** Every
+Flower surface — desktop, mobile, *and* the browser admin UI — authenticates the same way, with
+a device keypair and a one-time pairing code. The only thing that can't join that scheme is a
+third-party Subsonic client, and only because the protocol it implements is published and fixed.
 
-1. Admin, logged into the browser UI, hits "Add device" → server generates a short single-use
-   code (e.g. 8-char alphanumeric) with a ~10 minute expiry, shown on-screen (plus a QR
-   encoding the server's tailnet address + code).
-2. Admin relays the code to whoever's setting up the new device out-of-band.
-3. The new device's "pair with server" flow sends its self-signed public key **plus the code**
-   to a new endpoint, kept separate from the existing device-to-device `pair-request` so that
-   flow's semantics don't change at all. Server validates the code (exists, unexpired,
-   unconsumed), consumes it, completes the same proof-of-possession handshake already built
-   (verify offered key → derive fingerprint → write to `TrustedPeerStore`) — no 60-second live
-   wait, no dialog.
-4. Redeem endpoint is rate-limited hard per-IP (reuse `RateLimiter`) to bound brute-force
-   attempts against the code within its expiry window.
+An earlier revision of this section had three paths, with the browser UI on WebAuthn passkeys as
+its own middle tier. That was built on a false premise — see the security bullet above — and is
+now folded into path A.
 
-Additive only: the existing GUI reactive-approval path (`PeerApprovalRequested`,
-`ConfirmDialogWindow`, `TrustedDevicesWindow`) is untouched for desktop↔desktop/mobile P2P
-pairing. The code-based flow is specific to pairing *against* `Flower.Server`.
+**Status — server side done, browser client not started.** Built and tested:
+`TrustedPeer.IsAdmin` and the admin-granting pairing code that sets it; `/api/admin` gated by
+`DeviceSignatureAuth.VerifyTrustedPeer` + `IsAdmin` instead of a login; the `PairingInvite`
+(`flower://pair?host=…&code=…&fp=…`) shared type and the `fp=` server-key pin; the startup
+bootstrap code printed to stdout; path B end to end (`SubsonicCredentialStore`, the admin
+routes that mint/list/revoke, `SubsonicAuth` over per-client credentials, and the `apiKey`
+form); and `StreamTicketService` with its mint route and `/rest` redemption.
 
-**Effort:** roughly 3-5 weeks for one engineer for the server backend — most of it EF Core
-schema/migration and SQLite concurrency hardening, not streaming or Docker — plus the new
-`Flower.Web` head on top (see project structure below).
+### The server had to be findable first
+
+Pairing assumes the user can get to the server. `Flower.Server` could not be found at all: it
+never advertised `_flowersync._tcp` and never served `/api/localsend/v2/info`, the two things a
+client needs to put a peer in its sidebar, so a running server was simply invisible. This
+predates the pairing work - the server was built as a Subsonic endpoint reached by typed
+address, and the app's own discovery stack lives in the Avalonia project (`Flower/`), which
+`Flower.Server` cannot reference.
+
+**Fixed by moving discovery down into `Flower.Core`**, where both ends can share it, rather than
+by reimplementing the record and response shapes on the server: `IMdnsBackend`/`PlatformMdns`,
+`MakaretuMdnsBackend` (extracted out of `NetworkDiscoveryService.cs` and made public), the
+`Makaretu.Dns.Multicast.New` package reference, plus a new `SyncProtocol` holding the three facts
+both sides must agree on - the service type, the default port, and the `/info` path - and the
+`SyncInfoResponseDto` wire shape with its own `SyncProtocolJsonContext`. `SyncHttpServer` and
+`NetworkDiscoveryService` now reference those constants instead of owning private copies, so the
+two implementations cannot drift. `Flower.iOS`'s `BonjourMdnsBackend` needed no change (same
+namespace).
+
+The server side is then small: `MdnsAdvertiser`, an `IHostedLifecycleService` that advertises in
+`StartedAsync` (the bound port is only known once Kestrel has started) and unadvertises on
+shutdown so clients prune the row immediately; and `DiscoveryEndpoints`, serving the same DTO the
+app serves, with `IsServer` always true and `trustsCaller` answered from `TrustedPeerStore` for
+the ~5s poll every client already runs. Both failure modes are warnings, not startup failures -
+an undiscoverable server still serves every request, it just has to be reached by address.
+New options: `Flower:Alias` (sidebar name, defaults to the machine name) and
+`Flower:AdvertiseOnLan` (on by default; off for tailnet/reverse-proxy-only deployments).
+
+### Pairing from the client: "Pair" plus a code box
+
+Discovery gets the server into the sidebar; redeeming the code is what makes it usable. The
+client had only the app-to-app flow - an "Ask to pair" button that POSTs `/api/flower/v1/pair-request`
+and waits up to 60s on the peer's live approval prompt - which a headless server does not
+implement and could never answer.
+
+The two flows are told apart by the handshake's `deviceType`, not by `isServer` (an app in Server
+role sets that too): `DiscoveredDevice.DeviceType`/`PairsByCode` is true only for `"server"`, and
+an absent field reads as an app - the conservative default, since it keeps the approval flow
+rather than demanding a code nobody can produce. On that peer the button reads **Pair** rather
+than "Ask to pair", a code box appears next to it, and `PeerPairingService.RedeemPairingCodeAsync`
+POSTs `/api/flower/v1/pair-redeem` with the same self-signed request shape plus
+`X-Flower-PairingCode`. There is no "Waiting for server..." state on this path - the redeem
+either comes back trusted within one round trip or the code was wrong, in which case
+`PeerSyncCoordinator` rolls the pairing straight back and raises `PairingCodeRejected` so the UI
+can say so instead of appearing to have done nothing.
+
+All three client surfaces got it: the sidebar device-detail header (the primary one), Settings'
+`ServerPickerView` row (whose typed code is carried across the ~5s `Refresh()` rebuild, which
+would otherwise wipe it mid-keystroke), and mobile's `ConfirmPairServerView` sheet. Codes are
+normalized server-side (case, dashes, spaces), so what a user copies off the admin screen or
+hears over the phone works as typed.
+
+**Discovery is convenience only, deliberately.** Being found gets a server a row and an address
+and nothing else - it is untrusted until a pairing code is redeemed, because the code is what
+carries the `fp=` fingerprint pin. The alternative (tapping the row to request approval) was
+rejected: it reintroduces the reactive-approval shape this whole redesign replaced, and it
+bypasses the pin.
+
+**Deleted, not deprecated:** `AdminAuthService` (bearer tokens, `/api/admin/login`,
+`/logout`, `/logout-all`), and the `Flower:AdminUsername`/`Flower:AdminPassword` options
+together with the startup check that refused to boot without them.
+
+**Not built:** the browser half of path A — `Flower.Web` generating and storing its own
+keypair, and the pairing/admin screens that use it. That work waits on build-order step 4's
+admin UI, which doesn't exist yet. One open question to settle there, flagged because it
+changes the shape of the client code: whether .NET-for-WebAssembly's own `ECDsa` works in the
+browser runtime (in which case `DeviceSigningKey` is reusable as-is and only key *storage*
+needs a browser backend) or whether it needs a JS-interop `crypto.subtle` module in the
+`webaudio.js` mould. The non-extractable-key property argues for the interop module either
+way, but this needs a real WASM build to settle rather than an assumption.
+
+#### Path A — key-based: every Flower surface, browser included
+
+The hard part already exists: every device has a self-signed keypair, `TrustedPeerStore` does
+proof-of-possession, and `SignatureVerifier` checks per-request signatures. Pairing is only "get
+a public key to the server with evidence a human authorized it."
+
+**The browser is a device.** `Flower.Web` generates an ECDSA P-256 keypair via WebCrypto with
+`extractable: false` and keeps it in IndexedDB. The private key is a handle the page can sign
+with but never read — a *stronger* storage guarantee than the file-backed key the desktop app
+has today. The formats already line up exactly, with no bridging code:
+
+| | today, in `Flower.Core` | WebCrypto |
+|---|---|---|
+| curve | `ECCurve.NamedCurves.nistP256` (`DeviceKeyStore.cs:74`) | `ECDSA` / `P-256` |
+| hash | `HashAlgorithmName.SHA256` | `SHA-256` |
+| signature encoding | `DSASignatureFormat.IeeeP1363FixedFieldConcatenation` (`DeviceSigningKey.cs:34`) | raw `r‖s`, which *is* P1363 |
+
+So `SignatureVerifier` (`SignatureVerifier.cs:51`) accepts browser-produced signatures unchanged
+— no new algorithm, no new verification path, no second auth mode in the server. Admin routes
+get gated by the same `DeviceSignatureAuth` middleware as device routes, plus an `IsAdmin` flag
+on the peer record. Devices differ by capability, not by authentication mechanism.
+
+**Pairing, one mechanism for all of them.** Today's `SyncHttpServer.PeerApprovalRequested` flow
+holds an incoming request open for 60 seconds waiting on a human to click Approve, and fails
+closed if nobody's listening — fine when the admin is at the machine, a bad fit for a headless
+box nobody's watching. `Flower.Server` replaces it with an **admin-issued, one-time pairing
+code**, proactive instead of reactive:
+
+1. Admin hits "Add device" → server generates a short single-use code with a ~10 minute expiry,
+   displayed on-screen both as text and as a QR encoding
+
+   ```
+   flower://pair?host=100.x.y.z:4533&code=K7M2-P9QX&fp=<server-key-fingerprint>
+   ```
+
+   The `fp=` field is load-bearing and is the main addition over a bare code: it lets the
+   *client* pin the server's public key at pair time, making the QR a mutual trust bootstrap
+   rather than a one-directional one. That's what buys security without TOFU over plain LAN
+   HTTP.
+2. Admin relays the code (or just shows the screen) to whoever's setting up the new device.
+3. **(Built.)** The new device — phone, desktop, or a browser tab — scans the QR, or types the
+   code where there's no camera, and sends its public key **plus the code** to a redeem
+   endpoint kept separate from the existing device-to-device `pair-request`, so that flow's
+   semantics don't change at all. Server validates the code (exists, unexpired, unconsumed),
+   consumes it, completes the proof-of-possession handshake already built (verify offered key →
+   derive fingerprint → write to `TrustedPeerStore`) — no 60-second live wait, no dialog.
+4. **(Built.)** Redeem endpoint is rate-limited hard per-IP (reuse `RateLimiter`) to bound
+   brute-force attempts against the code within its expiry window.
+
+Codes are **Crockford base32** (no I/O/0/1) so they survive being dictated over the phone —
+already the alphabet `PairingCodeService` uses. Codes stay in-memory and un-persisted: they only
+need to outlive their own ~10 minute expiry, so losing outstanding ones on restart is a cheap,
+retryable cost rather than a schema concern.
+
+**Bootstrap.** On first start the server prints a pairing code to stdout, visible in
+`docker logs`. The first browser redeems it through the same endpoint as everything else — the
+first-run claim stops being its own mechanism and becomes simply "the first code." The same
+lever is the account-recovery story: a CLI/`docker exec` command that prints a fresh code, which
+is what you use after clearing site data, losing a laptop, or locking yourself out.
+
+**Additive for P2P.** The existing GUI reactive-approval path (`PeerApprovalRequested`,
+`ConfirmDialogWindow`, `TrustedDevicesWindow`) is untouched for desktop↔desktop/mobile pairing.
+The code-based flow is specific to pairing *against* `Flower.Server`.
+
+**Costs, stated plainly.** An IndexedDB key doesn't sync across a user's browsers the way a
+passkey would, so each browser pairs itself — fine here, and arguably more honest, since each
+browser genuinely is a separate device. Clearing site data locks that browser out until it
+re-pairs, hence the recovery lever above. And a WebCrypto key gives no phishing resistance where
+a WebAuthn passkey would — immaterial when there's no password to phish and no public login page
+to imitate.
+
+**Why not WebAuthn passkeys** (the rejected middle path): they need a secure context, so on
+plain LAN HTTP they don't run at all and would need an opaque-token fallback tier anyway —
+whereas WebCrypto and IndexedDB work fine over HTTP. Passkeys would also have been a second auth
+mode in the server for exactly one client type. The syncing and phishing-resistance advantages
+they hold over this design don't pay for that.
+
+#### Path B — the protocol-mandated exception: third-party Subsonic clients
+
+DSub / substreamer / Symfonium implement a published protocol and will send `u=`/`t=`/`s=` or an
+`apiKey`. No design choice on this side changes that, so this one genuinely can't merge into
+path A. What it *can* do is stop being a separate subsystem: it's a second **credential type**
+issued by the same admin action, not a second registry.
+
+| | redeemed by | becomes |
+|---|---|---|
+| Flower device / browser (path A) | posting a public key + the code | `TrustedPeer` with a fingerprint |
+| Subsonic client (path B) | using the code directly as the password | long-lived credential row |
+
+One issuer, one registry, one revoke button, one last-seen list — two redemption modes. The user
+copies a generated credential rather than inventing a secret, and each is individually revocable
+without touching any other client.
+
+Also implement OpenSubsonic's **`apiKey` extension** for clients that support it — same
+credential object underneath, cleaner wire format, no md5-salt round trip.
+
+#### The in-browser player: stream tickets
+
+The one piece path A doesn't solve by itself. A signed request needs a signature header, and an
+`<audio src="...">` can't send one. So a normally-signed call mints a **short-lived, single-URL
+stream ticket** which rides as a query parameter on the media URL. Note this would have been
+required under the passkey design too — it's a property of `<audio>`, not of how the browser
+authenticates, so unifying on keys neither creates nor removes this work.
+
+**Effort:** the original estimate here was 3-5 weeks for one engineer, most of it EF Core
+schema/migration and SQLite concurrency hardening. That's spent and the shape of it changed:
+the server no longer has a persistence layer of its own to harden — it runs on `Flower.Core`'s
+raw-SQLite layer and the shared resident `Library` (see the Tier 4.1 note below), so the
+schema/migration bulk of that estimate is gone rather than done-as-scoped. What remains is the
+`Flower.Web` head (see project structure below), the passwordless auth work above, and Docker
+packaging.
 
 ## Project structure: extracting a shared `Flower.Core` library, and a new `Flower.Web` head
 
@@ -283,10 +458,10 @@ backend can't reference that (the browser UI is a different story — see below)
 
 New `net10.0` `Microsoft.NET.Sdk.Web` project (`Flower.Server/`), referencing `Flower.Core` only (no Avalonia/LibVLC). Minimal API + Kestrel, plain HTTP, binds `0.0.0.0:4533` by default (`appsettings.json`'s `Urls` key - override via `ASPNETCORE_URLS`/`Urls` env var same as any ASP.NET Core app).
 
-- **Schema (EF Core/SQLite, `Flower.Server/Data/`):** `TrackEntity` (one row per imported file - title/artist/album/technical fields, plus `Starred`/`PlayCount`), `PlaylistEntity`/`PlaylistTrackEntity` (real CRUD tables, ordered by `Position`). No separate Artist/Album tables: `TrackEntity.ArtistId`/`AlbumId` are deterministic hashes of the normalized artist/album name (`SubsonicIdentity`, same normalize-then-hash shape as `Track.SyncKey`) - browsing groups rows by these instead of needing an upsert-reconciled Artist/Album table just to hand out stable ids. `FlowerDbContext` runs `PRAGMA journal_mode=WAL` at startup and sets `Default Timeout=30` (Microsoft.Data.Sqlite's busy-timeout knob) in the connection string, per the "Recommended stack" note above; registered via `IDbContextFactory<FlowerDbContext>` so every request/service creates its own short-lived context. `EnsureCreatedAsync()` for now, not formal EF migrations - fine while the schema is this young, worth switching once it needs to evolve without a full rebuild.
+- **Schema — as built, then superseded.** Originally EF Core/SQLite in `Flower.Server/Data/`: a `TrackEntity` restating `Track`'s fields, `PlaylistEntity`/`PlaylistTrackEntity`, `FlowerDbContext` with `PRAGMA journal_mode=WAL` and `Default Timeout=30`, `IDbContextFactory<FlowerDbContext>` per request, `EnsureCreatedAsync()` instead of formal migrations. **That whole layer is gone** — `Flower.Server/Data/` is empty and the server shares `Flower.Core`'s schema, migration runner, row mapper and write path with the client, running on the same resident `Library`. See the Tier 4.1 note above for the full account. The one design decision that survived the move intact: no separate Artist/Album tables — artist and album ids are deterministic hashes of the normalized name (`SubsonicIdentity`, same normalize-then-hash shape as `Track.SyncKey`), so browsing groups rows by these instead of needing an upsert-reconciled Artist/Album table just to hand out stable ids.
 - **Importer wiring (`LibraryImportService`):** runs once at startup, reusing `Flower.Core`'s own `Importer.ImportAsync` unchanged (per the "Reuse boundary" note) against `Flower:LibraryPaths` from config, upserting `TrackEntity` rows matched by `Path` and removing rows for files no longer present - same carry-forward shape as `Library.UpdateTracks`, just against SQLite instead of an in-memory list. No rescan-on-demand endpoint yet (deferred - step 3's admin UI is the natural place to trigger one).
 - **OpenSubsonic endpoints (`SubsonicEndpoints`):** `ping`, `getArtists`, `getArtist`, `getAlbum`, `getAlbumList2` (alphabetical/by-artist/newest/random), `getSong`, `search3`, `getPlaylists`/`getPlaylist`/`createPlaylist`/`updatePlaylist`/`deletePlaylist`, `star`/`unstar`, `scrobble`, `stream`/`download` (`Results.File(..., enableRangeProcessing: true)`), `getCoverArt` (embedded tag picture, falling back to a `cover.*`/`folder.*` file next to the track - originally a private copy of `AlbumArtLoader.TryGetLocalArtBytes`'s logic on the grounds that it lived in the Avalonia-coupled `Flower` project, since **un**duplicated: the lookup needs no Avalonia at all and now lives in `Flower.Core`'s `LocalAlbumArtReader`, shared by all three callers. The two copies had already drifted - the server's accepted only three image extensions to the client's eight - see ARCHITECTURE-REVIEW Tier 2.2). Responses are built from `Flower.Core`'s own `OpenSubsonicContracts.cs` types directly (`SubsonicResults`), so the wire shape is guaranteed to match what `OpenSubsonicClient` already parses - reflection-based JSON (not source-generated), since this project isn't trimmed/AOT the way mobile is. GET-only and `f=json`-only for v1 (matches Flower's own client and every real Subsonic client is fine defaulting to json); real multi-client XML support is deferred, not designed.
-- **Auth:** v1 is a single configured admin username/password (`Flower:AdminUsername`/`Flower:AdminPassword`), validated against the classic Subsonic `token=md5(password+salt)` scheme via `OpenSubsonicClient.ComputeToken` (`SubsonicAuth`), applied as an endpoint-group filter on `/rest/*`, behind two per-source-IP rate-limit budgets (a 10/60s failed-auth lockout and a 600/60s request ceiling - ARCHITECTURE-REVIEW Tier 3.1). `Flower:AdminPassword` has no default: the server throws at startup rather than boot on a placeholder. This is a placeholder scheme, not the final design - the "Pairing redesign" section above is the real admin/pairing auth story, not yet built.
+- **Auth:** v1 is a single configured admin username/password (`Flower:AdminUsername`/`Flower:AdminPassword`), validated against the classic Subsonic `token=md5(password+salt)` scheme via `OpenSubsonicClient.ComputeToken` (`SubsonicAuth`), applied as an endpoint-group filter on `/rest/*`, behind two per-source-IP rate-limit budgets (a 10/60s failed-auth lockout and a 600/60s request ceiling - ARCHITECTURE-REVIEW Tier 3.1). `Flower:AdminPassword` has no default: the server throws at startup rather than boot on a placeholder. This is a placeholder scheme, not the final design - "Passwordless by design" above is the real story, and under it this configured password goes away rather than being kept as a fallback (path B replaces it with per-client generated credentials).
 - **Verified end-to-end** against a real `OpenSubsonicClient` instance (not just curl): ping, browse (artists→albums→songs), search3, create/update/delete playlist, star, scrobble, ranged `stream`, `download`, ArtistID3/AlbumID3/Child all round-trip correctly.
 - **Not yet built:** admin/browser auth, pairing-code endpoint, `LanGuard`/rate limiting (all step 3); a rescan trigger beyond startup; Jellyfin backend; Docker packaging.
 
@@ -295,7 +470,7 @@ New `net10.0` `Microsoft.NET.Sdk.Web` project (`Flower.Server/`), referencing `F
 Step 3 of the build order below, built entirely on `Flower.Core`'s existing pairing/trust primitives (`TrustedPeerStore`, `SignedRequestCanonicalizer`/`SignatureVerifier`/`NonceReplayGuard`, `RateLimiter`, `LanGuard`) rather than reinventing any of them server-side.
 
 - **Data isolation:** `Program.cs` now sets `PlatformDataDirectory.Current` to `Flower:DataDirectory` before anything touches a store, straight off `IConfiguration` (the DI container doesn't exist yet at that point in startup) - without this, `TrustedPeerStore`/`DeviceKeyStore` would resolve their file paths via `AppDataDirectory`'s per-OS user-profile default and silently read/write the real developer machine's own `~/Library/Application Support/Flower/trusted-peers.json`, exactly the failure mode `feedback_test_isolation_appdata` warns about for tests. Verified by timestamp: the real file was untouched across a full pairing smoke-test run against a `Flower:DataDirectory`-scoped one.
-- **Admin auth (`AdminAuthService`):** single configured admin username/password (already-existing `Flower:AdminUsername`/`Flower:AdminPassword`) in, opaque 32-byte random bearer token out (`POST /api/admin/login`, 24h expiry, in-memory - no cookie, so no CSRF surface to defend, per the "Security hardening" section above). `POST /api/admin/pairing-codes`, `GET /api/admin/devices`, `DELETE /api/admin/devices/{fingerprint}`, `POST /api/admin/logout` (revokes the presenting token) and `POST /api/admin/logout-all` (revokes every session) all sit behind an `AddEndpointFilter` bearer check on a `/api/admin` route group.
+- **Admin auth (`AdminAuthService`) - superseded as designed, see "Passwordless by design" above.** The credential check here is slated for deletion: under the two-path design the browser pairs as a keyed device and admin routes are gated by `DeviceSignatureAuth` plus an `IsAdmin` flag, so there is no login route and no configured password. As currently built: single configured admin username/password (already-existing `Flower:AdminUsername`/`Flower:AdminPassword`) in, opaque 32-byte random bearer token out (`POST /api/admin/login`, 24h expiry, in-memory - no cookie, so no CSRF surface to defend, per the "Security hardening" section above). `POST /api/admin/pairing-codes`, `GET /api/admin/devices`, `DELETE /api/admin/devices/{fingerprint}`, `POST /api/admin/logout` (revokes the presenting token) and `POST /api/admin/logout-all` (revokes every session) all sit behind an `AddEndpointFilter` bearer check on a `/api/admin` route group.
   - **Gotcha hit and fixed:** `/login` was originally mapped on that same `/api/admin` group before the auth filter was added to it - but a `RouteGroupBuilder`'s conventions (including `AddEndpointFilter`) apply to every endpoint ever mapped on that builder instance regardless of Map-vs-AddEndpointFilter call order, not just ones mapped after the filter call. That gated `/login` behind the very bearer token it's supposed to issue, so correct credentials always came back 401. Fixed by mapping `/login` directly on `app`, outside the authenticated group.
 - **Pairing-code redemption (`PairingCodeService` + `PairingEndpoints`):** admin-issued 8-char codes (excludes `0/O/1/I` to avoid transcription errors), 10-minute expiry, single-use, in-memory (losing outstanding codes on a server restart is an acceptable cost for not needing an EF migration for state this ephemeral). `POST /api/flower/v1/pair-redeem` is a new, separate route from `SyncHttpServer`'s existing device-to-device `pair-request` (that flow's semantics don't change at all) - same proof-of-possession self-signed handshake as that route (`DeviceSignatureAuth.VerifySelfSigned`, a Kestrel/`HttpContext` port of `SyncHttpServer.VerifySelfSigned`), plus a code that must exist/be unexpired/be unconsumed, consumed atomically on success, then written to `TrustedPeerStore.ApproveAsync`. Rate-limited to 5/60s per source IP (tighter than `SyncHttpServer`'s own pair limiter, since a code's entire usable life is ~10 minutes) - a code that fails redemption for a reason other than "already consumed" is left unconsumed so a legitimate device can retry within the window.
 - **`LanGuard`:** now takes an optional `extraAllowedCidrs` param, and unconditionally treats Tailscale's CGNAT range (`100.64.0.0/10`) as private/allowed alongside the existing RFC1918/loopback/link-local ranges (benefits `SyncHttpServer`'s desktop↔desktop P2P too, not just `Flower.Server` - a Tailscale-reachable peer should be trusted exactly like a LAN one). `Flower.Server`'s new `FlowerServerOptions.AllowedCidrs` (empty by default) feeds further user-configured ranges (a reverse proxy on its own subnet, say) through to a global `app.Use(...)` middleware gating every route on `context.Connection.RemoteIpAddress`, the same "wildcard bind means this check is the only thing standing between LAN-only and internet-exposed" role it already plays for `SyncHttpServer`.
@@ -327,7 +502,7 @@ Once `Flower.Core` exists, add a `SubsonicLibraryImporter : IMusicImporter` (and
 ### Suggested build order
 
 1. **Done.** Extract `Flower.Core` (mechanical git-mv + reference fixups; confirm `Flower.Tests` still passes unchanged).
-2. **Done.** Scaffold `Flower.Server`: EF Core/SQLite schema, importer wired up, OpenSubsonic endpoints working against a real Navidrome-compatible client. See "`Flower.Server` v1" below.
+2. **Done.** Scaffold `Flower.Server`: SQLite schema (originally EF Core, since moved onto `Flower.Core`'s shared layer), importer wired up, OpenSubsonic endpoints working against a real Navidrome-compatible client. See "`Flower.Server` v1" below.
 3. **Done.** Pairing-code endpoint + admin auth + `LanGuard` CGNAT allowance + rate limiting on the redeem route — get a real device pairing against a real headless instance before building UI on top of it. See "Pairing-code endpoint, admin auth, `LanGuard` — done" above.
 4. Scaffold `Flower.Web`. **Done so far:** existing Views/ViewModels building and rendering in-browser (see "`Flower.Web` scaffolding — rendering milestone done" above), and real audio playback via `WebAudioManager` (see "`WebAudioManager` — real browser playback, done" above). **Still open:** decide the paired-browser-session `/rest/*` auth story (flagged above); a `SubsonicLibraryImporter : IMusicImporter` so the library isn't always empty; then the pairing-code "Add device" screen and admin settings screens; full jukebox browse/search/queue last since it needs a populated library to be worth testing against.
 5. Docker packaging + docs: the "expose this over Tailscale" setup guide as the primary documented remote-access path, LettuceEncrypt as the secondary one.
@@ -391,7 +566,7 @@ needs to leave a trusted LAN.
 
 ## Status summary
 
-All numbered steps through Phase 4 are **done**: `CROSS-PLATFORM-PLAN.md` item #3 updated to the private-file-library iOS design; WiFi/LAN discovery + LocalSend-style transfer; `UIFileSharingEnabled` for USB; Bluetooth/programmatic-USB deliberately not built; playlist metadata sync; the OpenSubsonic client; the full Phase 3 stack (trust gate, embedded host, merge logic, mobile download UI); and Phase 4's cryptographic identity/signed-request hardening (route table, rate limiting, LAN-only enforcement, persisted denials, server-initiated unpair, body size cap). `Flower.Server` build-order steps 1 (extracting `Flower.Core`), 2 (scaffolding `Flower.Server` itself - EF Core/SQLite schema, importer wiring, the full OpenSubsonic endpoint set, verified end-to-end against a real `OpenSubsonicClient`), and 3 (admin-issued pairing-code endpoint, admin bearer-token auth, `LanGuard` CGNAT allowance + configurable extra CIDRs, rate limiting on the redeem route) are also **done** (see "Project structure", "`Flower.Server` v1", and "Pairing-code endpoint, admin auth, `LanGuard`" above).
+All numbered steps through Phase 4 are **done**: `CROSS-PLATFORM-PLAN.md` item #3 updated to the private-file-library iOS design; WiFi/LAN discovery + LocalSend-style transfer; `UIFileSharingEnabled` for USB; Bluetooth/programmatic-USB deliberately not built; playlist metadata sync; the OpenSubsonic client; the full Phase 3 stack (trust gate, embedded host, merge logic, mobile download UI); and Phase 4's cryptographic identity/signed-request hardening (route table, rate limiting, LAN-only enforcement, persisted denials, server-initiated unpair, body size cap). `Flower.Server` build-order steps 1 (extracting `Flower.Core`), 2 (scaffolding `Flower.Server` itself - SQLite schema, since moved onto `Flower.Core`'s shared layer, importer wiring, the full OpenSubsonic endpoint set, verified end-to-end against a real `OpenSubsonicClient`), and 3 (admin-issued pairing-code endpoint, admin bearer-token auth, `LanGuard` CGNAT allowance + configurable extra CIDRs, rate limiting on the redeem route) are also **done** (see "Project structure", "`Flower.Server` v1", and "Pairing-code endpoint, admin auth, `LanGuard`" above).
 
 Build order step 4's first two parts - `Flower.Web` scaffolding (existing Views/ViewModels rendering in-browser) and real audio playback (`WebAudioManager`) - are also **done** (see "`Flower.Web` scaffolding — rendering milestone done" and "`WebAudioManager` — real browser playback, done" above). Two real architectural findings along the way: .NET-for-WASM has no asymmetric crypto support at all, so `MainViewModel`'s P2P sync dependencies (`DeviceSigningKey` and everything built on it) are now nullable/defaulted rather than hard requirements, gated on `OperatingSystem.IsBrowser()`; and the browser audio path couldn't reuse `IAudioSink`/`GaplessCoordinator` at all (LibVLC-backed decode has no WASM build either), so it's a separate `IAudioManager` implementation driving a plain `<audio>` element instead.
 

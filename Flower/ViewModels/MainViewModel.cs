@@ -223,7 +223,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public IEnumerable<DiscoveredDevice> AvailableServers => Sync.AvailableServers;
 
-    public void PairWithServer(DiscoveredDevice device) => Sync.PairWithServer(device);
+    public void PairWithServer(DiscoveredDevice device, string? pairingCode = null) =>
+        Sync.PairWithServer(device, pairingCode);
 
     public void UnpairServer() => Sync.UnpairServer();
 
@@ -525,10 +526,63 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // "Waiting for server..." still runs the Unpair flow (PairActionButton_Click
     // branches on IsSelectedDevicePaired, not on trust) - it's the only way
     // to cancel a pending request.
+    // "Pair" rather than "Ask to pair" for a headless server: nothing is being
+    // asked. The code the admin already issued is the approval, so the action
+    // completes in one round trip instead of leaving a request sitting at
+    // somebody else's prompt. An app peer still asks. See
+    // DiscoveredDevice.PairsByCode.
     public string PairActionLabel =>
-        !IsSelectedDevicePaired ? "Ask to pair" :
+        !IsSelectedDevicePaired ? (SelectedDevicePairsByCode ? "Pair" : "Ask to pair") :
         IsSelectedDeviceTrustConfirmed ? "Unpair" :
         "Waiting for server...";
+
+    // Whether to show the pairing-code box next to the button. Only for a
+    // not-yet-paired headless server - an app peer has no code to give, and a
+    // peer already paired has nothing left to redeem.
+    public bool IsPairingCodeRequired => SelectedDevicePairsByCode && !IsSelectedDevicePaired;
+
+    private bool SelectedDevicePairsByCode => SelectedDevice?.PairsByCode ?? false;
+
+    // What the user typed into that box. Cleared on a successful pair and
+    // whenever the sidebar selection moves, so a code left over from one
+    // attempt is never silently submitted against a different server.
+    private string _pairingCode = "";
+    public string PairingCode
+    {
+        get => _pairingCode;
+        set
+        {
+            if (_pairingCode == value)
+                return;
+            _pairingCode = value;
+            OnPropertyChanged();
+            // The error is about one attempt, not a standing condition -
+            // editing the code is the user retrying, so it clears.
+            PairingCodeError = null;
+            OnPropertyChanged(nameof(IsPairSubmittable));
+        }
+    }
+
+    // Set when a redeem came back rejected (see PeerSyncCoordinator's
+    // PairingCodeRejected), cleared the moment the user edits the code -
+    // the message is about one attempt, not a standing condition.
+    private string? _pairingCodeError;
+    public string? PairingCodeError
+    {
+        get => _pairingCodeError;
+        set
+        {
+            if (_pairingCodeError == value)
+                return;
+            _pairingCodeError = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // The button is only actionable once there is something to submit -
+    // otherwise "Pair" on an empty box would round-trip just to be rejected.
+    public bool IsPairSubmittable =>
+        !IsPairingCodeRequired || !string.IsNullOrWhiteSpace(PairingCode);
     public bool IsPairActionEnabled => IsSelectedDevicePaired || string.IsNullOrEmpty(PairedServerFingerprint);
     public string? PairActionHint =>
         !IsSelectedDevicePaired && !string.IsNullOrEmpty(PairedServerFingerprint) ? $"Unpair from {PairedServerAlias} first" : null;
@@ -543,9 +597,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // Diffed against the last-notified values rather than re-raised
     // unconditionally: RefreshDeviceDisplayNames is one of the call sites and
     // runs off the 5s peer poll, where the answer is the same every time, and
-    // each of these nine is a computed property the bindings then re-evaluate.
+    // each of these is a computed property the bindings then re-evaluate.
     // See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
-    private (bool, bool, bool, bool, bool, bool, string?, bool, string?)? _lastPairButtonState;
+    private (bool, bool, bool, bool, bool, bool, string?, bool, string?, bool)? _lastPairButtonState;
 
     private void NotifyPairButtonPropertiesChanged()
     {
@@ -558,7 +612,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             IsPairAwaitingApproval,
             PairActionLabel,
             IsPairActionEnabled,
-            PairActionHint);
+            PairActionHint,
+            IsPairingCodeRequired);
 
         if (_lastPairButtonState == state)
             return;
@@ -574,6 +629,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(PairActionLabel));
         OnPropertyChanged(nameof(IsPairActionEnabled));
         OnPropertyChanged(nameof(PairActionHint));
+        OnPropertyChanged(nameof(IsPairingCodeRequired));
+        OnPropertyChanged(nameof(IsPairSubmittable));
     }
 
     // ── Constructors ──────────────────────────────────────────────────────────
@@ -750,6 +807,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _deviceSidebar.SyncPairedServerRow();
         },
             h => Sync.PairingChanged += h, h => Sync.PairingChanged -= h);
+
+        // The redeem happens off the UI thread, so the message it produces has
+        // to come back onto it before a binding reads it.
+        _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
+                PairingCodeError = "That pairing code was not accepted. Ask for a new one and try again."),
+            h => Sync.PairingCodeRejected += h, h => Sync.PairingCodeRejected -= h);
 
         _subscriptions.Add<EventHandler>((_, _) =>
         {
@@ -1225,6 +1288,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     void IDeviceSidebarHost.DeviceRowsChanged()
     {
         OnPropertyChanged(nameof(SelectedDevice));
+        // A code typed for one server must never be submitted against
+        // another, so the box empties whenever the selection moves.
+        PairingCode = "";
+        PairingCodeError = null;
         NotifyPairButtonPropertiesChanged();
     }
 
@@ -1277,6 +1344,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(SelectedDevice));
+        // A code typed for one server must never be submitted against
+        // another, so the box empties whenever the selection moves.
+        PairingCode = "";
+        PairingCodeError = null;
         NotifyPairButtonPropertiesChanged();
         // Live browse, unrestricted by Client/Server role/pairing - see
         // PeerLibraryViewModel's own doc comment. Fire-and-forget: the VM

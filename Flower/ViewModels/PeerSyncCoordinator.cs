@@ -327,7 +327,10 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // a Server is seen - the user has to go looking, via the sidebar's
     // device-detail "Ask to pair" button or ServerPickerView) - called from
     // either of those.
-    public void PairWithServer(DiscoveredDevice device)
+    // pairingCode is non-null only for a headless server (DiscoveredDevice.
+    // PairsByCode), which has nobody to answer a live approval prompt and
+    // hands out admin-issued codes instead.
+    public void PairWithServer(DiscoveredDevice device, string? pairingCode = null)
     {
         _appSettings.PairedServerFingerprint = device.Fingerprint;
         _appSettings.PairedServerAlias = device.Alias;
@@ -347,8 +350,45 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // itself treated as a pairing attempt anymore). Explicitly request
         // pairing first and only start syncing once - if - a human on the
         // other end actually approves it.
-        RunTrackedSync(() => RequestPairingThenSyncAsync(device));
+        RunTrackedSync(() => pairingCode is null
+            ? RequestPairingThenSyncAsync(device)
+            : RedeemPairingCodeThenSyncAsync(device, pairingCode));
     }
+
+    // The headless-server path: the code the admin issued *is* the approval,
+    // so there is no waiting state at all - the redeem either comes back
+    // trusted or the code was wrong, and the difference is known within one
+    // round trip rather than up to a minute. See PeerPairingService.
+    // RedeemPairingCodeAsync.
+    private async Task RedeemPairingCodeThenSyncAsync(DiscoveredDevice device, string pairingCode)
+    {
+        var redeemed = await (_peerPairingService?.RedeemPairingCodeAsync(device, pairingCode) ?? Task.FromResult(false));
+
+        if (_appSettings.PairedServerFingerprint != device.Fingerprint)
+            return;
+
+        if (!redeemed)
+        {
+            // Roll the pairing straight back rather than leaving the UI in
+            // "Waiting for server..." - nothing is coming. A bad code is a
+            // retry, not a state to sit in.
+            _logger.LogWarning("Pairing code for {Alias} ({Fingerprint}) was rejected", device.Alias, device.Fingerprint);
+            Dispatcher.UIThread.Post(UnpairServer);
+            PairingCodeRejected?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        ConfirmServerTrust(device.Fingerprint);
+        _syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0);
+        await (_playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
+        await SyncLibraryAndConfirmTrust(device);
+    }
+
+    // Raised when a redeem came back rejected, so the view can say so instead
+    // of the pairing simply appearing not to have happened. Deliberately an
+    // event and not a piece of state: the message is about one attempt, and
+    // the next keystroke in the code box should clear it.
+    public event EventHandler? PairingCodeRejected;
 
     // See PairWithServer. Runs under RunTrackedSync so the "syncing" spinner
     // covers the wait for the other device's user to tap Allow/Deny, not just

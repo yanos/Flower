@@ -12,7 +12,16 @@ namespace Flower.Persistence
     // PublicKey is the cryptographic trust anchor (see SignatureVerifier), not
     // an optional annotation on the entry - an approval without one is not a
     // usable approval, so it's a plain required field.
-    public sealed record TrustedPeer(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, string PublicKey);
+    //
+    // IsAdmin is a capability flag, never an authentication mechanism: an admin
+    // peer authenticates exactly like any other peer, with the same signature
+    // over the same canonical request, and this only decides whether it may
+    // also reach /api/admin. That is the whole of SYNC-PLAN.md's "the browser
+    // is a device" collapse - a browser tab pairs, signs and is verified like a
+    // phone, and the only thing that distinguishes it is this bool. Defaults to
+    // false so the flag has to be granted deliberately, by redeeming a code
+    // that was itself issued as admin-granting.
+    public sealed record TrustedPeer(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, string PublicKey, bool IsAdmin = false);
 
     public sealed record DeniedPeer(string Fingerprint, string Alias, DateTimeOffset DeniedAt);
 
@@ -82,6 +91,19 @@ namespace Flower.Persistence
         public bool IsTrusted(string fingerprint) =>
             Load().Any(p => p.Fingerprint == fingerprint);
 
+        // Distinct from IsTrusted rather than folded into it: every gated route
+        // needs "is this a peer at all", and only /api/admin needs "and may it
+        // administer the server". Unknown fingerprint is false, same fail-closed
+        // shape as GetPublicKey.
+        public bool IsAdmin(string fingerprint) =>
+            Load().FirstOrDefault(p => p.Fingerprint == fingerprint)?.IsAdmin ?? false;
+
+        // Whether anyone can administer this server yet. Program.cs uses it at
+        // startup to decide whether to mint and print a bootstrap pairing code:
+        // no admin peer means nobody can reach /api/admin to issue one, so the
+        // server has to break that circularity itself.
+        public bool HasAdmin() => Load().Any(p => p.IsAdmin);
+
         // Null for an unknown fingerprint, which the caller fails closed on:
         // no key means the signature can never verify.
         public string? GetPublicKey(string fingerprint) =>
@@ -91,13 +113,13 @@ namespace Flower.Persistence
         // new alias/key) replaces its entry rather than duplicating it. Also
         // clears any pending denial for the same fingerprint, so a later
         // approval doesn't leave a stale "denied" entry sitting alongside it.
-        public async Task ApproveAsync(string fingerprint, string alias, string publicKey)
+        public async Task ApproveAsync(string fingerprint, string alias, string publicKey, bool isAdmin = false)
         {
             await _writeLock.WaitAsync();
             try
             {
                 var peers = Load().Where(p => p.Fingerprint != fingerprint).ToList();
-                peers.Add(new TrustedPeer(fingerprint, alias, DateTimeOffset.UtcNow, publicKey));
+                peers.Add(new TrustedPeer(fingerprint, alias, DateTimeOffset.UtcNow, publicKey, isAdmin));
                 await SaveAsync(peers);
 
                 var denied = LoadDenied().Where(p => p.Fingerprint != fingerprint).ToList();

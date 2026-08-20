@@ -1370,12 +1370,39 @@ public partial class MainView : UserControl
         // it syncs in from the server (see SettingsWindow's
         // CanManageLocalLibrary) - worth a clear warning before it happens,
         // same copy as ServerPickerView's own Pair confirmation.
+        //
+        // A headless server takes an admin-issued code instead of a live
+        // approval (MainViewModel.IsPairingCodeRequired), so the last sentence
+        // and the button both change: nothing is being asked, the code the
+        // user already holds is the approval.
+        var byCode = vm.IsPairingCodeRequired;
+        if (byCode && string.IsNullOrWhiteSpace(vm.PairingCode))
+        {
+            vm.PairingCodeError = "Enter the pairing code first.";
+            return;
+        }
+
+        var approvalSentence = byCode
+            ? $"The pairing code you entered authorizes this device on \"{alias}\" immediately."
+            : $"\"{alias}\" will need to approve the request before syncing begins.";
         var confirmedPair = await ConfirmDialogWindow.ShowAsync(
             owner,
-            $"Ask \"{alias}\" To Pair?",
-            $"This device's library view will be replaced by \"{alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. \"{alias}\" will need to approve the request before syncing begins.",
-            "Ask to pair");
+            byCode ? $"Pair With \"{alias}\"?" : $"Ask \"{alias}\" To Pair?",
+            $"This device's library view will be replaced by \"{alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. {approvalSentence}",
+            byCode ? "Pair" : "Ask to pair");
         if (confirmedPair)
-            vm.PairWithServer(device);
+            vm.PairWithServer(device, byCode ? vm.PairingCode.Trim() : null);
+    }
+
+    // Enter in the pairing-code box runs the same flow as the button - typing
+    // a code and pressing Return is what a user does without thinking, and
+    // having it do nothing reads as the box being broken.
+    private void PairingCodeBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+            return;
+
+        e.Handled = true;
+        PairActionButton_Click(sender, new RoutedEventArgs());
     }
 }
