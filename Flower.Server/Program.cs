@@ -1,5 +1,12 @@
+using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Options;
 
+// For ILoggingBuilder.AddSerilog - the file-writing engine AppLogging just
+// configured. Application code still logs through Microsoft.Extensions.
+// Logging's ILogger everywhere, never Serilog's own.
+using Serilog;
+
+using Flower.Logging;
 using Flower.Persistence;
 using Flower.Models;
 using Flower.Persistence.Sql;
@@ -13,14 +20,63 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<FlowerServerOptions>(builder.Configuration.GetSection(FlowerServerOptions.SectionName));
 
 // TrustedPeerStore/DeviceKeyStore (Flower.Core) resolve their file paths via
-// AppDataDirectory, which defaults to a per-OS user-profile directory -
-// PlatformDataDirectory.Current overrides that, same hook the test suite
-// uses (see Flower.Tests) to avoid writing into a real user's app-support
-// folder. Must be set before anything touches those stores, and read
-// straight off IConfiguration rather than through the DI container, which
-// doesn't exist yet at this point in startup.
-var dataDirectory = builder.Configuration.GetValue<string>($"{FlowerServerOptions.SectionName}:DataDirectory") ?? "./data";
-PlatformDataDirectory.Current = Path.GetFullPath(dataDirectory);
+// AppDataDirectory; PlatformDataDirectory.Current overrides that, the same
+// hook the test suite uses (see Flower.Tests) to avoid writing into a real
+// user's app-support folder. Must be set before anything touches those
+// stores, and read straight off IConfiguration rather than through the DI
+// container, which doesn't exist yet at this point in startup.
+var dataDirectory = ServerDataDirectory.Resolve(
+    builder.Configuration.GetValue<string>($"{FlowerServerOptions.SectionName}:DataDirectory"));
+Directory.CreateDirectory(dataDirectory);
+PlatformDataDirectory.Current = dataDirectory;
+
+// Config comes from two places on purpose. appsettings.json ships next to the
+// binary and carries the defaults; flower-server.json lives in the data
+// directory, which is what an operator actually owns and keeps across an
+// upgrade, a container rebuild or a reinstall - so that is where a setting the
+// operator changed belongs.
+//
+// It has to sit above the appsettings files and below everything else, so it
+// is moved into position rather than appended: a source added at the end
+// outranks the environment and the command line, and a container setting
+// Flower__Alias or ASPNETCORE_URLS would then be silently overruled by a file
+// on its data volume. AddJsonFile builds the source (file provider, reload
+// token, the lot) correctly - all this does is put it back in the chain one
+// slot after the last appsettings file.
+ServerDataDirectory.SeedSettingsFile(dataDirectory);
+builder.Configuration.AddJsonFile(
+    Path.Combine(dataDirectory, ServerDataDirectory.SettingsFileName), optional: true, reloadOnChange: true);
+{
+    var sources = builder.Configuration.Sources;
+    var settingsSource = sources[^1];
+    var lastAppSettings = sources.Count - 1;
+    while (lastAppSettings > 0 && sources[lastAppSettings - 1] is not JsonConfigurationSource)
+        lastAppSettings--;
+    sources.RemoveAt(sources.Count - 1);
+    sources.Insert(lastAppSettings, settingsSource);
+}
+
+// The one setting that cannot come from flower-server.json - it is what found
+// that file - written back as the resolved absolute path so everything reading
+// IOptions<FlowerServerOptions> (FlowerDb's path, below) agrees with what
+// PlatformDataDirectory.Current was just set to, rather than re-resolving a
+// relative path against whatever the working directory happens to be.
+builder.Configuration.AddInMemoryCollection(
+    [new KeyValuePair<string, string?>($"{FlowerServerOptions.SectionName}:DataDirectory", dataDirectory)]);
+
+// File logging, into <DataDirectory>/logs - the same Serilog bootstrap the app
+// uses (AppLogging.LogsDirectory resolves through the PlatformDataDirectory
+// just set), rather than a second configuration of the same sinks. Until now
+// this server logged to the console only, which on a headless box means a
+// crash at 3am is whatever the init system happened to retain.
+//
+// ClearProviders first: AppLogging's own console sink replaces the default
+// console provider rather than doubling every line. The Logging:LogLevel
+// section still applies on top of Serilog's minimum level, so appsettings.json
+// remains the way to turn the noise up or down.
+var logFile = AppLogging.Initialize(fileSizeLimitBytes: 32 * 1024 * 1024);
+builder.Logging.ClearProviders();
+builder.Logging.AddSerilog();
 
 // Nothing in this process should ever accept a body larger than the sync
 // server's own ceiling (SyncHttpServer.MaxBodyBytes, 20 MB) - before this,
@@ -93,6 +149,9 @@ builder.Services.AddSingleton(services =>
 });
 
 var app = builder.Build();
+
+app.Logger.LogInformation("Data directory: {DataDirectory}", dataDirectory);
+app.Logger.LogInformation("Logging to: {LogFile}", logFile);
 
 // Break the bootstrap circularity: pairing codes are issued from /api/admin,
 // and /api/admin can only be reached by a device that already paired as an
@@ -175,6 +234,10 @@ app.MapStreamTicketEndpoints();
 app.MapDiscoveryEndpoints();
 
 app.Run();
+
+// The last few lines of a run are buffered otherwise - same reason
+// MainWindow's Closing handler calls this in the app.
+AppLogging.Shutdown();
 
 // Exposed so Flower.Server.Tests's WebApplicationFactory<Program> can boot the
 // real app in-process. Top-level statements otherwise compile to an internal

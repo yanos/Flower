@@ -40,7 +40,15 @@ namespace Flower.Logging
         // after this from App.axaml.cs once the DI container's own
         // AddLogging(builder => builder.AddSerilog()) has built a factory
         // wrapping the Log.Logger just configured here.
-        public static string Initialize()
+        // fileSizeLimitBytes caps this run's file and rolls to a numbered
+        // sibling when it fills, for a host that stays up for weeks at a time
+        // (Flower.Server) rather than for the length of a desktop session. Left
+        // null - one unbounded file per launch - for the app itself, where a
+        // run is short enough that a size cap would only ever split a log
+        // nobody needed split. Note the interaction with DeleteOldLogs below:
+        // retention counts *files*, so a rolling host keeps the newest 10
+        // segments rather than the newest 10 runs.
+        public static string Initialize(long? fileSizeLimitBytes = null)
         {
             Directory.CreateDirectory(LogsDirectory);
             DeleteOldLogs();
@@ -50,8 +58,12 @@ namespace Flower.Logging
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
                 .Enrich.FromLogContext()
-                .WriteTo.File(path, outputTemplate:
-                    "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+                .WriteTo.File(path,
+                    outputTemplate:
+                    "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}",
+                    fileSizeLimitBytes: fileSizeLimitBytes,
+                    rollOnFileSizeLimit: fileSizeLimitBytes != null,
+                    retainedFileCountLimit: null)
                 // Same content as the file sink, just live in the terminal - added
                 // specifically so sync activity (discovery, playlist/library sync
                 // decisions, trust gate) can be watched in real time while testing,
