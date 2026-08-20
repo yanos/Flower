@@ -561,7 +561,7 @@ public class SyncHttpServer : IDisposable
             {
                 var manifest = new LibrarySyncManifestDto(
                     _deviceIdentity.Fingerprint,
-                    LibraryOpenSubsonicMapper.BuildAllSongs(_library.Tracks, _deviceIdentity.Fingerprint));
+                    LibraryOpenSubsonicMapper.BuildAllSongs(_library.Snapshot, _deviceIdentity.Fingerprint));
                 _cachedManifestJson = JsonSerializer.Serialize(manifest, FlowerJsonContext.Default.LibrarySyncManifestDto);
                 _cachedManifestToken = token;
                 _logger.LogDebug("Rebuilt library manifest at token {Token} ({Bytes} bytes)", token, _cachedManifestJson.Length);
@@ -631,7 +631,7 @@ public class SyncHttpServer : IDisposable
         var size = int.TryParse(query["size"], out var s) ? s : 500;
         var offset = int.TryParse(query["offset"], out var o) ? o : 0;
 
-        var albums = LibraryOpenSubsonicMapper.BuildAlbumList(_library.Tracks)
+        var albums = LibraryOpenSubsonicMapper.BuildAlbumList(_library.Snapshot)
             .Skip(offset)
             .Take(size)
             .ToList();
@@ -646,7 +646,7 @@ public class SyncHttpServer : IDisposable
     private async Task HandleGetAlbumAsync(HttpListenerContext context, byte[] body)
     {
         var id = context.Request.QueryString["id"];
-        var album = id != null ? LibraryOpenSubsonicMapper.FindAlbum(_library.Tracks, id, _deviceIdentity.Fingerprint) : null;
+        var album = id != null ? LibraryOpenSubsonicMapper.FindAlbum(_library.Snapshot, id, _deviceIdentity.Fingerprint) : null;
         if (album == null)
         {
             context.Response.StatusCode = 404;
@@ -667,10 +667,13 @@ public class SyncHttpServer : IDisposable
     // a track this device actually has a file for.
     private async Task HandleStreamAsync(HttpListenerContext context, byte[] body)
     {
+        // Library.Find, not a scan: this used to format every track's Guid to
+        // compare it against the query string, which both duplicated the id
+        // conversion Library already owns and made a stream request O(n) with
+        // an allocation per track. The Path check stays here - "has a real
+        // file" is this endpoint's rule, not the library's.
         var id = context.Request.QueryString["id"];
-        var track = id != null
-            ? _library.Tracks.FirstOrDefault(t => t.Path != null && t.Id.ToString("N") == id)
-            : null;
+        var track = _library.Find(id);
 
         if (track?.Path == null || !File.Exists(track.Path))
         {
@@ -809,7 +812,7 @@ public class SyncHttpServer : IDisposable
     {
         var id = context.Request.QueryString["id"];
         var track = id != null
-            ? _library.Tracks.FirstOrDefault(t => t.Path != null && LibraryOpenSubsonicMapper.AlbumIdFor(t) == id)
+            ? _library.Snapshot.AlbumTracks(id).FirstOrDefault(t => t.Path != null)
             : null;
 
         // The art's own MIME type, carried out of the lookup rather than

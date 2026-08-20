@@ -47,7 +47,7 @@ public class PlaylistControlViewModelTests : IDisposable
         var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
         var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
         return new PlaylistControlViewModel(
-            audio, playlist, library, appSettings ?? new AppSettings(), libraryStore, appSettingsStore,
+            audio, playlist, library, appSettings ?? new AppSettings(), appSettingsStore,
             NullLogger<PlaylistControlViewModel>.Instance);
     }
 

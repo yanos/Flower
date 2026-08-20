@@ -119,8 +119,8 @@ public static class MainViewModelHarness
     public sealed class StubLibrarySyncService : LibrarySyncService
     {
         public StubLibrarySyncService(Library library, DeviceIdentity identity, DeviceSigningKey key,
-            AppSettings appSettings, LibraryStore libraryStore)
-            : base(library, identity, key, appSettings, libraryStore, InMemoryLogStore.Instance,
+            AppSettings appSettings)
+            : base(library, identity, key, appSettings, InMemoryLogStore.Instance,
                    NullLogger<LibrarySyncService>.Instance) { }
 
         public LibrarySyncResult Result { get; set; } = new(Success: true, FetchedCount: 0, AddedCount: 0);
@@ -176,7 +176,7 @@ public static class MainViewModelHarness
         var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
         var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
         var playlistControl = new PlaylistControlViewModel(
-            audio, mainPlaylist, library, appSettings, libraryStore, appSettingsStore,
+            audio, mainPlaylist, library, appSettings, appSettingsStore,
             NullLogger<PlaylistControlViewModel>.Instance);
         var currentlyPlaying = new CurrentlyPlayingControlViewModel(
             playlistControl, audio, library, NullLogger<CurrentlyPlayingControlViewModel>.Instance);
@@ -194,16 +194,16 @@ public static class MainViewModelHarness
             ? new StubPlaylistSyncService(library, deviceIdentity, signingKey, appSettings, syncStateStore, deviceNicknameStore)
             : null;
         var stubLibrarySync = stubSyncServices
-            ? new StubLibrarySyncService(library, deviceIdentity, signingKey, appSettings, libraryStore)
+            ? new StubLibrarySyncService(library, deviceIdentity, signingKey, appSettings)
             : null;
         var playlistSyncService = (PlaylistSyncService?)stubPlaylistSync ?? new PlaylistSyncService(
             library, deviceIdentity, signingKey, appSettings, syncStateStore, deviceNicknameStore,
             NullLogger<PlaylistSyncService>.Instance);
         var librarySyncService = (LibrarySyncService?)stubLibrarySync ?? new LibrarySyncService(
-            library, deviceIdentity, signingKey, appSettings, libraryStore, InMemoryLogStore.Instance,
+            library, deviceIdentity, signingKey, appSettings, InMemoryLogStore.Instance,
             NullLogger<LibrarySyncService>.Instance);
         var libraryDownloadService = new LibraryDownloadService(
-            library, deviceIdentity, signingKey, appSettings, libraryStore,
+            library, deviceIdentity, signingKey, appSettings,
             NullLogger<LibraryDownloadService>.Instance);
         var peerPairingService = new PeerPairingService(
             deviceIdentity, signingKey, NullLogger<PeerPairingService>.Instance);
@@ -219,9 +219,9 @@ public static class MainViewModelHarness
         var busy = new BusyState();
         var main = new MainViewModel(
             playlistControl, library, appSettings, new FakeMusicImporter(), mainPlaylist,
-            libraryStore, appSettingsStore, deviceIdentityStore, deviceNicknameStore, trustedPeerStore,
+            appSettingsStore, deviceIdentityStore, deviceNicknameStore, trustedPeerStore,
             busy,
-            new ITunesImportCoordinator(library, libraryStore, busy, NullLogger<ITunesImportCoordinator>.Instance),
+            new ITunesImportCoordinator(library, busy, NullLogger<ITunesImportCoordinator>.Instance),
             new AnimationClock(),
             new VolumeControlViewModel(audio),
             currentlyPlaying,

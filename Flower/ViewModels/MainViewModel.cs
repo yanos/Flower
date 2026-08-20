@@ -41,7 +41,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     private MainPlaylist?      _mainPlaylist;
     private DeviceIdentity? _deviceIdentity;
     private PairedServerReachability? _reachability;
-    private LibraryStore? _libraryStore;
     private AppSettingsStore? _appSettingsStore;
 
     // The P2P sync coordinator - when to sync, with whom, and the
@@ -288,7 +287,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // through this after writing tags back to disk. Exposed for the same
     // reason as the rest of this block - they are windows and screens with no
     // constructor the container reaches.
-    public LibraryStore? LibraryStore => _libraryStore;
 
     public LogViewModel? Log { get; }
     public EqualizerViewModel Equalizer { get; }
@@ -605,7 +603,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         AppSettings appSettings,
         IMusicImporter importer,
         MainPlaylist mainPlaylist,
-        LibraryStore libraryStore,
         AppSettingsStore appSettingsStore,
         DeviceIdentityStore deviceIdentityStore,
         DeviceNicknameStore deviceNicknameStore,
@@ -662,7 +659,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         PeerLibrary            = deviceIdentity != null && signingKey != null
             ? new PeerLibraryViewModel(deviceIdentity, signingKey, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>())
             : null;
-        _libraryStore          = libraryStore;
         DeviceNicknames        = deviceNicknameStore;
         TrustedPeers           = trustedPeerStore;
         PeerUnpair             = peerUnpairNotifier;
@@ -1315,14 +1311,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     private async Task RebuildDatabaseAsync()
     {
-        if (_importer == null || _mainPlaylist == null || _libraryStore == null)
+        if (_importer == null || _mainPlaylist == null)
             return;
         using var _ = _busy.BeginScope("Rebuilding library…");
         var libraryPaths = _appSettings.LibraryPaths;
         var freshTracks = await _importer.ImportAsync(libraryPaths);
         _mainPlaylist.ReplaceAll(freshTracks);
         Library.UpdateTracks(freshTracks);
-        await _libraryStore.SaveAsync(freshTracks);
     }
 
     // Persists the path list only - deliberately doesn't also rescan, so

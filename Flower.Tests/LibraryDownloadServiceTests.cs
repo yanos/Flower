@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Models;
+using Flower.Persistence.Sql;
 using Flower.Persistence;
 using Flower.Services;
 using Flower.Tests.TestSupport;
@@ -85,12 +86,13 @@ public class LibraryDownloadServiceTests : IDisposable
 
     private static LibraryDownloadService MakeService(Track track, out Library library)
     {
-        library = new Library([track]);
+        // A real TrackRepository, because persistence is Library's own now
+        // (see its ITrackStore) - the service no longer saves anything itself.
+        library = new Library([track], NullLogger<Library>.Instance, new TrackRepository(FlowerDb.OpenDefault()));
         var identity = new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" };
         var signingKey = MakeSigningKey();
         var appSettings = new AppSettings();
-        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
-        return new LibraryDownloadService(library, identity, signingKey, appSettings, libraryStore, NullLogger<LibraryDownloadService>.Instance);
+        return new LibraryDownloadService(library, identity, signingKey, appSettings, NullLogger<LibraryDownloadService>.Instance);
     }
 
     [Fact]

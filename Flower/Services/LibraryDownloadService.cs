@@ -23,16 +23,14 @@ public class LibraryDownloadService
     private readonly DeviceIdentity _deviceIdentity;
     private readonly DeviceSigningKey _signingKey;
     private readonly AppSettings _appSettings;
-    private readonly LibraryStore _libraryStore;
     private readonly ILogger<LibraryDownloadService> _logger;
 
-    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, LibraryStore libraryStore, ILogger<LibraryDownloadService> logger)
+    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, ILogger<LibraryDownloadService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
         _signingKey = signingKey;
         _appSettings = appSettings;
-        _libraryStore = libraryStore;
         _logger = logger;
     }
 
@@ -69,9 +67,10 @@ public class LibraryDownloadService
 
             await client.DownloadTrackAsync(originTrackId, destination);
 
+            // One upsert of the one row whose Path changed. This used to
+            // rewrite all 16k rows to push a single field.
             track.Path = destination;
-            await _libraryStore.SaveAsync(_library.Tracks);
-            _library.NotifyTrackChanged();
+            _library.NotifyTrackChanged(track);
 
             _logger.LogInformation("Downloaded {Title} ({OriginTrackId}) from {Alias} to {Destination}",
                 track.Title, originTrackId, peer.Alias, destination);
@@ -116,8 +115,7 @@ public class LibraryDownloadService
         }
 
         track.Path = null;
-        await _libraryStore.SaveAsync(_library.Tracks);
-        _library.NotifyTrackChanged();
+        _library.NotifyTrackChanged(track);
     }
 
     // Test-only override, checked first below. Unlike AppDataDirectory (see

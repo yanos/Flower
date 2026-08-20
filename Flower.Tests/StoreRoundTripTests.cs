@@ -64,7 +64,7 @@ public class StoreRoundTripTests : IDisposable
             new Track { Title = "A", Artists = "X", Duration = TimeSpan.FromSeconds(125), Path = "/music/a.mp3" },
         };
 
-        await new LibraryStore(NullLogger<LibraryStore>.Instance).SaveAsync(tracks);
+        Repo().ReplaceAll(tracks);
         var loaded = await new LibraryStore(NullLogger<LibraryStore>.Instance).LoadAsync();
 
         Assert.Single(loaded);
@@ -91,7 +91,7 @@ public class StoreRoundTripTests : IDisposable
             new Track { Title = "A", Artists = "X", PlayCount = 1, Duration = TimeSpan.FromSeconds(125), Path = "/music/a.mp3" },
         };
 
-        new LibraryStore(NullLogger<LibraryStore>.Instance).Save(tracks);
+        Repo().ReplaceAll(tracks);
         var loaded = new LibraryStore(NullLogger<LibraryStore>.Instance).Load();
 
         Assert.Single(loaded);
@@ -149,7 +149,7 @@ public class StoreRoundTripTests : IDisposable
         var emptyPlaylist = new MainPlaylist(new List<Track>());
         var audio = new FakeAudioManager();
         var vm = new PlaylistControlViewModel(
-            audio, emptyPlaylist, library, new AppSettings(), new LibraryStore(NullLogger<LibraryStore>.Instance),
+            audio, emptyPlaylist, library, new AppSettings(),
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance), NullLogger<PlaylistControlViewModel>.Instance);
 
         vm.Play(oldTrack);
@@ -172,7 +172,7 @@ public class StoreRoundTripTests : IDisposable
         var trackB = new Track { Title = "B", Path = "/music/b.mp3" };
         var playlist = new Playlist("Favorites", new List<Track> { trackA, trackB });
 
-        await new PlaylistStore().SaveAsync(new List<Playlist> { playlist });
+        PlaylistRepo().Save(new List<Playlist> { playlist });
 
         var loaded = new PlaylistStore().Load(new List<Track> { trackA, trackB });
 
@@ -188,7 +188,7 @@ public class StoreRoundTripTests : IDisposable
         var trackGone = new Track { Title = "Gone", Path = "/music/gone.mp3" };
         var playlist  = new Playlist("Favorites", new List<Track> { trackA, trackGone });
 
-        await new PlaylistStore().SaveAsync(new List<Playlist> { playlist });
+        PlaylistRepo().Save(new List<Playlist> { playlist });
 
         // Simulate "Gone" having been removed from the library since the playlist was saved.
         var loaded = new PlaylistStore().Load(new List<Track> { trackA });
@@ -212,7 +212,7 @@ public class StoreRoundTripTests : IDisposable
         var originalId = playlist.Id;
         var originalUpdatedAt = playlist.UpdatedAt;
 
-        await new PlaylistStore().SaveAsync(new List<Playlist> { playlist });
+        PlaylistRepo().Save(new List<Playlist> { playlist });
         var loaded = new PlaylistStore().Load(new List<Track>());
 
         var only = Assert.Single(loaded);
@@ -227,7 +227,7 @@ public class StoreRoundTripTests : IDisposable
         var id = playlist.Id;
         playlist.Name = "New Name";
 
-        await new PlaylistStore().SaveAsync(new List<Playlist> { playlist });
+        PlaylistRepo().Save(new List<Playlist> { playlist });
         var loaded = new PlaylistStore().Load(new List<Track>());
 
         var only = Assert.Single(loaded);
@@ -843,7 +843,7 @@ public class StoreRoundTripTests : IDisposable
         var local       = new Track { Title = "Local",  Path = "/music/local.mp3" };
         var store       = new PlaylistStore(NullLogger<PlaylistStore>.Instance);
 
-        await store.SaveAsync(new[] { new Playlist("Mix", new List<Track> { local, placeholder }) });
+        PlaylistRepo().Save(new[] { new Playlist("Mix", new List<Track> { local, placeholder }) });
         var loaded = store.Load(new List<Track> { local, placeholder });
 
         var tracks = Assert.Single(loaded).Tracks;
@@ -861,7 +861,7 @@ public class StoreRoundTripTests : IDisposable
         var gone = new Track { Title = "B", Path = "/music/b.mp3" };
         var store = new PlaylistStore(NullLogger<PlaylistStore>.Instance);
 
-        await store.SaveAsync(new[] { new Playlist("Mix", new List<Track> { kept, gone }) });
+        PlaylistRepo().Save(new[] { new Playlist("Mix", new List<Track> { kept, gone }) });
         var loaded = store.Load(new List<Track> { kept });
 
         var playlist = Assert.Single(loaded);
@@ -915,7 +915,7 @@ public class StoreRoundTripTests : IDisposable
 
         // The user then deletes that track and adds another.
         var store = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
-        await store.SaveAsync([new Track { Title = "New", Path = "/music/b.mp3" }]);
+        Repo(db).ReplaceAll([new Track { Title = "New", Path = "/music/b.mp3" }]);
 
         JsonLibraryImport.RunIfNeeded(db, NullLogger.Instance);
 
@@ -1074,7 +1074,7 @@ public class StoreRoundTripTests : IDisposable
         File.WriteAllText(FlowerDb.DefaultPath, "this is not a database");
         var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
 
-        await store.SaveAsync([new Track { Title = "After", Path = "/music/a.mp3" }]);
+        Repo().ReplaceAll([new Track { Title = "After", Path = "/music/a.mp3" }]);
 
         Assert.Equal("After", Assert.Single(store.Load()).Title);
     }
@@ -1160,55 +1160,59 @@ public class StoreRoundTripTests : IDisposable
 
     // ── Tier 4.1: SQLite-backed library ───────────────────────────────────────
 
+    // Seeds the database directly. Writing the library is Library's own job
+    // now (see its ITrackStore) - LibraryStore only reads - so a test that
+    // just needs rows on disk goes to the repository rather than through a
+    // mutation it is not actually exercising.
+    private static TrackRepository Repo() => new(FlowerDb.OpenDefault());
+
+    private static TrackRepository Repo(FlowerDb db) => new(db);
+
+    private static PlaylistRepository PlaylistRepo() => new(FlowerDb.OpenDefault());
+
+    private static PlaylistRepository PlaylistRepo(FlowerDb db) => new(db);
+
     [Fact]
-    public void ScheduleStatsSave_coalesces_a_burst_into_a_single_write()
+    public void A_play_count_bump_is_on_disk_before_it_returns()
     {
         var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
         var track = new Track { Title = "A", Path = "/music/a.mp3" };
-        store.Save([track]);
+        Repo().ReplaceAll([track]);
 
-        // Playing one song fires two of these (RecordPlayed on Play,
-        // IncrementPlayCount on EndReached). Neither should hit the disk on
-        // its own.
-        track.PlayCount = 1;
-        store.ScheduleStatsSave(track);
-        track.PlayCount = 2;
-        store.ScheduleStatsSave(track);
+        // Through Library, not through a store method: the write is Library's
+        // own now (see its ITrackStore), so a caller cannot bump a count and
+        // forget to persist it. Playing one song fires two of these -
+        // RecordPlayed when it starts, IncrementPlayCount when it ends - and
+        // each has to land on its own: this used to be debounced by 3s, and
+        // anything that killed the process inside that window (a crash, or a
+        // phone backgrounding the app, which had no flush hook at all)
+        // silently dropped the increment.
+        var library = new Library([track], NullLogger<Library>.Instance, new TrackRepository(FlowerDb.OpenDefault()));
 
-        Assert.Equal(0, Assert.Single(store.Load()).PlayCount);
+        library.IncrementPlayCount(track);
+        Assert.Equal(1, Assert.Single(store.Load()).PlayCount);
 
-        store.Flush();
-
+        library.IncrementPlayCount(track);
         Assert.Equal(2, Assert.Single(store.Load()).PlayCount);
+
+        library.RecordPlayed(track);
+        Assert.NotNull(Assert.Single(store.Load()).LastPlayedAt);
     }
 
     [Fact]
-    public void Flush_with_nothing_pending_writes_nothing()
+    public void A_play_count_bump_writes_one_row_and_leaves_the_rest_of_the_library_alone()
     {
         var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var played = new Track { Title = "A", Path = "/music/a.mp3" };
+        var untouched = new Track { Title = "B", Path = "/music/b.mp3", PlayCount = 7 };
+        Repo().ReplaceAll([played, untouched]);
 
-        store.Flush();
+        var library = new Library([played, untouched], NullLogger<Library>.Instance, new TrackRepository(FlowerDb.OpenDefault()));
+        library.IncrementPlayCount(played);
 
-        Assert.Empty(store.Load());
-    }
-
-    [Fact]
-    public async Task Save_supersedes_a_pending_ScheduleStatsSave_rather_than_being_overwritten_by_it()
-    {
-        var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
-        var track = new Track { Title = "Song", Path = "/music/a.mp3", PlayCount = 1 };
-        store.Save([track]);
-
-        store.ScheduleStatsSave(track);
-        // The app-exit path (MainWindow's Closing handler): an explicit
-        // synchronous save while a debounced one is still queued. The queued
-        // one must not fire afterwards and put the older state back.
-        track.PlayCount = 9;
-        store.Save([track]);
-
-        await Task.Delay(200);
-
-        Assert.Equal(9, Assert.Single(store.Load()).PlayCount);
+        var loaded = store.Load();
+        Assert.Equal(1, loaded.Single(t => t.Path == "/music/a.mp3").PlayCount);
+        Assert.Equal(7, loaded.Single(t => t.Path == "/music/b.mp3").PlayCount);
     }
 
     [Fact]
@@ -1236,7 +1240,7 @@ public class StoreRoundTripTests : IDisposable
         track.RemotePlayCounts["peer-a"] = 11;
         track.RemotePlayCounts["peer-b"] = 22;
 
-        await store.SaveAsync([track]);
+        Repo().ReplaceAll([track]);
         var reloaded = Assert.Single(store.Load());
 
         Assert.Equal(track.Id, reloaded.Id);
@@ -1291,11 +1295,11 @@ public class StoreRoundTripTests : IDisposable
         var kept = new Track { Title = "Kept", Path = "/music/kept.mp3" };
         var dropped = new Track { Title = "Dropped", Path = "/music/dropped.mp3" };
 
-        await store.SaveAsync([kept, dropped]);
+        Repo().ReplaceAll([kept, dropped]);
         Assert.Equal(2, store.Load().Count);
 
         // A rescan after the file was deleted on disk.
-        await store.SaveAsync([kept]);
+        Repo().ReplaceAll([kept]);
 
         Assert.Equal("Kept", Assert.Single(store.Load()).Title);
     }
@@ -1306,13 +1310,13 @@ public class StoreRoundTripTests : IDisposable
         var store = new LibraryStore(NullLogger<LibraryStore>.Instance);
         var track = new Track { Title = "Gone", Path = "/music/gone.mp3" };
         track.RemotePlayCounts["peer"] = 5;
-        await store.SaveAsync([track]);
+        Repo().ReplaceAll([track]);
 
-        await store.SaveAsync([]);
+        Repo().ReplaceAll([]);
         // Re-adding a track that reuses the id must not inherit the old rows -
         // the child table cascades on delete (see Schema.V1).
         var reused = new Track { Id = track.Id, Title = "Gone", Path = "/music/gone.mp3" };
-        await store.SaveAsync([reused]);
+        Repo().ReplaceAll([reused]);
 
         Assert.Empty(Assert.Single(store.Load()).RemotePlayCounts);
     }
@@ -1327,10 +1331,10 @@ public class StoreRoundTripTests : IDisposable
         var a = new Track { Title = "A", Path = "/music/a.mp3" };
         var b = new Track { Title = "B", Path = "/music/b.mp3" };
         var c = new Track { Title = "C", Path = "/music/c.mp3" };
-        await libraryStore.SaveAsync([a, b, c]);
+        Repo(db).ReplaceAll([a, b, c]);
 
         var playlist = new Playlist("Mix", [c, a, b]);
-        await playlistStore.SaveAsync([playlist]);
+        PlaylistRepo(db).Save([playlist]);
 
         var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
         Assert.Equal(playlist.Id, reloaded.Id);
@@ -1347,12 +1351,12 @@ public class StoreRoundTripTests : IDisposable
 
         var kept = new Track { Title = "Kept", Path = "/music/kept.mp3" };
         var gone = new Track { Title = "Gone", Path = "/music/gone.mp3" };
-        await libraryStore.SaveAsync([kept, gone]);
-        await playlistStore.SaveAsync([new Playlist("Mix", [kept, gone])]);
+        Repo(db).ReplaceAll([kept, gone]);
+        PlaylistRepo(db).Save([new Playlist("Mix", [kept, gone])]);
 
         // The file was deleted and a rescan dropped it from the library, but
         // the playlist row still references it.
-        await libraryStore.SaveAsync([kept]);
+        Repo(db).ReplaceAll([kept]);
 
         var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
         Assert.Equal("Kept", Assert.Single(reloaded.Tracks).Title);
@@ -1366,12 +1370,12 @@ public class StoreRoundTripTests : IDisposable
         var playlistStore = new PlaylistStore(NullLogger<PlaylistStore>.Instance, db);
 
         var track = new Track { Title = "A", Path = "/music/a.mp3" };
-        await libraryStore.SaveAsync([track]);
+        Repo(db).ReplaceAll([track]);
 
         var kept = new Playlist("Kept", [track]);
         var deleted = new Playlist("Deleted", [track]);
-        await playlistStore.SaveAsync([kept, deleted]);
-        await playlistStore.SaveAsync([kept]);
+        PlaylistRepo(db).Save([kept, deleted]);
+        PlaylistRepo(db).Save([kept]);
 
         var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
         Assert.Equal("Kept", reloaded.Name);

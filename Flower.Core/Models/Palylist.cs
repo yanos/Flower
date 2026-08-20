@@ -28,6 +28,44 @@ namespace Flower.Models
         // Library.Playlists is: the save triggered by Changed runs on a
         // threadpool thread (App.axaml.cs) and enumerates this while the UI
         // thread may be adding a track to the very same playlist.
+        private string? _comment;
+
+        // Subsonic's playlist attributes, and the reason this model needed
+        // widening at all: they are columns in Schema.V1, so while the client
+        // had no field for them they could only be written from outside
+        // Flower.Core - which is what forced the server to keep a second,
+        // SQL-per-request view of the same playlists. With a field here, one
+        // resident playlist serves both.
+        public string? Comment
+        {
+            get => _comment;
+            set
+            {
+                _comment = value;
+                Touch();
+            }
+        }
+
+        private bool _isPublic;
+        public bool IsPublic
+        {
+            get => _isPublic;
+            set
+            {
+                _isPublic = value;
+                Touch();
+            }
+        }
+
+        // Set once, at creation, and never touched again - so unlike the two
+        // above it is not a Touch()ing property. Subsonic reports it; nothing
+        // in Flower edits it.
+        public DateTimeOffset CreatedAt { get; }
+
+        // Copy-on-write, never mutated in place, for the same reason
+        // Library.Playlists is: the save triggered by Changed runs on a
+        // threadpool thread (App.axaml.cs) and enumerates this while the UI
+        // thread may be adding a track to the very same playlist.
         private List<Track> _tracks;
 
         // Read-only so that every mutation has to go through the methods below,
@@ -60,10 +98,20 @@ namespace Flower.Models
         {
         }
 
-        public Playlist(Guid id, string name, List<Track> tracks, DateTimeOffset updatedAt)
+        public Playlist(
+            Guid id,
+            string name,
+            List<Track> tracks,
+            DateTimeOffset updatedAt,
+            string? comment = null,
+            bool isPublic = false,
+            DateTimeOffset? createdAt = null)
         {
             Id = id;
             _name = name;
+            _comment = comment;
+            _isPublic = isPublic;
+            CreatedAt = createdAt ?? updatedAt;
             // Defensive copy, matching Library's own constructor - callers can pass a
             // list they keep their own reference to (App.axaml.cs constructs
             // MainPlaylist directly from library.Tracks). Without this, ReplaceAll's

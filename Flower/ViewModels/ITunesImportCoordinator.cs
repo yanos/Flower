@@ -27,17 +27,15 @@ public sealed class ITunesImportCoordinator
     internal static TimeSpan Cooldown = TimeSpan.FromMinutes(1);
 
     private readonly Library _library;
-    private readonly LibraryStore? _libraryStore;
     private readonly BusyState _busy;
     private readonly ILogger _logger;
 
     private DateTimeOffset? _lastPlayCountSyncAt;
     private DateTimeOffset? _lastDateAddedSyncAt;
 
-    public ITunesImportCoordinator(Library library, LibraryStore? libraryStore, BusyState busy, ILogger<ITunesImportCoordinator> logger)
+    public ITunesImportCoordinator(Library library, BusyState busy, ILogger<ITunesImportCoordinator> logger)
     {
         _library      = library;
-        _libraryStore = libraryStore;
         _busy         = busy;
         _logger       = logger;
     }
@@ -83,7 +81,9 @@ public sealed class ITunesImportCoordinator
         // fresh scan result double-counts every placeholder (Path == null)
         // track, since UpdateTracks' own carry-forward step re-adds them a
         // second time on top of their copy already sitting in the argument.
+        // The no-argument form: this mutated every track in place, so the
+        // whole-table rewrite it issues is what actually changed. Persisting
+        // is NotifyTrackChanged's own now - see Library's ITrackStore.
         _library.NotifyTrackChanged();
-        await (_libraryStore?.SaveAsync(_library.Tracks) ?? Task.CompletedTask);
     }
 }

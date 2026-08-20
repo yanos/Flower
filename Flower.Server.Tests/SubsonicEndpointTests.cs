@@ -86,6 +86,16 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
         ];
 
         new TrackRepository(Services.GetRequiredService<FlowerDb>()).ReplaceAll(Seeded);
+
+        // Publishing through LibraryImportService.LoadStored, not by handing
+        // the Library the array directly: since the server reads from its
+        // resident snapshot rather than per-request SQL, seeding the database
+        // behind its back proves nothing. This makes the fixture exercise the
+        // same store-then-load path startup does, so a track that cannot
+        // round-trip through the schema fails here rather than passing against
+        // objects the database never saw.
+        using var scope = Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<LibraryImportService>().LoadStored();
         return Task.CompletedTask;
     }
 
@@ -654,6 +664,127 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
         await server.GetAsync($"/rest/unstar{Auth()}&artistId={Uri.EscapeDataString(artistId)}");
     }
 
+    // The write-through property itself: since reads come from the resident
+    // snapshot rather than from SQL, a write that only reached memory would
+    // still look correct through the API and silently vanish on restart. Both
+    // halves are asserted, from opposite sides.
+    [Fact]
+    public async Task A_star_is_visible_to_reads_and_on_disk_in_the_same_call()
+    {
+        var id = SongId("Love Song");
+
+        await server.GetAsync($"/rest/star{Auth()}&id={id}");
+
+        var song = await server.GetAsync($"/rest/getSong{Auth()}&id={id}");
+        Assert.True(song.GetProperty("song").GetProperty("starred").GetBoolean());
+
+        using (var connection = server.Db.Open())
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT starred, starred_at FROM tracks WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", id);
+            using var reader = command.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(1, reader.GetInt64(0));
+            // Stamped, not left null - the client's History and the sync
+            // protocol both order on it.
+            Assert.False(reader.IsDBNull(1));
+        }
+
+        await server.GetAsync($"/rest/unstar{Auth()}&id={id}");
+    }
+
+    // A song id is a Guid, and Guid.TryParse accepts the dashed spelling as
+    // readily as the 32-char hex the API hands out - so a client that
+    // round-trips an id through its own Guid type and sends it back dashed
+    // used to resolve in memory and then update no row, because the id column
+    // holds hex. The endpoint papered over that by canonicalising the id
+    // before passing it in; Library now tells the store the id of the track it
+    // actually matched, which is the only value guaranteed to agree with the
+    // row it is meant to update.
+    [Fact]
+    public async Task A_star_reaches_the_database_even_when_the_id_arrives_in_dashed_form()
+    {
+        var id = SongId("Love Song");
+        var dashed = Guid.Parse(id).ToString("D");
+        Assert.NotEqual(id, dashed);
+
+        await server.GetAsync($"/rest/star{Auth()}&id={dashed}");
+
+        using (var connection = server.Db.Open())
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT starred FROM tracks WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", id);
+            Assert.Equal(1L, Assert.IsType<long>(command.ExecuteScalar()));
+        }
+
+        await server.GetAsync($"/rest/unstar{Auth()}&id={dashed}");
+    }
+
+    [Fact]
+    public async Task Reloading_rebuilds_a_playlist_created_through_the_API_from_the_database()
+    {
+        var created = await server.GetAsync(
+            $"/rest/createPlaylist{Auth()}&name=Survivor&songId={SongId("Alpha Song")}&songId={SongId("Beta Song")}");
+        var id = created.GetProperty("playlist").GetProperty("id").GetString();
+
+        await server.GetAsync($"/rest/updatePlaylist{Auth()}&playlistId={id}&comment=kept&public=true");
+
+        // Playlists are resident now, so a write that only reached memory would
+        // still read back correctly - this is what tells the two apart. It also
+        // covers membership order and the two Subsonic attributes that used to
+        // have no field on Playlist to load into, which is exactly why they
+        // could not be reloaded before.
+        using (var scope = server.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<LibraryImportService>().LoadStored();
+        }
+
+        var reread = await server.GetAsync($"/rest/getPlaylist{Auth()}&id={id}");
+        var playlist = reread.GetProperty("playlist");
+        Assert.Equal("Survivor", playlist.GetProperty("name").GetString());
+        Assert.Equal("kept", playlist.GetProperty("comment").GetString());
+        Assert.True(playlist.GetProperty("public").GetBoolean());
+        Assert.Equal(
+            ["Alpha Song", "Beta Song"],
+            playlist.GetProperty("entry").EnumerateArray().Select(e => e.GetProperty("title").GetString()));
+
+        await server.GetAsync($"/rest/deletePlaylist{Auth()}&id={id}");
+    }
+
+    [Fact]
+    public async Task Reloading_the_stored_library_keeps_a_star_that_was_set_through_the_API()
+    {
+        var id = SongId("Beta Song");
+        await server.GetAsync($"/rest/star{Auth()}&id={id}");
+
+        // Rebuilds the resident snapshot from the database alone, which is what
+        // a restart does. A star held only in memory would not survive this.
+        using (var scope = server.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<LibraryImportService>().LoadStored();
+        }
+
+        var song = await server.GetAsync($"/rest/getSong{Auth()}&id={id}");
+        Assert.True(song.GetProperty("song").GetProperty("starred").GetBoolean());
+
+        await server.GetAsync($"/rest/unstar{Auth()}&id={id}");
+    }
+
+    [Fact]
+    public async Task An_empty_search_query_matches_nothing_rather_than_the_whole_library()
+    {
+        // Clients call search3 on every keystroke, so the empty string has to
+        // mean "no results", not "everything".
+        var response = await server.GetAsync($"/rest/search3{Auth()}&query=");
+        var result = response.GetProperty("searchResult3");
+
+        Assert.False(result.TryGetProperty("song", out var songs) && songs.GetArrayLength() > 0);
+        Assert.False(result.TryGetProperty("album", out var albums) && albums.GetArrayLength() > 0);
+        Assert.False(result.TryGetProperty("artist", out var artists) && artists.GetArrayLength() > 0);
+    }
+
     [Fact]
     public async Task Starring_with_no_target_is_a_parameter_error()
     {
@@ -677,8 +808,9 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
 
         using (var connection = server.Db.Open())
         {
-            // Incremented in SQL rather than read-modify-write, so two
-            // scrobbles are two increments and neither reads a stale value.
+            // Incremented on the resident Track and written through in the
+            // same call, so the row agrees with what reads are already
+            // reporting - see Library.RecordPlay.
             Assert.Equal(2, PlayCount(connection, id));
         }
     }

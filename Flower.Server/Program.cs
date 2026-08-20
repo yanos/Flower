@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Options;
 
 using Flower.Persistence;
+using Flower.Models;
 using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
-using Flower.Server.Data;
 using Flower.Server.Endpoints;
 using Flower.Server.Services;
 using Flower.Services;
@@ -47,8 +47,24 @@ builder.Services.AddSingleton(services =>
     var serverOptions = services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
     return new FlowerDb(Path.Combine(serverOptions.DataDirectory, "flower.db"));
 });
-builder.Services.AddSingleton<LibraryQueries>();
-builder.Services.AddSingleton<PlaylistQueries>();
+// Stateless over FlowerDb, so one instance for the process: it is the shared
+// SQLite layer, registered here so the library and the importer write tracks
+// through the same object the client does.
+builder.Services.AddSingleton<TrackRepository>();
+
+// The same resident Library the client runs on, for the life of the process,
+// and the same type - there is no server-side wrapper around it. What the
+// server adds is the TrackRepository below: handed in as Library's ITrackStore,
+// it makes a star or a scrobble durable by the time the request is answered,
+// and the PlaylistRepository does the same for a playlist edit. The client
+// registers both the same way. Loaded from the database at startup below, then
+// reconciled by each rescan.
+builder.Services.AddSingleton<PlaylistRepository>();
+builder.Services.AddSingleton(services => new Library(
+    services.GetRequiredService<TrackRepository>().LoadAll(),
+    services.GetRequiredService<ILogger<Library>>(),
+    services.GetRequiredService<TrackRepository>(),
+    services.GetRequiredService<PlaylistRepository>()));
 
 builder.Services.AddScoped<LibraryImportService>();
 builder.Services.AddSingleton<AdminAuthService>();
@@ -98,6 +114,7 @@ using (var scope = app.Services.CreateScope())
     // upgrade path but deleting flower.db (ARCHITECTURE-REVIEW Tier 2.5); a
     // schema change is now an appended script in Flower.Core's Schema.
     var importService = scope.ServiceProvider.GetRequiredService<LibraryImportService>();
+    importService.LoadStored();
     await importService.RescanAsync();
 }
 

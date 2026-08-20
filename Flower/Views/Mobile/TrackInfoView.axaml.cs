@@ -182,10 +182,9 @@ public partial class TrackInfoView : UserControl
         // NotifyTrackChanged, not UpdateTracks(Library.Tracks) - see
         // MainViewModel.SyncITunesPlayCountAsync's comment on why passing
         // Tracks back into UpdateTracks as a "fresh scan" silently doubles
-        // every placeholder track.
-        vm.Main.Library.NotifyTrackChanged();
-        if (vm.Main.LibraryStore is { } libraryStore)
-            await libraryStore.SaveAsync(vm.Main.Library.Tracks);
+        // every placeholder track. The single-track form persists this one
+        // row rather than the whole library.
+        vm.Main.Library.NotifyTrackChanged(_track);
     }
 
     private static string? NullIfEmpty(string? s) =>

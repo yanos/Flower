@@ -23,7 +23,7 @@ public class LibraryOpenSubsonicMapperTests
         var real = RealTrack("A", "Artist", "Album");
         var placeholder = new Track { Title = "B", Artists = "Artist", Album = "Other Album", Path = null, OriginDeviceFingerprint = "peer-1" };
 
-        var albums = LibraryOpenSubsonicMapper.BuildAlbumList(new List<Track> { real, placeholder });
+        var albums = LibraryOpenSubsonicMapper.BuildAlbumList(Snapshot(real, placeholder));
 
         var album = Assert.Single(albums);
         Assert.Equal("Album", album.Name);
@@ -38,7 +38,7 @@ public class LibraryOpenSubsonicMapperTests
             RealTrack("Track2", "Beatles", "Abbey Road", trackNumber: 2),
         };
 
-        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList(tracks));
+        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList(LibrarySnapshot.Build(tracks)));
 
         Assert.Equal("Abbey Road", album.Name);
         Assert.Equal("Beatles", album.Artist);
@@ -55,7 +55,7 @@ public class LibraryOpenSubsonicMapperTests
             RealTrack("Track2", "Artist B", "Greatest Hits"),
         };
 
-        var albums = LibraryOpenSubsonicMapper.BuildAlbumList(tracks);
+        var albums = LibraryOpenSubsonicMapper.BuildAlbumList(LibrarySnapshot.Build(tracks));
 
         Assert.Equal(2, albums.Count);
         Assert.Equal(2, albums.Select(a => a.Id).Distinct().Count());
@@ -73,7 +73,7 @@ public class LibraryOpenSubsonicMapperTests
         foreach (var t in tracks)
             t.AlbumArtists = "Various Artists";
 
-        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList(tracks));
+        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList(LibrarySnapshot.Build(tracks)));
 
         Assert.Equal("Various Artists", album.Artist);
         Assert.Equal(3, album.SongCount);
@@ -90,7 +90,7 @@ public class LibraryOpenSubsonicMapperTests
         foreach (var t in tracks)
             t.IsCompilation = true;
 
-        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList(tracks));
+        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList(LibrarySnapshot.Build(tracks)));
 
         Assert.Equal("Various Artists", album.Artist);
         Assert.Equal(2, album.SongCount);
@@ -107,7 +107,7 @@ public class LibraryOpenSubsonicMapperTests
         };
         var placeholder = new Track { Title = "Not Downloaded", Artists = "X", Album = "Y", Path = null, OriginDeviceFingerprint = "peer-1" };
 
-        var songs = LibraryOpenSubsonicMapper.BuildAllSongs(tracks.Append(placeholder).ToList(), "self-1");
+        var songs = LibraryOpenSubsonicMapper.BuildAllSongs(LibrarySnapshot.Build(tracks.Append(placeholder).ToList()), "self-1");
 
         Assert.Equal(3, songs.Count);
         Assert.DoesNotContain(songs, s => s.Title == "Not Downloaded");
@@ -116,7 +116,7 @@ public class LibraryOpenSubsonicMapperTests
     [Fact]
     public void FindAlbum_returns_null_for_an_unknown_id()
     {
-        Assert.Null(LibraryOpenSubsonicMapper.FindAlbum(new List<Track>(), "al:nope|nope", "self-1"));
+        Assert.Null(LibraryOpenSubsonicMapper.FindAlbum(Snapshot(), "al:nope|nope", "self-1"));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public class LibraryOpenSubsonicMapperTests
         };
         var albumId = SubsonicIdentity.AlbumId("Beatles", "Abbey Road");
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum(tracks, albumId, "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(LibrarySnapshot.Build(tracks), albumId, "self-1");
 
         Assert.NotNull(album);
         Assert.Equal(2, album!.Song?.Count);
@@ -159,7 +159,7 @@ public class LibraryOpenSubsonicMapperTests
         Assert.EndsWith("|370", track.SyncKey); // Sanity check on the premise itself.
 
         var albumId = SubsonicIdentity.AlbumId("Angine de Poitrine", "Vol.II");
-        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, albumId, "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(Snapshot(track), albumId, "self-1");
 
         Assert.Equal(370, album!.Song![0].Duration);
     }
@@ -169,7 +169,7 @@ public class LibraryOpenSubsonicMapperTests
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road");
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(Snapshot(track), SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
 
         Assert.Equal("mp3", album!.Song!.Single().Suffix);
     }
@@ -179,7 +179,7 @@ public class LibraryOpenSubsonicMapperTests
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road", durationSeconds: 259);
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(Snapshot(track), SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
 
         Assert.Equal(track.Id.ToString("N"), album!.Song!.Single().Id);
         Assert.NotEqual(track.SyncKey, album.Song!.Single().Id);
@@ -193,10 +193,10 @@ public class LibraryOpenSubsonicMapperTests
     public void ToChild_song_id_survives_a_tag_edit_on_the_serving_device()
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road", durationSeconds: 259);
-        var before = LibraryOpenSubsonicMapper.FindAlbum([track], LibraryOpenSubsonicMapper.AlbumIdFor(track), "self-1")!.Song!.Single().Id;
+        var before = LibraryOpenSubsonicMapper.FindAlbum(Snapshot(track), LibraryOpenSubsonicMapper.AlbumIdFor(track), "self-1")!.Song!.Single().Id;
 
         track.Title = "Come Together (Remastered)";
-        var after = LibraryOpenSubsonicMapper.FindAlbum([track], LibraryOpenSubsonicMapper.AlbumIdFor(track), "self-1")!.Song!.Single().Id;
+        var after = LibraryOpenSubsonicMapper.FindAlbum(Snapshot(track), LibraryOpenSubsonicMapper.AlbumIdFor(track), "self-1")!.Song!.Single().Id;
 
         Assert.Equal(before, after);
         Assert.NotEqual(track.SyncKey, after); // Sanity check on the premise: SyncKey did move.
@@ -209,7 +209,7 @@ public class LibraryOpenSubsonicMapperTests
         track.PlayCount = 3;
         track.ImportedPlayCount = 4;
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(Snapshot(track), SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
 
         Assert.Equal(7, album!.Song!.Single().PlayCounts!["self-1"]);
     }
@@ -220,7 +220,7 @@ public class LibraryOpenSubsonicMapperTests
         var track = RealTrack("Come Together", "Beatles", "Abbey Road");
         track.RemotePlayCounts = new Dictionary<string, int> { ["peer-2"] = 12 };
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum(new List<Track> { track }, SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(Snapshot(track), SubsonicIdentity.AlbumId("Beatles", "Abbey Road"), "self-1");
 
         Assert.Equal(12, album!.Song!.Single().PlayCounts!["peer-2"]);
     }
@@ -251,7 +251,7 @@ public class LibraryOpenSubsonicMapperTests
         Assert.Equal(SubsonicIdentity.AlbumId("Various Artists", "Compilation"), LibraryOpenSubsonicMapper.AlbumIdFor(first));
 
         // And the id the album listing actually publishes is that same one.
-        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList([first, second]));
+        var album = Assert.Single(LibraryOpenSubsonicMapper.BuildAlbumList(Snapshot(first, second)));
         Assert.Equal(LibraryOpenSubsonicMapper.AlbumIdFor(first), album.Id);
     }
 
@@ -264,7 +264,7 @@ public class LibraryOpenSubsonicMapperTests
             Album = "Compilation", Path = "/music/one.mp3",
         };
 
-        var album = LibraryOpenSubsonicMapper.FindAlbum([track], LibraryOpenSubsonicMapper.AlbumIdFor(track), "self-1");
+        var album = LibraryOpenSubsonicMapper.FindAlbum(Snapshot(track), LibraryOpenSubsonicMapper.AlbumIdFor(track), "self-1");
 
         Assert.Equal(SubsonicIdentity.ArtistId("Various Artists"), album!.Song!.Single().ArtistId);
         Assert.Equal(album.ArtistId, album.Song!.Single().ArtistId);
@@ -283,4 +283,8 @@ public class LibraryOpenSubsonicMapperTests
         Assert.DoesNotContain(artist.Trim().ToLowerInvariant(), id);
         Assert.NotEqual(SubsonicIdentity.AlbumId(album, artist), id); // Argument order is meaningful.
     }
+
+    // The mapper reads through the library's own grouped snapshot now, so a
+    // test that wants to map a handful of tracks builds one over them.
+    private static LibrarySnapshot Snapshot(params Track[] tracks) => LibrarySnapshot.Build(tracks);
 }

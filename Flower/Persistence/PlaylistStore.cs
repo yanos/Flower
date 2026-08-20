@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -17,6 +14,12 @@ namespace Flower.Persistence
     // membership is still stored as ids and resolved against the library on
     // load; that part did not change, it just moved from a JSON array to a
     // playlist_tracks table with a real position column.
+    //
+    // Read-only, like LibraryStore: writing a playlist set is Library's own
+    // (see its IPlaylistStore), which is what makes an in-place rename or
+    // drag-reorder persist without any call site remembering to ask. What is
+    // left here is the client-specific policy on the read - an unreadable
+    // playlist table degrades to "no playlists" and lets the app start.
     public class PlaylistStore
     {
         private readonly ILogger<PlaylistStore> _logger;
@@ -49,30 +52,6 @@ namespace Flower.Persistence
             {
                 _logger.LogWarning(ex, "Failed to load playlists from {Path}; starting with no playlists", StorePath);
                 return [];
-            }
-        }
-
-        private readonly SemaphoreSlim _writeLock = new(1, 1);
-
-        public async Task SaveAsync(IEnumerable<Playlist> playlists)
-        {
-            // Enumerated inside _writeLock, not before it. Saves are triggered
-            // by Library.PlaylistsChanged rather than by one call site at a
-            // time, so two can genuinely be in flight at once; reading current
-            // state under the lock means whoever writes last writes the newest
-            // state.
-            await _writeLock.WaitAsync();
-            try
-            {
-                _playlists.Save(playlists);
-            }
-            catch (Exception ex) when (ex is SqliteException)
-            {
-                _logger.LogWarning(ex, "Could not save playlists to {Path}; skipping this save", StorePath);
-            }
-            finally
-            {
-                _writeLock.Release();
             }
         }
     }

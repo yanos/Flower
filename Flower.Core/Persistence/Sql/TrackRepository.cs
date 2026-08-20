@@ -9,15 +9,14 @@ using Flower.Services;
 
 namespace Flower.Persistence.Sql
 {
-    // Reading and writing tracks. Shared by the client and, once it is ported
-    // off EF Core, Flower.Server - see FlowerDb's remarks.
-    public sealed class TrackRepository(FlowerDb db)
+    // Reading and writing tracks, shared by the client and Flower.Server - see
+    // FlowerDb's remarks.
+    public sealed class TrackRepository(FlowerDb db) : ITrackStore
     {
         // Every column in declaration order, reused by both the reader and the
         // upsert so the two cannot drift apart in ordering.
-        // Public so Flower.Server can build its own predicates over the same
-        // column list and row mapper instead of keeping a second copy of both
-        // (see Flower.Server/Data/LibraryQueries.cs).
+        // Public so Flower.Server can load through the same column list and
+        // row mapper instead of keeping a second copy of both.
         public const string Columns = """
             id, path, title, subtitle, artists, album_artists, is_compilation,
             album, album_sort, year, track_number, track_count, disc_number, disc_count,
@@ -62,7 +61,7 @@ namespace Flower.Persistence.Sql
                 using var reader = command.ExecuteReader();
                 while (reader.Read())
                 {
-                    if (byId.TryGetValue(Guid.Parse(reader.GetString(0)), out var track))
+                    if (byId.TryGetValue(EntityId.FromKey(reader.GetString(0)), out var track))
                         track.RemotePlayCounts[reader.GetString(1)] = reader.GetInt32(2);
                 }
             }
@@ -122,7 +121,36 @@ namespace Flower.Persistence.Sql
             command.Parameters.AddWithValue("$play_count", track.PlayCount);
             command.Parameters.AddWithValue("$imported_play_count", track.ImportedPlayCount);
             command.Parameters.AddWithValue("$last_played_at", (object?)track.LastPlayedAt?.UtcTicks ?? DBNull.Value);
-            command.Parameters.AddWithValue("$id", track.Id.ToString("N"));
+            command.Parameters.AddWithValue("$id", track.Id.ToKey());
+            command.ExecuteNonQuery();
+        }
+
+        // Star or unstar every track matching one Subsonic id - a song, or
+        // every track on an album or by an album artist. One indexed UPDATE
+        // rather than a loop of single-row writes, which is why it lives here
+        // and not in UpdateStats' shape.
+        //
+        // The caller is expected to have already applied the same change to
+        // the in-memory Track objects; this is the durability half, reached
+        // through ITrackStore from Library.SetStarred.
+        public void SetStarred(StarTarget target, string value, bool starred, DateTimeOffset? starredAt)
+        {
+            // The column is chosen from the enum, never interpolated from user
+            // input - SQLite cannot bind an identifier. All three are indexed.
+            var column = target switch
+            {
+                StarTarget.Song => "id",
+                StarTarget.Album => "album_id",
+                _ => "artist_id",
+            };
+
+            using var connection = db.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                $"UPDATE tracks SET starred = $starred, starred_at = $starred_at WHERE {column} = $value;";
+            command.Parameters.AddWithValue("$starred", starred ? 1 : 0);
+            command.Parameters.AddWithValue("$starred_at", (object?)starredAt?.UtcTicks ?? DBNull.Value);
+            command.Parameters.AddWithValue("$value", value);
             command.ExecuteNonQuery();
         }
 
@@ -162,7 +190,7 @@ namespace Flower.Persistence.Sql
                 while (reader.Read())
                 {
                     var id = reader.GetString(0);
-                    if (!keep.Contains(Guid.Parse(id)))
+                    if (!keep.Contains(EntityId.FromKey(id)))
                         doomed.Add(id);
                 }
             }
@@ -209,7 +237,7 @@ namespace Flower.Persistence.Sql
 
             foreach (var track in tracks)
             {
-                var id = track.Id.ToString("N");
+                var id = track.Id.ToKey();
 
                 // Replaced wholesale per track rather than merged: the in-memory
                 // dictionary is already the merged result (Library.MergeRemotePlayCounts
@@ -324,7 +352,7 @@ namespace Flower.Persistence.Sql
         private static void BindUpsert(SqliteCommand command, Track track)
         {
             var p = command.Parameters;
-            p["$id"].Value = track.Id.ToString("N");
+            p["$id"].Value = track.Id.ToKey();
             p["$path"].Value = Nullable(track.Path);
             p["$title"].Value = Nullable(track.Title);
             p["$subtitle"].Value = Nullable(track.Subtitle);
@@ -381,7 +409,7 @@ namespace Flower.Persistence.Sql
 
         public static Track ReadTrack(SqliteDataReader reader) => new()
         {
-            Id = Guid.Parse(reader.GetString(0)),
+            Id = EntityId.FromKey(reader.GetString(0)),
             Path = Text(reader, 1),
             Title = Text(reader, 2),
             Subtitle = Text(reader, 3),

@@ -2,6 +2,8 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 
+using Flower.Models;
+
 namespace Flower.Services;
 
 // The one and only (artist, album) -> id function in the codebase, shared by
@@ -30,6 +32,14 @@ public static class SubsonicIdentity
 
     public static string AlbumId(string? albumArtist, string? album) =>
         "al-" + Hash(Normalize(albumArtist) + "|" + Normalize(album));
+
+    // The grouping key for one track, in one place. An album is identified by
+    // its *album* artist, never the per-track Artists - getting that wrong
+    // silently 404'd cover art for every compilation (ARCHITECTURE-REVIEW Tier
+    // 2.1). Every caller that groups tracks into albums goes through this:
+    // the client's own embedded sync server (LibraryOpenSubsonicMapper) and
+    // the standalone server's resident snapshot (LibrarySnapshot.Build).
+    public static string AlbumIdFor(Track track) => AlbumId(track.EffectiveAlbumArtist, track.Album);
 
     private static string Normalize(string? value) => value?.Trim().ToLowerInvariant() ?? "";
 

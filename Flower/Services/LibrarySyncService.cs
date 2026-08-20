@@ -72,7 +72,6 @@ public class LibrarySyncService
     private readonly DeviceIdentity _deviceIdentity;
     private readonly DeviceSigningKey _signingKey;
     private readonly AppSettings _appSettings;
-    private readonly LibraryStore _libraryStore;
     private readonly InMemoryLogStore _logStore;
     private readonly ILogger _logger;
 
@@ -80,13 +79,12 @@ public class LibrarySyncService
     // same meaning here.
     public event EventHandler<PeerTrustRejectedEventArgs>? PeerTrustRejected;
 
-    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, LibraryStore libraryStore, InMemoryLogStore logStore, ILogger<LibrarySyncService> logger)
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, InMemoryLogStore logStore, ILogger<LibrarySyncService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
         _signingKey = signingKey;
         _appSettings = appSettings;
-        _libraryStore = libraryStore;
         _logStore = logStore;
         _logger = logger;
     }
@@ -171,12 +169,12 @@ public class LibrarySyncService
         _logger.LogInformation("Library sync with {Alias}: merged catalog, {AddedCount} new placeholder(s) added, {RemovedCount} stale placeholder(s) pruned ({TotalBefore} -> {TotalAfter})",
             device.Alias, addedCount, removedCount, beforeCount, _library.Tracks.Count);
 
-        // Without this, a merge only lives in memory - a killed/relaunched app
-        // (mobile has no always-on background process) would lose every
+        // The merge above persisted itself (see Library's ITrackStore).
+        // Without that a merge only lived in memory, and a killed/relaunched
+        // app (mobile has no always-on background process) lost every
         // not-yet-downloaded placeholder learned this way until the next
-        // successful sync. PlaylistSyncService and LibraryDownloadService both
-        // already persist after their own mutations; this one previously did not.
-        await _libraryStore.SaveAsync(_library.Tracks);
+        // successful sync - which is exactly the kind of "the caller forgot"
+        // bug that moving the write into Library removes by construction.
 
         // Only after the merge *and* the save have both succeeded - remembering
         // the token any earlier would mean a failure between fetch and persist
