@@ -19,6 +19,13 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
     private readonly MulticastService _mdns = new();
     private readonly ServiceDiscovery _serviceDiscovery;
 
+    // Stop() is reached twice on an ordinary shutdown - once from the host's
+    // stopping phase, so peers get the goodbye while the process is still
+    // alive, and again from Dispose - and Makaretu's Unadvertise throws a
+    // NullReferenceException the second time, out of a Dispose, where it takes
+    // the shutdown path down with it.
+    private bool _stopped;
+
     public event EventHandler<MdnsInstanceFound>? InstanceFound;
     public event EventHandler<string>? InstanceLost;
 
@@ -43,6 +50,7 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
 
     public void Advertise(string instanceName, string serviceType, int port)
     {
+        _stopped = false;
         _serviceDiscovery.Advertise(new ServiceProfile(instanceName, serviceType, (ushort)port));
         _mdns.Start();
     }
@@ -51,6 +59,10 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
 
     public void Stop()
     {
+        if (_stopped)
+            return;
+        _stopped = true;
+
         _serviceDiscovery.Unadvertise();
         _mdns.Stop();
     }
