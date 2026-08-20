@@ -118,6 +118,24 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         set => Sync.DeviceAlias = value;
     }
 
+    // Master switch for the whole iTunes/Music.app integration - see
+    // AppSettings.IntegrateWithITunes. Persisted immediately on change, like
+    // the two flags it gates below; the callers of those two
+    // (App.axaml.cs's startup rescan and SettingsWindow.SaveButton_Click)
+    // check this first, so nothing here has to reach out and clear them.
+    public bool IntegrateWithITunes
+    {
+        get => _appSettings.IntegrateWithITunes;
+        set
+        {
+            if (_appSettings.IntegrateWithITunes == value)
+                return;
+            _logger.LogInformation("IntegrateWithITunes changed {Old} -> {New}", _appSettings.IntegrateWithITunes, value);
+            _appSettings.IntegrateWithITunes = value;
+            SaveSettings();
+        }
+    }
+
     // Whether to import per-track play counts from iTunes/Music.app on every
     // launch - see ITunesPlayCountImporter. Persisted immediately on change,
     // like SortArtistAlbumsByYear below, rather than gated behind Settings'

@@ -84,31 +84,43 @@
            folders/rebuilding its own database/pulling its own iTunes data
            doesn't make sense here. -->
       <TabItem Header="Library">
-        <Grid x:Name="LibraryTabContent" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="0,12,0,0">
+        <Grid x:Name="LibraryTabContent" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="0,12,0,0">
+          <!-- Master switch for the whole Music.app integration (see
+               AppSettings.IntegrateWithITunes): with it off, Music.app's media
+               folder is no longer auto-added to the library paths below and
+               neither per-track import runs. The two sub-checkboxes stay
+               visible but disabled, keeping their own remembered values for
+               when it's switched back on. -->
           <CheckBox Grid.Row="0"
-                    x:Name="SyncPlayCountCheckBox"
-                    Content="Sync play count from iTunes/Music.app"
-                    IsCheckedChanged="SyncPlayCountCheckBox_IsCheckedChanged"/>
+                    x:Name="IntegrateWithITunesCheckBox"
+                    Content="Use iTunes/Music.app library"
+                    IsCheckedChanged="IntegrateWithITunesCheckBox_IsCheckedChanged"/>
 
           <CheckBox Grid.Row="1"
+                    x:Name="SyncPlayCountCheckBox"
+                    Content="Sync play count from iTunes/Music.app"
+                    Margin="20,4,0,0"
+                    IsCheckedChanged="SyncPlayCountCheckBox_IsCheckedChanged"/>
+
+          <CheckBox Grid.Row="2"
                     x:Name="SyncDateAddedCheckBox"
                     Content="Sync date added from iTunes/Music.app"
-                    Margin="0,4,0,0"
+                    Margin="20,4,0,0"
                     IsCheckedChanged="SyncDateAddedCheckBox_IsCheckedChanged"/>
-          
-          <TextBlock Grid.Row="2"
+
+          <TextBlock Grid.Row="3"
                      x:Name="ITunesLibraryPathText"
-                     Margin="20,2,0,0"
+                     Margin="40,2,0,0"
                      FontSize="11"
                      Opacity="0.6"
                      TextTrimming="CharacterEllipsis"/>
 
-          <TextBlock Grid.Row="3"
+          <TextBlock Grid.Row="4"
                      Text="Library Folders"
                      FontWeight="SemiBold"
                      Margin="0,16,0,8"/>
 
-          <Border Grid.Row="4"
+          <Border Grid.Row="5"
                   BorderThickness="1"
                   BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
             <ListBox x:Name="PathsList">
@@ -138,7 +150,7 @@
             </ListBox>
           </Border>
 
-          <StackPanel Grid.Row="5"
+          <StackPanel Grid.Row="6"
                       Orientation="Horizontal"
                       Margin="0,12,0,0"
                       HorizontalAlignment="Left"
@@ -147,7 +159,7 @@
             <Button x:Name="RemoveButton" Content="Remove Selected" Click="RemoveButton_Click"/>
           </StackPanel>
 
-          <Button Grid.Row="6"
+          <Button Grid.Row="7"
                   Content="Rebuild Database"
                   Margin="0,8,0,0"
                   HorizontalAlignment="Left"
