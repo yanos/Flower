@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.MarkupExtensions;
+using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
@@ -432,13 +434,13 @@ public partial class App : Application
             Control singleView;
             if (OperatingSystem.IsBrowser())
             {
-                var browserRoot = new Border
-                {
-                    Child = new MainView { DataContext = mainViewModel }
-                };
+                var browserMainView = new MainView { DataContext = mainViewModel };
+                var browserRoot = new Border { Child = browserMainView };
                 browserRoot[!Border.BackgroundProperty] =
                     new DynamicResourceExtension("SystemControlBackgroundAltHighBrush");
                 singleView = browserRoot;
+
+                OpenServerSettingsFromUrl(browserMainView, logger);
             }
             else
             {
@@ -545,5 +547,43 @@ public partial class App : Application
         }
 
         return mainView;
+    }
+
+    // The browser half of the desktop client's "Server Settings..." button.
+    //
+    // That button mints a short-lived admin session against the server and opens
+    // this page at #admin=<token>&page=settings (see
+    // MainViewModel.OpenSelectedServerSettingsAsync and Flower.Server's
+    // AdminSessionService). The token is the browser's whole authority here - it
+    // cannot sign anything, because .NET-for-WebAssembly has no asymmetric crypto
+    // at all, which is the same reason DeviceSigningKey is not registered on this
+    // platform (see RegisterServices above).
+    //
+    // The settings shown are then the *server's*, not this app's: a
+    // RemoteServerSettingsBackend over the origin the page was served from, which
+    // is the server itself.
+    private static void OpenServerSettingsFromUrl(MainView mainView, Microsoft.Extensions.Logging.ILogger logger)
+    {
+        try
+        {
+            var fragment = BrowserLocation.TakeFragment();
+            if (!fragment.TryGetValue("admin", out var token) || string.IsNullOrWhiteSpace(token))
+                return;
+
+            var client = ServerAdminClient.ForSession(new HttpClient(), BrowserLocation.Origin, token);
+            var settings = new SettingsViewModel(new RemoteServerSettingsBackend(client));
+
+            // Posted rather than called inline: the view is not attached to a
+            // visual tree yet at this point in OnFrameworkInitializationCompleted,
+            // and SettingsPanel's own load path expects to be.
+            Dispatcher.UIThread.Post(() => mainView.ShowSettingsOverlay(settings, mainViewModel: null));
+        }
+        catch (Exception ex)
+        {
+            // A malformed fragment, or a browser that would not give us one, must
+            // not stop the app from starting - the user can still open Settings
+            // themselves, they just will not be administering the server.
+            logger.LogWarning(ex, "Could not read the admin session from the page URL");
+        }
     }
 }

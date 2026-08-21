@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using Flower.Models;
 using Flower.Persistence;
@@ -140,25 +141,88 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         window.Close();
     }
 
-    // Both views reach their services through the one MainViewModel they are
-    // handed. A per-test TrustedPeerStore is the whole point: this row exists
-    // because *this* test put it there, which was impossible while the store
-    // came out of the process-wide container.
+    // The trusted-device list is now part of SettingsPanel and is fed by
+    // SettingsViewModel over an ISettingsBackend, so what used to be asserted
+    // against TrustedDevicesView's ItemsSource is asserted against the model that
+    // fills it. A per-test TrustedPeerStore is still the whole point: this row
+    // exists because *this* test put it there, which was impossible while the
+    // store came out of the process-wide container.
     [AvaloniaFact]
-    public async Task A_trusted_devices_view_lists_the_peers_its_view_model_was_given()
+    public async Task Settings_lists_the_trusted_peers_its_view_model_was_given()
     {
         using var parts = BuildClient();
         await parts.Main.TrustedPeers.ApproveAsync(ServerFingerprint, "Living Room", "test-public-key");
 
-        var view = new TrustedDevicesView(parts.Main);
-        var window = Show(view);
+        var settings = new SettingsViewModel(new LocalSettingsBackend(parts.Main));
+        await settings.LoadAsync();
 
-        var rows = (view.FindControl<ListBox>("DevicesList")?.ItemsSource as IEnumerable<object>)?
-            .Cast<TrustedPeerRow>().ToList();
+        Assert.Equal("Living Room", Assert.Single(settings.Devices).Alias);
+    }
 
-        Assert.NotNull(rows);
-        Assert.Equal("Living Room", Assert.Single(rows).Alias);
+    // Loads the real XAML and walks every tab, which is the only thing that
+    // catches a broken binding path or a DataTemplate whose x:DataType no longer
+    // matches - compiled bindings fail at load, not at first paint.
+    [AvaloniaFact]
+    public async Task The_settings_panel_renders_every_tab()
+    {
+        using var parts = BuildClient();
+
+        var settings = new SettingsViewModel(new LocalSettingsBackend(parts.Main));
+        var panel = new SettingsPanel(settings, parts.Main);
+        var window = Show(panel);
+        Dispatcher.UIThread.RunJobs();
+
+        var tabs = panel.GetVisualDescendants().OfType<TabControl>().Single();
+        for (var i = 0; i < tabs.ItemCount; i++)
+        {
+            tabs.SelectedIndex = i;
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        // Five declared - General, Library, Devices, Network, Logs - of which the
+        // last two are collapsed for a local backend (see SettingsCapabilities).
+        Assert.Equal(5, tabs.ItemCount);
+        await settings.LoadAsync();
 
         window.Close();
+    }
+
+    // The capability flags are what let one SettingsPanel serve both this device
+    // and a remote server, so a regression in them silently shows the wrong
+    // controls rather than failing anything.
+    [AvaloniaFact]
+    public async Task Local_settings_offer_the_app_only_controls_and_not_the_server_ones()
+    {
+        using var parts = BuildClient();
+
+        var settings = new SettingsViewModel(new LocalSettingsBackend(parts.Main));
+        await settings.LoadAsync();
+
+        Assert.True(settings.Capabilities.ThemePicker);
+        Assert.True(settings.Capabilities.ITunesIntegration);
+        Assert.True(settings.Capabilities.SyncRole);
+        Assert.True(settings.Capabilities.RebuildDatabase);
+
+        Assert.False(settings.Capabilities.ServerNetwork);
+        Assert.False(settings.Capabilities.PairingCodes);
+        Assert.False(settings.Capabilities.SubsonicCredentials);
+        Assert.False(settings.Capabilities.Log);
+    }
+
+    // An unpaired Client still curates its own library; only "Client, paired"
+    // disables it, and ticking "Act as Server" re-enables it straight away rather
+    // than after a save-and-reopen.
+    [AvaloniaFact]
+    public async Task An_unpaired_client_can_still_manage_its_own_library()
+    {
+        using var parts = BuildClient();
+
+        var settings = new SettingsViewModel(new LocalSettingsBackend(parts.Main));
+        await settings.LoadAsync();
+
+        Assert.True(settings.CanManageLibrary);
+
+        settings.IsServer = true;
+        Assert.True(settings.CanManageLibrary);
     }
 }

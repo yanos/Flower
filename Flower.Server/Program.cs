@@ -125,6 +125,13 @@ builder.Services.AddSingleton(services => new Library(
 builder.Services.AddScoped<LibraryImportService>();
 builder.Services.AddSingleton<PairingCodeService>();
 builder.Services.AddSingleton<StreamTicketService>();
+// Short-lived derived authority for the browser settings page, which cannot sign
+// its own requests - see AdminSessionService for why that is a property of the
+// WebAssembly runtime rather than a shortcut taken here.
+builder.Services.AddSingleton<AdminSessionService>();
+// Owns "a rescan is running", so the admin API can start one without two
+// operators racing two importers over the same folders.
+builder.Services.AddSingleton<LibraryRescanCoordinator>();
 builder.Services.AddSingleton<NonceReplayGuard>();
 builder.Services.AddSingleton<TrustedPeerStore>();
 builder.Services.AddSingleton<SubsonicCredentialStore>();
@@ -196,13 +203,33 @@ app.Logger.LogInformation("Logging to: {LogFile}", logFile);
             : "  No device can administer this server yet.");
         Console.WriteLine($"  Pair one with this code (valid until {expiresAt.ToLocalTime():HH:mm:ss}): {code}");
         Console.WriteLine($"  Or open: {new PairingInvite(host, code, signingKey.Fingerprint)}");
+
+        // The web UI is administered by a token minted by an admin device, and
+        // at this point there is no admin device - so the console mints one for
+        // itself. Printed under exactly the same gate as the pairing code above,
+        // never on an ordinary boot: this is a live credential, which is also why
+        // it goes to stdout rather than through the ILogger.
+        //
+        // Addressed differently from the pairing invite above: that one is for
+        // some *other* device, so a wildcard bind honestly reads as
+        // "<this-server>", while this one is for whoever is reading this console,
+        // who is on the machine. So it resolves the configured bind address and
+        // turns a wildcard into localhost, giving a link that can just be clicked.
+        var browserHost = ResolveLocalHost(builder.Configuration["Urls"]) ?? host;
+        Console.WriteLine();
+        Console.WriteLine("  Settings in a browser (valid for one hour):");
+        Console.WriteLine($"  {WebUiHosting.BuildConsoleSessionUrl(app.Services.GetRequiredService<AdminSessionService>(), browserHost)}");
         Console.WriteLine();
     }
 }
 
 app.Use(async (context, next) =>
 {
-    var serverOptions = context.RequestServices.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
+    // Monitor, not IOptions: the allow-list is editable from the admin API, and
+    // IOptions binds once for the life of the process - a CIDR added in the
+    // browser would then not apply until a restart, which is exactly the setting
+    // an operator is most likely to be changing *because* they are locked out.
+    var serverOptions = context.RequestServices.GetRequiredService<IOptionsMonitor<FlowerServerOptions>>().CurrentValue;
     var remoteAddress = context.Connection.RemoteIpAddress;
     if (remoteAddress == null
         || !LanGuard.IsPrivateOrLoopback(remoteAddress, serverOptions.AllowedCidrs, serverOptions.TrustTailscaleRange))
@@ -233,11 +260,29 @@ app.MapSyncEndpoints();
 app.MapStreamTicketEndpoints();
 app.MapDiscoveryEndpoints();
 
+// Last, so its single-page fallback can only ever catch what no API route did.
+app.MapWebUi();
+
 app.Run();
 
 // The last few lines of a run are buffered otherwise - same reason
 // MainWindow's Closing handler calls this in the app.
 AppLogging.Shutdown();
+
+// "localhost:4533" out of "http://0.0.0.0:4533" - the address to type into a
+// browser running on this machine. Null when there is nothing configured to
+// resolve, in which case the caller keeps its own fallback.
+static string? ResolveLocalHost(string? configuredUrls)
+{
+    var first = configuredUrls?.Split(';', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+    if (first == null || !Uri.TryCreate(first.Trim(), UriKind.Absolute, out var uri))
+        return null;
+
+    // A wildcard bind is not an address anything can dial; the loopback name is
+    // the one that always reaches it from here.
+    var hostName = uri.Host is "0.0.0.0" or "[::]" or "::" or "+" or "*" ? "localhost" : uri.Host;
+    return $"{hostName}:{uri.Port}";
+}
 
 // Exposed so Flower.Server.Tests's WebApplicationFactory<Program> can boot the
 // real app in-process. Top-level statements otherwise compile to an internal

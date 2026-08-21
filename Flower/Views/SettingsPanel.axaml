@@ -1,0 +1,427 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:vm="clr-namespace:Flower.ViewModels"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             x:Class="Flower.Views.SettingsPanel"
+             x:DataType="vm:SettingsViewModel">
+
+  <!-- The settings screen itself, hosted twice: by SettingsWindow on desktop, and
+       full-page by MainView in the browser, where Avalonia is single-view and
+       there is no second Window to open. Which tabs and controls appear is decided
+       entirely by SettingsViewModel.Capabilities, so administering a headless
+       Flower.Server from a browser runs this exact XAML rather than a second,
+       drifting copy of it. -->
+  <Grid RowDefinitions="*,Auto,Auto" Margin="16">
+
+    <TabControl Grid.Row="0">
+
+      <TabItem Header="General">
+        <StackPanel Margin="0,12,0,0" Spacing="0">
+          <Grid ColumnDefinitions="Auto,*">
+            <TextBlock Grid.Column="0" Text="Name" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <TextBox Grid.Column="1" Text="{Binding Alias, Mode=TwoWay}"/>
+          </Grid>
+          <TextBlock Text="Shown to other Flower devices when syncing over Wi-Fi"
+                     Margin="0,2,0,0" FontSize="11" Opacity="0.6"/>
+
+          <TextBlock Text="Theme"
+                     FontWeight="SemiBold"
+                     Margin="0,20,0,8"
+                     IsVisible="{Binding Capabilities.ThemePicker}"/>
+          <ComboBox HorizontalAlignment="Stretch"
+                    SelectedIndex="{Binding ThemeIndex, Mode=TwoWay}"
+                    IsVisible="{Binding Capabilities.ThemePicker}">
+            <ComboBoxItem Content="Follow System"/>
+            <ComboBoxItem Content="Light"/>
+            <ComboBoxItem Content="Dark"/>
+          </ComboBox>
+
+          <!-- Client/Server bulk-sync topology (see SyncRolePolicy) - a Server
+               accepts bulk-sync from Client devices and never initiates any
+               itself; a Client (the default) bulk-syncs with exactly one chosen
+               Server, picked from the Devices tab. Deliberately doesn't affect
+               browsing/streaming another device's catalog, which stays open to any
+               trusted peer regardless of role. -->
+          <CheckBox Content="Act as Server"
+                    Margin="0,20,0,0"
+                    IsChecked="{Binding IsServer, Mode=TwoWay}"
+                    IsVisible="{Binding Capabilities.SyncRole}"/>
+          <TextBlock Text="Browsing and streaming other devices always works regardless of this setting - it only affects automatic library/playlist syncing."
+                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                     IsVisible="{Binding Capabilities.SyncRole}"/>
+
+          <!-- Opt-in, off by default: the log snapshot travels over plaintext HTTP
+               and contains exception text and absolute file paths (see
+               AppSettings.ShareLogsWithPairedServer). -->
+          <CheckBox Content="Send logs to paired server"
+                    Margin="0,16,0,0"
+                    IsChecked="{Binding ShareLogsWithPairedServer, Mode=TwoWay}"
+                    IsVisible="{Binding Capabilities.SyncRole}"/>
+          <TextBlock Text="Sends this device's recent log lines after each sync so they can be read on the server. Sent unencrypted over your local network, and they include file paths and error details."
+                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                     IsVisible="{Binding Capabilities.SyncRole}"/>
+
+          <!-- "Where does my data live" is a general, not library-specific,
+               question. Shown as a button on the machine you are sitting at, and
+               as plain text for a server you are not - a file manager on this
+               machine cannot open a path on that one. -->
+          <Button Content="Open App Data Location"
+                  Margin="0,20,0,0"
+                  HorizontalAlignment="Left"
+                  Click="OpenAppDataLocationButton_Click"
+                  IsVisible="{Binding Capabilities.RevealAppDataLocation}"/>
+
+          <TextBlock Text="Data directory"
+                     FontWeight="SemiBold" Margin="0,20,0,4"
+                     IsVisible="{Binding !Capabilities.RevealAppDataLocation}"/>
+          <SelectableTextBlock Text="{Binding DataDirectory}"
+                               FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                               IsVisible="{Binding !Capabilities.RevealAppDataLocation}"/>
+
+          <TextBlock Text="{Binding VersionDisplay}"
+                     Margin="0,16,0,0" FontSize="11" Opacity="0.5"/>
+        </StackPanel>
+      </TabItem>
+
+      <!-- The tab itself always stays selectable - only its content is disabled
+           (see SettingsViewModel.CanManageLibrary) while this device is a Client
+           paired to a Server: a Client's library is meant to be synced in from
+           that server, not locally curated, so importing its own folders or
+           rebuilding its own database doesn't make sense here. -->
+      <TabItem Header="Library">
+        <ScrollViewer>
+          <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
+                Margin="0,12,0,0"
+                IsEnabled="{Binding CanManageLibrary}">
+
+            <!-- Master switch for the whole Music.app integration (see
+                 AppSettings.IntegrateWithITunes): with it off, Music.app's media
+                 folder is no longer auto-added to the library paths below and
+                 neither per-track import runs. The two sub-checkboxes stay visible
+                 but disabled, keeping their own remembered values for when it is
+                 switched back on. -->
+            <CheckBox Grid.Row="0"
+                      Content="Use iTunes/Music.app library"
+                      IsChecked="{Binding IntegrateWithITunes, Mode=TwoWay}"
+                      IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+
+            <CheckBox Grid.Row="1"
+                      Content="Sync play count from iTunes/Music.app"
+                      Margin="20,4,0,0"
+                      IsChecked="{Binding SyncPlayCountFromITunes, Mode=TwoWay}"
+                      IsEnabled="{Binding CanSyncFromITunes}"
+                      IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+
+            <CheckBox Grid.Row="2"
+                      Content="Sync date added from iTunes/Music.app"
+                      Margin="20,4,0,0"
+                      IsChecked="{Binding SyncDateAddedFromITunes, Mode=TwoWay}"
+                      IsEnabled="{Binding CanSyncFromITunes}"
+                      IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+
+            <TextBlock Grid.Row="3"
+                       Text="{Binding ITunesLibraryDescription}"
+                       Margin="40,2,0,0" FontSize="11" Opacity="0.6"
+                       TextTrimming="CharacterEllipsis"
+                       IsEnabled="{Binding CanSyncFromITunes}"
+                       IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+
+            <TextBlock Grid.Row="4" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"/>
+
+            <Border Grid.Row="5" MinHeight="140"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+              <ListBox x:Name="PathsList" ItemsSource="{Binding LibraryPaths}">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:LibraryPathRow">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                      <TextBlock Grid.Column="0"
+                                 Text="{Binding Path}"
+                                 VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis"
+                                 Margin="4,0"/>
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding SongCountDisplay}"
+                                 IsVisible="{Binding HasSongCount}"
+                                 VerticalAlignment="Center"
+                                 Opacity="0.6" FontSize="11" Margin="8,0"/>
+                      <Button Grid.Column="2"
+                              Width="26" Height="26" Padding="4"
+                              Click="RevealFolderButton_Click"
+                              ToolTip.Tip="Reveal in File Manager">
+                        <materialIcons:MaterialIcon Kind="FolderOpen" Width="16" Height="16"/>
+                      </Button>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Border>
+
+            <StackPanel Grid.Row="6" Orientation="Horizontal" Margin="0,12,0,0"
+                        HorizontalAlignment="Left" Spacing="8">
+              <Button Content="Add Folder…" Click="AddFolderButton_Click"/>
+              <Button Content="Remove Selected"
+                      Command="{Binding RemoveLibraryPathCommand}"
+                      CommandParameter="{Binding #PathsList.SelectedItem}"/>
+            </StackPanel>
+
+            <StackPanel Grid.Row="7" Orientation="Horizontal" Margin="0,8,0,0"
+                        HorizontalAlignment="Left" Spacing="8">
+              <Button Content="Rebuild Database"
+                      Command="{Binding RebuildDatabaseCommand}"
+                      IsVisible="{Binding Capabilities.RebuildDatabase}"/>
+              <Button Content="Rescan Now"
+                      Command="{Binding RescanCommand}"
+                      IsVisible="{Binding !Capabilities.RebuildDatabase}"/>
+            </StackPanel>
+          </Grid>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Devices">
+        <Panel Margin="0,12,0,0">
+
+          <!-- A Client picks which one Server it bulk-syncs with; there is no
+               trusted-device list to show it, because a Client approves nobody.
+               Built in code-behind (ServerPickerView takes MainViewModel), which is
+               also why it is a host rather than a declared element. Exactly one of
+               these two is visible at a time - see RefreshDevicesTab. -->
+          <ContentControl x:Name="ServerPickerHost"/>
+
+          <Grid x:Name="TrustedDevicesSection" RowDefinitions="Auto,Auto,*,Auto,Auto">
+            <StackPanel Grid.Row="0" Spacing="0">
+              <TextBlock Text="Devices approved to sync playlists and library data with this one."
+                         TextWrapping="Wrap" Opacity="0.75" FontSize="12" Margin="0,0,0,12"/>
+
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12"
+                          IsVisible="{Binding Capabilities.PairingCodes}">
+                <Button Content="Add Device…" Command="{Binding IssuePairingCodeCommand}"/>
+                <Button Content="Add Administrator…" Command="{Binding IssueAdminPairingCodeCommand}"/>
+                <SelectableTextBlock Text="{Binding PairingCode}"
+                                     FontFamily="monospace"
+                                     FontSize="18" FontWeight="SemiBold"
+                                     VerticalAlignment="Center"/>
+              </StackPanel>
+            </StackPanel>
+
+          <Border Grid.Row="2"
+                  BorderThickness="1"
+                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+            <Grid>
+              <TextBlock Text="No devices have been approved yet."
+                         Opacity="0.6"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         IsVisible="{Binding !HasDevices}"/>
+              <ListBox x:Name="DevicesList" ItemsSource="{Binding Devices}">
+                <!-- Zeroes FluentTheme's own default ListBoxItem padding/MinHeight
+                     cushion, same as MainView.axaml's sidebar list - otherwise it
+                     pads on top of this DataTemplate's own (already-tight) margins
+                     regardless of how compact the row content is made. -->
+                <ListBox.Styles>
+                  <Style Selector="ListBoxItem">
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="MinHeight" Value="0"/>
+                  </Style>
+                </ListBox.Styles>
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:TrustedPeerRow">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" Margin="4,2">
+                      <TextBlock Grid.Row="0" Grid.Column="0"
+                                 Text="{Binding Alias}"
+                                 IsVisible="{Binding !IsEditing}"
+                                 FontWeight="SemiBold" FontSize="13"
+                                 VerticalAlignment="Center" Margin="4,0"/>
+                      <TextBox Grid.Row="0" Grid.Column="0"
+                               Text="{Binding Alias, Mode=TwoWay}"
+                               IsVisible="{Binding IsEditing}"
+                               FontWeight="SemiBold" FontSize="13"
+                               Height="22" MinHeight="0" Padding="4,1"
+                               VerticalContentAlignment="Center"
+                               KeyDown="AliasTextBox_KeyDown"
+                               LostFocus="AliasTextBox_LostFocus"/>
+                      <TextBlock Grid.Row="1" Grid.Column="0"
+                                 Text="{Binding ApprovedAtDisplay}"
+                                 Opacity="0.6" FontSize="11" Margin="4,1,0,0"/>
+
+                      <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                              x:Name="RenameButton"
+                              Click="EditAliasButton_Click"
+                              Background="Transparent" BorderThickness="0" Padding="6"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Rename">
+                        <Panel>
+                          <materialIcons:MaterialIcon Kind="Pencil" Width="16" Height="16" Opacity="0.7"
+                                                       IsVisible="{Binding !IsEditing}"/>
+                          <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" Opacity="0.7"
+                                                       IsVisible="{Binding IsEditing}"/>
+                        </Panel>
+                      </Button>
+
+                      <!-- Confirmed inline rather than in a modal: this list also
+                           renders in the browser, where Avalonia is single-view
+                           and there is no Window to own a dialog - which used to
+                           make Forget silently do nothing there. -->
+                      <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="2"
+                              Content="Forget"
+                              Padding="10,4" VerticalAlignment="Center" Margin="8,0,0,0"
+                              IsVisible="{Binding IsNotConfirmingForget}"
+                              Click="ForgetButton_Click"/>
+                      <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="2"
+                                  Orientation="Horizontal" Spacing="6"
+                                  VerticalAlignment="Center" Margin="8,0,0,0"
+                                  IsVisible="{Binding IsConfirmingForget}">
+                        <TextBlock Text="Forget?" VerticalAlignment="Center" FontSize="12" Opacity="0.75"/>
+                        <Button Content="Yes" Padding="10,4" Click="ConfirmForgetButton_Click"/>
+                        <Button Content="No" Padding="10,4" Click="CancelForgetButton_Click"/>
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Grid>
+          </Border>
+
+          <TextBlock Grid.Row="3"
+                     Text="Devices you've denied."
+                     TextWrapping="Wrap" Opacity="0.75" FontSize="12" Margin="0,16,0,8"
+                     IsVisible="{Binding ShowsDeniedDevices}"/>
+
+          <Border Grid.Row="4"
+                  BorderThickness="1"
+                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                  IsVisible="{Binding ShowsDeniedDevices}">
+            <ListBox ItemsSource="{Binding DeniedDevices}">
+              <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                  <Setter Property="Padding" Value="0"/>
+                  <Setter Property="MinHeight" Value="0"/>
+                </Style>
+              </ListBox.Styles>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:DeniedPeerRow">
+                  <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4,2">
+                    <TextBlock Grid.Row="0" Grid.Column="0"
+                               Text="{Binding Alias}"
+                               FontWeight="SemiBold" FontSize="13"
+                               VerticalAlignment="Center" Margin="4,0"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0"
+                               Text="{Binding DeniedAtDisplay}"
+                               Opacity="0.6" FontSize="11" Margin="4,1,0,0"/>
+                    <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                            Content="Forget refusal"
+                            Padding="10,4" VerticalAlignment="Center" Margin="8,0,0,0"
+                            Click="ForgetRefusalButton_Click"/>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Border>
+          </Grid>
+        </Panel>
+      </TabItem>
+
+      <!-- Server-only: how this server is reached and who is allowed to reach it.
+           See FlowerServerOptions for what each of these actually does. -->
+      <TabItem Header="Network" IsVisible="{Binding Capabilities.ServerNetwork}">
+        <ScrollViewer>
+          <StackPanel Margin="0,12,0,0" Spacing="0">
+            <CheckBox Content="Announce this server on the local network"
+                      IsChecked="{Binding AdvertiseOnLan, Mode=TwoWay}"/>
+            <TextBlock Text="Lets Flower apps on the same network find this server without being given an address. Turn it off for a deployment reached only over a tunnel or a reverse proxy."
+                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+            <TextBlock Text="Advertised address" FontWeight="SemiBold" Margin="0,20,0,4"/>
+            <TextBox Text="{Binding AdvertisedHost, Mode=TwoWay}" Watermark="host:port"/>
+            <TextBlock Text="Put in pairing invites when the address a device should dial isn't the one the request arrived on - a reverse proxy, or a container publishing a different port than it binds. Leave empty to use whatever address the request came in on."
+                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+            <CheckBox Content="Trust the Tailscale range (100.64.0.0/10)"
+                      Margin="0,20,0,0"
+                      IsChecked="{Binding TrustTailscaleRange, Mode=TwoWay}"/>
+            <TextBlock Text="Also covers generic carrier-grade NAT. Turn it off on a deployment that is never reached over a tailnet."
+                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+            <TextBlock Text="Additional allowed networks" FontWeight="SemiBold" Margin="0,20,0,4"/>
+            <TextBox Text="{Binding AllowedCidrsText, Mode=TwoWay}"
+                     AcceptsReturn="True" Height="80"
+                     Watermark="One CIDR per line, e.g. 10.8.0.0/24"/>
+            <TextBlock Text="Private, loopback and (optionally) Tailscale addresses are always allowed. Add a range here for a trusted tunnel or proxy on its own subnet."
+                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+            <TextBlock Text="Subsonic clients" FontWeight="SemiBold" Margin="0,24,0,4"
+                       IsVisible="{Binding Capabilities.SubsonicCredentials}"/>
+            <TextBlock Text="Third-party Subsonic apps can't hold a device key, so each gets a generated username and password instead. The password is shown once, when it is created."
+                       Margin="0,0,0,8" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                       IsVisible="{Binding Capabilities.SubsonicCredentials}"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="8"
+                        IsVisible="{Binding Capabilities.SubsonicCredentials}">
+              <TextBox Text="{Binding NewCredentialLabel, Mode=TwoWay}" Width="180" Watermark="Label"/>
+              <Button Content="Create Credential" Command="{Binding IssueSubsonicCredentialCommand}"/>
+            </StackPanel>
+
+            <ItemsControl ItemsSource="{Binding SubsonicCredentials}" Margin="0,8,0,0"
+                          IsVisible="{Binding Capabilities.SubsonicCredentials}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:SubsonicCredentialRow">
+                  <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" Margin="0,4">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Label}" FontWeight="SemiBold" FontSize="13"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Detail}" Opacity="0.6" FontSize="11"/>
+                    <SelectableTextBlock Grid.Row="2" Grid.Column="0"
+                                         Text="{Binding Password}"
+                                         IsVisible="{Binding HasPassword}"
+                                         FontFamily="monospace"
+                                         FontSize="12" Margin="0,2,0,0"/>
+                    <Button Grid.Row="0" Grid.RowSpan="3" Grid.Column="1"
+                            Content="Revoke" Padding="10,4" VerticalAlignment="Center"
+                            Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RevokeSubsonicCredentialCommand}"
+                            CommandParameter="{Binding}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Logs" IsVisible="{Binding Capabilities.Log}">
+        <Grid RowDefinitions="Auto,*" Margin="0,12,0,0">
+          <Button Grid.Row="0" Content="Refresh" HorizontalAlignment="Left"
+                  Command="{Binding RefreshLogCommand}" Margin="0,0,0,8"/>
+          <!-- A plain read-only TextBox, not the app's AvaloniaEdit-backed Log
+               window: this is a bounded 500-line tail fetched on demand, not a
+               live-growing document that needs virtualization. -->
+          <TextBox Grid.Row="1"
+                   Text="{Binding LogText}"
+                   IsReadOnly="True" AcceptsReturn="True"
+                   TextWrapping="NoWrap"
+                   FontFamily="monospace"
+                   FontSize="11"/>
+        </Grid>
+      </TabItem>
+
+    </TabControl>
+
+    <StackPanel Grid.Row="1" Margin="0,8,0,0" Spacing="2">
+      <TextBlock Text="{Binding ErrorMessage}"
+                 IsVisible="{Binding ErrorMessage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                 Foreground="#E57373" FontSize="12" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding StatusMessage}"
+                 IsVisible="{Binding StatusMessage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                 Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="2"
+                Orientation="Horizontal"
+                Margin="0,12,0,0"
+                HorizontalAlignment="Right"
+                Spacing="8">
+      <materialIcons:MaterialIcon Kind="Sync" Width="14" Height="14" Opacity="0.55"
+                                   VerticalAlignment="Center"
+                                   IsVisible="{Binding IsBusy}"/>
+      <Button x:Name="CancelButton" Content="Cancel" Click="CancelButton_Click" IsCancel="True"/>
+      <Button x:Name="SaveButton" Content="OK" Click="SaveButton_Click" IsDefault="True"/>
+    </StackPanel>
+  </Grid>
+</UserControl>

@@ -25,7 +25,7 @@ public class LibraryImportService(
     TrackRepository repository,
     PlaylistRepository playlists,
     Library library,
-    IOptions<FlowerServerOptions> options,
+    IOptionsMonitor<FlowerServerOptions> options,
     ILogger<Flower.Importer.Importer> importerLogger,
     ILogger<LibraryImportService> logger)
 {
@@ -57,7 +57,11 @@ public class LibraryImportService(
     public async Task RescanAsync(CancellationToken ct = default)
     {
         var importer = new Flower.Importer.Importer(importerLogger);
-        var libraryPaths = options.Value.LibraryPaths;
+        // CurrentValue, re-read on every scan: the library folders are editable
+        // from the admin API (PUT /api/admin/settings), and IOptions binds once
+        // for the life of the process - a folder added in the browser would then
+        // be ignored by the very rescan the browser triggers next.
+        var libraryPaths = options.CurrentValue.LibraryPaths;
         var imported = await importer.ImportAsync(libraryPaths);
         logger.LogInformation(
             "Importer found {Count} tracks across {PathCount} configured path(s)", imported.Count, libraryPaths.Count);

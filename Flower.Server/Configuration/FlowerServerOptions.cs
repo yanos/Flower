@@ -55,6 +55,15 @@ public sealed class FlowerServerOptions
     // a tailnet.
     public bool TrustTailscaleRange { get; set; } = true;
 
+    // An override for where the browser UI lives. Normally empty, which means
+    // "next to the binary, then in the data directory" - and next to the binary
+    // is where Flower.Server's own build puts it, so the usual case needs no
+    // configuration at all. Setting this makes it the *only* place looked at,
+    // rather than one candidate among several: a path an operator named
+    // deliberately should not silently fall through to some other bundle.
+    // See WebUiHosting.Resolve.
+    public string WebUiPath { get; set; } = "";
+
     // Widens LanGuard's built-in private/loopback/CGNAT allow-list (see
     // Program.cs's LanGuard middleware) for a trusted tunnel/proxy whose
     // source range isn't already covered - e.g. a reverse proxy on its own
