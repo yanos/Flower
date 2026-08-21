@@ -387,6 +387,25 @@
             <TextBlock Text="{Binding PairActionHint}"
                        IsVisible="{Binding PairActionHint, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                        Opacity="0.5" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            <!-- Only for a headless Flower.Server this device has already paired
+                 with (see MainViewModel.CanOpenSelectedServerSettings): its
+                 settings live in its own browser UI, not in this app, so this
+                 mints a short-lived admin session against it and opens that page
+                 in the OS browser. An app peer has its own Settings window on its
+                 own screen and shows nothing here. -->
+            <Button Content="Server Settings…"
+                    IsVisible="{Binding CanOpenSelectedServerSettings}"
+                    IsEnabled="{Binding !IsOpeningServerSettings}"
+                    Click="ServerSettingsButton_Click"
+                    Margin="12,0,0,0" VerticalAlignment="Center"/>
+            <!-- "Paired, but not an administrator of that server" is the common
+                 case here, and it is an ordinary outcome rather than a fault -
+                 said plainly next to the button, same as PairingCodeError. -->
+            <TextBlock Text="{Binding ServerSettingsError}"
+                       IsVisible="{Binding ServerSettingsError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                       Foreground="#E57373" FontSize="12" TextWrapping="Wrap"
+                       MaxWidth="260"
+                       VerticalAlignment="Center" Margin="8,0,0,0"/>
           </StackPanel>
 
           <TextBlock Grid.Row="1" Text="{Binding PeerLibrary.ErrorMessage}"
@@ -452,6 +471,20 @@
         </StackPanel>
       </Border>
     </Grid>
+
+    <!-- Full-page settings, for a single-view host. On desktop Settings is a
+         SettingsWindow; Avalonia.Browser has no second Window to open at all, so
+         the same SettingsPanel is laid over the whole view instead. Opaque, not a
+         scrim - it is a screen, not a dialog. See MainView.axaml.cs's
+         ShowSettingsOverlay, which is also how the server's own settings page is
+         shown when the client's "Server Settings..." button opens this app with an
+         admin session in the URL fragment. -->
+    <Border x:Name="SettingsOverlay"
+            Grid.Row="0" Grid.RowSpan="3"
+            IsVisible="False"
+            Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+      <ContentControl x:Name="SettingsOverlayHost" MaxWidth="620"/>
+    </Border>
   </Grid>
 
 </UserControl>

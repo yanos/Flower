@@ -1074,11 +1074,34 @@ public partial class MainView : UserControl
     {
         if (_viewModel == null)
             return;
-        var settingsWindow = new SettingsWindow(_viewModel);
+
         if (TopLevel.GetTopLevel(this) is Window owner)
-            settingsWindow.ShowDialog(owner);
-        else
-            settingsWindow.Show();
+        {
+            new SettingsWindow(_viewModel).ShowDialog(owner);
+            return;
+        }
+
+        // No Window to own a dialog - this is the browser (Avalonia.Browser is a
+        // single-view lifetime). Same screen, laid over the view instead.
+        ShowSettingsOverlay(new SettingsViewModel(new LocalSettingsBackend(_viewModel)), _viewModel);
+    }
+
+    // Shown over the whole view, and dismissed by the panel's own OK/Cancel. Public
+    // because App.axaml.cs opens it directly at startup when the page was opened
+    // with a server admin session in its URL fragment - the settings shown then are
+    // a remote server's, not this app's, so it hands in its own SettingsViewModel
+    // rather than letting this build a local one.
+    public void ShowSettingsOverlay(SettingsViewModel viewModel, MainViewModel? mainViewModel)
+    {
+        var panel = new SettingsPanel(viewModel, mainViewModel);
+        panel.CloseRequested += (_, _) =>
+        {
+            SettingsOverlay.IsVisible = false;
+            SettingsOverlayHost.Content = null;
+        };
+
+        SettingsOverlayHost.Content = panel;
+        SettingsOverlay.IsVisible = true;
     }
 
     private void OpenColumnSelectorWindow()
@@ -1345,6 +1368,12 @@ public partial class MainView : UserControl
     // Device-detail header's Pair/Unpair button - mirrors ServerPickerView's
     // ActionButton_Click (Settings' Devices tab), same confirmation copy,
     // just acting on SelectedDevice instead of a ServerRow.
+    // Opening the selected server's browser settings page. All the work is in the
+    // ViewModel (it has to sign a request against that server); this only exists
+    // because a Button's Click is not a command binding.
+    private void ServerSettingsButton_Click(object? sender, RoutedEventArgs e) =>
+        _ = _viewModel?.OpenSelectedServerSettingsAsync();
+
     private async void PairActionButton_Click(object? sender, RoutedEventArgs e)
     {
         if (_viewModel is not { SelectedDevice: { } device } vm)

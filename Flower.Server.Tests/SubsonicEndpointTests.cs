@@ -40,13 +40,25 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
     private readonly string _emptyLibrary =
         Path.Combine(Path.GetTempPath(), "flower-server-tests-lib-" + Guid.NewGuid());
 
+    private readonly string _noWebUi =
+        Path.Combine(Path.GetTempPath(), "flower-server-tests-noweb-" + Guid.NewGuid());
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Directory.CreateDirectory(_dataDirectory);
         Directory.CreateDirectory(_emptyLibrary);
+        Directory.CreateDirectory(_noWebUi);
 
         builder.UseSetting("Flower:DataDirectory", _dataDirectory);
         builder.UseSetting("Flower:LibraryPaths:0", _emptyLibrary);
+
+        // Pinned at an empty directory so these tests see the same server
+        // whether or not a developer has dropped a real Flower.Web bundle into
+        // Flower.Server/wwwroot - which is a normal thing to do locally (it is
+        // how the "Server Settings..." button is exercised by hand) and which
+        // the test host's content root would otherwise pick up. A configured
+        // path is authoritative, so this is genuinely "no web UI deployed".
+        builder.UseSetting("Flower:WebUiPath", _noWebUi);
     }
 
     // The credential every /rest request in these tests authenticates with.
@@ -73,6 +85,7 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
         await base.DisposeAsync();
         try { Directory.Delete(_dataDirectory, recursive: true); } catch { /* best effort */ }
         try { Directory.Delete(_emptyLibrary, recursive: true); } catch { /* best effort */ }
+        try { Directory.Delete(_noWebUi, recursive: true); } catch { /* best effort */ }
     }
 
     // Two albums by one artist plus a third by another, with differing

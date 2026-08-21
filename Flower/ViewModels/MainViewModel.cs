@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,6 +41,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     private IMusicImporter? _importer;
     private MainPlaylist?      _mainPlaylist;
     private DeviceIdentity? _deviceIdentity;
+
+    // Kept, not just consumed in the constructor: "Server Settings..." signs a
+    // request against the selected server with it (see
+    // OpenSelectedServerSettingsAsync). Null on Flower.Web/WASM, same as
+    // _deviceIdentity - see the constructor's note on the sync-stack parameters.
+    private readonly DeviceSigningKey? _signingKey;
     private PairedServerReachability? _reachability;
     private AppSettingsStore? _appSettingsStore;
 
@@ -559,6 +566,97 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // peer already paired has nothing left to redeem.
     public bool IsPairingCodeRequired => SelectedDevicePairsByCode && !IsSelectedDevicePaired;
 
+    // Whether the device-detail header offers "Server Settings...". Only for a
+    // headless Flower.Server (PairsByCode, the same signal IsPairingCodeRequired
+    // uses) that has already approved this device - a server has a browser UI to
+    // open, and an app peer has its own Settings window on its own screen.
+    //
+    // Deliberately not also gated on this device being an *admin* of that server:
+    // nothing here can know that without asking, TrustedPeer.IsAdmin lives on the
+    // server, and a hidden button is a worse answer than a button that says why it
+    // did not work (see ServerSettingsError).
+    public bool CanOpenSelectedServerSettings =>
+        SelectedDevicePairsByCode && IsSelectedDeviceTrustConfirmed && _signingKey != null && _deviceIdentity != null;
+
+    // Set when minting a browser session against the selected server failed -
+    // most usefully when this device is paired but not an administrator, which is
+    // an ordinary outcome and so is said inline next to the button rather than
+    // raised as a dialog. Same treatment as PairingCodeError.
+    private string? _serverSettingsError;
+    public string? ServerSettingsError
+    {
+        get => _serverSettingsError;
+        private set
+        {
+            if (_serverSettingsError == value)
+                return;
+            _serverSettingsError = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private bool _isOpeningServerSettings;
+    public bool IsOpeningServerSettings
+    {
+        get => _isOpeningServerSettings;
+        private set
+        {
+            if (_isOpeningServerSettings == value)
+                return;
+            _isOpeningServerSettings = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // Opens the selected server's own settings page in the OS browser.
+    //
+    // The browser cannot authenticate itself - .NET-for-WebAssembly has no
+    // asymmetric crypto, which is the same reason DeviceSigningKey is not even
+    // registered there (see App.axaml.cs). So this device, which *can* sign, mints
+    // a short-lived admin session against that server and hands it over in the
+    // URL fragment: a fragment rather than a query string because it is never sent
+    // to the server as part of the request, so it cannot end up in an access log.
+    // See Flower.Server's AdminSessionService.
+    public async Task OpenSelectedServerSettingsAsync()
+    {
+        if (SelectedDevice is not { } device || _signingKey == null || _deviceIdentity == null)
+            return;
+
+        ServerSettingsError = null;
+        IsOpeningServerSettings = true;
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            var client = new ServerAdminClient(
+                http, new Uri($"http://{device.EndPoint}"), ServerAdminClient.SignWith(_signingKey, _deviceIdentity));
+
+            var session = await client.CreateSessionAsync();
+            OpenUrlInBrowser(session.Url);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not open the settings page for {Device}", device.EndPoint);
+            ServerSettingsError = ex is ServerAdminException ? ex.Message : "Could not reach that server.";
+        }
+        finally
+        {
+            IsOpeningServerSettings = false;
+        }
+    }
+
+    // Same per-OS launch shape as OpenAppDataLocation below, against a URL rather
+    // than a folder. UseShellExecute is what makes a non-Windows Process.Start
+    // hand a URL to the desktop's default handler at all.
+    private static void OpenUrlInBrowser(string url)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            Process.Start(new ProcessStartInfo { FileName = "open", ArgumentList = { url } });
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+        else
+            Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { url } });
+    }
+
     private bool SelectedDevicePairsByCode => SelectedDevice?.PairsByCode ?? false;
 
     // What the user typed into that box. Cleared on a successful pair and
@@ -617,7 +715,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // runs off the 5s peer poll, where the answer is the same every time, and
     // each of these is a computed property the bindings then re-evaluate.
     // See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
-    private (bool, bool, bool, bool, bool, bool, string?, bool, string?, bool)? _lastPairButtonState;
+    private (bool, bool, bool, bool, bool, bool, string?, bool, string?, bool, bool)? _lastPairButtonState;
 
     private void NotifyPairButtonPropertiesChanged()
     {
@@ -631,7 +729,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             PairActionLabel,
             IsPairActionEnabled,
             PairActionHint,
-            IsPairingCodeRequired);
+            IsPairingCodeRequired,
+            CanOpenSelectedServerSettings);
 
         if (_lastPairButtonState == state)
             return;
@@ -649,6 +748,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(PairActionHint));
         OnPropertyChanged(nameof(IsPairingCodeRequired));
         OnPropertyChanged(nameof(IsPairSubmittable));
+        OnPropertyChanged(nameof(CanOpenSelectedServerSettings));
     }
 
     // ── Constructors ──────────────────────────────────────────────────────────
@@ -731,6 +831,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _mainPlaylist          = mainPlaylist;
         _reachability          = reachability;
         _deviceIdentity        = deviceIdentity;
+        _signingKey            = signingKey;
         PeerLibrary            = deviceIdentity != null && signingKey != null
             ? new PeerLibraryViewModel(deviceIdentity, signingKey, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>())
             : null;
