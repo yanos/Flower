@@ -3,14 +3,19 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-ios26.0</TargetFramework>
     <SupportedOSPlatformVersion>12.2</SupportedOSPlatformVersion>
-    <ProvisioningType>automatic</ProvisioningType>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RuntimeIdentifier>ios-arm64</RuntimeIdentifier>
 
-    <!-- Switch back to these two to run on the Simulator instead of a real iDevice -->
-    <!--<ProvisioningType>manual</ProvisioningType>-->
-    <!--<RuntimeIdentifier>iossimulator-arm64</RuntimeIdentifier>-->
+    <!-- Device is the default, but an explicitly passed RID wins, so the
+         Simulator is just `-r iossimulator-arm64` (or the IDE's device
+         picker) rather than an edit to this file. A simulator build isn't
+         code-signed, hence the provisioning switch alongside it. Note the
+         simulator runtime pack is only downloaded by a restore that names
+         the RID - `dotnet restore Flower.iOS/Flower.iOS.csproj
+         -r iossimulator-arm64` - otherwise the build fails with NETSDK1112. -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">ios-arm64</RuntimeIdentifier>
+    <ProvisioningType Condition="'$(RuntimeIdentifier)' == 'ios-arm64'">automatic</ProvisioningType>
+    <ProvisioningType Condition="'$(RuntimeIdentifier)' != 'ios-arm64'">manual</ProvisioningType>
 
     <!-- ApplicationVersion (CFBundleVersion) is a plain, strictly-increasing
          integer that a store release overrides via /p:ApplicationVersion=<n>
