@@ -140,3 +140,50 @@ public class MdnsAdvertiserNamingTests
         Assert.Equal("Basement NAS", MdnsAdvertiser.InstanceName(options));
     }
 }
+
+// Which binds are worth announcing. An mDNS record resolves to the machine's
+// LAN addresses whatever Kestrel bound, so announcing a loopback-only server
+// hands every client on the network an address that refuses the connection -
+// and, under the machine name, a row that collides with the real server's.
+public class MdnsAdvertisablePortTests
+{
+    [Theory]
+    [InlineData("http://0.0.0.0:4533")]
+    [InlineData("http://[::]:4533")]
+    [InlineData("http://+:4533")]
+    [InlineData("http://*:4533")]
+    [InlineData("http://192.168.50.172:4533")]
+    public void A_bind_something_off_this_machine_can_reach_is_advertised(string address)
+    {
+        Assert.Equal(4533, MdnsAdvertiser.AdvertisablePort([address]));
+    }
+
+    [Theory]
+    [InlineData("http://localhost:5599")]
+    [InlineData("http://127.0.0.1:5599")]
+    [InlineData("http://[::1]:5599")]
+    public void A_loopback_only_bind_is_not_advertised(string address)
+    {
+        Assert.Null(MdnsAdvertiser.AdvertisablePort([address]));
+    }
+
+    [Fact]
+    public void Nothing_bound_is_not_advertised()
+    {
+        Assert.Null(MdnsAdvertiser.AdvertisablePort([]));
+    }
+
+    [Fact]
+    public void Unparseable_addresses_are_skipped_rather_than_throwing()
+    {
+        Assert.Equal(4533, MdnsAdvertiser.AdvertisablePort(["not a url", "http://0.0.0.0:4533"]));
+    }
+
+    // Kestrel binding both a loopback address and a real one is ordinary. The
+    // reachable one is what a client has to be told about.
+    [Fact]
+    public void The_reachable_bind_wins_over_a_loopback_one_listed_first()
+    {
+        Assert.Equal(4533, MdnsAdvertiser.AdvertisablePort(["http://127.0.0.1:5599", "http://0.0.0.0:4533"]));
+    }
+}
