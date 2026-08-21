@@ -46,6 +46,21 @@ without it the step is skipped and the server serves a page explaining how to ge
 it. `-p:IncludeWebUi=false` skips it deliberately. See `Flower.Server.csproj`'s
 "The browser UI" targets and `Flower.Server/Configuration/WebUiHosting.cs`.
 
+**Kill every `Flower.Server` you start before you finish.** A server left running
+keeps advertising itself over mDNS, so it shows up in the sidebar of any Flower
+client on the network — under the machine name, colliding with the row of the
+server that is actually wanted, and answering (or refusing) requests meant for it.
+Several forgotten instances at once is worse: they fight over one name and the row
+flaps. Sweep them at the end of any session that ran one:
+
+```bash
+pkill -f 'Flower\.Server'; sleep 3; pkill -9 -f 'Flower\.Server'
+lsof -nP -iTCP -sTCP:LISTEN | grep -i flower   # expect no output
+```
+
+Also pass `--Flower:DataDirectory=<scratch>` to anything throwaway, so a test
+instance never writes to `~/Library/Application Support/Flower/Server`.
+
 `Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `TrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no LibVLC), real-LibVLC decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresLibVLC`, need a local VLC install same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`) these all build on.
 
 `GaplessCoordinator` gives the armed (decode-ahead) role its own independent LibVLC core, separate from current's — two `MediaPlayer`s sharing one core was silently dropping `OnDrain`/`EndReached` under real decode load. See its `_secondCore`/`_cores` remarks and `GaplessCoordinatorRealDecodeTests`' class comment for the full writeup, including a second bug that fix exposed (a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`).
