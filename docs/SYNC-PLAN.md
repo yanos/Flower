@@ -273,6 +273,22 @@ an undiscoverable server still serves every request, it just has to be reached b
 New options: `Flower:Alias` (sidebar name, defaults to the machine name) and
 `Flower:AdvertiseOnLan` (on by default; off for tailnet/reverse-proxy-only deployments).
 
+#### Only a bind something else could reach gets advertised
+
+`MdnsAdvertiser` originally took the port out of Kestrel's bound address and discarded the host.
+But the mDNS record resolves to the machine's LAN addresses whatever Kestrel actually bound, so a
+server started on `--urls http://localhost:5599` published itself as reachable at
+`<lan-ip>:5599` - an address that refuses every connection, on a row that collides with the real
+server's, since both advertise under the machine name. The client is left logging
+`Connection refused` against a peer it was told exists, with nothing on its side to fix.
+
+This bites dev instances rather than deployments, which is exactly why it is worth catching in
+code: the symptom shows up on a *different* machine, a hop away from the cause. `AdvertisablePort`
+now returns null unless some bound address is non-loopback, and a loopback-only server logs that
+it is skipping the advertisement and serves on. A wildcard bind (`0.0.0.0`, `[::]`, `+`, `*`) is
+not loopback and still advertises, which is the normal path. The app-as-peer `SyncHttpServer`
+needs no equivalent guard - it always binds `http://+:{port}/`.
+
 ### Pairing from the client: "Pair" plus a code box
 
 Discovery gets the server into the sidebar; redeeming the code is what makes it usable. The

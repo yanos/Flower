@@ -33,14 +33,23 @@ public sealed class MdnsAdvertiser(
         if (!settings.AdvertiseOnLan)
             return Task.CompletedTask;
 
-        var port = ResolveBoundPort();
+        var addresses = (server.Features.Get<IServerAddressesFeature>()?.Addresses ?? []).ToArray();
+        var port = AdvertisablePort(addresses);
         if (port is null)
         {
-            // Nothing actionable for the operator to fix and nothing else
-            // breaks, so this is a warning and not a startup failure: the
-            // server still serves every request, it just has to be reached by
-            // address rather than found.
-            logger.LogWarning("Could not determine the bound port; skipping mDNS advertisement.");
+            // Neither case is actionable for the operator and nothing else
+            // breaks, so neither is a startup failure: the server still serves
+            // every request, it just has to be reached by address rather than
+            // found. Bound-to-loopback is a deliberate choice often enough
+            // (a dev instance, a reverse proxy in front) that it is not even a
+            // warning.
+            if (addresses.Length == 0)
+                logger.LogWarning("Could not determine the bound port; skipping mDNS advertisement.");
+            else
+                logger.LogInformation(
+                    "Bound only to loopback ({Addresses}); skipping mDNS advertisement, since nothing off this machine could reach it.",
+                    string.Join(", ", addresses));
+
             return Task.CompletedTask;
         }
 
@@ -76,19 +85,28 @@ public sealed class MdnsAdvertiser(
     public static string InstanceName(FlowerServerOptions options) =>
         string.IsNullOrWhiteSpace(options.Alias) ? Environment.MachineName : options.Alias.Trim();
 
-    private int? ResolveBoundPort()
+    // The port to advertise, or null if there is nothing worth advertising.
+    //
+    // Only a non-loopback bind is announced. The mDNS record resolves to this
+    // machine's LAN addresses regardless of what Kestrel actually bound, so a
+    // server started on --urls http://localhost:5599 would otherwise publish
+    // itself as reachable at <lan-ip>:5599, where every client that found it
+    // gets a connection refused it can do nothing about - and, advertising
+    // under the machine name, collides with the row of whichever server on the
+    // box is real. That is a dev-instance mistake rather than a deployment
+    // one, which is exactly why it is worth catching here: the symptom shows
+    // up on someone else's screen, a hop away from the cause.
+    public static int? AdvertisablePort(IEnumerable<string> boundAddresses) =>
+        boundAddresses.Select(Parse).FirstOrDefault(uri => uri is { IsLoopback: false })?.Port;
+
+    private static Uri? Parse(string address)
     {
-        var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
-        foreach (var address in addresses ?? [])
-        {
-            // Kestrel reports wildcard binds as http://[::]:4533 or
-            // http://+:4533, neither of which Uri will parse - substituting a
-            // real host keeps the only part being read here, the port.
-            var normalized = address.Replace("[::]", "localhost").Replace("//+", "//localhost").Replace("//*", "//localhost");
-            if (Uri.TryCreate(normalized, UriKind.Absolute, out var uri) && uri.Port > 0)
-                return uri.Port;
-        }
-        return null;
+        // Kestrel reports wildcard binds as http://[::]:4533, http://+:4533 or
+        // http://*:4533, none of which Uri will parse - substituting 0.0.0.0
+        // preserves both things read here, the port and whether the bind is
+        // loopback-only, which a wildcard bind is not.
+        var normalized = address.Replace("[::]", "0.0.0.0").Replace("//+", "//0.0.0.0").Replace("//*", "//0.0.0.0");
+        return Uri.TryCreate(normalized, UriKind.Absolute, out var uri) && uri.Port > 0 ? uri : null;
     }
 
     public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
