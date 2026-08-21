@@ -30,6 +30,13 @@ public static class DeviceSignatureAuth
         PeerSignatureAuth.VerifyTrustedPeer(
             ToSignedRequest(request, body), trustedPeers.GetPublicKey, replayGuard, DateTimeOffset.UtcNow);
 
+    // The same check, keeping "I don't know you" and "that signature didn't
+    // check out" apart so the two can be answered differently - see
+    // PeerSignatureAuth.AuthenticateTrustedPeer.
+    public static PeerAuthResult AuthenticateTrustedPeer(HttpRequest request, byte[] body, TrustedPeerStore trustedPeers, NonceReplayGuard replayGuard) =>
+        PeerSignatureAuth.AuthenticateTrustedPeer(
+            ToSignedRequest(request, body), trustedPeers.GetPublicKey, replayGuard, DateTimeOffset.UtcNow);
+
     // For the values a handler wants *after* the request is verified (pairing
     // code, alias). Same header-else-query rule, because it is the same rule.
     public static string? GetIdentityValue(HttpRequest request, string name) =>

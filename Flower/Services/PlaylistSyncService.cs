@@ -140,7 +140,12 @@ public class PlaylistSyncService
 
             // A 403 specifically means the peer is up and answered, but has actively
             // decided not to trust us - distinct from every other failure above,
-            // which just means "couldn't tell." See PeerTrustRejectedEventArgs.
+            // which just means "couldn't tell." Notably distinct from a 401, which
+            // both peer servers answer a signature that did not verify with (a
+            // stale timestamp, most often, after this device suspended with the
+            // request in flight) - that one must never unpair anything, it just
+            // fails this attempt. See PeerTrustRejectedEventArgs and
+            // PeerSignatureAuth.AuthenticateTrustedPeer.
             if (ex is HttpRequestException { StatusCode: HttpStatusCode.Forbidden })
                 PeerTrustRejected?.Invoke(this, new PeerTrustRejectedEventArgs { Fingerprint = device.Fingerprint, Alias = device.Alias });
 

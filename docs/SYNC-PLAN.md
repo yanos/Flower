@@ -600,6 +600,26 @@ server-initiated unpair notification (`POST /api/flower/v1/unpair-notify`,
 proactively instead of only via a later 403/poll; and a 20 MB request-body
 cap (`RequestBodyReader.ReadWithCapAsync`).
 
+### 403 means revoked; a bad signature is 401
+
+Both peer servers (`SyncHttpServer` and `Flower.Server`'s `SyncEndpoints`)
+used to answer *every* trusted-peer check failure with a 403, and
+`LibrarySyncService`/`PlaylistSyncService` read a 403 off a sync route as
+"this server has revoked me" and responded by unpairing this device for
+good. Those two facts together lost a real pairing: the client signed a
+`GET /playlists` at 05:12:07, the machine suspended with the request in
+flight, the bytes landed at 05:28:59 - seventeen minutes past
+`SignatureVerifier.ClockSkewWindow` - and the still-perfectly-trusted peer
+was dropped, needing a fresh pairing code to get back.
+
+So the two answers are now kept apart at the source, in
+`PeerSignatureAuth.AuthenticateTrustedPeer` (`PeerAuthFailure`):
+**`NotTrusted`** - no key on file for the claimed fingerprint - is a durable
+statement about the caller and is the only one reported as **403**;
+**`BadSignature`** - a key *is* on file, but this request's signature was
+missing, malformed, stale or replayed - is a **401** and means nothing
+beyond "this attempt failed, try again". Only 403 may unpair anything.
+
 **Explicitly still deferred**: TLS/transport encryption. `HttpListener`'s
 HTTPS support off Windows remains a long-standing gap
 (`dotnet/runtime#19752`); the signing scheme above closes the impersonation

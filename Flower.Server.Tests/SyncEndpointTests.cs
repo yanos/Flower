@@ -130,6 +130,53 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         Assert.Equal(HttpStatusCode.Forbidden, status);
     }
 
+    // The 401/403 split, from the endpoint's side. A trusted peer whose
+    // signature has simply gone stale - a laptop that suspended with the
+    // request in flight and delivered it many minutes later - must not be
+    // answered like a revoked one: a client reads 403 off a sync route as
+    // "this server has revoked me" and unpairs itself permanently, which is
+    // how a real pairing was lost. See
+    // PeerSignatureAuth.AuthenticateTrustedPeer.
+    [Fact]
+    public async Task A_trusted_device_whose_signature_went_stale_gets_401_not_403()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKeyRaw = ecdsa.ExportParameters(false) is { Q.X: { } x, Q.Y: { } y }
+            ? (byte[])[0x04, .. x, .. y]
+            : throw new InvalidOperationException("no public point");
+        var fingerprint = SignedRequestCanonicalizer.ComputeFingerprint(publicKeyRaw);
+        await trustedPeers.ApproveAsync(fingerprint, "Sleepy Laptop", Convert.ToBase64String(publicKeyRaw), isAdmin: false);
+
+        try
+        {
+            // Signed correctly, just seventeen minutes ago.
+            const string path = "/api/flower/v1/library";
+            var timestamp = DateTimeOffset.UtcNow.AddMinutes(-17).ToUnixTimeSeconds().ToString();
+            var nonce = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+            var signature = Convert.ToBase64String(ecdsa.SignData(
+                SignedRequestCanonicalizer.Build("GET", path, [], [], timestamp, nonce),
+                HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
+
+            var context = await server.Server.SendAsync(c =>
+            {
+                c.Request.Method = "GET";
+                c.Request.Path = path;
+                c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.2.4");
+                c.Request.Headers["X-Flower-Fingerprint"] = fingerprint;
+                c.Request.Headers["X-Flower-Signature"] = signature;
+                c.Request.Headers["X-Flower-Timestamp"] = timestamp;
+                c.Request.Headers["X-Flower-Nonce"] = nonce;
+            });
+
+            Assert.Equal(HttpStatusCode.Unauthorized, (HttpStatusCode)context.Response.StatusCode);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(fingerprint);
+        }
+    }
+
     [Fact]
     public async Task Playlists_round_trip_through_apply()
     {
