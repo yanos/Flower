@@ -240,8 +240,11 @@ public class SyncHttpServerRoundTripTests : IDisposable
         var response = await harness.Http.SendAsync(request);
 
         // Trusted fingerprint, no proof of possession - being on the trust
-        // list is not itself a credential.
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // list is not itself a credential. 401 rather than 403 because the
+        // peer *is* on the list: 403 is reserved for a caller with no key on
+        // file, since a client acts on that one by unpairing itself (see
+        // PeerSignatureAuth.AuthenticateTrustedPeer).
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -302,7 +305,7 @@ public class SyncHttpServerRoundTripTests : IDisposable
         }
 
         Assert.Equal(HttpStatusCode.OK, await SendAsync());
-        Assert.Equal(HttpStatusCode.Forbidden, await SendAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, await SendAsync());
     }
 
     [Fact]
@@ -330,7 +333,7 @@ public class SyncHttpServerRoundTripTests : IDisposable
 
         var response = await harness.Http.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     // ── Pairing (AuthMode.SelfSigned) ────────────────────────────────────────
@@ -529,7 +532,7 @@ public class SyncHttpServerRoundTripTests : IDisposable
 
         var response = await harness.Http.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]

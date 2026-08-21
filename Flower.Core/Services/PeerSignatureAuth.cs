@@ -96,17 +96,38 @@ public static class PeerSignatureAuth
     // arrives as a lookup over the trust store rather than off the request.
     // A fingerprint with no key on file fails exactly like an outright
     // stranger. Returns the verified fingerprint, or null.
-    public static string? VerifyTrustedPeer(SignedRequest request, Func<string, string?> publicKeyForFingerprint, NonceReplayGuard replayGuard, DateTimeOffset now)
+    //
+    // Prefer AuthenticateTrustedPeer below wherever the *reason* for a refusal
+    // is going to be told to the caller - see PeerAuthFailure.
+    public static string? VerifyTrustedPeer(SignedRequest request, Func<string, string?> publicKeyForFingerprint, NonceReplayGuard replayGuard, DateTimeOffset now) =>
+        AuthenticateTrustedPeer(request, publicKeyForFingerprint, replayGuard, now).Fingerprint;
+
+    // Same check, but saying which of the two very different things went
+    // wrong. Both used to collapse into one null, and both ends of the sync
+    // protocol answered that null with a 403 - which the client reads as "this
+    // server has revoked me" and responds to by unpairing itself for good. A
+    // signature that merely failed *freshness* would take the pairing down
+    // with it: a laptop that suspends with a sync request in flight delivers
+    // it minutes later, well past SignatureVerifier.ClockSkewWindow, and the
+    // peer that was still perfectly trusted the whole time gets dropped.
+    //
+    // So the two are kept apart at the source. NotTrusted is a durable
+    // statement about the caller ("I have no key on file for you") and is the
+    // only one that may be reported as 403; BadSignature is a statement about
+    // this one request, is 401, and means nothing more than "try again."
+    public static PeerAuthResult AuthenticateTrustedPeer(SignedRequest request, Func<string, string?> publicKeyForFingerprint, NonceReplayGuard replayGuard, DateTimeOffset now)
     {
         var fingerprint = request.Identity("X-Flower-Fingerprint");
         if (string.IsNullOrEmpty(fingerprint))
-            return null;
+            return new PeerAuthResult(null, PeerAuthFailure.NotTrusted);
 
         var publicKey = publicKeyForFingerprint(fingerprint);
         if (publicKey == null)
-            return null;
+            return new PeerAuthResult(null, PeerAuthFailure.NotTrusted);
 
-        return Verify(request, publicKey, fingerprint, replayGuard, now);
+        return Verify(request, publicKey, fingerprint, replayGuard, now) == null
+            ? new PeerAuthResult(null, PeerAuthFailure.BadSignature)
+            : new PeerAuthResult(fingerprint, PeerAuthFailure.None);
     }
 
     private static string? Verify(SignedRequest request, string publicKeyBase64, string fingerprint, NonceReplayGuard replayGuard, DateTimeOffset now)
@@ -120,3 +141,22 @@ public static class PeerSignatureAuth
         return verified ? fingerprint : null;
     }
 }
+
+// Why a trusted-peer check refused a caller. See
+// PeerSignatureAuth.AuthenticateTrustedPeer for why these must not collapse
+// back into a single "denied".
+public enum PeerAuthFailure
+{
+    // Verified. Fingerprint is set.
+    None,
+
+    // No public key on file for the fingerprint claimed (never approved, or
+    // approved and since revoked) - or no fingerprint claimed at all.
+    NotTrusted,
+
+    // A key *is* on file, but this request's signature did not check out
+    // against it: missing, malformed, stale, replayed, or simply wrong.
+    BadSignature,
+}
+
+public readonly record struct PeerAuthResult(string? Fingerprint, PeerAuthFailure Failure);

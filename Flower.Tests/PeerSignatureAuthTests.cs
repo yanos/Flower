@@ -139,6 +139,48 @@ public class PeerSignatureAuthTests
             Request(key), _ => null, new NonceReplayGuard(), DateTimeOffset.UtcNow));
     }
 
+    // The distinction the whole pairing hangs on: a peer whose signature went
+    // stale (the machine suspended with the request in flight, and it landed
+    // 17 minutes later - which is exactly how a real pairing was lost) must
+    // not be reported the same way as one that has actually been revoked. The
+    // first answers 401 and costs only this request; the second answers 403,
+    // which a client acts on by unpairing itself for good.
+    [Fact]
+    public void A_stale_signature_from_a_still_trusted_peer_is_not_reported_as_a_revoke()
+    {
+        var key = TestSigningKey.Create();
+        var wellAfterSigning = DateTimeOffset.UtcNow + SignatureVerifier.ClockSkewWindow + TimeSpan.FromMinutes(17);
+
+        var result = PeerSignatureAuth.AuthenticateTrustedPeer(
+            Request(key), _ => key.PublicKeyBase64, new NonceReplayGuard(), wellAfterSigning);
+
+        Assert.Equal(PeerAuthFailure.BadSignature, result.Failure);
+        Assert.Null(result.Fingerprint);
+    }
+
+    [Fact]
+    public void A_revoked_peer_is_reported_as_not_trusted()
+    {
+        var key = TestSigningKey.Create();
+
+        var result = PeerSignatureAuth.AuthenticateTrustedPeer(
+            Request(key), _ => null, new NonceReplayGuard(), DateTimeOffset.UtcNow);
+
+        Assert.Equal(PeerAuthFailure.NotTrusted, result.Failure);
+    }
+
+    [Fact]
+    public void A_verified_trusted_peer_reports_no_failure_at_all()
+    {
+        var key = TestSigningKey.Create();
+
+        var result = PeerSignatureAuth.AuthenticateTrustedPeer(
+            Request(key), _ => key.PublicKeyBase64, new NonceReplayGuard(), DateTimeOffset.UtcNow);
+
+        Assert.Equal(PeerAuthFailure.None, result.Failure);
+        Assert.Equal(key.Fingerprint, result.Fingerprint);
+    }
+
     [Fact]
     public void A_replayed_nonce_is_refused_the_second_time()
     {

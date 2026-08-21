@@ -296,11 +296,21 @@ public class SyncHttpServer : IDisposable
             }
             else if (route.Auth == AuthMode.TrustedPeer)
             {
-                fingerprint = PeerSignatureAuth.VerifyTrustedPeer(ToSignedRequest(context, body), _trustedPeerStore.GetPublicKey, _nonceReplayGuard, DateTimeOffset.UtcNow);
-                if (fingerprint == null)
+                // 403 and 401 mean very different things to the caller here:
+                // a client that gets a 403 off a sync route concludes it has
+                // been revoked and unpairs itself, so that answer is reserved
+                // for a peer there is genuinely no key on file for. A
+                // signature that simply did not verify - most often a stale
+                // timestamp from a caller that suspended with the request in
+                // flight - is a 401 and costs nothing but this attempt. See
+                // PeerSignatureAuth.AuthenticateTrustedPeer.
+                var auth = PeerSignatureAuth.AuthenticateTrustedPeer(ToSignedRequest(context, body), _trustedPeerStore.GetPublicKey, _nonceReplayGuard, DateTimeOffset.UtcNow);
+                fingerprint = auth.Fingerprint;
+                if (auth.Failure != PeerAuthFailure.None)
                 {
-                    context.Response.StatusCode = 403;
-                    _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: not authorized", method, path, context.Request.RemoteEndPoint);
+                    context.Response.StatusCode = auth.Failure == PeerAuthFailure.NotTrusted ? 403 : 401;
+                    _logger.LogWarning("Rejected {Method} {Path} from {RemoteEndPoint}: {Reason}", method, path, context.Request.RemoteEndPoint,
+                        auth.Failure == PeerAuthFailure.NotTrusted ? "not a trusted peer" : "signature did not verify");
                     return;
                 }
 
