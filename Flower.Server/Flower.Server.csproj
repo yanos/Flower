@@ -18,4 +18,82 @@
     <ProjectReference Include="..\Flower.Core\Flower.Core.csproj" />
   </ItemGroup>
 
+  <!-- ── The browser UI ──────────────────────────────────────────────────────
+
+       Flower.Web (an Avalonia WebAssembly build of the same Views and
+       ViewModels the desktop app runs) is built and dropped in beside this
+       server's binary, so that starting the server is all it takes to have the
+       settings page served - see WebUiHosting, which finds it at
+       AppContext.BaseDirectory/wwwroot with no configuration at all.
+
+       Deliberately NOT a ProjectReference. Flower.Web cannot be *built* without
+       the wasm-tools workload's Emscripten toolchain (WasmBuildNative=true;
+       without it Avalonia's Skia renderer throws DllNotFoundException on first
+       paint), and this server is the one head that has to compile on a headless
+       box or in a minimal container image. A reference would make that
+       impossible; this instead builds the bundle when the toolchain is present
+       and skips it silently when it is not, in which case the server serves a
+       short page explaining how to deploy one. Pass -p:IncludeWebUi=false to
+       skip it even where the toolchain exists.
+
+       It runs as a separate `dotnet publish` rather than an <MSBuild> task on
+       purpose: the WASM bundle is only fully assembled by Publish (a plain
+       build leaves wwwroot without index.html), and nesting a publish inside a
+       build in the same MSBuild node is a well-known way to get very confusing
+       failures. Incremental, it costs about four seconds. -->
+  <PropertyGroup>
+    <FlowerWebUiDir>$(MSBuildThisFileDirectory)../Flower.Web/bin/$(Configuration)/net10.0-browser/publish/wwwroot/</FlowerWebUiDir>
+  </PropertyGroup>
+
+  <!-- The toolchain probe has to happen at execution time, not evaluation time:
+       NetCoreTargetingPackRoot is set by the SDK targets imported *after* this
+       file's body, so a PropertyGroup condition up here would always see it
+       empty and decide the workload is missing.
+
+       None of these three targets carries a Condition of its own, because
+       MSBuild evaluates a target's Condition *before* running its
+       DependsOnTargets - so a condition on _BuildFlowerWebUi out here would
+       skip the very target that computes it. The conditions go on the tasks. -->
+  <Target Name="ResolveFlowerWebUi">
+    <ItemGroup>
+      <!-- Emscripten, not the WebAssembly SDK: the SDK alone would let
+           Flower.Web restore and then fail in the native link step, which is
+           the failure this probe exists to avoid. Globbed rather than tested
+           with Exists() because the pack path carries the Emscripten version,
+           the RID and the SDK band, none of which are known here. -->
+      <_EmscriptenPack Include="$(NetCoreTargetingPackRoot)/Microsoft.NET.Runtime.Emscripten.*.Sdk.*/*/*.nuspec" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_BuildFlowerWebUi Condition="'$(IncludeWebUi)' != 'false' And '@(_EmscriptenPack)' != ''">true</_BuildFlowerWebUi>
+    </PropertyGroup>
+    <Message Importance="normal" Condition="'$(_BuildFlowerWebUi)' != 'true'"
+             Text="Skipping the browser UI. The server will serve its not-deployed page instead." />
+    <Exec Condition="'$(_BuildFlowerWebUi)' == 'true'"
+          Command="dotnet publish &quot;$(MSBuildThisFileDirectory)../Flower.Web/Flower.Web.csproj&quot; -c $(Configuration) --nologo -v quiet" />
+  </Target>
+
+  <Target Name="CopyFlowerWebUiToOutput" AfterTargets="Build" DependsOnTargets="ResolveFlowerWebUi">
+    <ItemGroup>
+      <!-- The .br/.gz siblings are dead weight here: nothing in the pipeline
+           negotiates content encoding, so UseStaticFiles would only ever serve
+           the plain file. Dropping them takes the bundle from ~49 MB to ~17. -->
+      <FlowerWebUiFile Include="$(FlowerWebUiDir)**/*" Exclude="$(FlowerWebUiDir)**/*.br;$(FlowerWebUiDir)**/*.gz" />
+    </ItemGroup>
+    <Copy Condition="'$(_BuildFlowerWebUi)' == 'true'" SourceFiles="@(FlowerWebUiFile)" SkipUnchangedFiles="true"
+          DestinationFiles="@(FlowerWebUiFile->'$(OutDir)wwwroot/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+
+  <!-- So that `dotnet publish Flower.Server` alone produces a deployable server
+       with its web UI already in it, rather than needing the copy step by hand. -->
+  <Target Name="CopyFlowerWebUiToPublishDir" AfterTargets="Publish" DependsOnTargets="ResolveFlowerWebUi">
+    <ItemGroup>
+      <!-- The .br/.gz siblings are dead weight here: nothing in the pipeline
+           negotiates content encoding, so UseStaticFiles would only ever serve
+           the plain file. Dropping them takes the bundle from ~49 MB to ~17. -->
+      <FlowerWebUiFile Include="$(FlowerWebUiDir)**/*" Exclude="$(FlowerWebUiDir)**/*.br;$(FlowerWebUiDir)**/*.gz" />
+    </ItemGroup>
+    <Copy Condition="'$(_BuildFlowerWebUi)' == 'true'" SourceFiles="@(FlowerWebUiFile)" SkipUnchangedFiles="true"
+          DestinationFiles="@(FlowerWebUiFile->'$(PublishDir)wwwroot/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+
 </Project>
