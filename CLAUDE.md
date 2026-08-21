@@ -36,7 +36,15 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 dotnet build Flower.Desktop/Flower.Desktop.csproj
 dotnet test Flower.Tests/Flower.Tests.csproj --filter Category!=RequiresLibVLC   # fast, day-to-day
 dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs a local VLC install
+dotnet run --project Flower.Server                                              # server + its browser UI
 ```
+
+The browser UI (`Flower.Web`) has no run configuration of its own — building
+`Flower.Server` publishes it and drops it in beside the binary, so running the
+server is all it takes to have it served. That needs the `wasm-tools` workload;
+without it the step is skipped and the server serves a page explaining how to get
+it. `-p:IncludeWebUi=false` skips it deliberately. See `Flower.Server.csproj`'s
+"The browser UI" targets and `Flower.Server/Configuration/WebUiHosting.cs`.
 
 `Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `TrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no LibVLC), real-LibVLC decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresLibVLC`, need a local VLC install same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`) these all build on.
 
