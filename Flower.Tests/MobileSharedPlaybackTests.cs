@@ -16,9 +16,9 @@ using Xunit;
 
 namespace Flower.Tests;
 
-// MobileMainViewModel used to reimplement MainViewModel's
-// PlayResolvingPlaceholder and SyncPlayQueueToCurrentView line for line,
-// purely because both were private, and hand-rolled the same
+// MobileMainViewModel used to reimplement MainViewModel's placeholder-
+// resolving play path and SyncPlayQueueToCurrentView line for line, purely
+// because both were private, and hand-rolled the same
 // push-history/set-scope/rebuild sequence five times - the work
 // docs/ARCHITECTURE-REVIEW.md Tier 4.2 parked. These pin the behaviour that
 // sharing them has to preserve.
@@ -62,8 +62,10 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
     // A placeholder (not yet downloaded) with no peer to stream from must be
     // declined rather than handed to the audio manager - passing a null Path
     // straight to Play is what used to crash inside the old VlcAudioManager.
-    // That guard lived in MainViewModel.PlayResolvingPlaceholder and in a
-    // copy of it here; there is one now.
+    // That guard lived in MainViewModel.PlayResolvingPlaceholder and in a copy
+    // of it here, then in one shared place; it now lives one layer lower still,
+    // inside PlaylistControlViewModel.Play itself, so no caller can miss it -
+    // see IStreamUrlResolver.
     [AvaloniaFact]
     public async Task Tapping_a_placeholder_with_nowhere_to_stream_from_plays_nothing()
     {

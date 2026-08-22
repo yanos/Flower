@@ -89,14 +89,22 @@ namespace Flower.ViewModels
 
         public bool CanResume => CurrentlyPlayingTrack != null;
 
+        private readonly IStreamUrlResolver? _streamUrlResolver;
+
         public PlaylistControlViewModel(
             IAudioManager audioManager,
             MainPlaylist playlist,
             Library library,
             AppSettings appSettings,
             AppSettingsStore appSettingsStore,
-            ILogger<PlaylistControlViewModel> logger)
+            ILogger<PlaylistControlViewModel> logger,
+            // Nullable and defaulted for the same reason MainViewModel's peer
+            // dependencies are: the browser head registers no peer stack at all
+            // (see App.axaml.cs), and a container cannot inject what is not
+            // registered. Null simply means placeholders cannot be played here.
+            IStreamUrlResolver? streamUrlResolver = null)
         {
+            _streamUrlResolver = streamUrlResolver;
             _audioManager = audioManager;
             _currentPlaylist = playlist;
             _library = library;
@@ -265,7 +273,7 @@ namespace Flower.ViewModels
             // gapless IAudioManager needs to hear about it even though the
             // currently playing track itself isn't changing.
             if (CurrentlyPlayingTrack is { } currentTrack)
-                _audioManager.SetUpcoming(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track);
+                _audioManager.SetUpcoming(ResolveForPlayback(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track));
         }
 
         public void ToggleShuffle()
@@ -276,7 +284,7 @@ namespace Flower.ViewModels
             _ = _appSettingsStore.SaveAsync(_appSettings);
 
             if (CurrentlyPlayingTrack is { } currentTrack)
-                _audioManager.SetUpcoming(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track);
+                _audioManager.SetUpcoming(ResolveForPlayback(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track));
         }
 
         // What should play after the entry at currentIndex, given the current
@@ -348,9 +356,24 @@ namespace Flower.ViewModels
         // the queue because they re-anchored it immediately beforehand.
         public void Play(Track track, int queueIndex)
         {
+            // Worked out against the track as queued - the placeholder - since
+            // that is what the queue holds. ResolveForPlayback's copy keeps
+            // Track.Id, so this stays correct either way, but doing it first
+            // makes that independent of the copy's behaviour.
             _queueIndex = queueIndex >= 0 && queueIndex < _currentPlaylist.Tracks.Count && _currentPlaylist.Tracks[queueIndex] == track
                 ? queueIndex
                 : IndexOfInQueue(track);
+
+            // Every way a track can start playing arrives here - a double-
+            // clicked row, Next/Previous, PlayOrPause's fallback, auto-advance
+            // on EndReached, the skip-on-failure handler - so this is the one
+            // place a placeholder has to become playable. It used to be done by
+            // MainViewModel.PlayResolvingPlaceholder, above this class, and the
+            // half of those callers that never went through MainViewModel
+            // crashed the decoder instead (see IStreamUrlResolver).
+            if (ResolveForPlayback(track) is not { } playable)
+                return;
+            track = playable;
 
             _logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, track.Path);
             SelectedTrack = track;
@@ -359,7 +382,7 @@ namespace Flower.ViewModels
 
             // Arms decode-ahead for whichever track should follow this one,
             // so the gapless pipeline can splice it in with no gap.
-            _audioManager.SetUpcoming(GetUpcomingEntry(track, _queueIndex).Track);
+            _audioManager.SetUpcoming(ResolveForPlayback(GetUpcomingEntry(track, _queueIndex).Track));
 
             // Drives the History sidebar view - see Track.LastPlayedAt/
             // Library.RecordPlayed for why this stamps here rather than
@@ -367,6 +390,35 @@ namespace Flower.ViewModels
             // Raises TrackStatsChanged, not TracksUpdated - same reasoning as
             // the EndReached handler above.
             _library.RecordPlayed(track);
+        }
+
+        // A track ready to hand to IAudioManager, or null if it is not playable
+        // right now. A local file passes straight through; a placeholder needs a
+        // stream URL from the peer that holds it, and gets a transient copy
+        // carrying that URL rather than having its own Path mutated - the
+        // placeholder lives in Library.Tracks and a stream URL must never be
+        // persisted there.
+        //
+        // Clone() rather than a `with` expression on a record, because Clone
+        // keeps Track.Id: the copy is still the same track as far as the play
+        // queue is concerned. A differing Path once made the copy compare
+        // unequal to the queued placeholder, so IndexOf returned -1 and
+        // auto-advance jumped back to the front of the queue.
+        private Track? ResolveForPlayback(Track? track)
+        {
+            if (track == null || track.Path != null)
+                return track;
+
+            if (_streamUrlResolver?.Resolve(track) is not { } streamUrl)
+            {
+                // Already logged by the resolver, with the actual reason.
+                _logger.LogWarning("Not playing {Title}: it is not downloaded and no stream URL could be built", track.Title);
+                return null;
+            }
+
+            var streaming = track.Clone();
+            streaming.Path = streamUrl;
+            return streaming;
         }
 
         public void PlayOrPause(Track track)

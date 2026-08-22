@@ -213,7 +213,7 @@ public partial class App : Application
             // whole browser app down before its first frame.
             .AddSingleton(sp => new AlbumArtLoader(
                 sp.GetService<PeerTrackResolver>(),
-                sp.GetService<DeviceIdentity>(),
+                sp.GetService<IPeerCredentials>(),
                 sp.GetRequiredService<ILogger<AlbumArtLoader>>()))
 
             // One 60Hz timer for every animation in the app - see
@@ -284,7 +284,17 @@ public partial class App : Application
             .AddSingleton<PeerPairingService>()
             .AddSingleton<PeerUnpairNotifier>()
             .AddSingleton<PairedServerReachability>()
-            .AddSingleton<PeerTrackResolver>();
+            .AddSingleton<PeerTrackResolver>()
+            // How this device proves who it is to a peer, for every signed call
+            // into one (see IPeerCredentials). On this branch because it needs
+            // the signing key, which the browser head has no way to produce.
+            .AddSingleton<IPeerCredentials, SignedDeviceCredentials>()
+            // Registered here, on the peer-stack branch, because that is what it
+            // resolves against - a paired peer found over mDNS, addressed with
+            // this device's signing key. PlaylistControlViewModel takes it as an
+            // optional dependency (see IStreamUrlResolver) precisely so the
+            // browser head, which has neither, still constructs.
+            .AddSingleton<IStreamUrlResolver, PeerStreamUrlResolver>();
     }
 
     // The one platform fork the audio pipeline needs.

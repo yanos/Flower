@@ -1140,52 +1140,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public void PlayTrack(Track track, int queueIndex)
     {
         SyncPlayQueueToCurrentView();
-        PlayResolvingPlaceholder(track, queueIndex);
-    }
-
-    // Shared by every internal caller that hands a Track straight to
-    // PlaylistControlViewModel.Play - that call goes straight into
-    // IAudioManager.Play, which cannot handle a placeholder (Path == null,
-    // not yet downloaded - see SYNC-PLAN.md Phase 3) the way this method
-    // does: confirmed as a crash inside the old VlcAudioManager (LibVLCSharp's Media
-    // constructor rejecting a null mrl) wherever a placeholder reached Play
-    // directly (PlayAlbum's tracks[0], and PlayOrPauseFromCurrentView's
-    // auto-picked first track, before both were routed through this).
-    // Streams the track on demand from whichever peer currently holds it
-    // rather than requiring an explicit download first - a transient copy,
-    // not the placeholder itself. See GetStreamUrl's own doc comment and
-    // Public because mobile calls it too - MobileMainViewModel.PlayTrackCommand
-    // used to reimplement it line for line, because this was private (see
-    // docs/ARCHITECTURE-REVIEW.md Tier 4.2's parked mobile work).
-    public void PlayResolvingPlaceholder(Track track) => PlayResolvingPlaceholder(track, -1);
-
-    public void PlayResolvingPlaceholder(Track track, int queueIndex)
-    {
-        if (track.Path == null)
-        {
-            if (GetStreamUrl(track) is { } streamUrl)
-                _playlistControlViewModel.Play(WithStreamUrl(track, streamUrl), queueIndex);
-            return;
-        }
-
         _playlistControlViewModel.Play(track, queueIndex);
-    }
-
-    // The transient stream-URL copy of a placeholder track. Clone() keeps
-    // Track.Id, so the copy is still the same track as far as the play queue
-    // is concerned - the queue can still find it, which it could not
-    // when this was a `with` expression on a record (the differing Path made
-    // the copy compare unequal to the queued placeholder, so IndexOf returned
-    // -1 and auto-advance jumped back to the front of the queue). Path here is
-    // a stream URL, not a local file, and must never be persisted back into
-    // Library.Tracks - hence a copy rather than mutating the placeholder.
-    // Shared with MobileMainViewModel.PlayTrackCommand, which does the same
-    // thing on the mobile side.
-    public static Track WithStreamUrl(Track track, string streamUrl)
-    {
-        var streaming = track.Clone();
-        streaming.Path = streamUrl;
-        return streaming;
     }
 
     // Double-click on an album tile in the Albums/Recently Added grid (see
@@ -1205,7 +1160,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             Browser.ToggleAlbumExpanded(albumName);
 
         _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
-        PlayResolvingPlaceholder(tracks[0], 0);
+        _playlistControlViewModel.Play(tracks[0], 0);
     }
 
     // Enter/double-click on an individual track row inside the inline-
@@ -1227,7 +1182,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             return;
 
         _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(ExpandedAlbumTracks)));
-        PlayResolvingPlaceholder(track, ExpandedAlbumTracks.IndexOf(track));
+        _playlistControlViewModel.Play(track, ExpandedAlbumTracks.IndexOf(track));
     }
 
     // Space bar / toolbar play-pause button. Only snapshots a fresh queue when
@@ -1244,17 +1199,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             SyncPlayQueueToCurrentView();
 
             // PlaylistControlViewModel.PlayOrPause()'s own SelectedTrack-or-
-            // first-track fallback calls straight into IAudioManager.Play,
-            // which cannot handle a placeholder track the way
-            // PlayResolvingPlaceholder does (see its own doc comment) -
-            // confirmed as a crash when nothing was selected and the
-            // current view's first track happened to be an undownloaded
-            // placeholder. Resolve the same "selected, or first in the
-            // current view" fallback here instead.
+            // first-track fallback used to be re-implemented here, because that
+            // one went straight into IAudioManager.Play and crashed on an
+            // undownloaded placeholder. Play() resolves placeholders itself now
+            // (see IStreamUrlResolver), so the fallback below is enough - except
+            // that this view's first track, not the queue's, is the right one to
+            // fall back to.
             var trackToPlay = _playlistControlViewModel.SelectedTrack ?? DisplayedTracks.FirstOrDefault();
             if (trackToPlay != null)
             {
-                PlayResolvingPlaceholder(trackToPlay);
+                _playlistControlViewModel.Play(trackToPlay);
                 return;
             }
         }
@@ -1418,7 +1372,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Task DeleteDownloadedFileAsync(Track track) => Sync.DeleteDownloadedFileAsync(track);
 
-    public string? GetStreamUrl(Track track) => Sync.GetStreamUrl(track);
 
     // internal for MainViewModelSyncTriggerTests, which drive the discovery
     // handlers directly - reaching them through the real

@@ -801,11 +801,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 : Main.Rows.IndexOf(row!);
 
             SyncPlayQueueToCurrentView();
-            // Handles the not-yet-downloaded case (Path == null) by streaming
-            // from whichever peer holds it - this was a line-for-line copy of
-            // MainViewModel.PlayResolvingPlaceholder, duplicated only because
-            // that method was private. See its doc comment.
-            Main.PlayResolvingPlaceholder(track, queueIndex);
+            // The not-yet-downloaded case (Path == null) is handled inside
+            // Play itself now - see IStreamUrlResolver. This used to have to
+            // route through MainViewModel to get that.
+            PlaylistControl.Play(track, queueIndex);
         });
         ToggleMiniPlayerCommand = new RelayCommand(() =>
         {

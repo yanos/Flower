@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Text;
 using System.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
@@ -45,6 +47,17 @@ public class AlbumArtLoaderTests : IDisposable
     // being constructor parameters is what lets a test choose that, rather
     // than inheriting whatever the process-wide container happens to hold.
     private readonly AlbumArtLoader _loader = new(null, null, NullLogger<AlbumArtLoader>.Instance);
+
+    // The real SignedDeviceCredentials over a throwaway keypair - the same
+    // thing the app injects. Using the real one is the point: an art fetch that
+    // is not properly signed is refused by Flower.Server, and that refusal is
+    // what used to take streaming down with it (see TheRemoteFetchIsSigned).
+    private static readonly DeviceSigningKey SigningKey = TestSigningKey.Create();
+
+    private static IPeerCredentials Credentials() => new SignedDeviceCredentials(
+        new DeviceIdentity { Fingerprint = SigningKey.Fingerprint, Alias = "Us" },
+        SigningKey,
+        new AppSettings());
 
     public AlbumArtLoaderTests()
     {
@@ -292,9 +305,7 @@ public class AlbumArtLoaderTests : IDisposable
         });
 
         var loader = new AlbumArtLoader(
-            new FixedPeerResolver(peer.Port),
-            new DeviceIdentity { Fingerprint = "us-fp", Alias = "Us" },
-            NullLogger<AlbumArtLoader>.Instance);
+            new FixedPeerResolver(peer.Port), Credentials(), NullLogger<AlbumArtLoader>.Instance);
 
         var hash = Unique("hash");
         var track = RemoteTrack(hash);
@@ -303,12 +314,73 @@ public class AlbumArtLoaderTests : IDisposable
         Assert.Equal(150, bitmap!.PixelSize.Width);
         // Identified to the peer as us, and asking for this track's album by
         // the same id the server side maps albums under.
-        Assert.Equal("us-fp", requestedFingerprint);
+        Assert.Equal(SigningKey.Fingerprint, requestedFingerprint);
         Assert.Contains(Uri.EscapeDataString(LibraryOpenSubsonicMapper.AlbumIdFor(track)), requestedPath);
         // Content-addressed on disk, so the next run (or a restart) needs no
         // peer at all - see the cached-file test above.
         Assert.Equal(art, await File.ReadAllBytesAsync(
             Path.Combine(AppDataDirectory.Path, "AlbumArtCache", $"{hash}.art")));
+    }
+
+    [AvaloniaFact]
+    public async Task The_remote_fetch_is_signed_so_a_real_server_will_serve_it()
+    {
+        // Cover art used to go out with a bare fingerprint and alias and no
+        // signature. A peer's own SyncHttpServer tolerated that; Flower.Server
+        // does not - and this is not a cosmetic difference, because its refusal
+        // charges a FailedAuthLimiter that gates the WHOLE /rest surface. Ten
+        // album tiles were enough to push it over, after which every
+        // /rest/stream came back 429 and no server-hosted track would play at
+        // all. Pin the full signature block, not just "some headers".
+        var art = SyntheticPng.Build(10, 10);
+        var headers = new Dictionary<string, string?>();
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            foreach (var name in context.Request.Headers.AllKeys)
+            {
+                if (name != null && name.StartsWith("X-Flower-", StringComparison.OrdinalIgnoreCase))
+                    headers[name] = context.Request.Headers[name];
+            }
+            context.Response.ContentType = "image/png";
+            await context.Response.OutputStream.WriteAsync(art);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new FixedPeerResolver(peer.Port), Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        Assert.NotNull(await loader.LoadAsync(RemoteTrack(Unique("hash"))));
+
+        Assert.Equal(SigningKey.Fingerprint, headers.GetValueOrDefault("X-Flower-Fingerprint"));
+        Assert.Equal(SigningKey.PublicKeyBase64, headers.GetValueOrDefault("X-Flower-PublicKey"));
+        Assert.False(string.IsNullOrEmpty(headers.GetValueOrDefault("X-Flower-Signature")));
+        Assert.False(string.IsNullOrEmpty(headers.GetValueOrDefault("X-Flower-Timestamp")));
+        Assert.False(string.IsNullOrEmpty(headers.GetValueOrDefault("X-Flower-Nonce")));
+    }
+
+    [AvaloniaFact]
+    public async Task A_subsonic_error_envelope_is_never_written_to_the_art_cache()
+    {
+        // The other half of the same bug. A Subsonic refusal is HTTP *200*
+        // carrying an error envelope, so IsSuccessStatusCode is true and the
+        // JSON body used to be written to disk as if it were an image. The
+        // cached-file branch runs before the fetch, so that turned one
+        // transient refusal into a permanently broken tile.
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            context.Response.StatusCode = 200;
+            context.Response.ContentType = "application/json";
+            await context.Response.OutputStream.WriteAsync(
+                Encoding.UTF8.GetBytes("""{"subsonic-response":{"status":"failed","error":{"code":40}}}"""));
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new FixedPeerResolver(peer.Port), Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        var hash = Unique("hash");
+        Assert.Null(await loader.LoadAsync(RemoteTrack(hash)));
+        Assert.False(File.Exists(Path.Combine(AppDataDirectory.Path, "AlbumArtCache", $"{hash}.art")));
     }
 
     [AvaloniaFact]
@@ -322,9 +394,7 @@ public class AlbumArtLoaderTests : IDisposable
         });
 
         var loader = new AlbumArtLoader(
-            new FixedPeerResolver(peer.Port),
-            new DeviceIdentity { Fingerprint = "us-fp", Alias = "Us" },
-            NullLogger<AlbumArtLoader>.Instance);
+            new FixedPeerResolver(peer.Port), Credentials(), NullLogger<AlbumArtLoader>.Instance);
 
         var hash = Unique("hash");
 

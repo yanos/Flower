@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Flower.Manager;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 
@@ -73,12 +74,20 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
         // already decoding.
         private readonly Dictionary<Track, List<FakeTrackDecoder>> _decoders = new(ReferenceEqualityComparer.Instance);
 
-        public Harness(List<Track> tracks)
+        // Every track actually handed to a decoder, in order. Needed alongside
+        // the per-instance dictionary above because a placeholder never reaches
+        // the decoder as itself - it arrives as the transient stream-URL copy
+        // (see PlaylistControlViewModel.ResolveForPlayback), which is a
+        // different instance and so invisible to a reference-keyed lookup.
+        public List<Track> DecodedTracks { get; } = [];
+
+        public Harness(List<Track> tracks, IStreamUrlResolver? streamUrlResolver = null)
         {
             var ring = new GaplessRingBuffer(4096);
             var coordinator = new GaplessCoordinator(ring, (track, r) =>
             {
                 var fake = new FakeTrackDecoder(track);
+                DecodedTracks.Add(track);
                 if (!_decoders.TryGetValue(track, out var list))
                     _decoders[track] = list = [];
                 list.Add(fake);
@@ -93,7 +102,7 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
 
             PlaylistControl = new PlaylistControlViewModel(
                 audioManager, playlist, library, new AppSettings(), appSettingsStore,
-                NullLogger<PlaylistControlViewModel>.Instance);
+                NullLogger<PlaylistControlViewModel>.Instance, streamUrlResolver);
             CurrentlyPlaying = new CurrentlyPlayingControlViewModel(
                 PlaylistControl, audioManager, library, NullLogger<CurrentlyPlayingControlViewModel>.Instance);
         }
@@ -122,6 +131,165 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
             }
             Thread.Sleep(1);
         }
+    }
+
+    // ── Local vs. remote: the same pipeline, both sources ────────────────
+    //
+    // A library can hold two kinds of track: a local file (Path is a real path)
+    // and a placeholder synced in from a peer's catalog that this device has
+    // never downloaded (Path is null, OriginTrackId names it on that peer - see
+    // SYNC-PLAN.md Phase 3). Only the first can go to a decoder as-is; the
+    // second has to become a stream URL first.
+    //
+    // That resolution used to live above this class, in
+    // MainViewModel.PlayResolvingPlaceholder, so only callers that went through
+    // MainViewModel got it. Everything inside PlaylistControlViewModel - auto-
+    // advance, skip-on-failure, Next, Previous, decode-ahead - handed the raw
+    // placeholder straight to the decoder, which throws in
+    // TrackDecoder.EnsureMedia. Manual play worked and auto-advance did not.
+    // These tests run both kinds through the real pipeline, and specifically
+    // pin the entry points that used to skip resolution.
+
+    private static Track P(string title) => new()
+    {
+        Title = title,
+        Path = null,
+        OriginTrackId = "sg-" + title,
+        OriginDeviceFingerprint = "peer-fingerprint",
+        Duration = TimeSpan.FromMinutes(3),
+    };
+
+    private static string StreamUrlFor(Track track) =>
+        $"http://server.local:53317/rest/stream?id={track.OriginTrackId}";
+
+    private sealed class FakeStreamUrlResolver(bool reachable = true) : IStreamUrlResolver
+    {
+        // Every track this was asked about - lets a test assert that a local
+        // file never goes near the peer resolution path at all.
+        public List<Track> Asked { get; } = [];
+
+        public string? Resolve(Track track)
+        {
+            Asked.Add(track);
+            return reachable ? StreamUrlFor(track) : null;
+        }
+    }
+
+    [AvaloniaFact]
+    public void A_local_track_plays_straight_from_its_own_path()
+    {
+        var a = T("A");
+        var resolver = new FakeStreamUrlResolver();
+        var h = new Harness([a], resolver);
+
+        h.PlaylistControl.Play(a);
+        PumpUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, TimeSpan.FromSeconds(5));
+
+        // The very same instance, unmodified: a local track is not copied, not
+        // rewritten, and never asks a peer for anything.
+        Assert.Same(a, h.PlaylistControl.CurrentlyPlayingTrack);
+        Assert.Equal("/music/A.mp3", h.LatestDecoderFor(a).Track.Path);
+        Assert.Empty(resolver.Asked);
+    }
+
+    [AvaloniaFact]
+    public void A_remote_placeholder_plays_from_a_stream_url_without_being_downloaded()
+    {
+        var r = P("R");
+        var h = new Harness([r], new FakeStreamUrlResolver());
+
+        h.PlaylistControl.Play(r);
+        PumpUntil(() => h.DecodedTracks.Count > 0, TimeSpan.FromSeconds(5));
+
+        Assert.Contains(h.DecodedTracks, t => t.Id == r.Id && t.Path == StreamUrlFor(r));
+
+        // The placeholder itself is still a placeholder. It lives in
+        // Library.Tracks, and a stream URL must never be persisted there - only
+        // the transient copy carries one.
+        Assert.Null(r.Path);
+    }
+
+    [AvaloniaFact]
+    public void Auto_advance_onto_a_remote_placeholder_streams_it()
+    {
+        var a = T("A");
+        var r = P("R");
+        var h = new Harness([a, r], new FakeStreamUrlResolver());
+
+        h.PlaylistControl.Play(a);
+        PumpUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, TimeSpan.FromSeconds(5));
+
+        h.LatestDecoderFor(a).RaiseDrained();
+        PumpUntil(() => h.PlaylistControl.CurrentlyPlayingTrack?.Id == r.Id, TimeSpan.FromSeconds(5));
+
+        Assert.Contains(h.DecodedTracks, t => t.Id == r.Id && t.Path == StreamUrlFor(r));
+    }
+
+    [AvaloniaFact]
+    public void Skipping_a_failed_track_onto_a_remote_placeholder_streams_it()
+    {
+        // The exact reported crash: a track failed to decode, the skip-on-
+        // failure handler advanced to the next one, and that one was an
+        // undownloaded placeholder handed straight to the decoder.
+        var a = T("A");
+        var r = P("R");
+        var h = new Harness([a, r], new FakeStreamUrlResolver());
+
+        h.PlaylistControl.Play(a);
+        PumpUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, TimeSpan.FromSeconds(5));
+
+        h.LatestDecoderFor(a).RaiseFaulted();
+        PumpUntil(() => h.PlaylistControl.CurrentlyPlayingTrack?.Id == r.Id, TimeSpan.FromSeconds(5));
+
+        Assert.Contains(h.DecodedTracks, t => t.Id == r.Id && t.Path == StreamUrlFor(r));
+    }
+
+    [AvaloniaFact]
+    public void Decode_ahead_arms_the_streamed_copy_of_an_upcoming_placeholder()
+    {
+        // SetUpcoming is the other way a track reaches a decoder, and it never
+        // went through the old resolution either - so arming decode-ahead on an
+        // undownloaded next track failed on its own, before playback got there.
+        var a = T("A");
+        var r = P("R");
+        var h = new Harness([a, r], new FakeStreamUrlResolver());
+
+        h.PlaylistControl.Play(a);
+        PumpUntil(() => h.DecodedTracks.Exists(t => t.Id == r.Id), TimeSpan.FromSeconds(5));
+
+        Assert.Contains(h.DecodedTracks, t => t.Id == r.Id && t.Path == StreamUrlFor(r));
+    }
+
+    [AvaloniaFact]
+    public void A_remote_placeholder_with_no_reachable_peer_is_not_played()
+    {
+        // Nothing to stream from is an ordinary outcome, not a crash: the peer
+        // holding this track may simply be off right now.
+        var r = P("R");
+        var h = new Harness([r], new FakeStreamUrlResolver(reachable: false));
+
+        h.PlaylistControl.Play(r);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Null(h.PlaylistControl.CurrentlyPlayingTrack);
+        Assert.Empty(h.DecodedTracks);
+    }
+
+    [AvaloniaFact]
+    public void A_streaming_placeholder_keeps_its_place_in_the_queue()
+    {
+        // The transient copy keeps Track.Id, so the queue still recognizes it
+        // (see Track.Clone). Without that, navigation off a streaming track
+        // falls back to the front of the queue rather than moving one on.
+        var r = P("R");
+        var b = T("B");
+        var h = new Harness([r, b], new FakeStreamUrlResolver());
+
+        h.PlaylistControl.Play(r);
+        PumpUntil(() => h.DecodedTracks.Exists(t => t.Id == r.Id), TimeSpan.FromSeconds(5));
+
+        h.PlaylistControl.Next();
+        Assert.Same(b, h.PlaylistControl.CurrentlyPlayingTrack);
     }
 
     [AvaloniaFact]

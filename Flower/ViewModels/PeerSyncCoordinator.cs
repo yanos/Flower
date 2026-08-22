@@ -690,36 +690,6 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     public Task DeleteDownloadedFileAsync(Track track) =>
         _libraryDownloadService?.DeleteDownloadedFileAsync(track) ?? Task.CompletedTask;
 
-    // Builds an on-demand stream URL for a placeholder track from whichever
-    // peer currently holds it, for playing without downloading first - see
-    // MobileMainViewModel.PlayTrackCommand and PeerLibraryViewModel's own
-    // identical streaming approach for peer-browsed (not yet synced-in)
-    // tracks. Null if the peer isn't currently reachable (same resolution
-    // DownloadTrackAsync uses) or this device's own identity isn't ready yet.
-    public string? GetStreamUrl(Track track)
-    {
-        if (_deviceIdentity == null || _signingKey == null)
-        {
-            _logger.LogWarning("Cannot build a stream URL for {Title}: device identity/settings not ready yet", track.Title);
-            return null;
-        }
-        // The id the origin peer itself gave this track, not one recomputed
-        // here - see Track.OriginTrackId. Absent only for a track that never
-        // came from a peer at all, which has no business on this path.
-        if (track.OriginTrackId == null)
-        {
-            _logger.LogWarning("Cannot build a stream URL for {Title}: it carries no origin track id", track.Title);
-            return null;
-        }
-        var peer = ResolvePeerForTrack(track);
-        if (peer == null)
-            return null; // ResolvePeerForTrack already logged why.
-
-        var url = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey).GetStreamUrl(track.OriginTrackId);
-        _logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint}): {Url}", track.Title, peer.Alias, peer.EndPoint, url);
-        return url;
-    }
-
     private readonly SubscriptionBag _subscriptions = new();
 
     // Stops the log-push timer and detaches from the process-wide log store.
