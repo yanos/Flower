@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
+using Flower.Importer;
 using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
@@ -55,7 +56,8 @@ public class LibrarySyncConditionalPullTests : IDisposable
             key,
             new AppSettings { IsServer = false },
             InMemoryLogStore.Instance,
-            NullLogger<LibrarySyncService>.Instance);
+            NullLogger<LibrarySyncService>.Instance,
+            NullLogger<RemoteLibraryImporter>.Instance);
 
     private static Child RemoteSong(string title) => new(
         Id: "sync:" + title,
