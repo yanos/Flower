@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
+using Flower.Importer;
 using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
@@ -75,11 +76,17 @@ public class LibrarySyncService
     private readonly InMemoryLogStore _logStore;
     private readonly ILogger _logger;
 
+    // The importer's own, injected rather than reused: it is a separate class
+    // with its own category, and the browser resolves it from the container the
+    // same way - this service just happens to construct one per peer, since a
+    // peer's address is only known per call.
+    private readonly ILogger<RemoteLibraryImporter> _importerLogger;
+
     // See PeerTrustRejectedEventArgs (PlaylistSyncService.cs) - same trust gate,
     // same meaning here.
     public event EventHandler<PeerTrustRejectedEventArgs>? PeerTrustRejected;
 
-    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, InMemoryLogStore logStore, ILogger<LibrarySyncService> logger)
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, InMemoryLogStore logStore, ILogger<LibrarySyncService> logger, ILogger<RemoteLibraryImporter> importerLogger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
@@ -90,6 +97,7 @@ public class LibrarySyncService
         _appSettings = appSettings;
         _logStore = logStore;
         _logger = logger;
+        _importerLogger = importerLogger;
     }
 
     // Virtual for the same reason PeerTrackResolver.Resolve is: it is the seam
@@ -107,34 +115,33 @@ public class LibrarySyncService
         _logger.LogInformation("Library sync starting with {Alias} ({Fingerprint}) at {EndPoint}",
             device.Alias, device.Fingerprint, device.EndPoint);
 
-        List<Child> songs;
+        List<Track> placeholders;
         string? servedToken;
+        int fetchedCount;
         try
         {
-            const string path = "/api/flower/v1/library";
+            // The request itself is RemoteLibraryImporter's - the same class the
+            // browser head uses as its whole library - so there is one HTTP path
+            // to this endpoint instead of two that have to be kept in step. What
+            // stays here is what is genuinely this service's own: the per-peer
+            // token cache below, the trust-rejection signal, and the additive
+            // merge into Library.
+            var importer = new RemoteLibraryImporter(
+                Http, $"http://{device.EndPoint}", _credentials,
+                originFingerprint: device.Fingerprint, ownFingerprint: _deviceIdentity.Fingerprint,
+                _importerLogger, closeConnection: true);
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}{path}");
-            if (_lastSeenTokens.TryGetValue(device.Fingerprint, out var knownToken))
-                request.Headers.TryAddWithoutValidation("If-None-Match", knownToken);
-            request.AddPeerCredentials(_credentials);
-            // Fresh connection per request rather than pooling one - see
-            // PlaylistSyncService.AddSignedIdentityHeaders for why (avoids
-            // reusing a keep-alive connection the server/OS already tore down).
-            request.Headers.ConnectionClose = true;
-
-            using var response = await Http.SendAsync(request);
-            if (response.StatusCode == HttpStatusCode.NotModified)
+            var fetch = await importer.FetchAsync(_lastSeenTokens.GetValueOrDefault(device.Fingerprint));
+            if (fetch.NotModified)
             {
                 _logger.LogDebug("Library sync with {Alias}: catalog unchanged since {Token}, nothing to merge",
-                    device.Alias, _lastSeenTokens.GetValueOrDefault(device.Fingerprint));
+                    device.Alias, fetch.ETag);
                 return new LibrarySyncResult(true, 0, 0, Unchanged: true);
             }
 
-            response.EnsureSuccessStatusCode();
-            servedToken = response.Headers.ETag?.Tag ?? (response.Headers.TryGetValues("ETag", out var etags) ? etags.FirstOrDefault() : null);
-            var json = await response.Content.ReadAsStringAsync();
-            var manifest = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.LibrarySyncManifestDto);
-            songs = manifest?.Songs ?? [];
+            placeholders = fetch.Tracks;
+            servedToken = fetch.ETag;
+            fetchedCount = placeholders.Count;
         }
         catch (Exception ex)
         {
@@ -150,11 +157,7 @@ public class LibrarySyncService
             return new LibrarySyncResult(false, 0, 0);
         }
 
-        var placeholders = songs
-            .Select(song => LibrarySyncMapper.ToPlaceholderTrack(song, device.Fingerprint, _deviceIdentity.Fingerprint))
-            .ToList();
-
-        _logger.LogInformation("Library sync with {Alias}: fetched {SongCount} song(s) from their catalog", device.Alias, songs.Count);
+        _logger.LogInformation("Library sync with {Alias}: fetched {SongCount} song(s) from their catalog", device.Alias, fetchedCount);
 
         // No early-return for an empty catalog: a peer reporting zero songs
         // (its whole library emptied, or a fresh pairing to one with nothing
@@ -195,7 +198,7 @@ public class LibrarySyncService
         if (!_appSettings.IsServer && _appSettings.ShareLogsWithPairedServer)
             await PushLogSnapshotAsync(device);
 
-        return new LibrarySyncResult(true, songs.Count, addedCount);
+        return new LibrarySyncResult(true, fetchedCount, addedCount);
     }
 
     private async Task PushLogSnapshotAsync(DiscoveredDevice device)

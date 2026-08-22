@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -6,10 +6,14 @@ using Flower.Models;
 
 namespace Flower.Services;
 
-// Maps an OpenSubsonic Child (a peer's song, fetched via LibrarySyncService) into
-// a Flower placeholder Track - see SYNC-PLAN.md Phase 3's data model. Path stays
-// null (this device doesn't have the file yet); OriginDeviceFingerprint records
-// which peer answered, so a later download request goes to the right device.
+// Maps an OpenSubsonic Child (a peer's song, fetched by RemoteLibraryImporter)
+// into a Flower placeholder Track - see SYNC-PLAN.md Phase 3's data model. Path
+// stays null (this device doesn't have the file yet); OriginDeviceFingerprint
+// records which peer answered, so a later download request goes to the right
+// device.
+//
+// In Flower.Core rather than the app project because its one caller is: the
+// browser head reaches the same importer without ever loading Flower.
 public static class LibrarySyncMapper
 {
     // ownFingerprint is this device's own DeviceIdentity.Fingerprint - excluded
