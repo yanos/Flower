@@ -26,7 +26,7 @@ public partial class AlbumGridView : UserControl
     private const double CellWidth = 180 + 16;
 
     private IReadOnlyList<AlbumTileViewModel> _tiles = Array.Empty<AlbumTileViewModel>();
-    private readonly List<AlbumGridRowViewModel> _rows = new();
+    private List<AlbumGridRowViewModel> _rows = new();
     private int _columns = 1;
 
     public static readonly StyledProperty<IEnumerable?> ItemsSourceProperty =
@@ -145,11 +145,26 @@ public partial class AlbumGridView : UserControl
         var width = Bounds.Width > 0 ? Bounds.Width : 800; // reasonable default before first layout
         _columns = Math.Max(1, (int)(width / CellWidth));
 
-        _rows.Clear();
+        // A brand-new list every time, handed over in a single assignment.
+        // This used to keep one List for the control's lifetime, refill it in
+        // place and then poke the ItemsControl with `ItemsSource = null;
+        // ItemsSource = _rows;` to make it notice - a plain List raises no
+        // change notifications of its own. That poke does not reliably work:
+        // Avalonia resolves a collection to an ItemsSourceView per instance,
+        // so handing back the *same* instance can leave the virtualizing panel
+        // believing its source never changed, and it keeps the containers it
+        // had already realized. Visible as albums that stay on screen after
+        // the library behind them is gone (remove the last library folder -
+        // the status bar correctly says 0 songs while the grid still shows
+        // every album) until any resize happens to force a fresh layout pass.
+        // A different instance leaves nothing to recognise, so the panel
+        // rebuilds - which is all the null-then-reassign was ever trying to
+        // ask for.
+        var rows = new List<AlbumGridRowViewModel>();
         for (int i = 0; i < _tiles.Count; i += _columns)
-            _rows.Add(new AlbumGridRowViewModel { Tiles = _tiles.Skip(i).Take(_columns).ToList() });
+            rows.Add(new AlbumGridRowViewModel { Tiles = _tiles.Skip(i).Take(_columns).ToList() });
 
-        RowsList.ItemsSource = null;
+        _rows = rows;
         RowsList.ItemsSource = _rows;
 
         ApplySelection();
