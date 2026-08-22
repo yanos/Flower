@@ -70,7 +70,7 @@ public class LibrarySyncService
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
-    private readonly DeviceSigningKey _signingKey;
+    private readonly IPeerCredentials _credentials;
     private readonly AppSettings _appSettings;
     private readonly InMemoryLogStore _logStore;
     private readonly ILogger _logger;
@@ -83,7 +83,10 @@ public class LibrarySyncService
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
-        _signingKey = signingKey;
+        // Constructed here rather than injected: every caller that could supply
+        // one would build it from exactly these three, which the container
+        // already hands this service.
+        _credentials = new SignedDeviceCredentials(deviceIdentity, signingKey, appSettings);
         _appSettings = appSettings;
         _logStore = logStore;
         _logger = logger;
@@ -109,17 +112,11 @@ public class LibrarySyncService
         try
         {
             const string path = "/api/flower/v1/library";
-            var (signature, timestamp, nonce) = _signingKey.Sign("GET", path, [], body: []);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}{path}");
             if (_lastSeenTokens.TryGetValue(device.Fingerprint, out var knownToken))
                 request.Headers.TryAddWithoutValidation("If-None-Match", knownToken);
-            request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
-            request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
-            request.Headers.Add("X-Flower-Role", _appSettings.IsServer ? "server" : "client");
-            request.Headers.Add("X-Flower-Signature", signature);
-            request.Headers.Add("X-Flower-Timestamp", timestamp);
-            request.Headers.Add("X-Flower-Nonce", nonce);
+            request.AddPeerCredentials(_credentials);
             // Fresh connection per request rather than pooling one - see
             // PlaylistSyncService.AddSignedIdentityHeaders for why (avoids
             // reusing a keep-alive connection the server/OS already tore down).
@@ -210,15 +207,9 @@ public class LibrarySyncService
             var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, FlowerJsonContext.Default.LogReportDto));
 
             const string path = "/api/flower/v1/log/report";
-            var (signature, timestamp, nonce) = _signingKey.Sign("POST", path, [], bodyBytes);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}{path}");
-            request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
-            request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
-            request.Headers.Add("X-Flower-Role", _appSettings.IsServer ? "server" : "client");
-            request.Headers.Add("X-Flower-Signature", signature);
-            request.Headers.Add("X-Flower-Timestamp", timestamp);
-            request.Headers.Add("X-Flower-Nonce", nonce);
+            request.AddPeerCredentials(_credentials, bodyBytes);
             request.Headers.ConnectionClose = true;
             using var content = new ByteArrayContent(bodyBytes);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");

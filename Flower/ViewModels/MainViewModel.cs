@@ -628,7 +628,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             var client = new ServerAdminClient(
-                http, new Uri($"http://{device.EndPoint}"), ServerAdminClient.SignWith(_signingKey, _deviceIdentity));
+                http, new Uri($"http://{device.EndPoint}"), ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity, _signingKey, _appSettings)));
 
             var session = await client.CreateSessionAsync();
             OpenUrlInBrowser(session.Url);

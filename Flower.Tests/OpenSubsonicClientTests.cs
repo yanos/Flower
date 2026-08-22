@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Flower.Persistence;
 using Flower.Services;
 using Flower.Tests.TestSupport;
 
@@ -35,11 +36,10 @@ public class OpenSubsonicClientTests
         }
     }
 
-    // Builds the same kind of peerIdentityParams delegate
-    // PeerOpenSubsonicClientFactory.Create wires up, standalone here so the
-    // test doesn't need a DiscoveredDevice/AppSettings just to exercise the
-    // "does every call get a fresh nonce" property.
-    private static PeerIdentityParamsBuilder MakePeerIdentityParams()
+    // The real SignedDeviceCredentials, over a throwaway keypair - this used to
+    // build its own stand-in delegate, which is no longer worth doing now that
+    // one class serves every call site (see IPeerCredentials).
+    private static IPeerCredentials MakePeerCredentials()
     {
         var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var q = ecdsa.ExportParameters(false).Q;
@@ -49,21 +49,10 @@ public class OpenSubsonicClientTests
         Buffer.BlockCopy(q.Y!, 0, raw, 33, 32);
         var signingKey = new DeviceSigningKey(ecdsa, raw);
 
-        return (method, path, extraParams, body) =>
-        {
-            var identityParams = new List<(string Key, string Value)>
-            {
-                ("X-Flower-Fingerprint", signingKey.Fingerprint),
-                ("X-Flower-PublicKey", signingKey.PublicKeyBase64),
-            };
-            var (signature, timestamp, nonce) = signingKey.Sign(method, path, extraParams.Concat(identityParams), body);
-            return identityParams.Concat(
-            [
-                ("X-Flower-Signature", signature),
-                ("X-Flower-Timestamp", timestamp),
-                ("X-Flower-Nonce", nonce),
-            ]);
-        };
+        return new SignedDeviceCredentials(
+            new DeviceIdentity { Fingerprint = signingKey.Fingerprint, Alias = "test-device" },
+            signingKey,
+            new AppSettings());
     }
 
     private static OpenSubsonicClient MakeClient(string responseBody, out FakeHandler handler)
@@ -423,7 +412,7 @@ public class OpenSubsonicClientTests
         const string body = """{"subsonic-response":{"status":"ok","version":"1.16.1"}}""";
         var handler = new FakeHandler(body);
         var http = new HttpClient(handler);
-        var client = new OpenSubsonicClient("http://peer.local:53317", "", "", http, peerIdentityParams: MakePeerIdentityParams());
+        var client = new OpenSubsonicClient("http://peer.local:53317", "", "", http, credentials: MakePeerCredentials());
 
         await client.PingAsync();
         await client.PingAsync();
