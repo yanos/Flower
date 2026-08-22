@@ -67,7 +67,13 @@ public sealed class ServerAdminException(HttpStatusCode status, string message) 
 // asymmetric crypto at all, so the browser cannot sign anything).
 public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Action<HttpRequestMessage, byte[]> authorize)
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    // Web defaults for the naming policy (the server answers camelCase), but with
+    // the source-generated resolver supplying the metadata: Flower.Web is trimmed,
+    // and a trimmed build has reflection-based serialization disabled entirely, so
+    // resolving these types by reflection throws there rather than merely being
+    // slower. See FlowerJsonContext.
+    private static readonly JsonSerializerOptions Json =
+        new(JsonSerializerDefaults.Web) { TypeInfoResolver = FlowerJsonContext.Default };
 
     public Uri BaseAddress { get; } = baseAddress;
 
