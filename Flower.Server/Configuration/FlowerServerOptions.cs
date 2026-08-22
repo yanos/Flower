@@ -1,3 +1,5 @@
+using Flower.Persistence;
+
 namespace Flower.Server.Configuration;
 
 // Bound from the "Flower" section of appsettings.json/environment variables
@@ -10,7 +12,13 @@ namespace Flower.Server.Configuration;
 // Subsonic clients use per-client credentials this server generates at
 // runtime (SubsonicCredentialStore). Nothing an operator has to invent, type
 // into a config file, or remember to change from a placeholder.
-public sealed class FlowerServerOptions
+//
+// Derives from MusicLibrarySettings, which the app's own AppSettings derives
+// from too: the library folders and the three iTunes switches are the same
+// settings on both hosts, and were briefly declared (and defaulted, and
+// documented) twice. Everything left here is deployment configuration the app
+// has no equivalent of.
+public sealed class FlowerServerOptions : MusicLibrarySettings
 {
     public const string SectionName = "Flower";
 
@@ -24,8 +32,6 @@ public sealed class FlowerServerOptions
     // as an absolute path - so by the time this is bound it is never relative
     // and never empty, whatever was configured.
     public string DataDirectory { get; set; } = "";
-
-    public List<string> LibraryPaths { get; set; } = [];
 
     // Host:port to put in a pairing invite's QR code, for deployments where
     // the address the request arrived on is not the address a new device

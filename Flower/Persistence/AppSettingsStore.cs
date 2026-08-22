@@ -26,10 +26,12 @@ namespace Flower.Persistence
         Dark,
     }
 
-    public class AppSettings
+    // Everything the app persists to settings.json. The library folders and the
+    // iTunes switches come from MusicLibrarySettings, which Flower.Server's own
+    // options type derives from as well - see there for why only that much is
+    // shared and the rest of this stays app-only.
+    public class AppSettings : MusicLibrarySettings
     {
-        public List<string> LibraryPaths { get; set; } = new();
-
         // Main window geometry, saved on close and restored on the next
         // launch. Null until the window has been closed at least once (first
         // run falls back to Avalonia's own default size/placement).
@@ -52,32 +54,6 @@ namespace Flower.Persistence
         // When sorting by Artist, order each artist's albums by year instead of
         // however they happened to appear - see MainViewModel.SortArtistAlbumsByYear.
         public bool SortArtistAlbumsByYear { get; set; }
-
-        // Master switch for every way Flower reaches into a local
-        // iTunes/Music.app installation: auto-registering Music.app's own
-        // configured media folder as a library path (see Load below) and the
-        // two per-track imports underneath. On by default - on a Mac with a
-        // Music.app library, having Flower pick that library up on its own is
-        // what most people want; turning this off makes Flower ignore
-        // Music.app entirely and leaves the library purely whatever folders
-        // were added by hand. The two flags below stay independently
-        // meaningful (and keep their own persisted values) but are inert
-        // while this is false.
-        public bool IntegrateWithITunes { get; set; } = true;
-
-        // Whether to import per-track play counts from iTunes/Music.app's
-        // optional library XML export on every launch - see
-        // ITunesPlayCountImporter and Track.ImportedPlayCount. On by default;
-        // it's a harmless no-op when no such export exists on disk.
-        public bool SyncPlayCountFromITunes { get; set; } = true;
-
-        // Same export, but for Track.DateAdded instead of play counts - see
-        // ITunesDateAddedImporter. Off by default, unlike SyncPlayCountFromITunes:
-        // this can visibly reorder Recently Added (the older of the two dates
-        // always wins - see ITunesDateAddedImporter's own doc comment), so it is
-        // opt-in rather than silently changing sort order for everyone the first
-        // time they update.
-        public bool SyncDateAddedFromITunes { get; set; } = false;
 
         // Follows the OS light/dark setting by default; Light/Dark force that
         // variant regardless of the OS - see Settings' Appearance picker and
@@ -188,13 +164,10 @@ namespace Flower.Persistence
 
             // Auto-register Apple Music's configured media folder, if found and not
             // already present, so it shows up in Settings without the user having to
-            // browse for a folder they've already pointed Music.app at. Skipped
-            // entirely when the iTunes integration is off - that switch is also what
-            // makes removing this folder in Settings stick, since otherwise the next
-            // launch just puts it back.
-            if (settings.IntegrateWithITunes &&
-                Importer.Importer.TryResolveAppleMusicFolder(_logger) is string appleMusicFolder &&
-                !settings.LibraryPaths.Any(p => string.Equals(p, appleMusicFolder, StringComparison.OrdinalIgnoreCase)))
+            // browse for a folder they've already pointed Music.app at. When to do
+            // that is ITunesIntegration's call, not this store's - Flower.Server
+            // asks it the identical question before its own scan.
+            if (Importer.ITunesIntegration.ResolveMediaFolderToAdopt(settings, _logger) is { } appleMusicFolder)
             {
                 settings.LibraryPaths.Add(appleMusicFolder);
                 changed = true;

@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 
 using Microsoft.Extensions.Options;
 
+using Flower.Importer;
 using Flower.Logging;
 using Flower.Persistence;
 using Flower.Server.Configuration;
@@ -19,35 +20,6 @@ public sealed record SubsonicCredentialResponse(
 public sealed record AdminSessionResponse(string Token, DateTimeOffset ExpiresAt, string Url);
 public sealed record LibraryStatusResponse(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
 public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
-
-// The settings an operator may change from the browser, which is exactly the
-// operator-editable half of FlowerServerOptions - DataDirectory is excluded
-// deliberately (it is what located the file these are written to; see
-// ServerSettingsWriter), and so is WebUiPath, which is part of how the server was
-// deployed rather than something the page served from it should be able to move
-// out from under itself.
-//
-// RestartRequired names the fields whose new value is on disk and bound but not
-// yet acted on, so the page can say so instead of appearing to have done nothing:
-// MdnsAdvertiser reads its options once, when the hosted service starts.
-public sealed record ServerSettingsResponse(
-    string Alias,
-    string AdvertisedHost,
-    bool AdvertiseOnLan,
-    bool TrustTailscaleRange,
-    IReadOnlyList<string> AllowedCidrs,
-    IReadOnlyList<string> LibraryPaths,
-    string DataDirectory,
-    string? Version,
-    IReadOnlyList<string>? RestartRequired = null);
-
-public sealed record ServerSettingsUpdate(
-    string? Alias,
-    string? AdvertisedHost,
-    bool? AdvertiseOnLan,
-    bool? TrustTailscaleRange,
-    IReadOnlyList<string>? AllowedCidrs,
-    IReadOnlyList<string>? LibraryPaths);
 
 // The admin API: issuing pairing codes, listing and revoking devices, minting the
 // per-client credentials third-party Subsonic clients need, and - for the browser
@@ -221,12 +193,13 @@ public static class AdminEndpoints
         // Read from the raw (buffered, rewound) stream rather than a bound
         // parameter - see the filter above for why no route here may bind a body.
         authenticated.MapPut("/settings", async (
-            HttpContext context, IOptionsMonitor<FlowerServerOptions> options, ILoggerFactory loggerFactory) =>
+            HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
+            LibraryRescanCoordinator rescans, ILoggerFactory loggerFactory) =>
         {
-            ServerSettingsUpdate? update;
+            ServerSettingsUpdateDto? update;
             try
             {
-                update = await JsonSerializer.DeserializeAsync<ServerSettingsUpdate>(
+                update = await JsonSerializer.DeserializeAsync<ServerSettingsUpdateDto>(
                     context.Request.Body, jsonOptions, context.RequestAborted);
             }
             catch (JsonException ex)
@@ -256,6 +229,9 @@ public static class AdminEndpoints
                 TrustTailscaleRange = before.TrustTailscaleRange,
                 AllowedCidrs = [.. before.AllowedCidrs],
                 LibraryPaths = [.. before.LibraryPaths],
+                IntegrateWithITunes = before.IntegrateWithITunes,
+                SyncPlayCountFromITunes = before.SyncPlayCountFromITunes,
+                SyncDateAddedFromITunes = before.SyncDateAddedFromITunes,
             };
 
             if (update.Alias is { } alias && alias.Trim() != before.Alias)
@@ -291,12 +267,52 @@ public static class AdminEndpoints
                 values[nameof(FlowerServerOptions.LibraryPaths)] = ToJsonArray(after.LibraryPaths);
             }
 
+            if (update.IntegrateWithITunes is { } integrate && integrate != before.IntegrateWithITunes)
+            {
+                after.IntegrateWithITunes = integrate;
+                values[nameof(FlowerServerOptions.IntegrateWithITunes)] = JsonValue.Create(integrate);
+            }
+            if (update.SyncPlayCountFromITunes is { } syncPlayCount && syncPlayCount != before.SyncPlayCountFromITunes)
+            {
+                after.SyncPlayCountFromITunes = syncPlayCount;
+                values[nameof(FlowerServerOptions.SyncPlayCountFromITunes)] = JsonValue.Create(syncPlayCount);
+            }
+            if (update.SyncDateAddedFromITunes is { } syncDateAdded && syncDateAdded != before.SyncDateAddedFromITunes)
+            {
+                after.SyncDateAddedFromITunes = syncDateAdded;
+                values[nameof(FlowerServerOptions.SyncDateAddedFromITunes)] = JsonValue.Create(syncDateAdded);
+            }
+
             if (values.Count > 0)
             {
                 await ServerSettingsWriter.WriteAsync(before.DataDirectory, values, context.RequestAborted);
+
+                // Reloaded here rather than left to the file watcher: that watcher
+                // is debounced, and the very next thing to happen is a rescan that
+                // has to see these values - the folder that was just added, the
+                // iTunes switch that was just turned on. Without this the scan
+                // reads the previous configuration and appears to have ignored the
+                // change, which is exactly what the page just promised it did.
+                (configuration as IConfigurationRoot)?.Reload();
+
                 loggerFactory.CreateLogger(typeof(AdminEndpoints)).LogInformation(
                     "{Fingerprint} updated server settings: {Keys}",
                     context.Items[AdminFingerprintKey], string.Join(", ", values.Keys));
+            }
+
+            // Turning an iTunes switch on has no visible effect until something
+            // scans - and unlike a library folder, which the page follows with its
+            // own rescan call, nothing else here would ever trigger one. Started
+            // from this side rather than asked of the caller because the caller
+            // cannot tell that these three settings need it: TryStart is a no-op
+            // while a scan is already running, so the page's own rescan after a
+            // folder change does not turn into two.
+            if (after.IntegrateWithITunes &&
+                (values.ContainsKey(nameof(FlowerServerOptions.IntegrateWithITunes)) ||
+                 values.ContainsKey(nameof(FlowerServerOptions.SyncPlayCountFromITunes)) ||
+                 values.ContainsKey(nameof(FlowerServerOptions.SyncDateAddedFromITunes))))
+            {
+                rescans.TryStart();
             }
 
             return Results.Json(Describe(after) with { RestartRequired = restartRequired }, jsonOptions);
@@ -364,13 +380,23 @@ public static class AdminEndpoints
         return array;
     }
 
-    private static ServerSettingsResponse Describe(FlowerServerOptions options) =>
+    // The operator-editable half of FlowerServerOptions, as the shared wire
+    // shape - DataDirectory and Version ride along read-only, and WebUiPath
+    // deliberately does not appear at all: it is part of how the server was
+    // deployed, not something the page served from it should move out from
+    // under itself.
+    private static ServerSettingsDto Describe(FlowerServerOptions options) =>
         new(options.Alias,
             options.AdvertisedHost,
             options.AdvertiseOnLan,
             options.TrustTailscaleRange,
             options.AllowedCidrs.ToList(),
             options.LibraryPaths.ToList(),
+            options.IntegrateWithITunes,
+            options.SyncPlayCountFromITunes,
+            options.SyncDateAddedFromITunes,
+            Flower.Importer.Importer.TryResolveAppleMusicFolder(),
+            ITunesIntegration.DescribeSource(),
             options.DataDirectory,
             typeof(AdminEndpoints).Assembly.GetName().Version?.ToString());
 
