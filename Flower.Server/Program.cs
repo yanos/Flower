@@ -136,6 +136,7 @@ builder.Services.AddSingleton<NonceReplayGuard>();
 builder.Services.AddSingleton<TrustedPeerStore>();
 builder.Services.AddSingleton<SubsonicCredentialStore>();
 builder.Services.AddSingleton<LibraryManifestCache>();
+builder.Services.AddSingleton<PlayReportService>();
 builder.Services.AddSingleton<DeviceKeyStore>();
 
 // Announces the server on the LAN so it shows up in a client's sidebar without

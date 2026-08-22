@@ -8,12 +8,32 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Flower.Models
 {
+    // Which half of a play a stats change was. Flower deliberately triggers
+    // the two at different moments - LastPlayedAt when a track starts (so
+    // History means "what I put on"), PlayCount when it ends naturally (so a
+    // skip does not count as a listen) - see Track.LastPlayedAt. Flags rather
+    // than two enum members because a scrobble arriving over the wire is one
+    // request carrying both.
+    [Flags]
+    public enum TrackStatsChange
+    {
+        Started = 1,
+        Finished = 2,
+    }
+
     // See Library.TrackStatsChanged. Carries the Track object that was
     // actually mutated, which is not necessarily the one the caller passed in -
     // a rescan can have replaced it since (see Library.ResolveCurrent).
-    public sealed class TrackStatsChangedEventArgs(Track track) : EventArgs
+    //
+    // Change is what lets a subscriber that has to *forward* the play - the
+    // browser head reporting to its origin server, see IPlayReporter - tell a
+    // start from a finish. A subscriber that only refreshes a stats column
+    // does not care and ignores it.
+    public sealed class TrackStatsChangedEventArgs(Track track, TrackStatsChange change) : EventArgs
     {
         public Track Track { get; } = track;
+
+        public TrackStatsChange Change { get; } = change;
     }
 
     public class Library
@@ -614,7 +634,7 @@ namespace Flower.Models
         {
             var current = BumpPlayCount(playedTrack);
             Persist(() => _store!.UpdateStats(current));
-            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
+            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current, TrackStatsChange.Finished));
             return current;
         }
 
@@ -637,6 +657,21 @@ namespace Flower.Models
         // lock rather than resolving and returning first.
         private Track ResolveCurrent(Track playedTrack)
         {
+            // By identity first, because a Path is not one. The browser head
+            // plays a *clone* of the queued track carrying a minted stream URL
+            // in Path (see PlaylistControlViewModel.ResolveForPlaybackAsync),
+            // and that URL matches nothing in the path index - so resolving by
+            // path alone silently fell through to the clone and every play a
+            // tab made was counted onto a throwaway object that was discarded
+            // at the next track change. Clone() keeps Id for exactly this kind
+            // of reason.
+            if (Snapshot.ById.GetValueOrDefault(playedTrack.Id) is { } byId)
+                return byId;
+
+            // Still by path as well, and not redundantly: a rescan replaces
+            // every Track instance with a brand-new one carrying a brand-new
+            // Id, so a caller holding a pre-rescan reference (the case the
+            // tests above cover) can only be matched by the file it names.
             if (playedTrack.Path == null)
                 return playedTrack;
 
@@ -679,7 +714,7 @@ namespace Flower.Models
         {
             var current = StampLastPlayed(playedTrack);
             Persist(() => _store!.UpdateStats(current));
-            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
+            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current, TrackStatsChange.Started));
             return current;
         }
 
@@ -702,24 +737,35 @@ namespace Flower.Models
         public Track? Find(string? id) =>
             EntityId.FromWire(id) is { } parsed ? Snapshot.ById.GetValueOrDefault(parsed) : null;
 
-        // "This track finished playing", by id - Subsonic's scrobble, and
-        // what the client's own end-of-track path does in two calls.
+        // A play that happened somewhere else, addressed by id - Subsonic's
+        // scrobble, and the browser head reporting what it played back to the
+        // origin server that lent it the track (see IPlayReporter).
         //
-        // Both halves, because a scrobble is both: the count bump and the
-        // played-at stamp live on separate methods above only because the
-        // client triggers them at different moments (see Track.LastPlayedAt),
-        // which a single request does not. One stats write covers the pair
-        // rather than one per half.
-        public bool RecordPlay(string? id)
+        // Both halves by default, because a scrobble is both: the count bump
+        // and the played-at stamp live on separate methods above only because
+        // the *local* player triggers them at different moments (see
+        // Track.LastPlayedAt), which a single scrobble request does not. One
+        // stats write covers whichever halves were asked for, rather than one
+        // per half.
+        //
+        // A caller that does distinguish them - a head reporting a start when
+        // playback begins and a finish when it ends naturally, so the far side
+        // ends up with the same History a local player would have had - passes
+        // the half it means instead.
+        public bool RecordPlay(string? id, TrackStatsChange change = TrackStatsChange.Started | TrackStatsChange.Finished)
         {
             if (Find(id) is not { } track)
                 return false;
 
-            var current = BumpPlayCount(track);
-            current = StampLastPlayed(current);
+            var current = track;
+            if (change.HasFlag(TrackStatsChange.Finished))
+                current = BumpPlayCount(current);
+            if (change.HasFlag(TrackStatsChange.Started))
+                current = StampLastPlayed(current);
+
             Persist(() => _store!.UpdateStats(current));
 
-            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current));
+            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current, change));
             return true;
         }
 

@@ -290,8 +290,11 @@ public class AlbumArtLoader
         // the currently paired Server" (see PeerTrackResolver), and in a browser
         // it is simply the origin. This call site doesn't need to know either
         // rule exists, just that null means "don't fetch."
-        var url = _artUrls?.Resolve(track);
-        if (url == null || _credentials == null)
+        if (_artUrls == null || _credentials == null)
+            return null;
+
+        var url = _artUrls.Resolve(track);
+        if (url == null)
             return null;
 
         try

@@ -108,7 +108,13 @@ public sealed record Child(
     // so a Client's Recently Added view would show a burst of everything at
     // sync time instead of matching the paired Server's actual chronology.
     // Null when talking to a third-party server that doesn't send it.
-    System.DateTimeOffset? DateAdded = null);
+    System.DateTimeOffset? DateAdded = null,
+    // Also Flower-specific, and the History counterpart to DateAdded above.
+    // Without it a receiving head's History is empty until it plays something
+    // itself - which for a browser tab means every refresh, since a tab keeps
+    // nothing across one. See Track.LastPlayedAt, and IPlayReporter for the
+    // road a tab's own plays take in the other direction.
+    System.DateTimeOffset? LastPlayed = null);
 
 public sealed record SearchResult3(
     List<ArtistID3>? Artist,

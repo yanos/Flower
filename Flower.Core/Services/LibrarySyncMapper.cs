@@ -47,5 +47,9 @@ public static class LibrarySyncMapper
         // Child.DateAdded's own doc comment for why this matters for Recently
         // Added parity between a Client and its paired Server.
         DateAdded = song.DateAdded ?? DateTimeOffset.UtcNow,
+        // Null from a third-party server, and null for a track nobody has
+        // played - both simply mean "not in History", which is what an unset
+        // LastPlayedAt already means.
+        LastPlayedAt = song.LastPlayed,
     };
 }

@@ -206,7 +206,7 @@ public static class SubsonicEndpoints
             summary.ArtistId ?? "",
             id, summary.SongCount, (long)summary.TotalDuration.TotalSeconds,
             summary.Year, summary.Genre,
-            album.Tracks.Select(SubsonicMapper.ToChild).ToList());
+            album.Tracks.Select(t => SubsonicMapper.ToChild(t)).ToList());
 
         return SubsonicResults.Ok(album: dto);
     }
@@ -266,7 +266,7 @@ public static class SubsonicEndpoints
         var songs = snapshot.Tracks
             .Where(t => Matches(t.Title, query))
             .Take(songCount)
-            .Select(SubsonicMapper.ToChild)
+            .Select(t => SubsonicMapper.ToChild(t))
             .ToList();
 
         var albums = snapshot.Albums
@@ -321,7 +321,7 @@ public static class SubsonicEndpoints
         if (library.FindPlaylist(id) is not { } playlist)
             return SubsonicResults.Failed(70, "Playlist not found.");
 
-        var entries = playlist.Tracks.Select(SubsonicMapper.ToChild).ToList();
+        var entries = playlist.Tracks.Select(t => SubsonicMapper.ToChild(t)).ToList();
         var summary = ToDto(playlist);
 
         var dto = new PlaylistWithSongsDto(
