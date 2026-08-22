@@ -34,8 +34,12 @@ public static class ITunesIntegration
     // differs: the app appends to the AppSettings it is about to persist, the
     // server appends to the path list it is about to scan and writes that back
     // to flower-server.json. Both then have a folder the user can see and
-    // remove, which is the point - removing it only stays removed because
-    // turning IntegrateWithITunes off is what stops this offering it again.
+    // remove, which is the point - and removing it is the *only* thing that
+    // removes it: turning IntegrateWithITunes off stops this offering the folder
+    // again but deliberately leaves an already-adopted one in place (see
+    // SettingsViewModel.ApplyAppleMusicFolder). Dropping Music.app entirely is
+    // therefore both - uncheck, so this stops re-adding it, and remove the
+    // folder.
     public static string? ResolveMediaFolderToAdopt(MusicLibrarySettings settings, ILogger? logger = null)
     {
         if (!settings.IntegrateWithITunes)

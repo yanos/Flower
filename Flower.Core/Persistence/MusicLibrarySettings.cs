@@ -30,10 +30,15 @@ public class MusicLibrarySettings
     // library path (see ITunesIntegration.ResolveMediaFolderToAdopt) and the two
     // per-track imports below. On by default - on a Mac with a Music.app
     // library, having Flower pick that library up on its own is what most people
-    // want; turning this off makes Flower ignore Music.app entirely and leaves
-    // the library purely whatever folders were added by hand. The two flags
-    // below stay independently meaningful (and keep their own persisted values)
-    // but are inert while this is false.
+    // want; turning this off makes Flower stop reaching into Music.app - the
+    // folder is never offered again and the two flags below go inert (they keep
+    // their own persisted values, they just stop being acted on).
+    //
+    // Turning it off does *not* take an already-adopted folder back out of
+    // LibraryPaths. Once adopted it is one of the user's library folders like
+    // any other, and only removing it there removes it - see SettingsViewModel.
+    // ApplyAppleMusicFolder, which used to do exactly that and so turned "stop
+    // importing play counts" into "empty my entire library".
     public bool IntegrateWithITunes { get; set; } = true;
 
     // Whether to import per-track play counts from iTunes/Music.app's library

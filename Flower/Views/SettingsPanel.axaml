@@ -98,9 +98,12 @@
             <!-- Master switch for the whole Music.app integration (see
                  AppSettings.IntegrateWithITunes / FlowerServerOptions.IntegrateWithITunes):
                  with it off, Music.app's media folder is no longer auto-added to
-                 the library paths below and neither per-track import runs. The two
-                 sub-checkboxes stay visible but disabled, keeping their own
-                 remembered values for when it is switched back on.
+                 the library paths below and neither per-track import runs. A
+                 folder already in that list stays there, though - unchecking this
+                 stops Flower re-adding it, and the Remove button below is what
+                 takes it out. The two sub-checkboxes stay visible but disabled,
+                 keeping their own remembered values for when it is switched back
+                 on.
 
                  All three are disabled outright, with the note in row 4 in place of
                  the source description, when the machine being configured has no
