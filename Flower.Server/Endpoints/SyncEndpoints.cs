@@ -103,6 +103,15 @@ public static class SyncEndpoints
         sync.MapGet("/library", GetLibrary);
         sync.MapGet("/playlists", GetPlaylists);
         sync.MapPost("/playlists/apply", ApplyPlaylists);
+
+        // The same album art /rest/getCoverArt serves, behind this group's gate
+        // instead of the Subsonic one. A browser tab holds a session token and
+        // no signing key, so /rest is a door it cannot open - and unlike
+        // playback, art needs no stream ticket to get through this one, because
+        // AlbumArtLoader fetches it with an HttpClient that can send the header
+        // (an <audio> element is what cannot). Deliberately the existing
+        // handler rather than a second implementation of "an album's art".
+        sync.MapGet("/cover-art", SubsonicEndpoints.GetCoverArt);
     }
 
     // Conditional on Library.ChangeToken, served as the ETag, exactly as

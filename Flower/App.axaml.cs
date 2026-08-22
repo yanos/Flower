@@ -230,7 +230,7 @@ public partial class App : Application
             // type-based registration threw CannotResolveService and took the
             // whole browser app down before its first frame.
             .AddSingleton(sp => new AlbumArtLoader(
-                sp.GetService<PeerTrackResolver>(),
+                sp.GetService<ICoverArtUrlResolver>(),
                 sp.GetService<IPeerCredentials>(),
                 sp.GetRequiredService<ILogger<AlbumArtLoader>>()))
 
@@ -315,7 +315,10 @@ public partial class App : Application
             // this device's signing key. PlaylistControlViewModel takes it as an
             // optional dependency (see IStreamUrlResolver) precisely so the
             // browser head, which has neither, still constructs.
-            .AddSingleton<IStreamUrlResolver, PeerStreamUrlResolver>();
+            .AddSingleton<IStreamUrlResolver, PeerStreamUrlResolver>()
+            // Album art resolves against the same peer, by the same rule, and
+            // so belongs on the same branch - see ICoverArtUrlResolver.
+            .AddSingleton<ICoverArtUrlResolver, PeerCoverArtUrlResolver>();
     }
 
     // Everything the browser head has instead of the peer-to-peer stack above.
@@ -381,7 +384,12 @@ public partial class App : Application
                 sp.GetRequiredService<HttpClient>(),
                 origin,
                 sp.GetRequiredService<IPeerCredentials>(),
-                sp.GetRequiredService<ILogger<StreamTicketUrlResolver>>()));
+                sp.GetRequiredService<ILogger<StreamTicketUrlResolver>>()))
+
+            // Album art: no ticket needed, because AlbumArtLoader fetches it
+            // with its own HttpClient and can send the session header that
+            // already reaches GET /library - see OriginCoverArtUrlResolver.
+            .AddSingleton<ICoverArtUrlResolver>(_ => new OriginCoverArtUrlResolver(origin));
     }
 
     // The one platform fork the audio pipeline needs.
