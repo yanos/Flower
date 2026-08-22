@@ -46,7 +46,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         SyncDateAddedFromITunes = ViewModel.SyncDateAddedFromITunes,
         IsServer = ViewModel.IsServer,
         ShareLogsWithPairedServer = ViewModel.ShareLogsWithPairedServer,
-        ITunesLibraryDescription = DescribeITunesLibrarySource(),
+        ITunesLibraryDescription = ITunesIntegration.DescribeSource(),
         AppleMusicFolder = Flower.Importer.Importer.TryResolveAppleMusicFolder(),
         DataDirectory = AppDataDirectory.Path,
         Version = typeof(LocalSettingsBackend).Assembly.GetName().Version?.ToString(),
@@ -185,18 +185,4 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 
     public Task<IReadOnlyList<string>> LoadLogAsync(int limit, CancellationToken ct = default) =>
         throw new NotSupportedException("The app has its own Log window.");
-
-    // Describes where play counts will actually come from without doing any slow
-    // work itself (the live export - see ITunesPlayCountImporter - isn't triggered
-    // just to populate this label; only checking whether Music.app is installed at
-    // all, and whether a fallback file exists).
-    private static string DescribeITunesLibrarySource()
-    {
-        if (Directory.Exists("/System/Applications/Music.app") || Directory.Exists("/Applications/Music.app"))
-            return "Exports a fresh copy from Music.app each launch";
-
-        return ITunesPlayCountImporter.ResolveLibraryXmlPath() is string fallbackPath
-            ? $"Music.app not found - using {fallbackPath}"
-            : "No iTunes/Music library data available";
-    }
 }

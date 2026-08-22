@@ -53,6 +53,9 @@ public static class ServerDataDirectory
             "_Alias": "The name this server shows up as in a Flower client's sidebar. Defaults to the machine name.",
             "_AdvertisedHost": "host:port to put in pairing invites when the address a device should dial isn't the one the request arrived on (reverse proxy, remapped container port).",
             "_AdvertiseOnLan": "false to stop announcing this server over mDNS - for tailnet/reverse-proxy-only deployments.",
+            "_IntegrateWithITunes": "false to make this server ignore a local iTunes/Music.app library entirely. On by default: Music.app's own media folder is added to LibraryPaths on the first scan that finds it, and the two switches below then import play counts and Date Added from it.",
+            "_SyncPlayCountFromITunes": "false to stop importing per-track play counts from Music.app on each rescan.",
+            "_SyncDateAddedFromITunes": "false to stop importing per-track Date Added values from Music.app on each rescan.",
             "_AllowedCidrs": ["Extra networks allowed to reach this server, e.g. 10.8.0.0/24. Private, loopback and Tailscale addresses are already allowed."],
             "_WebUiPath": "Override for where the browser UI lives. Empty looks next to the binary (where the build puts it), then here. Set, it is the only place looked at."
           }

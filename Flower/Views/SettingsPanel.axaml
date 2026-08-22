@@ -91,19 +91,25 @@
            rebuilding its own database doesn't make sense here. -->
       <TabItem Header="Library">
         <ScrollViewer>
-          <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
+          <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
                 Margin="0,12,0,0"
                 IsEnabled="{Binding CanManageLibrary}">
 
             <!-- Master switch for the whole Music.app integration (see
-                 AppSettings.IntegrateWithITunes): with it off, Music.app's media
-                 folder is no longer auto-added to the library paths below and
-                 neither per-track import runs. The two sub-checkboxes stay visible
-                 but disabled, keeping their own remembered values for when it is
-                 switched back on. -->
+                 AppSettings.IntegrateWithITunes / FlowerServerOptions.IntegrateWithITunes):
+                 with it off, Music.app's media folder is no longer auto-added to
+                 the library paths below and neither per-track import runs. The two
+                 sub-checkboxes stay visible but disabled, keeping their own
+                 remembered values for when it is switched back on.
+
+                 All three are disabled outright, with the note in row 4 in place of
+                 the source description, when the machine being configured has no
+                 Music.app library folder at all - see
+                 SettingsViewModel.HasAppleMusicFolder. -->
             <CheckBox Grid.Row="0"
                       Content="Use iTunes/Music.app library"
                       IsChecked="{Binding IntegrateWithITunes, Mode=TwoWay}"
+                      IsEnabled="{Binding CanIntegrateWithITunes}"
                       IsVisible="{Binding Capabilities.ITunesIntegration}"/>
 
             <CheckBox Grid.Row="1"
@@ -125,11 +131,21 @@
                        Margin="40,2,0,0" FontSize="11" Opacity="0.6"
                        TextTrimming="CharacterEllipsis"
                        IsEnabled="{Binding CanSyncFromITunes}"
-                       IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+                       IsVisible="{Binding CanIntegrateWithITunes}"/>
 
-            <TextBlock Grid.Row="4" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"/>
+            <!-- Why the three switches above are greyed out. Deliberately in the
+                 same place the source description would have been, rather than
+                 beside them: it answers the same question ("where would this read
+                 from?") in the case where the answer is "nowhere". -->
+            <TextBlock Grid.Row="4"
+                       Text="{Binding ITunesUnavailableMessage}"
+                       Margin="20,4,0,0" FontSize="11" Opacity="0.6"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding ShowsITunesUnavailable}"/>
 
-            <Border Grid.Row="5" MinHeight="140"
+            <TextBlock Grid.Row="5" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"/>
+
+            <Border Grid.Row="6" MinHeight="140"
                     BorderThickness="1"
                     BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
               <ListBox x:Name="PathsList" ItemsSource="{Binding LibraryPaths}">
@@ -158,7 +174,7 @@
               </ListBox>
             </Border>
 
-            <StackPanel Grid.Row="6" Orientation="Horizontal" Margin="0,12,0,0"
+            <StackPanel Grid.Row="7" Orientation="Horizontal" Margin="0,12,0,0"
                         HorizontalAlignment="Left" Spacing="8">
               <Button Content="Add Folder…" Click="AddFolderButton_Click"/>
               <Button Content="Remove Selected"
@@ -166,7 +182,7 @@
                       CommandParameter="{Binding #PathsList.SelectedItem}"/>
             </StackPanel>
 
-            <StackPanel Grid.Row="7" Orientation="Horizontal" Margin="0,8,0,0"
+            <StackPanel Grid.Row="8" Orientation="Horizontal" Margin="0,8,0,0"
                         HorizontalAlignment="Left" Spacing="8">
               <Button Content="Rebuild Database"
                       Command="{Binding RebuildDatabaseCommand}"

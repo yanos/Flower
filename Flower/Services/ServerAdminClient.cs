@@ -13,29 +13,13 @@ using Flower.Persistence;
 namespace Flower.Services;
 
 // Wire shapes for Flower.Server's /api/admin surface (see
-// Flower.Server/Endpoints/AdminEndpoints.cs). Deliberately hand-written here
-// rather than shared from Flower.Server: the server project references this one,
-// not the other way round, and the browser head has no business taking a
-// dependency on Kestrel to name a DTO.
-public sealed record ServerSettingsDto(
-    string Alias,
-    string AdvertisedHost,
-    bool AdvertiseOnLan,
-    bool TrustTailscaleRange,
-    List<string> AllowedCidrs,
-    List<string> LibraryPaths,
-    string DataDirectory,
-    string? Version,
-    List<string>? RestartRequired);
-
-public sealed record ServerSettingsUpdateDto(
-    string? Alias,
-    string? AdvertisedHost,
-    bool? AdvertiseOnLan,
-    bool? TrustTailscaleRange,
-    List<string>? AllowedCidrs,
-    List<string>? LibraryPaths);
-
+// Flower.Server/Endpoints/AdminEndpoints.cs). Written here rather than shared
+// from Flower.Server: the server project references this one, not the other way
+// round, and the browser head has no business taking a dependency on Kestrel to
+// name a DTO. The server therefore declares its own matching records - except
+// for the settings pair, which is the one shape both sides had started *editing*
+// in step with each other, and which now lives in Flower.Core beside the other
+// contracts both hosts share (Services/ServerAdminContracts.cs).
 public sealed record AdminDeviceDto(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin);
 public sealed record AdminPairingCodeDto(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite);
 public sealed record AdminSessionDto(string Token, DateTimeOffset ExpiresAt, string Url);

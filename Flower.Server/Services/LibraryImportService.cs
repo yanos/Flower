@@ -1,5 +1,8 @@
+using System.Text.Json.Nodes;
+
 using Microsoft.Extensions.Options;
 
+using Flower.Importer;
 using Flower.Models;
 using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
@@ -61,7 +64,8 @@ public class LibraryImportService(
         // from the admin API (PUT /api/admin/settings), and IOptions binds once
         // for the life of the process - a folder added in the browser would then
         // be ignored by the very rescan the browser triggers next.
-        var libraryPaths = options.CurrentValue.LibraryPaths;
+        var settings = options.CurrentValue;
+        var libraryPaths = await AdoptAppleMusicFolderAsync(settings, ct);
         var imported = await importer.ImportAsync(libraryPaths);
         logger.LogInformation(
             "Importer found {Count} tracks across {PathCount} configured path(s)", imported.Count, libraryPaths.Count);
@@ -88,5 +92,54 @@ public class LibraryImportService(
 
         logger.LogInformation(
             "Library sync complete: {Before} -> {After} track(s)", before, library.Tracks.Count);
+
+        ApplyITunesImports(settings);
+    }
+
+    // Music.app's own media folder, adopted as a library path on the first scan
+    // that finds it. Whether there is one to adopt is ITunesIntegration's call -
+    // the identical question AppSettingsStore.Load asks before the app's own
+    // scan - and this is only what a server does with the answer: write it back
+    // to flower-server.json, so it is visible (and removable) in the settings
+    // page's folder list rather than a scan-time fallback nobody can see.
+    // Removing it only stays removed because turning IntegrateWithITunes off is
+    // what stops this offering it again.
+    //
+    // Returns the paths to scan rather than re-reading options afterwards:
+    // flower-server.json is watched with reloadOnChange and that watcher is
+    // debounced, so CurrentValue right after this write is still the old list
+    // more often than not - and the scan this feeds is happening now.
+    private async Task<List<string>> AdoptAppleMusicFolderAsync(FlowerServerOptions settings, CancellationToken ct)
+    {
+        var paths = settings.LibraryPaths.ToList();
+        if (ITunesIntegration.ResolveMediaFolderToAdopt(settings, importerLogger) is not { } appleMusicFolder)
+            return paths;
+
+        paths.Add(appleMusicFolder);
+        logger.LogInformation("Adopting Music.app's media folder as a library path: {Folder}", appleMusicFolder);
+
+        var array = new JsonArray();
+        foreach (var path in paths)
+            array.Add(JsonValue.Create(path));
+        await ServerSettingsWriter.WriteAsync(
+            settings.DataDirectory,
+            new Dictionary<string, JsonNode?> { [nameof(FlowerServerOptions.LibraryPaths)] = array },
+            ct);
+
+        return paths;
+    }
+
+    // Play counts and Date Added from Music.app's own library, applied to the
+    // tracks the scan just reconciled. Which of the two run is
+    // ITunesIntegration's call, the same one the app's startup rescan makes;
+    // what is server-specific is only how the result gets published - both
+    // importers mutate Track objects in place, so the one NotifyTrackChanged
+    // here is what persists them and invalidates the snapshot every client
+    // reads through. Skipped entirely when neither ran, rather than issuing a
+    // whole-table rewrite for two no-ops.
+    private void ApplyITunesImports(FlowerServerOptions settings)
+    {
+        if (ITunesIntegration.ApplyImports(settings, library.Tracks, logger))
+            library.NotifyTrackChanged();
     }
 }

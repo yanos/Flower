@@ -86,7 +86,10 @@ public class AdminJsonContractTests
             """
             {"alias":"Basement","advertisedHost":"nas.local","advertiseOnLan":true,
              "trustTailscaleRange":false,"allowedCidrs":["10.0.0.0/8"],
-             "libraryPaths":["/music"],"dataDirectory":"/data","version":"1.2.3"}
+             "libraryPaths":["/music"],"integrateWithITunes":true,"syncPlayCountFromITunes":false,
+             "syncDateAddedFromITunes":true,"appleMusicFolder":"/Users/x/Music/Music/Media.localized",
+             "iTunesLibraryDescription":"Exports a fresh copy from Music.app each launch",
+             "dataDirectory":"/data","version":"1.2.3"}
             """,
             options);
 
@@ -94,9 +97,12 @@ public class AdminJsonContractTests
         Assert.Equal("nas.local", settings.AdvertisedHost);
         Assert.False(settings.TrustTailscaleRange);
         Assert.Equal(["10.0.0.0/8"], settings.AllowedCidrs);
+        Assert.True(settings.IntegrateWithITunes);
+        Assert.False(settings.SyncPlayCountFromITunes);
+        Assert.Equal("/Users/x/Music/Music/Media.localized", settings.AppleMusicFolder);
 
         var update = JsonSerializer.Serialize(
-            new ServerSettingsUpdateDto("Basement", null, null, null, null, null), options);
+            new ServerSettingsUpdateDto("Basement", null, null, null, null, null, null, null, null), options);
 
         Assert.Contains("\"alias\":\"Basement\"", update);
         // Null means "leave this one alone" (AdminEndpoints tests each field

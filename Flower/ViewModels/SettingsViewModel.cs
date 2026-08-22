@@ -119,10 +119,26 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
+    // Whether the machine being configured - this device, or the server this page
+    // administers - actually has an iTunes/Music.app library folder to integrate
+    // with. All three switches are gated on it: they are real, remembered settings,
+    // but with no folder found there is nothing for them to turn on, and a switch
+    // that silently does nothing is worse than one that explains itself (see
+    // ITunesUnavailableMessage, shown in its place).
+    public bool HasAppleMusicFolder => _snapshot.AppleMusicFolder is { Length: > 0 };
+
+    public bool CanIntegrateWithITunes => HasAppleMusicFolder && CanManageLibrary;
+
     // The two per-track imports only mean anything while the integration as a
     // whole is on. Disabled rather than unchecked, so each keeps whatever the user
     // had already chosen for when it is switched back on.
-    public bool CanSyncFromITunes => IntegrateWithITunes && CanManageLibrary;
+    public bool CanSyncFromITunes => IntegrateWithITunes && CanIntegrateWithITunes;
+
+    public bool ShowsITunesUnavailable => Capabilities.ITunesIntegration && !HasAppleMusicFolder;
+
+    public string ITunesUnavailableMessage =>
+        "No iTunes/Music.app library folder could be found" +
+        (Capabilities.ServerNetwork ? " on the server." : " on this device.");
 
     private bool _syncPlayCountFromITunes;
     public bool SyncPlayCountFromITunes
@@ -148,6 +164,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 return;
 
             OnPropertyChanged(nameof(CanManageLibrary));
+            OnPropertyChanged(nameof(CanIntegrateWithITunes));
             OnPropertyChanged(nameof(CanSyncFromITunes));
             DeviceListChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -264,7 +281,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(ITunesLibraryDescription));
             OnPropertyChanged(nameof(VersionDisplay));
             OnPropertyChanged(nameof(CanManageLibrary));
+            OnPropertyChanged(nameof(HasAppleMusicFolder));
+            OnPropertyChanged(nameof(CanIntegrateWithITunes));
             OnPropertyChanged(nameof(CanSyncFromITunes));
+            OnPropertyChanged(nameof(ShowsITunesUnavailable));
+            OnPropertyChanged(nameof(ITunesUnavailableMessage));
 
             await RefreshDevicesAsync(ct);
             if (Capabilities.SubsonicCredentials)

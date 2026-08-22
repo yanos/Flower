@@ -14,9 +14,15 @@ namespace Flower.ViewModels;
 //
 // Everything here is one call to ServerAdminClient; the interesting part is what
 // is *absent*. There is no theme (a browser tab administering a headless box has
-// no app theme to set), no Music.app integration, no Client/Server role choice (a
-// server is one, unconditionally) and no "Rebuild Database" - FlowerDb migrates
-// itself on construction, so a server has a rescan and nothing to rebuild.
+// no app theme to set), no Client/Server role choice (a server is one,
+// unconditionally) and no "Rebuild Database" - FlowerDb migrates itself on
+// construction, so a server has a rescan and nothing to rebuild.
+//
+// Music.app integration is *not* absent, though the browser has none of its own:
+// the switches administer the machine the server runs on, which is very often a
+// Mac with an existing Music.app library, and the server applies them in its own
+// scan (LibraryImportService). When that machine has no Music.app library the
+// server reports a null AppleMusicFolder and the page disables all three.
 public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISettingsBackend
 {
     private ServerSettingsDto? _lastLoaded;
@@ -28,7 +34,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         SubsonicCredentials = true,
         Log = true,
         ThemePicker = false,
-        ITunesIntegration = false,
+        ITunesIntegration = true,
         SyncRole = false,
         RevealAppDataLocation = false,
         RebuildDatabase = false,
@@ -43,6 +49,11 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         {
             Alias = settings.Alias,
             LibraryPaths = settings.LibraryPaths,
+            IntegrateWithITunes = settings.IntegrateWithITunes,
+            SyncPlayCountFromITunes = settings.SyncPlayCountFromITunes,
+            SyncDateAddedFromITunes = settings.SyncDateAddedFromITunes,
+            AppleMusicFolder = settings.AppleMusicFolder,
+            ITunesLibraryDescription = settings.ITunesLibraryDescription,
             AdvertisedHost = settings.AdvertisedHost,
             AdvertiseOnLan = settings.AdvertiseOnLan,
             TrustTailscaleRange = settings.TrustTailscaleRange,
@@ -66,7 +77,10 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
                 draft.AdvertiseOnLan,
                 draft.TrustTailscaleRange,
                 draft.AllowedCidrs.ToList(),
-                draft.LibraryPaths.ToList()),
+                draft.LibraryPaths.ToList(),
+                draft.IntegrateWithITunes,
+                draft.SyncPlayCountFromITunes,
+                draft.SyncDateAddedFromITunes),
             ct);
         _lastLoaded = result;
 
