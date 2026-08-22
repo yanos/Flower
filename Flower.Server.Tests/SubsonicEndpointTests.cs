@@ -33,10 +33,10 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
     private readonly string _dataDirectory =
         Path.Combine(Path.GetTempPath(), "flower-server-tests-" + Guid.NewGuid());
 
-    // An empty directory, deliberately: Importer.ImportAsync falls back to the
-    // user's real ~/Music when handed no paths at all (see CLAUDE.md), so
-    // leaving LibraryPaths unset would make startup scan - and these tests
-    // depend on - whatever music happens to be on the machine.
+    // An empty directory, deliberately: leaving LibraryPaths unset would make
+    // startup scan - and these tests depend on - whatever music happens to be
+    // on the machine. Pinning it is only half of that; see the
+    // IntegrateWithITunes setting below for the other half.
     private readonly string _emptyLibrary =
         Path.Combine(Path.GetTempPath(), "flower-server-tests-lib-" + Guid.NewGuid());
 
@@ -51,6 +51,14 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
 
         builder.UseSetting("Flower:DataDirectory", _dataDirectory);
         builder.UseSetting("Flower:LibraryPaths:0", _emptyLibrary);
+
+        // Off, because it defaults to on and a server that finds a Music.app
+        // media folder adopts it as a library path on its first scan (see
+        // LibraryImportService.AdoptAppleMusicFolderAsync). On a developer's
+        // Mac that is their real ~/Music, so pinning LibraryPaths above is not
+        // on its own enough to keep these tests off it - the server appends to
+        // the pinned list and scans 16k real songs on every run.
+        builder.UseSetting("Flower:IntegrateWithITunes", "false");
 
         // Pinned at an empty directory so these tests see the same server
         // whether or not a developer has dropped a real Flower.Web bundle into
@@ -522,6 +530,7 @@ public class BootstrapPairingCodeTests
 
             builder.UseSetting("Flower:DataDirectory", DataDirectory);
             builder.UseSetting("Flower:LibraryPaths:0", emptyLibrary);
+            builder.UseSetting("Flower:IntegrateWithITunes", "false");
         }
     }
 
