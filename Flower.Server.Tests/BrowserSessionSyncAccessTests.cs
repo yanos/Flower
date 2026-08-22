@@ -46,10 +46,12 @@ public class BrowserSessionSyncAccessTests(SubsonicServerFixture server) : IClas
                 c.Request.QueryString = new QueryString(query);
             c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
             if (token != null)
-                // Spelled out rather than referenced off AdminEndpoints, which
-                // is internal: the header name is wire, so a test is the right
-                // place to state it independently.
-                c.Request.Headers["X-Flower-Admin-Session"] = token;
+                // Off AdminSessionCredentials rather than AdminEndpoints,
+                // which is internal - and better this way round: that is the
+                // client class the browser actually sends with, so this pins
+                // the two ends of the header to each other rather than to a
+                // literal repeated in both.
+                c.Request.Headers[AdminSessionCredentials.HeaderName] = token;
         });
 
         using var reader = new StreamReader(context.Response.Body);

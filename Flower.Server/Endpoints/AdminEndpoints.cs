@@ -355,7 +355,11 @@ public static class AdminEndpoints
     // Where a browser session token travels. A header, not a query parameter:
     // unlike a stream ticket it is never dropped into a media element's URL, so
     // there is no reason to let it end up in a referrer or a proxy access log.
-    internal const string AdminSessionHeader = "X-Flower-Admin-Session";
+    //
+    // Taken from the client class that sends it rather than restated, so the
+    // two ends cannot drift - see AdminSessionCredentials, the browser's whole
+    // IPeerCredentials implementation.
+    internal const string AdminSessionHeader = AdminSessionCredentials.HeaderName;
 
     // Matches the process-wide Kestrel ceiling (see Program.cs). Nothing here is
     // remotely near it - a settings body is a few hundred bytes - but a signed

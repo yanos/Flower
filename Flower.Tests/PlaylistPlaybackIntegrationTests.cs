@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
@@ -168,10 +169,25 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
         // file never goes near the peer resolution path at all.
         public List<Track> Asked { get; } = [];
 
-        public string? Resolve(Track track)
+        // Held-open answers, one per track asked about, for the tests that
+        // exercise the browser's shape: a URL that is a network round trip away
+        // rather than in hand. Left empty, every answer completes immediately
+        // and playback starts on the calling stack, which is what every other
+        // head does and what the rest of this file assumes.
+        public bool Defer { get; init; }
+
+        public List<TaskCompletionSource<string?>> Pending { get; } = [];
+
+        public Task<string?> ResolveAsync(Track track)
         {
             Asked.Add(track);
-            return reachable ? StreamUrlFor(track) : null;
+            var url = reachable ? StreamUrlFor(track) : null;
+            if (!Defer)
+                return Task.FromResult(url);
+
+            var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Pending.Add(pending);
+            return pending.Task;
         }
     }
 
@@ -273,6 +289,95 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
 
         Assert.Null(h.PlaylistControl.CurrentlyPlayingTrack);
         Assert.Empty(h.DecodedTracks);
+    }
+
+    // ── When the URL is a round trip away ────────────────────────────────
+    //
+    // The browser cannot answer "what URL plays this track?" without asking its
+    // server to mint a ticket for that exact track (see StreamTicketUrlResolver).
+    // Play() therefore has to cope with a URL that is not in hand yet, without
+    // making every other head - which resolves synchronously and is asserted on
+    // the very next line all over this file - pay for it.
+
+    [AvaloniaFact]
+    public void A_track_whose_url_is_a_round_trip_away_starts_when_it_lands()
+    {
+        var r = P("R");
+        var resolver = new FakeStreamUrlResolver { Defer = true };
+        var h = new Harness([r], resolver);
+
+        h.PlaylistControl.Play(r);
+        Dispatcher.UIThread.RunJobs();
+
+        // Nothing has started: the URL is still in flight.
+        Assert.Null(h.PlaylistControl.CurrentlyPlayingTrack);
+
+        resolver.Pending[0].SetResult(StreamUrlFor(r));
+        PumpUntil(() => h.PlaylistControl.CurrentlyPlayingTrack != null, TimeSpan.FromSeconds(2));
+
+        Assert.Equal(r.Id, h.PlaylistControl.CurrentlyPlayingTrack!.Id);
+        Assert.Equal(StreamUrlFor(r), h.PlaylistControl.CurrentlyPlayingTrack.Path);
+    }
+
+    [AvaloniaFact]
+    public void A_url_that_arrives_after_another_track_was_started_is_discarded()
+    {
+        // The failure this exists to stop: press play on one track, get bored
+        // and play another, and have the first one hijack playback a second
+        // later when its URL finally arrives. Whatever was asked for last wins.
+        var first = P("First");
+        var second = P("Second");
+        var resolver = new FakeStreamUrlResolver { Defer = true };
+        var h = new Harness([first, second], resolver);
+
+        h.PlaylistControl.Play(first);
+        h.PlaylistControl.Play(second);
+        Dispatcher.UIThread.RunJobs();
+
+        // Answered out of order on purpose - the guard is the generation, not
+        // the arrival order.
+        resolver.Pending[0].SetResult(StreamUrlFor(first));
+        resolver.Pending[1].SetResult(StreamUrlFor(second));
+        PumpUntil(() => h.PlaylistControl.CurrentlyPlayingTrack != null, TimeSpan.FromSeconds(2));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(second.Id, h.PlaylistControl.CurrentlyPlayingTrack!.Id);
+        Assert.DoesNotContain(h.DecodedTracks, t => t.Id == first.Id);
+    }
+
+    [AvaloniaFact]
+    public void A_round_trip_that_comes_back_with_nothing_plays_nothing()
+    {
+        // The deferred spelling of "no stream URL could be built" - a refused
+        // ticket has to be as harmless as an unreachable peer.
+        var r = P("R");
+        var resolver = new FakeStreamUrlResolver { Defer = true };
+        var h = new Harness([r], resolver);
+
+        h.PlaylistControl.Play(r);
+        resolver.Pending[0].SetResult(null);
+        Dispatcher.UIThread.RunJobs();
+        Thread.Sleep(20);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Null(h.PlaylistControl.CurrentlyPlayingTrack);
+        Assert.Empty(h.DecodedTracks);
+    }
+
+    [AvaloniaFact]
+    public void A_local_track_never_waits_on_anything()
+    {
+        // The property that keeps this change free everywhere but the browser:
+        // a track with a real path is not asked about at all, so it starts on
+        // the calling stack with no dispatcher turn in between.
+        var a = T("A");
+        var resolver = new FakeStreamUrlResolver { Defer = true };
+        var h = new Harness([a], resolver);
+
+        h.PlaylistControl.Play(a);
+
+        Assert.Equal(a.Id, h.PlaylistControl.CurrentlyPlayingTrack!.Id);
+        Assert.Empty(resolver.Pending);
     }
 
     [AvaloniaFact]

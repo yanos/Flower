@@ -1,3 +1,9 @@
+using System;
+using System.Collections.Concurrent;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
+
 using Microsoft.Extensions.Logging;
 
 using Flower.Models;
@@ -30,7 +36,17 @@ public interface IStreamUrlResolver
     // Null when this track cannot be streamed right now - no origin peer, the
     // peer is unreachable, or this device is not in a position to ask. The
     // caller's job is then to not play it, not to substitute anything.
-    string? Resolve(Track track);
+    //
+    // A task because one head genuinely cannot answer without going to the
+    // network: the browser has to ask its server to mint a ticket for this
+    // exact track. Everywhere else the answer is already in hand, the returned
+    // task is already completed, and PlaylistControlViewModel.Play therefore
+    // still starts playback on the same stack it was called on - see the
+    // IsCompleted check there. That is deliberate: an unconditionally
+    // asynchronous start would have turned every synchronous caller, and every
+    // test that plays a track and asserts on the next line, into a timing
+    // question.
+    Task<string?> ResolveAsync(Track track);
 }
 
 // The app's implementation: an on-demand OpenSubsonic stream URL from whichever
@@ -45,7 +61,12 @@ public sealed class PeerStreamUrlResolver(
     AppSettings appSettings,
     ILogger<PeerStreamUrlResolver> logger) : IStreamUrlResolver
 {
-    public string? Resolve(Track track)
+    // Already-completed, always: a signed stream URL is pure computation over
+    // the peer's endpoint and this device's key, with nothing to wait for. The
+    // network only gets involved when the audio pipeline opens the URL.
+    public Task<string?> ResolveAsync(Track track) => Task.FromResult(Resolve(track));
+
+    private string? Resolve(Track track)
     {
         // The id the origin peer itself gave this track, not one recomputed
         // here - see Track.OriginTrackId. Absent only for a track that never
@@ -72,5 +93,97 @@ public sealed class PeerStreamUrlResolver(
             .GetStreamUrl(track.OriginTrackId);
         logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint})", track.Title, peer.Alias, peer.EndPoint);
         return url;
+    }
+}
+
+// What the server hands back from POST /api/flower/v1/stream-tickets - see
+// Flower.Server/Endpoints/StreamTicketEndpoints.cs, which assembles Url itself
+// so that every caller doesn't concatenate the same thing slightly differently.
+public sealed record StreamTicketDto(string Ticket, DateTimeOffset ExpiresAt, string Url);
+
+// The browser head's implementation: ask the server for a short-lived ticket
+// for this exact track, and hand back the media URL it returns.
+//
+// The browser cannot use PeerStreamUrlResolver for two independent reasons.
+// It has no signing key, so it cannot build an authenticated stream URL; and it
+// has no mDNS discovery, so there is no DiscoveredDevice to resolve against -
+// its server is simply the origin the page was served from. What it has instead
+// is a session token and one route that turns it into a playable URL.
+//
+// This is the one place in the app where resolving a track for playback really
+// does go to the network, which is why IStreamUrlResolver.ResolveAsync is a
+// task at all. The cache below is what keeps that from being felt: a URL
+// already minted for a track is returned on the spot (a completed task, so
+// playback starts synchronously), and PlaylistControlViewModel primes the
+// upcoming track while the current one is still playing, so auto-advance
+// normally finds one waiting.
+public sealed class StreamTicketUrlResolver(
+    HttpClient http, Uri baseAddress, IPeerCredentials credentials,
+    ILogger<StreamTicketUrlResolver> logger) : IStreamUrlResolver
+{
+    private static readonly JsonSerializerOptions Json =
+        new(JsonSerializerDefaults.Web) { TypeInfoResolver = FlowerJsonContext.Default };
+
+    // Re-mint rather than reuse once a ticket is inside this of its expiry. A
+    // media element issues many requests for one playback - the initial probe,
+    // then a range request per seek - so a ticket has to outlive the *track*,
+    // not just the request that started it. This margin does not save a track
+    // longer than StreamTicketService's whole 15-minute lifetime, whose later
+    // seeks will be refused; that is a known limit of ticketed playback and the
+    // fix belongs on the server side (a ticket that renews while it is being
+    // read), not here.
+    private static readonly TimeSpan RenewWithin = TimeSpan.FromMinutes(5);
+
+    private readonly ConcurrentDictionary<string, (string Url, DateTimeOffset ExpiresAt)> _minted = new();
+
+    public async Task<string?> ResolveAsync(Track track)
+    {
+        // The id the origin server itself gave this track - see
+        // Track.OriginTrackId. A track that never came from a server has no
+        // business on this path.
+        if (track.OriginTrackId == null)
+        {
+            logger.LogWarning("Cannot mint a stream ticket for {Title}: it carries no origin track id", track.Title);
+            return null;
+        }
+
+        if (_minted.TryGetValue(track.OriginTrackId, out var cached) &&
+            cached.ExpiresAt - DateTimeOffset.UtcNow > RenewWithin)
+        {
+            return cached.Url;
+        }
+
+        try
+        {
+            var path = $"/api/flower/v1/stream-tickets?id={Uri.EscapeDataString(track.OriginTrackId)}";
+            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseAddress, path));
+            request.AddPeerCredentials(credentials);
+
+            using var response = await http.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            var ticket = JsonSerializer.Deserialize<StreamTicketDto>(
+                await response.Content.ReadAsStringAsync(), Json);
+            if (ticket == null)
+            {
+                logger.LogWarning("Cannot stream {Title}: the server returned an empty stream ticket", track.Title);
+                return null;
+            }
+
+            // Absolute, because the URL is handed to a media element rather than
+            // to this HttpClient - the server returns it origin-relative.
+            var url = new Uri(baseAddress, ticket.Url).ToString();
+            _minted[track.OriginTrackId] = (url, ticket.ExpiresAt);
+            logger.LogInformation("Streaming {Title} on a ticket valid until {ExpiresAt}", track.Title, ticket.ExpiresAt);
+            return url;
+        }
+        catch (Exception ex)
+        {
+            // Same contract as the peer resolver: a track that cannot be
+            // resolved is simply not played, and the reason is logged here
+            // rather than thrown at a caller that has no way to act on it.
+            logger.LogWarning(ex, "Cannot stream {Title}: minting a stream ticket failed", track.Title);
+            return null;
+        }
     }
 }
