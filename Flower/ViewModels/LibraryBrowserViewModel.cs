@@ -468,6 +468,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     public void Repopulate()
     {
         _allTracks = new List<Track>(_library.Tracks);
+        _logger.LogInformation("Library view repopulated: {Count} track(s)", _allTracks.Count);
         RebuildSubListItems();
         RebuildAlbumGrids();
         ScheduleFilter();
@@ -572,6 +573,13 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         // belonged to (see TrackRowViewModel.Dispose). Disposing the reused
         // ones would kill a spinner that is still on screen and still
         // downloading.
+        // Debug, not Information: this runs on every keystroke in the search
+        // box, not just on a library change - unlike Repopulate's own line
+        // above, which is the once-per-library-update counterpart to Library's
+        // "Library updated" and is what tells the two apart in a log.
+        _logger.LogDebug("Rows rebuilt: {Rows} row(s) from {Base} track(s) of {All} ({Kind})",
+            rows.Count, baseTracks.Count, allTracks.Count, _host.CurrentKind);
+
         Rows = new ObservableCollection<TrackRowViewModel>(rows);
         foreach (var row in retired)
             row.Dispose();
