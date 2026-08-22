@@ -889,7 +889,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             this, appSettings, appSettingsStore, deviceIdentityStore,
             AppLogging.CreateTypedLogger<PeerSyncCoordinator>(),
             networkDiscovery, reachability, playlistSyncService, librarySyncService,
-            libraryDownloadService, peerPairingService, peerTrackResolver, deviceIdentity, signingKey);
+            libraryDownloadService, peerPairingService, peerTrackResolver, deviceIdentity, signingKey,
+            Library);
 
         _deviceSidebar = new DeviceSidebarSection(_sidebarItems, this, deviceNicknameStore, reachability);
 
