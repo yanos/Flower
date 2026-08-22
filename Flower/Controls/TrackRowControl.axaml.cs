@@ -84,9 +84,21 @@ public partial class TrackRowControl : UserControl
     // Cell content is built per-column from ColumnManager's runtime-configurable
     // definitions, so these bindings are constructed in code (new Binding(...))
     // rather than declared in TrackRowControl.axaml, where compiled bindings are
-    // otherwise on. Each path used below (Track.Title etc.) is a real property
-    // on TrackRowViewModel/Track, kept alive by direct references elsewhere.
-    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Binding paths are real properties on TrackRowViewModel/Track, kept alive by direct references elsewhere in the codebase.")]
+    // otherwise on. Each path used below is a real property on
+    // TrackRowViewModel/Track - but a *string* path, which is the whole problem:
+    // nothing in the codebase references DurationDisplay and its siblings any
+    // other way, so on a trimmed build the linker has no reason to believe they
+    // are used and drops them. Only Flower.Web trims (WasmBuildNative), so this
+    // showed up as browser-only: #, Duration, Plays, Added and Last Played all
+    // rendered blank in a tab while Title/Artist/Album/Genre - bound through
+    // Track, whose properties are referenced directly all over - were fine.
+    //
+    // DynamicDependency rather than a descriptor XML because the dependency is
+    // genuinely this method's: it is what turns a column id into a property
+    // name, and a root declared anywhere else would be a fact about this switch
+    // stored away from it.
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(TrackRowViewModel))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(Models.Track))]
     private Control BuildCellContent(MusicColumnDefinition col)
     {
         if (col.Id == "Title")
