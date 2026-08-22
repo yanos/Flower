@@ -17,13 +17,6 @@ public sealed class SubsonicException(int code, string message) : Exception(mess
     public int Code { get; } = code;
 }
 
-// Builds the peer-identity/signature query params or headers for one specific
-// request (method + path + the params already decided for it + its body) -
-// see OpenSubsonicClient's own doc comment on why this has to be a delegate
-// invoked fresh per call rather than a fixed list computed once.
-public delegate IEnumerable<(string Key, string Value)> PeerIdentityParamsBuilder(
-    string method, string path, IEnumerable<(string Key, string Value)> extraParams, byte[] body);
-
 // Hand-rolled OpenSubsonic/Subsonic REST client (see SYNC-PLAN.md, "The unifying
 // decision": one client, three interchangeable servers - a third-party Navidrome/
 // Jellyfin-compat instance, a first-party Flower.Server, or another Flower app
@@ -41,15 +34,16 @@ public class OpenSubsonicClient
     private readonly string _username;
     private readonly string _password;
     private readonly string _clientName;
-    private readonly PeerIdentityParamsBuilder? _peerIdentityParams;
+    private readonly IPeerCredentials? _credentials;
 
-    // peerIdentityParams is for talking to another Flower device's embedded
-    // host rather than a real Subsonic server: peer-to-peer auth is the
-    // signed trust gate (X-Flower-Fingerprint/-Alias/-Role/-PublicKey/
-    // -Signature/-Timestamp/-Nonce - see SyncHttpServer, LibrarySyncService),
-    // not real Subsonic credentials, but this is still the same client
-    // either way - see SYNC-PLAN.md's "one client, three interchangeable
-    // servers". It's a delegate rather than a fixed header list because a
+    // credentials is for talking to a Flower host - another device's embedded
+    // SyncHttpServer, or a headless Flower.Server - rather than a real
+    // Subsonic server: auth there is the signed trust gate
+    // (X-Flower-Fingerprint/-Alias/-Role/-PublicKey/-Signature/-Timestamp/
+    // -Nonce - see SignedDeviceCredentials, SyncHttpServer), not real Subsonic
+    // credentials, but this is still the same client either way - see
+    // SYNC-PLAN.md's "one client, three interchangeable servers". It is an
+    // object consulted per request rather than a fixed header list because a
     // signature/nonce must be unique per call (see DeviceSigningKey.Sign) -
     // this client instance is long-lived and calls it repeatedly (once per
     // browse call, once per stream/download), so the identity params can
@@ -57,14 +51,14 @@ public class OpenSubsonicClient
     public OpenSubsonicClient(
         string baseUrl, string username, string password,
         HttpClient? httpClient = null, string clientName = "Flower",
-        PeerIdentityParamsBuilder? peerIdentityParams = null)
+        IPeerCredentials? credentials = null)
     {
         _baseUrl = baseUrl.TrimEnd('/');
         _username = username;
         _password = password;
         _clientName = clientName;
         _http = httpClient ?? new HttpClient();
-        _peerIdentityParams = peerIdentityParams;
+        _credentials = credentials;
     }
 
     // MD5 here is mandated by the Subsonic auth scheme itself (token = md5(password
@@ -106,8 +100,8 @@ public class OpenSubsonicClient
         var parameters = AuthParams();
         if (extraParams != null)
             parameters.AddRange(extraParams);
-        if (_peerIdentityParams != null)
-            parameters.AddRange(_peerIdentityParams("GET", path, parameters, []));
+        if (_credentials != null)
+            parameters.AddRange(_credentials.Authorize("GET", path, parameters, []));
 
         var query = string.Join("&", parameters.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
         return $"{_baseUrl}{path}?{query}";
@@ -138,10 +132,10 @@ public class OpenSubsonicClient
     // practice as "Connection reset by peer" on iOS.
     private void AddPeerIdentityHeaders(HttpRequestMessage request, string method, string path, IEnumerable<(string Key, string Value)> parameters)
     {
-        if (_peerIdentityParams == null)
+        if (_credentials == null)
             return;
 
-        foreach (var header in _peerIdentityParams(method, path, parameters, []))
+        foreach (var header in _credentials.Authorize(method, path, parameters, []))
             request.Headers.Add(header.Key, header.Value);
         request.Headers.ConnectionClose = true;
     }

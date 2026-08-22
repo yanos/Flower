@@ -159,45 +159,9 @@ public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Action<H
         };
     }
 
-    // The signing half of the desktop/mobile case, kept here next to the client
-    // it authorizes so the two cannot drift: same canonical form, same header
-    // names and same identity block as PeerOpenSubsonicClientFactory, which does
-    // this for the OpenSubsonic surface.
-    public static Action<HttpRequestMessage, byte[]> SignWith(DeviceSigningKey signingKey, DeviceIdentity identity) =>
-        (request, body) =>
-        {
-            var uri = request.RequestUri!;
-            var query = ParseQuery(uri.Query);
-            var identityParams = new List<(string Key, string Value)>
-            {
-                ("X-Flower-Fingerprint", identity.Fingerprint),
-                ("X-Flower-Alias", identity.Alias),
-                ("X-Flower-PublicKey", signingKey.PublicKeyBase64),
-            };
-
-            var (signature, timestamp, nonce) = signingKey.Sign(
-                request.Method.Method, uri.AbsolutePath, query.Concat(identityParams), body);
-
-            foreach (var (key, value) in identityParams)
-                request.Headers.TryAddWithoutValidation(key, value);
-            request.Headers.TryAddWithoutValidation("X-Flower-Signature", signature);
-            request.Headers.TryAddWithoutValidation("X-Flower-Timestamp", timestamp);
-            request.Headers.TryAddWithoutValidation("X-Flower-Nonce", nonce);
-        };
-
-    // The canonical form signs the *decoded* key and value, which is what the
-    // server rebuilds from its own parsed query - so this has to decode rather
-    // than split the raw string and leave the escapes in.
-    private static List<(string Key, string Value)> ParseQuery(string query)
-    {
-        var parsed = new List<(string Key, string Value)>();
-        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var separator = pair.IndexOf('=');
-            parsed.Add(separator < 0
-                ? (Uri.UnescapeDataString(pair), "")
-                : (Uri.UnescapeDataString(pair[..separator]), Uri.UnescapeDataString(pair[(separator + 1)..])));
-        }
-        return parsed;
-    }
+    // The signing half of the desktop/mobile case. The identity block, the
+    // canonical form and the query parsing all live in IPeerCredentials now -
+    // this used to be a fifth hand-rolled copy of them.
+    public static Action<HttpRequestMessage, byte[]> SignWith(IPeerCredentials credentials) =>
+        (request, body) => request.AddPeerCredentials(credentials, body);
 }
