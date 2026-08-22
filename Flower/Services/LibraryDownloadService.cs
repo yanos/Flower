@@ -70,6 +70,11 @@ public class LibraryDownloadService
             // One upsert of the one row whose Path changed. This used to
             // rewrite all 16k rows to push a single field.
             track.Path = destination;
+            // Set together with Path, because this - not the presence of an
+            // origin fingerprint - is what tells the next rescan that no folder
+            // scan is responsible for this file, wherever it ended up. See
+            // Track.IsLocallyDownloaded and Library.UpdateTracks.
+            track.IsLocallyDownloaded = true;
             _library.NotifyTrackChanged(track);
 
             _logger.LogInformation("Downloaded {Title} ({OriginTrackId}) from {Alias} to {Destination}",
@@ -115,6 +120,7 @@ public class LibraryDownloadService
         }
 
         track.Path = null;
+        track.IsLocallyDownloaded = false;
         _library.NotifyTrackChanged(track);
     }
 

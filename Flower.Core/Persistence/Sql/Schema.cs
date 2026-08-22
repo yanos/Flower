@@ -155,5 +155,16 @@ namespace Flower.Persistence.Sql
             );
             """;
 
+        // See Track.IsLocallyDownloaded. Appended as a step rather than folded
+        // into V1 - which is what SqliteMigrations' own comment says to do while
+        // there are no released users, and what every schema change so far has
+        // done - because folding it in means an existing local flower.db has to
+        // be deleted to pick it up, and by now that database is the only place
+        // play counts, starred flags and playlists live. Preserving those is
+        // exactly what the runner is for; it just arrived one release earlier
+        // than expected.
+        public const string V2 = """
+            ALTER TABLE tracks ADD COLUMN is_locally_downloaded INTEGER NOT NULL DEFAULT 0;
+            """;
     }
 }

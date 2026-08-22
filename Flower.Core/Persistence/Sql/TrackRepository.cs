@@ -26,7 +26,8 @@ namespace Flower.Persistence.Sql
             duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
             origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_hash,
             play_count, imported_play_count, last_played_at, date_added,
-            album_artist, artist_id, album_id, starred, starred_at
+            album_artist, artist_id, album_id, starred, starred_at,
+            is_locally_downloaded
             """;
 
         public List<Track> LoadAll()
@@ -265,7 +266,8 @@ namespace Flower.Persistence.Sql
                 duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
                 origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_hash,
                 play_count, imported_play_count, last_played_at, date_added,
-                album_artist, artist_id, album_id, starred, starred_at
+                album_artist, artist_id, album_id, starred, starred_at,
+                is_locally_downloaded
             ) VALUES (
                 $id, $path, $title, $subtitle, $artists, $album_artists, $is_compilation,
                 $album, $album_sort, $year, $track_number, $track_count, $disc_number, $disc_count,
@@ -275,7 +277,8 @@ namespace Flower.Persistence.Sql
                 $duration_ticks, $bitrate, $sample_rate, $channels, $bits_per_sample, $codec,
                 $origin_device_fingerprint, $origin_track_id, $origin_file_extension, $origin_album_art_hash,
                 $play_count, $imported_play_count, $last_played_at, $date_added,
-                $album_artist, $artist_id, $album_id, $starred, $starred_at
+                $album_artist, $artist_id, $album_id, $starred, $starred_at,
+                $is_locally_downloaded
             )
             ON CONFLICT (id) DO UPDATE SET
                 path = excluded.path,
@@ -322,7 +325,8 @@ namespace Flower.Persistence.Sql
                 artist_id = excluded.artist_id,
                 album_id = excluded.album_id,
                 starred = excluded.starred,
-                starred_at = excluded.starred_at;
+                starred_at = excluded.starred_at,
+                is_locally_downloaded = excluded.is_locally_downloaded;
             """;
 
         private static readonly string[] UpsertParameterNames =
@@ -336,6 +340,7 @@ namespace Flower.Persistence.Sql
             "$origin_device_fingerprint", "$origin_track_id", "$origin_file_extension", "$origin_album_art_hash",
             "$play_count", "$imported_play_count", "$last_played_at", "$date_added",
             "$album_artist", "$artist_id", "$album_id", "$starred", "$starred_at",
+            "$is_locally_downloaded",
         ];
 
         // Parameters are added once and then only have their Value reassigned
@@ -403,6 +408,7 @@ namespace Flower.Persistence.Sql
             p["$album_id"].Value = SubsonicIdentity.AlbumId(albumArtist, track.Album);
             p["$starred"].Value = track.Starred ? 1 : 0;
             p["$starred_at"].Value = (object?)track.StarredAt?.UtcTicks ?? DBNull.Value;
+            p["$is_locally_downloaded"].Value = track.IsLocallyDownloaded ? 1 : 0;
         }
 
         private static object Nullable(string? value) => (object?)value ?? DBNull.Value;
@@ -457,6 +463,7 @@ namespace Flower.Persistence.Sql
             // See Schema.V1.
             Starred = reader.GetInt64(44) != 0,
             StarredAt = reader.IsDBNull(45) ? null : new DateTimeOffset(reader.GetInt64(45), TimeSpan.Zero),
+            IsLocallyDownloaded = reader.GetInt64(46) != 0,
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>

@@ -19,13 +19,12 @@ namespace Flower.Persistence.Sql
     // EnsureCreatedAsync() with no migrations at all, so any schema change
     // silently wiped a self-hoster's database (ARCHITECTURE-REVIEW Tier 2.5).
     //
-    // There is exactly one script today, and that is the point: with no
-    // released users there is nothing to migrate *from*, so every schema change
-    // so far has been folded straight into V1 rather than appended as a step
-    // that only ever runs against a developer's own scratch database. The
-    // runner exists for the first change made after a release, not before it -
-    // and until then the honest upgrade path for a stale local flower.db is to
-    // delete it and rescan.
+    // The default is still to fold a schema change straight into V1 rather than
+    // append a step: with no released users there is nothing to migrate *from*,
+    // and the honest upgrade path for a stale local flower.db is to delete it
+    // and rescan. Append a script only when that delete-and-rescan would lose
+    // something a rescan cannot reproduce - play counts, starred flags,
+    // playlists - which is what V2 is doing here.
     public static class SqliteMigrations
     {
         // Index + 1 is the schema version a script brings the database to, so
@@ -33,6 +32,7 @@ namespace Flower.Persistence.Sql
         private static readonly IReadOnlyList<string> Scripts =
         [
             Schema.V1,
+            Schema.V2,
         ];
 
         public static int LatestVersion => Scripts.Count;

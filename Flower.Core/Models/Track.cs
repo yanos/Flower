@@ -166,6 +166,31 @@ namespace Flower.Models
         // OriginDeviceFingerprint.
         public string? OriginAlbumArtHash { get; set; }
 
+        // True when *this* device fetched this file from a peer and put it
+        // where it now sits (see LibraryDownloadService) - as opposed to a file
+        // the importer found by scanning a folder the user configured.
+        //
+        // The distinction exists for one question, asked once per rescan: a
+        // scan that did not produce this track, does that mean the track is
+        // gone? For a scanned file, yes - the folder list is the whole of what
+        // the user asked Flower to scan, so a file no longer in it is no longer
+        // in the library (see Library.UpdateTracks). For a downloaded one, no:
+        // it can live in platform-private storage no scan ever looks at
+        // (Android's app-private Downloads folder in particular), so the scan
+        // was never going to find it and its silence proves nothing.
+        //
+        // That question used to be answered with OriginDeviceFingerprint != null
+        // instead, on the strength of that field's own documented promise just
+        // above - "never set on a track this device actually imported itself".
+        // MergeSyncedTracks broke the promise deliberately and for a good reason
+        // (it stamps the origin onto a local file the paired server also has, so
+        // the delete-downloaded-file warning can tell "safe, re-downloadable"
+        // from "permanent"), which quietly turned the predicate into "every
+        // track" on any paired device - and a library that can never be emptied,
+        // no matter what is on disk. This field answers the question directly
+        // rather than through a proxy that something else is free to redefine.
+        public bool IsLocallyDownloaded { get; set; }
+
         // Stats. PlayCount is Flower's own count, incremented on natural
         // end-of-track (see PlaylistControlViewModel); ImportedPlayCount comes
         // from iTunes/Music.app's library export when that sync is enabled
@@ -311,9 +336,9 @@ namespace Flower.Models
 
         // Replaces the `with` expressions this type used to support. Keeps Id,
         // so a copy made to hand a peer stream URL to the audio manager (see
-        // MainViewModel/MobileMainViewModel) is still *the same track* as far
-        // as the play queue is concerned - which the record-equality version
-        // was not, since the differing Path made it compare unequal and
+        // PlaylistControlViewModel.ResolveForPlayback) is still *the same track*
+        // as far as the play queue is concerned - which the record-equality
+        // version was not, since the differing Path made it compare unequal and
         // queue navigation then fell back to the front of the queue.
         public Track Clone()
         {

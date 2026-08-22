@@ -72,6 +72,27 @@ public class StoreRoundTripTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(125), loaded[0].Duration);
     }
 
+    // IsLocallyDownloaded decides whether the next rescan is allowed to drop a
+    // track (see Library.UpdateTracks), so it is only any use if it survives a
+    // restart - and the tracks it matters most for are the mobile ones in
+    // app-private storage, on the platform most likely to be killed between
+    // launches. The row mapper reads by ordinal, which makes an added column a
+    // silent-corruption risk rather than a compile error, so pin both values.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task LibraryStore_round_trips_whether_a_track_was_downloaded_here(bool downloaded)
+    {
+        Repo().ReplaceAll(new List<Track>
+        {
+            new Track { Title = "A", Path = "/private/downloads/a.mp3", IsLocallyDownloaded = downloaded },
+        });
+
+        var loaded = await new LibraryStore(NullLogger<LibraryStore>.Instance).LoadAsync();
+
+        Assert.Equal(downloaded, Assert.Single(loaded).IsLocallyDownloaded);
+    }
+
     [Fact]
     public async Task LibraryStore_Load_returns_empty_list_when_no_file_exists()
     {

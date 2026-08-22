@@ -243,24 +243,49 @@ namespace Flower.Models
                         CarryForwardMutableState(previousSynced, track);
                 }
 
-                // Tracks known via sync (OriginDeviceFingerprint set - see
-                // LibrarySyncService/MergeSyncedTracks), placeholder or already
-                // downloaded, aren't necessarily rediscoverable by a disk/MediaStore
-                // scan at all - a downloaded file can live in platform-private
-                // storage a scan never looks at (see LibraryDownloadService, Android
-                // in particular) - so a scan finding nothing there is not evidence
-                // the track should be forgotten. Excluded here if the fresh scan
-                // *did* also find the same path (e.g. iOS's Documents-folder scan
-                // legitimately re-discovering a file this device downloaded earlier)
-                // OR the same SyncKey (the container-UUID-drift case above) - either
-                // way, that fresh-scanned instance already carried its
-                // DateAdded/PlayCount/origin metadata forward above.
+                // For everything the scan is responsible for, the scan's result
+                // IS the library: a track it did not produce is a track that is
+                // no longer there. The folder list (Settings > Library) is the
+                // whole of what the user has asked Flower to scan, so emptying it
+                // empties the library, and deleting a file removes its track -
+                // without either needing a separate delete path to remember.
+                //
+                // Two kinds of track the scan is NOT responsible for survive it,
+                // because their absence from a scan says nothing about them:
+                //
+                //   - A placeholder (Path == null): a peer's catalog entry with
+                //     no local file at all (see MergeSyncedTracks). There is
+                //     nothing on disk for a scan to find.
+                //   - A file this device downloaded itself
+                //     (IsLocallyDownloaded - see LibraryDownloadService): it can
+                //     live in platform-private storage a scan never looks at,
+                //     Android's app-private Downloads folder in particular.
+                //
+                // Both are excluded again if the fresh scan *did* turn up the
+                // same path (iOS's Documents-folder scan legitimately
+                // re-discovering a file this device downloaded earlier) or the
+                // same SyncKey (the container-UUID-drift case above) - either
+                // way that fresh-scanned instance already carried this one's
+                // DateAdded/PlayCount/origin metadata forward above, and keeping
+                // both would duplicate the track.
+                //
+                // This test used to be OriginDeviceFingerprint != null, which
+                // reads as the same thing only while that field means what its
+                // own doc comment promises ("never set on a track this device
+                // actually imported itself"). MergeSyncedTracks stopped honouring
+                // that on purpose, stamping the origin onto local files a paired
+                // server also has - so on any paired device the predicate
+                // silently became "every track", and no rescan could ever remove
+                // anything again. Observed as a client sitting on 16k tracks with
+                // no library folders configured at all, logging "0 track(s) from
+                // scan, 16115 synced-only track(s) carried forward" on every
+                // launch.
                 var freshPaths = new HashSet<string>(
                     tracks.Where(t => t.Path != null).Select(t => t.Path!),
                     StringComparer.OrdinalIgnoreCase);
                 var freshSyncKeys = new HashSet<string>(tracks.Select(t => t.SyncKey));
                 var carriedForwardSyncTracks = Tracks.Where(t =>
-                    t.OriginDeviceFingerprint != null
+                    (t.Path == null || t.IsLocallyDownloaded)
                     && (t.Path == null || !freshPaths.Contains(t.Path))
                     && !freshSyncKeys.Contains(t.SyncKey))
                     .ToList();
@@ -284,7 +309,7 @@ namespace Flower.Models
                 Persist(() => _store!.ReplaceAll(Tracks));
             }
 
-            _logger.LogInformation("Library updated: {FreshCount} track(s) from scan, {CarriedForwardCount} synced-only track(s) carried forward, {TotalBefore} -> {TotalAfter}",
+            _logger.LogInformation("Library updated: {FreshCount} track(s) from scan, {CarriedForwardCount} placeholder/downloaded track(s) carried forward, {TotalBefore} -> {TotalAfter}",
                 tracks.Count, carriedForwardCount, beforeCount, afterCount);
 
             TracksUpdated?.Invoke(this, EventArgs.Empty);
@@ -353,6 +378,11 @@ namespace Flower.Models
             track.OriginTrackId           = previous.OriginTrackId;
             track.OriginFileExtension     = previous.OriginFileExtension;
             track.OriginAlbumArtHash      = previous.OriginAlbumArtHash;
+            // Carried forward even though a rescan finding the file means it was
+            // under a scanned folder after all: the flag also answers "is
+            // deleting this file reversible" for the mobile download UI, and that
+            // stays true of a downloaded file the scan happens to see.
+            track.IsLocallyDownloaded     = previous.IsLocallyDownloaded;
             MergeRemotePlayCounts(track, previous.RemotePlayCounts);
         }
 
