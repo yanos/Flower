@@ -389,7 +389,16 @@ public partial class App : Application
             // Album art: no ticket needed, because AlbumArtLoader fetches it
             // with its own HttpClient and can send the session header that
             // already reaches GET /library - see OriginCoverArtUrlResolver.
-            .AddSingleton<ICoverArtUrlResolver>(_ => new OriginCoverArtUrlResolver(origin));
+            .AddSingleton<ICoverArtUrlResolver>(_ => new OriginCoverArtUrlResolver(origin))
+
+            // The origin's playlists, mirrored read-only into this tab - see
+            // OriginPlaylistImporter for why a tab is not a party to the
+            // peer-to-peer playlist merge the desktop runs.
+            .AddSingleton<Importer.IPlaylistImporter>(sp => new Importer.OriginPlaylistImporter(
+                sp.GetRequiredService<HttpClient>(),
+                origin.ToString(),
+                sp.GetRequiredService<IPeerCredentials>(),
+                sp.GetRequiredService<ILogger<Importer.OriginPlaylistImporter>>()));
     }
 
     // The one platform fork the audio pipeline needs.
@@ -647,6 +656,25 @@ public partial class App : Application
                 // lines for the same reason.
                 library.UpdateTracks(freshTracks);
                 rescanLogger.LogInformation("Library saved ({TrackCount} tracks)", library.Tracks.Count);
+
+                // Only the browser registers one - see IPlaylistImporter. After
+                // UpdateTracks rather than before, because a playlist on the
+                // wire names its tracks by description and can only be resolved
+                // against a library that has already arrived.
+                //
+                // ReplacePlaylists, not ResetPlaylists. Reset is for replaying
+                // the on-disk set into a Library before any window exists, and
+                // deliberately announces nothing; this runs on a background task
+                // with the UI already up, so nothing would rebuild the sidebar
+                // and the playlists would be fetched and then invisible. Replace
+                // also no-ops when the set came back identical, which is the
+                // normal case on every rescan after the first.
+                if (provider.GetService<Importer.IPlaylistImporter>() is { } playlistImporter)
+                {
+                    var remotePlaylists = await playlistImporter.ImportAsync(library.Tracks);
+                    library.ReplacePlaylists(remotePlaylists);
+                    rescanLogger.LogInformation("Playlists refreshed from the remote catalog ({PlaylistCount})", remotePlaylists.Count);
+                }
 
                 // SyncITunesPlayCountAsync/SyncITunesDateAddedAsync each do their
                 // own save (either may run again later via its own Settings
