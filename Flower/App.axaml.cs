@@ -203,7 +203,18 @@ public partial class App : Application
                                 ?? new Importer.Importer(sp.GetRequiredService<ILogger<Importer.Importer>>()))
 
             .AddSingleton<ColumnManager>()
-            .AddSingleton<AlbumArtLoader>()
+            // Constructed by hand rather than by type: its two peer dependencies
+            // are genuinely optional (see its own constructor remarks) and are
+            // simply not registered on Flower.Web/WASM, and a nullable *type* is
+            // not something the container treats as optional - only a defaulted
+            // parameter is, which the trailing ILogger rules out here. Asking for
+            // them with GetService is what actually makes them optional; the
+            // type-based registration threw CannotResolveService and took the
+            // whole browser app down before its first frame.
+            .AddSingleton(sp => new AlbumArtLoader(
+                sp.GetService<PeerTrackResolver>(),
+                sp.GetService<DeviceIdentity>(),
+                sp.GetRequiredService<ILogger<AlbumArtLoader>>()))
 
             // One 60Hz timer for every animation in the app - see
             // AnimationClock. Injected into MainViewModel (which threads it

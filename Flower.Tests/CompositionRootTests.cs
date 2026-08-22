@@ -253,6 +253,50 @@ public class CompositionRootTests : PinnedDataDirectory
             provider.GetRequiredService<DeviceIdentity>().Fingerprint);
     }
 
+    // The browser head, which registers none of the P2P sync stack at all (see
+    // App.RegisterServices' OperatingSystem.IsBrowser() early return), and so is
+    // the one shape BuildContainer above cannot catch a gap in: every other test
+    // here builds the desktop graph, where every service exists.
+    //
+    // Modelled by dropping exactly the registrations that early return skips,
+    // rather than by trying to convince the real method it is running in a
+    // browser. What it pins is that nothing outside that branch depends on
+    // anything inside it: a *nullable* constructor parameter does not make a
+    // dependency optional to the container - only a defaulted one does - so a
+    // plain AddSingleton<T>() of a class taking one throws CannotResolveService
+    // and takes the whole browser app down before its first frame, which is
+    // exactly what AlbumArtLoader did (a Flower.Web settings page that never
+    // painted at all).
+    [AvaloniaFact]
+    public void The_graph_still_resolves_without_the_sync_stack_the_browser_head_omits()
+    {
+        Type[] browserAbsent =
+        [
+            typeof(DeviceSigningKey), typeof(DeviceIdentity),
+            typeof(NetworkDiscoveryService), typeof(SyncHttpServer), typeof(PlaylistSyncService),
+            typeof(LibrarySyncService), typeof(LibraryDownloadService), typeof(PeerPairingService),
+            typeof(PeerUnpairNotifier), typeof(PairedServerReachability), typeof(PeerTrackResolver),
+        ];
+
+        var services = new ServiceCollection()
+            .AddLogging(builder => builder.AddSerilog(Serilog.Core.Logger.None));
+
+        App.RegisterServices(services);
+        services.AddSingleton<IAudioManager>(new FakeAudioManager());
+
+        foreach (var descriptor in services.Where(d => browserAbsent.Contains(d.ServiceType)).ToList())
+            services.Remove(descriptor);
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true,
+        });
+
+        Assert.NotNull(provider.GetRequiredService<AlbumArtLoader>());
+        Assert.NotNull(provider.GetRequiredService<MainViewModel>());
+    }
+
     // The container's ILoggerFactory registration is what makes an injected
     // ILogger<T> and Flower.Core's static-field loggers the same pipeline
     // (App.OnFrameworkInitializationCompleted registers the instance

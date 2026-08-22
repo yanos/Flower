@@ -38,6 +38,24 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(PlaylistSyncManifestDto))]
     [JsonSerializable(typeof(LibrarySyncManifestDto))]
     [JsonSerializable(typeof(LogReportDto))]
+
+    // The server's /api/admin surface (see ServerAdminClient). Registered here
+    // for the same reason as the sync DTOs above - Flower writes both ends of
+    // it - but load-bearing rather than cosmetic on one head in particular:
+    // Flower.Web is trimmed, so reflection-based serialization is disabled
+    // outright there and every one of these calls threw
+    // NotSupportedException("JsonSerializer.IsReflectionEnabledByDefault") -
+    // which surfaced as a settings page that drew its chrome and then filled in
+    // nothing.
+    [JsonSerializable(typeof(ServerSettingsDto))]
+    [JsonSerializable(typeof(ServerSettingsUpdateDto))]
+    [JsonSerializable(typeof(List<AdminDeviceDto>), TypeInfoPropertyName = "AdminDeviceList")]
+    [JsonSerializable(typeof(AdminPairingCodeDto))]
+    [JsonSerializable(typeof(AdminSessionDto))]
+    [JsonSerializable(typeof(AdminLibraryStatusDto))]
+    [JsonSerializable(typeof(List<AdminLogEntryDto>), TypeInfoPropertyName = "AdminLogEntryList")]
+    [JsonSerializable(typeof(SubsonicCredentialDto))]
+    [JsonSerializable(typeof(List<SubsonicCredentialDto>), TypeInfoPropertyName = "SubsonicCredentialList")]
     internal partial class FlowerJsonContext : JsonSerializerContext
     {
     }
