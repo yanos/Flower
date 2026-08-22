@@ -100,6 +100,9 @@ public sealed class RemoteLibraryImporter : IMusicImporter
     public async Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null) =>
         (await FetchAsync()).Tracks;
 
+    // Placeholders for someone else's files, every one of them.
+    public bool ScansLocalFiles => false;
+
     // Throws rather than swallowing: a 403 off this route means the peer has
     // revoked us and a 401 means one request's signature was rejected, and only
     // the caller knows what to do about either (see LibrarySyncService's own

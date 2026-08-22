@@ -48,3 +48,35 @@ public static partial class BrowserLocation
         return values;
     }
 }
+
+// What the page was opened with, read once at startup.
+//
+// TakeFragment erases the fragment as it reads it, so exactly one caller may
+// ever call it - this class is that caller, and everything else asks the
+// container for the result. Before the browser had a library, the one caller
+// was the settings overlay and it could read the fragment itself; now the same
+// token is also the credential for the catalog and for minting stream tickets
+// (see AdminSessionCredentials), so it has to be shared rather than consumed.
+public sealed class BrowserSession
+{
+    // The server-minted admin session token, or null if the page was opened
+    // without one - a tab someone navigated to by hand rather than through the
+    // desktop client's "Server Settings..." button. Such a tab has no authority
+    // at all: no catalog, no playback, no settings.
+    public string? Token { get; private init; }
+
+    // What the page was asked to show. Only "settings" means anything today,
+    // and it is what keeps a session token from *implying* the settings overlay
+    // now that a plain jukebox tab carries one too.
+    public string? Page { get; private init; }
+
+    public static BrowserSession FromPageUrl()
+    {
+        var fragment = BrowserLocation.TakeFragment();
+        return new BrowserSession
+        {
+            Token = fragment.TryGetValue("admin", out var token) && !string.IsNullOrWhiteSpace(token) ? token : null,
+            Page = fragment.GetValueOrDefault("page"),
+        };
+    }
+}

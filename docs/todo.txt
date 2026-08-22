@@ -48,7 +48,7 @@ server / client overhaul:
  on desktop sidebar: checkmark on devices that are paired.
  what happens to the library if the client cancel the pairing
  
- I
+ SubSonic vs our own endpoints
  Event bus?
  
 Question for Claude:
