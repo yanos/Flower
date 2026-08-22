@@ -166,6 +166,20 @@ namespace Flower.Models
         // DI-configured ILogger<Library>.
         public Library(List<Track> tracks) : this(tracks, NullLogger<Library>.Instance) { }
 
+        // "Could a placeholder stamped with this fingerprint still be played?"
+        // Answered by the head that actually has a pairing to answer with - the
+        // app hands in SyncRolePolicy.MayRequestFrom against the currently
+        // paired Server (see App.axaml.cs). Left null on Flower.Server and in
+        // tests, where the question does not arise: a server holds no
+        // placeholders of its own, and every one it does hold came from an
+        // import it is itself the origin of.
+        //
+        // A delegate rather than an AppSettings dependency because Library is
+        // Flower.Core and the pairing model is the app's - and because the
+        // answer changes at runtime (an Unpair, a switch to a different Server)
+        // rather than being fixed when the library is built.
+        public Func<string, bool>? IsOriginPaired { get; set; }
+
         public Library(
             List<Track> tracks,
             ILogger<Library> logger,
@@ -280,6 +294,18 @@ namespace Flower.Models
                 // no library folders configured at all, logging "0 track(s) from
                 // scan, 16115 synced-only track(s) carried forward" on every
                 // launch.
+                // The placeholder half of that carries one further condition,
+                // and it is the one this device's own library was wrong about
+                // for a whole release: a placeholder is only worth keeping
+                // while somebody is still there to serve it. Unpairing used to
+                // clear three fields in AppSettings and leave the catalog
+                // alone, so a client that unpaired sat on a library made
+                // entirely of rows that could not be played, relaunch after
+                // relaunch - every click on one logging "no currently paired,
+                // reachable origin device" and doing nothing visible at all.
+                // UnpairServer now prunes them at the moment of unpairing (see
+                // RemoveTracksFromOrigin); this is what heals a library that
+                // was already in that state before it did.
                 var freshPaths = new HashSet<string>(
                     tracks.Where(t => t.Path != null).Select(t => t.Path!),
                     StringComparer.OrdinalIgnoreCase);
@@ -287,7 +313,8 @@ namespace Flower.Models
                 var carriedForwardSyncTracks = Tracks.Where(t =>
                     (t.Path == null || t.IsLocallyDownloaded)
                     && (t.Path == null || !freshPaths.Contains(t.Path))
-                    && !freshSyncKeys.Contains(t.SyncKey))
+                    && !freshSyncKeys.Contains(t.SyncKey)
+                    && (t.Path != null || HasSomewhereToComeFrom(t)))
                     .ToList();
 
                 Tracks = tracks.Concat(carriedForwardSyncTracks).ToList();
@@ -313,6 +340,80 @@ namespace Flower.Models
                 tracks.Count, carriedForwardCount, beforeCount, afterCount);
 
             TracksUpdated?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Whether a track with no local file still has an origin that could
+        // produce one. Three ways to say yes, and only one to say no:
+        //
+        //   - No IsOriginPaired hook at all: the host does not have a pairing
+        //     model (Flower.Server), so it is in no position to call anything
+        //     orphaned and the answer stays what it was before this existed.
+        //   - No OriginDeviceFingerprint: not a sync placeholder in the first
+        //     place. DeleteDownloadedFileAsync produces one of these by
+        //     deleting the only copy of a purely local import - it is the
+        //     user's own track, nobody else's, and nothing here may drop it.
+        //   - The fingerprint is the currently paired Server: business as
+        //     usual.
+        private bool HasSomewhereToComeFrom(Track track) =>
+            IsOriginPaired == null
+            || track.OriginDeviceFingerprint == null
+            || IsOriginPaired(track.OriginDeviceFingerprint);
+
+        // Everything a given origin device was the only source of, dropped -
+        // called when this device stops being paired with it (see
+        // PeerSyncCoordinator.UnpairServer).
+        //
+        // Two different things carry that fingerprint and only one of them goes
+        // away. A placeholder (Path == null) was never anything but a promise
+        // that this peer would serve the file on request; with the pairing gone
+        // the promise is void and the row is unplayable, so it is removed. A
+        // real file (Path != null) is this device's own, whatever the sync once
+        // said about who else has a copy - it stays, and only loses the origin
+        // metadata, which is now stale and would otherwise have the mobile
+        // delete-a-download warning still calling it re-downloadable.
+        //
+        // Returns how many tracks were removed, for the caller to log.
+        public int RemoveTracksFromOrigin(string originFingerprint)
+        {
+            int removedCount;
+            lock (_lock)
+            {
+                var kept = new List<Track>(Tracks.Count);
+                foreach (var track in Tracks)
+                {
+                    if (track.OriginDeviceFingerprint != originFingerprint)
+                    {
+                        kept.Add(track);
+                        continue;
+                    }
+
+                    if (track.Path == null)
+                        continue;
+
+                    track.OriginDeviceFingerprint = null;
+                    track.OriginTrackId = null;
+                    track.OriginFileExtension = null;
+                    track.OriginAlbumArtHash = null;
+                    kept.Add(track);
+                }
+
+                removedCount = Tracks.Count - kept.Count;
+                Tracks = kept;
+                InvalidateIndexes();
+                RebindPlaylistTracks();
+
+                // Inside the lock, for the ordering reason UpdateTracks'
+                // own Persist call spells out. Unconditional, because the
+                // origin metadata cleared above is a change worth writing even
+                // when nothing was removed.
+                Persist(() => _store!.ReplaceAll(Tracks));
+            }
+
+            _logger.LogInformation("Dropped {RemovedCount} placeholder(s) from origin {Origin} and cleared its metadata from the rest",
+                removedCount, originFingerprint);
+
+            TracksUpdated?.Invoke(this, EventArgs.Empty);
+            return removedCount;
         }
 
         // Points every playlist at the Track instances now in Tracks.

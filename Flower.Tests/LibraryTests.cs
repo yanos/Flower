@@ -227,16 +227,66 @@ public class LibraryTests
     // OriginDeviceFingerprint (e.g. UpdateTracks_replaces_the_track_list's
     // "Old" track above), which still gets wiped like before - only a genuine
     // sync placeholder is special-cased.
+    //
+    // Says "while its origin is still paired" out loud now, via IsOriginPaired,
+    // which is the condition this test always meant and never stated. The
+    // counterpart below is what it was quietly asserting the opposite of.
     [Fact]
     public void UpdateTracks_preserves_a_sync_placeholder_across_a_rescan()
     {
         var placeholder = new Track { Title = "Remote Song", Path = null, OriginDeviceFingerprint = "peer-1" };
-        var library = new Library(new List<Track> { placeholder });
+        var library = new Library(new List<Track> { placeholder })
+        {
+            IsOriginPaired = fingerprint => fingerprint == "peer-1",
+        };
 
         library.UpdateTracks(new List<Track> { new Track { Title = "Local", Path = "/music/local.mp3" } });
 
         Assert.Equal(2, library.Tracks.Count);
         Assert.Contains(library.Tracks, t => t.Title == "Remote Song" && t.OriginDeviceFingerprint == "peer-1");
+    }
+
+    // The case the test above used to cover too, by saying nothing about
+    // pairing at all: a placeholder whose origin this device is no longer
+    // paired with. Nothing can ever resolve it - PeerTrackResolver refuses to
+    // dial a peer that isn't the paired Server, whatever a stale fingerprint
+    // says - so carrying it forward produces a library of rows that look
+    // playable and are not. Observed on a real client left holding 86 of them
+    // after an unpair, each click logging "no currently paired, reachable
+    // origin device" and doing nothing visible.
+    [Fact]
+    public void UpdateTracks_drops_a_placeholder_whose_origin_is_no_longer_paired()
+    {
+        var orphaned = new Track { Title = "Remote Song", Path = null, OriginDeviceFingerprint = "old-server" };
+        var library = new Library(new List<Track> { orphaned })
+        {
+            IsOriginPaired = _ => false,
+        };
+
+        library.UpdateTracks(new List<Track> { new Track { Title = "Local", Path = "/music/local.mp3" } });
+
+        Assert.Equal("Local", library.Tracks.Single().Title);
+    }
+
+    // A file this device downloaded from that server is not a placeholder and
+    // is not the pairing's to take away - it is on disk and plays with nothing
+    // else involved. Only the never-downloaded rows are the pairing's.
+    [Fact]
+    public void UpdateTracks_keeps_a_downloaded_file_whose_origin_is_no_longer_paired()
+    {
+        var downloaded = new Track
+        {
+            Title = "Downloaded Song", Path = "/private/downloads/abc.mp3",
+            OriginDeviceFingerprint = "old-server", IsLocallyDownloaded = true,
+        };
+        var library = new Library(new List<Track> { downloaded })
+        {
+            IsOriginPaired = _ => false,
+        };
+
+        library.UpdateTracks(new List<Track>());
+
+        Assert.Equal("Downloaded Song", library.Tracks.Single().Title);
     }
 
     // OriginTrackId is how a downloaded-then-deleted track gets re-fetched
@@ -408,6 +458,69 @@ public class LibraryTests
         library.UpdateTracks(new List<Track>());
 
         Assert.Empty(library.Tracks);
+    }
+
+    // What UnpairServer calls (see PeerSyncCoordinator): the pairing going away
+    // takes the placeholders with it, because a placeholder is nothing but a
+    // promise that peer would serve the file on request.
+    [Fact]
+    public void RemoveTracksFromOrigin_drops_that_origins_placeholders()
+    {
+        var library = new Library(new List<Track>
+        {
+            new Track { Title = "From The Server", Path = null, OriginDeviceFingerprint = "server-1" },
+            new Track { Title = "From Someone Else", Path = null, OriginDeviceFingerprint = "server-2" },
+            new Track { Title = "Mine", Path = "/music/mine.mp3" },
+        });
+
+        var removed = library.RemoveTracksFromOrigin("server-1");
+
+        Assert.Equal(1, removed);
+        Assert.DoesNotContain(library.Tracks, t => t.Title == "From The Server");
+        Assert.Contains(library.Tracks, t => t.Title == "From Someone Else");
+        Assert.Contains(library.Tracks, t => t.Title == "Mine");
+    }
+
+    // A real file stays and only loses the origin metadata: it is this device's
+    // own copy whatever the sync once said about who else had one, and the
+    // stale fingerprint would otherwise leave the mobile delete-a-download
+    // warning still calling it re-downloadable from a server we unpaired from.
+    [Fact]
+    public void RemoveTracksFromOrigin_keeps_a_downloaded_file_and_clears_its_origin()
+    {
+        var downloaded = new Track
+        {
+            Title = "Downloaded Song", Path = "/private/downloads/abc.mp3",
+            OriginDeviceFingerprint = "server-1", OriginTrackId = "peer-track-id",
+            OriginFileExtension = "mp3", OriginAlbumArtHash = "art-hash",
+            IsLocallyDownloaded = true,
+        };
+        var library = new Library(new List<Track> { downloaded });
+
+        var removed = library.RemoveTracksFromOrigin("server-1");
+
+        Assert.Equal(0, removed);
+        var kept = library.Tracks.Single();
+        Assert.Equal("/private/downloads/abc.mp3", kept.Path);
+        Assert.Null(kept.OriginDeviceFingerprint);
+        Assert.Null(kept.OriginTrackId);
+        Assert.Null(kept.OriginFileExtension);
+        Assert.Null(kept.OriginAlbumArtHash);
+    }
+
+    [Fact]
+    public void RemoveTracksFromOrigin_raises_TracksUpdated()
+    {
+        var library = new Library(new List<Track>
+        {
+            new Track { Title = "From The Server", Path = null, OriginDeviceFingerprint = "server-1" },
+        });
+        var raised = 0;
+        library.TracksUpdated += (_, _) => raised++;
+
+        library.RemoveTracksFromOrigin("server-1");
+
+        Assert.Equal(1, raised);
     }
 
     // A track with no local file survives whatever its origin. Usually that is a

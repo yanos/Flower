@@ -190,11 +190,27 @@ public partial class App : Application
             // and then remembering to call LibraryStore.SaveStats), which is
             // the same structural problem Library.PlaylistsChanged exists to
             // solve for playlists: a new mutation path could simply forget.
-            .AddSingleton(sp => new Library(
-                sp.GetRequiredService<LibraryStore>().Load(),
-                sp.GetRequiredService<ILogger<Library>>(),
-                sp.GetRequiredService<TrackRepository>(),
-                sp.GetRequiredService<PlaylistRepository>()))
+            .AddSingleton(sp =>
+            {
+                var library = new Library(
+                    sp.GetRequiredService<LibraryStore>().Load(),
+                    sp.GetRequiredService<ILogger<Library>>(),
+                    sp.GetRequiredService<TrackRepository>(),
+                    sp.GetRequiredService<PlaylistRepository>());
+
+                // The app's answer to "is this placeholder's origin still
+                // someone we can ask" - the same rule PeerTrackResolver applies
+                // before dialing a peer at all, so a rescan cannot decide to
+                // keep a row that playback would then refuse to resolve. Read
+                // through the settings object on every call rather than
+                // captured, because unpairing changes the answer while the
+                // library is alive. See Library.IsOriginPaired.
+                var appSettings = sp.GetRequiredService<AppSettings>();
+                library.IsOriginPaired = fingerprint =>
+                    SyncRolePolicy.MayRequestFrom(appSettings.PairedServerFingerprint, fingerprint);
+
+                return library;
+            })
             .AddSingleton(sp => new MainPlaylist(sp.GetRequiredService<Library>().Tracks))
 
             // The platform hook wins when a head has installed one (Android's

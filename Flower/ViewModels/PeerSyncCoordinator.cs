@@ -46,6 +46,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     private readonly AppSettingsStore? _appSettingsStore;
     private readonly DeviceIdentityStore? _deviceIdentityStore;
     private readonly PlaylistSyncService? _playlistSyncService;
+    private readonly Library? _library;
     private readonly LibrarySyncService? _librarySyncService;
     private readonly LibraryDownloadService? _libraryDownloadService;
     private readonly PeerPairingService? _peerPairingService;
@@ -72,7 +73,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         PeerPairingService? peerPairingService = null,
         PeerTrackResolver? peerTrackResolver = null,
         DeviceIdentity? deviceIdentity = null,
-        DeviceSigningKey? signingKey = null)
+        DeviceSigningKey? signingKey = null,
+        Library? library = null)
     {
         _host                   = host;
         _appSettings            = appSettings;
@@ -88,6 +90,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _peerTrackResolver      = peerTrackResolver;
         _deviceIdentity         = deviceIdentity;
         _signingKey             = signingKey;
+        _library                = library;
 
         // Any new log line at all (playing a track, a setting changed, an
         // error, routine peer-polling chatter, ...) marks that there is
@@ -458,6 +461,19 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // step, not a direct one-click switch).
     public void UnpairServer()
     {
+        // Before the pointer is cleared, because clearing it is what makes the
+        // fingerprint unrecoverable. Everything that server was the only source
+        // of goes with the pairing: a placeholder is a promise it would serve
+        // the file on request, and that promise is void the moment this runs.
+        // Leaving them behind is how a client ended up sitting on a library of
+        // 86 rows that could not be played and could not be got rid of - every
+        // click logging "no currently paired, reachable origin device", every
+        // relaunch carrying the same rows forward through a rescan that found
+        // nothing (see Library.RemoveTracksFromOrigin, and the carry-forward
+        // predicate in UpdateTracks that now refuses to keep them either).
+        if (_appSettings.PairedServerFingerprint is { } origin)
+            _library?.RemoveTracksFromOrigin(origin);
+
         _appSettings.PairedServerFingerprint = null;
         _appSettings.PairedServerAlias = null;
         _appSettings.PairedServerTrustConfirmed = false;
