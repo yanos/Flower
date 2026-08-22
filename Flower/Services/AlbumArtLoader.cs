@@ -50,17 +50,20 @@ public class AlbumArtLoader
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
-    private readonly PeerTrackResolver? _peerResolver;
+    private readonly ICoverArtUrlResolver? _artUrls;
     private readonly IPeerCredentials? _credentials;
     private readonly ILogger _logger;
 
-    // Both peer dependencies are nullable and unregistered on Flower.Web/WASM,
-    // which has no P2P sync stack at all (see App.RegisterServices) - a null
-    // either way means the same thing the old Ioc.Default.GetService returning
-    // null meant: there is no peer to fetch remote art from.
-    public AlbumArtLoader(PeerTrackResolver? peerResolver, IPeerCredentials? credentials, ILogger<AlbumArtLoader> logger)
+    // Both remote dependencies stay nullable: a head that has neither is a head
+    // with no origin to fetch art from, which is what the old Ioc.Default.
+    // GetService returning null meant too. What changed is that the browser is
+    // no longer one of them - it registers an OriginCoverArtUrlResolver and an
+    // AdminSessionCredentials, so remote art works there as well as on the
+    // desktop (see App.RegisterBrowserServices). The nulls now cover only tests
+    // and the Current fallback below.
+    public AlbumArtLoader(ICoverArtUrlResolver? artUrls, IPeerCredentials? credentials, ILogger<AlbumArtLoader> logger)
     {
-        _peerResolver = peerResolver;
+        _artUrls = artUrls;
         _credentials = credentials;
         _logger = logger;
     }
@@ -272,19 +275,18 @@ public class AlbumArtLoader
             }
         }
 
-        // PeerTrackResolver is what actually decides whether track's origin peer is someone this
-        // device may still talk to at all (only the currently paired Server -
-        // see that class's own doc comment) - this call site doesn't need to
-        // know that rule exists, just that null means "don't fetch."
-        var peer = _peerResolver?.Resolve(track);
-        if (peer == null || _credentials == null)
+        // ICoverArtUrlResolver is what actually decides where - and whether -
+        // this track's art can be asked for: against a peer that rule is "only
+        // the currently paired Server" (see PeerTrackResolver), and in a browser
+        // it is simply the origin. This call site doesn't need to know either
+        // rule exists, just that null means "don't fetch."
+        var url = _artUrls?.Resolve(track);
+        if (url == null || _credentials == null)
             return null;
 
         try
         {
-            var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
-            using var request = new HttpRequestMessage(HttpMethod.Get,
-                $"http://{peer.EndPoint}/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
             // Signed, like every other call into a peer's /rest surface. This
             // used to send a bare fingerprint and alias with no signature at
             // all, which a peer's own SyncHttpServer tolerated but Flower.Server
@@ -297,7 +299,8 @@ public class AlbumArtLoader
             // entire /rest surface for a minute - including /rest/stream, which
             // is why playback of server-hosted tracks died wholesale.
             request.AddPeerCredentials(_credentials);
-            request.Headers.ConnectionClose = true;
+            if (_artUrls.ClosesConnection)
+                request.Headers.ConnectionClose = true;
 
             using var response = await Http.SendAsync(request);
             if (!response.IsSuccessStatusCode)

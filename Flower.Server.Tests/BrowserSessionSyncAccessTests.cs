@@ -128,6 +128,36 @@ public class BrowserSessionSyncAccessTests(SubsonicServerFixture server) : IClas
     }
 
     [Fact]
+    public async Task A_session_token_reaches_cover_art_that_rest_would_have_refused_it()
+    {
+        var (device, token) = await SessionForATrustedDeviceAsync();
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+
+        try
+        {
+            var albumId = SubsonicIdentity.AlbumId("Aurora", "Alpha Album");
+            var query = $"?id={Uri.EscapeDataString(albumId)}";
+
+            var (withSession, _) = await SendWithSessionAsync(
+                "GET", "/api/flower/v1/cover-art", "10.0.9.6", token, query);
+            var (withNothing, _) = await SendWithSessionAsync(
+                "GET", "/api/flower/v1/cover-art", "10.0.9.6", token: null, query);
+
+            // NotFound, not OK: the fixture seeds rows whose paths point at no
+            // real file, so there is no art to read. That is the assertion -
+            // reaching the handler at all is what the session buys, and a 404
+            // says it got there where a 403 would say the gate stopped it.
+            Assert.Equal(HttpStatusCode.NotFound, withSession);
+            Assert.Equal(HttpStatusCode.Forbidden, withNothing);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+            device.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task A_session_whose_device_has_since_been_revoked_no_longer_opens_the_catalog()
     {
         var (device, token) = await SessionForATrustedDeviceAsync();

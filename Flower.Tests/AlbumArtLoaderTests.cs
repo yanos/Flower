@@ -305,7 +305,8 @@ public class AlbumArtLoaderTests : IDisposable
         });
 
         var loader = new AlbumArtLoader(
-            new FixedPeerResolver(peer.Port), Credentials(), NullLogger<AlbumArtLoader>.Instance);
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
 
         var hash = Unique("hash");
         var track = RemoteTrack(hash);
@@ -347,7 +348,8 @@ public class AlbumArtLoaderTests : IDisposable
         });
 
         var loader = new AlbumArtLoader(
-            new FixedPeerResolver(peer.Port), Credentials(), NullLogger<AlbumArtLoader>.Instance);
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
 
         Assert.NotNull(await loader.LoadAsync(RemoteTrack(Unique("hash"))));
 
@@ -376,7 +378,8 @@ public class AlbumArtLoaderTests : IDisposable
         });
 
         var loader = new AlbumArtLoader(
-            new FixedPeerResolver(peer.Port), Credentials(), NullLogger<AlbumArtLoader>.Instance);
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
 
         var hash = Unique("hash");
         Assert.Null(await loader.LoadAsync(RemoteTrack(hash)));
@@ -394,7 +397,8 @@ public class AlbumArtLoaderTests : IDisposable
         });
 
         var loader = new AlbumArtLoader(
-            new FixedPeerResolver(peer.Port), Credentials(), NullLogger<AlbumArtLoader>.Instance);
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
 
         var hash = Unique("hash");
 
@@ -402,6 +406,49 @@ public class AlbumArtLoaderTests : IDisposable
         // Caching a 404 body would make the miss permanent - the album would
         // stay a placeholder icon even once the peer could serve it.
         Assert.False(File.Exists(Path.Combine(AppDataDirectory.Path, "AlbumArtCache", $"{hash}.art")));
+    }
+
+    [AvaloniaFact]
+    public async Task A_browser_tab_fetches_art_from_its_origin_with_the_session_header()
+    {
+        // The browser head's whole art path, end to end against a real socket:
+        // no peer, no mDNS, no signing key - one origin and one session token.
+        // Worth pinning rather than trusting the URL shape, because the two
+        // things that make it work are independent. It has to go to the Flower
+        // sync route (a tab cannot open /rest at all, and asking there is how
+        // this silently returned nothing before), and it has to carry the
+        // session header (AlbumArtLoader signs with IPeerCredentials, which in
+        // a tab is AdminSessionCredentials rather than a signature).
+        var art = SyntheticPng.Build(64, 64);
+        string? requestedPath = null;
+        string? sessionHeader = null;
+        var connectionClose = true;
+
+        using var origin = new FakePeerHttpServer(async context =>
+        {
+            requestedPath = context.Request.Url?.PathAndQuery;
+            sessionHeader = context.Request.Headers[AdminSessionCredentials.HeaderName];
+            connectionClose = context.Request.Headers["Connection"]?
+                .Contains("close", StringComparison.OrdinalIgnoreCase) ?? false;
+            context.Response.ContentType = "image/png";
+            await context.Response.OutputStream.WriteAsync(art);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new OriginCoverArtUrlResolver(new Uri($"http://127.0.0.1:{origin.Port}")),
+            new AdminSessionCredentials("session-token"),
+            NullLogger<AlbumArtLoader>.Instance);
+
+        var track = RemoteTrack(Unique("hash"));
+        Assert.NotNull(await loader.LoadAsync(track));
+
+        Assert.StartsWith("/api/flower/v1/cover-art", requestedPath);
+        Assert.Contains(Uri.EscapeDataString(LibraryOpenSubsonicMapper.AlbumIdFor(track)), requestedPath);
+        Assert.Equal("session-token", sessionHeader);
+        // Connection reuse is the fetch stack's to manage in a browser, unlike
+        // against a peer's HttpListener - see ICoverArtUrlResolver.ClosesConnection.
+        Assert.False(connectionClose);
     }
 
     [Fact]

@@ -276,7 +276,7 @@ public class CompositionRootTests : PinnedDataDirectory
             typeof(NetworkDiscoveryService), typeof(SyncHttpServer), typeof(PlaylistSyncService),
             typeof(LibrarySyncService), typeof(LibraryDownloadService), typeof(PeerPairingService),
             typeof(PeerUnpairNotifier), typeof(PairedServerReachability), typeof(PeerTrackResolver),
-            typeof(IStreamUrlResolver), typeof(IPeerCredentials),
+            typeof(IStreamUrlResolver), typeof(ICoverArtUrlResolver), typeof(IPeerCredentials),
         ];
 
         var services = new ServiceCollection()

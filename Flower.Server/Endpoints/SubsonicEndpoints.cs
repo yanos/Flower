@@ -479,7 +479,12 @@ public static class SubsonicEndpoints
         return track?.Path is not null && File.Exists(track.Path) ? track : null;
     }
 
-    private static IResult GetCoverArt(string? id, Library library)
+    // Internal rather than private: SyncEndpoints serves the same bytes at
+    // GET /api/flower/v1/cover-art for callers that authenticate with a session
+    // token instead of a Subsonic credential or a signature - the browser head,
+    // in practice. One handler, so the two doors cannot drift about what an
+    // album's art is.
+    internal static IResult GetCoverArt(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))
             return Results.NotFound();
