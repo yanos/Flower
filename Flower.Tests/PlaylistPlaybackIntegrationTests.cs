@@ -105,7 +105,7 @@ public class PlaylistPlaybackIntegrationTests : IDisposable
                 audioManager, playlist, library, new AppSettings(), appSettingsStore,
                 NullLogger<PlaylistControlViewModel>.Instance, streamUrlResolver);
             CurrentlyPlaying = new CurrentlyPlayingControlViewModel(
-                PlaylistControl, audioManager, library, NullLogger<CurrentlyPlayingControlViewModel>.Instance);
+                PlaylistControl, audioManager, library, new AlbumArtLoader(null, null, NullLogger<AlbumArtLoader>.Instance), NullLogger<CurrentlyPlayingControlViewModel>.Instance);
         }
 
         public IReadOnlyList<FakeTrackDecoder> DecodersFor(Track track) =>
