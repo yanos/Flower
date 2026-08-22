@@ -646,12 +646,60 @@ Hand-run against a real server and a real tab: right-click a track → Add To Pl
 
 Still out of scope, and worth saying because "a tab can write" sounds broader than it is: playlists only. Play counts, ratings and last-played still change in a tab and stay there.
 
+### Browsing a tab like a jukebox — done
+
+The plan's last browser item was "full jukebox browse/search/queue", which turned
+out to be mostly already true and worth checking rather than assuming. A hand-run
+against a real server and a real tab exercised each half: the sidebar's Recently
+Added / History / Songs / Albums / Artists, the filter box, the Artists
+drill-down, playing a track, and Next/Previous. Browse, search and queue all
+worked as they do on the desktop — they are shared UI over a library the tab
+already has in full, so there was nothing browser-specific left to build.
+
+What the run did find was **the now-playing panel showing a blank square while
+every row showed its cover**. The cause was a second, independent album-art
+implementation: `CurrentlyPlayingControlViewModel` did its own embedded-tag and
+cover/folder-file lookup rather than going through `AlbumArtLoader`, which the
+track list and `TrackInfoWindow` use and which already knows how to fetch a
+placeholder's art from the origin (see "Album art in the browser" above). Two
+copies of one question, and only one of them had been taught about the server.
+
+The interesting part is *why* it was blank, because the obvious answer is wrong.
+It is not that a placeholder has no `Path`: by the time a track is playing,
+`PlaylistControlViewModel.ResolveForPlaybackAsync` has cloned it and put the
+minted stream URL in `Path`. So the panel bailed on its "a `Path` containing
+`://` is not a file" guard — correct as far as it went, since no filesystem read
+can satisfy that path, but it concluded "no art" where the right conclusion is
+"art, and on the origin". That test now lives in `AlbumArtLoader.IsLocalFile` and
+routes such a track down the remote road instead of the local one, which is right
+for every caller rather than just this one.
+
+Two things fell out of moving art onto the shared loader:
+
+- **Ordering.** Art is a network round trip now, so pressing Next twice can land
+  the first track's art after the second's. Guarded with a generation counter,
+  the same way `PlaylistControlViewModel` guards a stream URL in flight.
+- **Ownership.** The panel used to dispose the previous bitmap when replacing it,
+  which was correct when each was a private decode it had made itself. The
+  loader's bitmaps are cached and shared with every row showing that album, so
+  disposing one would blank the list; the panel now only holds a reference.
+
+Also fixed while in there: the subtitle rendered a bare `()` after the album for a
+track with no year. Possible on any head, but caught here, where every row comes
+from a server whose own import may not have had a year to give.
+
+**Still out of scope, unchanged:** play counts, ratings and last-played still
+change in a tab and stay there. That — a tab whose *listening* reaches the
+server, not just its playlist edits — is the next real browser feature, and it is
+a different shape from the playlist writer: those are per-event increments to
+merge, not a set to replace wholesale.
+
 ### Suggested build order
 
 1. **Done.** Extract `Flower.Core` (mechanical git-mv + reference fixups; confirm `Flower.Tests` still passes unchanged).
 2. **Done.** Scaffold `Flower.Server`: SQLite schema (originally EF Core, since moved onto `Flower.Core`'s shared layer), importer wired up, OpenSubsonic endpoints working against a real Navidrome-compatible client. See "`Flower.Server` v1" below.
 3. **Done.** Pairing-code endpoint + admin auth + `LanGuard` CGNAT allowance + rate limiting on the redeem route — get a real device pairing against a real headless instance before building UI on top of it. See "Pairing-code endpoint, admin auth, `LanGuard` — done" above.
-4. Scaffold `Flower.Web`. **Done so far:** existing Views/ViewModels building and rendering in-browser (see "`Flower.Web` scaffolding — rendering milestone done" above), real audio playback via `WebAudioManager`, and the admin settings screen with the pairing-code "Add device" button, served by `Flower.Server` itself (see "The server's settings page in the browser — done" above). `RemoteLibraryImporter` itself, over the bulk `/api/flower/v1/library` manifest, is built and shared with the desktop (see "The browser's library" above — *not* the Subsonic-shaped importer earlier revisions of this doc called for). The server-side gate that lets a browser tab reach it without a signing key is built too (seam 3). Stream-ticket playback (seam 4), the `/info` fingerprint read and the browser DI wiring (seam 5) are built too, so a browser tab now has a real library and plays from it. The first end-to-end run against a real server and a real tab has now happened — see "The first browser hand-run" above. Album art and playlists followed it (see those two sections). Letting a tab write followed (see "A tab that writes" above), so the browser head is no longer read-only. **Still open:** full jukebox browse/search/queue.
+4. Scaffold `Flower.Web`. **Done so far:** existing Views/ViewModels building and rendering in-browser (see "`Flower.Web` scaffolding — rendering milestone done" above), real audio playback via `WebAudioManager`, and the admin settings screen with the pairing-code "Add device" button, served by `Flower.Server` itself (see "The server's settings page in the browser — done" above). `RemoteLibraryImporter` itself, over the bulk `/api/flower/v1/library` manifest, is built and shared with the desktop (see "The browser's library" above — *not* the Subsonic-shaped importer earlier revisions of this doc called for). The server-side gate that lets a browser tab reach it without a signing key is built too (seam 3). Stream-ticket playback (seam 4), the `/info` fingerprint read and the browser DI wiring (seam 5) are built too, so a browser tab now has a real library and plays from it. The first end-to-end run against a real server and a real tab has now happened — see "The first browser hand-run" above. Album art and playlists followed it (see those two sections). Letting a tab write followed (see "A tab that writes" above), so the browser head is no longer read-only. Browse/search/queue was then checked end to end in a real tab and found already working, bar the now-playing album art (see "Browsing a tab like a jukebox" above). **Still open:** a tab's play counts, ratings and last-played reaching the server.
 5. Docker packaging + docs: the "expose this over Tailscale" setup guide as the primary documented remote-access path, LettuceEncrypt as the secondary one.
 
 ## Mobile-specific note: streaming vs. background sync

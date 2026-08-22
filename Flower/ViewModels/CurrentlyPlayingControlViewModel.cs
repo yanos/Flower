@@ -20,6 +20,7 @@ namespace Flower.ViewModels
         private readonly PlaylistControlViewModel _playlistControlViewModel;
         private readonly IAudioManager _audioManager;
         private readonly Library _library;
+        private readonly AlbumArtLoader _albumArtLoader;
         private readonly ILogger<CurrentlyPlayingControlViewModel> _logger;
 
         private double _seekPosition;
@@ -46,14 +47,28 @@ namespace Flower.ViewModels
 
         // Always rendered (never IsVisible=false) so the control's height stays constant
         // whether or not a track is playing, instead of growing when playback starts.
+        //
+        // The year is parenthesised only when there is one: an untagged file used
+        // to render a bare "()" after the album. Possible on any head, but caught
+        // in the browser, where every row comes from a server whose own import
+        // may not have had a year to give.
         public string Subtitle => CurrentlyPlayingTrack is { } track
-            ? $"{track.Artists} — {track.Album} ({track.Year})"
+            ? string.IsNullOrWhiteSpace(track.Year)
+                ? $"{track.Artists} — {track.Album}"
+                : $"{track.Artists} — {track.Album} ({track.Year})"
             : " ";
 
+        // Not disposed on replacement, and deliberately so. These bitmaps come
+        // from AlbumArtLoader, which caches them per album and hands the same
+        // instance to every track row showing that album - disposing one here
+        // would blank the list. The loader owns their lifetime (weak-referenced,
+        // so the GC can still reclaim them); this only holds a reference.
+        // Before the shared loader, each was a private decode this class had
+        // made itself, and disposing was correct.
         public Bitmap? AlbumArt
         {
             get => _albumArt;
-            private set { _albumArt?.Dispose(); _albumArt = value; OnPropertyChanged(); }
+            private set { _albumArt = value; OnPropertyChanged(); }
         }
 
         public double SeekPosition
@@ -105,66 +120,40 @@ namespace Flower.ViewModels
         private static string FormatDuration(TimeSpan ts)
             => (int)ts.TotalHours > 0 ? ts.ToString(@"h\:mm\:ss") : ts.ToString(@"m\:ss");
 
-        private static readonly string[] _imageExtensions =
-            [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"];
+        // Which track's art is wanted now. A remote fetch is a network round
+        // trip (see AlbumArtLoader.LoadRemoteAsync), so pressing Next twice in
+        // quick succession can land the first track's art after the second's -
+        // the same out-of-order hazard PlaylistControlViewModel guards with its
+        // own _playGeneration. Reading a local file was fast enough that this
+        // never showed up before there was a browser head.
+        private int _artGeneration;
 
         private void LoadAlbumArt(Track? track)
         {
-            // A live peer-stream URL (see PeerLibraryViewModel.ToTransientTrack)
-            // is not a local filesystem path - skip straight to no-art instead of
-            // throwing TagLib/IO exceptions trying to read it as one.
-            // TrackDecoder.EnsureMedia uses the same "://" check to tell them apart.
-            if (track?.Path is not { } path || path.Contains("://")) { AlbumArt = null; return; }
+            var generation = ++_artGeneration;
 
-            _ = Task.Run(() =>
+            if (track == null)
             {
-                Bitmap? bitmap = null;
+                AlbumArt = null;
+                return;
+            }
 
-                // 1. Embedded tag art
-                try
-                {
-                    using var tagFile = TagLib.File.Create(track.Path);
-                    var pic = tagFile.Tag.Pictures.FirstOrDefault();
-                    if (pic?.Data?.Data is { Length: > 0 } data)
-                    {
-                        using var ms = new MemoryStream(data);
-                        bitmap = new Bitmap(ms);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Could not read/decode embedded art for {Path}", track.Path);
-                }
+            _ = Task.Run(async () =>
+            {
+                // The one implementation of "what is this track's art", shared
+                // with the track list and TrackInfoWindow, and the only one that
+                // knows a placeholder's art lives on the origin server. This
+                // used to be a second, filesystem-only copy of the embedded-tag
+                // and cover/folder lookup - which is why a browser tab showed
+                // covers on every row and a blank square in the top bar.
+                var bitmap = await _albumArtLoader.LoadAsync(track);
 
-                // 2. cover.* / folder.* in the same directory
-                if (bitmap == null)
-                {
-                    try
-                    {
-                        var dir = Path.GetDirectoryName(track.Path);
-                        if (dir != null)
-                        {
-                            var file = Directory.EnumerateFiles(dir)
-                                .FirstOrDefault(f =>
-                                {
-                                    var stem = Path.GetFileNameWithoutExtension(f);
-                                    var ext  = Path.GetExtension(f).ToLowerInvariant();
-                                    return (stem.Equals("cover",  StringComparison.OrdinalIgnoreCase) ||
-                                            stem.Equals("folder", StringComparison.OrdinalIgnoreCase))
-                                        && _imageExtensions.Contains(ext);
-                                });
-                            if (file != null)
-                                bitmap = new Bitmap(file);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogDebug(ex, "Could not read/decode a cover/folder image next to {Path}", track.Path);
-                    }
-                }
-
-                // 3. Embedded art from another track on the same album
-                if (bitmap == null && !string.IsNullOrEmpty(track.Album))
+                // Art from another track on the same album, which the shared
+                // loader deliberately does not do. It caches per album and only
+                // retains hits, so a miss would re-walk the library on every
+                // row that scrolled past - affordable once per track change
+                // here, not once per row there.
+                if (bitmap == null && AlbumArtLoader.IsLocalFile(track) && !string.IsNullOrEmpty(track.Album))
                 {
                     // t.Path != null - a sibling can be a sync placeholder
                     // (no local file yet, see SYNC-PLAN.md's library sync)
@@ -192,7 +181,11 @@ namespace Flower.ViewModels
                     }
                 }
 
-                Dispatcher.UIThread.Post(() => AlbumArt = bitmap);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (generation == _artGeneration)
+                        AlbumArt = bitmap;
+                });
             });
         }
 
@@ -200,11 +193,13 @@ namespace Flower.ViewModels
             PlaylistControlViewModel playlistControlViewModel,
             IAudioManager audioManager,
             Library library,
+            AlbumArtLoader albumArtLoader,
             ILogger<CurrentlyPlayingControlViewModel> logger)
         {
             _playlistControlViewModel = playlistControlViewModel;
             _audioManager = audioManager;
             _library = library;
+            _albumArtLoader = albumArtLoader;
             _logger = logger;
 
             _seekDebounceTimer = new Timer(150) { AutoReset = false };

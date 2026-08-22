@@ -180,7 +180,7 @@ public static class MainViewModelHarness
             audio, mainPlaylist, library, appSettings, appSettingsStore,
             NullLogger<PlaylistControlViewModel>.Instance);
         var currentlyPlaying = new CurrentlyPlayingControlViewModel(
-            playlistControl, audio, library, NullLogger<CurrentlyPlayingControlViewModel>.Instance);
+            playlistControl, audio, library, new AlbumArtLoader(null, null, NullLogger<AlbumArtLoader>.Instance), NullLogger<CurrentlyPlayingControlViewModel>.Instance);
 
         var deviceIdentity = new DeviceIdentity { Fingerprint = "test-device", Alias = "Test Device" };
         var signingKey = MakeSigningKey();

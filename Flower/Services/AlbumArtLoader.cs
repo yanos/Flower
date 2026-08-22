@@ -178,11 +178,21 @@ public class AlbumArtLoader
     // (see TrackRowMergeTests) without standing up real files and a decoder.
     public virtual async Task<Bitmap?> LoadAsync(Track track)
     {
-        if (track.Path != null)
+        if (IsLocalFile(track))
             return await LoadLocalAsync(track);
 
         return await LoadRemoteAsync(track);
     }
+
+    // A Path is not automatically a file. PlaylistControlViewModel.
+    // ResolveForPlaybackAsync clones a placeholder and puts the minted stream
+    // URL in Path, so the *currently playing* track on a browser tab - or on a
+    // desktop streaming from a peer - has a Path that no filesystem read can
+    // ever satisfy. Its art is on the origin, exactly as it is for the
+    // placeholder it was cloned from. TrackDecoder.EnsureMedia and
+    // CurrentlyPlayingControlViewModel use the same "://" test.
+    public static bool IsLocalFile(Track track) =>
+        track.Path is { } path && !path.Contains("://");
 
     // Album/EffectiveAlbumArtist, not directory - a normally-organized local
     // library happens to have one directory per album, but a *downloaded*

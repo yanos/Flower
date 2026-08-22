@@ -495,7 +495,7 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance),
             NullLogger<PlaylistControlViewModel>.Instance);
         return new CurrentlyPlayingControlViewModel(
-            playback, audio, library, NullLogger<CurrentlyPlayingControlViewModel>.Instance);
+            playback, audio, library, new AlbumArtLoader(null, null, NullLogger<AlbumArtLoader>.Instance), NullLogger<CurrentlyPlayingControlViewModel>.Instance);
     }
 
     private static Track T(string title) => new()
@@ -692,12 +692,11 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         Assert.Contains(nameof(vm.IsShuffleEnabled), raised);
     }
 
-    // A live peer-stream URL is not a filesystem path - reading it as one threw
-    // TagLib/IO exceptions per track change.
-    // A live peer-stream URL is skipped straight to no-art rather than being
-    // handed to TagLib as a filesystem path. Both routes end at AlbumArt=null,
-    // so the difference is only visible in whether a read was attempted at all
-    // - which is the entire cost being avoided, once per track change.
+    // A live peer-stream URL is a Path that no filesystem read can satisfy, and
+    // reading it as one threw TagLib/IO exceptions per track change. It still
+    // goes to the shared loader - that is where art for a track living on
+    // another machine comes from - but by the remote road, not the local one
+    // (see AlbumArtLoader.IsLocalFile).
     [AvaloniaFact]
     public void A_peer_stream_url_is_never_read_as_a_file_path()
     {
@@ -709,7 +708,8 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance),
             NullLogger<PlaylistControlViewModel>.Instance);
         var logger = new RecordingLogger<CurrentlyPlayingControlViewModel>();
-        var vm = new CurrentlyPlayingControlViewModel(playback, audio, library, logger);
+        var loader = new RecordingArtLoader();
+        var vm = new CurrentlyPlayingControlViewModel(playback, audio, library, loader, logger);
 
         playback.Play(streamed);
         Thread.Sleep(200); // the art load, if attempted, runs on a Task.Run
@@ -717,6 +717,107 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
 
         Assert.Null(vm.AlbumArt);
         Assert.DoesNotContain(logger.Messages, m => m.Contains("Could not read/decode"));
+        Assert.Equal([streamed], loader.Asked);
+    }
+
+    // The now-playing panel used to run its own filesystem-only art lookup, so a
+    // track with no local file - every track in a browser tab, and every
+    // not-yet-downloaded placeholder on a desktop - was skipped before anything
+    // was even attempted. Seen in a real tab as covers on every row (those go
+    // through AlbumArtLoader, which knows to fetch from the origin) and a blank
+    // square in the top bar.
+    [AvaloniaFact]
+    public void A_track_with_no_local_file_still_asks_for_its_art()
+    {
+        var placeholder = new Track { Title = "On A Server", Album = "Remote Album", Path = null };
+        var audio = new FakeAudioManager();
+        var library = new Library(new List<Track> { placeholder });
+        var loader = new RecordingArtLoader();
+        var vm = NowPlaying(placeholder, audio, library, loader);
+
+        vm.Playback.Play(placeholder);
+        Thread.Sleep(200);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal([placeholder], loader.Asked);
+    }
+
+    // Art arrives asynchronously now that it can come off the network, so the
+    // answer to a track the user has already skipped past must not overwrite
+    // the answer to the one actually playing - the same out-of-order hazard
+    // PlaylistControlViewModel guards when it resolves a stream URL.
+    [AvaloniaFact]
+    public void Art_that_arrives_after_the_track_changed_is_dropped()
+    {
+        var first = new Track { Title = "First", Album = "A", Path = null };
+        var second = new Track { Title = "Second", Album = "B", Path = null };
+        var audio = new FakeAudioManager();
+        var library = new Library(new List<Track> { first, second });
+        var loader = new RecordingArtLoader();
+        var vm = NowPlaying(first, audio, library, loader, new MainPlaylist(new List<Track> { first, second }));
+
+        loader.Gate = new TaskCompletionSource();
+        vm.Playback.Play(first);
+        vm.Playback.Play(second);
+        loader.Gate.SetResult();          // let the first track's stale load finish last
+        Thread.Sleep(200);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Null(vm.Vm.AlbumArt);
+        Assert.Equal([first, second], loader.Asked);
+    }
+
+    // Counts what was asked for rather than producing a bitmap: decoding a real
+    // image would test Skia, and the claim under test is only which tracks
+    // reach the shared loader at all.
+    private sealed class RecordingArtLoader()
+        : AlbumArtLoader(null, null, NullLogger<AlbumArtLoader>.Instance)
+    {
+        public List<Track> Asked { get; } = new();
+        public TaskCompletionSource? Gate { get; set; }
+
+        public override async Task<Avalonia.Media.Imaging.Bitmap?> LoadAsync(Track track)
+        {
+            lock (Asked)
+                Asked.Add(track);
+
+            if (Gate != null)
+                await Gate.Task;
+
+            return null;
+        }
+    }
+
+    // A URL already in hand, so playback starts on the calling stack exactly as
+    // it does for a local file - the deferred case has its own coverage in
+    // PlaylistPlaybackIntegrationTests.
+    private sealed class ImmediateStreamUrls : IStreamUrlResolver
+    {
+        public Task<string?> ResolveAsync(Track track) =>
+            Task.FromResult<string?>($"http://origin.local/rest/stream?id={track.OriginTrackId}");
+    }
+
+    private sealed record NowPlayingHarness(
+        CurrentlyPlayingControlViewModel Vm, PlaylistControlViewModel Playback)
+    {
+        public Avalonia.Media.Imaging.Bitmap? AlbumArt => Vm.AlbumArt;
+    }
+
+    private static NowPlayingHarness NowPlaying(
+        Track track, FakeAudioManager audio, Library library, AlbumArtLoader loader,
+        MainPlaylist? playlist = null)
+    {
+        // A placeholder is unplayable without one, so Play would return before
+        // ever changing the current track - see PlaylistControlViewModel's own
+        // note on why this dependency is nullable.
+        var playback = new PlaylistControlViewModel(
+            audio, playlist ?? new MainPlaylist(new List<Track> { track }), library, new AppSettings(),
+            new AppSettingsStore(NullLogger<AppSettingsStore>.Instance),
+            NullLogger<PlaylistControlViewModel>.Instance,
+            new ImmediateStreamUrls());
+        var vm = new CurrentlyPlayingControlViewModel(
+            playback, audio, library, loader, NullLogger<CurrentlyPlayingControlViewModel>.Instance);
+        return new NowPlayingHarness(vm, playback);
     }
 
     // Records what was logged so a test can assert a code path was never taken.
