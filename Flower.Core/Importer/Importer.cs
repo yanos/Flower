@@ -37,10 +37,10 @@ namespace Flower.Importer
             // No configured folders means an empty library, not "guess the
             // user's music folder". The folder list (Settings > Library) is the
             // whole of what the user has asked Flower to scan, so emptying it -
-            // by removing the last folder, or by turning off the iTunes
-            // integration, which drops Music.app's own media folder from the
-            // list (see AppSettingsStore.Load) - has to actually empty the
-            // library. Guessing here defeated both: on a default Mac setup
+            // which now takes removing the last folder by hand, that being the
+            // only thing that removes one (see SettingsViewModel.
+            // ApplyAppleMusicFolder) - has to actually empty the library.
+            // Guessing here defeated that: on a default Mac setup
             // Music.app's media folder sits *under* ~/Music, so falling back to
             // ~/Music re-scanned exactly the tracks that had just been removed.
             // The default folder a first run starts with is seeded into the

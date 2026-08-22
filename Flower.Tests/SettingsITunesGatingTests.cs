@@ -155,11 +155,33 @@ public class SettingsITunesGatingTests
         Assert.False(viewModel.ShowsITunesUnavailable);
     }
 
-    // Toggling the master switch is what puts Music.app's own media folder into
-    // the library-folder list (and takes it back out), on the server exactly as
-    // in the app - see SettingsViewModel.ApplyAppleMusicFolder.
+    // Turning the master switch on is what puts Music.app's own media folder
+    // into the library-folder list, on the server exactly as in the app - see
+    // SettingsViewModel.ApplyAppleMusicFolder.
     [Fact]
-    public async Task The_master_switch_adds_and_removes_the_music_folder_as_a_library_path()
+    public async Task The_master_switch_adds_the_music_folder_as_a_library_path()
+    {
+        const string folder = "/Users/x/Music/Music/Media.localized";
+        var viewModel = await LoadAsync(ServerCapabilities, new SettingsSnapshot
+        {
+            AppleMusicFolder = folder,
+            LibraryPaths = ["/music"],
+            IntegrateWithITunes = false,
+        });
+
+        viewModel.IntegrateWithITunes = true;
+
+        Assert.Contains(viewModel.LibraryPaths, row => row.Path == folder);
+    }
+
+    // ...and turning it back off leaves that folder exactly where it is. This is
+    // the whole point of the switch not owning the folder: unchecking it used to
+    // remove the folder, and for a library that is Music.app's folder and
+    // nothing else that meant declining two metadata imports silently emptied
+    // the library (a scan of no folders finds nothing - see Importer.Import).
+    // Removing the folder is Remove Folder's job.
+    [Fact]
+    public async Task Turning_the_master_switch_off_leaves_the_music_folder_in_the_library()
     {
         const string folder = "/Users/x/Music/Music/Media.localized";
         var viewModel = await LoadAsync(ServerCapabilities, new SettingsSnapshot
@@ -170,9 +192,8 @@ public class SettingsITunesGatingTests
         });
 
         viewModel.IntegrateWithITunes = false;
-        Assert.DoesNotContain(viewModel.LibraryPaths, row => row.Path == folder);
 
-        viewModel.IntegrateWithITunes = true;
         Assert.Contains(viewModel.LibraryPaths, row => row.Path == folder);
+        Assert.Contains(viewModel.LibraryPaths, row => row.Path == "/music");
     }
 }

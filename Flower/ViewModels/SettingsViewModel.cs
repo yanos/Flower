@@ -479,27 +479,32 @@ public sealed partial class SettingsViewModel : ViewModelBase
             SubsonicCredentials.Add(credential);
     }
 
-    // Turning the iTunes integration off also drops Music.app's media folder from
-    // the pending paths list (and turning it back on restores it), so the change
-    // is visible right here in the folders list instead of only taking effect on
-    // some later launch. Editing the pending list rather than saving directly
-    // keeps it cancellable and routes it through the same "did the paths change"
-    // rescan as Add/Remove Folder.
+    // Turning the iTunes integration on adds Music.app's media folder to the
+    // pending paths list immediately, so it shows up in the folders list right
+    // here instead of only appearing on some later launch. Editing the pending
+    // list rather than saving directly keeps it cancellable and routes it
+    // through the same "did the paths change" rescan as Add/Remove Folder.
+    //
+    // Turning it *off* deliberately leaves that folder where it is. It used to
+    // remove it, which meant unchecking one box silently emptied the entire
+    // library of anyone whose library is Music.app's folder and nothing else -
+    // no folders to scan means no tracks (see Importer.Import), so 16k songs
+    // disappeared as a side effect of declining two metadata imports. What this
+    // switch governs is whether Flower reaches into Music.app at all: adopting
+    // that folder in the first place, and the two per-track imports. A folder
+    // already in the list is a folder the user has, and taking it back out is
+    // the Remove Folder button's job, directly below it. Off is still what makes
+    // such a removal stick - see ITunesIntegration.ResolveMediaFolderToAdopt,
+    // which re-offers the folder on every load for as long as this is on.
     private void ApplyAppleMusicFolder()
     {
-        if (!IsLoaded || _snapshot.AppleMusicFolder is not { } folder)
+        if (!IsLoaded || !IntegrateWithITunes || _snapshot.AppleMusicFolder is not { } folder)
             return;
 
-        if (IntegrateWithITunes)
-        {
-            if (!_paths.Contains(folder, StringComparer.OrdinalIgnoreCase))
-                _paths.Add(folder);
-        }
-        else
-        {
-            _paths.RemoveAll(p => string.Equals(p, folder, StringComparison.OrdinalIgnoreCase));
-        }
+        if (_paths.Contains(folder, StringComparer.OrdinalIgnoreCase))
+            return;
 
+        _paths.Add(folder);
         RefreshPathRows();
     }
 
