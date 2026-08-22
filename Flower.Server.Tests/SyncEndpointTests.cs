@@ -218,4 +218,153 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
             await trustedPeers.RevokeAsync(device.Fingerprint);
         }
     }
+
+    // The return leg. A play reported here is stored on this server and has to
+    // come back out in the manifest, or a tab counts a play and then never sees
+    // it again - the count was kept and never served, which is how this looked
+    // in a real tab before SubsonicMapper.ToChild filled these two fields.
+    [Fact]
+    public async Task The_manifest_carries_this_servers_own_counts_and_last_played_back()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        var countBefore = track.PlayCount;
+
+        try
+        {
+            var report = new PlayReportDto(
+            [
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
+                    DateTimeOffset.UtcNow, Started: true, Completed: true),
+            ]);
+            await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.8",
+                body: JsonSerializer.Serialize(report));
+
+            var (_, body, _) = await SendAsync(device, "GET", "/api/flower/v1/library", "10.0.2.8");
+            var manifest = JsonSerializer.Deserialize<LibrarySyncManifestDto>(body)!;
+            var song = manifest.Songs.Single(s => s.Id == track.Id.ToKey());
+
+            // Under this server's own fingerprint - a client files it as this
+            // device's tally, not as its own. See Track.RemotePlayCounts.
+            var fingerprint = server.Services.GetRequiredService<DeviceSigningKey>().Fingerprint;
+            Assert.Equal(countBefore + 1, song.PlayCounts![fingerprint]);
+            Assert.NotNull(song.LastPlayed);
+        }
+        finally
+        {
+            track.PlayCount = countBefore;
+            track.LastPlayedAt = null;
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The two halves a browser tab reports separately, so the server ends up
+    // with the History a local player would have had - a skipped track stamped
+    // as played without its count claiming a listen. See IPlayReporter.
+    [Fact]
+    public async Task A_reported_play_counts_and_stamps_the_track_it_names()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Love Song");
+        var countBefore = track.PlayCount;
+
+        try
+        {
+            var report = new PlayReportDto(
+            [
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
+                    DateTimeOffset.UtcNow, Started: true, Completed: false),
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
+                    DateTimeOffset.UtcNow, Started: false, Completed: true),
+            ]);
+
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/plays", "10.0.2.5",
+                body: JsonSerializer.Serialize(report));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(countBefore + 1, track.PlayCount);
+            Assert.NotNull(track.LastPlayedAt);
+        }
+        finally
+        {
+            track.PlayCount = countBefore;
+            track.LastPlayedAt = null;
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // What makes the reporter's retry safe: a batch the server applied but
+    // whose response never came back is re-sent verbatim, and an increment
+    // applied twice is simply wrong. The event id is what stops it.
+    [Fact]
+    public async Task The_same_play_event_sent_twice_is_only_counted_once()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Alpha Song");
+        var countBefore = track.PlayCount;
+
+        try
+        {
+            var body = JsonSerializer.Serialize(new PlayReportDto(
+            [
+                new PlayEventDto("event-sent-twice", track.Id.ToKey(),
+                    DateTimeOffset.UtcNow, Started: true, Completed: true),
+            ]));
+
+            await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.6", body: body);
+            await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.6", body: body);
+
+            Assert.Equal(countBefore + 1, track.PlayCount);
+        }
+        finally
+        {
+            track.PlayCount = countBefore;
+            track.LastPlayedAt = null;
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // A tab whose library is stale, or one pointed at a different server's
+    // track. Nothing to count it against, and nothing to fail over either -
+    // the rest of the batch still lands.
+    [Fact]
+    public async Task A_play_of_a_track_this_server_does_not_have_is_ignored()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Beta Song");
+        var countBefore = track.PlayCount;
+
+        try
+        {
+            var report = new PlayReportDto(
+            [
+                new PlayEventDto(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToKey(),
+                    DateTimeOffset.UtcNow, Started: true, Completed: true),
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
+                    DateTimeOffset.UtcNow, Started: true, Completed: true),
+            ]);
+
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/plays", "10.0.2.7",
+                body: JsonSerializer.Serialize(report));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(countBefore + 1, track.PlayCount);
+        }
+        finally
+        {
+            track.PlayCount = countBefore;
+            track.LastPlayedAt = null;
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
 }

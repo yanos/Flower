@@ -185,6 +185,31 @@ public class LibraryTests
         Assert.Equal(0, oldTrack.PlayCount);
     }
 
+    // The browser head's case. PlaylistControlViewModel.ResolveForPlaybackAsync
+    // hands the audio manager a *clone* of the queued placeholder carrying a
+    // minted stream URL in Path, and that clone is what comes back through
+    // IncrementPlayCount/RecordPlayed - so resolving by path alone matched
+    // nothing and every play a tab made was counted onto an object thrown away
+    // at the next track change. Clone() keeps Id, which is what this resolves on.
+    [Fact]
+    public void A_played_clone_carrying_a_stream_url_still_counts_against_the_library_track()
+    {
+        var placeholder = new Track { Title = "On A Server", Path = null, OriginTrackId = "tr-7" };
+        var library = new Library(new List<Track> { placeholder });
+
+        var streaming = placeholder.Clone();
+        streaming.Path = "http://origin.local/rest/stream?id=tr-7&ticket=abc";
+
+        var incremented = library.IncrementPlayCount(streaming);
+        var played = library.RecordPlayed(streaming);
+
+        Assert.Same(placeholder, incremented);
+        Assert.Same(placeholder, played);
+        Assert.Equal(1, placeholder.PlayCount);
+        Assert.NotNull(placeholder.LastPlayedAt);
+        Assert.Equal(0, streaming.PlayCount);
+    }
+
     // Without Library's internal lock, concurrent int++ from multiple threads on
     // the same object is a classic lost-update race - some increments overwrite
     // each other instead of accumulating, so this would be flaky (occasionally

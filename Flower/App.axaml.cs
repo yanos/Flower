@@ -408,7 +408,17 @@ public partial class App : Application
                 sp.GetRequiredService<HttpClient>(),
                 origin.ToString(),
                 sp.GetRequiredService<IPeerCredentials>(),
-                sp.GetRequiredService<ILogger<Importer.OriginPlaylistWriter>>()));
+                sp.GetRequiredService<ILogger<Importer.OriginPlaylistWriter>>()))
+
+            // And what the tab *plays*, which until now changed here and
+            // stayed here - lost at the next refresh, since a tab's filesystem
+            // is an in-memory one. Same premise again: a play of the server's
+            // track is the server's play. See IPlayReporter.
+            .AddSingleton<Importer.IPlayReporter>(sp => new Importer.OriginPlayReporter(
+                sp.GetRequiredService<HttpClient>(),
+                origin.ToString(),
+                sp.GetRequiredService<IPeerCredentials>(),
+                sp.GetRequiredService<ILogger<Importer.OriginPlayReporter>>()));
     }
 
     // The one platform fork the audio pipeline needs.
@@ -640,6 +650,15 @@ public partial class App : Application
         var playlistWriter = provider.GetService<Importer.IPlaylistWriter>();
         if (playlistWriter != null)
             library.PlaylistsChanged += (_, _) => playlistWriter.Schedule(library.Playlists);
+
+        // Likewise the browser only - see IPlayReporter. TrackStatsChanged is
+        // already the "one track's counters moved" signal both halves of a
+        // play raise (the played-at stamp when it starts, the count bump when
+        // it ends naturally), and it carries which half it was, so this needs
+        // no second subscription and no knowledge of the playback pipeline.
+        var playReporter = provider.GetService<Importer.IPlayReporter>();
+        if (playReporter != null)
+            library.TrackStatsChanged += (_, e) => playReporter.Report(e.Track, e.Change);
 
         _ = Task.Run(async () =>
         {

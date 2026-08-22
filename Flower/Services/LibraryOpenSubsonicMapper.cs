@@ -193,7 +193,8 @@ public static class LibraryOpenSubsonicMapper
         {
             [selfFingerprint] = track.PlayCount + track.ImportedPlayCount,
         },
-        DateAdded: track.DateAdded);
+        DateAdded: track.DateAdded,
+        LastPlayed: track.LastPlayedAt);
 
     private static int? ParseYear(string? year) => int.TryParse(year, out var y) ? y : null;
 }

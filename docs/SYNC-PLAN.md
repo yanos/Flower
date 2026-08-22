@@ -694,12 +694,95 @@ server, not just its playlist edits — is the next real browser feature, and it
 a different shape from the playlist writer: those are per-event increments to
 merge, not a set to replace wholesale.
 
+### A tab that listens — done
+
+The last browser item: a play in a tab changed a counter in the tab and stayed
+there, lost at the next refresh (a tab's filesystem is an in-memory WASM one) and
+invisible to every other client of the same server. `IPlayReporter` /
+`OriginPlayReporter` is the third road out of a tab, after `IMusicImporter` in and
+`IPlaylistWriter` back, and it rests on the same premise as the writer: a tab has
+no durable identity and nothing of its own to contribute, so a play of the
+server's track is the server's play.
+
+**Why events and not a count.** The obvious instrument was the existing
+`Track.RemotePlayCounts` G-Counter, which two desktops already merge by per-key
+max. It is the wrong one here, and interestingly so: max-merge only converges
+because each device's own total never regresses. A tab's does — it starts at zero
+on every refresh — so max-merge would settle on "whatever the highest single
+session happened to reach" and silently discard everything after it. A counter
+needs durable storage to state a total from, and the tab is the one participant
+that has none. So the tab reports increments as they happen and the server, which
+does have storage, keeps the running total.
+
+**The two halves stay separate on the wire.** Flower deliberately stamps
+`LastPlayedAt` when a track starts and bumps `PlayCount` when it ends naturally
+(see `Track.LastPlayedAt`), so a skip is History without being a listen.
+Collapsing them into one scrobble-shaped event — which is what `/rest/scrobble`
+does, reasonably, for a single request — would have made a tab's History and the
+server's disagree in *content*: a skipped track would appear in one and not the
+other. `Library.TrackStatsChange` is a `[Flags]` enum carried on
+`TrackStatsChanged`, so the reporter can tell them apart and `Library.RecordPlay`
+can apply whichever halves a request names.
+
+Three things the reporter has to get right that a POST-per-play would not:
+
+- **Addressing.** The server knows the track by `OriginTrackId`, not by the local
+  `Guid` a tab minted for its own placeholder. A track carrying no origin id came
+  from somewhere else and is dropped rather than guessed at.
+- **Backlog.** Unlike a rejected playlist edit, a swallowed play is not still on
+  screen for the user to make again — so this one *does* retry, where
+  `OriginPlaylistWriter` deliberately does not. Events queue, one POST is in
+  flight at a time, and a failed batch goes back to the front to leave with the
+  next play. Bounded at 500 events, oldest dropped first.
+- **Duplicates, which that retry creates.** A batch the server applied but whose
+  response never arrived is re-sent, and an increment applied twice is wrong in a
+  way a wholesale replacement never is. Each event carries an id;
+  `PlayReportService` drops one it has already applied. Deliberately not
+  `NonceReplayGuard` despite the identical shape — that one's retention is tied to
+  the signature validity window, and sharing it would make either window wrong for
+  the other.
+
+**The bug the hand-run found first was on the near side.** A tab's plays were not
+reaching the tab's own library either. `Library.ResolveCurrent` matched the played
+track against the library *by path*, and the track that comes back through
+`IncrementPlayCount` on a streaming head is the clone carrying a minted stream URL
+— which matches nothing. Every play a tab made was counted onto an object thrown
+away at the next track change. It now resolves by `Id` first (which `Clone()`
+preserves for exactly this kind of reason) and falls back to path, which is still
+needed: a rescan mints brand-new `Id`s, so a caller holding a pre-rescan reference
+can only be matched by the file it names.
+
+**And the return leg, which is what makes any of it visible.** Reporting worked
+and a fresh tab still showed an empty Plays column, because the server stored the
+counts and never served them. `SubsonicMapper.ToChild` — the server's copy of a
+mapper the app also has — simply never filled `Child.PlayCounts`, where
+`LibraryOpenSubsonicMapper.ToChild` always had. Now it does, under this server's
+own fingerprint. `Child` also gained `LastPlayed`, the History counterpart to the
+`DateAdded` field beside it; without it a receiving head's History is empty until
+it plays something itself, which for a tab means after every refresh. The `/rest`
+browse endpoints deliberately pass no fingerprint and send no counts — that is
+what a third-party Subsonic client expects, and a Flower client pulls its catalog
+through the bulk route anyway.
+
+Hand-run against a real server and a real tab: playing a track logged `Applied 1
+of 1 play event(s)` and wrote `last_played_at` with `play_count` still 0; letting
+it run to the end bumped the count to 1 and stamped the auto-advanced next track
+as started. The tab's own Plays and Last Played columns filled in — which before
+the identity fix they never did — and a fresh tab against the same server showed
+Last Played carried back in the manifest.
+
+**Still out of scope, and now honestly so: ratings.** There is no rating on
+`Track` and no UI that sets one, so there is nothing for a tab to report.
+`Starred`/`StarredAt` exists and `/rest/star` sets it, but no client-side UI does,
+so it is a server-side flag with no browser story to build yet. When a liked-songs
+view lands, starring travels this same road.
+
 ### Suggested build order
 
 1. **Done.** Extract `Flower.Core` (mechanical git-mv + reference fixups; confirm `Flower.Tests` still passes unchanged).
 2. **Done.** Scaffold `Flower.Server`: SQLite schema (originally EF Core, since moved onto `Flower.Core`'s shared layer), importer wired up, OpenSubsonic endpoints working against a real Navidrome-compatible client. See "`Flower.Server` v1" below.
 3. **Done.** Pairing-code endpoint + admin auth + `LanGuard` CGNAT allowance + rate limiting on the redeem route — get a real device pairing against a real headless instance before building UI on top of it. See "Pairing-code endpoint, admin auth, `LanGuard` — done" above.
-4. Scaffold `Flower.Web`. **Done so far:** existing Views/ViewModels building and rendering in-browser (see "`Flower.Web` scaffolding — rendering milestone done" above), real audio playback via `WebAudioManager`, and the admin settings screen with the pairing-code "Add device" button, served by `Flower.Server` itself (see "The server's settings page in the browser — done" above). `RemoteLibraryImporter` itself, over the bulk `/api/flower/v1/library` manifest, is built and shared with the desktop (see "The browser's library" above — *not* the Subsonic-shaped importer earlier revisions of this doc called for). The server-side gate that lets a browser tab reach it without a signing key is built too (seam 3). Stream-ticket playback (seam 4), the `/info` fingerprint read and the browser DI wiring (seam 5) are built too, so a browser tab now has a real library and plays from it. The first end-to-end run against a real server and a real tab has now happened — see "The first browser hand-run" above. Album art and playlists followed it (see those two sections). Letting a tab write followed (see "A tab that writes" above), so the browser head is no longer read-only. Browse/search/queue was then checked end to end in a real tab and found already working, bar the now-playing album art (see "Browsing a tab like a jukebox" above). **Still open:** a tab's play counts, ratings and last-played reaching the server.
+4. Scaffold `Flower.Web`. **Done so far:** existing Views/ViewModels building and rendering in-browser (see "`Flower.Web` scaffolding — rendering milestone done" above), real audio playback via `WebAudioManager`, and the admin settings screen with the pairing-code "Add device" button, served by `Flower.Server` itself (see "The server's settings page in the browser — done" above). `RemoteLibraryImporter` itself, over the bulk `/api/flower/v1/library` manifest, is built and shared with the desktop (see "The browser's library" above — *not* the Subsonic-shaped importer earlier revisions of this doc called for). The server-side gate that lets a browser tab reach it without a signing key is built too (seam 3). Stream-ticket playback (seam 4), the `/info` fingerprint read and the browser DI wiring (seam 5) are built too, so a browser tab now has a real library and plays from it. The first end-to-end run against a real server and a real tab has now happened — see "The first browser hand-run" above. Album art and playlists followed it (see those two sections). Letting a tab write followed (see "A tab that writes" above), so the browser head is no longer read-only. Browse/search/queue was then checked end to end in a real tab and found already working, bar the now-playing album art (see "Browsing a tab like a jukebox" above). A tab's play counts and last-played now reach the server, and come back out in its manifest, through `IPlayReporter` (see "A tab that listens" above) — which leaves ratings, and only because no rating exists to report yet.
 5. Docker packaging + docs: the "expose this over Tailscale" setup guide as the primary documented remote-access path, LettuceEncrypt as the secondary one.
 
 ## Mobile-specific note: streaming vs. background sync

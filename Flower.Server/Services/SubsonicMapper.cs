@@ -27,7 +27,15 @@ public static class SubsonicMapper
     public static string ContentTypeOf(Track track) =>
         ContentTypesBySuffix.GetValueOrDefault(SuffixOf(track), "application/octet-stream");
 
-    public static Child ToChild(Track track)
+    // selfFingerprint is this server's own DeviceIdentity.Fingerprint, and is
+    // what makes the PlayCounts field below meaningful - it names whose tally
+    // the count is. Optional because only the callers whose response a Flower
+    // client *merges into its own library* need it: GET /api/flower/v1/library
+    // (see SyncEndpoints). The /rest browse endpoints pass nothing and send no
+    // counts, which is what they did before and what a third-party Subsonic
+    // client expects; a Flower client pulls its catalog through the bulk route,
+    // not through those.
+    public static Child ToChild(Track track, string? selfFingerprint = null)
     {
         var albumArtist = track.EffectiveAlbumArtist;
         var suffix = SuffixOf(track);
@@ -61,7 +69,21 @@ public static class SubsonicMapper
             BitRate: track.Bitrate > 0 ? track.Bitrate : null,
             CoverArt: SubsonicIdentity.AlbumId(albumArtist, track.Album),
             Starred: track.Starred,
-            DateAdded: track.DateAdded);
+            DateAdded: track.DateAdded,
+            // The same snapshot the app's own LibraryOpenSubsonicMapper.ToChild
+            // sends, and deliberately the same expression: this server's own
+            // tally under its own name, plus every other device's count it has
+            // learned. It sent none at all until now, which meant a browser tab
+            // could report a play here (see IPlayReporter) and then never see
+            // it again - the count was stored and never served, so the next tab
+            // showed an empty Plays column for a track it had just played.
+            PlayCounts: selfFingerprint == null
+                ? null
+                : new Dictionary<string, int>(track.RemotePlayCounts)
+                {
+                    [selfFingerprint] = track.PlayCount + track.ImportedPlayCount,
+                },
+            LastPlayed: track.LastPlayedAt);
     }
 
     private static long SizeOf(Track track)

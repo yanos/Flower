@@ -24,6 +24,7 @@ namespace Flower.Server.Endpoints;
 //   GET  /library         - the whole track catalog in one response
 //   GET  /playlists       - this server's playlists, for the merge
 //   POST /playlists/apply - the merged result the client resolved
+//   POST /plays           - what a browser tab played, to count here
 //
 // Not here, and not accidentally omitted: pair-request (this server pairs by
 // code instead - see PairingEndpoints), unpair-notify (nothing server-side
@@ -111,6 +112,7 @@ public static class SyncEndpoints
         sync.MapGet("/library", GetLibrary);
         sync.MapGet("/playlists", GetPlaylists);
         sync.MapPost("/playlists/apply", ApplyPlaylists);
+        sync.MapPost("/plays", ReportPlays);
 
         // The same album art /rest/getCoverArt serves, behind this group's gate
         // instead of the Subsonic one. A browser tab holds a session token and
@@ -148,7 +150,12 @@ public static class SyncEndpoints
             var songs = library.Snapshot.Albums
                 .SelectMany(album => album.Tracks)
                 .Where(track => track.Path != null)
-                .Select(SubsonicMapper.ToChild)
+                // Under this server's own fingerprint, so a client merging
+                // this manifest files the counts as *this device's* rather
+                // than its own - see Track.RemotePlayCounts, and
+                // SubsonicMapper.ToChild for why the /rest browse endpoints
+                // deliberately do not pass one.
+                .Select(track => SubsonicMapper.ToChild(track, signingKey.Fingerprint))
                 .ToList();
             return JsonSerializer.Serialize(new LibrarySyncManifestDto(signingKey.Fingerprint, songs), JsonOptions);
         });
@@ -183,6 +190,36 @@ public static class SyncEndpoints
         loggerFactory.CreateLogger(typeof(SyncEndpoints)).LogInformation(
             "Applied {Count} playlist(s) pushed by {Fingerprint}",
             playlists.Count, context.Items[AuthenticatedFingerprintKey]);
+
+        return Results.NoContent();
+    }
+
+    // A browser tab's plays, counted here because there is nowhere else for
+    // them to be counted - see IPlayReporter. Not the peer-to-peer path: two
+    // desktops exchange durable per-device totals through the library manifest
+    // instead (Track.RemotePlayCounts), which is the better instrument for
+    // both sides that can keep one.
+    //
+    // A tab is authenticated by session token, not by signature, which is what
+    // makes this route reachable from one at all - the same widening GET
+    // /library already relies on (see PeerOrSessionAuth). Worth naming what
+    // that means here specifically: a caller through this route can inflate
+    // this server's play counts. That is a nuisance, not a disclosure, and it
+    // is bounded by the same session the tab needs to see the library at all.
+    private static async Task<IResult> ReportPlays(
+        HttpContext context, PlayReportService plays, ILoggerFactory loggerFactory)
+    {
+        using var reader = new StreamReader(context.Request.Body);
+        var report = JsonSerializer.Deserialize<PlayReportDto>(
+            await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+        if (report == null)
+            return Results.BadRequest();
+
+        var applied = plays.Apply(report, DateTimeOffset.UtcNow);
+
+        loggerFactory.CreateLogger(typeof(SyncEndpoints)).LogInformation(
+            "Applied {AppliedCount} of {ReportedCount} play event(s) reported by {Fingerprint}",
+            applied, report.Plays.Count, context.Items[AuthenticatedFingerprintKey]);
 
         return Results.NoContent();
     }
