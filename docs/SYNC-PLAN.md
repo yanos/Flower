@@ -688,11 +688,11 @@ Also fixed while in there: the subtitle rendered a bare `()` after the album for
 track with no year. Possible on any head, but caught here, where every row comes
 from a server whose own import may not have had a year to give.
 
-**Still out of scope, unchanged:** play counts, ratings and last-played still
-change in a tab and stay there. That — a tab whose *listening* reaches the
-server, not just its playlist edits — is the next real browser feature, and it is
-a different shape from the playlist writer: those are per-event increments to
-merge, not a set to replace wholesale.
+**Out of scope when this section was written, and built straight after:** play
+counts and last-played used to change in a tab and stay there. A tab whose
+*listening* reaches the server was the next real browser feature, and it was a
+different shape from the playlist writer — per-event increments, not a set to
+replace wholesale. See "A tab that listens" below.
 
 ### A tab that listens — done
 
@@ -868,4 +868,11 @@ All numbered steps through Phase 4 are **done**: `CROSS-PLATFORM-PLAN.md` item #
 
 Build order step 4's first two parts - `Flower.Web` scaffolding (existing Views/ViewModels rendering in-browser) and real audio playback (`WebAudioManager`) - are also **done** (see "`Flower.Web` scaffolding — rendering milestone done" and "`WebAudioManager` — real browser playback, done" above). Two real architectural findings along the way: .NET-for-WASM has no asymmetric crypto support at all, so `MainViewModel`'s P2P sync dependencies (`DeviceSigningKey` and everything built on it) are now nullable/defaulted rather than hard requirements, gated on `OperatingSystem.IsBrowser()`; and the browser audio path couldn't reuse `IAudioSink`/`GaplessCoordinator` at all (LibVLC-backed decode has no WASM build either), so it's a separate `IAudioManager` implementation driving a plain `<audio>` element instead.
 
-**Remaining work:** fold the client into the `IMusicImporter` abstraction as a user-facing settings choice; add Jellyfin as a second `IMusicImporter` backend; real-device Android download-path verification and end-to-end testing against a real peer; and, now the next initiative, the rest of build order step 4 - a `RemoteLibraryImporter` so the browser library isn't always empty, reached through a shared `IPeerCredentials` seam and an admin-session fallback on the sync and stream-ticket routes (designed in full under "The browser's library" above; note this supersedes the `SubsonicLibraryImporter` earlier revisions called for, which was the wrong shape - a true Subsonic importer is only needed for third-party servers), plus stream-ticket playback, album art and the `/rest/*` auth question for third-party clients - before Docker packaging + Tailscale/LettuceEncrypt docs (step 5).
+Build order step 4 is now **done in full**: on top of scaffolding and playback, a browser tab has a real library (`RemoteLibraryImporter` over the bulk manifest, shared with the desktop), album art, playlists, stream-ticket playback, browse/search/queue, the ability to write its playlist edits back, and — last — its own listening reaching the server through `IPlayReporter` and coming back out in the manifest. See the per-feature sections above.
+
+**Remaining work:**
+
+- **Step 5, the next initiative:** Docker packaging + docs — the "expose this over Tailscale" setup guide as the primary documented remote-access path, LettuceEncrypt as the secondary one.
+- **Ratings.** Deferred honestly rather than by omission: nothing on `Track` holds a rating and no UI sets one, so a tab has nothing to report. `Starred`/`StarredAt` exists server-side and `/rest/star` sets it, with no client UI. When a liked-songs view lands, starring travels the same road `IPlayReporter` just built.
+- **`IMusicImporter` as a user-facing settings choice**, folding the OpenSubsonic client in alongside the local scanner; and **Jellyfin as a second backend** on the same seam.
+- **Real-device verification** still owed: the Android download path, and end-to-end sync against a real second peer rather than a test harness.
