@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 using Avalonia.Threading;
 
@@ -31,6 +32,13 @@ namespace Flower.ViewModels
         // position; ResolveQueueIndex falls back to IndexOf there, which is no
         // worse than what this replaced. See docs/ARCHITECTURE-REVIEW.md 0.2.
         private int _queueIndex = -1;
+
+        // Bumped by every Play. A start deferred while its stream URL is minted
+        // (see StartWhenResolved) carries the generation it was requested at and
+        // gives up if anything has been started since - otherwise a URL that
+        // took two seconds to arrive would hijack playback from whatever the
+        // user asked for in the meantime.
+        private int _playGeneration;
         private Track? _selectedTrack;
         private bool _isRepeatEnabled;
         private bool _isShuffleEnabled;
@@ -273,7 +281,7 @@ namespace Flower.ViewModels
             // gapless IAudioManager needs to hear about it even though the
             // currently playing track itself isn't changing.
             if (CurrentlyPlayingTrack is { } currentTrack)
-                _audioManager.SetUpcoming(ResolveForPlayback(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track));
+                ArmUpcoming(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track);
         }
 
         public void ToggleShuffle()
@@ -284,7 +292,7 @@ namespace Flower.ViewModels
             _ = _appSettingsStore.SaveAsync(_appSettings);
 
             if (CurrentlyPlayingTrack is { } currentTrack)
-                _audioManager.SetUpcoming(ResolveForPlayback(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track));
+                ArmUpcoming(GetUpcomingEntry(currentTrack, ResolveQueueIndex(currentTrack)).Track);
         }
 
         // What should play after the entry at currentIndex, given the current
@@ -364,6 +372,10 @@ namespace Flower.ViewModels
                 ? queueIndex
                 : IndexOfInQueue(track);
 
+            // Every start of playback ages out any earlier one still waiting on
+            // a stream URL - see StartWhenResolved.
+            var generation = ++_playGeneration;
+
             // Every way a track can start playing arrives here - a double-
             // clicked row, Next/Previous, PlayOrPause's fallback, auto-advance
             // on EndReached, the skip-on-failure handler - so this is the one
@@ -371,10 +383,23 @@ namespace Flower.ViewModels
             // MainViewModel.PlayResolvingPlaceholder, above this class, and the
             // half of those callers that never went through MainViewModel
             // crashed the decoder instead (see IStreamUrlResolver).
-            if (ResolveForPlayback(track) is not { } playable)
+            var pending = ResolveForPlaybackAsync(track);
+            if (!pending.IsCompleted)
+            {
+                StartWhenResolved(pending, generation);
                 return;
-            track = playable;
+            }
 
+            if (pending.Result is not { } playable)
+                return;
+
+            Start(playable);
+        }
+
+        // Everything after the track is known to be playable. Split out only so
+        // the deferred path below can rejoin here rather than restating it.
+        private void Start(Track track)
+        {
             _logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, track.Path);
             SelectedTrack = track;
             CurrentlyPlayingTrack = track;
@@ -382,7 +407,7 @@ namespace Flower.ViewModels
 
             // Arms decode-ahead for whichever track should follow this one,
             // so the gapless pipeline can splice it in with no gap.
-            _audioManager.SetUpcoming(ResolveForPlayback(GetUpcomingEntry(track, _queueIndex).Track));
+            ArmUpcoming(GetUpcomingEntry(track, _queueIndex).Track);
 
             // Drives the History sidebar view - see Track.LastPlayedAt/
             // Library.RecordPlayed for why this stamps here rather than
@@ -390,6 +415,55 @@ namespace Flower.ViewModels
             // Raises TrackStatsChanged, not TracksUpdated - same reasoning as
             // the EndReached handler above.
             _library.RecordPlayed(track);
+        }
+
+        // The browser path: the stream URL is a round trip away (a ticket has to
+        // be minted for this exact track - see StreamTicketUrlResolver), so the
+        // start finishes when it lands instead of on this stack. Every other
+        // head resolves synchronously and never reaches here.
+        //
+        // Back onto the UI thread, because Start touches observable properties
+        // the view is bound to. The generation check is what makes a slow
+        // resolve safe: pressing Next twice while the first URL is still in
+        // flight must not have the first track suddenly take over once it
+        // arrives - only the most recent request may still start something.
+        private void StartWhenResolved(Task<Track?> pending, int generation)
+        {
+            _ = pending.ContinueWith(resolved => Dispatcher.UIThread.Post(() =>
+            {
+                if (generation != _playGeneration)
+                {
+                    _logger.LogDebug("Discarding a stream URL that arrived after another track was started");
+                    return;
+                }
+
+                if (resolved.Result is { } playable)
+                    Start(playable);
+            }));
+        }
+
+        // Hands the audio pipeline whatever should follow the current track.
+        // Deferred exactly like the start above when the URL isn't in hand yet -
+        // which is also what primes the browser's ticket cache, so auto-advance
+        // onto a streamed track normally finds a URL already minted rather than
+        // pausing for one.
+        private void ArmUpcoming(Track? upcoming)
+        {
+            var pending = ResolveForPlaybackAsync(upcoming);
+            if (pending.IsCompleted)
+            {
+                _audioManager.SetUpcoming(pending.Result);
+                return;
+            }
+
+            var generation = _playGeneration;
+            _ = pending.ContinueWith(resolved => Dispatcher.UIThread.Post(() =>
+            {
+                // Nothing to arm for a track that is no longer the current one's
+                // successor.
+                if (generation == _playGeneration)
+                    _audioManager.SetUpcoming(resolved.Result);
+            }));
         }
 
         // A track ready to hand to IAudioManager, or null if it is not playable
@@ -404,12 +478,20 @@ namespace Flower.ViewModels
         // queue is concerned. A differing Path once made the copy compare
         // unequal to the queued placeholder, so IndexOf returned -1 and
         // auto-advance jumped back to the front of the queue.
-        private Track? ResolveForPlayback(Track? track)
+        //
+        // A task because one head cannot answer without a network round trip -
+        // see IStreamUrlResolver. Everywhere else the returned task is already
+        // completed and playback still starts on the caller's own stack.
+        private async Task<Track?> ResolveForPlaybackAsync(Track? track)
         {
             if (track == null || track.Path != null)
                 return track;
 
-            if (_streamUrlResolver?.Resolve(track) is not { } streamUrl)
+            string? streamUrl = null;
+            if (_streamUrlResolver != null)
+                streamUrl = await _streamUrlResolver.ResolveAsync(track);
+
+            if (streamUrl == null)
             {
                 // Already logged by the resolver, with the actual reason.
                 _logger.LogWarning("Not playing {Title}: it is not downloaded and no stream URL could be built", track.Title);
