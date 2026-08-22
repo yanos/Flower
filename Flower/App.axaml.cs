@@ -215,6 +215,8 @@ public partial class App : Application
 
             // The platform hook wins when a head has installed one (Android's
             // MediaStore importer); otherwise the shared filesystem scanner.
+            // The browser branch below replaces this outright - there are no
+            // folders to scan in a sandbox, and its library is a server's.
             .AddSingleton(sp => Importer.PlatformMusicImporter.Current
                                 ?? new Importer.Importer(sp.GetRequiredService<ILogger<Importer.Importer>>()))
 
@@ -270,7 +272,10 @@ public partial class App : Application
         // of them as nullable, defaulted constructor parameters specifically to
         // accommodate that (see its own doc comment).
         if (OperatingSystem.IsBrowser())
+        {
+            RegisterBrowserServices(services);
             return;
+        }
 
         services
             // This device's cryptographic identity (see DeviceSigningKey/
@@ -311,6 +316,72 @@ public partial class App : Application
             // optional dependency (see IStreamUrlResolver) precisely so the
             // browser head, which has neither, still constructs.
             .AddSingleton<IStreamUrlResolver, PeerStreamUrlResolver>();
+    }
+
+    // Everything the browser head has instead of the peer-to-peer stack above.
+    //
+    // A tab is not a device: it cannot sign (no asymmetric crypto under WASM),
+    // cannot discover (no mDNS from a sandbox), and has no folders to scan. What
+    // it has is one server - the origin it was served from - and one credential,
+    // the session token that server minted and put in the page URL. Those two
+    // facts are the whole of this method: a credential built from the token, a
+    // library pulled from the origin, and stream URLs minted against it.
+    //
+    // Registered last, so these win over the shared registrations above for the
+    // services they replace (IMusicImporter in particular).
+    private static void RegisterBrowserServices(IServiceCollection services)
+    {
+        // Read here rather than where it is used because reading it consumes it
+        // - see BrowserSession.
+        var session = BrowserSession.FromPageUrl();
+        services.AddSingleton(session);
+
+        if (session.Token == null)
+        {
+            // A tab opened by hand rather than through the desktop client's
+            // "Server Settings..." button. It has no authority over the server,
+            // so it gets none of what follows and shows an empty library - which
+            // is honest, and is what it showed before any of this existed. Said
+            // explicitly rather than by omission: the registration this replaces
+            // is the filesystem scanner, which would go looking for a music
+            // folder inside a browser sandbox.
+            services.AddSingleton<Importer.IMusicImporter>(_ => new Importer.EmptyLibraryImporter());
+            return;
+        }
+
+        var origin = BrowserLocation.Origin;
+
+        services
+            // One shared client, which under WASM is a thin wrapper over the
+            // browser's own fetch stack rather than anything holding sockets -
+            // so the usual reasons not to register an HttpClient as a singleton
+            // do not apply here, and there is nothing to dispose.
+            .AddSingleton(_ => new HttpClient())
+
+            // The browser's entire authentication story - see
+            // AdminSessionCredentials. Registered under both its own type and
+            // the interface so the settings overlay can reach the token itself.
+            .AddSingleton(new AdminSessionCredentials(session.Token))
+            .AddSingleton<IPeerCredentials>(sp => sp.GetRequiredService<AdminSessionCredentials>())
+
+            // The library: the origin server's catalog, as placeholders. This is
+            // the registration that makes "local files" versus "a self-hosted
+            // server" a choice of IMusicImporter rather than a second code path,
+            // which is what that abstraction was introduced for.
+            .AddSingleton<Importer.IMusicImporter>(sp => new Importer.OriginLibraryImporter(
+                sp.GetRequiredService<HttpClient>(),
+                origin.ToString(),
+                sp.GetRequiredService<IPeerCredentials>(),
+                sp.GetRequiredService<ILogger<Importer.RemoteLibraryImporter>>(),
+                sp.GetRequiredService<ILogger<Importer.OriginLibraryImporter>>()))
+
+            // Playback: a ticket per track, because an <audio> element cannot
+            // carry credentials of its own - see StreamTicketUrlResolver.
+            .AddSingleton<IStreamUrlResolver>(sp => new StreamTicketUrlResolver(
+                sp.GetRequiredService<HttpClient>(),
+                origin,
+                sp.GetRequiredService<IPeerCredentials>(),
+                sp.GetRequiredService<ILogger<StreamTicketUrlResolver>>()));
     }
 
     // The one platform fork the audio pipeline needs.
@@ -521,66 +592,78 @@ public partial class App : Application
             networkDiscovery.Start(syncHttpServer.BoundPort ?? SyncHttpServer.DefaultPort);
         }
 
-        // Rescan the music folder in the background while the UI is already
-        // showing. Meaningless under WASM - there's no local music folder to
-        // scan in a browser sandbox; Flower.Web's library instead comes from
-        // Flower.Server via a SubsonicLibraryImporter (IMusicImporter), not yet
-        // built (see SYNC-PLAN.md) - until then the browser head just starts
-        // with an empty library rather than running this against nothing.
-        if (!OperatingSystem.IsBrowser())
-        {
-            var importer = provider.GetRequiredService<Importer.IMusicImporter>();
-            var mainPlaylist = provider.GetRequiredService<MainPlaylist>();
+        // Refresh the library in the background while the UI is already showing.
+        //
+        // Whatever IMusicImporter is registered: folders on disk for a desktop
+        // or phone, the origin server's catalog for a browser tab (see
+        // RegisterBrowserServices). This used to be skipped outright under WASM,
+        // back when the only importer was a filesystem scanner and there was
+        // nothing for the browser to scan - the sole remaining fork is the two
+        // iTunes syncs below, which are about *this* machine's music library and
+        // mean nothing for a catalog pulled off a server.
+        var importer = provider.GetRequiredService<Importer.IMusicImporter>();
+        var isLocalImporter = importer.ScansLocalFiles;
+        var mainPlaylist = provider.GetRequiredService<MainPlaylist>();
 
-            _ = Task.Run(async () =>
+        _ = Task.Run(async () =>
+        {
+            var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");
+            // Covers the whole sequence below, not just the two iTunes syncs'
+            // own brief individual scopes - the rescan itself is the longest
+            // part (~9s against a large real library) and previously had no
+            // busy-spinner coverage of its own at all, which is why the
+            // spinner was so easy to miss at startup.
+            using var busy = mainViewModel.BeginBusyScope("Refreshing Library");
+            try
             {
-                var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");
-                // Covers the whole sequence below, not just the two iTunes syncs'
-                // own brief individual scopes - the rescan itself is the longest
-                // part (~9s against a large real library) and previously had no
-                // busy-spinner coverage of its own at all, which is why the
-                // spinner was so easy to miss at startup.
-                using var busy = mainViewModel.BeginBusyScope("Refreshing Library");
-                try
+                // A remote catalog has no paths, and logging this device's
+                // (which still default to ~/Music even where nothing can read
+                // it) would misdescribe what is about to happen.
+                if (isLocalImporter)
                 {
                     rescanLogger.LogInformation("Startup rescan starting for paths: {LibraryPaths}", string.Join(", ", appSettings.LibraryPaths));
-                    var stopwatch = Stopwatch.StartNew();
-                    var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
-                    rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
-
-                    // Update the playlist first so navigation is consistent when TracksUpdated fires
-                    mainPlaylist.ReplaceAll(freshTracks);
-                    // Persisted by UpdateTracks itself - see Library's
-                    // ITrackStore. Flower.Server's rescan is the same two
-                    // lines for the same reason.
-                    library.UpdateTracks(freshTracks);
-                    rescanLogger.LogInformation("Library saved ({TrackCount} tracks)", library.Tracks.Count);
-
-                    // SyncITunesPlayCountAsync/SyncITunesDateAddedAsync each do their
-                    // own save (either may run again later via its own Settings
-                    // checkbox, independent of this startup rescan) and layer their
-                    // own more specific BusyMessage on top of this outer scope's.
-                    // Both gated on the master IntegrateWithITunes switch first -
-                    // with it off, Flower ignores Music.app entirely, whatever
-                    // these two remember individually. Asked of
-                    // ITunesIntegration rather than spelled out here, because
-                    // the server gates its own imports on the same rule.
-                    if (Flower.Importer.ITunesIntegration.ShouldSyncPlayCount(appSettings))
-                        await mainViewModel.SyncITunesPlayCountAsync();
-                    if (Flower.Importer.ITunesIntegration.ShouldSyncDateAdded(appSettings))
-                        await mainViewModel.SyncITunesDateAddedAsync();
                 }
-                catch (Exception ex)
+                else
                 {
-                    // Without this, a failure here (e.g. a library path became
-                    // unreadable) would just be an unobserved task fault - logged
-                    // above via TaskScheduler.UnobservedTaskException, eventually,
-                    // but only once the GC finalizes the task; log it immediately
-                    // here instead.
-                    rescanLogger.LogError(ex, "Startup rescan failed");
+                    rescanLogger.LogInformation("Startup library refresh starting from the remote catalog");
                 }
-            });
-        }
+
+                var stopwatch = Stopwatch.StartNew();
+                var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
+                rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
+
+                // Update the playlist first so navigation is consistent when TracksUpdated fires
+                mainPlaylist.ReplaceAll(freshTracks);
+                // Persisted by UpdateTracks itself - see Library's
+                // ITrackStore. Flower.Server's rescan is the same two
+                // lines for the same reason.
+                library.UpdateTracks(freshTracks);
+                rescanLogger.LogInformation("Library saved ({TrackCount} tracks)", library.Tracks.Count);
+
+                // SyncITunesPlayCountAsync/SyncITunesDateAddedAsync each do their
+                // own save (either may run again later via its own Settings
+                // checkbox, independent of this startup rescan) and layer their
+                // own more specific BusyMessage on top of this outer scope's.
+                // Both gated on the master IntegrateWithITunes switch first -
+                // with it off, Flower ignores Music.app entirely, whatever
+                // these two remember individually. Asked of
+                // ITunesIntegration rather than spelled out here, because
+                // the server gates its own imports on the same rule.
+                if (isLocalImporter && Flower.Importer.ITunesIntegration.ShouldSyncPlayCount(appSettings))
+                    await mainViewModel.SyncITunesPlayCountAsync();
+                if (isLocalImporter && Flower.Importer.ITunesIntegration.ShouldSyncDateAdded(appSettings))
+                    await mainViewModel.SyncITunesDateAddedAsync();
+            }
+            catch (Exception ex)
+            {
+                // Without this, a failure here (e.g. a library path became
+                // unreadable) would just be an unobserved task fault - logged
+                // above via TaskScheduler.UnobservedTaskException, eventually,
+                // but only once the GC finalizes the task; log it immediately
+                // here instead.
+                rescanLogger.LogError(ex, "Startup rescan failed");
+            }
+        });
 
         return mainView;
     }
@@ -588,7 +671,9 @@ public partial class App : Application
     // The browser half of the desktop client's "Server Settings..." button.
     //
     // That button mints a short-lived admin session against the server and opens
-    // this page at #admin=<token>&page=settings (see
+    // this page at #admin=<token>&page=settings. The page= half is what decides
+    // whether the overlay opens: the token alone no longer implies it, now that
+    // an ordinary jukebox tab carries one as its library credential. (See
     // MainViewModel.OpenSelectedServerSettingsAsync and Flower.Server's
     // AdminSessionService). The token is the browser's whole authority here - it
     // cannot sign anything, because .NET-for-WebAssembly has no asymmetric crypto
@@ -602,11 +687,16 @@ public partial class App : Application
     {
         try
         {
-            var fragment = BrowserLocation.TakeFragment();
-            if (!fragment.TryGetValue("admin", out var token) || string.IsNullOrWhiteSpace(token))
+            // Off the container, not off the URL: reading the fragment consumes
+            // it, and RegisterBrowserServices got there first because the same
+            // token is now the credential for the library and for playback too
+            // (see BrowserSession).
+            var session = Ioc.Default.GetRequiredService<BrowserSession>();
+            if (session.Token == null || !string.Equals(session.Page, "settings", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            var client = ServerAdminClient.ForSession(new HttpClient(), BrowserLocation.Origin, token);
+            var client = ServerAdminClient.ForSession(
+                Ioc.Default.GetRequiredService<HttpClient>(), BrowserLocation.Origin, session.Token);
             var settings = new SettingsViewModel(new RemoteServerSettingsBackend(client));
 
             // Posted rather than called inline: the view is not attached to a
