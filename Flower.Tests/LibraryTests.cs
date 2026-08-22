@@ -12,8 +12,16 @@ public class LibraryTests
     [Fact]
     public void UpdateTracks_replaces_the_track_list()
     {
-        var library = new Library(new List<Track> { new Track { Title = "Old" } });
-        library.UpdateTracks(new List<Track> { new Track { Title = "New1" }, new Track { Title = "New2" } });
+        // Path set, because that is what the scan is responsible for and so
+        // what a rescan is entitled to remove. A Path == null track is a
+        // placeholder with no local file for any scan to find, and survives -
+        // see UpdateTracks_keeps_a_track_with_no_local_file_whatever_its_origin.
+        var library = new Library(new List<Track> { new Track { Title = "Old", Path = "/music/old.mp3" } });
+        library.UpdateTracks(new List<Track>
+        {
+            new Track { Title = "New1", Path = "/music/new1.mp3" },
+            new Track { Title = "New2", Path = "/music/new2.mp3" },
+        });
 
         Assert.Equal(2, library.Tracks.Count);
         Assert.DoesNotContain(library.Tracks, t => t.Title == "Old");
@@ -284,7 +292,16 @@ public class LibraryTests
     [Fact]
     public void UpdateTracks_preserves_a_downloaded_sync_track_the_fresh_scan_does_not_find()
     {
-        var downloaded = new Track { Title = "Downloaded Song", Path = "/private/app/downloads/abc.mp3", OriginDeviceFingerprint = "peer-1" };
+        // IsLocallyDownloaded, not just an origin fingerprint: the origin says
+        // some peer has a copy (true of plenty of ordinary local files once
+        // paired - see MergeSyncedTracks), while this says *this* device put the
+        // file where it is, which is what makes a scan's silence about it
+        // meaningless. See Track.IsLocallyDownloaded.
+        var downloaded = new Track
+        {
+            Title = "Downloaded Song", Path = "/private/app/downloads/abc.mp3",
+            OriginDeviceFingerprint = "peer-1", IsLocallyDownloaded = true,
+        };
         var library = new Library(new List<Track> { downloaded });
 
         // Simulates an Android MediaStore rescan that only ever sees system-indexed
@@ -302,7 +319,11 @@ public class LibraryTests
     [Fact]
     public void UpdateTracks_does_not_duplicate_a_downloaded_sync_track_the_fresh_scan_also_finds()
     {
-        var downloaded = new Track { Title = "Downloaded Song", Path = "/private/app/Documents/abc.mp3", OriginDeviceFingerprint = "peer-1" };
+        var downloaded = new Track
+        {
+            Title = "Downloaded Song", Path = "/private/app/Documents/abc.mp3",
+            OriginDeviceFingerprint = "peer-1", IsLocallyDownloaded = true,
+        };
         var library = new Library(new List<Track> { downloaded });
 
         var rescanned = new Track { Title = "Downloaded Song (retagged)", Path = "/private/app/Documents/abc.mp3" };
@@ -345,6 +366,66 @@ public class LibraryTests
         Assert.Same(rescanned, only);
         Assert.Equal("peer-1", only.OriginDeviceFingerprint);
         Assert.Equal(16, only.RemotePlayCounts["peer-1"]);
+    }
+
+    // The bug this rule was rewritten for, end to end.
+    //
+    // Once a device pairs, MergeSyncedTracks stamps the server's fingerprint
+    // onto local files the server also has - by design, so the mobile
+    // delete-a-download warning can tell "re-downloadable" from "permanent".
+    // The carry-forward test was OriginDeviceFingerprint != null, which that
+    // turned into "every track": from then on no rescan could remove anything.
+    // Seen in the field as a client with no library folders configured at all
+    // still listing 16k songs, launch after launch, logging "0 track(s) from
+    // scan, 16115 synced-only track(s) carried forward" every time.
+    [Fact]
+    public void UpdateTracks_removes_a_local_file_the_scan_no_longer_finds_even_when_a_peer_also_has_it()
+    {
+        var localButAlsoOnTheServer = new Track
+        {
+            Title = "Socket", Path = "/music/socket.mp3", OriginDeviceFingerprint = "server-1",
+        };
+        var library = new Library(new List<Track> { localButAlsoOnTheServer });
+
+        // What the importer returns once the last library folder is removed:
+        // "No library folders configured - nothing to scan".
+        library.UpdateTracks(new List<Track>());
+
+        Assert.Empty(library.Tracks);
+    }
+
+    // The disk is the source of truth for local files, so removing the folder
+    // list empties the library even when every track in it came back from a
+    // sync - the sync's own placeholders are a separate question, re-answered
+    // by the next MergeSyncedTracks.
+    [Fact]
+    public void UpdateTracks_empties_a_fully_synced_library_when_no_folders_are_configured()
+    {
+        var library = new Library(Enumerable.Range(0, 100)
+            .Select(i => new Track { Title = $"Song {i}", Path = $"/music/{i}.mp3", OriginDeviceFingerprint = "server-1" })
+            .ToList());
+
+        library.UpdateTracks(new List<Track>());
+
+        Assert.Empty(library.Tracks);
+    }
+
+    // A track with no local file survives whatever its origin. Usually that is a
+    // sync placeholder, but DeleteDownloadedFileAsync also produces one with no
+    // origin at all (deleting the only copy of a purely local import - see its
+    // own comment, and MobileMainViewModel.IsRecoverableDownload, which warns
+    // about exactly that case rather than preventing it). Either way there is
+    // nothing on disk for a scan to find, so a scan not finding it is not
+    // evidence of anything.
+    [Fact]
+    public void UpdateTracks_keeps_a_track_with_no_local_file_whatever_its_origin()
+    {
+        var orphaned = new Track { Title = "Deleted Download", Path = null };
+        var library = new Library(new List<Track> { orphaned });
+
+        library.UpdateTracks(new List<Track> { new Track { Title = "Local", Path = "/music/local.mp3" } });
+
+        Assert.Contains(library.Tracks, t => t.Title == "Deleted Download");
     }
 
     [Fact]
