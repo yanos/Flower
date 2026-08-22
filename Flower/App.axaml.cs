@@ -398,7 +398,17 @@ public partial class App : Application
                 sp.GetRequiredService<HttpClient>(),
                 origin.ToString(),
                 sp.GetRequiredService<IPeerCredentials>(),
-                sp.GetRequiredService<ILogger<Importer.OriginPlaylistImporter>>()));
+                sp.GetRequiredService<ILogger<Importer.OriginPlaylistImporter>>()))
+
+            // ...and back the other way, which is the one thing a browser tab
+            // could not do until now - see IPlaylistWriter. Still not the
+            // peer-to-peer merge: a tab's playlists are the server's, so an
+            // edit here is an edit there.
+            .AddSingleton<Importer.IPlaylistWriter>(sp => new Importer.OriginPlaylistWriter(
+                sp.GetRequiredService<HttpClient>(),
+                origin.ToString(),
+                sp.GetRequiredService<IPeerCredentials>(),
+                sp.GetRequiredService<ILogger<Importer.OriginPlaylistWriter>>()));
     }
 
     // The one platform fork the audio pipeline needs.
@@ -622,6 +632,15 @@ public partial class App : Application
         var isLocalImporter = importer.ScansLocalFiles;
         var mainPlaylist = provider.GetRequiredService<MainPlaylist>();
 
+        // Only the browser registers one - see IPlaylistWriter. PlaylistsChanged
+        // rather than PlaylistsUpdated, because this needs to fire for exactly
+        // the case that one deliberately skips: a local edit. It is already the
+        // event that means "the on-disk copy is stale", and for a head whose
+        // playlists live on a server, the server's copy is the on-disk copy.
+        var playlistWriter = provider.GetService<Importer.IPlaylistWriter>();
+        if (playlistWriter != null)
+            library.PlaylistsChanged += (_, _) => playlistWriter.Schedule(library.Playlists);
+
         _ = Task.Run(async () =>
         {
             var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");
@@ -672,6 +691,12 @@ public partial class App : Application
                 if (provider.GetService<Importer.IPlaylistImporter>() is { } playlistImporter)
                 {
                     var remotePlaylists = await playlistImporter.ImportAsync(library.Tracks);
+                    // Before the install, not after: ReplacePlaylists raises
+                    // PlaylistsChanged exactly as a user's own edit does, and
+                    // the writer below has no other way to tell the two apart -
+                    // without this every rescan would push the server's own
+                    // playlists straight back at it.
+                    playlistWriter?.NoteOriginState(remotePlaylists);
                     library.ReplacePlaylists(remotePlaylists);
                     rescanLogger.LogInformation("Playlists refreshed from the remote catalog ({PlaylistCount})", remotePlaylists.Count);
                 }
