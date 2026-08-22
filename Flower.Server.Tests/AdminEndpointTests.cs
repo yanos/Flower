@@ -123,7 +123,7 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             var context = await SignedAsync(admin, "GET", "/api/admin/settings");
 
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-            var settings = await ReadAsync<ServerSettingsResponse>(context);
+            var settings = await ReadAsync<ServerSettingsDto>(context);
             // The fixture configures exactly one (empty) library folder, which is
             // what stops the startup scan from wandering into the real ~/Music.
             Assert.Single(settings.LibraryPaths);
@@ -148,7 +148,7 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
                 body: """{"alias":"Basement NAS","advertiseOnLan":false,"allowedCidrs":["10.8.0.0/24"]}""");
 
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-            var settings = await ReadAsync<ServerSettingsResponse>(context);
+            var settings = await ReadAsync<ServerSettingsDto>(context);
             Assert.Equal("Basement NAS", settings.Alias);
             Assert.False(settings.AdvertiseOnLan);
             Assert.Equal(["10.8.0.0/24"], settings.AllowedCidrs);
@@ -337,6 +337,9 @@ public class WebUiHostingTests
 
             builder.UseSetting("Flower:DataDirectory", _dataDirectory);
             builder.UseSetting("Flower:LibraryPaths:0", emptyLibrary);
+            // See SubsonicServerFixture - keeps the adopted Music.app folder
+            // out of the pinned library path list.
+            builder.UseSetting("Flower:IntegrateWithITunes", "false");
             builder.UseSetting("Flower:WebUiPath", WebUi);
         }
 

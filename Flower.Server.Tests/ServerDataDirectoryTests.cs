@@ -97,9 +97,11 @@ public class ServerSettingsFilePrecedenceTests : IDisposable
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("Flower:DataDirectory", dataDirectory);
-            // Scanning is beside the point here, and an empty LibraryPaths
-            // makes the importer fall back to the real ~/Music.
+            // Scanning is beside the point here, and both of these are needed
+            // to keep it away from the developer's real music - see
+            // SubsonicServerFixture.
             builder.UseSetting("Flower:LibraryPaths:0", Path.Combine(dataDirectory, "empty-library"));
+            builder.UseSetting("Flower:IntegrateWithITunes", "false");
         }
     }
 
