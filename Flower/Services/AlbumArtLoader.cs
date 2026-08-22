@@ -51,17 +51,17 @@ public class AlbumArtLoader
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     private readonly PeerTrackResolver? _peerResolver;
-    private readonly DeviceIdentity? _deviceIdentity;
+    private readonly IPeerCredentials? _credentials;
     private readonly ILogger _logger;
 
     // Both peer dependencies are nullable and unregistered on Flower.Web/WASM,
     // which has no P2P sync stack at all (see App.RegisterServices) - a null
     // either way means the same thing the old Ioc.Default.GetService returning
     // null meant: there is no peer to fetch remote art from.
-    public AlbumArtLoader(PeerTrackResolver? peerResolver, DeviceIdentity? deviceIdentity, ILogger<AlbumArtLoader> logger)
+    public AlbumArtLoader(PeerTrackResolver? peerResolver, IPeerCredentials? credentials, ILogger<AlbumArtLoader> logger)
     {
         _peerResolver = peerResolver;
-        _deviceIdentity = deviceIdentity;
+        _credentials = credentials;
         _logger = logger;
     }
 
@@ -277,7 +277,7 @@ public class AlbumArtLoader
         // see that class's own doc comment) - this call site doesn't need to
         // know that rule exists, just that null means "don't fetch."
         var peer = _peerResolver?.Resolve(track);
-        if (peer == null || _deviceIdentity == null)
+        if (peer == null || _credentials == null)
             return null;
 
         try
@@ -285,8 +285,18 @@ public class AlbumArtLoader
             var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
             using var request = new HttpRequestMessage(HttpMethod.Get,
                 $"http://{peer.EndPoint}/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}");
-            request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
-            request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
+            // Signed, like every other call into a peer's /rest surface. This
+            // used to send a bare fingerprint and alias with no signature at
+            // all, which a peer's own SyncHttpServer tolerated but Flower.Server
+            // does not - and its refusal is a *Subsonic* refusal, so it comes
+            // back as HTTP 200 carrying an error envelope. Two things followed
+            // from that, both of them bad: the JSON error body was written
+            // straight into the art cache as if it were an image (see the
+            // content check below), and each refusal charged the server's
+            // FailedAuthLimiter, so ten album tiles were enough to 429 the
+            // entire /rest surface for a minute - including /rest/stream, which
+            // is why playback of server-hosted tracks died wholesale.
+            request.AddPeerCredentials(_credentials);
             request.Headers.ConnectionClose = true;
 
             using var response = await Http.SendAsync(request);
@@ -295,9 +305,6 @@ public class AlbumArtLoader
 
             var bytes = await response.Content.ReadAsByteArrayAsync();
 
-            Directory.CreateDirectory(CacheDirectory);
-            await File.WriteAllBytesAsync(cachePath, bytes);
-
             // Decode off the UI thread - same reason LoadLocalAsync/the cached-file
             // path above both use Task.Run: this runs on whatever thread called
             // LoadAsync (typically the UI thread, via TrackRowViewModel.AlbumArt's
@@ -305,7 +312,19 @@ public class AlbumArtLoader
             // every time a placeholder row's art finishes downloading.
             var bmp = await Task.Run(() => TryDecodeBytes(bytes));
             if (bmp == null)
+            {
+                // Reached the peer and got *something* back that is not an
+                // image - a Subsonic error envelope, most likely. Caching it
+                // would turn one transient refusal into a permanently broken
+                // tile, since the cache-file branch above hits before the
+                // fetch. Hence decode first, write second.
+                _logger.LogDebug("Remote album art for {Album} from {Fingerprint} was not a decodable image ({ByteCount} bytes); not caching it",
+                    track.Album, track.OriginDeviceFingerprint, bytes.Length);
                 return null;
+            }
+
+            Directory.CreateDirectory(CacheDirectory);
+            await File.WriteAllBytesAsync(cachePath, bytes);
 
             Retain(cacheKey, bmp);
             return bmp;
