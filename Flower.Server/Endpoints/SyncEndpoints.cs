@@ -97,6 +97,14 @@ public static class SyncEndpoints
             if (auth.Failure != PeerAuthFailure.None)
                 return Results.StatusCode(StatusCodes.Status401Unauthorized);
 
+            // Who the gate actually let through, for the handlers below to
+            // attribute a write to. Not the same as the request's own
+            // X-Flower-Fingerprint header: a browser tab sends no fingerprint
+            // at all (see AdminSessionCredentials - an identity claim taken on
+            // trust from an unsigned caller is worse than none), so reading the
+            // header logged every tab's write as "pushed by null".
+            context.HttpContext.Items[AuthenticatedFingerprintKey] = auth.Fingerprint;
+
             return await next(context);
         });
 
@@ -113,6 +121,8 @@ public static class SyncEndpoints
         // handler rather than a second implementation of "an album's art".
         sync.MapGet("/cover-art", SubsonicEndpoints.GetCoverArt);
     }
+
+    private const string AuthenticatedFingerprintKey = "flower.auth.fingerprint";
 
     // Conditional on Library.ChangeToken, served as the ETag, exactly as
     // SyncHttpServer does it: a client that sends back the token it already
@@ -172,7 +182,7 @@ public static class SyncEndpoints
 
         loggerFactory.CreateLogger(typeof(SyncEndpoints)).LogInformation(
             "Applied {Count} playlist(s) pushed by {Fingerprint}",
-            playlists.Count, DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Fingerprint"));
+            playlists.Count, context.Items[AuthenticatedFingerprintKey]);
 
         return Results.NoContent();
     }

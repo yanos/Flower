@@ -23,10 +23,13 @@ namespace Flower.Importer;
 // stops, which is honest about what a tab is rather than pretending it is a
 // third peer.
 //
-// The consequence worth stating: editing a playlist in a browser tab does not
-// reach the server, because there is nowhere for the edit to go yet. Giving a
-// tab write access is a real feature (POST /playlists/apply already exists on
-// the other side of the same gate) and is not this.
+// Read-only here does not mean a tab's edits are stranded: they go back by the
+// other road, IPlaylistWriter, which POSTs the whole set to /playlists/apply.
+// That is still not a merge - it is the same "a tab's playlists are the
+// server's" premise read in the other direction. The one coupling between the
+// two: this path's ReplacePlaylists raises the same event a user's own edit
+// does, so the writer is told what was fetched before it is installed, or every
+// rescan would push the server's own playlists straight back at it.
 public sealed class OriginPlaylistImporter(
     HttpClient http,
     string baseUrl,

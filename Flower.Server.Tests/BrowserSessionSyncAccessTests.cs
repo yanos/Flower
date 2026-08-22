@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
+using Flower.Models;
 using Flower.Persistence;
 using Flower.Server.Endpoints;
 using Flower.Server.Services;
@@ -36,7 +37,7 @@ public class BrowserSessionSyncAccessTests(SubsonicServerFixture server) : IClas
     // No signature headers at all, which is the whole point: this is exactly
     // what a browser tab can produce.
     private async Task<(HttpStatusCode Status, string Body)> SendWithSessionAsync(
-        string method, string path, string remoteIp, string? token, string? query = null)
+        string method, string path, string remoteIp, string? token, string? query = null, string? body = null)
     {
         var context = await server.Server.SendAsync(c =>
         {
@@ -44,6 +45,11 @@ public class BrowserSessionSyncAccessTests(SubsonicServerFixture server) : IClas
             c.Request.Path = path;
             if (query != null)
                 c.Request.QueryString = new QueryString(query);
+            if (body != null)
+            {
+                c.Request.Body = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(body));
+                c.Request.ContentType = "application/json";
+            }
             c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
             if (token != null)
                 // Off AdminSessionCredentials rather than AdminEndpoints,
@@ -152,6 +158,57 @@ public class BrowserSessionSyncAccessTests(SubsonicServerFixture server) : IClas
         }
         finally
         {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+            device.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task A_session_token_writes_a_playlist_back_and_can_then_read_it_again()
+    {
+        // The one thing a browser tab could not do at all until now: every
+        // path built for it before this was read-only. Worth pinning on this
+        // side rather than only in OriginPlaylistWriter's own tests, because
+        // "the tab produces a well-formed POST" and "this server accepts that
+        // POST from something holding no signing key" are two different claims
+        // and only the second one is about the gate.
+        var (device, token) = await SessionForATrustedDeviceAsync();
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+
+        try
+        {
+            // Named by the tag/duration triple PlaylistSyncMapper resolves
+            // against the library, not by path - a track this server does not
+            // have would be dropped and this would pass for the wrong reason.
+            var track = server.Seeded[0];
+            var pushed = JsonSerializer.Serialize(new PlaylistSyncManifestDto("browser",
+            [
+                new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Made in a tab", DateTimeOffset.UtcNow,
+                [
+                    new PlaylistSyncTrackDto(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration)),
+                ]),
+            ]));
+
+            var (refused, _) = await SendWithSessionAsync(
+                "POST", "/api/flower/v1/playlists/apply", "10.0.9.7", token: null, body: pushed);
+            Assert.Equal(HttpStatusCode.Forbidden, refused);
+
+            var (applied, _) = await SendWithSessionAsync(
+                "POST", "/api/flower/v1/playlists/apply", "10.0.9.7", token, body: pushed);
+            Assert.Equal(HttpStatusCode.NoContent, applied);
+
+            var (read, body) = await SendWithSessionAsync("GET", "/api/flower/v1/playlists", "10.0.9.7", token);
+            Assert.Equal(HttpStatusCode.OK, read);
+
+            var served = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(body)!;
+            var playlist = Assert.Single(served.Playlists);
+            Assert.Equal("Made in a tab", playlist.Name);
+            Assert.Equal(track.Title, Assert.Single(playlist.Tracks).Title);
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
             await trustedPeers.RevokeAsync(device.Fingerprint);
             device.Dispose();
         }
