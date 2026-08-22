@@ -80,12 +80,18 @@ public static class SyncEndpoints
 
             var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
             var replayGuard = services.GetRequiredService<NonceReplayGuard>();
+            var sessions = services.GetRequiredService<AdminSessionService>();
             // 403 only for a caller this server genuinely has no key on file
             // for - a client treats that as "revoked" and unpairs itself. A
             // signature that just failed to verify (commonly a stale
             // timestamp, after the caller suspended mid-request) is a 401:
             // this attempt failed, the pairing is untouched.
-            var auth = DeviceSignatureAuth.AuthenticateTrustedPeer(http.Request, body, trustedPeers, replayGuard);
+            //
+            // A signature *or* a live admin session, because the browser head
+            // pulls its whole library through GET /library below and has no key
+            // to sign with - see PeerOrSessionAuth for what that widening costs.
+            var auth = PeerOrSessionAuth.Authenticate(
+                http.Request, body, trustedPeers, replayGuard, sessions, DateTimeOffset.UtcNow);
             if (auth.Failure == PeerAuthFailure.NotTrusted)
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             if (auth.Failure != PeerAuthFailure.None)

@@ -29,16 +29,22 @@ public static class StreamTicketEndpoints
 
         app.MapPost("/api/flower/v1/stream-tickets", (
             HttpContext context, TrustedPeerStore trustedPeers, NonceReplayGuard replayGuard,
-            StreamTicketService tickets, string id) =>
+            AdminSessionService sessions, StreamTicketService tickets, string id) =>
         {
-            var fingerprint = DeviceSignatureAuth.VerifyTrustedPeer(context.Request, [], trustedPeers, replayGuard);
-            if (fingerprint == null)
+            // A signature or a live admin session (see PeerOrSessionAuth). The
+            // browser is the caller this route was built for and is also the one
+            // caller that cannot sign, so gating it on a signature alone left it
+            // able to mint nothing - a player that can list a catalog and play
+            // none of it.
+            var auth = PeerOrSessionAuth.Authenticate(
+                context.Request, [], trustedPeers, replayGuard, sessions, DateTimeOffset.UtcNow);
+            if (auth.Fingerprint == null)
                 return Results.Unauthorized();
 
             if (string.IsNullOrWhiteSpace(id))
                 return Results.BadRequest(new { error = "A track id is required." });
 
-            var (ticket, expiresAt) = tickets.Issue(id, fingerprint);
+            var (ticket, expiresAt) = tickets.Issue(id, auth.Fingerprint);
 
             // The whole point is a URL that can be dropped straight into an
             // <audio src>, so hand back the assembled thing rather than a bare
