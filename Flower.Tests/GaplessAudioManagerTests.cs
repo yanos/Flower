@@ -124,6 +124,12 @@ public class GaplessAudioManagerTests
     {
         var (manager, _, _, ring) = PlayTrack(T("A", TimeSpan.FromSeconds(10)));
 
+        // Play() resumed the sink, and the sink's pump reads the same ring
+        // this test is about to read. The ring is single-consumer by
+        // contract, so the pump has to be off before the test can stand in
+        // for it - FakeAudioSink.Pause() does not return until it is.
+        manager.Pause();
+
         // 2 seconds of canonical PCM, consumed by the sink.
         var bytes = GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame * 2;
         ring.TryWrite(new byte[bytes]);
@@ -136,6 +142,9 @@ public class GaplessAudioManagerTests
     public void Position_is_time_over_length()
     {
         var (manager, _, _, ring) = PlayTrack(T("A", TimeSpan.FromSeconds(10)));
+
+        // The sink's pump reads this same ring - see the test above.
+        manager.Pause();
 
         // 5 of 10 seconds, consumed by the sink.
         var bytes = GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame * 5;
