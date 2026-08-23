@@ -6,6 +6,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#), running on Windows, macOS, Linux, iOS, and Android. Every feature must work across all platforms. Uses LibVLC for playback and TagLib# for metadata. Shared `Flower` library project + platform-specific entry points.
 
+## How It Gets Used
+
+**Plex, but only for music, and smaller.** One person runs one server for
+themselves, with maybe a handful of friends or family also listening. That is
+the whole deployment model, and it settles arguments in both directions:
+
+- **No multi-tenancy, no scale work.** Single-digit concurrent listeners, one
+  library, one owner. Don't reach for sharding, job queues, horizontal scaling,
+  or per-tenant isolation — the load is a few streams at once, on hardware the
+  owner already has.
+- **But it is not single-user either.** Other people do get accounts and do
+  listen, sometimes from outside the house. So auth, per-device pairing, rate
+  limiting and the trust boundary are load-bearing, not ceremony — the thing
+  standing between a shared library and the open internet is
+  `PeerSignatureAuth` plus `LanGuard`, and it is the one area where "it's just
+  for me" reasoning does not apply.
+- **The owner is technical; their listeners are not.** Setup on the server can
+  reasonably ask for a config file or a terminal command. Setup on a listener's
+  phone cannot ask for anything beyond opening a link or a pairing screen. When
+  a design trades server-side complexity for client-side simplicity, take the
+  trade — see `REMOTE-TRANSPORT-PLAN.md`, which is that argument in full.
+
 ## No Users Yet
 
 The app is a WIP with no released users and no data anyone else depends on. **Backward compatibility is not a constraint** — the sync/pairing protocol, on-disk JSON shapes, the server's DB schema, config keys and defaults can all be changed outright rather than versioned, sentinel-detected, or migrated. Prefer the clean design over the compatible one, and delete the old path instead of keeping a fallback. (Third-party *client* compatibility is a separate question: the OpenSubsonic surface is a published protocol others implement, so changing it means breaking real clients — that one still needs a reason.)
@@ -16,6 +38,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 
 - `SELF-HOSTING.md` — the one user-facing document here: running your own server and reaching it remotely. `SYNC-PLAN.md` holds the reasoning behind it.
 - `REMOTE-ACCESS-PLAN.md` — the client-side half of remote access: how a paired server stays reachable off the LAN (candidate addresses, LAN↔tailnet handover).
+- `REMOTE-TRANSPORT-PLAN.md` — who carries the traffic when neither end has a public address: Tailscale vs Cloudflare Tunnel vs embedding `tsnet`.
 - `ARCHITECTURE-REVIEW.md` — standing whole-codebase backlog: correctness, performance, duplicated sources of truth, test gaps.
 - `CROSS-PLATFORM-PLAN.md` — iOS/Android platform-gap remediation.
 - `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server (same OpenSubsonic client protocol).
