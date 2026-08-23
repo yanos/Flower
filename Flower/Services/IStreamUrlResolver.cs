@@ -91,7 +91,7 @@ public sealed class PeerStreamUrlResolver(
         var url = PeerOpenSubsonicClientFactory
             .Create(peer, deviceIdentity, appSettings, signingKey)
             .GetStreamUrl(track.OriginTrackId);
-        logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint})", track.Title, peer.Alias, peer.EndPoint);
+        logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint})", track.Title, peer.Alias, peer.BaseUri);
         return url;
     }
 }

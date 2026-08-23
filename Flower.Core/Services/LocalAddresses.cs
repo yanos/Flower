@@ -30,7 +30,17 @@ public static class LocalAddresses
     // 172.17.x gets reported and will never answer a probe, which costs the
     // client one failed request; guessing which of a machine's interfaces are
     // "real" would eventually drop the one interface that was.
-    public static List<string> Reachable(int port, string? advertisedHost = null)
+    // Full origins - "http://192.168.1.40:4533", not "192.168.1.40:4533" -
+    // because the scheme is part of how a peer is reached and only this side
+    // knows it. A client that had to assume one could never dial a server
+    // behind TLS, which is exactly the state this replaced.
+    //
+    // The scheme parameter is what a TLS-serving deployment sets; the addresses
+    // enumerated from interfaces all share it, since they are all this same
+    // listener seen from different networks. An AdvertisedHost that names its
+    // own scheme overrides it, because that one is not this listener at all -
+    // it is whatever terminates TLS in front of it.
+    public static List<string> Reachable(int port, string? advertisedHost = null, string scheme = "http")
     {
         var addresses = new List<string>();
 
@@ -38,7 +48,7 @@ public static class LocalAddresses
         // list cannot: the name that resolves from outside, through a proxy or
         // a remapped container port. See FlowerServerOptions.AdvertisedHost.
         if (!string.IsNullOrWhiteSpace(advertisedHost))
-            addresses.Add(WithPort(advertisedHost.Trim(), port));
+            addresses.Add(AdvertisedOrigin(advertisedHost.Trim(), port, scheme));
 
         foreach (var nic in SafeInterfaces())
         {
@@ -52,7 +62,7 @@ public static class LocalAddresses
                 if (!IsReportable(unicast.Address))
                     continue;
 
-                addresses.Add(Format(unicast.Address, port));
+                addresses.Add(Format(unicast.Address, port, scheme));
             }
         }
 
@@ -77,20 +87,35 @@ public static class LocalAddresses
         };
     }
 
-    private static string Format(IPAddress address, int port) =>
+    private static string Format(IPAddress address, int port, string scheme) =>
         address.AddressFamily == AddressFamily.InterNetworkV6
-            ? $"[{address}]:{port}"
-            : $"{address}:{port}";
+            ? $"{scheme}://[{address}]:{port}"
+            : $"{scheme}://{address}:{port}";
 
-    // An AdvertisedHost may or may not name a port already ("host" vs
-    // "host:8080" vs "[::1]:8080"). Appending unconditionally would produce
-    // host:8080:4533, so only add one when there isn't one - and read the last
-    // colon *after* any bracketed IPv6 literal, which is full of them.
-    private static string WithPort(string host, int port)
+    // An AdvertisedHost is written by hand and so arrives in every shape a
+    // person might reasonably write: "host", "host:8080", "[::1]:8080",
+    // "https://music.example.com", or that with a path glued on.
+    //
+    // A scheme of its own wins outright - "https://music.example.com" is a
+    // Cloudflare tunnel or a reverse proxy, and neither this listener's scheme
+    // nor its port has anything to do with how the world reaches it. Anything
+    // else is a bare host that stands in front of *this* listener, so it
+    // inherits both, and only gains a port when it does not already state one.
+    private static string AdvertisedOrigin(string host, int port, string scheme)
     {
+        if (Uri.TryCreate(host, UriKind.Absolute, out var absolute) &&
+            (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+        {
+            return absolute.GetLeftPart(UriPartial.Authority);
+        }
+
+        // Reading the last colon *after* any bracketed IPv6 literal, which is
+        // full of them - otherwise "[::1]:8080" looks like it names no port and
+        // becomes "[::1]:8080:4533".
         var afterBracket = host.LastIndexOf(']');
         var colon = host.LastIndexOf(':');
-        return colon > afterBracket && colon >= 0 ? host : $"{host}:{port}";
+        var withPort = colon > afterBracket && colon >= 0 ? host : $"{host}:{port}";
+        return $"{scheme}://{withPort}";
     }
 
     // Enumerating interfaces can throw on a locked-down or unusual host

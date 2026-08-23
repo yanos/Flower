@@ -246,6 +246,42 @@ network" indicator exists for precisely this, and is the right thing to copy.
 than nothing when it happens to work. As the primary remote path it needs a
 certificate story it does not have and fails silently behind CGNAT.
 
+## The certificate, once TLS actually lands
+
+Decided ahead of the code, because it is the question that determines whether
+remote access needs a domain at all. It does not.
+
+**A self-signed certificate is the floor.** The server generates one on first
+run and the app pins it to the fingerprint it already paired with. A browser
+warns about a self-signed certificate because a browser meets arbitrary servers
+and cannot know which one is legitimate; a paired client is in the opposite
+position, having already established exactly which server it means. So there is
+no warning to show, because there is no ambiguity to resolve — the same
+reasoning Syncthing has run on for a decade.
+
+The consequence worth stating: **a LAN-only listener configures nothing and
+still gets encryption.** No domain, no certificate authority, no third party,
+and it works on a bare IP.
+
+**A real certificate is the optional upgrade**, for the two things that cannot
+pin: the browser UI (`Flower.Web`) and third-party OpenSubsonic clients. Three
+ways to get one, and only the last needs a purchase:
+
+- **DNS-01 against a free subdomain.** A DuckDNS-style name plus Let's
+  Encrypt's DNS-01 challenge, which proves ownership through a TXT record and
+  so never has to reach the server — meaning the A record may point at
+  `192.168.1.40` and the certificate still issues. Publicly trusted, no open
+  ports, entirely LAN.
+- **`tailscale cert`**, for anyone already running Tailscale. Tailscale owns
+  `ts.net`, so the user owns no domain and it renews itself.
+- **A domain the user owns**, via LettuceEncrypt.
+
+All three land in the same place — a certificate file the server loads — so this
+is one mechanism with a configuration switch, not three code paths. A local CA
+installed on each device was considered and rejected: it is the most privilege
+of any option and the most tedious to install on iOS, and the two above make it
+unnecessary.
+
 ## Decision
 
 **All of them, because they are not alternatives.** This is the point worth
@@ -277,8 +313,13 @@ Sequence, if this is picked up. The first two are shared prerequisites — every
 path above needs them, so neither is wasted whichever paths are eventually
 enabled:
 
-1. **The scheme rework.** Unblocks every HTTPS front end at once, `tailscale
-   serve` included — already documented, currently unreachable from the app.
+1. **The scheme rework — done.** `DiscoveredDevice` now carries a `BaseUri`
+   (scheme, host, port) with the resolved address kept beside it as `Ip` for
+   ranking only, `/info` reports full origins rather than bare `host:port`, and
+   the eleven hardcoded `http://` call sites go through `DiscoveredDevice.Url`.
+   Nothing serves TLS yet, so behaviour is unchanged — but every HTTPS front end
+   is now reachable in principle, `tailscale serve` included, which was
+   documented and impossible before.
 2. **The `LanGuard` / rate-limit / signature review**, on the assumption that
    requests arrive from the open internet. Non-negotiable before either the
    tunnel or a mapped port is switched on, and the two differ in a way that
@@ -297,6 +338,13 @@ nothing above changes what happens to someone who never turns it on.
 
 ## Status
 
-**Written, not built.** No code exists for any of this. The `tsnet` rejection is
-a decision; the Cloudflare adoption is a direction, and its first two steps are
-useful on their own even if it is never taken.
+**Step 1 of the sequence is built; the rest is still a decision on paper.** The
+scheme rework landed (see above) and both suites pass — `Flower.Tests`
+1076/1076, `Flower.Server.Tests` 165/165. Nothing serves TLS yet, no transport
+was added, and no behaviour changed: what changed is that a scheme other than
+`http` is now expressible end to end, which nothing else here could proceed
+without.
+
+The `tsnet` rejection is a decision. The Cloudflare adoption and the certificate
+design above are directions, and the auth review that precedes both is the next
+thing that has to happen.

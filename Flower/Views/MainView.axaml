@@ -346,7 +346,7 @@
                      on rename; SelectedDevice.Alias is that raw, unresolved value. -->
                 <TextBlock Text="{Binding SelectedSidebarItem.Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
-              <TextBlock Text="{Binding SelectedDevice.EndPoint}" Opacity="0.5" FontSize="13"/>
+              <TextBlock Text="{Binding SelectedDevice.Origin}" Opacity="0.5" FontSize="13"/>
             </StackPanel>
             <!-- Only shown for a peer advertising Server mode, while this device
                  is a Client (see MainViewModel.CanPairWithSelectedDevice) - mirrors

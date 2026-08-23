@@ -640,14 +640,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             var client = new ServerAdminClient(
-                http, new Uri($"http://{device.EndPoint}"), ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity, _signingKey, _appSettings)));
+                http, device.BaseUri, ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity, _signingKey, _appSettings)));
 
             var session = await client.CreateSessionAsync();
             OpenUrlInBrowser(session.Url);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not open the settings page for {Device}", device.EndPoint);
+            _logger.LogWarning(ex, "Could not open the settings page for {Device}", device.BaseUri);
             ServerSettingsError = ex is ServerAdminException ? ex.Message : "Could not reach that server.";
         }
         finally

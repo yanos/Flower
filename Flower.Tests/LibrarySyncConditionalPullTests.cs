@@ -91,7 +91,7 @@ public class LibrarySyncConditionalPullTests : IDisposable
         var device = new DiscoveredDevice
         {
             InstanceName = "peer",
-            EndPoint = new IPEndPoint(IPAddress.Loopback, peer.Port),
+            BaseUri = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, peer.Port)),
             Fingerprint = "peer-fingerprint",
         };
 
@@ -136,7 +136,7 @@ public class LibrarySyncConditionalPullTests : IDisposable
         var device = new DiscoveredDevice
         {
             InstanceName = "peer",
-            EndPoint = new IPEndPoint(IPAddress.Loopback, peer.Port),
+            BaseUri = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, peer.Port)),
             Fingerprint = "peer-fingerprint",
         };
 
@@ -177,7 +177,7 @@ public class LibrarySyncConditionalPullTests : IDisposable
         var device = new DiscoveredDevice
         {
             InstanceName = "peer",
-            EndPoint = new IPEndPoint(IPAddress.Loopback, peer.Port),
+            BaseUri = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, peer.Port)),
             Fingerprint = "peer-fingerprint",
         };
 

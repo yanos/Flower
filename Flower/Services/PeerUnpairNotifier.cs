@@ -46,7 +46,7 @@ public class PeerUnpairNotifier
                 const string path = "/api/flower/v1/unpair-notify";
                 var (signature, timestamp, nonce) = _signingKey.Sign("POST", path, [], body: []);
 
-                using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{peer.EndPoint}{path}");
+                using var request = new HttpRequestMessage(HttpMethod.Post, peer.Url(path));
                 request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
                 request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
                 request.Headers.Add("X-Flower-PublicKey", _signingKey.PublicKeyBase64);

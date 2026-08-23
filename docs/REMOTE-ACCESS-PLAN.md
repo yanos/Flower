@@ -51,9 +51,13 @@ be reached on.
 
 ```
 GET /api/localsend/v2/info
-{ ..., "addresses": ["192.168.1.40:4533", "100.101.102.103:4533",
-                     "basement.tail1234.ts.net:4533"] }
+{ ..., "addresses": ["http://192.168.1.40:4533", "http://100.101.102.103:4533",
+                     "https://basement.tail1234.ts.net"] }
 ```
+
+Entries are full origins rather than bare `host:port`. Only the server knows
+whether it is behind TLS, so the scheme has to travel with the address — see
+`REMOTE-TRANSPORT-PLAN.md`.
 
 Sources, in order: the configured `AdvertisedHost` if there is one; then every
 non-loopback, non-link-local unicast address on an up interface, with the bound

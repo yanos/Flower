@@ -85,7 +85,7 @@ public class LibraryDownloadService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Download failed for {Title} ({OriginTrackId}) from {Alias} ({Fingerprint}) at {EndPoint}",
-                track.Title, originTrackId, peer.Alias, track.OriginDeviceFingerprint, peer.EndPoint);
+                track.Title, originTrackId, peer.Alias, track.OriginDeviceFingerprint, peer.BaseUri);
             return TrackDownloadResult.Failed;
         }
     }

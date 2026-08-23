@@ -12,6 +12,6 @@ namespace Flower.Services;
 public static class PeerOpenSubsonicClientFactory
 {
     public static OpenSubsonicClient Create(DiscoveredDevice peer, DeviceIdentity identity, AppSettings appSettings, DeviceSigningKey signingKey) =>
-        new($"http://{peer.EndPoint}", username: "", password: "",
+        new(peer.Origin, username: "", password: "",
             credentials: new SignedDeviceCredentials(identity, signingKey, appSettings));
 }

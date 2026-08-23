@@ -51,7 +51,7 @@ public class PeerPairingService
             const string path = "/api/flower/v1/pair-redeem";
             var (signature, timestamp, nonce) = _signingKey.Sign("POST", path, [], body: []);
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}{path}");
+            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(path));
             request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
             request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
             request.Headers.Add("X-Flower-PublicKey", _signingKey.PublicKeyBase64);
@@ -70,7 +70,7 @@ public class PeerPairingService
                 // false for the UI to phrase.
                 _logger.LogInformation(
                     "Pairing code rejected by {Alias} ({EndPoint}): {Status}",
-                    device.Alias, device.EndPoint, response.StatusCode);
+                    device.Alias, device.BaseUri, response.StatusCode);
                 return false;
             }
 
@@ -78,7 +78,7 @@ public class PeerPairingService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Pair redeem to {Alias} ({EndPoint}) failed", device.Alias, device.EndPoint);
+            _logger.LogWarning(ex, "Pair redeem to {Alias} ({EndPoint}) failed", device.Alias, device.BaseUri);
             return false;
         }
     }
@@ -90,7 +90,7 @@ public class PeerPairingService
             const string path = "/api/flower/v1/pair-request";
             var (signature, timestamp, nonce) = _signingKey.Sign("POST", path, [], body: []);
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}{path}");
+            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(path));
             request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
             request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
             request.Headers.Add("X-Flower-PublicKey", _signingKey.PublicKeyBase64);
@@ -104,7 +104,7 @@ public class PeerPairingService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Pair request to {Alias} ({EndPoint}) failed", device.Alias, device.EndPoint);
+            _logger.LogWarning(ex, "Pair request to {Alias} ({EndPoint}) failed", device.Alias, device.BaseUri);
             return false;
         }
     }

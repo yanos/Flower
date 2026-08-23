@@ -111,7 +111,7 @@ public class PlaylistSyncService
         }
 
         _logger.LogInformation("Playlist sync starting with {Alias} ({Fingerprint}) at {EndPoint}",
-            device.Alias, device.Fingerprint, device.EndPoint);
+            device.Alias, device.Fingerprint, device.BaseUri);
 
         // A local nickname (see DeviceNicknameStore - the same override the
         // sidebar's "Rename Device" and Trusted Devices window use) wins over
@@ -124,7 +124,7 @@ public class PlaylistSyncService
         try
         {
             const string getPath = "/api/flower/v1/playlists";
-            using var getRequest = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}{getPath}");
+            using var getRequest = new HttpRequestMessage(HttpMethod.Get, device.Url(getPath));
             AddSignedIdentityHeaders(getRequest, body: []);
             using var getResponse = await Http.SendAsync(getRequest);
             getResponse.EnsureSuccessStatusCode(); // Throws on a 403 from an unapproved trust gate - handled below like any other unreachable peer.
@@ -203,7 +203,7 @@ public class PlaylistSyncService
             const string postPath = "/api/flower/v1/playlists/apply";
             using var content = new ByteArrayContent(bodyBytes);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            using var postRequest = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}{postPath}") { Content = content };
+            using var postRequest = new HttpRequestMessage(HttpMethod.Post, device.Url(postPath)) { Content = content };
             AddSignedIdentityHeaders(postRequest, bodyBytes);
             using var postResponse = await Http.SendAsync(postRequest);
             postResponse.EnsureSuccessStatusCode();

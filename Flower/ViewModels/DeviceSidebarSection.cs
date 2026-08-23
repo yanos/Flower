@@ -373,7 +373,7 @@ public sealed class DeviceSidebarSection
         {
             var showSubtitle = group.Count() > 1;
             foreach (var item in group)
-                item.Subtitle = showSubtitle ? item.Device!.EndPoint.Address.ToString() : null;
+                item.Subtitle = showSubtitle ? item.Device!.BaseUri.Host : null;
         }
 
         _host.DeviceRowsChanged();

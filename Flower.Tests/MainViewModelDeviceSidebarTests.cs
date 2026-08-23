@@ -40,7 +40,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         new()
         {
             InstanceName = instanceName,
-            EndPoint     = new IPEndPoint(IPAddress.Parse("192.168.1." + (++_port % 250 + 2)), 53317),
+            BaseUri     = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Parse("192.168.1." + (++_port % 250 + 2)), 53317)),
             Alias        = alias ?? instanceName,
             Fingerprint  = fingerprint,
             IsServer     = isServer,
@@ -50,7 +50,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         new()
         {
             InstanceName = instanceName,
-            EndPoint     = new IPEndPoint(IPAddress.Parse(ip), 53317),
+            BaseUri     = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Parse(ip), 53317)),
             Alias        = alias ?? instanceName,
             Fingerprint  = fingerprint,
         };
