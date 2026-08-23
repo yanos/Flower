@@ -118,6 +118,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand DownloadAllVisibleCommand { get; }
     public ICommand PairWithServerCommand { get; }
     public ICommand UnpairServerCommand { get; }
+
+    // Bootstrap-only: an address for a server this phone has never shared a
+    // network with, and therefore could never discover. A server paired with at
+    // home reports its own addresses and needs none of this - see
+    // docs/REMOTE-ACCESS-PLAN.md.
+    public ICommand AddManualServerCommand { get; }
+    public ICommand RemoveManualServerCommand { get; }
     public ICommand ConfirmPairServerCommand { get; }
     public ICommand CancelPairServerCommand { get; }
     public ICommand ForceSyncCommand { get; }
@@ -518,6 +525,34 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         + (IsPendingServerPairedByCode
             ? "The pairing code below authorizes this device immediately."
             : $"\"{PendingServerToPairAlias}\" will need to approve the request before syncing begins.");
+
+    // What the user typed into Settings' "add a server by address" box, and
+    // the result of the last attempt. See AddManualServerCommand.
+    private string _manualServerAddress = "";
+    public string ManualServerAddress
+    {
+        get => _manualServerAddress;
+        set
+        {
+            if (_manualServerAddress == value)
+                return;
+            _manualServerAddress = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string _manualServerStatus = "";
+    public string ManualServerStatus
+    {
+        get => _manualServerStatus;
+        set
+        {
+            if (_manualServerStatus == value)
+                return;
+            _manualServerStatus = value;
+            OnPropertyChanged();
+        }
+    }
 
     // What the user typed into the sheet's code box. Reset every time the
     // sheet opens, so a code left from an abandoned attempt is never
@@ -977,6 +1012,32 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             ActiveSheet = MobileSheet.ConfirmPairServer;
         });
         UnpairServerCommand = new RelayCommand(Main.UnpairServer);
+        AddManualServerCommand = new RelayCommand(async () =>
+        {
+            var address = ManualServerAddress.Trim();
+            if (address.Length == 0)
+                return;
+
+            ManualServerStatus = "Looking for a server...";
+            var found = await Main.AddManualServerAsync(address);
+
+            // A typo is by far the likeliest reason this fails, and finding
+            // that out here beats finding it out from a coffee shop. The entry
+            // is kept either way - a server that is merely switched off right
+            // now is still the server the user meant.
+            ManualServerStatus = found
+                ? ""
+                : $"Nothing answered at {address}. It is saved anyway - check the address, and that Tailscale is on at both ends.";
+            if (found)
+                ManualServerAddress = "";
+
+            OnPropertyChanged(nameof(Main.ManualServerAddresses));
+        });
+        RemoveManualServerCommand = new RelayCommand<string>(address =>
+        {
+            if (address != null)
+                Main.RemoveManualServer(address);
+        });
         ForceSyncCommand = new RelayCommand(Main.ForceSyncNow);
         ConfirmPairServerCommand = new RelayCommand(() =>
         {

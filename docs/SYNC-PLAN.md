@@ -777,6 +777,74 @@ Last Played carried back in the manifest.
 so it is a server-side flag with no browser story to build yet. When a liked-songs
 view lands, starring travels this same road.
 
+### Tailscale, and the proxy the guide creates — done
+
+The remote-access path is written up for a user in `docs/SELF-HOSTING.md`
+(deliberately a user-facing guide, not a design record - the reasoning stays
+here). "Document, don't automate" held: there is no Tailscale integration in the
+server and there should not be one. `sudo tailscale up`, `sudo tailscale serve
+--bg 4533`, and the server is reachable from anywhere over WireGuard with a real
+Let's Encrypt certificate that Tailscale provisions and renews. `LanGuard`'s
+CGNAT allowance, built in Phase 4, was already the only code this needed.
+
+Writing it turned up one thing that was not just documentation. **`tailscale
+serve` terminates TLS and proxies onward over loopback**, so with it enabled
+every request reaches Kestrel from `127.0.0.1`. Three per-IP rate limiters
+(pair-redeem, sync, `/rest` auth) and the `LanGuard` gate itself all read
+`Connection.RemoteIpAddress`, so on the deployment the guide recommends they
+would all have collapsed into a single bucket shared by the whole tailnet: five
+bad pairing attempts from one phone locks out every other device for a minute,
+and every log line attributes everything to loopback. Nothing looks broken,
+which is what makes it worth a test rather than a sentence.
+
+So `FlowerServerOptions.TrustedProxies` (CIDRs, empty by default) drives
+`UseForwardedHeaders` ahead of the `LanGuard` middleware. Three things about the
+shape:
+
+- **Empty by default, and no header believed from anyone.** `X-Forwarded-For` is
+  written by whoever sent the request. Believing it unconditionally would hand
+  every caller a free way to choose its own source address - past the allow-list
+  and out of whatever bucket it had just exhausted. ASP.NET's own defaults trust
+  loopback out of the box, so `KnownIPNetworks`/`KnownProxies` are cleared before
+  the configured entries go in: on a box where anything else is listening,
+  loopback is reachable by every local process.
+- **The guard still applies to the substituted address**, which is what makes
+  the feature safe to have at all. A proxy in front of the server is not a way
+  around the gate; it moves the gate to the address that actually matters. A
+  deployment genuinely fronting public traffic has to widen `AllowedCidrs` and
+  mean it.
+- **Not in `ServerSettingsDto`, unlike `AllowedCidrs`.** This is a fact about how
+  the server was deployed rather than a preference, and the browser page served
+  *through* the proxy is the last thing that should be able to redefine who the
+  proxy is. Same reasoning as `WebUiPath`; same consequence, that it is read once
+  at startup.
+
+`Flower.Server.Tests/ForwardedHeaderTests.cs` covers it, and the fixture trusts
+`203.0.113.0/24` alongside loopback on purpose: loopback is an address `LanGuard`
+admits anyway, so a test proxying only from there cannot tell "the forwarded
+address was substituted" from "nothing happened at all". Three of the five tests
+were confirmed to fail with the middleware disabled, including the rate-limit
+one; the other two guard against over-trust, which only the middleware's presence
+could break.
+
+**The client-side leg was missing, and this section originally did not notice.**
+"Document, don't automate" was right about Tailscale itself, but it quietly
+assumed a client could be pointed at the resulting address. It could not:
+`PairedServerReachability` resolved the paired server out of
+`NetworkDiscoveryService.KnownDevices`, which only mDNS populates, so
+reachability was *defined* as "discovered on this link right now" and nothing
+persisted an address to fall back on. The setup guide written alongside this
+told the reader to "add the server by address instead", a feature that did not
+exist. See `REMOTE-ACCESS-PLAN.md`, which owns that half: the server reports its
+own addresses in the `/info` handshake, the client remembers them for its paired
+server, and reachability becomes a ranked probe (mDNS, then LAN, then tailnet).
+
+**Not verified against a real tailnet.** There is no Tailscale on this machine,
+so the proxy behaviour is exercised through the test host rather than through
+tailscaled. The claim that `tailscale serve` forwards `X-Forwarded-For` over
+loopback is from its documented behaviour, not from an observed request - worth
+confirming on a real deployment, since the guide tells people to configure for it.
+
 ### Suggested build order
 
 1. **Done.** Extract `Flower.Core` (mechanical git-mv + reference fixups; confirm `Flower.Tests` still passes unchanged).
@@ -872,7 +940,9 @@ Build order step 4 is now **done in full**: on top of scaffolding and playback, 
 
 **Remaining work:**
 
-- **Step 5, the next initiative:** Docker packaging + docs — the "expose this over Tailscale" setup guide as the primary documented remote-access path, LettuceEncrypt as the secondary one.
+- **Step 5, in progress.** The Tailscale half is **done** — `docs/SELF-HOSTING.md`, plus the forwarded-header handling that deployment needs (see "Tailscale, and the proxy the guide creates" above). Still owed: **LettuceEncrypt** for a public domain without a VPN, and **Docker packaging**.
+- **LettuceEncrypt has a blocker to clear first:** the `LanGuard` middleware is global, so Let's Encrypt's own validation servers - public by definition - would get a 403 fetching `/.well-known/acme-challenge/*` and no certificate would ever issue. That path needs an explicit exemption. Worth being deliberate about the tier as a whole: its deployment shape is a publicly-reachable server, which means widening `AllowedCidrs` to effectively everything and retiring the same-LAN threat model Phase 4's "plain HTTP is an accepted residual risk" rests on. Fine as an opt-in second tier, but it is a choice to write down rather than a config toggle. Also confirm the package builds against .NET 10 before committing to it.
+- **Docker has one real wrinkle:** `MdnsAdvertiser` cannot work under default bridge networking, since mDNS is link-local multicast. It needs `--network host`, which is Linux-only. A tailnet deployment turns `AdvertiseOnLan` off anyway, so the fallback is documenting it rather than solving it.
 - **Ratings.** Deferred honestly rather than by omission: nothing on `Track` holds a rating and no UI sets one, so a tab has nothing to report. `Starred`/`StarredAt` exists server-side and `/rest/star` sets it, with no client UI. When a liked-songs view lands, starring travels the same road `IPlayReporter` just built.
 - **`IMusicImporter` as a user-facing settings choice**, folding the OpenSubsonic client in alongside the local scanner; and **Jellyfin as a second backend** on the same seam.
 - **Real-device verification** still owed: the Android download path, and end-to-end sync against a real second peer rather than a test harness.

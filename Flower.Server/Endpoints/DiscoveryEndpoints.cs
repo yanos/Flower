@@ -1,5 +1,7 @@
 using System.Text.Json;
 
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Options;
 
 using Flower.Models;
@@ -37,7 +39,8 @@ public static class DiscoveryEndpoints
         // "unknown", never as a rejection.
         app.MapGet(SyncProtocol.InfoPath, (
             HttpContext context, IOptions<FlowerServerOptions> options,
-            DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, Library library) =>
+            DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, Library library,
+            IServer boundServer) =>
         {
             var callerFingerprint = context.Request.Headers["X-Flower-Fingerprint"].ToString();
             var response = new SyncInfoResponseDto(
@@ -50,7 +53,16 @@ public static class DiscoveryEndpoints
                 IsServer: true,
                 Download: false,
                 string.IsNullOrEmpty(callerFingerprint) ? null : trustedPeers.IsTrusted(callerFingerprint),
-                library.ChangeToken);
+                library.ChangeToken,
+                // Every address this server thinks it can be reached on,
+                // including its tailnet one - the whole point being that a
+                // client which paired here on the LAN keeps working after it
+                // leaves. See LocalAddresses and REMOTE-ACCESS-PLAN.md.
+                LocalAddresses.Reachable(
+                    MdnsAdvertiser.AdvertisablePort(
+                        boundServer.Features.Get<IServerAddressesFeature>()?.Addresses ?? [])
+                        ?? SyncProtocol.DefaultPort,
+                    options.Value.AdvertisedHost));
 
             return Results.Json(response, SyncProtocolJsonContext.Default.SyncInfoResponseDto);
         });

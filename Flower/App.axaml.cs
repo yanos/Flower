@@ -627,6 +627,14 @@ public partial class App : Application
             PlatformMulticastLock.Current?.Acquire();
             syncHttpServer.Start();
             networkDiscovery.Start(syncHttpServer.BoundPort ?? SyncHttpServer.DefaultPort);
+
+            // Every address the paired server has told us about, registered as
+            // a peer so the ordinary poll loop starts probing them. This is
+            // what a client off its home network has instead of discovery -
+            // mDNS is link-local, so away from home there is nothing to find
+            // and this is the only route back to the server. See
+            // PairedServerReachability and docs/REMOTE-ACCESS-PLAN.md.
+            _ = provider.GetRequiredService<PairedServerReachability>().RestoreRememberedAsync();
         }
 
         // Refresh the library in the background while the UI is already showing.

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Flower.Services;
 
 // The three facts both ends of LAN discovery have to agree on, in the one place
@@ -30,7 +32,16 @@ public static class SyncProtocol
 //
 // TrustsCaller is null rather than false when the caller did not identify
 // itself, so a plain unauthenticated probe cannot be misread as a rejection.
+//
+// Addresses is how a client keeps hold of a server it can no longer discover.
+// mDNS is link-local, so a client off the home network cannot see the server at
+// all - and before this, reachability *was* discovery, which made a paired
+// server simply vanish the moment its client left the house. The server reports
+// every address it believes it can be reached on (see LocalAddresses), the
+// client remembers them for the server it paired with, and probes them in rank
+// order later. Empty on a peer that predates the field or could not enumerate
+// its interfaces, which reads as "discover me the old way".
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
     string Fingerprint, string PublicKey, bool IsServer, bool Download, bool? TrustsCaller,
-    string LibraryToken);
+    string LibraryToken, List<string>? Addresses = null);

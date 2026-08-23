@@ -188,7 +188,8 @@ public static class MainViewModelHarness
         var mdnsBackend = new FakeMdnsBackend();
         var networkDiscovery = new NetworkDiscoveryService(
             deviceIdentity, NullLogger<NetworkDiscoveryService>.Instance, mdnsBackend, discoveryHttpClient);
-        var reachability = new PairedServerReachability(networkDiscovery, appSettings);
+        var reachability = new PairedServerReachability(
+            networkDiscovery, appSettings, appSettingsStore, NullLogger<PairedServerReachability>.Instance);
         var syncStateStore = new PlaylistSyncStateStore(NullLogger<PlaylistSyncStateStore>.Instance);
         var deviceNicknameStore = new DeviceNicknameStore(NullLogger<DeviceNicknameStore>.Instance);
         var stubPlaylistSync = stubSyncServices

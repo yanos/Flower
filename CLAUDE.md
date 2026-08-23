@@ -14,6 +14,8 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 
 `docs/` holds long-lived design/investigation notes, one file per initiative. Check the relevant file before touching that area — each records its own current status and what's left; this index is intentionally just a pointer, not a summary.
 
+- `SELF-HOSTING.md` — the one user-facing document here: running your own server and reaching it remotely. `SYNC-PLAN.md` holds the reasoning behind it.
+- `REMOTE-ACCESS-PLAN.md` — the client-side half of remote access: how a paired server stays reachable off the LAN (candidate addresses, LAN↔tailnet handover).
 - `ARCHITECTURE-REVIEW.md` — standing whole-codebase backlog: correctness, performance, duplicated sources of truth, test gaps.
 - `CROSS-PLATFORM-PLAN.md` — iOS/Android platform-gap remediation.
 - `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server (same OpenSubsonic client protocol).

@@ -101,6 +101,26 @@ namespace Flower.Persistence
         // request starts unconfirmed again).
         public bool PairedServerTrustConfirmed { get; set; }
 
+        // Every address the paired Server has told us it can be reached on,
+        // from the addresses field of its /info handshake (see
+        // SyncInfoResponseDto and LocalAddresses). Refreshed - replaced, not
+        // merged - on each successful handshake, so an address the server has
+        // stopped reporting stops being probed.
+        //
+        // This is what makes a paired server survive leaving the house. Before
+        // it, reachability *was* mDNS discovery, and mDNS is link-local: off
+        // the home network the paired server simply vanished, with no record of
+        // any address to fall back on. See PairedServerReachability and
+        // docs/REMOTE-ACCESS-PLAN.md.
+        public List<string> PairedServerAddresses { get; set; } = [];
+
+        // Addresses the user typed in themselves, for a server they have never
+        // shared a network with and therefore could never discover. Kept apart
+        // from PairedServerAddresses because these are the user's to remove and
+        // must survive the refresh above, which otherwise overwrites whatever
+        // the server most recently reported.
+        public List<string> ManualServerAddresses { get; set; } = [];
+
         // Whether this Client pushes its own recent log lines to its paired
         // Server at the end of each library sync (LibrarySyncService.
         // PushLogSnapshotAsync, read back by the Log window's remote view).

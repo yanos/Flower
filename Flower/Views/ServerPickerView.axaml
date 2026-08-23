@@ -27,7 +27,7 @@
       </Style.Animations>
     </Style>
   </UserControl.Styles>
-  <Grid RowDefinitions="Auto,*,Auto" Margin="0,12,0,0">
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="0,12,0,0">
     <TextBlock Grid.Row="0"
                Text="Pick the one Server this device bulk-syncs library/playlist data with. Browsing and streaming other devices works regardless of pairing."
                TextWrapping="Wrap"
@@ -123,5 +123,26 @@
                Opacity="0.65"
                FontSize="11"
                Margin="0,10,0,0"/>
+
+    <!-- Bootstrap only: a server this device has never shared a network with,
+         and so could never discover. A server paired with on the LAN reports
+         its own addresses and keeps working away from home with nothing typed
+         - see docs/REMOTE-ACCESS-PLAN.md. -->
+    <StackPanel Grid.Row="3" Spacing="6" Margin="0,14,0,0">
+      <TextBlock Text="Somewhere else"
+                 FontSize="12" Opacity="0.6"/>
+      <TextBlock Text="Only needed for a server this device has never been on the same network as. One you paired with at home keeps working away from home on its own."
+                 TextWrapping="Wrap" FontSize="11" Opacity="0.55"/>
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBox Grid.Column="0" x:Name="ManualAddressBox"
+                 PlaceholderText="my-server.tail1234.ts.net:4533"
+                 Margin="0,0,8,0"/>
+        <Button Grid.Column="1" x:Name="AddManualServerButton" Content="Add"
+                Padding="10,4" Click="AddManualServerButton_Click"/>
+      </Grid>
+      <TextBlock x:Name="ManualAddressStatus"
+                 IsVisible="False"
+                 TextWrapping="Wrap" FontSize="11" Opacity="0.65"/>
+    </StackPanel>
   </Grid>
 </UserControl>
