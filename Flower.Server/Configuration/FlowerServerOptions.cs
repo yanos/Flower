@@ -76,4 +76,26 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // subnet. Empty by default: the built-in RFC1918 + Tailscale CGNAT
     // ranges already cover the documented "expose via Tailscale" path.
     public List<string> AllowedCidrs { get; set; } = [];
+
+    // The proxies whose X-Forwarded-For this server believes, as CIDRs.
+    //
+    // Empty by default, and that default is the security-relevant half: an
+    // X-Forwarded-For header is written by whoever sent the request, so
+    // honouring one from an arbitrary caller would hand every caller a free
+    // way to pick their own source address - past LanGuard's allow-list and
+    // out of whatever per-IP bucket they had exhausted. Only a hop named here
+    // is believed.
+    //
+    // The documented reason to set it is `tailscale serve` (docs/SELF-HOSTING
+    // .md): tailscaled terminates TLS and proxies onward over loopback, so
+    // without this every tailnet device arrives as 127.0.0.1 and shares one
+    // rate-limit bucket with all the others. Set it to 127.0.0.1/32 there.
+    //
+    // Deliberately not in ServerSettingsDto, unlike AllowedCidrs: this is a
+    // fact about how the server was deployed rather than a preference, and
+    // the browser page served *through* the proxy is the last place that
+    // should be able to change who the proxy is trusted to be. Same reasoning
+    // as WebUiPath above, and the same consequence - it is read once at
+    // startup, so changing it needs a restart.
+    public List<string> TrustedProxies { get; set; } = [];
 }
