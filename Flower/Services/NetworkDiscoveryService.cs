@@ -212,6 +212,14 @@ public class NetworkDiscoveryService : IDisposable
     // trusts us - see DiscoveredDevice.TrustsUs.
     private readonly DeviceIdentity _deviceIdentity;
 
+    // Signs those /info requests. Optional only so the test seam below and the
+    // browser head (which registers no signing credentials at all - see
+    // App.axaml.cs) can still construct this; in the app it is always the same
+    // SignedDeviceCredentials every other outbound peer call uses. Null means
+    // the poll goes out identifying itself but unsigned, which a peer answers
+    // with the unauthenticated half of /info - no addresses, no trustsCaller.
+    private readonly IPeerCredentials? _credentials;
+
     // backend/httpClient are test-only seams (NetworkDiscoveryServiceTests):
     // production always goes through the other two constructor args alone,
     // getting the real Makaretu-backed mDNS and a real HttpClient exactly as
@@ -220,9 +228,10 @@ public class NetworkDiscoveryService : IDisposable
     // HttpMessageHandler behind the HttpClient lets a test control
     // ResolveAliasAsync's /info response (or make it fail) without a real
     // socket.
-    public NetworkDiscoveryService(DeviceIdentity deviceIdentity, ILogger<NetworkDiscoveryService> logger, IMdnsBackend? backend = null, HttpClient? httpClient = null)
+    public NetworkDiscoveryService(DeviceIdentity deviceIdentity, ILogger<NetworkDiscoveryService> logger, IMdnsBackend? backend = null, HttpClient? httpClient = null, IPeerCredentials? credentials = null)
     {
         _deviceIdentity = deviceIdentity;
+        _credentials = credentials;
         _logger = logger;
         _backend = backend ?? PlatformMdns.Current ?? new MakaretuMdnsBackend();
         _http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
@@ -434,13 +443,29 @@ public class NetworkDiscoveryService : IDisposable
         string json;
         try
         {
-            // Identifies us the same way every gated endpoint does, even though
-            // /info itself stays ungated (see SyncHttpServer.RequiresTrust) - lets
-            // the peer's response include trustsCaller (see DiscoveredDevice.
-            // TrustsUs) if it recognizes these headers, without requiring it to.
+            // Signed the same way every gated endpoint's calls are, even though
+            // /info itself stays ungated (see SyncHttpServer.RequiresTrust): a
+            // peer has to be able to learn our fingerprint and public key here
+            // before either side can evaluate trust at all, so the route stays
+            // open - what the signature buys is the half of the answer that is
+            // only for peers who can prove who they are, trustsCaller and the
+            // address list (see DiscoveredDevice.TrustsUs/Addresses and
+            // docs/OPEN-INTERNET-REVIEW.md).
+            //
+            // An unsigned X-Flower-Fingerprint used to be enough for that.
+            // It never proved anything: fingerprints are public - they are in
+            // this very response and in every pairing invite - so anyone could
+            // claim one and be told the server's tailnet address.
             using var request = new HttpRequestMessage(HttpMethod.Get, device.Url(SyncProtocol.InfoPath));
-            request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
-            request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
+            if (_credentials != null)
+            {
+                request.AddPeerCredentials(_credentials);
+            }
+            else
+            {
+                request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
+                request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
+            }
             using var response = await _http.SendAsync(request);
             response.EnsureSuccessStatusCode();
             json = await response.Content.ReadAsStringAsync();

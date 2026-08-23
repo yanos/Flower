@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 using Microsoft.AspNetCore.Http;
@@ -20,7 +21,21 @@ namespace Flower.Server.Tests;
 // error.
 public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
 {
-    private async Task<(HttpStatusCode Status, JsonElement Body)> GetInfoAsync(string? callerFingerprint = null)
+    private static DeviceSigningKey NewDevice()
+    {
+        var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKeyRaw = ecdsa.ExportParameters(false) is { Q.X: { } x, Q.Y: { } y }
+            ? (byte[])[0x04, .. x, .. y]
+            : throw new InvalidOperationException("no public point");
+        return new DeviceSigningKey(ecdsa, publicKeyRaw);
+    }
+
+    // callerFingerprint alone claims an identity without proving it - the shape
+    // an attacker can trivially produce, since fingerprints are public. Passing
+    // `signer` instead proves it, the way NetworkDiscoveryService.
+    // ResolveAliasAsync now does.
+    private async Task<(HttpStatusCode Status, JsonElement Body)> GetInfoAsync(
+        string? callerFingerprint = null, DeviceSigningKey? signer = null)
     {
         var context = await server.Server.SendAsync(c =>
         {
@@ -29,6 +44,23 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
             c.Connection.RemoteIpAddress = IPAddress.Loopback;
             if (callerFingerprint != null)
                 c.Request.Headers["X-Flower-Fingerprint"] = callerFingerprint;
+
+            if (signer == null)
+                return;
+
+            var identity = new List<(string Key, string Value)>
+            {
+                ("X-Flower-Fingerprint", signer.Fingerprint),
+                ("X-Flower-Alias", "Kitchen iPad"),
+                ("X-Flower-Role", "client"),
+                ("X-Flower-PublicKey", signer.PublicKeyBase64),
+            };
+            var (signature, timestamp, nonce) = signer.Sign("GET", SyncProtocol.InfoPath, identity, body: []);
+            foreach (var (key, value) in identity.Concat(
+                [("X-Flower-Signature", signature), ("X-Flower-Timestamp", timestamp), ("X-Flower-Nonce", nonce)]))
+            {
+                c.Request.Headers[key] = value;
+            }
         });
 
         using var reader = new StreamReader(context.Response.Body);
@@ -96,17 +128,17 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
         // learns it was revoked on its own timetable, rather than at its next
         // failed sync.
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
-        const string fingerprint = "discovery-test-peer";
-        await trustedPeers.ApproveAsync(fingerprint, "Test peer", "public-key");
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Test peer", device.PublicKeyBase64);
 
         try
         {
-            var (_, body) = await GetInfoAsync(callerFingerprint: fingerprint);
+            var (_, body) = await GetInfoAsync(signer: device);
             Assert.True(body.GetProperty("trustsCaller").GetBoolean());
         }
         finally
         {
-            await trustedPeers.RevokeAsync(fingerprint);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
         }
     }
 
@@ -114,11 +146,86 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
     public async Task Is_reachable_without_any_credential()
     {
         // Deliberately ungated: a device has to learn this server's public key
-        // here before either side can evaluate trust at all. LanGuard is the
-        // only thing in front of it.
+        // here before either side can evaluate trust at all. What a signature
+        // buys is a fuller answer, not access.
         var (status, _) = await GetInfoAsync();
 
         Assert.Equal(HttpStatusCode.OK, status);
+    }
+
+    // The address list is the half of this handshake that describes where the
+    // server lives rather than who it is - including, once a tailnet is in play,
+    // an address that is otherwise only handed out by invitation. See
+    // docs/OPEN-INTERNET-REVIEW.md.
+
+    [Fact]
+    public async Task Withholds_its_addresses_from_a_caller_that_did_not_identify_itself()
+    {
+        var (_, body) = await GetInfoAsync();
+
+        Assert.True(!body.TryGetProperty("addresses", out var addresses)
+                    || addresses.ValueKind == JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Withholds_its_addresses_from_a_signed_but_untrusted_caller()
+    {
+        var (_, body) = await GetInfoAsync(signer: NewDevice());
+
+        Assert.True(!body.TryGetProperty("addresses", out var addresses)
+                    || addresses.ValueKind == JsonValueKind.Null);
+    }
+
+    // The finding itself, as a test. A fingerprint is public - it is in this
+    // very response, and in every pairing invite - so claiming one has to buy
+    // nothing. Before this, claiming a trusted peer's fingerprint was enough to
+    // be told the server's tailnet address.
+    [Fact]
+    public async Task Withholds_its_addresses_from_a_caller_that_claims_a_trusted_fingerprint_without_signing()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Test peer", device.PublicKeyBase64);
+
+        try
+        {
+            var (_, body) = await GetInfoAsync(callerFingerprint: device.Fingerprint);
+
+            Assert.True(!body.TryGetProperty("addresses", out var addresses)
+                        || addresses.ValueKind == JsonValueKind.Null);
+            // And it is told nothing about the pairing either: a key is on file,
+            // so this is a signature failure rather than a revocation.
+            Assert.True(!body.TryGetProperty("trustsCaller", out var trusts)
+                        || trusts.ValueKind == JsonValueKind.Null);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task Reports_its_addresses_to_a_verified_trusted_peer()
+    {
+        // The other half, and the one REMOTE-ACCESS-PLAN.md depends on: a paired
+        // client has to keep learning where this server can be reached, or it
+        // stops working the moment it leaves the LAN.
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Test peer", device.PublicKeyBase64);
+
+        try
+        {
+            var (_, body) = await GetInfoAsync(signer: device);
+
+            var addresses = body.GetProperty("addresses");
+            Assert.Equal(JsonValueKind.Array, addresses.ValueKind);
+            Assert.All(addresses.EnumerateArray(), a => Assert.StartsWith("http", a.GetString()!));
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
     }
 }
 

@@ -39,9 +39,23 @@ public static class SignedRequestCanonicalizer
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body,
         string timestamp, string nonce)
     {
+        // Percent-encoded before joining, so a value can never imitate the
+        // separators. Unencoded, `?a=1&b=2` and `?a=1%26b%3D2` both canonicalize
+        // to "a=1&b=2" - two different requests, one signature, which is a
+        // signature that does not say what it appears to say. Reaching it needs
+        // an attacker positioned to rewrite a request before it is delivered
+        // (the nonce guard covers one already delivered), so plain HTTP behind a
+        // TLS-terminating proxy rather than WireGuard - narrow, and cheaper to
+        // close than to keep reasoning about. See docs/OPEN-INTERNET-REVIEW.md.
+        //
+        // Sorted on the *encoded* form, and by value as well as key: two values
+        // under one key otherwise rely on both ends flattening them in the same
+        // arrival order, which nothing actually guarantees.
         var canonicalQuery = string.Join("&",
             query.Where(p => !IsTransportParam(p.Key))
+                 .Select(p => (Key: Uri.EscapeDataString(p.Key), Value: Uri.EscapeDataString(p.Value)))
                  .OrderBy(p => p.Key, StringComparer.Ordinal)
+                 .ThenBy(p => p.Value, StringComparer.Ordinal)
                  .Select(p => $"{p.Key}={p.Value}"));
         var bodyHash = Convert.ToHexStringLower(SHA256.HashData(body));
 

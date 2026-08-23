@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -45,9 +47,14 @@ public class NetworkDiscoveryServiceTests : IDisposable
         // of remembering more than one address for a server.
         public void StopResponding(int port) => _responsesByPort.Remove(port);
 
+        // The headers of the most recent /info poll, so a test can check what
+        // the client proved about itself rather than only what it was told.
+        public HttpRequestHeaders? LastHeaders { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
+            LastHeaders = request.Headers;
             var port = request.RequestUri!.Port;
             RequestedPorts.Add(port);
 
@@ -82,6 +89,49 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
     private static void WaitUntil(Func<bool> condition, string because) =>
         Assert.True(SpinWait.SpinUntil(condition, TimeSpan.FromSeconds(5)), because);
+
+    // ── Identifying ourselves on the poll ────────────────────────────────
+    //
+    // /info stays open to anyone, but the half of its answer that matters to a
+    // paired client - trustsCaller, and the addresses that keep a server
+    // reachable off the LAN - is only given to a caller whose signature checks
+    // out. So the poll has to carry one. See docs/OPEN-INTERNET-REVIEW.md.
+
+    [Fact]
+    public async Task The_info_poll_is_signed_when_this_device_can_sign()
+    {
+        using var signingKey = TestSigningKey.Create();
+        var identity = new DeviceIdentity { Fingerprint = signingKey.Fingerprint, Alias = "Me" };
+        var handler = new FakeInfoHandler();
+        handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true,"deviceType":"server"}""");
+        using var service = new NetworkDiscoveryService(
+            identity, NullLogger<NetworkDiscoveryService>.Instance, new FakeMdnsBackend(),
+            new HttpClient(handler),
+            new SignedDeviceCredentials(identity, signingKey, new AppSettings()));
+
+        await service.AddRememberedAsync("192.168.1.40:4533");
+
+        Assert.NotNull(handler.LastHeaders);
+        Assert.True(handler.LastHeaders!.Contains("X-Flower-Signature"));
+        Assert.True(handler.LastHeaders.Contains("X-Flower-Timestamp"));
+        Assert.True(handler.LastHeaders.Contains("X-Flower-Nonce"));
+        Assert.Equal(signingKey.Fingerprint, handler.LastHeaders.GetValues("X-Flower-Fingerprint").Single());
+    }
+
+    // The browser head registers no signing key at all, and the tests above
+    // construct without one - a peer still has to resolve, just without the
+    // parts of the answer a signature buys.
+    [Fact]
+    public async Task A_device_with_no_signing_credentials_still_resolves_a_peer()
+    {
+        _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true,"deviceType":"server"}""");
+
+        var device = await _service.AddRememberedAsync("192.168.1.40:4533");
+
+        Assert.Equal("server-fp", device!.Fingerprint);
+        Assert.False(_handler.LastHeaders!.Contains("X-Flower-Signature"));
+        Assert.Equal("my-fp", _handler.LastHeaders.GetValues("X-Flower-Fingerprint").Single());
+    }
 
     // ── Remembered peers: reaching a server discovery cannot see ─────────
     //

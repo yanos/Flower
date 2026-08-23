@@ -187,4 +187,61 @@ public class SignatureVerifierTests
 
         Assert.True(forOtherFingerprint);
     }
+
+    // The canonical query is built by joining key=value pairs with "&". Without
+    // escaping, a value containing those separators can imitate a different set
+    // of parameters entirely, so one signature covers two different requests -
+    // see docs/OPEN-INTERNET-REVIEW.md and SignedRequestCanonicalizer.Build.
+    [Fact]
+    public void A_signature_does_not_carry_across_a_query_that_only_looks_the_same()
+    {
+        var (signer, publicKeyBase64) = MakeSigner();
+        // Two genuinely different requests: one parameter whose value happens to
+        // contain the separators, versus two parameters.
+        (string, string)[] signed = [("a", "1&b=2")];
+        (string, string)[] forged = [("a", "1"), ("b", "2")];
+        var (signature, timestamp, nonce) = signer.Sign("GET", "/rest/stream", signed, []);
+
+        var ok = SignatureVerifier.Verify(
+            "GET", "/rest/stream", forged, [], timestamp, nonce, signature, publicKeyBase64,
+            DateTimeOffset.UtcNow, new NonceReplayGuard(), "fp-1");
+
+        Assert.False(ok);
+    }
+
+    [Theory]
+    [InlineData("a&b")]
+    [InlineData("a=b")]
+    [InlineData("100%")]
+    [InlineData("Sigur Rós - Untitled #3")]
+    public void Values_carrying_the_separators_still_round_trip(string value)
+    {
+        var (signer, publicKeyBase64) = MakeSigner();
+        (string, string)[] query = [("id", value), ("size", "600")];
+        var (signature, timestamp, nonce) = signer.Sign("GET", "/rest/getCoverArt", query, []);
+
+        var ok = SignatureVerifier.Verify(
+            "GET", "/rest/getCoverArt", query, [], timestamp, nonce, signature, publicKeyBase64,
+            DateTimeOffset.UtcNow, new NonceReplayGuard(), "fp-1");
+
+        Assert.True(ok);
+    }
+
+    // Two values under one key: the canonical form sorts by value as well as by
+    // key, so neither side has to flatten a repeated parameter in the same order
+    // as the other - which nothing guarantees.
+    [Fact]
+    public void A_repeated_key_verifies_whichever_order_its_values_arrive_in()
+    {
+        var (signer, publicKeyBase64) = MakeSigner();
+        (string, string)[] signed = [("songIdToAdd", "t-1"), ("songIdToAdd", "t-2")];
+        (string, string)[] received = [("songIdToAdd", "t-2"), ("songIdToAdd", "t-1")];
+        var (signature, timestamp, nonce) = signer.Sign("GET", "/rest/updatePlaylist", signed, []);
+
+        var ok = SignatureVerifier.Verify(
+            "GET", "/rest/updatePlaylist", received, [], timestamp, nonce, signature, publicKeyBase64,
+            DateTimeOffset.UtcNow, new NonceReplayGuard(), "fp-1");
+
+        Assert.True(ok);
+    }
 }
