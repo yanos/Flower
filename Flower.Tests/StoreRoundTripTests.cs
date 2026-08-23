@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Flower.Controls;
+using Flower.Tests.TestSupport;
 using Flower.Importer;
 using Flower.Models;
 using Flower.Persistence;
@@ -52,7 +53,7 @@ public class StoreRoundTripTests : IDisposable
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("HOME", _originalHome);
-        PlatformDataDirectory.Current = null;
+        PlatformDataDirectory.Current = AssemblySetup.DefaultDataDirectory;
         try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
     }
 

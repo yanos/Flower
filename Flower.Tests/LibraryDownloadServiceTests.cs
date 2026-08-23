@@ -49,7 +49,7 @@ public class LibraryDownloadServiceTests : IDisposable
 
     public void Dispose()
     {
-        PlatformDataDirectory.Current = null;
+        PlatformDataDirectory.Current = AssemblySetup.DefaultDataDirectory;
         LibraryDownloadService.DownloadFolderOverride = null;
         try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
     }

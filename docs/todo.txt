@@ -20,7 +20,7 @@ long term:
  visualizers
  themes
  back / forward arrows
- UI tests
+ UI tests (Playwright?)
 
 build:
  dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
@@ -42,18 +42,6 @@ details:
  album art top align on mobile
  next song doesn't always play
  track last played for each song
- option to toggle each log category (level, category, timestamp)
-
-server / client overhaul:
- on desktop sidebar: checkmark on devices that are paired.
- what happens to the library if the client cancel the pairing
- 
+ option to toggle each log category (level, category, timestamp) 
  SubSonic vs our own endpoints
  Event bus?
- 
-Question for Claude:
-  album_artist/artist_id/album_id stored, not computed: will modifying a track metadata cause problem?
-   if stable-across-rename album identity ever matters, the fix isn't un-storing these — it's a real albums table with its own Guid, which SubsonicIdentity's comment already anticipates. Not needed now.
-  
-  * Couldnt the server uses the same queries as the client, but then route the results into a paginator to split them into pages for its own purpose (maybe i misunderstood why they are not using the same)
-  * Starred track will eventually my available for both server and client. 

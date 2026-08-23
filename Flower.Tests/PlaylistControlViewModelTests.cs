@@ -31,7 +31,7 @@ public class PlaylistControlViewModelTests : IDisposable
 
     public void Dispose()
     {
-        PlatformDataDirectory.Current = null;
+        PlatformDataDirectory.Current = AssemblySetup.DefaultDataDirectory;
         try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
     }
 
