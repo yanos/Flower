@@ -13,15 +13,30 @@ namespace Flower.Tests.TestSupport;
 // fake HttpMessageHandler can't produce, since that never touches a real
 // socket at all.
 //
-// Binds the first free port from a small range, one at a time - the same
-// incremental-retry approach SyncHttpServer.Start uses for the real app, so
-// a port already taken by something else on the test machine is skipped
-// rather than failing the test outright.
+// Binds a free port from a small range, skipping any already taken by
+// something else on the test machine rather than failing the test outright.
+//
+// Where it walks the range from matters. It used to start at BasePort every
+// time, which meant the lowest port was re-bound the instant the previous
+// server released it - so consecutive servers were usually handed the *same*
+// port. A request built against a disposed server's port (a retry still in
+// flight, a stream URL handed to something that fetched it late) then landed
+// on the next test's server and was recorded as if that test had made it,
+// which is exactly how StreamTicketUrlResolverTests saw a stray "/rest/stream"
+// arrive at a server only ever asked for tickets. Rotating the starting point
+// means a released port is not offered again until the whole range has been
+// walked, by which time the stragglers are long gone.
 public sealed class FakePeerHttpServer : IDisposable
 {
     private const int BasePort = 48700;
     private const int MaxPortAttempts = 50;
     private const int UnboundBasePort = BasePort + MaxPortAttempts;
+
+    // How many servers have been created. Shared across every instance and
+    // only ever moved forward, so the search starts at a different port each
+    // time and ports are handed out round-robin rather than lowest-first. See
+    // the class remarks.
+    private static int s_created;
 
     private readonly HttpListener _listener;
     private readonly Func<HttpListenerContext, Task> _handle;
@@ -33,8 +48,10 @@ public sealed class FakePeerHttpServer : IDisposable
     {
         _handle = handle;
 
-        for (var port = BasePort; port < BasePort + MaxPortAttempts; port++)
+        var start = Interlocked.Increment(ref s_created);
+        for (var attempt = 0; attempt < MaxPortAttempts; attempt++)
         {
+            var port = BasePort + (start + attempt) % MaxPortAttempts;
             var listener = new HttpListener();
             listener.Prefixes.Add($"http://127.0.0.1:{port}/");
             try

@@ -20,6 +20,7 @@ public sealed class FakeAudioSink : IAudioSink
     private readonly MemoryStream _captured = new();
     private GaplessRingBuffer? _ring;
     private CancellationTokenSource? _pumpCts;
+    private Task? _pump;
 
     public event EventHandler? Playing;
     public event EventHandler? Paused;
@@ -67,7 +68,9 @@ public sealed class FakeAudioSink : IAudioSink
             cts = _pumpCts = new CancellationTokenSource();
         }
 
-        _ = Task.Run(() => Pump(ring, cts.Token));
+        lock (_gate)
+            _pump = Task.Run(() => Pump(ring, cts.Token));
+
         Playing?.Invoke(this, EventArgs.Empty);
     }
 
@@ -122,9 +125,18 @@ public sealed class FakeAudioSink : IAudioSink
         Stopped?.Invoke(this, EventArgs.Empty);
     }
 
+    // Returns only once the pump thread has actually stopped, not merely
+    // once it has been asked to. The ring is single-producer/single-consumer
+    // by contract, so a test that reads it directly has to be the only
+    // reader - and "Pause() returned" is the only signal it has that the pump
+    // is no longer competing for the same bytes. Leaving that asynchronous
+    // made GaplessAudioManagerTests' Time/Position assertions flaky: the pump
+    // would take one 4096-byte chunk out from under the test's own Read, and
+    // the position came out a chunk short.
     private bool StopPump()
     {
         CancellationTokenSource? cts;
+        Task? pump;
         lock (_gate)
         {
             if (!IsPlaying)
@@ -132,10 +144,13 @@ public sealed class FakeAudioSink : IAudioSink
 
             IsPlaying = false;
             cts = _pumpCts;
+            pump = _pump;
             _pumpCts = null;
+            _pump = null;
         }
 
         cts?.Cancel();
+        pump?.Wait(TimeSpan.FromSeconds(5));
         return true;
     }
 

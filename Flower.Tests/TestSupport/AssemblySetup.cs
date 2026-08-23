@@ -85,29 +85,18 @@ internal static class AssemblySetup
 // do. Only reach for MainLoop when a DispatcherTimer is genuinely what is under
 // test.
 //
-// KNOWN ISSUE, not yet solved: this suite fails intermittently - roughly 1 run
-// in 8 - inside Avalonia's own headless session setup
-// (HeadlessUnitTestSession.EnsureIsolatedApplication ->
-// "The calling thread cannot access this object because a different thread owns
-// it"). It surfaces as an unrelated [AvaloniaFact] failing, most often one of
-// CompositionRootTests, and is never an assertion failure in the code under
-// test. Measured findings, so the next person does not repeat them:
-//   - Disabling collection parallelization does NOT fix it (8 full runs).
-//   - Excluding the two MainLoop suites does NOT fix it either (1 in 8, same as
-//     with them). MainLoop makes it much worse when combined with a leaked
-//     short-interval DispatcherTimer (see below), but is not the whole story.
-//   - What DID take it from about 1 run in 3 down to 1 in 8: not letting a
-//     MainViewModel be constructed while MainViewModel.ContentSyncCooldown is
-//     shortened. Its constructor starts a periodic _logPushTimer at that
-//     interval, so such a MainViewModel used to leak a 150ms DispatcherTimer
-//     onto the shared dispatcher for the rest of the run. See
-//     MainViewModelSyncTriggerTests.ShortCooldown.
+// A MainViewModel must always be disposed by the test that builds one. Its
+// PeerSyncCoordinator owns a periodic DispatcherTimer, and a test that shortens
+// MainViewModel.ContentSyncCooldown and then drops the view model leaks a 150ms
+// timer onto the shared dispatcher for the rest of the run. MainViewModelHarness
+// .Parts is IDisposable for this reason and every caller either scopes it with
+// `using` or hands it to PinnedDataDirectory.Own; keep it that way. That is no
+// longer left to discipline alone - TimerLeakGuard fails the next test in the
+// collection, naming the test that started the timer.
 //
-// The timer leak itself is now closed: the timer lives on PeerSyncCoordinator,
-// MainViewModel.Dispose stops it, and no test drops a MainViewModel without
-// disposing it any more - MainViewModelHarness.Parts is IDisposable and every
-// caller either scopes it with `using` or hands it to PinnedDataDirectory.Own.
-// It does NOT settle the intermittent failure above: 8 consecutive full runs
-// after the fix still produced 2 with the identical signature, on an unrelated
-// [AvaloniaFact] each time. So the leak was worth closing on its own merits,
-// but it is not the cause of this.
+// The intermittent headless-session failure that used to be documented here -
+// "The calling thread cannot access this object because a different thread owns
+// it", roughly 1 run in 8, inside Avalonia's HeadlessUnitTestSession - is
+// fixed. It was a race over which thread gets to own Avalonia's UI dispatcher,
+// and it is now won deliberately rather than left to chance. See TestAppBuilder
+// for the mechanism and HeadlessSessionWarmup for the fixture that closes it.

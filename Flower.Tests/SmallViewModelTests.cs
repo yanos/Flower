@@ -764,7 +764,13 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         Dispatcher.UIThread.RunJobs();
 
         Assert.Null(vm.Vm.AlbumArt);
-        Assert.Equal([first, second], loader.Asked);
+        // Both were asked, in no promised order: the view model kicks each load
+        // off with its own Task.Run, so which one reaches the loader first is up
+        // to the thread pool. Asserting the sequence made this test fail under a
+        // shuffled run order (see ShuffleOrderer) - a real defect in the test,
+        // since the claim here is that the stale *answer* is dropped, which the
+        // AlbumArt assertion above is what actually checks.
+        Assert.Equal([first, second], loader.Asked.OrderBy(t => t.Title).ToList());
     }
 
     // Counts what was asked for rather than producing a bitmap: decoding a real

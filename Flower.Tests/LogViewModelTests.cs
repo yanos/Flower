@@ -54,12 +54,10 @@ public class LogViewModelTests : PinnedDataDirectory
         messages.Select(m => new LogEntryDto(DateTimeOffset.UtcNow, "Information", null, m, null)).ToList();
 
     // Drains the dispatcher until `condition` holds. Deliberately RunJobs and
-    // not Dispatcher.UIThread.MainLoop: running the real main loop inside a
-    // test fights Avalonia.Headless.XUnit's session management (it owns the
-    // dispatcher thread), which showed up as intermittent
-    // "the calling thread cannot access this object" failures in whichever
-    // unrelated [AvaloniaFact] happened to need a session next. Everything
-    // this class waits on is a plain Dispatcher.Post, so draining is enough.
+    // not Dispatcher.UIThread.MainLoop: the headless session owns the
+    // dispatcher thread, so a test that parks it in MainLoop holds up every
+    // [AvaloniaFact] queued behind it. Everything this class waits on is a
+    // plain Dispatcher.Post, so draining is enough.
     private static void PumpUntil(Func<bool> condition, int timeoutMs = 3000)
     {
         var deadline = Environment.TickCount64 + timeoutMs;

@@ -102,15 +102,13 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         return vm;
     }
 
-    // Sleep + RunJobs, deliberately NOT Dispatcher.UIThread.MainLoop. Running
-    // the real main loop inside a test fights Avalonia.Headless.XUnit's own
-    // session management: it owns the dispatcher thread, and a test holding it
-    // in MainLoop made HeadlessUnitTestSession.EnsureIsolatedApplication throw
-    // "the calling thread cannot access this object" for whichever unrelated
-    // [AvaloniaFact] happened to need a session next - intermittent failures
-    // across the suite, a different test each run. Nothing here needs a
-    // DispatcherTimer advanced (the debounce is a Task.Delay, and the syncing
-    // edges are plain Dispatcher.Post), so draining the queue is enough.
+    // Sleep + RunJobs, deliberately NOT Dispatcher.UIThread.MainLoop. The
+    // headless session owns the dispatcher thread, so a test that parks it in
+    // MainLoop holds up every [AvaloniaFact] queued behind it. Nothing here
+    // needs a DispatcherTimer advanced (the debounce is a Task.Delay, and the
+    // syncing edges are plain Dispatcher.Post), so draining the queue is
+    // enough. See TestAppBuilder for the suite-wide flake this was once
+    // suspected of causing - it was not the cause.
     private static void PumpUntil(Func<bool> condition, int timeoutMs = 10000)
     {
         var deadline = Environment.TickCount64 + timeoutMs;
