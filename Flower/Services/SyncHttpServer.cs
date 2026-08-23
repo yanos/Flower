@@ -517,7 +517,12 @@ public class SyncHttpServer : IDisposable
             // NetworkDiscoveryService.ResolveAliasAsync) means a client sees
             // a changed server catalog promptly without a new connection, a
             // new endpoint, or anything long-lived to keep alive on mobile.
-            _library.ChangeToken);
+            _library.ChangeToken,
+            // Only worth reporting when this app is acting as a Server: a
+            // Client is dialled by nobody, so a list of addresses to reach it
+            // on is noise a peer would remember and never use. See
+            // LocalAddresses and REMOTE-ACCESS-PLAN.md.
+            _appSettings.IsServer && BoundPort is { } boundPort ? LocalAddresses.Reachable(boundPort) : null);
         var responseBody = JsonSerializer.Serialize(responseDto, SyncProtocolJsonContext.Default.SyncInfoResponseDto);
         await WriteJsonAsync(context, responseBody);
     }

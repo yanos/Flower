@@ -40,6 +40,11 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         public void RespondWith(int port, string json) => _responsesByPort[port] = json;
 
+        // Makes a port start throwing again, so a test can take one route away
+        // from a peer while leaving another working - which is the whole point
+        // of remembering more than one address for a server.
+        public void StopResponding(int port) => _responsesByPort.Remove(port);
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
@@ -77,6 +82,147 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
     private static void WaitUntil(Func<bool> condition, string because) =>
         Assert.True(SpinWait.SpinUntil(condition, TimeSpan.FromSeconds(5)), because);
+
+    // ── Remembered peers: reaching a server discovery cannot see ─────────
+    //
+    // mDNS is link-local, so a client off its home network has nothing to
+    // find. Before these, reachability *was* discovery and a paired server
+    // simply vanished when its client left the house. See
+    // docs/REMOTE-ACCESS-PLAN.md.
+
+    [Fact]
+    public async Task A_remembered_address_becomes_a_peer_without_any_mDNS_sighting()
+    {
+        _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true,"deviceType":"server"}""");
+
+        var device = await _service.AddRememberedAsync("192.168.1.40:4533");
+
+        Assert.NotNull(device);
+        Assert.Equal("server-fp", device!.Fingerprint);
+        Assert.True(device.IsRemembered);
+        Assert.True(device.IsResponding);
+        Assert.Same(device, Assert.Single(_service.KnownDevices));
+        Assert.Empty(_backend.Browsed);
+    }
+
+    [Fact]
+    public async Task A_remembered_address_that_does_not_answer_is_still_kept()
+    {
+        // Nothing is registered for this port, so /info throws. The entry has
+        // to survive anyway - "my server, currently unreachable" is the state
+        // a phone away from home is in whenever the server is asleep, and
+        // forgetting the address would make it unrecoverable.
+        var device = await _service.AddRememberedAsync("192.168.1.41:4533");
+
+        Assert.NotNull(device);
+        Assert.False(device!.IsResponding);
+        Assert.Single(_service.KnownDevices);
+    }
+
+    [Fact]
+    public async Task An_unresolvable_address_is_rejected_rather_than_stored()
+    {
+        Assert.Null(await _service.AddRememberedAsync("not a host name at all"));
+        Assert.Null(await _service.AddRememberedAsync("192.168.1.40:not-a-port"));
+        Assert.Empty(_service.KnownDevices);
+    }
+
+    [Fact]
+    public async Task A_remembered_peer_survives_more_failures_than_would_prune_a_discovered_one()
+    {
+        // The regression this design is most likely to grow. A discovered peer
+        // is pruned after MaxConsecutiveResolveFailures because a fresh mDNS
+        // announcement brings it back; a remembered one has no announcement to
+        // come back on, so pruning it destroys the only route to it.
+        _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
+        var device = await _service.AddRememberedAsync("192.168.1.40:4533");
+        Assert.True(device!.IsResponding);
+
+        _handler.StopResponding(4533);
+        for (var attempt = 0; attempt < 6; attempt++)
+            await _service.AddRememberedAsync("192.168.1.40:4533");
+
+        Assert.Single(_service.KnownDevices);
+        Assert.False(device.IsResponding);
+
+        // And it comes back on its own once the address works again, without
+        // anything having to re-add it.
+        _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
+        await _service.AddRememberedAsync("192.168.1.40:4533");
+        Assert.True(device.IsResponding);
+    }
+
+    [Fact]
+    public async Task A_peer_reports_the_addresses_it_can_be_reached_on()
+    {
+        _handler.RespondWith(4533, """
+            {"alias":"Basement","fingerprint":"server-fp","isServer":true,
+             "addresses":["192.168.1.40:4533","100.101.102.103:4533"]}
+            """);
+
+        var device = await _service.AddRememberedAsync("192.168.1.40:4533");
+
+        Assert.Equal(["192.168.1.40:4533", "100.101.102.103:4533"], device!.Addresses);
+    }
+
+    [Fact]
+    public async Task A_live_sighting_outranks_a_remembered_address_for_the_same_server()
+    {
+        // The same server, known two ways at once: seen on this link, and
+        // remembered at its tailnet address. Both work, and the sighting is
+        // the better route by definition - which is what makes walking back
+        // through the front door quietly restore the direct path.
+        const string info = """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""";
+        _handler.RespondWith(4533, info);
+        _handler.RespondWith(4534, info);
+
+        _backend.RaiseInstanceFound(InstanceName("Basement"), Routable(40));
+        WaitUntil(() => _service.KnownDevices.Count == 1, "the discovered peer should resolve");
+
+        await _service.AddRememberedAsync("100.101.102.103:4534");
+
+        var device = Assert.Single(_service.KnownDevices);
+        Assert.False(device.IsRemembered);
+        Assert.Equal(0, NetworkDiscoveryService.ReachRank(device));
+    }
+
+    [Fact]
+    public async Task A_lan_address_outranks_a_tailnet_one_and_the_tailnet_takes_over_when_it_stops_answering()
+    {
+        // Walking out of the house, in one test. Both candidates are
+        // remembered, so the choice is made purely on rank - and then purely
+        // on which one still answers.
+        const string info = """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""";
+        _handler.RespondWith(4533, info);
+        _handler.RespondWith(4534, info);
+
+        await _service.AddRememberedAsync("192.168.1.40:4533");
+        await _service.AddRememberedAsync("100.101.102.103:4534");
+
+        var atHome = Assert.Single(_service.KnownDevices);
+        Assert.Equal(1, NetworkDiscoveryService.ReachRank(atHome));
+        Assert.Equal(4533, atHome.EndPoint.Port);
+
+        // The LAN address stops answering - the phone has left the building.
+        _handler.StopResponding(4533);
+        await _service.AddRememberedAsync("192.168.1.40:4533");
+
+        var away = Assert.Single(_service.KnownDevices);
+        Assert.Equal(2, NetworkDiscoveryService.ReachRank(away));
+        Assert.Equal(4534, away.EndPoint.Port);
+        Assert.True(away.IsResponding);
+    }
+
+    [Fact]
+    public async Task A_remembered_peer_can_be_removed()
+    {
+        _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
+        await _service.AddRememberedAsync("192.168.1.40:4533");
+
+        _service.RemoveRemembered("192.168.1.40:4533");
+
+        Assert.Empty(_service.KnownDevices);
+    }
 
     [Fact]
     public void Start_advertises_and_browses_for_our_own_service_type()

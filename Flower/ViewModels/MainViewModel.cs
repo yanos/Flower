@@ -262,6 +262,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool ShowPairedServerUnreachableWarning =>
         !string.IsNullOrEmpty(PairedServerFingerprint) && !IsPairedServerReachable;
 
+    // See PeerSyncCoordinator.PairedServerRouteDescription - null while the
+    // server is reached the ordinary way, on the local network.
+    public string? PairedServerRouteDescription => Sync.PairedServerRouteDescription;
+
+    // Servers reached by an address the user typed rather than by discovery -
+    // see PeerSyncCoordinator.AddManualServerAsync.
+    public IEnumerable<string> ManualServerAddresses => Sync.ManualServerAddresses;
+
+    public Task<bool> AddManualServerAsync(string address) => Sync.AddManualServerAsync(address);
+
+    public void RemoveManualServer(string address) => Sync.RemoveManualServer(address);
+
     public bool CanForceSync => Sync.CanForceSync;
 
     public string? LastForceSyncResult => Sync.LastForceSyncResult;
@@ -996,7 +1008,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _subscriptions.Add<EventHandler<DiscoveredDevice>>((_, device) =>
         {
             Dispatcher.UIThread.Post(() => AddOrUpdateDeviceSidebarItem(device));
-            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
+            Dispatcher.UIThread.Post(() =>
+            {
+                OnPropertyChanged(nameof(AvailableServers));
+                OnPropertyChanged(nameof(ManualServerAddresses));
+            });
             Sync.HandlePeerTrustChanged(device);
             TriggerSyncIfPeerCatalogChanged(device);
             TriggerSyncIfReady(device);
@@ -1006,7 +1022,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _subscriptions.Add<EventHandler<string>>((_, instanceName) =>
         {
             Dispatcher.UIThread.Post(() => RemoveDeviceSidebarItem(instanceName));
-            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(AvailableServers)));
+            Dispatcher.UIThread.Post(() =>
+            {
+                OnPropertyChanged(nameof(AvailableServers));
+                OnPropertyChanged(nameof(ManualServerAddresses));
+            });
         },
                 h => networkDiscovery.DeviceLost += h, h => networkDiscovery.DeviceLost -= h);
         }
@@ -1019,6 +1039,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
             OnPropertyChanged(nameof(IsPairedServerReachable));
             OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
+            OnPropertyChanged(nameof(PairedServerRouteDescription));
             OnPropertyChanged(nameof(CanForceSync));
             _deviceSidebar.SyncPairedServerRow();
             Browser.ApplyTrackAvailability(PairedServerFingerprint, reachability.IsReachable);

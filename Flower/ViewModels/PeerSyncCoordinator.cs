@@ -531,6 +531,59 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // truth for this (see that class's own doc comment).
     public bool IsPairedServerReachable => _reachability?.IsReachable ?? false;
 
+    // How the paired server is being reached, for the settings screens to show.
+    // Null when it is not reached at all (the existing "Server not reachable"
+    // text covers that) and empty for the ordinary case of being at home,
+    // where naming the obvious would just be noise. Worth surfacing at all
+    // because a fallback from the LAN to a possibly-relayed tailnet path is
+    // silent, and "why has this got slow" otherwise has no answer anywhere in
+    // the app. See PairedServerReachability.Route.
+    public string? PairedServerRouteDescription => _reachability?.Route switch
+    {
+        ServerRoute.Tailnet => "Connected over your tailnet",
+        ServerRoute.Remote => "Connected over a remote address",
+        _ => null,
+    };
+
+    // Addresses the user typed for a server they cannot discover - the
+    // bootstrap case, and only that: a server paired with on the LAN reports
+    // its own addresses and needs none of this. See
+    // docs/REMOTE-ACCESS-PLAN.md.
+    public IEnumerable<string> ManualServerAddresses => _appSettings.ManualServerAddresses;
+
+    // Returns whether the address answered. A caller shows the failure rather
+    // than leaving a row that will never resolve - the overwhelmingly likely
+    // cause is a typo, and finding that out at pairing time is far better than
+    // at the coffee shop.
+    public async Task<bool> AddManualServerAsync(string address)
+    {
+        var trimmed = address.Trim();
+        if (trimmed.Length == 0 || _networkDiscovery == null)
+            return false;
+
+        if (!_appSettings.ManualServerAddresses.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
+        {
+            _appSettings.ManualServerAddresses.Add(trimmed);
+            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+        }
+
+        var device = await _networkDiscovery.AddRememberedAsync(trimmed);
+        _reachability?.Recompute();
+        NotifyPairingChanged();
+        return device is { IsResponding: true };
+    }
+
+    public void RemoveManualServer(string address)
+    {
+        if (!_appSettings.ManualServerAddresses.Remove(address))
+            return;
+
+        _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+        _networkDiscovery?.RemoveRemembered(address);
+        _reachability?.Recompute();
+        NotifyPairingChanged();
+    }
+
     // "Sync Now" action (desktop's ServerPickerView, mobile's SettingsView) -
     // bypasses both _syncedDeviceFingerprints (the once-per-session dedup
     // TriggerSyncIfReady normally applies) and ScheduleContentSync's 5s

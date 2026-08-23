@@ -4,6 +4,11 @@
 
 Get `Flower.iOS`/`Flower.Android` from untouched scaffolding to actually runnable. Most of the work — especially the mobile UI — is shared between the two via the same `ISingleViewApplicationLifetime` branch in `App.axaml.cs`; only tooling, native package wiring, and data-import are platform-specific.
 
+> **Away from home:** a phone streaming from a paired server off the LAN is not
+> covered by any phase here. mDNS does not cross a tailnet, and reachability was
+> defined as discovery — see `REMOTE-ACCESS-PLAN.md` for that half, and
+> `SELF-HOSTING.md` for the setup.
+
 ## Status — all phases done
 
 - **Phase 0/1** (tooling, app-shell): both `ios`/`android` workloads installed; real bundle identity; explicit `LibVLCSharp.Avalonia`/`VideoLAN.LibVLC.*` refs; `Flower.Android.csproj` on `net10.0-android`.

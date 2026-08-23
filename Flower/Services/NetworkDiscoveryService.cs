@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -67,6 +68,35 @@ public class DiscoveredDevice
     // Server went unnoticed for as long as both apps stayed running (see
     // ARCHITECTURE-REVIEW Tier 1.4, MainViewModel.HandleDeviceDiscovered).
     public string LibraryToken { get; set; } = "";
+
+    // Every address this peer says it can be reached on, from the same /info
+    // handshake as the rest (SyncInfoResponseDto.Addresses). Empty for a peer
+    // that predates the field. A client persists these for the server it paired
+    // with, which is what lets it keep hold of that server after leaving the
+    // network it discovered it on - see PairedServerReachability and
+    // REMOTE-ACCESS-PLAN.md.
+    public IReadOnlyList<string> Addresses { get; set; } = [];
+
+    // Whether this entry came from a remembered address rather than an mDNS
+    // sighting. Two things turn on it.
+    //
+    // It must not be pruned: MaxConsecutiveResolveFailures exists because a
+    // discovered peer that stops answering will be rediscovered when it
+    // re-announces, so dropping it costs nothing. A remembered peer has no
+    // announcement to come back on, so pruning it destroys the only record of
+    // how to reach it. It reads as unreachable instead - see IsResponding.
+    //
+    // And it ranks below a live sighting: if the same server is both visible on
+    // this link and remembered from somewhere else, the sighting is the better
+    // route by definition.
+    public bool IsRemembered { get; init; }
+
+    // Whether the last /info attempt actually got an answer. For a discovered
+    // peer this is nearly always true, since a peer that stops answering is
+    // pruned outright; it carries the weight for remembered peers, which are
+    // not, and where "we know an address for this server" and "that address
+    // works from where we are standing" are genuinely different facts.
+    public bool IsResponding { get; set; } = true;
 }
 
 // See SYNC-PLAN.md: mDNS discovery (proven working macOS <-> iOS Simulator, and -
@@ -230,7 +260,23 @@ public class NetworkDiscoveryService : IDisposable
                 var devices = _knownDevices.Values.Where(d => !d.EndPoint.Address.IsIPv6LinkLocal).ToList();
                 _logger.LogDebug("Polling /info for {Count} known device(s)", devices.Count);
                 foreach (var device in devices)
+                {
+                    // A remembered peer that is not answering gets its address
+                    // resolved again rather than merely retried, because the
+                    // name may now point somewhere else - a server that moved
+                    // on its LAN, or one whose tailnet address changed. Retrying
+                    // the resolved IP alone would keep dialling an address the
+                    // name no longer means, forever. Only when it is already
+                    // failing: a working peer needs no lookup.
+                    if (device is { IsRemembered: true, IsResponding: false }
+                        && RememberedAddressOf(device) is { } address)
+                    {
+                        _ = AddRememberedAsync(address, token);
+                        continue;
+                    }
+
                     _ = ResolveAliasAsync(device);
+                }
 
                 // See RebrowseInterval for why this re-query exists alongside
                 // the one-shot Browse() call in Start().
@@ -430,6 +476,34 @@ public class NetworkDiscoveryService : IDisposable
                 device.LibraryToken = libraryToken;
                 changed = true;
             }
+            // Where this peer says it can be reached. Replaced wholesale rather
+            // than merged: an address the peer has stopped reporting is one it
+            // no longer has, and merging would leave a client probing a stale
+            // one forever. Absent (an older peer) leaves what we had, since
+            // "didn't say" is not "no longer reachable there".
+            if (doc.RootElement.TryGetProperty("addresses", out var addressesProp) &&
+                addressesProp.ValueKind == JsonValueKind.Array)
+            {
+                var addresses = addressesProp.EnumerateArray()
+                    .Select(a => a.GetString())
+                    .Where(a => !string.IsNullOrWhiteSpace(a))
+                    .Select(a => a!)
+                    .ToList();
+                if (!addresses.SequenceEqual(device.Addresses))
+                {
+                    device.Addresses = addresses;
+                    changed = true;
+                }
+            }
+            // It answered, so whatever it was before, it is reachable now. Only
+            // ever false for a remembered peer (a discovered one that stops
+            // answering is pruned instead), which is exactly the case where the
+            // flip back to true is the interesting event.
+            if (!device.IsResponding)
+            {
+                device.IsResponding = true;
+                changed = true;
+            }
             if (changed)
             {
                 _logger.LogInformation("Peer {InstanceName} info updated: alias={Alias}, fingerprint={Fingerprint}",
@@ -488,6 +562,25 @@ public class NetworkDiscoveryService : IDisposable
         if (device.EndPoint.Address.IsIPv6LinkLocal)
             return;
 
+        // A remembered peer is never pruned - see DiscoveredDevice.IsRemembered.
+        // It goes quiet instead, and any consumer that cares (chiefly
+        // PairedServerReachability) is told so it can fall back to another
+        // candidate. Pruning it would delete the only record of how to reach a
+        // server the user is not currently near.
+        if (device.IsRemembered)
+        {
+            if (device.IsResponding)
+            {
+                device.IsResponding = false;
+                _logger.LogInformation(
+                    "Remembered peer {InstanceName} at {EndPoint} is not answering; keeping it and marking it unreachable",
+                    device.InstanceName, device.EndPoint);
+                DeviceDiscovered?.Invoke(this, device);
+            }
+
+            return;
+        }
+
         var failures = _consecutiveResolveFailures.AddOrUpdate(device.InstanceName, 1, (_, count) => count + 1);
         if (failures >= MaxConsecutiveResolveFailures && _knownDevices.TryRemove(device.InstanceName, out _))
         {
@@ -523,11 +616,184 @@ public class NetworkDiscoveryService : IDisposable
     // twice in the picker. Entries with no resolved Fingerprint yet are kept
     // as-is (grouped by instance name instead) since they cannot yet be
     // proven to be duplicates of anything.
+    //
+    // Which entry of a group wins is no longer arbitrary now that the same
+    // server can legitimately appear twice - once seen on this link, once
+    // remembered from an address it told us about. Answering beats not
+    // answering, and among those that answer the route is picked by rank (see
+    // ReachRank): being here on this link beats the LAN address, which beats
+    // the tailnet, which may be relayed.
     public IReadOnlyCollection<DiscoveredDevice> KnownDevices =>
         _knownDevices.Values
             .GroupBy(d => string.IsNullOrEmpty(d.Fingerprint) ? $"instance:{d.InstanceName}" : $"fingerprint:{d.Fingerprint}")
-            .Select(g => g.First())
+            .Select(g => g.OrderByDescending(d => d.IsResponding).ThenBy(ReachRank).First())
             .ToList();
+
+    // How good a route to a peer this entry is, lowest first. Only meaningful
+    // between entries for the same peer.
+    //
+    // The tailnet ranks below the LAN rather than beside it because the two are
+    // not equivalent when both work: a 100.64/10 address may be carried by a
+    // DERP relay rather than a direct WireGuard path, so at home the LAN
+    // address is the one to use. This is what makes walking back through the
+    // front door quietly restore the direct route.
+    internal static int ReachRank(DiscoveredDevice device)
+    {
+        if (!device.IsRemembered)
+            return 0;
+
+        var address = device.EndPoint.Address;
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        if (address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var b = address.GetAddressBytes();
+            if (b[0] == 10 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168))
+                return 1;
+            if (b[0] == 100 && b[1] is >= 64 and <= 127) // Tailscale's CGNAT range
+                return 2;
+        }
+        else if (address.AddressFamily == AddressFamily.InterNetworkV6 && (address.GetAddressBytes()[0] & 0xFE) == 0xFC)
+        {
+            return 1; // fc00::/7, a unique-local address - someone's own network
+        }
+
+        return 3;
+    }
+
+    // Adds a peer by address rather than by sighting: an address a paired
+    // server reported for itself (the normal case, see
+    // PairedServerReachability) or one a user typed for a server they have
+    // never shared a network with (the bootstrap case).
+    //
+    // Returns the entry once /info has been attempted, so a caller can tell a
+    // working address from a typo immediately rather than leaving a dead row in
+    // the UI. Null only when the address cannot be parsed or resolved at all -
+    // a resolvable address that does not answer still yields an entry, since
+    // "my server, currently unreachable" is a state worth holding on to.
+    public async Task<DiscoveredDevice?> AddRememberedAsync(string address, CancellationToken token = default)
+    {
+        var endPoint = await ResolveEndPointAsync(address, token);
+        if (endPoint == null)
+        {
+            _logger.LogInformation("Could not resolve remembered address {Address}", address);
+            return null;
+        }
+
+        // Keyed by the address as written, not by the resolved endpoint, so
+        // re-adding after a DHCP or tailnet address change updates the entry in
+        // place instead of accumulating one per address the name ever had.
+        var instanceName = RememberedInstancePrefix + address;
+        var device = _knownDevices.AddOrUpdate(
+            instanceName,
+            _ => NewRemembered(instanceName, address, endPoint),
+
+            // Replaced rather than mutated when the address behind the name
+            // moves, matching how OnInstanceFound handles the same situation -
+            // EndPoint is init-only, and a peer at a new address is a new route
+            // to it rather than an edit of the old one. Identity carries over,
+            // since it is the same server; IsResponding does not, because
+            // whether the *new* address answers is not yet known.
+            (_, existing) => existing.EndPoint.Equals(endPoint)
+                ? existing
+                : new DiscoveredDevice
+                {
+                    InstanceName = instanceName,
+                    EndPoint = endPoint,
+                    Alias = existing.Alias,
+                    Fingerprint = existing.Fingerprint,
+                    IsServer = existing.IsServer,
+                    DeviceType = existing.DeviceType,
+                    TrustsUs = existing.TrustsUs,
+                    LibraryToken = existing.LibraryToken,
+                    Addresses = existing.Addresses,
+                    IsRemembered = true,
+                    IsResponding = false,
+                });
+
+        await ResolveAliasAsync(device);
+        return device;
+    }
+
+    private static DiscoveredDevice NewRemembered(string instanceName, string address, IPEndPoint endPoint) =>
+        new()
+        {
+            InstanceName = instanceName,
+            EndPoint = endPoint,
+
+            // The address stands in as the display name until /info supplies
+            // the real one, exactly as the mDNS instance name does for a
+            // discovered peer.
+            Alias = address,
+            IsRemembered = true,
+
+            // Until /info answers, this is an address and nothing more -
+            // claiming otherwise would let a consumer act on a server that may
+            // not be there.
+            IsResponding = false,
+        };
+
+    public void RemoveRemembered(string address)
+    {
+        var instanceName = RememberedInstancePrefix + address;
+        if (_knownDevices.TryRemove(instanceName, out _))
+            DeviceLost?.Invoke(this, instanceName);
+    }
+
+    // Distinguishes a remembered entry's key from an mDNS instance name, which
+    // is whatever the peer advertised.
+    private const string RememberedInstancePrefix = "remembered:";
+
+    // The address as the user or the server originally wrote it, recovered from
+    // the key. Kept rather than the resolved endpoint precisely so a name can be
+    // looked up again later - see the poll loop.
+    private static string? RememberedAddressOf(DiscoveredDevice device) =>
+        device.InstanceName.StartsWith(RememberedInstancePrefix, StringComparison.Ordinal)
+            ? device.InstanceName[RememberedInstancePrefix.Length..]
+            : null;
+
+    // "host", "host:port", "1.2.3.4:port" or "[::1]:port". A missing port means
+    // Flower.Server's, not SyncProtocol.DefaultPort: a hand-typed address is
+    // overwhelmingly a headless server, which is the thing a user cannot
+    // discover and therefore the thing they are typing an address for.
+    private async Task<IPEndPoint?> ResolveEndPointAsync(string address, CancellationToken token)
+    {
+        var trimmed = address.Trim();
+        if (trimmed.Length == 0)
+            return null;
+
+        var host = trimmed;
+        var port = FlowerServerPort;
+
+        var afterBracket = trimmed.LastIndexOf(']');
+        var colon = trimmed.LastIndexOf(':');
+        if (colon > afterBracket && colon >= 0)
+        {
+            if (!int.TryParse(trimmed[(colon + 1)..], out port) || port is < 1 or > 65535)
+                return null;
+            host = trimmed[..colon];
+        }
+
+        host = host.Trim('[', ']');
+
+        if (IPAddress.TryParse(host, out var literal))
+            return new IPEndPoint(literal, port);
+
+        try
+        {
+            var resolved = await Dns.GetHostAddressesAsync(host, token);
+            return resolved.Length == 0 ? null : new IPEndPoint(resolved[0], port);
+        }
+        catch (Exception ex) when (ex is SocketException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    // Flower.Server's default listening port - deliberately not
+    // SyncProtocol.DefaultPort (53317), which is the app-to-app one.
+    private const int FlowerServerPort = 4533;
 
     private static bool IsOurServiceType(string instanceName) =>
         instanceName.EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);

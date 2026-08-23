@@ -272,4 +272,39 @@ public partial class ServerPickerView : UserControl
     }
 
     private void ForceSyncButton_Click(object? sender, RoutedEventArgs e) => _mainViewModel.ForceSyncNow();
+
+    // Adding an address is a DNS lookup plus an /info round trip, so the button
+    // is disabled for the duration rather than left clickable - a second click
+    // would otherwise queue a duplicate probe of the same host.
+    private async void AddManualServerButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var address = ManualAddressBox.Text?.Trim() ?? "";
+        if (address.Length == 0)
+            return;
+
+        AddManualServerButton.IsEnabled = false;
+        ManualAddressStatus.IsVisible = true;
+        ManualAddressStatus.Text = "Looking for a server...";
+        try
+        {
+            var found = await _mainViewModel.AddManualServerAsync(address);
+
+            // Kept either way: a server that merely happens to be switched off
+            // right now is still the server the user meant. Saying which
+            // happened is the useful part, since a typo is by far the likelier
+            // of the two and is worth catching here rather than from a coffee
+            // shop.
+            ManualAddressStatus.Text = found
+                ? $"Found a server at {address}."
+                : $"Nothing answered at {address}. It is saved anyway - check the address, and that both ends are on the tailnet.";
+            if (found)
+                ManualAddressBox.Text = "";
+        }
+        finally
+        {
+            AddManualServerButton.IsEnabled = true;
+        }
+
+        Refresh();
+    }
 }
