@@ -200,8 +200,9 @@ public class SyncHttpServerRoundTripTests : IDisposable
 
         async Task<bool?> AskAsync()
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, harness.Url("/api/localsend/v2/info"));
-            request.Headers.Add("X-Flower-Fingerprint", harness.PeerFingerprint);
+            // Signed, not merely claimed: a fingerprint is public, so asserting
+            // one proves nothing (see docs/OPEN-INTERNET-REVIEW.md).
+            using var request = harness.Signed(HttpMethod.Get, "/api/localsend/v2/info");
             using var response = await harness.Http.SendAsync(request);
             using var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var trustsCaller = info.RootElement.GetProperty("trustsCaller");
@@ -211,6 +212,63 @@ public class SyncHttpServerRoundTripTests : IDisposable
         Assert.False(await AskAsync());
         await harness.ApprovePeerAsync();
         Assert.True(await AskAsync());
+    }
+
+    // An unsigned caller claiming a fingerprint this device does trust learns
+    // nothing from it - not the trust status, and not the addresses below.
+    [Fact]
+    public async Task Info_tells_a_caller_that_only_claims_a_trusted_fingerprint_nothing()
+    {
+        using var harness = new Harness();
+        if (harness.Port == null)
+            return;
+        await harness.ApprovePeerAsync();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, harness.Url("/api/localsend/v2/info"));
+        request.Headers.Add("X-Flower-Fingerprint", harness.PeerFingerprint);
+        using var response = await harness.Http.SendAsync(request);
+        using var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // A key is on file, so this is a failed signature rather than a
+        // revocation - which is "unknown", not "no".
+        Assert.Equal(JsonValueKind.Null, info.RootElement.GetProperty("trustsCaller").ValueKind);
+        Assert.True(!info.RootElement.TryGetProperty("addresses", out var addresses)
+                    || addresses.ValueKind == JsonValueKind.Null);
+    }
+
+    // Where this device can be reached is for paired peers only, and only when
+    // it is acting as a Server at all - see REMOTE-ACCESS-PLAN.md for why the
+    // list exists and OPEN-INTERNET-REVIEW.md for why it is gated.
+    [Fact]
+    public async Task Info_reports_where_a_server_can_be_reached_only_to_a_verified_peer()
+    {
+        using var harness = new Harness(isServer: true);
+        if (harness.Port == null)
+            return;
+
+        async Task<JsonElement> AskAsync(bool signed)
+        {
+            using var request = signed
+                ? harness.Signed(HttpMethod.Get, "/api/localsend/v2/info")
+                : new HttpRequestMessage(HttpMethod.Get, harness.Url("/api/localsend/v2/info"));
+            using var response = await harness.Http.SendAsync(request);
+            using var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return info.RootElement.Clone();
+        }
+
+        // Signed, but not yet approved.
+        var beforePairing = await AskAsync(signed: true);
+        Assert.True(!beforePairing.TryGetProperty("addresses", out var none)
+                    || none.ValueKind == JsonValueKind.Null);
+
+        await harness.ApprovePeerAsync();
+
+        var anonymous = await AskAsync(signed: false);
+        Assert.True(!anonymous.TryGetProperty("addresses", out var stillNone)
+                    || stillNone.ValueKind == JsonValueKind.Null);
+
+        var paired = await AskAsync(signed: true);
+        Assert.Equal(JsonValueKind.Array, paired.GetProperty("addresses").ValueKind);
     }
 
     [Fact]

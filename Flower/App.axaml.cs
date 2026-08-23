@@ -297,7 +297,17 @@ public partial class App : Application
             .AddSingleton(sp => sp.GetRequiredService<DeviceIdentityStore>()
                 .Load(sp.GetRequiredService<DeviceSigningKey>().Fingerprint))
 
-            .AddSingleton<NetworkDiscoveryService>()
+            // Built by hand rather than by type so the signing credentials are
+            // actually passed: they are a defaulted constructor parameter (the
+            // test seams beside them have to stay optional), and leaving the
+            // container to decide whether to fill one is how the /info poll
+            // would quietly go out unsigned - which now costs it the address
+            // list. Safe to require here: IPeerCredentials is registered a few
+            // lines below, on this same non-browser branch.
+            .AddSingleton(sp => new NetworkDiscoveryService(
+                sp.GetRequiredService<DeviceIdentity>(),
+                sp.GetRequiredService<ILogger<NetworkDiscoveryService>>(),
+                credentials: sp.GetRequiredService<IPeerCredentials>()))
             .AddSingleton<SyncHttpServer>()
             .AddSingleton<PlaylistSyncService>()
             .AddSingleton<LibrarySyncService>()

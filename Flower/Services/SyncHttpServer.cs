@@ -491,13 +491,21 @@ public class SyncHttpServer : IDisposable
     // device's own timetable rather than needing to be mid-sync - see
     // DiscoveredDevice.TrustsUs. trustsCaller is omitted (not false) when
     // the caller didn't identify itself, so a plain unauthenticated /info
-    // probe can't be misread as a rejection. This existence check
-    // (IsTrusted) is intentionally unauthenticated/display-only - it grants
-    // no access, unlike the gated endpoints' full signature verification.
+    // probe can't be misread as a rejection.
+    //
+    // The caller's claim is *verified* rather than taken at its word, and
+    // Flower.Server's DiscoveryEndpoints does the same - the two halves of
+    // this handshake have to agree. An unsigned X-Flower-Fingerprint proves
+    // nothing at all, fingerprints being public (this response carries one,
+    // and so does every pairing invite), which is why the address list below
+    // is answered only to a signature that checks out. See
+    // docs/OPEN-INTERNET-REVIEW.md.
     private async Task HandleInfoAsync(HttpListenerContext context, byte[] body)
     {
         var deviceType = OperatingSystem.IsIOS() || OperatingSystem.IsAndroid() ? "mobile" : "desktop";
-        var callerFingerprint = GetIdentityValue(context, "X-Flower-Fingerprint");
+        var caller = PeerSignatureAuth.AuthenticateTrustedPeer(
+            ToSignedRequest(context, body), _trustedPeerStore.GetPublicKey, _nonceReplayGuard, DateTimeOffset.UtcNow);
+        var callerClaimedIdentity = !string.IsNullOrEmpty(GetIdentityValue(context, "X-Flower-Fingerprint"));
         var responseDto = new SyncInfoResponseDto(
             _deviceIdentity.Alias,
             "2.0",
@@ -507,7 +515,15 @@ public class SyncHttpServer : IDisposable
             _deviceSigningKey.PublicKeyBase64,
             _appSettings.IsServer,
             false,
-            string.IsNullOrEmpty(callerFingerprint) ? null : _trustedPeerStore.IsTrusted(callerFingerprint),
+            // NotTrusted is the durable "I have no key on file for you" a
+            // revoked peer needs to hear; a signature that merely failed to
+            // verify says nothing about the pairing, so it reads as unknown.
+            !callerClaimedIdentity ? null : caller.Failure switch
+            {
+                PeerAuthFailure.None => true,
+                PeerAuthFailure.NotTrusted => false,
+                _ => null,
+            },
             // The same token GET /api/flower/v1/library serves as its ETag.
             // This is what closes Tier 1.4's actual correctness gap: sync
             // previously fired only on first mDNS contact or a debounced
@@ -521,8 +537,11 @@ public class SyncHttpServer : IDisposable
             // Only worth reporting when this app is acting as a Server: a
             // Client is dialled by nobody, so a list of addresses to reach it
             // on is noise a peer would remember and never use. See
-            // LocalAddresses and REMOTE-ACCESS-PLAN.md.
-            _appSettings.IsServer && BoundPort is { } boundPort ? LocalAddresses.Reachable(boundPort) : null);
+            // LocalAddresses and REMOTE-ACCESS-PLAN.md. And only to a peer that
+            // proved it is trusted - this is where we live, not who we are.
+            caller.Failure == PeerAuthFailure.None && _appSettings.IsServer && BoundPort is { } boundPort
+                ? LocalAddresses.Reachable(boundPort)
+                : null);
         var responseBody = JsonSerializer.Serialize(responseDto, SyncProtocolJsonContext.Default.SyncInfoResponseDto);
         await WriteJsonAsync(context, responseBody);
     }

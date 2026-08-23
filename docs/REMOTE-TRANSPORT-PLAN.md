@@ -346,5 +346,19 @@ was added, and no behaviour changed: what changed is that a scheme other than
 without.
 
 The `tsnet` rejection is a decision. The Cloudflare adoption and the certificate
-design above are directions, and the auth review that precedes both is the next
-thing that has to happen.
+design above are directions.
+
+**Step 2 — the auth review — has now been done, and is written up in
+`OPEN-INTERNET-REVIEW.md`.** It found no live vulnerability, because nothing is
+exposed yet; what it found is that `LanGuard` is cited as the containing control
+in five separate places that were each reasoned about on their own, and that a
+tunnel delivering over loopback retires all five at once without anything
+logging that it happened. The two fixes it called for before any transport are
+**built**: `/info` now answers its address list only to a peer whose signature
+verifies (the client signs its poll to be one), and the signed canonical form
+percent-encodes its parameters so a value can no longer imitate a separator.
+
+The rest is sequenced there against the steps above, including the one that
+hardens the ordering here — a mapped public port cannot ship before TLS, because
+classic Subsonic auth puts a permanent credential in a query string, so step 4
+is downstream of step 3 rather than parallel to it.
