@@ -39,8 +39,13 @@ public static class SyncProtocol
 // server simply vanish the moment its client left the house. The server reports
 // every address it believes it can be reached on (see LocalAddresses), the
 // client remembers them for the server it paired with, and probes them in rank
-// order later. Empty on a peer that predates the field or could not enumerate
-// its interfaces, which reads as "discover me the old way".
+// order later. Empty on a peer that could not enumerate its interfaces, which
+// reads as "discover me the old way".
+//
+// Each entry is a full origin - "http://192.168.1.40:4533",
+// "https://music.example.com" - not a bare host:port. The scheme has to travel
+// with the address because only the server knows whether it is behind TLS, and
+// a client that assumed http could never reach one that is.
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
     string Fingerprint, string PublicKey, bool IsServer, bool Download, bool? TrustsCaller,

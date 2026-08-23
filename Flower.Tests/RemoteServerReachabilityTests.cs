@@ -36,8 +36,15 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
 
         public void StopResponding(int port) => _responsesByPort.Remove(port);
 
+        // Every URL actually dialled, so a test can assert the *scheme* a
+        // candidate was probed over and not merely that it answered.
+        public List<Uri> Requested { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            lock (Requested)
+                Requested.Add(request.RequestUri!);
+
             if (!_responsesByPort.TryGetValue(request.RequestUri!.Port, out var json))
                 throw new HttpRequestException("simulated unreachable peer");
 
@@ -67,7 +74,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
 
     private const string ServerInfo = """
         {"alias":"Basement","fingerprint":"server-fp","isServer":true,"deviceType":"server",
-         "addresses":["192.168.1.40:4533","100.101.102.103:4534"]}
+         "addresses":["http://192.168.1.40:4533","http://100.101.102.103:4534"]}
         """;
 
     private static void WaitUntil(Func<bool> condition, string because) =>
@@ -82,9 +89,9 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
 
         // This is what "pair once at home and it follows you" rests on: the
         // tailnet address is now stored without the user ever typing it.
-        WaitUntil(() => _appSettings.PairedServerAddresses.Contains("100.101.102.103:4534"),
+        WaitUntil(() => _appSettings.PairedServerAddresses.Contains("http://100.101.102.103:4534"),
             "the server's own reported addresses should have been remembered");
-        Assert.Equal(["192.168.1.40:4533", "100.101.102.103:4534"], _appSettings.PairedServerAddresses);
+        Assert.Equal(["http://192.168.1.40:4533", "http://100.101.102.103:4534"], _appSettings.PairedServerAddresses);
     }
 
     [Fact]
@@ -109,7 +116,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
     public async Task A_remembered_address_makes_the_server_reachable_with_no_discovery_at_all()
     {
         _handler.RespondWith(4534, ServerInfo);
-        _appSettings.PairedServerAddresses = ["100.101.102.103:4534"];
+        _appSettings.PairedServerAddresses = ["http://100.101.102.103:4534"];
 
         await _reachability.RestoreRememberedAsync();
 
@@ -122,7 +129,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
     {
         _handler.RespondWith(4533, ServerInfo);
         _handler.RespondWith(4534, ServerInfo);
-        _appSettings.PairedServerAddresses = ["192.168.1.40:4533", "100.101.102.103:4534"];
+        _appSettings.PairedServerAddresses = ["http://192.168.1.40:4533", "http://100.101.102.103:4534"];
 
         await _reachability.RestoreRememberedAsync();
         Assert.True(_reachability.IsReachable);
@@ -131,13 +138,13 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
         // Out of the house: the LAN address stops answering, and the tailnet
         // one carries it without the server ever becoming unreachable.
         _handler.StopResponding(4533);
-        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("http://192.168.1.40:4533");
         Assert.True(_reachability.IsReachable);
         Assert.Equal(ServerRoute.Tailnet, _reachability.Route);
 
         // And back in again.
         _handler.RespondWith(4533, ServerInfo);
-        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("http://192.168.1.40:4533");
         Assert.True(_reachability.IsReachable);
         Assert.Equal(ServerRoute.LocalNetwork, _reachability.Route);
     }
@@ -145,7 +152,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
     [Fact]
     public async Task A_server_that_answers_nowhere_is_unreachable_but_not_forgotten()
     {
-        _appSettings.PairedServerAddresses = ["192.168.1.40:4533", "100.101.102.103:4534"];
+        _appSettings.PairedServerAddresses = ["http://192.168.1.40:4533", "http://100.101.102.103:4534"];
 
         await _reachability.RestoreRememberedAsync();
 
@@ -176,6 +183,51 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
         WaitUntil(() => _appSettings.PairedServerAddresses.Count == 1, "the dropped address should not be kept");
         Assert.Equal(["192.168.1.40:4533"], _appSettings.PairedServerAddresses);
     }
+    // The point of the whole scheme rework: a server that says it is behind TLS
+    // gets dialled over TLS. Every peer URL used to be built as "http://...",
+    // so an https candidate was simply unreachable however it was advertised.
+    [Fact]
+    public async Task A_candidate_advertising_https_is_dialled_over_https()
+    {
+        _handler.RespondWith(443, ServerInfo);
+
+        var device = await _discovery.AddRememberedAsync("https://localhost");
+
+        Assert.NotNull(device);
+        Assert.Equal("https", device.BaseUri.Scheme);
+        Assert.Contains(_handler.Requested, u => u.Scheme == "https" && u.Port == 443);
+    }
+
+    // A scheme the user spelled out keeps its own default port; a bare address
+    // means Flower.Server's, since that is what someone types an address for.
+    [Fact]
+    public async Task A_written_scheme_defaults_to_its_own_port_and_a_bare_address_to_the_servers()
+    {
+        _handler.RespondWith(443, ServerInfo);
+        _handler.RespondWith(4533, ServerInfo);
+
+        var named = await _discovery.AddRememberedAsync("https://localhost");
+        var bare = await _discovery.AddRememberedAsync("192.168.1.40");
+
+        Assert.Equal(443, named!.BaseUri.Port);
+        Assert.Equal(4533, bare!.BaseUri.Port);
+    }
+
+    // TLS validates against a name, so the name has to survive into the URL
+    // that gets dialled - resolving it to its address first would fail
+    // validation on a connection that was otherwise exactly the right one.
+    [Fact]
+    public async Task A_named_host_is_dialled_by_name_not_by_its_resolved_address()
+    {
+        _handler.RespondWith(4533, ServerInfo);
+
+        var device = await _discovery.AddRememberedAsync("localhost:4533");
+
+        Assert.NotNull(device);
+        Assert.Equal("localhost", device.BaseUri.Host);
+        Assert.Contains(_handler.Requested, u => u.Host == "localhost");
+    }
+
 }
 
 // What a server says about where it can be reached. The client half of this is
@@ -191,8 +243,8 @@ public class LocalAddressesTests
         // anywhere else.
         var addresses = LocalAddresses.Reachable(4533);
 
-        Assert.DoesNotContain(addresses, a => a.StartsWith("127.") || a.StartsWith("[::1]") || a.StartsWith("169.254."));
-        Assert.DoesNotContain(addresses, a => a.StartsWith("[fe80"));
+        Assert.DoesNotContain(addresses, a => a.StartsWith("http://127.") || a.StartsWith("http://[::1]") || a.StartsWith("http://169.254."));
+        Assert.DoesNotContain(addresses, a => a.StartsWith("http://[fe80"));
     }
 
     [Fact]
@@ -201,13 +253,46 @@ public class LocalAddressesTests
         Assert.All(LocalAddresses.Reachable(4533), a => Assert.EndsWith(":4533", a));
     }
 
+    // The scheme travels with the address because only the server knows whether
+    // it is behind TLS - a client that assumed http could never reach one that
+    // is, which is the gap this whole change exists to close.
+    [Fact]
+    public void Every_reported_address_carries_the_scheme()
+    {
+        Assert.All(LocalAddresses.Reachable(4533), a => Assert.StartsWith("http://", a));
+        Assert.All(LocalAddresses.Reachable(4533, scheme: "https"), a => Assert.StartsWith("https://", a));
+    }
+
     [Fact]
     public void An_advertised_host_is_reported_first_and_keeps_a_port_it_already_has()
     {
-        Assert.Equal("my-server.tail1234.ts.net:4533", LocalAddresses.Reachable(4533, "my-server.tail1234.ts.net")[0]);
+        Assert.Equal("http://my-server.tail1234.ts.net:4533", LocalAddresses.Reachable(4533, "my-server.tail1234.ts.net")[0]);
 
         // Appending unconditionally would produce host:8080:4533.
-        Assert.Equal("my-server.tail1234.ts.net:8080", LocalAddresses.Reachable(4533, "my-server.tail1234.ts.net:8080")[0]);
+        Assert.Equal("http://my-server.tail1234.ts.net:8080", LocalAddresses.Reachable(4533, "my-server.tail1234.ts.net:8080")[0]);
+    }
+
+    // A bare AdvertisedHost stands in front of this listener and so inherits its
+    // scheme; one that names its own is a tunnel or a reverse proxy, which this
+    // listener's scheme and port have nothing to do with.
+    [Fact]
+    public void An_advertised_host_that_names_its_own_scheme_keeps_it()
+    {
+        Assert.Equal("https://music.example.com",
+            LocalAddresses.Reachable(4533, "https://music.example.com")[0]);
+
+        // The port is the scheme's own default, not this listener's - nobody
+        // writes ":443" and it would be wrong to add ":4533".
+        Assert.Equal("https://music.example.com",
+            LocalAddresses.Reachable(4533, "https://music.example.com", scheme: "http")[0]);
+
+        // A path is not part of an origin, and a trailing slash would make the
+        // stored candidate differ from the same address written without one.
+        Assert.Equal("https://music.example.com",
+            LocalAddresses.Reachable(4533, "https://music.example.com/")[0]);
+
+        Assert.Equal("http://192.168.1.40:8080",
+            LocalAddresses.Reachable(4533, "http://192.168.1.40:8080")[0]);
     }
 
     [Fact]

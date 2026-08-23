@@ -284,7 +284,7 @@ public class AlbumArtLoaderTests : IDisposable
         public override DiscoveredDevice? Resolve(Track track) => new()
         {
             InstanceName = "fake-peer",
-            EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+            BaseUri = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, port)),
         };
     }
 

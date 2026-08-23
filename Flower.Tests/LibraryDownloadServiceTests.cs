@@ -69,7 +69,7 @@ public class LibraryDownloadServiceTests : IDisposable
     private static DiscoveredDevice PeerAt(int port) => new()
     {
         InstanceName = "peer.local",
-        EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+        BaseUri = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, port)),
         Alias = "Peer",
     };
 

@@ -113,7 +113,7 @@ public class LibrarySyncService
         }
 
         _logger.LogInformation("Library sync starting with {Alias} ({Fingerprint}) at {EndPoint}",
-            device.Alias, device.Fingerprint, device.EndPoint);
+            device.Alias, device.Fingerprint, device.BaseUri);
 
         List<Track> placeholders;
         string? servedToken;
@@ -127,7 +127,7 @@ public class LibrarySyncService
             // token cache below, the trust-rejection signal, and the additive
             // merge into Library.
             var importer = new RemoteLibraryImporter(
-                Http, $"http://{device.EndPoint}", _credentials,
+                Http, device.Origin, _credentials,
                 originFingerprint: device.Fingerprint, ownFingerprint: _deviceIdentity.Fingerprint,
                 _importerLogger, closeConnection: true);
 
@@ -211,7 +211,7 @@ public class LibrarySyncService
 
             const string path = "/api/flower/v1/log/report";
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{device.EndPoint}{path}");
+            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(path));
             request.AddPeerCredentials(_credentials, bodyBytes);
             request.Headers.ConnectionClose = true;
             using var content = new ByteArrayContent(bodyBytes);

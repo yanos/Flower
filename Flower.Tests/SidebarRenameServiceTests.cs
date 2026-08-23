@@ -50,7 +50,7 @@ public class SidebarRenameServiceTests : PinnedDataDirectory
         var device = new DiscoveredDevice
         {
             InstanceName = "peer",
-            EndPoint = new IPEndPoint(IPAddress.Loopback, 5000),
+            BaseUri = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, 5000)),
             Alias = "Peer",
             Fingerprint = fingerprint,
         };

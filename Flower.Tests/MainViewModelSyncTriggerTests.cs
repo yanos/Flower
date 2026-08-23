@@ -75,7 +75,7 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         string fingerprint, string alias = "Peer", bool isServer = true, string libraryToken = "") => new()
     {
         InstanceName = alias.ToLowerInvariant(),
-        EndPoint     = new IPEndPoint(IPAddress.Loopback, ClosedPort),
+        BaseUri     = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, ClosedPort)),
         Alias        = alias,
         Fingerprint  = fingerprint,
         IsServer     = isServer,

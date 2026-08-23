@@ -50,7 +50,7 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
             return null;
 
         var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
-        return $"http://{peer.EndPoint}/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}";
+        return peer.Url($"/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}").ToString();
     }
 }
 

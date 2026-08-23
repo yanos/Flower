@@ -21,7 +21,41 @@ namespace Flower.Services;
 public class DiscoveredDevice
 {
     public required string InstanceName { get; init; }
-    public required IPEndPoint EndPoint { get; init; }
+
+    // Where this peer is dialled: scheme, host and port, no path. A Uri rather
+    // than an IPEndPoint because the scheme is not always http and the host is
+    // not always a literal - a server behind a tunnel or a real certificate is
+    // reached by name, and https is the whole point of naming it.
+    //
+    // The host is kept exactly as it was written or announced, and deliberately
+    // not replaced by its resolved address: a certificate is issued for a name,
+    // so dialling the IP behind that name would fail validation even though the
+    // connection is the one intended. Resolution is HttpClient's job, per
+    // request, which also means a name that moves is followed for free.
+    public required Uri BaseUri { get; init; }
+
+    // The address behind BaseUri when it is known - an mDNS sighting always has
+    // one, a remembered address has whatever it resolved to at the time, and a
+    // name that has never resolved has none.
+    //
+    // Only ever used to *classify* a route, never to dial one: ReachRank asks
+    // which network an address belongs to, and the link-local checks ask whether
+    // it is worth retrying. Both are questions about the address itself, which
+    // is why the resolved value is kept alongside the name rather than replacing
+    // it.
+    public IPAddress? Ip { get; init; }
+
+    // The absolute URL of a path on this peer. Every caller goes through this
+    // rather than interpolating a scheme of its own - there used to be eleven
+    // places hardcoding "http://", which is precisely why none of them could
+    // talk to a server behind TLS.
+    public Uri Url(string pathAndQuery) => new(BaseUri, pathAndQuery);
+
+    // The same thing as a string with no trailing slash, for the two consumers
+    // that take a base URL rather than build one (OpenSubsonicClient and
+    // RemoteLibraryImporter).
+    public string Origin => BaseUri.GetLeftPart(UriPartial.Authority);
+
     public string Alias { get; set; } = "";
 
     // Resolved alongside Alias via the /info handshake - see ResolveAliasAsync.
@@ -257,7 +291,7 @@ public class NetworkDiscoveryService : IDisposable
                 // it again a few seconds later, only by a fresh mDNS
                 // announcement (handled by OnInstanceFound instead) actually
                 // replacing it with something routable.
-                var devices = _knownDevices.Values.Where(d => !d.EndPoint.Address.IsIPv6LinkLocal).ToList();
+                var devices = _knownDevices.Values.Where(d => d.Ip?.IsIPv6LinkLocal != true).ToList();
                 _logger.LogDebug("Polling /info for {Count} known device(s)", devices.Count);
                 foreach (var device in devices)
                 {
@@ -341,10 +375,10 @@ public class NetworkDiscoveryService : IDisposable
         // over, as long as nothing routable happened to arrive in between.
         if (_knownDevices.TryGetValue(found.InstanceName, out var existing) &&
             found.EndPoint.Address.IsIPv6LinkLocal &&
-            (!existing.EndPoint.Address.IsIPv6LinkLocal || existing.EndPoint.Address.Equals(found.EndPoint.Address)))
+            (existing.Ip?.IsIPv6LinkLocal != true || existing.Ip.Equals(found.EndPoint.Address)))
         {
             _logger.LogDebug("Ignoring link-local (re-)announcement for {InstanceName} at {EndPoint} - already have {Existing}",
-                found.InstanceName, found.EndPoint, existing.EndPoint);
+                found.InstanceName, found.EndPoint, existing.BaseUri);
             return;
         }
 
@@ -364,14 +398,21 @@ public class NetworkDiscoveryService : IDisposable
         // rediscover loop rather than a steady, bounded one. The periodic
         // poll already re-resolves every known peer on its own cadence, so
         // there is nothing useful left for a repeat announcement to do here.
-        if (existing != null && existing.EndPoint.Equals(found.EndPoint))
+        var announced = HttpOrigin(found.EndPoint);
+        if (existing != null && existing.BaseUri == announced)
         {
             _logger.LogDebug("Ignoring re-announcement for {InstanceName} - already have {EndPoint}, the periodic poll will re-resolve it",
                 found.InstanceName, found.EndPoint);
             return;
         }
 
-        var device = new DiscoveredDevice { InstanceName = found.InstanceName, EndPoint = found.EndPoint, Alias = found.InstanceName };
+        var device = new DiscoveredDevice
+        {
+            InstanceName = found.InstanceName,
+            BaseUri = announced,
+            Ip = found.EndPoint.Address,
+            Alias = found.InstanceName,
+        };
         _knownDevices[found.InstanceName] = device;
         _logger.LogInformation("Discovered peer {InstanceName} at {EndPoint}", found.InstanceName, found.EndPoint);
         DeviceDiscovered?.Invoke(this, device);
@@ -397,7 +438,7 @@ public class NetworkDiscoveryService : IDisposable
             // /info itself stays ungated (see SyncHttpServer.RequiresTrust) - lets
             // the peer's response include trustsCaller (see DiscoveredDevice.
             // TrustsUs) if it recognizes these headers, without requiring it to.
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"http://{device.EndPoint}/api/localsend/v2/info");
+            using var request = new HttpRequestMessage(HttpMethod.Get, device.Url(SyncProtocol.InfoPath));
             request.Headers.Add("X-Flower-Fingerprint", _deviceIdentity.Fingerprint);
             request.Headers.Add("X-Flower-Alias", _deviceIdentity.Alias);
             using var response = await _http.SendAsync(request);
@@ -520,7 +561,7 @@ public class NetworkDiscoveryService : IDisposable
             // Loud on purpose: unlike a flaky connection, this won't clear up
             // on its own on the next poll.
             _logger.LogWarning(ex, "Peer {InstanceName} at {EndPoint} answered /info but the response could not be parsed",
-                device.InstanceName, device.EndPoint);
+                device.InstanceName, device.BaseUri);
         }
     }
 
@@ -546,10 +587,10 @@ public class NetworkDiscoveryService : IDisposable
         // (see LogViewModel). A one-line message carries the same
         // "still failing" information for the repeats.
         if (_consecutiveResolveFailures.GetValueOrDefault(device.InstanceName) == 0)
-            _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.EndPoint);
+            _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.BaseUri);
         else
             _logger.LogDebug("Still could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
-                device.InstanceName, device.EndPoint, ex.Message);
+                device.InstanceName, device.BaseUri, ex.Message);
 
         // A link-local address failing doesn't mean the peer is gone -
         // see OnInstanceFound's own comment - it just means this
@@ -559,7 +600,7 @@ public class NetworkDiscoveryService : IDisposable
         // way. Left un-pruned, it just waits quietly for a routable
         // address to actually replace it (OnInstanceFound already
         // handles that half).
-        if (device.EndPoint.Address.IsIPv6LinkLocal)
+        if (device.Ip?.IsIPv6LinkLocal == true)
             return;
 
         // A remembered peer is never pruned - see DiscoveredDevice.IsRemembered.
@@ -574,7 +615,7 @@ public class NetworkDiscoveryService : IDisposable
                 device.IsResponding = false;
                 _logger.LogInformation(
                     "Remembered peer {InstanceName} at {EndPoint} is not answering; keeping it and marking it unreachable",
-                    device.InstanceName, device.EndPoint);
+                    device.InstanceName, device.BaseUri);
                 DeviceDiscovered?.Invoke(this, device);
             }
 
@@ -642,7 +683,11 @@ public class NetworkDiscoveryService : IDisposable
         if (!device.IsRemembered)
             return 0;
 
-        var address = device.EndPoint.Address;
+        // A name that has never resolved cannot be classified, and guessing
+        // would rank it as though it were on the LAN. Unknown sorts last.
+        if (device.Ip is not { } address)
+            return 3;
+
         if (address.IsIPv4MappedToIPv6)
             address = address.MapToIPv4();
 
@@ -674,12 +719,14 @@ public class NetworkDiscoveryService : IDisposable
     // "my server, currently unreachable" is a state worth holding on to.
     public async Task<DiscoveredDevice?> AddRememberedAsync(string address, CancellationToken token = default)
     {
-        var endPoint = await ResolveEndPointAsync(address, token);
-        if (endPoint == null)
+        var route = await ResolveOriginAsync(address, token);
+        if (route == null)
         {
             _logger.LogInformation("Could not resolve remembered address {Address}", address);
             return null;
         }
+
+        var (baseUri, ip) = route.Value;
 
         // Keyed by the address as written, not by the resolved endpoint, so
         // re-adding after a DHCP or tailnet address change updates the entry in
@@ -687,20 +734,26 @@ public class NetworkDiscoveryService : IDisposable
         var instanceName = RememberedInstancePrefix + address;
         var device = _knownDevices.AddOrUpdate(
             instanceName,
-            _ => NewRemembered(instanceName, address, endPoint),
+            _ => NewRemembered(instanceName, address, baseUri, ip),
 
             // Replaced rather than mutated when the address behind the name
             // moves, matching how OnInstanceFound handles the same situation -
-            // EndPoint is init-only, and a peer at a new address is a new route
+            // BaseUri is init-only, and a peer at a new address is a new route
             // to it rather than an edit of the old one. Identity carries over,
             // since it is the same server; IsResponding does not, because
             // whether the *new* address answers is not yet known.
-            (_, existing) => existing.EndPoint.Equals(endPoint)
+            //
+            // Compared on the resolved address as well as the origin: the name
+            // is what we dial, but a name that now points somewhere else is a
+            // different route even though the URL is character-for-character
+            // the same.
+            (_, existing) => existing.BaseUri == baseUri && Equals(existing.Ip, ip)
                 ? existing
                 : new DiscoveredDevice
                 {
                     InstanceName = instanceName,
-                    EndPoint = endPoint,
+                    BaseUri = baseUri,
+                    Ip = ip,
                     Alias = existing.Alias,
                     Fingerprint = existing.Fingerprint,
                     IsServer = existing.IsServer,
@@ -716,11 +769,12 @@ public class NetworkDiscoveryService : IDisposable
         return device;
     }
 
-    private static DiscoveredDevice NewRemembered(string instanceName, string address, IPEndPoint endPoint) =>
+    private static DiscoveredDevice NewRemembered(string instanceName, string address, Uri baseUri, IPAddress? ip) =>
         new()
         {
             InstanceName = instanceName,
-            EndPoint = endPoint,
+            BaseUri = baseUri,
+            Ip = ip,
 
             // The address stands in as the display name until /info supplies
             // the real one, exactly as the mDNS instance name does for a
@@ -753,43 +807,64 @@ public class NetworkDiscoveryService : IDisposable
             ? device.InstanceName[RememberedInstancePrefix.Length..]
             : null;
 
-    // "host", "host:port", "1.2.3.4:port" or "[::1]:port". A missing port means
-    // Flower.Server's, not SyncProtocol.DefaultPort: a hand-typed address is
-    // overwhelmingly a headless server, which is the thing a user cannot
-    // discover and therefore the thing they are typing an address for.
-    private async Task<IPEndPoint?> ResolveEndPointAsync(string address, CancellationToken token)
+    // An origin as a server reported it or a user typed it, in any of the forms
+    // either produces: "host", "host:port", "1.2.3.4:port", "[::1]:port",
+    // "https://name" or "http://1.2.3.4:4533".
+    //
+    // Two defaults, and they differ on purpose. Without a scheme this is a
+    // hand-typed LAN address, so it means http on Flower.Server's port - not
+    // SyncProtocol.DefaultPort (53317), which is the app-to-app one, because
+    // what a user types an address for is overwhelmingly the headless server
+    // they cannot discover. *With* a scheme, the scheme's own default port
+    // applies, so "https://music.example.com" means 443 and needs no ":443"
+    // spelled out - that address came from a tunnel or a certificate, where the
+    // standard port is the expected one.
+    //
+    // Returns the origin to dial and, separately, the address it resolved to.
+    // The origin keeps the host as written so TLS validates against the name;
+    // the resolved address is for ranking only. See DiscoveredDevice.BaseUri.
+    private async Task<(Uri BaseUri, IPAddress? Ip)?> ResolveOriginAsync(string address, CancellationToken token)
     {
         var trimmed = address.Trim();
         if (trimmed.Length == 0)
             return null;
 
-        var host = trimmed;
-        var port = FlowerServerPort;
+        if (!Uri.TryCreate(HasScheme(trimmed) ? trimmed : $"http://{trimmed}", UriKind.Absolute, out var uri))
+            return null;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            return null;
 
-        var afterBracket = trimmed.LastIndexOf(']');
-        var colon = trimmed.LastIndexOf(':');
-        if (colon > afterBracket && colon >= 0)
-        {
-            if (!int.TryParse(trimmed[(colon + 1)..], out port) || port is < 1 or > 65535)
-                return null;
-            host = trimmed[..colon];
-        }
+        // IsDefaultPort distinguishes "no port was written" from one that was,
+        // and only the former gets Flower.Server's port - a scheme the user
+        // spelled out keeps its own default instead.
+        var baseUri = !HasScheme(trimmed) && uri.IsDefaultPort
+            ? new UriBuilder(uri) { Port = FlowerServerPort }.Uri
+            : uri;
 
-        host = host.Trim('[', ']');
-
+        var host = uri.Host.Trim('[', ']');
         if (IPAddress.TryParse(host, out var literal))
-            return new IPEndPoint(literal, port);
+            return (baseUri, literal);
 
         try
         {
             var resolved = await Dns.GetHostAddressesAsync(host, token);
-            return resolved.Length == 0 ? null : new IPEndPoint(resolved[0], port);
+            return resolved.Length == 0 ? null : (baseUri, resolved[0]);
         }
         catch (Exception ex) when (ex is SocketException or ArgumentException)
         {
             return null;
         }
     }
+
+    private static bool HasScheme(string address) =>
+        address.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+        address.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    // An mDNS sighting is always plain http at a literal address: the peer is on
+    // this link, there is no name for a certificate to be issued for, and the
+    // app-to-app server does not serve TLS.
+    internal static Uri HttpOrigin(IPEndPoint endPoint) =>
+        new($"http://{endPoint}");
 
     // Flower.Server's default listening port - deliberately not
     // SyncProtocol.DefaultPort (53317), which is the app-to-app one.

@@ -201,7 +201,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         var atHome = Assert.Single(_service.KnownDevices);
         Assert.Equal(1, NetworkDiscoveryService.ReachRank(atHome));
-        Assert.Equal(4533, atHome.EndPoint.Port);
+        Assert.Equal(4533, atHome.BaseUri.Port);
 
         // The LAN address stops answering - the phone has left the building.
         _handler.StopResponding(4533);
@@ -209,7 +209,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         var away = Assert.Single(_service.KnownDevices);
         Assert.Equal(2, NetworkDiscoveryService.ReachRank(away));
-        Assert.Equal(4534, away.EndPoint.Port);
+        Assert.Equal(4534, away.BaseUri.Port);
         Assert.True(away.IsResponding);
     }
 
@@ -370,7 +370,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         _backend.RaiseInstanceFound(name, LinkLocal());
 
-        Assert.Equal(routable, Assert.Single(_service.KnownDevices).EndPoint);
+        Assert.Equal(NetworkDiscoveryService.HttpOrigin(routable), Assert.Single(_service.KnownDevices).BaseUri);
     }
 
     [Fact]
@@ -384,7 +384,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
         _handler.RespondWith(routable.Port, """{"alias":"Phone","fingerprint":"phone-fp"}""");
         _backend.RaiseInstanceFound(name, routable);
 
-        Assert.Equal(routable, Assert.Single(_service.KnownDevices).EndPoint);
+        Assert.Equal(NetworkDiscoveryService.HttpOrigin(routable), Assert.Single(_service.KnownDevices).BaseUri);
     }
 
     [Fact]
@@ -474,7 +474,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         var found = _service.FindByFingerprint("server-fp");
 
-        Assert.Equal(endpoint, found!.EndPoint);
+        Assert.Equal(NetworkDiscoveryService.HttpOrigin(endpoint), found!.BaseUri);
         Assert.Null(_service.FindByFingerprint("no-such-fingerprint"));
     }
 }

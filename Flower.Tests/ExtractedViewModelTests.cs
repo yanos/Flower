@@ -491,7 +491,7 @@ public class DeviceSidebarSectionTests
             Fingerprint = fingerprint,
             Alias = alias ?? instanceName,
             IsServer = isServer,
-            EndPoint = new IPEndPoint(IPAddress.Loopback, System.Threading.Interlocked.Increment(ref _port)),
+            BaseUri = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, System.Threading.Interlocked.Increment(ref _port))),
         };
 
     private static (DeviceSidebarSection Section, ObservableCollection<SidebarItem> Items, Host Host) Make()
