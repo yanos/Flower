@@ -1,5 +1,8 @@
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
+
+using Flower.Persistence;
 
 namespace Flower.Tests.TestSupport;
 
@@ -27,6 +30,43 @@ internal static class AssemblySetup
     public static void RaiseThreadPoolMinimumToAvoidStarvationUnderParallelTestExecution()
     {
         ThreadPool.SetMinThreads(100, 100);
+    }
+
+    // Where AppDataDirectory resolves to for any test that has not pinned a
+    // directory of its own. Never null, and that is the whole point: null means
+    // "the real one", i.e. the developer's own ~/Library/Application Support/
+    // Flower.
+    //
+    // PinnedDataDirectory exists so a test's stores write somewhere disposable,
+    // but pinning is per-test-class and the thing being protected is a
+    // process-global static, so the gap is everything that writes *outside* a
+    // pinned class's lifetime:
+    //
+    //   - TestIoc registers a ColumnManager over a throwaway AppSettings, and
+    //     any column PropertyChanged - a width change during a resize gesture is
+    //     enough - schedules a fire-and-forget save 500ms later. That
+    //     ColumnManager is a process-wide singleton (Ioc.Default can only be
+    //     configured once), so the save lands wherever Current happens to point
+    //     when the timer fires, in whatever class is running by then.
+    //   - Any other fire-and-forget SaveAsync still in flight when a pinned
+    //     class's Dispose has already restored Current.
+    //
+    // Both did happen, and the damage is not abstract: a default AppSettings
+    // written over the real settings.json is a wiped library folder list, a
+    // re-enabled iTunes integration and a forgotten paired server - and since
+    // AtomicJsonFile keeps exactly one generation of backup, a second such write
+    // takes settings.json.bak with it and there is nothing left to recover from.
+    //
+    // Pinning a temp directory here makes the *floor* safe rather than relying
+    // on every future test remembering. Restoring Current to this value, not to
+    // null, is the other half - see the Dispose of the classes that pin.
+    public static string DefaultDataDirectory { get; } =
+        Directory.CreateTempSubdirectory("flower-test-appdata-default").FullName;
+
+    [ModuleInitializer]
+    public static void KeepEveryTestOutOfTheRealApplicationSupportDirectory()
+    {
+        PlatformDataDirectory.Current = DefaultDataDirectory;
     }
 }
 

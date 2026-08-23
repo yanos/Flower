@@ -20,6 +20,16 @@ namespace Flower.Tests.TestSupport;
 // ColumnManager below is all that is left of the pattern - MusicListView is
 // built by XAML and has no DataContext by the time its panel must exist, so
 // it is the one deliberate exception; see its own constructor comment.
+//
+// "Touches no disk" was wrong about the ColumnManager, and expensively so. It
+// subscribes to every column's PropertyChanged and schedules a fire-and-forget
+// save 500ms later - a width change during a resize gesture is enough - so this
+// throwaway AppSettings gets written to settings.json for real, at whatever
+// AppDataDirectory resolves to when the timer fires. Being a process-wide
+// singleton, that is long after the test that moved the column, in some other
+// class entirely. It overwrote the developer's own settings.json with a default
+// AppSettings; see AssemblySetup.DefaultDataDirectory, which is what now makes
+// that land somewhere disposable instead of somewhere real.
 internal static class TestIoc
 {
     private static readonly object Gate = new();

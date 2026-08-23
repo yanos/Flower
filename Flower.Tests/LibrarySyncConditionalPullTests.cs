@@ -46,7 +46,7 @@ public class LibrarySyncConditionalPullTests : IDisposable
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("HOME", _originalHome);
-        PlatformDataDirectory.Current = null;
+        PlatformDataDirectory.Current = AssemblySetup.DefaultDataDirectory;
         try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
     }
 

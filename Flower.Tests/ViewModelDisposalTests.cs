@@ -20,6 +20,16 @@ namespace Flower.Tests;
 // process-lifetime singleton, which nothing enforced, and the reason a test
 // could never build one, use it, and let it go.
 // See docs/ARCHITECTURE-REVIEW.md Tier 2.3.
+//
+// The collection attribute is not optional despite what deriving from
+// PinnedDataDirectory suggests: the directory it pins is a process-global, so a
+// class that pins one while running in parallel with another collection
+// redirects *that* collection's stores into its own temp directory, and deletes
+// it out from under them on Dispose. This was the one PinnedDataDirectory
+// subclass missing it - caught by TestDataDirectoryIsolationTests, which saw
+// AppDataDirectory.Path pointing at a pinned directory from a test class that
+// had nothing to do with it.
+[Collection("PlatformDataDirectory")]
 public class ViewModelDisposalTests : PinnedDataDirectory
 {
     private static Track T(string title) =>
