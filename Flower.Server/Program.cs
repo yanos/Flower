@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Options;
 
@@ -222,6 +223,64 @@ app.Logger.LogInformation("Logging to: {LogFile}", logFile);
         Console.WriteLine($"  {WebUiHosting.BuildConsoleSessionUrl(app.Services.GetRequiredService<AdminSessionService>(), browserHost)}");
         Console.WriteLine();
     }
+}
+
+// Ahead of the LanGuard gate below, and that order is the whole point: this is
+// what decides which address that gate - and every per-IP rate limiter behind
+// it - is actually looking at.
+//
+// Only runs when an operator has named a proxy (FlowerServerOptions
+// .TrustedProxies). Unconfigured, no X-Forwarded-For is believed from anyone,
+// which is the safe default for the ordinary "clients reach Kestrel directly"
+// deployment - there, a forwarded header can only have been written by the
+// client itself.
+//
+// KnownIPNetworks/KnownProxies are cleared first because they are not empty by
+// default (loopback is trusted out of the box), and "trusted unless the
+// operator says otherwise" is the wrong shape for this particular decision:
+// on a box where anything else is listening, loopback is reachable by every
+// local process.
+var trustedProxies = app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value.TrustedProxies;
+if (trustedProxies.Count > 0)
+{
+    var forwarded = new ForwardedHeadersOptions
+    {
+        // For and Proto, not Host. The first two are what a TLS-terminating
+        // proxy genuinely knows better than Kestrel does; the host a pairing
+        // invite should name already has an explicit override that an operator
+        // sets deliberately (FlowerServerOptions.AdvertisedHost, see
+        // AdminEndpoints.BuildInvite), and quietly rewriting Host underneath it
+        // would give the same setting two sources of truth.
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+
+        // A ceiling on how far back through the chain to walk, not a grant of
+        // trust to that many hops: the middleware re-checks each address it
+        // pops against the networks below and stops at the first one it does
+        // not recognise. Sized from the configured list because the deployment
+        // this exists for has one entry and one hop, and a chain can only get
+        // longer by an operator naming the extra hops here too.
+        ForwardLimit = trustedProxies.Count,
+    };
+    forwarded.KnownIPNetworks.Clear();
+    forwarded.KnownProxies.Clear();
+
+    foreach (var cidr in trustedProxies)
+    {
+        // System.Net's parser is strict about the address being the network's
+        // base one, so 192.168.1.5/24 is rejected rather than quietly read as
+        // 192.168.1.0/24 - hence the warning naming both ways this can fail.
+        if (System.Net.IPNetwork.TryParse(cidr, out var parsed))
+            forwarded.KnownIPNetworks.Add(parsed);
+        else
+            app.Logger.LogWarning(
+                "Ignoring {Cidr} in TrustedProxies: not a CIDR, or not written as the network's base address (192.168.1.0/24, not 192.168.1.5/24). Nothing forwarded by it will be believed",
+                cidr);
+    }
+
+    app.UseForwardedHeaders(forwarded);
+    app.Logger.LogInformation(
+        "Believing X-Forwarded-For from {ProxyCount} configured proxy network(s): {Proxies}",
+        forwarded.KnownIPNetworks.Count, string.Join(", ", trustedProxies));
 }
 
 app.Use(async (context, next) =>

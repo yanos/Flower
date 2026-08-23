@@ -57,6 +57,7 @@ public static class ServerDataDirectory
             "_SyncPlayCountFromITunes": "false to stop importing per-track play counts from Music.app on each rescan.",
             "_SyncDateAddedFromITunes": "false to stop importing per-track Date Added values from Music.app on each rescan.",
             "_AllowedCidrs": ["Extra networks allowed to reach this server, e.g. 10.8.0.0/24. Private, loopback and Tailscale addresses are already allowed."],
+            "_TrustedProxies": ["Networks whose X-Forwarded-For this server believes, e.g. 127.0.0.1/32. Empty by default, so no forwarded header is trusted from anyone. Set it to the proxy in front of this server (127.0.0.1/32 for 'tailscale serve'), or every client behind that proxy is seen as one address and shares one rate-limit bucket. Read once at startup."],
             "_WebUiPath": "Override for where the browser UI lives. Empty looks next to the binary (where the build puts it), then here. Set, it is the only place looked at."
           }
         }
