@@ -171,6 +171,8 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
         _handler.RespondWith(4533, ServerInfo);
         await _discovery.AddRememberedAsync("192.168.1.40:4533");
         WaitUntil(() => _appSettings.PairedServerAddresses.Count == 2, "both addresses should be remembered first");
+        WaitUntil(() => _discovery.KnownDevices.Any(d => d.BaseUri.Host == "100.101.102.103"),
+            "the reported address should have been registered as a peer first");
 
         // The server leaves the tailnet. Replaced rather than merged, so the
         // address it no longer has stops being probed instead of lingering.
@@ -182,6 +184,37 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
 
         WaitUntil(() => _appSettings.PairedServerAddresses.Count == 1, "the dropped address should not be kept");
         Assert.Equal(["192.168.1.40:4533"], _appSettings.PairedServerAddresses);
+
+        // And unregistered, not merely unpersisted. A remembered peer is exempt
+        // from the ordinary staleness pruning, so dropping it from settings
+        // alone left it in discovery for the rest of the session - one dead
+        // entry per address the server ever held, each of them a row in the
+        // Devices list labelled with a raw URL.
+        WaitUntil(() => _discovery.KnownDevices.All(d => d.BaseUri.Host != "100.101.102.103"),
+            "the dropped address should have been unregistered from discovery too");
+    }
+
+    // The one exception: an address the *user* typed is not the server's to
+    // withdraw. The two lists overlap - a LAN address the server reports is
+    // exactly the sort a user also bookmarks - so forgetting on the server's
+    // say-so alone would delete a manual entry out from under them.
+    [Fact]
+    public async Task An_address_the_user_typed_survives_the_server_dropping_it()
+    {
+        _appSettings.ManualServerAddresses.Add("http://100.101.102.103:4534");
+        _handler.RespondWith(4533, ServerInfo);
+        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        WaitUntil(() => _appSettings.PairedServerAddresses.Count == 2, "both addresses should be remembered first");
+
+        _handler.RespondWith(4533, """
+            {"alias":"Basement","fingerprint":"server-fp","isServer":true,
+             "addresses":["192.168.1.40:4533"]}
+            """);
+        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        WaitUntil(() => _appSettings.PairedServerAddresses.Count == 1, "the dropped address should not be kept");
+
+        Assert.Contains(_discovery.KnownDevices, d => d.BaseUri.Host == "100.101.102.103");
+        Assert.Contains("http://100.101.102.103:4534", _appSettings.ManualServerAddresses);
     }
     // The point of the whole scheme rework: a server that says it is behind TLS
     // gets dialled over TLS. Every peer URL used to be built as "http://...",

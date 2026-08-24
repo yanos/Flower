@@ -66,6 +66,13 @@ public sealed class ServerRow : ViewModelBase
     // is the paired one).
     public required string? BlockedByAlias { get; init; }
 
+    // Shown under the name only when the name alone does not identify the
+    // row: two servers calling themselves the same thing. A row is otherwise
+    // deliberately just a name - an origin is how this device happens to be
+    // reaching the server right now, which is both changeable and none of the
+    // user's business when there is nothing to tell apart. See Refresh.
+    public string? Detail { get; init; }
+
     public string ActionLabel =>
         !IsPaired ? "Pair" :
         IsTrustConfirmed ? "Unpair" :
@@ -166,11 +173,30 @@ public partial class ServerPickerView : UserControl
             .ToDictionary(r => r.Fingerprint, r => r.PairingCode)
             ?? [];
 
-        var rows = _mainViewModel.AvailableServers
+        // One row per server, named. AvailableServers is already one entry per
+        // identified server - deduped by fingerprint, with the addresses that
+        // never answered filtered out (see PeerSyncCoordinator.AvailableServers
+        // and NetworkDiscoveryService.KnownDevices) - so the only way two rows
+        // can look alike is two genuinely different servers choosing the same
+        // alias, which is entirely possible since an alias defaults to the
+        // machine name. Those, and only those, get their origin underneath to
+        // tell them apart. A manual address that never resolved is not lost by
+        // being absent here: the box that added it reports its own success or
+        // failure inline (see AddManualServerButton_Click).
+        var servers = _mainViewModel.AvailableServers.ToList();
+
+        var duplicateAliases = servers
+            .GroupBy(d => d.Alias, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var rows = servers
             .Select(d => new ServerRow
             {
                 Fingerprint = d.Fingerprint,
-                Alias = d.Alias,
+                Alias = string.IsNullOrWhiteSpace(d.Alias) ? d.Origin : d.Alias,
+                Detail = duplicateAliases.Contains(d.Alias) ? d.Origin : null,
                 IsPaired = d.Fingerprint == pairedFingerprint,
                 IsSyncing = d.Fingerprint == pairedFingerprint && _mainViewModel.IsSyncing,
                 IsTrustConfirmed = d.Fingerprint == pairedFingerprint && _mainViewModel.IsPairedServerTrustConfirmed,

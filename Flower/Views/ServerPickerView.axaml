@@ -75,11 +75,19 @@
                                                VerticalAlignment="Center"
                                                IsVisible="{Binding IsSyncing}"/>
                 </StackPanel>
-                <TextBlock Grid.Row="1" Grid.Column="0"
-                           Text="{Binding HintText}"
-                           IsVisible="{Binding HintText, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                           Opacity="0.6" FontSize="11"
-                           Margin="4,1,0,0"/>
+                <!-- Detail only appears when two servers share a name - see
+                     ServerRow.Detail. Both live on the same line so a row
+                     showing one, the other or both keeps its height. -->
+                <StackPanel Grid.Row="1" Grid.Column="0"
+                            Orientation="Horizontal" Spacing="8"
+                            Margin="4,1,0,0">
+                  <TextBlock Text="{Binding Detail}"
+                             IsVisible="{Binding Detail, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                             Opacity="0.6" FontSize="11"/>
+                  <TextBlock Text="{Binding HintText}"
+                             IsVisible="{Binding HintText, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                             Opacity="0.6" FontSize="11"/>
+                </StackPanel>
                 <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
                             Orientation="Horizontal" Spacing="6"
                             VerticalAlignment="Center" Margin="8,0,0,0">

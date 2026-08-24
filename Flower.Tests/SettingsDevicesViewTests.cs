@@ -39,22 +39,37 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
     private const string ServerFingerprint = "fp-server";
     private static readonly IPEndPoint ServerEndPoint = new(IPAddress.Parse("192.168.1.10"), 4533);
 
+    // Answers per host rather than for everything, so a test can also stand up
+    // an address that is *not* a server - which is what an address a server
+    // has stopped reporting, or one typed with a typo in it, looks like from
+    // here.
     private sealed class FakeInfoHandler : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        private readonly Dictionary<string, (string Alias, string Fingerprint)> _serversByHost =
+            new() { [ServerEndPoint.Address.ToString()] = ("Living Room", ServerFingerprint) };
+
+        public void AddServer(string host, string alias, string fingerprint) =>
+            _serversByHost[host] = (alias, fingerprint);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (!_serversByHost.TryGetValue(request.RequestUri!.Host, out var server))
+                throw new HttpRequestException("simulated unreachable peer");
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    $$"""{"alias":"Living Room","fingerprint":"{{ServerFingerprint}}","isServer":true,"trustsCaller":true}"""),
+                    $$"""{"alias":"{{server.Alias}}","fingerprint":"{{server.Fingerprint}}","isServer":true,"trustsCaller":true}"""),
             });
+        }
     }
 
-    private static MainViewModelHarness.Parts BuildClient() =>
+    private static MainViewModelHarness.Parts BuildClient(FakeInfoHandler? handler = null) =>
         MainViewModelHarness.BuildParts(
             new Library(new List<Track>()),
             new MainPlaylist(new List<Track>()),
             new AppSettings(),
-            discoveryHttpClient: new HttpClient(new FakeInfoHandler()));
+            discoveryHttpClient: new HttpClient(handler ?? new FakeInfoHandler()));
 
     // Puts the control in a real (headless) window, because everything under
     // test here hangs off attach/detach rather than off the constructor.
@@ -77,8 +92,10 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         Dispatcher.UIThread.RunJobs();
     }
 
-    private static int RowCount(ServerPickerView view) =>
-        (view.FindControl<ListBox>("ServersList")?.ItemsSource as IEnumerable<object>)?.Count() ?? 0;
+    private static IReadOnlyList<ServerRow> Rows(ServerPickerView view) =>
+        (view.FindControl<ListBox>("ServersList")?.ItemsSource as IEnumerable<ServerRow>)?.ToList() ?? [];
+
+    private static int RowCount(ServerPickerView view) => Rows(view).Count;
 
     // The live case, which is what makes the detached one below an assertion
     // about detaching rather than about the wiring never having worked.
@@ -93,6 +110,77 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         DiscoverTheServer(parts);
 
         Assert.Equal(1, RowCount(view));
+
+        window.Close();
+    }
+
+    // One server is one row, however many ways this device knows to reach it.
+    // A server reports every address it holds, over both schemes, and each one
+    // is registered as its own remembered peer - so a perfectly ordinary
+    // server with an IPv4 and an IPv6 address produced four rows, three of
+    // them labelled with a raw URL and none of them pairable.
+    [AvaloniaFact]
+    public async Task Every_way_of_reaching_one_server_is_still_one_row()
+    {
+        using var parts = BuildClient();
+        var view = new ServerPickerView(parts.Main);
+        var window = Show(view);
+
+        DiscoverTheServer(parts);
+        await parts.NetworkDiscovery.AddRememberedAsync($"http://{ServerEndPoint.Address}:{ServerEndPoint.Port}");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(1, RowCount(view));
+        Assert.Equal("Living Room", Rows(view)[0].Alias);
+
+        window.Close();
+    }
+
+    // An address nothing answers on is not a server anyone can pair with -
+    // pairing pins a fingerprint, and this has none. It used to get a row
+    // anyway, labelled with the URL and permanently disabled: the visible
+    // symptom of dead addresses accumulating in discovery (see
+    // PairedServerReachability.RememberAddresses).
+    [AvaloniaFact]
+    public async Task An_address_that_never_answers_is_not_offered_as_a_server()
+    {
+        using var parts = BuildClient();
+        var view = new ServerPickerView(parts.Main);
+        var window = Show(view);
+
+        DiscoverTheServer(parts);
+        await parts.NetworkDiscovery.AddRememberedAsync("http://[fd93:887c:f753::2]:4533");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(1, RowCount(view));
+        Assert.DoesNotContain(Rows(view), r => r.Alias.Contains("fd93"));
+
+        window.Close();
+    }
+
+    // Two different servers may well call themselves the same thing - an alias
+    // defaults to the machine name. Only then is an address worth showing, and
+    // only as a subtitle: the name is the identity, the address is the tie
+    // break.
+    [AvaloniaFact]
+    public async Task Two_servers_sharing_a_name_are_told_apart_by_their_address()
+    {
+        var handler = new FakeInfoHandler();
+        handler.AddServer("192.168.1.11", "Living Room", "fp-other-server");
+
+        using var parts = BuildClient(handler);
+        var view = new ServerPickerView(parts.Main);
+        var window = Show(view);
+
+        DiscoverTheServer(parts);
+        await parts.NetworkDiscovery.AddRememberedAsync("http://192.168.1.11:4533");
+        Dispatcher.UIThread.RunJobs();
+
+        var rows = Rows(view);
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.Equal("Living Room", r.Alias));
+        Assert.Equal(2, rows.Select(r => r.Detail).Distinct().Count());
+        Assert.All(rows, r => Assert.NotNull(r.Detail));
 
         window.Close();
     }
