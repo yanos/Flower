@@ -19,12 +19,13 @@ by name as the containing control in five separate places:
 - `DiscoveryEndpoints` — `/info` is deliberately ungated ("LanGuard still
   fronts it, so this is reachable from the local network and not the open
   internet").
-- `AdminSessionService` — a 60-minute bearer token handed over in a URL
+- ~~`AdminSessionService` — a 60-minute bearer token handed over in a URL
   fragment ("LanGuard keeps it unusable from off the LAN even in the window
-  where it is live").
-- `PeerOrSessionAuth` — widening that bearer token past `/api/admin` to the
+  where it is live").~~ **Gone** — both this class and the token are deleted;
+  see #7.
+- ~~`PeerOrSessionAuth` — widening that bearer token past `/api/admin` to the
   catalog and to ticket minting ("LanGuard still keeps it unusable from off
-  the LAN").
+  the LAN").~~ **Gone** — deleted with it; see #7.
 - `SyncHttpServer`'s class comment — "the only thing standing between
   LAN-only and reachable from the internet if the port is ever forwarded."
 - `Program.cs`'s Kestrel body cap — the LanGuard middleware described as "the
@@ -47,7 +48,9 @@ become an explicit one. Concretely, the server needs to know whether it is
 exposed — a `FlowerServerOptions` switch that a transport sets — and the five
 sites above need to state what they do when it is on, rather than inheriting an
 answer. `/info` is the one with a clean fix (below); the admin-session widening
-is the one that most needs an actual decision rather than a comment.
+was the one that most needed an actual decision rather than a comment, and #7
+records the decision taken — the two citations above are struck through because
+the code that made them is gone, so three of the five sites remain.
 
 ## Findings
 
@@ -229,20 +232,79 @@ step 4 of the transport sequence rather than a nice-to-have. It is the same
 conclusion `REMOTE-TRANSPORT-PLAN.md`'s certificate section reaches from the
 other direction.
 
-### 7. Bearer tokens in URLs, once URLs leave the house
+### 7. Bearer tokens in URLs, once URLs leave the house — **fixed**
 
-Two tokens travel in URLs: stream tickets (`/rest/stream?...&ticket=`, 15
+Two tokens travelled in URLs: stream tickets (`/rest/stream?...&ticket=`, 15
 minutes, bound to one track id) and the admin session token (URL fragment, 60
-minutes, full admin). Both are narrow by design and the reasoning in
-`StreamTicketService` and `AdminSessionService` is sound for a LAN.
+minutes, full admin). Both were narrow by design and the reasoning in
+`StreamTicketService` and `AdminSessionService` was sound for a LAN.
 
 Exposed, query strings are logged by every proxy in the path and leak via
-`Referer`. The stream ticket is defensible — one track, fifteen minutes. The
-admin session is the one to look at again: `PeerOrSessionAuth` has already
-widened it from "the settings page" to "the catalog and the right to mint
-stream tickets," and its own comment names the principled answer (the
-non-extractable WebCrypto keypair from `SYNC-PLAN.md`). Off-LAN exposure is the
-event that turns that from an interim into a debt.
+`Referer`. The stream ticket is defensible — one track, fifteen minutes, and
+it is what an `<audio>` element plays on because a media element cannot present
+a credential of its own. It stays.
+
+The admin session was the one to look at again, and looking at it the answer
+was not to narrow it. It had already widened once — `PeerOrSessionAuth` took it
+from "the settings page" to "the catalog and the right to mint stream tickets"
+— and every narrowing available was a smaller version of the same wrong shape:
+a bearer credential, in a URL, standing in for a device that could not
+authenticate itself. Off-LAN exposure removes the one thing that made it
+tolerable.
+
+**Fixed by making the browser a device**, which is what `SYNC-PLAN.md`'s "the
+browser is a device" always said and what `AdminSessionService`'s own comment
+named as the principled answer.
+
+`Flower.Web/wwwroot/webcrypto.js` generates an ECDSA P-256 keypair with
+`extractable: false` and keeps it in IndexedDB as a `CryptoKey`, never as
+bytes. The private half is a handle the page can sign with and nothing —
+including that module — can read out, which is a *stronger* storage guarantee
+than the file-backed key the desktop has. The formats needed no bridging: `raw`
+export is `0x04 || X || Y`, exactly `DeviceKeyStore.PublicKeyRaw`, and a
+WebCrypto ECDSA signature is raw `r‖s`, which is
+`DSASignatureFormat.IeeeP1363FixedFieldConcatenation`. `SignatureVerifier`
+accepts a browser's signature with no new code path at all.
+
+What the URL fragment now carries is a **single-use pairing code**, the same
+one every other device redeems, spent within a second of the page loading and
+worthless afterwards. The desktop's "Server Settings…" button issues an
+admin-granting code instead of minting a session; the server's first-run console
+prints the code it already prints, addressed at a browser as well as at an app.
+
+Deleted outright rather than kept as a fallback (`CLAUDE.md`, "No Users Yet"):
+`AdminSessionService`, `AdminSessionCredentials`, `PeerOrSessionAuth`,
+`POST /api/admin/sessions`, and the `X-Flower-Admin-Session` header. There is
+no bearer credential left in the project. `/api/admin`, `GET /library` and the
+ticket route all gate on a device signature and nothing else.
+
+**What it cost.** `IPeerCredentials.Authorize` had to become
+`AuthorizeAsync` — `crypto.subtle` is a promise — which is the re-shaping of
+every signing call site that `PeerOrSessionAuth`'s comment predicted would make
+this not a drop-in. It reached twelve call sites plus
+`OpenSubsonicClient.BuildUrl`/`GetStreamUrl`/`GetCoverArtUrl`, all of which
+still complete synchronously on every head but the browser.
+
+**What it requires, stated plainly: a secure context.** Browsers expose
+`crypto.subtle` only over HTTPS and on `localhost`, so a tab opened at
+`http://192.168.1.x:4533` now has no key and cannot pair. That is a real
+regression for plain-HTTP LAN browsing, and it is not one this change can avoid
+— it is the browser's rule, not the server's. It is also aligned with where
+everything else here is going: every remote transport under consideration
+terminates TLS (Cloudflare Tunnel at the edge, Tailscale via `tailscale cert`),
+and #6 already makes TLS a hard gate on the mapped-port path. `App` logs an
+explicit error naming the requirement rather than failing at the first refused
+request.
+
+**Verified.** The real `webcrypto.js` was run against a live server: it
+generated a key, redeemed a printed pairing code with a self-signed request
+(200, `isAdmin: true`), then signed its way into `GET /api/flower/v1/library`,
+`GET /api/admin/settings` and `POST /api/flower/v1/stream-tickets` — all 200,
+with no bearer token anywhere. The same server answered 401 to an
+`X-Flower-Admin-Session` on `/api/admin`, 403 on the sync surface, and 404 for
+`POST /api/admin/sessions`. `BrowserSignatureFormatTests` pins the format
+contract as a fixed vector generated from that module, so the three encoding
+choices it depends on cannot drift unnoticed.
 
 ### 8. Smaller notes, recorded rather than acted on
 
@@ -273,8 +335,8 @@ Ordered by what blocks what, not by severity:
 1. ~~**Before any transport:** #1 (`/info` gating) and #5 (canonicalization).~~
    **Done** — see each finding above.
 2. ~~**Before Cloudflare Tunnel:** #2 — `TrustedProxies` enforcement and the
-   failed-auth lockout.~~ **Done** — see the finding above. Still open before
-   the tunnel is anything but a test: a decision on #7's admin session bearer.
+   failed-auth lockout, and #7 — the admin session bearer.~~ **Done** — see
+   each finding above. Nothing is left between here and turning the tunnel on.
 3. **Before a mapped public port:** #6 — TLS, which means the certificate
    design in `REMOTE-TRANSPORT-PLAN.md` has to land first. This is the reason
    step 4 of that sequence is genuinely downstream of step 3 rather than
@@ -284,15 +346,17 @@ Ordered by what blocks what, not by severity:
 
 ## Status
 
-**Reviewed; everything Cloudflare Tunnel needs is fixed.**
+**Reviewed; everything Cloudflare Tunnel needs is fixed, including the bearer
+token that was the last thing standing before it.**
 
 Built: #1 (`/info` answers its address list and `TrustsCaller` only to a
 verified trusted peer, and the client signs its poll to be one), #5 (an
 unambiguous canonical form), #3 (one shared per-source rate-limit key, IPv6
 collapsed to its /64), #4 (a budget on `/api/admin`) and #2 (an undeclared proxy
 warns about itself, and the failed-auth lockout no longer takes the surface away
-from bystanders). Both suites pass — `Flower.Tests` 1092/1092,
-`Flower.Server.Tests` 178/178 — and a live server was
+from bystanders) and #7 (the browser holds a non-extractable WebCrypto keypair
+and signs; every bearer credential is deleted). Both suites pass —
+`Flower.Tests` 1095/1095, `Flower.Server.Tests` 178/178 — and a live server was
 confirmed by hand to answer an anonymous `/info` with `addresses: null`, where
 it previously listed every address it had. Pairing was confirmed by hand to
 still work afterwards.
@@ -306,6 +370,12 @@ The proxy warning was confirmed by hand as well: a request carrying an
 `X-Forwarded-For` logs it naming `127.0.0.1`, a second one inside the interval
 does not, and a request without the header logs nothing.
 
-Findings #6 and #7 are untouched — both are decisions attached to a mapped
-public port rather than fixes that stand on their own, and are sequenced above
-against it. #8 is notes.
+The browser's own path was confirmed against that same live server, driving the
+real `webcrypto.js`: key, redeem, and then signed access to the catalog, the
+admin settings and a stream ticket, with the bearer header refused everywhere.
+What has *not* been run by hand is the same flow inside an actual browser tab —
+the DOM half, IndexedDB persistence across a reload, and the settings overlay
+opening on `page=settings`. That is the one leg left for a person at a keyboard.
+
+Finding #6 is untouched — a decision attached to a mapped public port rather
+than a fix that stands on its own, and sequenced above against it. #8 is notes.

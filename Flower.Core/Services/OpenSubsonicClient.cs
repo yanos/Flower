@@ -94,14 +94,14 @@ public class OpenSubsonicClient
     // information as headers instead (see BuildPlainUrl) - harmless against a
     // real third-party OpenSubsonic server either way, which just ignores
     // the extra unknown params.
-    public string BuildUrl(string endpoint, IEnumerable<(string Key, string Value)>? extraParams = null)
+    public async Task<string> BuildUrlAsync(string endpoint, IEnumerable<(string Key, string Value)>? extraParams = null)
     {
         var path = $"/rest/{endpoint}";
         var parameters = AuthParams();
         if (extraParams != null)
             parameters.AddRange(extraParams);
         if (_credentials != null)
-            parameters.AddRange(_credentials.Authorize("GET", path, parameters, []));
+            parameters.AddRange(await _credentials.AuthorizeAsync("GET", path, parameters, []));
 
         var query = string.Join("&", parameters.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
         return $"{_baseUrl}{path}?{query}";
@@ -130,12 +130,12 @@ public class OpenSubsonicClient
     // avoids reusing a keep-alive connection the peer's HttpListener (or the
     // OS, e.g. after iOS backgrounds the app) already tore down - observed in
     // practice as "Connection reset by peer" on iOS.
-    private void AddPeerIdentityHeaders(HttpRequestMessage request, string method, string path, IEnumerable<(string Key, string Value)> parameters)
+    private async Task AddPeerIdentityHeadersAsync(HttpRequestMessage request, string method, string path, IEnumerable<(string Key, string Value)> parameters)
     {
         if (_credentials == null)
             return;
 
-        foreach (var header in _credentials.Authorize(method, path, parameters, []))
+        foreach (var header in await _credentials.AuthorizeAsync(method, path, parameters, []))
             request.Headers.Add(header.Key, header.Value);
         request.Headers.ConnectionClose = true;
     }
@@ -144,7 +144,7 @@ public class OpenSubsonicClient
     {
         var url = BuildPlainUrl(endpoint, extraParams, out var path, out var parameters);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        AddPeerIdentityHeaders(request, "GET", path, parameters);
+        await AddPeerIdentityHeadersAsync(request, "GET", path, parameters);
 
         using var httpResponse = await _http.SendAsync(request);
         httpResponse.EnsureSuccessStatusCode(); // e.g. a 403 from a peer's trust gate - surfaces as a plain HttpRequestException.
@@ -290,17 +290,21 @@ public class OpenSubsonicClient
     // Binary endpoints - callers stream/fetch bytes themselves (LibVLC can also
     // play a URL directly), so these just build fully-authed URLs rather than
     // buffering audio into memory here. See SYNC-PLAN.md Phase 3's download flow.
-    public string GetStreamUrl(string id) => BuildUrl("stream", [("id", id)]);
+    //
+    // A task, like everything else that signs: the browser's key answers through
+    // crypto.subtle and cannot be asked on the calling stack (see
+    // IPeerCredentials). Every other head completes these synchronously.
+    public Task<string> GetStreamUrlAsync(string id) => BuildUrlAsync("stream", [("id", id)]);
 
-    public string GetDownloadUrl(string id) => BuildUrl("download", [("id", id)]);
+    public Task<string> GetDownloadUrlAsync(string id) => BuildUrlAsync("download", [("id", id)]);
 
-    public string GetCoverArtUrl(string id, int? size = null)
+    public Task<string> GetCoverArtUrlAsync(string id, int? size = null)
     {
         var parameters = new List<(string, string)> { ("id", id) };
         if (size.HasValue)
             parameters.Add(("size", size.Value.ToString()));
 
-        return BuildUrl("getCoverArt", parameters);
+        return BuildUrlAsync("getCoverArt", parameters);
     }
 
     // Streams stream?id=... straight to a file rather than buffering the whole
@@ -342,7 +346,7 @@ public class OpenSubsonicClient
     {
         var url = BuildPlainUrl("stream", [("id", id)], out var path, out var parameters);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        AddPeerIdentityHeaders(request, "GET", path, parameters);
+        await AddPeerIdentityHeadersAsync(request, "GET", path, parameters);
         if (from > 0)
             request.Headers.Range = new RangeHeaderValue(from, null);
 

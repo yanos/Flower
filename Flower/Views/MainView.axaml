@@ -390,9 +390,10 @@
             <!-- Only for a headless Flower.Server this device has already paired
                  with (see MainViewModel.CanOpenSelectedServerSettings): its
                  settings live in its own browser UI, not in this app, so this
-                 mints a short-lived admin session against it and opens that page
-                 in the OS browser. An app peer has its own Settings window on its
-                 own screen and shows nothing here. -->
+                 issues a one-time admin pairing code against it and opens that
+                 page in the OS browser, where the tab spends the code on a
+                 keypair of its own. An app peer has its own Settings window on
+                 its own screen and shows nothing here. -->
             <Button Content="Server Settings…"
                     IsVisible="{Binding CanOpenSelectedServerSettings}"
                     IsEnabled="{Binding !IsOpeningServerSettings}"
@@ -477,8 +478,8 @@
          the same SettingsPanel is laid over the whole view instead. Opaque, not a
          scrim - it is a screen, not a dialog. See MainView.axaml.cs's
          ShowSettingsOverlay, which is also how the server's own settings page is
-         shown when the client's "Server Settings..." button opens this app with an
-         admin session in the URL fragment. -->
+         shown when the client's "Server Settings..." button opens this app with
+         page=settings in the URL fragment. -->
     <Border x:Name="SettingsOverlay"
             Grid.Row="0" Grid.RowSpan="3"
             IsVisible="False"

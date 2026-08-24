@@ -177,7 +177,8 @@ public class OriginPlayReporterTests
 
     private sealed class UnauthenticatedCredentials : IPeerCredentials
     {
-        public IEnumerable<(string Key, string Value)> Authorize(
-            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) => [];
+        public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
+            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) =>
+            Task.FromResult<IReadOnlyList<(string Key, string Value)>>([]);
     }
 }

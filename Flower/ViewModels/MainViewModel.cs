@@ -622,13 +622,17 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // Opens the selected server's own settings page in the OS browser.
     //
-    // The browser cannot authenticate itself - .NET-for-WebAssembly has no
-    // asymmetric crypto, which is the same reason DeviceSigningKey is not even
-    // registered there (see App.axaml.cs). So this device, which *can* sign, mints
-    // a short-lived admin session against that server and hands it over in the
-    // URL fragment: a fragment rather than a query string because it is never sent
-    // to the server as part of the request, so it cannot end up in an access log.
-    // See Flower.Server's AdminSessionService.
+    // A browser tab holds its own WebCrypto keypair and pairs like any other
+    // device (see BrowserPeerCredentials), so what this hands over is not a
+    // credential for the tab to *use* but a one-time, admin-granting pairing
+    // code for it to spend on becoming a device. In the URL fragment rather than
+    // the query string because a fragment is never sent to the server as part of
+    // the request, so the code cannot end up in an access log on the way in.
+    //
+    // Opening this a second time for a tab that already paired issues a code
+    // nothing needs, which the tab's redeem attempt spends harmlessly. That is
+    // cheap enough not to be worth a round-trip to find out first, and it is
+    // also the way back in after site data is cleared.
     public async Task OpenSelectedServerSettingsAsync()
     {
         if (SelectedDevice is not { } device || _signingKey == null || _deviceIdentity == null)
@@ -642,8 +646,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             var client = new ServerAdminClient(
                 http, device.BaseUri, ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity, _signingKey, _appSettings)));
 
-            var session = await client.CreateSessionAsync();
-            OpenUrlInBrowser(session.Url);
+            var pairing = await client.IssuePairingCodeAsync(grantsAdmin: true);
+            OpenUrlInBrowser(pairing.BrowserUrl);
         }
         catch (Exception ex)
         {

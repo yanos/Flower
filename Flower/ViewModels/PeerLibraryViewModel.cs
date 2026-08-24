@@ -140,13 +140,19 @@ public sealed class PeerLibraryViewModel : ViewModelBase
     // Library/persisted anywhere; Path is a live http://peer/rest/stream URL,
     // which TrackDecoder.EnsureMedia already streams directly (it branches on any
     // Path containing "://", originally for Android's content:// URIs).
-    public void PlaySong(Child song)
+    // A task because building a signed stream URL is one - see
+    // OpenSubsonicClient.BuildUrlAsync. Against a peer it completes on this
+    // stack; the interface is asynchronous for the browser head, which does not
+    // reach this view at all.
+    public async Task PlaySongAsync(Child song)
     {
         if (_client == null || SelectedAlbum == null)
             return;
 
         var songs = AlbumSongs.ToList();
-        var tracks = songs.Select(ToTransientTrack).ToList();
+        var tracks = new List<Track>(songs.Count);
+        foreach (var s in songs)
+            tracks.Add(await ToTransientTrackAsync(s));
         var index = songs.FindIndex(s => s.Id == song.Id);
         if (index < 0)
             return;
@@ -155,7 +161,7 @@ public sealed class PeerLibraryViewModel : ViewModelBase
         _playlistControlViewModel.Play(tracks[index], index);
     }
 
-    private Track ToTransientTrack(Child song) => new()
+    private async Task<Track> ToTransientTrackAsync(Child song) => new()
     {
         Title = song.Title,
         Artists = song.Artist,
@@ -164,6 +170,6 @@ public sealed class PeerLibraryViewModel : ViewModelBase
         Year = song.Year?.ToString(),
         Genre = song.Genre,
         Duration = TimeSpan.FromSeconds(song.Duration ?? 0),
-        Path = _client!.GetStreamUrl(song.Id),
+        Path = await _client!.GetStreamUrlAsync(song.Id),
     };
 }

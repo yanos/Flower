@@ -61,12 +61,11 @@ public sealed class PeerStreamUrlResolver(
     AppSettings appSettings,
     ILogger<PeerStreamUrlResolver> logger) : IStreamUrlResolver
 {
-    // Already-completed, always: a signed stream URL is pure computation over
-    // the peer's endpoint and this device's key, with nothing to wait for. The
+    // Completes synchronously in practice: a signed stream URL is pure
+    // computation over the peer's endpoint and this device's key, with nothing
+    // to wait for (SignedDeviceCredentials hands back a finished task). The
     // network only gets involved when the audio pipeline opens the URL.
-    public Task<string?> ResolveAsync(Track track) => Task.FromResult(Resolve(track));
-
-    private string? Resolve(Track track)
+    public async Task<string?> ResolveAsync(Track track)
     {
         // The id the origin peer itself gave this track, not one recomputed
         // here - see Track.OriginTrackId. Absent only for a track that never
@@ -88,9 +87,9 @@ public sealed class PeerStreamUrlResolver(
             return null;
         }
 
-        var url = PeerOpenSubsonicClientFactory
+        var url = await PeerOpenSubsonicClientFactory
             .Create(peer, deviceIdentity, appSettings, signingKey)
-            .GetStreamUrl(track.OriginTrackId);
+            .GetStreamUrlAsync(track.OriginTrackId);
         logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint})", track.Title, peer.Alias, peer.BaseUri);
         return url;
     }
@@ -104,11 +103,12 @@ public sealed record StreamTicketDto(string Ticket, DateTimeOffset ExpiresAt, st
 // The browser head's implementation: ask the server for a short-lived ticket
 // for this exact track, and hand back the media URL it returns.
 //
-// The browser cannot use PeerStreamUrlResolver for two independent reasons.
-// It has no signing key, so it cannot build an authenticated stream URL; and it
-// has no mDNS discovery, so there is no DiscoveredDevice to resolve against -
-// its server is simply the origin the page was served from. What it has instead
-// is a session token and one route that turns it into a playable URL.
+// The browser cannot use PeerStreamUrlResolver, and not for the reason it
+// originally could not. It signs perfectly well now (BrowserPeerCredentials) -
+// but it has no mDNS discovery, so there is no DiscoveredDevice to resolve
+// against, and more to the point the thing that opens the URL is an <audio>
+// element, which presents nothing at all. So the tab signs a request for a
+// ticket and hands the element a URL that carries one.
 //
 // This is the one place in the app where resolving a track for playback really
 // does go to the network, which is why IStreamUrlResolver.ResolveAsync is a
@@ -157,7 +157,7 @@ public sealed class StreamTicketUrlResolver(
         {
             var path = $"/api/flower/v1/stream-tickets?id={Uri.EscapeDataString(track.OriginTrackId)}";
             using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseAddress, path));
-            request.AddPeerCredentials(credentials);
+            await request.AddPeerCredentialsAsync(credentials);
 
             using var response = await http.SendAsync(request);
             response.EnsureSuccessStatusCode();

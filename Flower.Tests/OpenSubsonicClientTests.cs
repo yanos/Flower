@@ -388,12 +388,12 @@ public class OpenSubsonicClientTests
     }
 
     [Fact]
-    public void GetStreamUrl_and_GetCoverArtUrl_build_authed_urls_without_a_request()
+    public async Task GetStreamUrl_and_GetCoverArtUrl_build_authed_urls_without_a_request()
     {
         var client = new OpenSubsonicClient("http://peer.local:4533", "alice", "hunter2", new HttpClient(new FakeHandler("")));
 
-        var streamUrl = client.GetStreamUrl("sg-1");
-        var coverUrl = client.GetCoverArtUrl("al-1", size: 300);
+        var streamUrl = await client.GetStreamUrlAsync("sg-1");
+        var coverUrl = await client.GetCoverArtUrlAsync("al-1", size: 300);
 
         Assert.StartsWith("http://peer.local:4533/rest/stream?", streamUrl);
         Assert.Contains("id=sg-1", streamUrl);

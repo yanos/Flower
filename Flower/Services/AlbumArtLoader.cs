@@ -57,8 +57,8 @@ public class AlbumArtLoader
     // Both remote dependencies stay nullable: a head that has neither is a head
     // with no origin to fetch art from, which is what the old Ioc.Default.
     // GetService returning null meant too. What changed is that the browser is
-    // no longer one of them - it registers an OriginCoverArtUrlResolver and an
-    // AdminSessionCredentials, so remote art works there as well as on the
+    // no longer one of them - it registers an OriginCoverArtUrlResolver and a
+    // BrowserPeerCredentials, so remote art works there as well as on the
     // desktop (see App.RegisterBrowserServices). The nulls now cover only tests
     // and the Current fallback below.
     public AlbumArtLoader(ICoverArtUrlResolver? artUrls, IPeerCredentials? credentials, ILogger<AlbumArtLoader> logger)
@@ -311,7 +311,7 @@ public class AlbumArtLoader
             // FailedAuthLimiter, so ten album tiles were enough to 429 the
             // entire /rest surface for a minute - including /rest/stream, which
             // is why playback of server-hosted tracks died wholesale.
-            request.AddPeerCredentials(_credentials);
+            await request.AddPeerCredentialsAsync(_credentials);
             if (_artUrls.ClosesConnection)
                 request.Headers.ConnectionClose = true;
 

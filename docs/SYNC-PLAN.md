@@ -323,14 +323,11 @@ bypasses the pin.
 `/logout`, `/logout-all`), and the `Flower:AdminUsername`/`Flower:AdminPassword` options
 together with the startup check that refused to boot without them.
 
-**Not built:** the browser half of path A — `Flower.Web` generating and storing its own
-keypair, and the pairing/admin screens that use it. That work waits on build-order step 4's
-admin UI, which doesn't exist yet. One open question to settle there, flagged because it
-changes the shape of the client code: whether .NET-for-WebAssembly's own `ECDsa` works in the
-browser runtime (in which case `DeviceSigningKey` is reusable as-is and only key *storage*
-needs a browser backend) or whether it needs a JS-interop `crypto.subtle` module in the
-`webaudio.js` mould. The non-extractable-key property argues for the interop module either
-way, but this needs a real WASM build to settle rather than an assumption.
+**Built (see "The browser is a device, for real" below).** The open question settled the way
+the non-extractable-key property argued it would: .NET-for-WebAssembly has no `ECDsa` at all,
+so the browser half is a JS-interop `crypto.subtle` module in the `webaudio.js` mould
+(`Flower.Web/wwwroot/webcrypto.js`) rather than a storage backend under `DeviceSigningKey`.
+The formats needed no bridging code, exactly as the table below predicted.
 
 #### Path A — key-based: every Flower surface, browser included
 
@@ -541,7 +538,15 @@ There is deliberately no standalone `Flower.Web` dev host any more. Run under it
 - **Bootstrap**: at first run there is no admin device to mint anything, so the console prints an admin session URL beside the pairing code it already prints, under the same gate (no admin on file, or `--pairing-code`). Never on an ordinary boot.
 - This does not close off giving the browser its own key later; it removes the dependency on doing so first.
 
-**The client's way in.** The desktop device-detail pane gained a **"Server Settings…"** button for a selected headless server it has already paired with (`MainViewModel.CanOpenSelectedServerSettings`). It signs a session mint against that server and opens the returned URL in the OS browser. Deliberately *not* also gated on this device being an admin — nothing client-side can know that without asking, and a button that says "paired, but not an administrator" inline is a better answer than a hidden one.
+> **Superseded — the derived-authority design above was the interim, and it is gone.** Every
+> bullet in this section describes `AdminSessionService`, which is deleted. The browser holds
+> its own non-extractable WebCrypto keypair now and signs like every other device; what the URL
+> fragment carries is a single-use pairing code, not a token. See "The browser is a device, for
+> real" below, and `docs/OPEN-INTERNET-REVIEW.md` finding 7 for why the interim could not
+> survive a remote transport. The paragraphs are kept because the reasoning that led here is
+> worth reading — including the cost this predicted, which is exactly what it cost.
+
+**The client's way in.** The desktop device-detail pane gained a **"Server Settings…"** button for a selected headless server it has already paired with (`MainViewModel.CanOpenSelectedServerSettings`). It signs a request against that server — a session mint originally, an admin-granting pairing code now — and opens the returned URL in the OS browser. Deliberately *not* also gated on this device being an admin — nothing client-side can know that without asking, and a button that says "paired, but not an administrator" inline is a better answer than a hidden one.
 
 **New admin routes**, all on the existing signature gate: `GET`/`PUT /api/admin/settings` (written to `flower-server.json` through `ServerSettingsWriter`, a read-modify-write over a `JsonNode` so the seeded documentation keys and anything an operator added survive), `GET /api/admin/library` + `POST /api/admin/library/rescan` (`LibraryRescanCoordinator`, on its own DI scope because the request that starts a 16k-track scan is answered long before it finishes), and `GET /api/admin/logs` off `InMemoryLogStore`.
 
@@ -946,3 +951,72 @@ Build order step 4 is now **done in full**: on top of scaffolding and playback, 
 - **Ratings.** Deferred honestly rather than by omission: nothing on `Track` holds a rating and no UI sets one, so a tab has nothing to report. `Starred`/`StarredAt` exists server-side and `/rest/star` sets it, with no client UI. When a liked-songs view lands, starring travels the same road `IPlayReporter` just built.
 - **`IMusicImporter` as a user-facing settings choice**, folding the OpenSubsonic client in alongside the local scanner; and **Jellyfin as a second backend** on the same seam.
 - **Real-device verification** still owed: the Android download path, and end-to-end sync against a real second peer rather than a test harness.
+
+### The browser is a device, for real — done
+
+The derived-authority design above always said it "does not close off giving the browser its
+own key later; it removes the dependency on doing so first." `OPEN-INTERNET-REVIEW.md` finding
+7 is what made later become now: a 60-minute full-admin bearer token in a URL is tolerable
+while `LanGuard` makes it unusable from off the LAN, and a tunnel is precisely the thing that
+stops making that true. Narrowing it was available and was the wrong move — it had already
+widened once, and every narrowing was a smaller version of the same shape.
+
+**The module.** `Flower.Web/wwwroot/webcrypto.js` generates an ECDSA P-256 keypair with
+`extractable: false` and stores it in IndexedDB as a `CryptoKey`, through structured clone,
+so it never exists in serializable form at all. The private half is a handle the page can sign
+with and nothing — including that module — can read out, which is a *stronger* storage
+guarantee than the file-backed key on the desktop. `BrowserSigningKey` is the `[JSImport]`
+wrapper, same shape as `BrowserLocation`/`WebAudioManager`; `BrowserPeerCredentials` is the
+`IPeerCredentials` that uses it.
+
+**No bridging code, as the table above promised.** `exportKey("raw")` is `0x04 || X || Y`,
+byte-for-byte `DeviceKeyStore.PublicKeyRaw`; a WebCrypto ECDSA signature is raw `r‖s`, which is
+`DSASignatureFormat.IeeeP1363FixedFieldConcatenation`. `SignatureVerifier` accepts a tab's
+signature with no new code path, no second auth mode, and no server-side branch. Pinned by
+`BrowserSignatureFormatTests`, a fixed vector generated by running the real module — the one
+thing about this that no managed test could otherwise reach.
+
+**Pairing is the same mechanism as everything else.** The tab redeems a single-use code at
+`POST /api/flower/v1/pair-redeem` with a self-signed request, exactly as
+`PeerPairingService.RedeemPairingCodeAsync` does. The code arrives in the URL fragment
+(`#pair=<code>&page=settings`), is spent within a second of the page loading, and is worthless
+afterwards. `page=settings` is separate from the code on purpose: an ordinary listener pairs a
+tab to get a jukebox, not a settings screen. After that first visit the tab needs nothing in
+its URL ever again — its key is the credential, so a returning tab gets its library from the
+bare address. Per browser profile, because the key is: each browser is its own row in the
+device list, revoked on its own, and clearing site data un-pairs it.
+
+**Deleted, not deprecated** (`CLAUDE.md`, "No Users Yet"): `AdminSessionService`,
+`AdminSessionCredentials`, `PeerOrSessionAuth`, `POST /api/admin/sessions`, the
+`X-Flower-Admin-Session` header, and `RegisterBrowserServices`' fork on whether the page
+arrived with a credential. There is no bearer credential left in the project. Seam 3's widening
+is undone: `SyncEndpoints` and `StreamTicketEndpoints` gate on
+`DeviceSignatureAuth.AuthenticateTrustedPeer` and nothing else.
+
+**The cost, which seam 3 predicted exactly.** `crypto.subtle` is asynchronous, so
+`IPeerCredentials.Authorize` became `AuthorizeAsync` and `AddPeerCredentials` became
+`AddPeerCredentialsAsync` — twelve call sites, plus `OpenSubsonicClient.BuildUrl`,
+`GetStreamUrl`, `GetDownloadUrl` and `GetCoverArtUrl`, which are now tasks. Every head but the
+browser still completes them synchronously (`SignedDeviceCredentials` returns a finished task),
+so `PlaylistControlViewModel.Play`'s synchronous-start path is unaffected.
+`ICoverArtUrlResolver` stayed synchronous — it builds a URL and does not sign.
+
+**The requirement, stated plainly: a secure context.** Browsers expose `crypto.subtle` only
+over HTTPS and on `localhost`. A tab opened at `http://192.168.1.x:4533` cannot hold a key and
+cannot pair; it logs an explicit error naming the requirement and shows an empty library. That
+is a real regression for plain-HTTP LAN browsing and it is the browser's rule, not a choice
+made here. It also points the same way everything else does: every remote transport under
+consideration terminates TLS, and `OPEN-INTERNET-REVIEW.md` finding 6 already makes TLS a hard
+gate on the mapped-port path.
+
+**Stream tickets stay.** What cannot authenticate itself is the `<audio>` element, not the tab
+that owns it — so the tab signs the mint request and the element plays on the ticket. One
+track, fifteen minutes, attributed to the minting device, exactly as before.
+
+**Verified** against a live server by driving the real `webcrypto.js`: key generated, printed
+pairing code redeemed (200, `isAdmin: true`), then signed access to `GET /api/flower/v1/library`,
+`GET /api/admin/settings` and `POST /api/flower/v1/stream-tickets`, all 200. The same server
+answered 401 to an `X-Flower-Admin-Session` on `/api/admin`, 403 on the sync surface, and 404
+for `POST /api/admin/sessions`. `BrowserDeviceAccessTests` covers the same ground server-side.
+What has not been run is the DOM half — a real tab, IndexedDB surviving a reload, the settings
+overlay opening on `page=settings`.

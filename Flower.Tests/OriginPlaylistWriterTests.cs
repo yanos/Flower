@@ -196,14 +196,15 @@ public class OriginPlaylistWriterTests
 
     private sealed class NoCredentials : IPeerCredentials
     {
-        public IEnumerable<(string Key, string Value)> Authorize(
-            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) => [];
+        public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
+            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) =>
+            Task.FromResult<IReadOnlyList<(string Key, string Value)>>([]);
     }
 
     private sealed class HeaderCredentials(string value) : IPeerCredentials
     {
-        public IEnumerable<(string Key, string Value)> Authorize(
+        public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
             string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) =>
-            [("X-Test-Credential", value)];
+            Task.FromResult<IReadOnlyList<(string Key, string Value)>>([("X-Test-Credential", value)]);
     }
 }

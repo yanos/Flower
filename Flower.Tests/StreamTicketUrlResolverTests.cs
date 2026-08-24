@@ -25,7 +25,7 @@ namespace Flower.Tests;
 //
 // Against a real socket (FakePeerHttpServer) rather than a fake handler: the
 // point is partly what goes out on the wire - the route, the track id, and the
-// session header a browser can actually send.
+// credential a browser attaches to the mint request.
 public class StreamTicketUrlResolverTests
 {
     private static Track Placeholder(string id = "sg-1") => new()
@@ -36,9 +36,9 @@ public class StreamTicketUrlResolverTests
         OriginDeviceFingerprint = "server-fingerprint",
     };
 
-    private static StreamTicketUrlResolver Resolver(int port, string token = "session-token") =>
+    private static StreamTicketUrlResolver Resolver(int port, string credential = "browser-credential") =>
         new(new HttpClient(), new Uri($"http://127.0.0.1:{port}"),
-            new AdminSessionCredentials(token), NullLogger<StreamTicketUrlResolver>.Instance);
+            new StaticPeerCredentials("X-Test-Credential", credential), NullLogger<StreamTicketUrlResolver>.Instance);
 
     // What Flower.Server's StreamTicketEndpoints really answers with: the
     // assembled, origin-relative media URL alongside the raw ticket.
@@ -59,12 +59,12 @@ public class StreamTicketUrlResolverTests
     [Fact]
     public async Task It_mints_a_ticket_for_the_track_and_hands_back_a_url_a_media_element_can_open()
     {
-        var requests = new List<(string Path, string? Id, string? Session)>();
+        var requests = new List<(string Path, string? Id, string? Credential)>();
         using var server = new FakePeerHttpServer(context =>
         {
             requests.Add((context.Request.Url!.AbsolutePath,
                 context.Request.QueryString["id"],
-                context.Request.Headers["X-Flower-Admin-Session"]));
+                context.Request.Headers["X-Test-Credential"]));
             return ServeTicket(context, "tk-abc", DateTimeOffset.UtcNow.AddMinutes(15));
         });
 
@@ -73,12 +73,14 @@ public class StreamTicketUrlResolverTests
         // Absolute, because what comes back is handed to an <audio> element and
         // not to the HttpClient that has the base address.
         Assert.Equal($"http://127.0.0.1:{server.Port}/rest/stream?id=sg-1&ticket=tk-abc", url);
-        var (path, id, session) = Assert.Single(requests);
+        var (path, id, credential) = Assert.Single(requests);
         Assert.Equal("/api/flower/v1/stream-tickets", path);
         Assert.Equal("sg-1", id);
-        // The whole reason this resolver exists: a browser tab has no key to
-        // sign with, so the session token is the only credential it can present.
-        Assert.Equal("session-token", session);
+        // The mint request is authenticated like any other call the tab makes -
+        // in a real tab, by its WebCrypto signature. What this resolver exists
+        // for is the step after: an <audio> element cannot present any of that,
+        // so the ticket is what it plays on.
+        Assert.Equal("browser-credential", credential);
     }
 
     [Fact]

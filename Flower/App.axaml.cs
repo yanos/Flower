@@ -333,12 +333,12 @@ public partial class App : Application
 
     // Everything the browser head has instead of the peer-to-peer stack above.
     //
-    // A tab is not a device: it cannot sign (no asymmetric crypto under WASM),
-    // cannot discover (no mDNS from a sandbox), and has no folders to scan. What
-    // it has is one server - the origin it was served from - and one credential,
-    // the session token that server minted and put in the page URL. Those two
-    // facts are the whole of this method: a credential built from the token, a
-    // library pulled from the origin, and stream URLs minted against it.
+    // A tab *is* a device now. It cannot discover (no mDNS from a sandbox) and
+    // has no folders to scan, but it holds its own non-extractable P-256 keypair
+    // through WebCrypto and signs every request with it exactly like a desktop
+    // or a phone - see BrowserPeerCredentials, which is what closes
+    // docs/OPEN-INTERNET-REVIEW.md finding 7. What remains particular to this
+    // head is that it has exactly one server, the origin it was served from.
     //
     // Registered last, so these win over the shared registrations above for the
     // services they replace (IMusicImporter in particular).
@@ -349,19 +349,13 @@ public partial class App : Application
         var session = BrowserSession.FromPageUrl();
         services.AddSingleton(session);
 
-        if (session.Token == null)
-        {
-            // A tab opened by hand rather than through the desktop client's
-            // "Server Settings..." button. It has no authority over the server,
-            // so it gets none of what follows and shows an empty library - which
-            // is honest, and is what it showed before any of this existed. Said
-            // explicitly rather than by omission: the registration this replaces
-            // is the filesystem scanner, which would go looking for a music
-            // folder inside a browser sandbox.
-            services.AddSingleton<Importer.IMusicImporter>(_ => new Importer.EmptyLibraryImporter());
-            return;
-        }
-
+        // No fork on whether the page arrived with a credential, which is what
+        // this used to open with. A tab that has paired before needs nothing in
+        // its URL - its key is the credential, and it gets its library on an
+        // ordinary visit to the bare address. A tab that has not paired and was
+        // given no code registers all of this anyway and is simply refused by
+        // the server, arriving at the same empty library the old fork produced,
+        // without this branch having to guess which case it is in.
         var origin = BrowserLocation.Origin;
 
         services
@@ -372,10 +366,16 @@ public partial class App : Application
             .AddSingleton(_ => new HttpClient())
 
             // The browser's entire authentication story - see
-            // AdminSessionCredentials. Registered under both its own type and
-            // the interface so the settings overlay can reach the token itself.
-            .AddSingleton(new AdminSessionCredentials(session.Token))
-            .AddSingleton<IPeerCredentials>(sp => sp.GetRequiredService<AdminSessionCredentials>())
+            // BrowserPeerCredentials. Registered under both its own type and the
+            // interface: the settings overlay signs through the interface like
+            // everything else, but startup also asks the concrete type whether
+            // this tab has an identity at all.
+            .AddSingleton(sp => new BrowserPeerCredentials(
+                sp.GetRequiredService<HttpClient>(),
+                origin,
+                session.PairingCode,
+                sp.GetRequiredService<ILogger<BrowserPeerCredentials>>()))
+            .AddSingleton<IPeerCredentials>(sp => sp.GetRequiredService<BrowserPeerCredentials>())
 
             // The library: the origin server's catalog, as placeholders. This is
             // the registration that makes "local files" versus "a self-hosted
@@ -397,8 +397,8 @@ public partial class App : Application
                 sp.GetRequiredService<ILogger<StreamTicketUrlResolver>>()))
 
             // Album art: no ticket needed, because AlbumArtLoader fetches it
-            // with its own HttpClient and can send the session header that
-            // already reaches GET /library - see OriginCoverArtUrlResolver.
+            // with its own HttpClient and signs the request like any other -
+            // see OriginCoverArtUrlResolver.
             .AddSingleton<ICoverArtUrlResolver>(_ => new OriginCoverArtUrlResolver(origin))
 
             // The origin's playlists, mirrored read-only into this tab - see
@@ -768,15 +768,16 @@ public partial class App : Application
 
     // The browser half of the desktop client's "Server Settings..." button.
     //
-    // That button mints a short-lived admin session against the server and opens
-    // this page at #admin=<token>&page=settings. The page= half is what decides
-    // whether the overlay opens: the token alone no longer implies it, now that
-    // an ordinary jukebox tab carries one as its library credential. (See
-    // MainViewModel.OpenSelectedServerSettingsAsync and Flower.Server's
-    // AdminSessionService). The token is the browser's whole authority here - it
-    // cannot sign anything, because .NET-for-WebAssembly has no asymmetric crypto
-    // at all, which is the same reason DeviceSigningKey is not registered on this
-    // platform (see RegisterServices above).
+    // That button issues an admin-granting pairing code against the server and
+    // opens this page at #pair=<code>&page=settings. The page= half is what
+    // decides whether the overlay opens: the code alone does not imply it, since
+    // an ordinary listener pairs a tab to get a jukebox and nothing more. (See
+    // MainViewModel.OpenSelectedServerSettingsAsync and
+    // WebUiHosting.BuildBrowserPairingUrl.)
+    //
+    // The tab administers with its own key, signed through the same
+    // IPeerCredentials as everything else - there is no browser-specific
+    // credential left to special-case here.
     //
     // The settings shown are then the *server's*, not this app's: a
     // RemoteServerSettingsBackend over the origin the page was served from, which
@@ -786,15 +787,15 @@ public partial class App : Application
         try
         {
             // Off the container, not off the URL: reading the fragment consumes
-            // it, and RegisterBrowserServices got there first because the same
-            // token is now the credential for the library and for playback too
-            // (see BrowserSession).
+            // it, and RegisterBrowserServices got there first because the code
+            // it carries is what pairs this tab (see BrowserSession).
             var session = Ioc.Default.GetRequiredService<BrowserSession>();
-            if (session.Token == null || !string.Equals(session.Page, "settings", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(session.Page, "settings", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            var client = ServerAdminClient.ForSession(
-                Ioc.Default.GetRequiredService<HttpClient>(), BrowserLocation.Origin, session.Token);
+            var client = new ServerAdminClient(
+                Ioc.Default.GetRequiredService<HttpClient>(), BrowserLocation.Origin,
+                ServerAdminClient.SignWith(Ioc.Default.GetRequiredService<IPeerCredentials>()));
             var settings = new SettingsViewModel(new RemoteServerSettingsBackend(client));
 
             // Posted rather than called inline: the view is not attached to a
@@ -807,7 +808,7 @@ public partial class App : Application
             // A malformed fragment, or a browser that would not give us one, must
             // not stop the app from starting - the user can still open Settings
             // themselves, they just will not be administering the server.
-            logger.LogWarning(ex, "Could not read the admin session from the page URL");
+            logger.LogWarning(ex, "Could not open the server settings page");
         }
     }
 }

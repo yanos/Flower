@@ -409,16 +409,16 @@ public class AlbumArtLoaderTests : IDisposable
     }
 
     [AvaloniaFact]
-    public async Task A_browser_tab_fetches_art_from_its_origin_with_the_session_header()
+    public async Task A_browser_tab_fetches_art_from_its_origin_with_its_own_credential()
     {
         // The browser head's whole art path, end to end against a real socket:
-        // no peer, no mDNS, no signing key - one origin and one session token.
-        // Worth pinning rather than trusting the URL shape, because the two
-        // things that make it work are independent. It has to go to the Flower
-        // sync route (a tab cannot open /rest at all, and asking there is how
-        // this silently returned nothing before), and it has to carry the
-        // session header (AlbumArtLoader signs with IPeerCredentials, which in
-        // a tab is AdminSessionCredentials rather than a signature).
+        // no peer, no mDNS - one origin. Worth pinning rather than trusting the
+        // URL shape, because the two things that make it work are independent.
+        // It has to go to the Flower sync route (a tab cannot open /rest at all,
+        // and asking there is how this silently returned nothing before), and
+        // whatever its IPeerCredentials produces has to actually reach the wire.
+        // In a real tab that is a WebCrypto signature (BrowserPeerCredentials);
+        // here it is a fixed header, because the question is the transport.
         var art = SyntheticPng.Build(64, 64);
         string? requestedPath = null;
         string? sessionHeader = null;
@@ -427,7 +427,7 @@ public class AlbumArtLoaderTests : IDisposable
         using var origin = new FakePeerHttpServer(async context =>
         {
             requestedPath = context.Request.Url?.PathAndQuery;
-            sessionHeader = context.Request.Headers[AdminSessionCredentials.HeaderName];
+            sessionHeader = context.Request.Headers["X-Test-Credential"];
             connectionClose = context.Request.Headers["Connection"]?
                 .Contains("close", StringComparison.OrdinalIgnoreCase) ?? false;
             context.Response.ContentType = "image/png";
@@ -437,7 +437,7 @@ public class AlbumArtLoaderTests : IDisposable
 
         var loader = new AlbumArtLoader(
             new OriginCoverArtUrlResolver(new Uri($"http://127.0.0.1:{origin.Port}")),
-            new AdminSessionCredentials("session-token"),
+            new StaticPeerCredentials("X-Test-Credential", "browser-credential"),
             NullLogger<AlbumArtLoader>.Instance);
 
         var track = RemoteTrack(Unique("hash"));
@@ -445,7 +445,7 @@ public class AlbumArtLoaderTests : IDisposable
 
         Assert.StartsWith("/api/flower/v1/cover-art", requestedPath);
         Assert.Contains(Uri.EscapeDataString(LibraryOpenSubsonicMapper.AlbumIdFor(track)), requestedPath);
-        Assert.Equal("session-token", sessionHeader);
+        Assert.Equal("browser-credential", sessionHeader);
         // Connection reuse is the fetch stack's to manage in a browser, unlike
         // against a peer's HttpListener - see ICoverArtUrlResolver.ClosesConnection.
         Assert.False(connectionClose);

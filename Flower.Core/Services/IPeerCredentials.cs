@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace Flower.Services;
 
@@ -24,20 +25,22 @@ namespace Flower.Services;
 // gets sent: SignedRequestCanonicalizer covers all four so a captured signature
 // cannot be replayed against a different route, parameter or body.
 //
-// Deliberately says nothing about *how* the caller is authenticated. The one
-// implementation today signs with this device's keypair; the browser cannot sign
-// at all (.NET-for-WebAssembly has no asymmetric crypto - see App.axaml.cs) and
-// will present a server-minted session token through this same interface
-// instead. That is exactly why the seam exists: see SYNC-PLAN.md's "The
-// browser's library".
+// Asynchronous because one implementation genuinely cannot answer on the calling
+// stack: the browser's key lives in WebCrypto, whose sign() is a promise, and it
+// may additionally have to redeem a pairing code before it has an identity at
+// all (see BrowserPeerCredentials). Every other head signs in-process and hands
+// back an already-completed task. This is what the previous shape - a
+// synchronous Authorize plus a server-minted bearer token for the browser - was
+// avoiding, and paying for with a bearer credential in a URL; see
+// docs/OPEN-INTERNET-REVIEW.md finding 7.
 public interface IPeerCredentials
 {
     // The params to attach to this request - identity, and whatever proves it.
     // Returned as key/value pairs rather than written onto anything, because
     // both transports are real: headers for an ordinary HttpClient call, query
     // params for a URL handed to something else to fetch that cannot carry
-    // headers (LibVLC playing a stream URL - see OpenSubsonicClient.BuildUrl).
-    IEnumerable<(string Key, string Value)> Authorize(
+    // headers (LibVLC playing a stream URL - see OpenSubsonicClient.BuildUrlAsync).
+    Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body);
 }
 
@@ -54,11 +57,11 @@ public static class PeerCredentialsExtensions
     // torn the pooled connection down - see PlaylistSyncService's note) rather
     // than of how the call is authenticated, and the admin client deliberately
     // does not set it.
-    public static void AddPeerCredentials(
+    public static async Task AddPeerCredentialsAsync(
         this HttpRequestMessage request, IPeerCredentials credentials, byte[]? body = null)
     {
         var uri = request.RequestUri!;
-        foreach (var (key, value) in credentials.Authorize(
+        foreach (var (key, value) in await credentials.AuthorizeAsync(
                      request.Method.Method, uri.AbsolutePath, ParseQuery(uri.Query), body ?? []))
         {
             request.Headers.TryAddWithoutValidation(key, value);

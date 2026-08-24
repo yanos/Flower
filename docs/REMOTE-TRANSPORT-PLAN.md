@@ -338,9 +338,9 @@ nothing above changes what happens to someone who never turns it on.
 
 ## Status
 
-**Step 1 of the sequence is built; the rest is still a decision on paper.** The
-scheme rework landed (see above) and both suites pass — `Flower.Tests`
-1076/1076, `Flower.Server.Tests` 165/165. Nothing serves TLS yet, no transport
+**Step 1 of the sequence is built, and step 2 is complete; the rest is still a
+decision on paper.** The scheme rework landed (see above) and both suites pass —
+`Flower.Tests` 1095/1095, `Flower.Server.Tests` 178/178. Nothing serves TLS yet, no transport
 was added, and no behaviour changed: what changed is that a scheme other than
 `http` is now expressible end to end, which nothing else here could proceed
 without.
@@ -369,8 +369,22 @@ delivers over loopback, so the server watches for the one signal that exists (an
 `X-Forwarded-For` from a hop `TrustedProxies` does not name) and says what it
 costs. The failed-auth budget no longer locks out the whole `/rest` surface
 either: it gates password attempts only, so a paired device sharing an address
-with a guesser keeps playing. **Cloudflare Tunnel can be tested now.** What is
-still open before it is more than a test is the admin-session decision (#7).
+with a guesser keeps playing.
+
+**And #7 is closed, which was the last thing between a test and a deployment.**
+The 60-minute full-admin bearer token the browser ran on is deleted, along with
+`AdminSessionService`, `AdminSessionCredentials`, `PeerOrSessionAuth` and the
+`X-Flower-Admin-Session` header — there is no bearer credential left in the
+project. The browser holds a non-extractable P-256 keypair through WebCrypto,
+redeems a single-use pairing code like any other device, and signs every
+request; `SignatureVerifier` accepts it unchanged, because `raw` key export and
+raw `r‖s` signatures are byte-for-byte what the desktop already produces. The
+cost was making `IPeerCredentials` asynchronous, which is exactly the
+re-shaping that was predicted, and one requirement: `crypto.subtle` exists only
+in a secure context, so the browser UI now needs HTTPS or `localhost`. Every
+transport considered here terminates TLS anyway, and step 4 already gates on it.
+
+**Cloudflare Tunnel is ready to be turned on**, not merely tested.
 
 What remains there is sequenced against the steps above, including the one that
 hardens the ordering here — a mapped public port cannot ship before TLS, because

@@ -1088,7 +1088,7 @@ public partial class MainView : UserControl
 
     // Shown over the whole view, and dismissed by the panel's own OK/Cancel. Public
     // because App.axaml.cs opens it directly at startup when the page was opened
-    // with a server admin session in its URL fragment - the settings shown then are
+    // with page=settings in its URL fragment - the settings shown then are
     // a remote server's, not this app's, so it hands in its own SettingsViewModel
     // rather than letting this build a local one.
     public void ShowSettingsOverlay(SettingsViewModel viewModel, MainViewModel? mainViewModel)
@@ -1355,14 +1355,14 @@ public partial class MainView : UserControl
         await (vm.PeerLibrary?.SelectAlbumAsync(album) ?? Task.CompletedTask);
     }
 
-    private void PeerSongList_DoubleTapped(object? sender, TappedEventArgs e)
+    private async void PeerSongList_DoubleTapped(object? sender, TappedEventArgs e)
     {
         if (_viewModel is not { } vm)
             return;
         if (sender is not ListBox { SelectedItem: Child song })
             return;
 
-        vm.PeerLibrary?.PlaySong(song);
+        await (vm.PeerLibrary?.PlaySongAsync(song) ?? Task.CompletedTask);
     }
 
     // Device-detail header's Pair/Unpair button - mirrors ServerPickerView's

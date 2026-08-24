@@ -18,9 +18,9 @@ using Flower.Services;
 namespace Flower.Server.Tests;
 
 // The admin API behind the browser settings page: reading and writing this
-// server's own configuration, triggering a rescan, reading its log, and the
-// short-lived session tokens the browser runs on because it cannot sign
-// anything itself (see AdminSessionService).
+// server's own configuration, triggering a rescan, and reading its log. One way
+// in for every caller, a device signature plus IsAdmin - the browser included,
+// which holds a WebCrypto keypair of its own now (see BrowserPeerCredentials).
 public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -76,22 +76,6 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             }
         });
     }
-
-    private Task<HttpContext> WithSessionAsync(string token, string method, string path, string? body = null) =>
-        server.Server.SendAsync(c =>
-        {
-            c.Request.Method = method;
-            c.Request.Path = path;
-            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.51");
-            c.Request.Headers["X-Flower-Admin-Session"] = token;
-            if (body != null)
-            {
-                var bytes = Encoding.UTF8.GetBytes(body);
-                c.Request.ContentType = "application/json";
-                c.Request.Body = new MemoryStream(bytes);
-                c.Request.ContentLength = bytes.Length;
-            }
-        });
 
     private static List<(string Key, string Value)> ParseQuery(string? query) =>
         string.IsNullOrEmpty(query)
@@ -192,36 +176,32 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
         }
     }
 
-    // The whole point of the session token: the browser holds one instead of a
-    // key, and it works exactly as far as the admin device behind it does.
+    // The bearer token this surface used to accept is gone, and its absence is
+    // worth a test rather than a deletion: a header nothing reads is
+    // indistinguishable from a header that is read and honoured until something
+    // asks. See docs/OPEN-INTERNET-REVIEW.md finding 7.
     [Fact]
-    public async Task A_minted_session_authenticates_the_browser_and_dies_with_its_device()
+    public async Task An_admin_session_header_is_not_a_credential_any_more()
     {
-        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         using var admin = await NewAdminAsync("Desktop");
 
-        var minted = await SignedAsync(admin, "POST", "/api/admin/sessions");
-        Assert.Equal(StatusCodes.Status200OK, minted.Response.StatusCode);
-        var session = await ReadAsync<AdminSessionResponse>(minted);
+        // The exact shape the old AdminSessionService minted, from a device that
+        // really is an admin - so the only reason it fails is that nothing on
+        // this server resolves it.
+        var token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        var refused = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = "/api/admin/settings";
+            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.51");
+            c.Request.Headers["X-Flower-Admin-Session"] = token;
+        });
 
-        // Handed to the browser in the URL fragment, never the query string - a
-        // fragment is not sent to the server, so the token cannot land in a log.
-        Assert.Contains("#admin=", session.Url);
+        Assert.Equal(StatusCodes.Status401Unauthorized, refused.Response.StatusCode);
 
-        var used = await WithSessionAsync(session.Token, "GET", "/api/admin/settings");
-        Assert.Equal(StatusCodes.Status200OK, used.Response.StatusCode);
-
-        // A bearer token that can mint its own successor is not short-lived.
-        var chained = await WithSessionAsync(session.Token, "POST", "/api/admin/sessions");
-        Assert.Equal(StatusCodes.Status400BadRequest, chained.Response.StatusCode);
-
-        // Revoking the device the session came from has to take the session with
-        // it, or "forget this device" is a promise the server does not keep.
-        await trustedPeers.RevokeAsync(admin.Fingerprint);
-        server.Services.GetRequiredService<AdminSessionService>().RevokeFor(admin.Fingerprint);
-
-        var afterRevoke = await WithSessionAsync(session.Token, "GET", "/api/admin/settings");
-        Assert.Equal(StatusCodes.Status401Unauthorized, afterRevoke.Response.StatusCode);
+        // And the route that used to mint them is not there to be asked.
+        var minting = await SignedAsync(admin, "POST", "/api/admin/sessions");
+        Assert.Equal(StatusCodes.Status404NotFound, minting.Response.StatusCode);
     }
 
     [Fact]

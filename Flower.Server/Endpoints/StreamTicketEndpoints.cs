@@ -29,15 +29,14 @@ public static class StreamTicketEndpoints
 
         app.MapPost("/api/flower/v1/stream-tickets", (
             HttpContext context, TrustedPeerStore trustedPeers, NonceReplayGuard replayGuard,
-            AdminSessionService sessions, StreamTicketService tickets, string id) =>
+            StreamTicketService tickets, string id) =>
         {
-            // A signature or a live admin session (see PeerOrSessionAuth). The
-            // browser is the caller this route was built for and is also the one
-            // caller that cannot sign, so gating it on a signature alone left it
-            // able to mint nothing - a player that can list a catalog and play
-            // none of it.
-            var auth = PeerOrSessionAuth.Authenticate(
-                context.Request, [], trustedPeers, replayGuard, sessions, DateTimeOffset.UtcNow);
+            // A signature, from the browser too: it holds a WebCrypto keypair
+            // and pairs like any other device (see BrowserPeerCredentials). The
+            // ticket is still needed, because what cannot authenticate itself
+            // here is the <audio> element, not the tab that owns it.
+            var auth = DeviceSignatureAuth.AuthenticateTrustedPeer(
+                context.Request, [], trustedPeers, replayGuard);
             if (auth.Fingerprint == null)
                 return Results.Unauthorized();
 

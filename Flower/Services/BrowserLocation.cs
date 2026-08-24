@@ -53,21 +53,20 @@ public static partial class BrowserLocation
 //
 // TakeFragment erases the fragment as it reads it, so exactly one caller may
 // ever call it - this class is that caller, and everything else asks the
-// container for the result. Before the browser had a library, the one caller
-// was the settings overlay and it could read the fragment itself; now the same
-// token is also the credential for the catalog and for minting stream tickets
-// (see AdminSessionCredentials), so it has to be shared rather than consumed.
+// container for the result.
 public sealed class BrowserSession
 {
-    // The server-minted admin session token, or null if the page was opened
-    // without one - a tab someone navigated to by hand rather than through the
-    // desktop client's "Server Settings..." button. Such a tab has no authority
-    // at all: no catalog, no playback, no settings.
-    public string? Token { get; private init; }
+    // A single-use pairing code, or null for a tab opened by hand. Null is the
+    // ordinary case after the first visit: pairing happens once per browser
+    // profile and the key that came out of it is what authenticates every visit
+    // afterwards, so a returning tab needs nothing in its URL at all. See
+    // BrowserPeerCredentials.
+    public string? PairingCode { get; private init; }
 
     // What the page was asked to show. Only "settings" means anything today,
-    // and it is what keeps a session token from *implying* the settings overlay
-    // now that a plain jukebox tab carries one too.
+    // and it is separate from the code on purpose: pairing a tab and
+    // administering the server are different things, and an ordinary listener
+    // pairs a tab to get a jukebox.
     public string? Page { get; private init; }
 
     public static BrowserSession FromPageUrl()
@@ -75,7 +74,7 @@ public sealed class BrowserSession
         var fragment = BrowserLocation.TakeFragment();
         return new BrowserSession
         {
-            Token = fragment.TryGetValue("admin", out var token) && !string.IsNullOrWhiteSpace(token) ? token : null,
+            PairingCode = fragment.TryGetValue("pair", out var code) && !string.IsNullOrWhiteSpace(code) ? code : null,
             Page = fragment.GetValueOrDefault("page"),
         };
     }

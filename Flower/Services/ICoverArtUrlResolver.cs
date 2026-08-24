@@ -12,9 +12,10 @@ namespace Flower.Services;
 // Synchronous, unlike IStreamUrlResolver.ResolveAsync. That interface is a task
 // because the browser genuinely has to go to the network to mint a stream
 // ticket for an <audio> element that cannot carry credentials of its own. Art
-// is fetched by AlbumArtLoader's own HttpClient, which can sign or send a
-// session header like any other call, so there is nothing to mint and nothing
-// to await - both implementations below are pure string building.
+// is fetched by AlbumArtLoader's own HttpClient, which signs like any other
+// call, so there is nothing to mint and nothing to await here - both
+// implementations below are pure string building. (The signing itself is
+// asynchronous now, but that happens in AlbumArtLoader, not in a resolver.)
 public interface ICoverArtUrlResolver
 {
     // Null when this track's art cannot be fetched right now - no origin peer,
@@ -58,11 +59,10 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
 // from, over the Flower sync surface rather than /rest.
 //
 // /rest is the wrong door here for the same reason it was for the catalog: it
-// authenticates with the classic Subsonic credential scheme or a device
-// signature, and a tab has neither. GET /api/flower/v1/cover-art sits behind
-// the gate seam 3 already opened for GET /library, so the session token that
-// fetched the catalog also fetches the art for it - no ticket, no second
-// credential, no widening of anything that was not already widened.
+// authenticates with the classic Subsonic credential scheme, and a tab has no
+// Subsonic credential. GET /api/flower/v1/cover-art sits behind the same signed
+// gate as GET /library, so the key that fetched the catalog also fetches the art
+// for it - no ticket, no second credential.
 //
 // Addressed by the album id recomputed from this track's own tags rather than
 // by the CoverArt value the manifest carried. The two agree today (see
