@@ -99,7 +99,7 @@ public sealed class ServerAdminClient(
     // A paired device's own log, as last pushed to the server - the counterpart
     // to GetLogAsync above, which is the server's own. Throws
     // ServerAdminException with NotFound when that device has not pushed
-    // anything yet, which the Log window shows as "no snapshot yet" rather than
+    // anything yet, which the Logs tab shows as "no snapshot yet" rather than
     // as a failure.
     public Task<AdminDeviceLogDto> GetDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
         SendAsync<AdminDeviceLogDto>(

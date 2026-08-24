@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Flower.Logging;
 using Flower.ViewModels;
 
 using Xunit;
@@ -59,11 +60,11 @@ public class SettingsITunesGatingTests
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-        public Task<IReadOnlyList<string>> LoadLogAsync(int limit, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<string>>([]);
+        public Task<IReadOnlyList<InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<InMemoryLogEntry>>([]);
 
-        public Task<IReadOnlyList<string>> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<string>>([]);
+        public Task<IReadOnlyList<InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<InMemoryLogEntry>?>([]);
     }
 
     // The server's capability set (see RemoteServerSettingsBackend), which now

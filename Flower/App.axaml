@@ -49,7 +49,7 @@
     <Application.Styles>
         <FluentTheme />
         <materialIcons:MaterialIconStyles />
-        <!-- Required for AvaloniaEdit's TextEditor (Log window) to render at
+        <!-- Required for AvaloniaEdit's TextEditor (see LogViewer) to render at
              all - without its own theme resources included here, the control
              has no default ControlTemplate and shows completely blank (no
              text, no caret) even though its Text property is set correctly

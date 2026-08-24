@@ -84,7 +84,7 @@ public class CompositionRootTests : PinnedDataDirectory
             typeof(DeviceSigningKey), typeof(DeviceIdentity),
             typeof(NetworkDiscoveryService), typeof(PlaylistSyncService),
             typeof(LibrarySyncService), typeof(LibraryDownloadService), typeof(PeerPairingService),
-            typeof(PairedServerReachability), typeof(IRemoteLogSource), typeof(PeerTrackResolver),
+            typeof(PairedServerReachability), typeof(PeerTrackResolver),
         }.Select(t => new object[] { t });
 
     [Theory]
@@ -270,7 +270,7 @@ public class CompositionRootTests : PinnedDataDirectory
             typeof(DeviceSigningKey), typeof(DeviceIdentity),
             typeof(NetworkDiscoveryService), typeof(PlaylistSyncService),
             typeof(LibrarySyncService), typeof(LibraryDownloadService), typeof(PeerPairingService),
-            typeof(PairedServerReachability), typeof(IRemoteLogSource), typeof(PeerTrackResolver),
+            typeof(PairedServerReachability), typeof(PeerTrackResolver),
             typeof(IStreamUrlResolver), typeof(ICoverArtUrlResolver), typeof(IPeerCredentials),
         ];
 

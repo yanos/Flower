@@ -27,8 +27,9 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         TrustedDevices = false,
         RevealAppDataLocation = true,
         RebuildDatabase = true,
-        // The app has its own Log window (View > Log...), which does far more
-        // than a flat tail - a Logs tab here would be a worse second copy.
+        // The app has its own Log window (View > Log...), showing this device's
+        // live log through the very same viewer this tab would - a second copy
+        // of it here, fetched rather than live, would be strictly worse.
         Log = false,
         // Handing out pairing codes and keeping Subsonic credentials are both
         // the server's job; this device redeems a code, it never issues one.
@@ -154,9 +155,9 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     public Task RevokeSubsonicCredentialAsync(SubsonicCredentialRow credential, CancellationToken ct = default) =>
         throw new NotSupportedException("Only a Flower server issues Subsonic credentials.");
 
-    public Task<IReadOnlyList<string>> LoadLogAsync(int limit, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<Logging.InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default) =>
         throw new NotSupportedException("The app has its own Log window.");
 
-    public Task<IReadOnlyList<string>> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<Logging.InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
         throw new NotSupportedException("The app has its own Log window.");
 }

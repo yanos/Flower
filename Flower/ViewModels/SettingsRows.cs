@@ -110,3 +110,9 @@ public sealed class SubsonicCredentialRow : ViewModelBase
         ? $"Created {CreatedAt.LocalDateTime:g} - last seen {seen.LocalDateTime:g}"
         : $"Created {CreatedAt.LocalDateTime:g} - never used";
 }
+
+// One row in the Logs tab's list of whose log to read: the server itself, or a
+// device on its roster. A null Fingerprint is the server - it answers its own
+// admin route rather than one keyed by fingerprint, and it is the row the tab
+// lands on.
+public sealed record LogSourceRow(string Name, string? Fingerprint);
