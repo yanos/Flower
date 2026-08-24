@@ -358,7 +358,12 @@ logging that it happened. The two fixes it called for before any transport are
 verifies (the client signs its poll to be one), and the signed canonical form
 percent-encodes its parameters so a value can no longer imitate a separator.
 
-The rest is sequenced there against the steps above, including the one that
+Its two unsequenced findings are built as well: every per-source rate-limit key
+in both servers now goes through one helper that collapses IPv6 to its /64, so
+the budgets bound a caller rather than an address; and `/api/admin`, which had
+no budget at all, has one.
+
+What remains there is sequenced against the steps above, including the one that
 hardens the ordering here — a mapped public port cannot ship before TLS, because
 classic Subsonic auth puts a permanent credential in a query string, so step 4
 is downstream of step 3 rather than parallel to it.

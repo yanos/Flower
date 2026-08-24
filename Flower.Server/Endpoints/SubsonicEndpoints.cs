@@ -32,8 +32,8 @@ public static class SubsonicEndpoints
     // Classic Subsonic auth is t=md5(password+salt) with no expiry and no
     // nonce, so a captured u/t/s query string replays forever and a wrong one
     // costs an attacker nothing to retry - this surface had no rate limiting
-    // at all, unlike AdminEndpoints and PairingEndpoints. Two budgets, both
-    // keyed by source IP (there is no pre-auth identity worth keying by):
+    // at all. Two budgets, both keyed by source IP via RateLimiter.KeyFor
+    // (there is no pre-auth identity worth keying by):
     //
     // - FailedAuthLimiter is charged only when auth actually fails, and is
     //   peeked before anything else, so a source that burns it is locked out
@@ -52,7 +52,7 @@ public static class SubsonicEndpoints
         {
             var services = context.HttpContext.RequestServices;
             var query = context.HttpContext.Request.Query;
-            var key = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var key = RateLimiter.KeyFor(context.HttpContext.Connection.RemoteIpAddress);
             var now = DateTimeOffset.UtcNow;
 
             if (!FailedAuthLimiter.WouldAllow(key, now) || !RequestLimiter.TryAcquire(key, now))

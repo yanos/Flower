@@ -59,7 +59,7 @@ public static class SyncEndpoints
         {
             var http = context.HttpContext;
             var services = http.RequestServices;
-            var key = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var key = RateLimiter.KeyFor(http.Connection.RemoteIpAddress);
             if (!BulkLimiter.TryAcquire(key, DateTimeOffset.UtcNow))
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
 
