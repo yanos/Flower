@@ -107,8 +107,8 @@ public class ForwardedHeaderTests(ProxiedServerFixture proxied, SubsonicServerFi
         // The half that makes the feature safe to have at all: substituting
         // the real client's address means the allow-list now applies to *it*,
         // so a proxy in front of the server is not a way around the gate. A
-        // deployment that genuinely fronts public traffic has to say so, by
-        // widening AllowedCidrs.
+        // deployment that genuinely fronts public traffic has to say so, with
+        // Flower:AllowPublicAccess - see PublicAccessTests.
         Assert.Equal(
             HttpStatusCode.Forbidden,
             await GetInfoAsync(proxied.Server, "127.0.0.1", forwardedFor: "203.0.113.7"));

@@ -292,9 +292,26 @@ regression for plain-HTTP LAN browsing, and it is not one this change can avoid
 — it is the browser's rule, not the server's. It is also aligned with where
 everything else here is going: every remote transport under consideration
 terminates TLS (Cloudflare Tunnel at the edge, Tailscale via `tailscale cert`),
-and #6 already makes TLS a hard gate on the mapped-port path. `App` logs an
-explicit error naming the requirement rather than failing at the first refused
-request.
+and #6 already makes TLS a hard gate on the mapped-port path.
+
+Two things were then needed to keep that regression from reading as a bug. The
+first surfaced immediately in testing: the desktop's "Server Settings…" button
+built its link from the address the client had dialled, which for a client that
+found the server over mDNS is the LAN one — so the button reliably opened a tab
+that could not pair, even with both ends on the same machine. The server now
+chooses the origin (`WebUiHosting.BrowserOriginFor`): `localhost` when the
+caller is on this machine, the dialled address otherwise. Answering *that*
+needs more than a loopback check, since a same-machine client that dialled our
+LAN address arrives with that address as its source — hence
+`LocalAddresses.IsThisMachine`, which asks the question of every address we
+hold.
+
+The second is what the failure says. A 401 carries no reason, and the message
+inferred from it — "This device is not paired with that server." — sent the
+user to pair again, which cannot ever succeed when there was no key to pair.
+`BrowserPeerCredentials` keeps the real reason (no secure context, or a browser
+refusing IndexedDB) and `ServerAdminClient` asks the caller for it before
+falling back to its guess.
 
 **Verified.** The real `webcrypto.js` was run against a live server: it
 generated a key, redeemed a printed pairing code with a self-signed request
@@ -305,6 +322,11 @@ with no bearer token anywhere. The same server answered 401 to an
 `POST /api/admin/sessions`. `BrowserSignatureFormatTests` pins the format
 contract as a fixed vector generated from that module, so the three encoding
 choices it depends on cannot drift unnoticed.
+
+**And verified in a real browser**, which is the leg no test reaches: clicking
+"Server Settings…" in the desktop client opens a tab that generates its key,
+spends the code, and administers the server it was opened against. That is the
+whole path end to end, in the thing it was written for.
 
 ### 8. Smaller notes, recorded rather than acted on
 
@@ -337,11 +359,17 @@ Ordered by what blocks what, not by severity:
 2. ~~**Before Cloudflare Tunnel:** #2 — `TrustedProxies` enforcement and the
    failed-auth lockout, and #7 — the admin session bearer.~~ **Done** — see
    each finding above. Nothing is left between here and turning the tunnel on.
-3. **Before a mapped public port:** #6 — TLS, which means the certificate
+3. ~~**Before Cloudflare Tunnel:** the `LanGuard` question the framing finding
+   raises — what actually replaces it.~~ **Answered by building the switch**:
+   `FlowerServerOptions.AllowPublicAccess` retires the guard by name rather than
+   by an `AllowedCidrs` of `0.0.0.0/0`, warns at every startup, and cannot be
+   set from the browser page. `PublicAccessTests` pins both halves — that a
+   public caller gets in, and that getting in still buys them nothing unsigned.
+4. **Before a mapped public port:** #6 — TLS, which means the certificate
    design in `REMOTE-TRANSPORT-PLAN.md` has to land first. This is the reason
    step 4 of that sequence is genuinely downstream of step 3 rather than
    parallel to it.
-4. ~~**Whenever convenient:** #3 (IPv6 /64 keying) and #4 (`/api/admin`
+5. ~~**Whenever convenient:** #3 (IPv6 /64 keying) and #4 (`/api/admin`
    budget).~~ **Done** — see each finding above.
 
 ## Status
@@ -373,9 +401,9 @@ does not, and a request without the header logs nothing.
 The browser's own path was confirmed against that same live server, driving the
 real `webcrypto.js`: key, redeem, and then signed access to the catalog, the
 admin settings and a stream ticket, with the bearer header refused everywhere.
-What has *not* been run by hand is the same flow inside an actual browser tab —
-the DOM half, IndexedDB persistence across a reload, and the settings overlay
-opening on `page=settings`. That is the one leg left for a person at a keyboard.
+It has since been confirmed inside an actual browser tab as well, opened the way
+a user opens it — the "Server Settings…" button — which is what turned up the
+LAN-address link and the misleading 401 described in #7.
 
 Finding #6 is untouched — a decision attached to a mapped public port rather
 than a fix that stands on its own, and sequenced above against it. #8 is notes.

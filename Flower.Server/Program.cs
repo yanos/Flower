@@ -290,6 +290,28 @@ if (trustedProxyNetworks.Count > 0)
         forwarded.KnownIPNetworks.Count, string.Join(", ", trustedProxies));
 }
 
+// Said once, loudly, at the only moment an operator is reading the console: a
+// server that answers the open internet should never be one that got there by
+// accident. The second warning is the failure this pairs with most often -
+// public access through a tunnel, with nothing declaring the tunnel, which
+// leaves every remote listener sharing one address and therefore one budget.
+var publicAccess = app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value.AllowPublicAccess;
+if (publicAccess)
+{
+    app.Logger.LogWarning(
+        "Flower:AllowPublicAccess is on, so this server answers callers from any address - the LAN allow-list is off. "
+        + "Every route that matters still requires a paired device's signature, and that is now the only thing that does. "
+        + "See docs/SELF-HOSTING.md.");
+
+    if (trustedProxyNetworks.Count == 0)
+    {
+        app.Logger.LogWarning(
+            "Flower:AllowPublicAccess is on but Flower:TrustedProxies is empty. If a tunnel or reverse proxy is what "
+            + "makes this server reachable, name it there - for cloudflared on this machine that is 127.0.0.1/32 - or "
+            + "every remote listener arrives as that proxy and shares one rate-limit bucket.");
+    }
+}
+
 // Behind UseForwardedHeaders, so RemoteIpAddress is already whatever a trusted
 // hop said it was - which is what makes "still not a trusted proxy" mean an
 // undeclared one. A hop that was believed also consumes its entry from the
@@ -325,8 +347,23 @@ app.Use(async (context, next) =>
     // an operator is most likely to be changing *because* they are locked out.
     var serverOptions = context.RequestServices.GetRequiredService<IOptionsMonitor<FlowerServerOptions>>().CurrentValue;
     var remoteAddress = context.Connection.RemoteIpAddress;
-    if (remoteAddress == null
-        || !LanGuard.IsPrivateOrLoopback(remoteAddress, serverOptions.AllowedCidrs, serverOptions.TrustTailscaleRange))
+
+    // A connection with no address at all is refused either way: every rate
+    // limiter behind this keys on one, so admitting it would be admitting a
+    // caller nothing downstream can budget.
+    if (remoteAddress == null)
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+
+    // AllowPublicAccess is what a deployment behind a tunnel or a mapped port
+    // sets, and it retires this gate rather than widening it - see the option's
+    // own remarks for what is left holding the door, and Program.cs's startup
+    // warning, which says the same thing where an operator will actually read
+    // it.
+    if (!serverOptions.AllowPublicAccess
+        && !LanGuard.IsPrivateOrLoopback(remoteAddress, serverOptions.AllowedCidrs, serverOptions.TrustTailscaleRange))
     {
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
         return;

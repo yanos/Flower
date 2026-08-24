@@ -81,18 +81,40 @@ Private, loopback and link-local addresses are allowed, plus `100.64.0.0/10` —
 the range Tailscale hands out. Everything else gets a flat `403`, whether or not
 it has a valid credential.
 
-This matters for the rest of this guide: **the server is not designed to be
-port-forwarded.** A directly-exposed music server gets found by scanners within
-hours, and the allow-list is what stands between "on my LAN" and "on the
-internet". The remote-access path below goes around that problem instead of
-punching through it.
+This matters for the rest of this guide. A directly-exposed music server gets
+found by scanners within hours, and the allow-list is what stands between "on my
+LAN" and "on the internet". Three ways to reach the server from outside follow,
+and they are in preference order for a reason:
 
-Two settings widen the list, and they answer different questions:
+1. **Tailscale** — goes around the problem instead of punching through it. The
+   server never becomes reachable from the internet at all, and the allow-list
+   stays on. Best for your own devices; asks each listener to install a VPN.
+2. **Cloudflare Tunnel** — no open port, nothing for a listener to install, but
+   a third party terminates your TLS and their terms restrict this use.
+3. **Port forwarding** — you publish the server yourself. Most control, no third
+   party, and the only one where a mistake is your mistake. It needs the most
+   care, which is why it is last.
 
-- **`AllowedCidrs`** — *who is allowed in*. Extra networks to admit, e.g. a VPN
-  subnet of your own. Editable from the settings page, applies immediately.
+The last two require turning the allow-list off, which is a deliberate setting.
+
+Three settings change it, and they answer different questions:
+
+- **`AllowedCidrs`** — *who else is allowed in*. Extra networks to admit, e.g. a
+  VPN subnet of your own. Editable from the settings page, applies immediately.
 - **`TrustedProxies`** — *who is allowed to tell the server who someone else
   is*. See below. Deployment-shaped, so it is read once at startup.
+- **`AllowPublicAccess`** — *turn the allow-list off entirely*. For a server
+  deliberately published to the internet, through a tunnel or a mapped port.
+  Off by default. Not editable from the settings page, on purpose: whether your
+  library faces the internet is a fact about how you deployed it, not a
+  preference a browser tab should be able to flip.
+
+Turning that last one on is the single most consequential thing you can do to
+this server, so it says so in the log every time it starts. What holds the door
+afterwards is the same thing that always did the real work: **every route that
+matters requires a paired device's signature**, and unsigned callers get a `403`
+whether they came from your sofa or from a botnet. The allow-list was the belt.
+That is the braces.
 
 ---
 
@@ -131,6 +153,12 @@ and browsers only expose WebCrypto in a secure context — so over plain `http:/
 to anything but `localhost`, a tab cannot pair and shows an empty library. A
 real `https://` address also avoids a class of mixed-content surprises that are
 tedious to debug.
+
+First, one thing that has to be enabled in the tailnet before the command below
+will work. In the [Tailscale admin console](https://login.tailscale.com/admin/dns),
+under **DNS**, turn on **MagicDNS** and then **HTTPS Certificates**. Both are
+free, and without the second, `tailscale serve` has no certificate to serve and
+fails.
 
 ```bash
 sudo tailscale serve --bg 4533
@@ -200,7 +228,9 @@ suggestion.
 
 Note that the allow-list still applies to the *forwarded* address. That is the
 point: putting a proxy in front of Flower does not turn the gate off, it just
-moves it to the address that actually matters.
+moves it to the address that actually matters. On a tailnet that is exactly what
+you want, because a `100.x` address is already on the allow-list — which is why
+this path, unlike the two below, never needs `AllowPublicAccess`.
 
 ### Tuning for a tailnet
 
@@ -209,9 +239,26 @@ Two settings worth changing on a tailnet-only deployment:
 - **`AdvertiseOnLan: false`** — stops the mDNS announcement. On a server only
   ever reached over the tailnet, the multicast announcement is noise no client
   that matters can hear.
-- **`AdvertisedHost: "basement.tail1234.ts.net"`** — the address put into
-  pairing invites. The default is the address your own browser reached the
-  server on, which is usually right; set this if it is not.
+- **`AdvertisedHost: "https://basement.tail1234.ts.net"`** — the address put
+  into pairing invites and handed to paired clients to remember.
+
+  **Include the `https://`.** A bare host here inherits the scheme and port the
+  server itself listens on, so `"basement.tail1234.ts.net"` becomes
+  `http://basement.tail1234.ts.net:4533` — which bypasses `tailscale serve`
+  entirely and is not what you set it up for. A value with its own scheme is
+  taken as-is, port and all, which is right: what terminates TLS is not this
+  listener.
+
+### Sharing with someone who is not you
+
+A listener does not need an account on your tailnet. In the admin console, open
+the server's machine, choose **Share…**, and send the invite link. They install
+Tailscale, accept, and the server appears on their tailnet as a single shared
+machine — they get no access to anything else of yours, and you get none to
+theirs.
+
+That is still an app install on their phone, which is the whole reason the next
+two options exist.
 
 ### Pairing a device over the tailnet
 
@@ -225,29 +272,277 @@ after that the server tells the client every address it can be reached on,
 including its tailnet one, and the client uses whichever works from wherever it
 is.
 
-The **browser UI** has no such constraint — it talks to whatever host you opened
-it on, so `https://basement.tail1234.ts.net` works from anywhere without pairing
-anything. See "Reaching it from a browser" below.
+The **browser UI** has no discovery constraint — it talks to whatever host you
+opened it on, so `https://basement.tail1234.ts.net` reaches the server from
+anywhere. It still has to pair once, with a code, exactly like an app does; what
+it does not need is to have ever shared a network with the server. See "Reaching
+it from a browser" below.
 
 ---
 
-## Cloudflare Tunnel — the option for people who won't install a VPN
+## Cloudflare Tunnel — reaching the server without a VPN or an open port
 
-If you want to share your library with someone who will not install Tailscale,
-[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-publishes a service to the internet without opening a port, the same way. Run
-`cloudflared` on the same machine as the server and set `TrustedProxies` to
-`127.0.0.1/32`, exactly as in step 3 — that is where it delivers from. If it
-runs elsewhere, set `TrustedProxies` to its address and `AllowedCidrs` to the
-range it forwards from. Start the server, make one request through the tunnel,
-and check the log: the `X-Forwarded-For arrived from ...` warning above is how
-you find out you named the wrong address.
+Tailscale is the better answer for your own devices, but it asks every listener
+to install a VPN. [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+asks them for nothing: `cloudflared` runs beside the server, dials *out* to
+Cloudflare, and a hostname you own starts serving your library over HTTPS. No
+port is opened, no router is touched, and your home IP address is never
+published.
 
-Understand the trade before you do: **Cloudflare terminates TLS at their edge**,
-so your traffic is decrypted on someone else's machine. That is a materially
-different trust boundary from Tailscale, where nothing between your devices can
-read anything. It is a reasonable choice for sharing; it is a bad default for
-your own library.
+Read both of these before you set it up.
+
+> **Cloudflare's terms restrict this use.** Their CDN terms reserve the right to
+> "disable or limit your access to or use of the CDN … if you use or are
+> suspected of using the CDN without such Paid Services to serve video or a
+> disproportionate percentage of pictures, audio files, or other large files."
+> A music library streaming through a tunnel is squarely that. Cloudflare has
+> said as much about self-hosted media servers specifically. Nothing here will
+> break the day you turn it on, but this is a path that can be limited or shut
+> off at Cloudflare's discretion, and you should not build your listening on it
+> without knowing that.
+
+> **Cloudflare terminates TLS at their edge**, so your traffic is decrypted on
+> someone else's machine. That is a materially different trust boundary from
+> Tailscale, where nothing between your devices can read anything. Reasonable
+> for sharing with a friend; a poor default for your own library.
+
+### 1. What you need first
+
+A domain whose DNS is on Cloudflare — a free plan is enough, and a cheap domain
+is fine. Cloudflare has to be your nameserver, because the tunnel is published
+by writing a DNS record it controls.
+
+### 2. Install and authenticate `cloudflared`
+
+```bash
+brew install cloudflared          # macOS; see Cloudflare's docs for Linux packages
+cloudflared tunnel login
+```
+
+The login opens a browser, asks which domain to authorise, and writes a
+certificate to `~/.cloudflared/cert.pem`.
+
+### 3. Create the tunnel and point a hostname at it
+
+```bash
+cloudflared tunnel create flower
+cloudflared tunnel route dns flower music.example.com
+```
+
+The first prints a tunnel UUID and writes credentials to
+`~/.cloudflared/<UUID>.json`. The second creates the DNS record.
+
+Then write `~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: <UUID>
+credentials-file: /Users/you/.cloudflared/<UUID>.json
+
+ingress:
+  - hostname: music.example.com
+    service: http://localhost:4533
+  - service: http_status:404
+```
+
+`localhost:4533` is the point worth noticing: the server keeps speaking plain
+HTTP, bound where it always was. The tunnel is the only thing facing outward.
+
+### 4. Tell the server what changed
+
+Two settings, and neither is optional:
+
+```json
+{
+  "Flower": {
+    "AllowPublicAccess": true,
+    "TrustedProxies": [ "127.0.0.1/32" ],
+    "AdvertisedHost": "https://music.example.com",
+    "AdvertiseOnLan": true
+  }
+}
+```
+
+- **`AllowPublicAccess`** — without it, every listener gets a `403`. `cloudflared`
+  delivers over loopback, so the allow-list would admit the *tunnel* — but with
+  `TrustedProxies` set the server correctly sees the real client's public
+  address instead, and refuses it. The two settings only make sense together.
+- **`TrustedProxies: ["127.0.0.1/32"]`** — where `cloudflared` delivers from.
+  Without it every remote listener arrives as `127.0.0.1`, sharing one identity
+  and therefore **one rate-limit bucket**, so one busy listener locks out the
+  rest. If `cloudflared` runs on another machine, name that address instead.
+- **`AdvertisedHost`** — the origin put into pairing invites and reported to
+  paired clients as an address to remember. It carries its own scheme, so
+  `https://` here is what tells clients to reach the tunnel over TLS rather than
+  guessing `http`.
+- **`AdvertiseOnLan`** — leave it on if you still listen at home; the tunnel is
+  an *extra* way in, not a replacement. Clients rank a LAN address ahead of it
+  and only fall back to the tunnel from outside.
+
+Restart the server after editing; `TrustedProxies` and `AllowPublicAccess` are
+read once at startup.
+
+### 5. Run it
+
+```bash
+cloudflared tunnel run flower
+```
+
+Once it works, install it as a service so it survives a reboot —
+`sudo cloudflared service install` on macOS and Linux.
+
+### 6. Check you got it right
+
+The failure this setup produces is quiet, so look for it deliberately:
+
+1. Open `https://music.example.com` in a browser. You should get the Flower UI,
+   and — because it is now a secure context — a tab that can pair.
+2. Watch the server log during that first request. `An X-Forwarded-For arrived
+   from … so it is being ignored` means `TrustedProxies` names the wrong
+   address, and you are in the one-bucket-for-everyone state described above.
+3. Check the startup log says `Flower:AllowPublicAccess is on`. If it warns that
+   `TrustedProxies` is empty, step 4 did not take effect.
+
+### 7. Give a listener access
+
+Settings page → **Add Device…** → read them the code. They open
+`https://music.example.com`, paste it, and their browser is a paired device from
+then on — or they enter it in the Flower app's **Pairing code** box.
+
+Nothing about a listener's setup involves Cloudflare, a VPN, or an address to
+remember. That is the whole reason this option exists.
+
+---
+
+## Port forwarding — publishing the server yourself
+
+The most direct option, and the one with no third party in it: a port on your
+router points at the server, a name in DNS points at your router, and listeners
+reach it over the public internet. No VPN for them to install, no company able
+to read your traffic or decide your library is the wrong sort of content.
+
+It is also the one where a mistake is entirely yours, so read this part before
+the steps.
+
+> **Do not forward port 4533 to the server and stop there.** Flower speaks plain
+> HTTP and does not obtain certificates of its own. Unencrypted on the open
+> internet, two things leak that matter: third-party Subsonic clients
+> authenticate with a password derived scheme that assumes a trusted transport,
+> and stream URLs carry a short-lived ticket in the query string. Both are fine
+> on a LAN and neither is fine in the clear across the internet. **Terminate TLS
+> in front of the server.** The steps below do that with Caddy, which gets a
+> certificate on its own and renews it without being asked.
+
+### 1. Give the server a fixed address on your LAN
+
+In your router's DHCP settings, reserve an address for the server's MAC — most
+routers call it "DHCP reservation" or "static lease". A forwarded port that
+points at an address the server no longer holds is the most common way this
+setup breaks silently, weeks later.
+
+### 2. Get a name that points at your router
+
+If your ISP gives you a static IP, just create an `A` record for
+`music.example.com` at your DNS provider.
+
+Most home connections do not. Use a dynamic DNS provider (many routers have one
+built in, under "DDNS"), which keeps the record pointing at your current address
+as it changes. Whatever you use, the outcome is one hostname that resolves to
+your router.
+
+Check what you actually have first — if `curl -s ifconfig.me` returns an address
+in `100.64.0.0/10`, you are behind carrier-grade NAT and **port forwarding
+cannot work at all**. There is no port to forward; your ISP shares that address
+across many customers. Ask them for a public IP, or use one of the two options
+above.
+
+### 3. Put Caddy in front of the server
+
+On the server machine:
+
+```bash
+brew install caddy        # or your distro's package
+```
+
+`/etc/caddy/Caddyfile` (or `/opt/homebrew/etc/Caddyfile`):
+
+```
+music.example.com {
+    reverse_proxy localhost:4533
+}
+```
+
+That is the entire configuration. Caddy obtains a Let's Encrypt certificate for
+the name, renews it, redirects HTTP to HTTPS, and proxies to Flower — which goes
+on speaking plain HTTP on loopback, exactly as it does behind `tailscale serve`.
+
+```bash
+sudo caddy run --config /etc/caddy/Caddyfile      # to try it
+sudo brew services start caddy                     # once it works
+```
+
+### 4. Forward the ports on the router
+
+Forward **443 → the server's reserved address, port 443**, and **80 → port 80**.
+Both, and 80 is not optional: Let's Encrypt validates over it, so without it
+Caddy cannot get the certificate in the first place.
+
+Do **not** forward 4533. Nothing outside needs to reach Flower directly, and a
+forwarded 4533 is precisely the unencrypted exposure the warning above is about.
+
+### 5. Tell the server what changed
+
+```json
+{
+  "Flower": {
+    "AllowPublicAccess": true,
+    "TrustedProxies": [ "127.0.0.1/32" ],
+    "AdvertisedHost": "https://music.example.com",
+    "AdvertiseOnLan": true
+  }
+}
+```
+
+Identical to the tunnel setup, and for identical reasons — Caddy is a proxy on
+loopback the same way `cloudflared` is. `AllowPublicAccess` is what stops the
+allow-list refusing every listener once `TrustedProxies` correctly resolves them
+to their real public address. Restart the server; both are read at startup.
+
+### 6. Check you got it right
+
+From a phone on cellular, with Wi-Fi off — testing from inside your own network
+proves nothing, because many routers do not loop a forwarded port back:
+
+1. `https://music.example.com` serves the Flower UI, with a valid certificate.
+2. `http://music.example.com` redirects to HTTPS rather than serving anything.
+3. The startup log says `Flower:AllowPublicAccess is on` and does **not** warn
+   that `TrustedProxies` is empty.
+4. The log shows no `An X-Forwarded-For arrived from …` warning during that
+   request. If it does, it names the address that belongs in `TrustedProxies`.
+
+### What you are now responsible for
+
+Being on the internet on purpose is fine; being on it without knowing what holds
+the door is not. What does:
+
+- **Every route that matters requires a paired device's signature.** An unsigned
+  caller reaches the handshake endpoint and nothing else. This is the same check
+  that has always done the real work — the allow-list was a second line, and you
+  have just removed it deliberately.
+- **Rate limits are per caller**, which is what `TrustedProxies` buys you. Get
+  that wrong and every listener shares one budget, so one of them can lock out
+  the rest.
+- **Pairing codes are single-use and short-lived**, and the device list is the
+  revocation surface. Check it occasionally; anything in it you do not recognise
+  should be revoked.
+
+Keep the server updated, and prefer Tailscale for your own devices even with
+this set up — the two coexist, and clients rank a LAN or tailnet address ahead
+of the public one anyway.
+
+> **Automatic port mapping (UPnP / NAT-PMP) is not implemented.** Flower will
+> not open a port on your router for you, by design — the mapping above is one
+> you made deliberately and can see in your router's UI. See
+> `docs/REMOTE-TRANSPORT-PLAN.md` if you are curious about where that might go.
 
 ---
 
@@ -257,15 +552,25 @@ The server serves a full Flower UI of its own, which plays music in a tab and
 needs nothing installed. Over `tailscale serve` it lives at
 `https://basement.tail1234.ts.net`.
 
-One caveat worth knowing before you rely on it: a tab has no authority on its own.
-It needs a session token, which the settings page mints for it, and that token
-lasts **one hour** with no renewal. So the browser is excellent for a quick listen
-or for a device you do not own, and the app is what you want on your own phone.
+A tab is a device, with a keypair of its own that never leaves the browser (see
+"Pairing" above). Pair it once with a code and it keeps working at the plain
+address afterwards, indefinitely, until you revoke it in the device list or
+clear the browser's site data.
+
+The one constraint is the one already noted: the page has to be served over
+HTTPS or `localhost`, because that is the only place browsers expose the
+cryptography the key depends on. Every remote-access option below terminates
+TLS, so in practice this only affects browsing to a LAN address over plain
+`http://`.
 
 ## Not yet covered
 
-- **A public domain without a VPN**, via LettuceEncrypt for automatic Let's
-  Encrypt certificates. Planned; see `SYNC-PLAN.md`.
+- **Certificates from the server itself**, via LettuceEncrypt, so that a
+  port-forwarded deployment needs no reverse proxy in front of it. Planned; see
+  `SYNC-PLAN.md` and the certificate section of `REMOTE-TRANSPORT-PLAN.md`.
+  Until then, Caddy above is the answer and works fine.
+- **Automatic port mapping** (UPnP / NAT-PMP). See the note at the end of the
+  port-forwarding section.
 - **Docker packaging.** Planned. Note that mDNS announcement (`AdvertiseOnLan`)
   needs host networking to work from a container, since it is link-local
   multicast — a tailnet deployment turns that off anyway.
@@ -280,6 +585,27 @@ proxy's address unless `TrustedProxies` names it.
 
 **403 only from one device.** It is not on the tailnet, or `TrustTailscaleRange`
 has been turned off.
+
+**403 for every listener through a tunnel, but the browser on the server works
+fine.** `AllowPublicAccess` is off while `TrustedProxies` is set — so the server
+correctly resolves each caller to their real public address and then turns it
+away. Both settings, or neither.
+
+**Nothing reaches a port-forwarded server from outside.** Test from cellular
+with Wi-Fi off — many routers do not loop a forwarded port back, so testing from
+inside your own network proves nothing either way. Then check, in order: that
+`curl -s ifconfig.me` is not in `100.64.0.0/10` (carrier-grade NAT, in which
+case no port forwarding can work), that the server still holds the LAN address
+the forward points at, and that both 80 and 443 are forwarded.
+
+**Caddy will not get a certificate.** Port 80 is not forwarded, or DNS does not
+yet point at your router. Let's Encrypt validates over HTTP on 80, so 443 alone
+is not enough.
+
+**A browser tab says it cannot be paired.** The page is not in a secure context.
+Over a tunnel or `tailscale serve` it should be `https://`; on the server itself
+use `http://localhost`. A LAN address over plain `http://` cannot work, and the
+message says which of the two you are hitting.
 
 **A device is getting 429s it did not earn.** Every per-source rate limit is
 keyed by the address the request arrived from, so if `TrustedProxies` is not set

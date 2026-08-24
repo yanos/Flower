@@ -118,7 +118,14 @@ phone.
    partly done for remembered candidates. Nothing conceptually hard; it is the
    bulk of the effort and it is client-side after all, which weakens the "zero
    client work" claim to "no new client *concepts*."
-2. **`LanGuard` faces the internet.** Today it admits RFC1918, loopback and
+2. **`LanGuard` faces the internet** — done, and it needed a setting of its own.
+   Turning the guard off is one decision with five consequences (it is the
+   containing control named in five separate places, see
+   `OPEN-INTERNET-REVIEW.md`), so it is now `FlowerServerOptions
+   .AllowPublicAccess` rather than an `AllowedCidrs` of `0.0.0.0/0` that a
+   reader might not recognise for what it is. Deliberately not editable from the
+   browser settings page, and it warns at every startup. The original note
+   follows, and it is what the setting is for. Today it admits RFC1918, loopback and
    `100.64/10`, and everything else gets a flat 403 — so authentication has a
    network-level backstop underneath it. Behind a tunnel every request arrives
    from the tunnel daemon, inside the allow-list by definition, and that backstop
@@ -133,9 +140,26 @@ phone.
    hostname so unauthenticated requests never reach the server. Worth knowing
    about; it does not remove point 2, since a listener has to get through it.
 4. **Transcoding is unchanged and still absent.** A FLAC is ~1000 kbps whatever
-   carries it. Cloudflare's free tier is not a CDN cache for this traffic, and
-   their terms discourage sustained large media streaming — worth reading before
-   depending on it for a whole library.
+   carries it. Cloudflare's free tier is not a CDN cache for this traffic.
+
+5. **Their terms do not merely discourage this; they reserve the right to stop
+   it.** Checked against the primary source while writing the setup guide, and
+   it is sharper than the line above assumed. Cloudflare retired the old
+   HTML/non-HTML section 2.8, but moved the restriction into the CDN-specific
+   service terms, which reserve the right to "disable or limit your access to or
+   use of the CDN … if you use or are suspected of using the CDN without such
+   Paid Services to serve video or a disproportionate percentage of pictures,
+   audio files, or other large files." A music library is a disproportionate
+   percentage of audio files by construction, and Cloudflare has said the same
+   about self-hosted media servers specifically.
+
+   This does not make the option unbuildable — it is built, and it works — but
+   it does downgrade what it can be. **It is a sharing path that may be limited
+   at Cloudflare's discretion, not a foundation to build listening on.** The
+   recommendation above stands only in that narrower sense, and the honest
+   consequence is that the *owner's* own listening should go over Tailscale or a
+   mapped port, with the tunnel as the thing offered to a friend who will not
+   install a VPN. `SELF-HOSTING.md` leads with this rather than burying it.
 
 ## Option C — keep Tailscale, document only
 
@@ -338,8 +362,7 @@ nothing above changes what happens to someone who never turns it on.
 
 ## Status
 
-**Step 1 of the sequence is built, and step 2 is complete; the rest is still a
-decision on paper.** The scheme rework landed (see above) and both suites pass —
+**Steps 1, 2 and 3 are built; steps 4 and 5 are still a decision on paper.** The scheme rework landed (see above) and both suites pass —
 `Flower.Tests` 1095/1095, `Flower.Server.Tests` 178/178. Nothing serves TLS yet, no transport
 was added, and no behaviour changed: what changed is that a scheme other than
 `http` is now expressible end to end, which nothing else here could proceed
@@ -390,3 +413,16 @@ What remains there is sequenced against the steps above, including the one that
 hardens the ordering here — a mapped public port cannot ship before TLS, because
 classic Subsonic auth puts a permanent credential in a query string, so step 4
 is downstream of step 3 rather than parallel to it.
+
+**Step 3 — Cloudflare Tunnel — is built and documented end to end** in
+`SELF-HOSTING.md`: prerequisites, `cloudflared` setup, the `config.yml`, the
+server settings that go with it, how to verify, and how to hand a listener
+access. It needed one piece of code rather than none —
+`FlowerServerOptions.AllowPublicAccess`, see point 2 above — because
+`TrustedProxies` doing its job correctly is precisely what makes `LanGuard`
+refuse every remote listener, and the two only make sense set together.
+
+That work also turned up the terms question in point 5, which is the more
+important outcome of the step. The tunnel works; what changed is what it should
+be used *for*. Nothing here has been run against a real Cloudflare account yet —
+that needs a domain, and is the one part of this that cannot be tested locally.
