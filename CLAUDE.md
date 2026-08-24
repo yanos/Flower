@@ -56,6 +56,17 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `STREAMING-SERVICES-PLAN.md` — feasibility of streaming Spotify/Apple Music/YouTube Music.
 - `ALBUM-GRID-PLAN.md` — design record for the Albums/Recently Added art-tile grid.
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `yanos/Flower`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at the root, ADRs in `docs/adr/`. Neither exists
+yet, and their absence is not a problem to fix. See `docs/agents/domain.md`.
+
 ## Build & Run
 
 ```bash
