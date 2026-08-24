@@ -70,6 +70,33 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // See WebUiHosting.Resolve.
     public string WebUiPath { get; set; } = "";
 
+    // Whether this server is deliberately reachable from the open internet,
+    // which switches LanGuard's gate off entirely (see Program.cs).
+    //
+    // Off by default, and the default is the whole point: LanGuard is cited as
+    // the containing control in five separate places that were each reasoned
+    // about on their own (docs/OPEN-INTERNET-REVIEW.md), so retiring it is one
+    // decision with five consequences and deserves to be one setting rather
+    // than a side effect. The same effect is expressible as an AllowedCidrs of
+    // 0.0.0.0/0 - this exists so that nobody has to write that and hope a
+    // reader notices what it means.
+    //
+    // What carries the weight afterwards, all of which is already there: every
+    // route that matters requires a device signature (PeerSignatureAuth), the
+    // per-client rate limits key on the forwarded address rather than the
+    // proxy's, and the browser head holds a non-extractable key rather than a
+    // bearer token. LanGuard was the belt; those are the braces.
+    //
+    // Set TrustedProxies alongside it whenever a tunnel or proxy is what makes
+    // the server reachable, or every remote listener arrives as that proxy's
+    // address and shares one rate-limit bucket. Startup says so if it is not.
+    //
+    // Deliberately not in ServerSettingsDto, for the same reason as
+    // TrustedProxies below and more so: exposing a server to the internet is a
+    // fact about how it was deployed, and the browser page is the last place
+    // that should be able to decide it.
+    public bool AllowPublicAccess { get; set; } = false;
+
     // Widens LanGuard's built-in private/loopback/CGNAT allow-list (see
     // Program.cs's LanGuard middleware) for a trusted tunnel/proxy whose
     // source range isn't already covered - e.g. a reverse proxy on its own
