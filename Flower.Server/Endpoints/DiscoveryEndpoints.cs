@@ -108,7 +108,7 @@ public static class DiscoveryEndpoints
                 // signature verified gets an answer, and everyone else gets
                 // null rather than a "no" they did not earn. A client uses it
                 // to decide whether to show the administrator-only controls -
-                // see MainViewModel.CanInviteDeviceToSelectedServer. It grants
+                // see MainViewModel.CanInviteDeviceToPairedServer. It grants
                 // nothing: AdminEndpoints checks the same store itself on
                 // every request.
                 callerIsTrusted ? trustedPeers.IsAdmin(caller.Fingerprint!) : null);

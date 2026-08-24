@@ -338,7 +338,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
     // Whether this server counts us as one of its administrators, which is what
     // decides if the admin-only controls are offered at all - see
-    // DiscoveredDevice.WeAreAdmin and MainViewModel.CanInviteDeviceToSelectedServer.
+    // DiscoveredDevice.WeAreAdmin and MainViewModel.CanInviteDeviceToPairedServer.
     [Fact]
     public void Resolves_whether_the_peer_makes_us_an_administrator()
     {

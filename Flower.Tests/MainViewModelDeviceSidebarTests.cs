@@ -419,49 +419,25 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
 
     // ── Handing out pairing codes ─────────────────────────────────────────────
 
-    // A headless Flower.Server that has already approved this device *and*
-    // counts it as one of its administrators: the device-detail header offers
-    // to generate a pairing code against it.
+    // Desktop hands out no pairing codes of its own any more: the selected
+    // server's settings screen does it, on its Devices tab, and a second button
+    // in the header beside it was the same control twice. What is left to check
+    // here is that the screen offering it appears at all - see
+    // An_approved_server_gets_a_settings_screen_of_its_own above.
+    //
+    // Paired, approved, but an ordinary listener on that server: the settings
+    // screen is still built and still offered, and the server's own refusal is
+    // what the pane shows. That is deliberate - the alternative, hiding it,
+    // leaves a paired server with a blank pane and no account of why.
     [AvaloniaFact]
-    public void An_approved_headless_server_can_be_asked_for_a_pairing_code()
-    {
-        var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
-        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
-        vm.SelectedSidebarItem = SingleDeviceRow(vm);
-
-        Assert.True(vm.CanInviteDeviceToSelectedServer);
-    }
-
-    // Paired, approved, and an ordinary listener there. Handing out pairing
-    // codes is an administrator's job, and this server would refuse every one
-    // of this device's attempts - so the control is not offered at all rather
-    // than offered and then explained away (see
-    // MainViewModel.CanInviteDeviceToSelectedServer, DiscoveredDevice.WeAreAdmin).
-    [AvaloniaFact]
-    public void A_server_that_does_not_make_us_an_administrator_offers_nothing()
+    public void A_server_that_does_not_make_us_an_administrator_still_gets_a_pane()
     {
         var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
         vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop"));
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
 
-        Assert.False(vm.CanInviteDeviceToSelectedServer);
-
-        // "Server Settings…" is deliberately *not* gated the same way: opening
-        // a page a non-admin cannot read costs a wasted trip that says so,
-        // where a code button costs a control that only ever fails.
+        Assert.NotNull(vm.SelectedServerSettings);
         Assert.True(vm.CanOpenSelectedServerSettings);
-    }
-
-    // Paired but still waiting for the server to approve this device: any admin
-    // call it made would be refused, so there is nothing to offer yet.
-    [AvaloniaFact]
-    public void A_server_that_has_not_approved_this_device_yet_offers_nothing()
-    {
-        var vm = Make(PairedWith("fp-desk", trustConfirmed: false));
-        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop"));
-        vm.SelectedSidebarItem = SingleDeviceRow(vm);
-
-        Assert.False(vm.CanInviteDeviceToSelectedServer);
     }
 
     // Mobile's Settings sheet asks the paired server rather than a selected row,
@@ -473,6 +449,53 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
 
         Assert.False(vm.CanInviteDeviceToPairedServer);
+    }
+
+    // ── The selected server's settings pane ───────────────────────────────────
+
+    // Selecting an approved server builds the settings screen the device-detail
+    // pane shows in place of what used to be a browse view of its catalog (see
+    // MainViewModel.SelectedServerSettings). Nothing is fetched here - the
+    // ViewModel exists first and loads when the panel hosting it says so.
+    [AvaloniaFact]
+    public void An_approved_server_gets_a_settings_screen_of_its_own()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
+        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+
+        Assert.NotNull(vm.SelectedServerSettings);
+        // A server's settings, not this device's: no theme, no server picker,
+        // and a device roster (see RemoteServerSettingsBackend's capabilities).
+        Assert.False(vm.SelectedServerSettings!.Capabilities.ThemePicker);
+        Assert.True(vm.SelectedServerSettings.Capabilities.TrustedDevices);
+    }
+
+    // Paired but still waiting for approval: every admin call would come back
+    // refused, so there is no panel to show yet - the pane says why instead.
+    [AvaloniaFact]
+    public void A_server_that_has_not_approved_this_device_has_no_settings_screen()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: false));
+        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop"));
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+
+        Assert.Null(vm.SelectedServerSettings);
+    }
+
+    // Moving off the server row drops it again, so the next server selected is
+    // never briefly administering the previous one.
+    [AvaloniaFact]
+    public void Leaving_the_server_row_drops_its_settings_screen()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
+        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+        Assert.NotNull(vm.SelectedServerSettings);
+
+        vm.SelectedSidebarItem = vm.SidebarItems.First(i => i.Kind == SidebarItemKind.Songs);
+
+        Assert.Null(vm.SelectedServerSettings);
     }
 
     private static AppSettings PairedWith(string fingerprint, bool trustConfirmed) => new()

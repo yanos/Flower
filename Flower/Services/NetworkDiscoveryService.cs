@@ -96,7 +96,7 @@ public class DiscoveredDevice
     // guards against offering a control that only the server can actually
     // authorise. An unresolved peer, or one that says nothing, is treated as
     // "not an administrator here" - the admin-only buttons stay hidden until
-    // the server says otherwise. See MainViewModel.CanInviteDeviceToSelectedServer.
+    // the server says otherwise. See MainViewModel.CanInviteDeviceToPairedServer.
     public bool WeAreAdmin { get; set; }
 
     // This peer's Library.ChangeToken as of its last /info answer - the same
