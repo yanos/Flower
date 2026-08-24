@@ -483,13 +483,30 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
     public DiscoveredDevice? SelectedDevice => _selectedSidebarItem?.Device;
 
-    // Live browse/stream state for SelectedDevice, unrestricted by Client/
-    // Server role - see PeerLibraryViewModel and OnSidebarSelectionChanged,
-    // which triggers LoadAsync whenever SelectedDevice changes.
-    // Null on a platform with no P2P sync stack at all (Flower.Web/WASM - see
-    // App.axaml.cs's OperatingSystem.IsBrowser() branch: .NET-for-WASM's crypto
-    // backend has no ECDSA support, so DeviceSigningKey can't exist there).
-    public PeerLibraryViewModel? PeerLibrary { get; }
+    // The selected server's own settings, administered in place: the same
+    // SettingsPanel its browser UI serves, over a RemoteServerSettingsBackend
+    // signed as this device (see RefreshSelectedServerSettings). Null while
+    // there is nothing to administer - no server row selected, or one that has
+    // not approved this device yet.
+    //
+    // This is what the device-detail pane shows instead of what used to be
+    // there, a browse view of that server's catalog. That view was the same
+    // music twice: a paired server's tracks are merged into Library by
+    // LibrarySyncService and stream from the ordinary track list through
+    // IStreamUrlResolver, so the one thing about a server that had nowhere
+    // else to live was its settings.
+    private SettingsViewModel? _selectedServerSettings;
+    public SettingsViewModel? SelectedServerSettings
+    {
+        get => _selectedServerSettings;
+        private set
+        {
+            if (ReferenceEquals(_selectedServerSettings, value))
+                return;
+            _selectedServerSettings = value;
+            OnPropertyChanged();
+        }
+    }
 
     // Whether the device-detail header's Pair/Unpair button should show at
     // all for SelectedDevice. Every discovered device is a server now, so the
@@ -645,18 +662,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // ── Handing out pairing codes ─────────────────────────────────────────────
 
-    // "Generate Pairing Code" against the selected server: the same one-time
-    // code the server's own browser UI hands out (see SettingsViewModel's
-    // IssuePairingCodeCommand and PairingCodeService), asked for from the place
-    // an administrator already stands when they are thinking about their server -
-    // its sidebar row - rather than only after a trip out to a browser tab.
+    // "Generate Pairing Code" on mobile's Settings sheet: the same one-time code
+    // the server hands out through its own settings screen (see
+    // SettingsViewModel's IssuePairingCodeCommand and PairingCodeService).
     //
-    // An ordinary listener's code unless PairingCodeGrantsAdmin is ticked, which
-    // is what the checkbox beside the button is for: the common case is adding
-    // somebody's phone, and a device that only listens has no business handing
-    // out codes of its own - but an owner's second device is a real case too,
-    // and used to mean a trip out to the server's own browser UI to do a thing
-    // the sidebar was already standing in front of.
+    // Desktop no longer has a second one of these. It used to sit in the
+    // device-detail header, next to a pane that browsed the server's catalog;
+    // that pane now *is* the server's settings screen (SelectedServerSettings),
+    // whose Devices tab already offers this - and two identical buttons on one
+    // page is worse than the trip the header one was saving. A phone has no
+    // such pane, which is why this state stays.
+    //
+    // An ordinary listener's code unless PairingCodeGrantsAdmin is ticked: the
+    // common case is adding somebody's phone, and a device that only listens has
+    // no business handing out codes of its own - but an owner's second device is
+    // a real case too.
     private string? _issuedPairingCode;
     public string? IssuedPairingCode
     {
@@ -716,30 +736,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
-    // "Server Settings…"'s preconditions, plus the one that button deliberately
-    // does without: this device actually being an administrator of that server.
+    // Whether mobile's Settings sheet offers to hand out a pairing code. A phone
+    // has no sidebar to select a server in, so it asks the one server it is
+    // paired with - resolved through PairedServerReachability, which knows the
+    // server's current address whether it was found on this link or remembered
+    // from home (see docs/REMOTE-ACCESS-PLAN.md).
     //
-    // The two part company here because the buttons fail differently. Opening a
-    // settings page a non-admin cannot read is a wasted trip that says so;
-    // handing out pairing codes is an administrator's job in a way a listener
-    // has no reason to see offered at all, and a control whose every press
-    // returns the server's 403 reads as broken rather than as forbidden. The
-    // server now answers whether the caller is one of its admins on the same
-    // /info poll everything else here rides on (DiscoveredDevice.WeAreAdmin),
-    // so this can be known without asking - which is what the old comment here
-    // said could not be done.
-    //
-    // Still only a display decision. AdminEndpoints re-checks
-    // TrustedPeer.IsAdmin on every request, so a client that lies to itself
-    // about this gains nothing.
-    public bool CanInviteDeviceToSelectedServer =>
-        CanOpenSelectedServerSettings && SelectedDevice?.WeAreAdmin == true;
-
-    // The mobile half of the same feature. A phone has no sidebar to select a
-    // server in, so its Settings sheet asks the one server it is paired with -
-    // resolved through PairedServerReachability, which knows the server's current
-    // address whether it was found on this link or remembered from home (see
-    // docs/REMOTE-ACCESS-PLAN.md). Same admin gate as above.
+    // Gated on this device being one of that server's administrators
+    // (DiscoveredDevice.WeAreAdmin, answered on the same 5s /info poll
+    // everything else here rides on): a control whose every press returns the
+    // server's 403 reads as broken rather than as forbidden. Still only a
+    // display decision - AdminEndpoints re-checks TrustedPeer.IsAdmin on every
+    // request, so a client that lies to itself about this gains nothing.
     public bool CanInviteDeviceToPairedServer =>
         _reachability?.PairedServerDevice is { WeAreAdmin: true }
         && IsPairedServerTrustConfirmed && _signingKey != null && _deviceIdentity != null;
@@ -766,8 +774,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             OnPropertyChanged();
         }
     }
-
-    public Task InviteDeviceToSelectedServerAsync() => IssuePairingCodeAgainstAsync(SelectedDevice);
 
     public Task InviteDeviceToPairedServerAsync() => IssuePairingCodeAgainstAsync(_reachability?.PairedServerDevice);
 
@@ -806,6 +812,42 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     private ServerAdminClient CreateServerAdminClient(HttpClient http, DiscoveredDevice device) =>
         new(http, device.BaseUri,
             ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity!, _signingKey!)));
+
+    // One client for every settings panel this window ever shows, rather than
+    // one per selection: a SettingsViewModel outlives the call that created it
+    // (it saves, reloads and tails a log on demand), so the disposable-per-call
+    // shape the two one-shot admin calls above use does not work here.
+    private HttpClient? _adminHttp;
+
+    // Which server the panel currently on screen was built against - both
+    // halves matter: a different server obviously needs a new panel, and so
+    // does the same server reached at a new address (a LAN-to-tailnet handover
+    // moves BaseUri under a fingerprint that never changes).
+    private (string Fingerprint, Uri BaseUri)? _selectedServerSettingsFor;
+
+    // Rebuilds SelectedServerSettings for whatever server row is selected now.
+    // Called both when the selection moves and whenever the pair-button state
+    // changes, since pairing with the selected server - or its approval landing
+    // a moment later - is what turns an unadministerable row into one whose
+    // settings can be read at all.
+    private void RefreshSelectedServerSettings()
+    {
+        var device = CanOpenSelectedServerSettings ? SelectedDevice : null;
+        var target = device == null ? ((string, Uri)?)null : (device.Fingerprint, device.BaseUri);
+        if (target == _selectedServerSettingsFor)
+            return;
+
+        _selectedServerSettingsFor = target;
+        if (device == null)
+        {
+            SelectedServerSettings = null;
+            return;
+        }
+
+        _adminHttp ??= new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        SelectedServerSettings = new SettingsViewModel(
+            new RemoteServerSettingsBackend(CreateServerAdminClient(_adminHttp, device)));
+    }
 
     // What the user typed into that box. Cleared on a successful pair and
     // whenever the sidebar selection moves, so a code left over from one
@@ -863,7 +905,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // runs off the 5s peer poll, where the answer is the same every time, and
     // each of these is a computed property the bindings then re-evaluate.
     // See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
-    private (bool, bool, bool, bool, bool, bool, string?, bool, string?, bool, bool, bool, bool)? _lastPairButtonState;
+    private (bool, bool, bool, bool, bool, bool, string?, bool, string?, bool, bool, bool)? _lastPairButtonState;
 
     private void NotifyPairButtonPropertiesChanged()
     {
@@ -879,16 +921,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             PairActionHint,
             IsPairingCodeRequired,
             CanOpenSelectedServerSettings,
-            // Both carry their own term now that they are gated on being an
-            // administrator of the server in question, which the 5s /info poll
-            // can flip on its own - see DiscoveredDevice.WeAreAdmin.
-            CanInviteDeviceToSelectedServer,
+            // Carries its own term because it is gated on being an administrator
+            // of the server in question, which the 5s /info poll can flip on its
+            // own - see DiscoveredDevice.WeAreAdmin.
             CanInviteDeviceToPairedServer);
 
         if (_lastPairButtonState == state)
             return;
 
         _lastPairButtonState = state;
+
+        // Before the notifications: CanOpenSelectedServerSettings is part of
+        // the state tuple above, so this is the edge on which a freshly
+        // approved server gains a settings panel - or a just-unpaired one
+        // loses it.
+        RefreshSelectedServerSettings();
 
         OnPropertyChanged(nameof(CanPairWithSelectedDevice));
         OnPropertyChanged(nameof(IsSelectedDevicePaired));
@@ -902,7 +949,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsPairingCodeRequired));
         OnPropertyChanged(nameof(IsPairSubmittable));
         OnPropertyChanged(nameof(CanOpenSelectedServerSettings));
-        OnPropertyChanged(nameof(CanInviteDeviceToSelectedServer));
         // Mobile's Settings sheet asks the *paired* server rather than the
         // selected one.
         OnPropertyChanged(nameof(CanInviteDeviceToPairedServer));
@@ -949,7 +995,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         ILogger<MainViewModel> logger,
         // Trailing + defaulted (not just nullable-typed) deliberately: these
         // don't exist at all on Flower.Web/WASM (no P2P sync stack there - see
-        // PeerLibrary's own doc comment), and aren't registered in that
+        // DeviceSigningKey, which .NET-for-WASM's crypto backend cannot
+        // produce at all), and aren't registered in that
         // platform's DI container. A bare "T? x" parameter with no "= null"
         // is NOT enough for the container to pick this constructor over the
         // parameterless one above when T isn't registered - verified directly
@@ -987,9 +1034,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _reachability          = reachability;
         _deviceIdentity        = deviceIdentity;
         _signingKey            = signingKey;
-        PeerLibrary            = deviceIdentity != null && signingKey != null
-            ? new PeerLibraryViewModel(deviceIdentity, signingKey, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>())
-            : null;
         DeviceNicknames        = deviceNicknameStore;
         NetworkDiscovery       = networkDiscovery;
         _appSettingsStore      = appSettingsStore;
@@ -1575,12 +1619,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         IssuedPairingCodeError = null;
         ServerSettingsError = null;
         NotifyPairButtonPropertiesChanged();
-        // Live browse, unrestricted by Client/Server role/pairing - see
-        // PeerLibraryViewModel's own doc comment. Fire-and-forget: the VM
-        // guards against a stale request winning a race if the selection
-        // changes again before this completes.
-        if (SelectedDevice is { } device)
-            _ = PeerLibrary?.LoadAsync(device);
+        RefreshSelectedServerSettings();
         // Recently Added carries its own independent sort state (see SortColumn),
         // so switching to/from it changes what these computed properties report.
         Browser.NotifySortChanged();

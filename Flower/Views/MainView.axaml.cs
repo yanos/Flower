@@ -175,6 +175,8 @@ public partial class MainView : UserControl
             // MainView re-attaching to an already-initialized ViewModel).
             if (_viewModel.Rows.Count > 0)
                 ApplyRows();
+
+            UpdateServerSettingsPane();
         }
     }
 
@@ -241,6 +243,10 @@ public partial class MainView : UserControl
                 break;
             case nameof(MainViewModel.SelectedSubItems):
                 SyncSubListSelectionFromViewModel();
+                break;
+            case nameof(MainViewModel.SelectedServerSettings):
+            case nameof(MainViewModel.IsSelectedDevicePaired):
+                UpdateServerSettingsPane();
                 break;
         }
     }
@@ -1326,26 +1332,71 @@ public partial class MainView : UserControl
         await vm.ReorderPlaylistTrack(playlist, e.dragged, e.insertBefore);
     }
 
-    // ── Device detail: live peer browsing/streaming (PeerLibraryViewModel) ──────
+    // ── Device detail: the selected server's own settings ──────────────────────
 
-    private async void PeerAlbumList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    // Hosts (or clears) the settings panel for whichever server row is selected.
+    // The panel is rebuilt rather than re-pointed whenever MainViewModel hands
+    // over a different SettingsViewModel: SettingsPanel takes its ViewModel in
+    // its constructor and wires up event handlers from it, and one panel per
+    // server is cheap - this pane is only ever showing one at a time.
+    private SettingsViewModel? _hostedServerSettings;
+
+    private void UpdateServerSettingsPane()
     {
-        if (_viewModel is not { } vm)
+        var settings = _viewModel?.SelectedServerSettings;
+        if (ReferenceEquals(settings, _hostedServerSettings))
+        {
+            UpdateServerSettingsMessage();
             return;
-        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not AlbumID3 album)
-            return;
+        }
 
-        await (vm.PeerLibrary?.SelectAlbumAsync(album) ?? Task.CompletedTask);
+        if (_hostedServerSettings != null)
+            _hostedServerSettings.PropertyChanged -= OnServerSettingsPropertyChanged;
+        _hostedServerSettings = settings;
+
+        if (settings == null)
+        {
+            ServerSettingsHost.Content = null;
+        }
+        else
+        {
+            settings.PropertyChanged += OnServerSettingsPropertyChanged;
+            // No MainViewModel: that argument is what adds this device's own
+            // server picker to the Devices tab, and this panel is administering
+            // the server, not this device (see SettingsPanel.RefreshDevicesTab).
+            var panel = new SettingsPanel(settings);
+            // Inline, so no Cancel/OK pair and nothing to close - see
+            // SettingsPanel.UseInlineChrome.
+            panel.UseInlineChrome();
+            ServerSettingsHost.Content = panel;
+        }
+
+        UpdateServerSettingsMessage();
     }
 
-    private async void PeerSongList_DoubleTapped(object? sender, TappedEventArgs e)
+    private void OnServerSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (_viewModel is not { } vm)
-            return;
-        if (sender is not ListBox { SelectedItem: Child song })
-            return;
+        if (e.PropertyName is nameof(SettingsViewModel.IsLoaded) or nameof(SettingsViewModel.ErrorMessage))
+            UpdateServerSettingsMessage();
+    }
 
-        await (vm.PeerLibrary?.PlaySongAsync(song) ?? Task.CompletedTask);
+    // The panel only earns its place once the server has actually answered with
+    // its settings. Until then this says why it has not: not paired, not yet
+    // approved, or - the common one - paired as an ordinary listener rather than
+    // an administrator, which is the server's own refusal message.
+    private void UpdateServerSettingsMessage()
+    {
+        var vm = _viewModel;
+        var settings = _hostedServerSettings;
+        var loaded = settings is { IsLoaded: true };
+
+        ServerSettingsHost.IsVisible = loaded;
+        ServerSettingsMessage.IsVisible = !loaded;
+        ServerSettingsMessage.Text =
+            settings?.ErrorMessage is { Length: > 0 } error ? error :
+            settings != null ? "Loading this server's settings…" :
+            vm is null || !vm.IsSelectedDevicePaired ? "Pair with this server to manage it." :
+            "Waiting for this server to approve this device.";
     }
 
     // Device-detail header's Pair/Unpair button - mirrors ServerPickerView's
@@ -1356,12 +1407,6 @@ public partial class MainView : UserControl
     // because a Button's Click is not a command binding.
     private void ServerSettingsButton_Click(object? sender, RoutedEventArgs e) =>
         _ = _viewModel?.OpenSelectedServerSettingsAsync();
-
-    // Fire-and-forget like ServerSettingsButton_Click above: the ViewModel owns
-    // the whole outcome (the code, the error, the in-flight flag), and the
-    // button is disabled while a request is out.
-    private void GeneratePairingCodeButton_Click(object? sender, RoutedEventArgs e) =>
-        _ = _viewModel?.InviteDeviceToSelectedServerAsync();
 
     private async void PairActionButton_Click(object? sender, RoutedEventArgs e)
     {

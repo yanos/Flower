@@ -206,6 +206,16 @@ public partial class SettingsPanel : UserControl
             _viewModel.ForgetDenialCommand.Execute(row);
     }
 
+    // Hosted inside another page rather than in a window or a full-page overlay
+    // (MainView's device-detail pane): there is nothing to close, so Cancel -
+    // which only ever meant "close without saving" - has nothing to mean either,
+    // and the button that saves says so instead of saying OK.
+    public void UseInlineChrome()
+    {
+        CancelButton.IsVisible = false;
+        SaveButton.Content = "Save";
+    }
+
     private void CancelButton_Click(object? sender, RoutedEventArgs e) =>
         CloseRequested?.Invoke(this, EventArgs.Empty);
 

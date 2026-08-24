@@ -319,10 +319,13 @@
                                 SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
 
         <!-- Device detail: shown instead of the track list when a Devices/Server
-             sidebar row is selected. Live browse/stream of that peer's catalog (see
-             PeerLibraryViewModel) - unrestricted by Client/Server role/pairing,
-             deliberately separate from the bulk LibrarySyncService merge (see
-             SyncRolePolicy). -->
+             sidebar row is selected. The server itself - who it is, pairing, the
+             codes it hands out - and then its own settings, administered in
+             place (see MainViewModel.SelectedServerSettings). Its music is
+             deliberately not here: a paired server's tracks are merged into the
+             library by LibrarySyncService and play from the ordinary track list,
+             so browsing them again under the sidebar row was the same catalog
+             twice. -->
         <Grid Grid.Column="0" Grid.ColumnSpan="2"
               IsVisible="{Binding IsShowingDeviceDetail}"
               Margin="24" RowDefinitions="Auto,*">
@@ -388,17 +391,21 @@
             <TextBlock Text="{Binding PairActionHint}"
                        IsVisible="{Binding PairActionHint, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                        Opacity="0.5" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"/>
-            <!-- Only for a headless Flower.Server this device has already paired
-                 with (see MainViewModel.CanOpenSelectedServerSettings): its
-                 settings live in its own browser UI, not in this app, so this
-                 issues a one-time admin pairing code against it and opens that
-                 page in the OS browser, where the tab spends the code on a
-                 keypair of its own. An app peer has its own Settings window on
-                 its own screen and shows nothing here. -->
-            <Button Content="Server Settings…"
+            <!-- Only for a server this device has already paired with (see
+                 MainViewModel.CanOpenSelectedServerSettings). Demoted now that
+                 the settings themselves are on this page: what it still does
+                 that the panel below cannot is pair a *browser tab* as an
+                 administrator, which is the only way into this server from a
+                 machine that is not running Flower. It issues a one-time
+                 admin pairing code and opens the server's own page in the OS
+                 browser, where the tab spends that code on a keypair of its
+                 own. -->
+            <Button Content="Open in Browser…"
+                    ToolTip.Tip="Pairs a browser tab with this server as an administrator and opens its settings page there."
                     IsVisible="{Binding CanOpenSelectedServerSettings}"
                     IsEnabled="{Binding !IsOpeningServerSettings}"
                     Click="ServerSettingsButton_Click"
+                    Background="Transparent" FontSize="12" Padding="6,3"
                     Margin="12,0,0,0" VerticalAlignment="Center"/>
             <!-- "Paired, but not an administrator of that server" is the common
                  case here, and it is an ordinary outcome rather than a fault -
@@ -408,85 +415,21 @@
                        Foreground="#E57373" FontSize="12" TextWrapping="Wrap"
                        MaxWidth="260"
                        VerticalAlignment="Center" Margin="8,0,0,0"/>
-            <!-- Adding another device to this server, from the one place its
-                 administrator already is. Shown only to a device the server
-                 itself says is one of its administrators - see
-                 MainViewModel.CanInviteDeviceToSelectedServer; a listener sees
-                 nothing here rather than a button that can only be refused. -->
-            <StackPanel IsVisible="{Binding CanInviteDeviceToSelectedServer}"
-                        Spacing="4" MaxWidth="320"
-                        VerticalAlignment="Center" Margin="12,0,0,0">
-              <StackPanel Orientation="Horizontal" Spacing="10">
-                <Button Content="Generate Pairing Code"
-                        IsEnabled="{Binding !IsIssuingPairingCode}"
-                        Click="GeneratePairingCodeButton_Click"
-                        VerticalAlignment="Center"/>
-                <!-- More than one device may be an administrator - somebody's
-                     own desktop and their own phone both being one is the
-                     expected shape. See MainViewModel.PairingCodeGrantsAdmin
-                     for why this is never remembered between presses. -->
-                <CheckBox Content="Administrator"
-                          IsChecked="{Binding PairingCodeGrantsAdmin}"
-                          VerticalAlignment="Center"/>
-              </StackPanel>
-              <TextBlock Text="Creates a one-time code to type on the device being added. It expires in a few minutes."
-                         Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
-              <TextBlock Text="An administrator can also change this server's settings and add devices of their own."
-                         IsVisible="{Binding PairingCodeGrantsAdmin}"
-                         Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
-              <!-- Selectable: it is as often pasted into a chat message as it is
-                   read aloud. Monospace at size for both - see
-                   PairingCodeService's alphabet, chosen so it survives being
-                   dictated over the phone. -->
-              <SelectableTextBlock Text="{Binding IssuedPairingCode}"
-                                   IsVisible="{Binding IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                                   FontFamily="monospace" FontSize="16" FontWeight="SemiBold"/>
-              <!-- What the code on screen actually grants, which the checkbox
-                   above stops describing the moment it is un-ticked - see
-                   MainViewModel.IssuedPairingCodeGrantsAdmin. -->
-              <TextBlock Text="This code grants administrator access."
-                         IsVisible="{Binding IssuedPairingCodeGrantsAdmin}"
-                         Opacity="0.6" FontSize="12" TextWrapping="Wrap"/>
-              <TextBlock Text="{Binding IssuedPairingCodeError}"
-                         IsVisible="{Binding IssuedPairingCodeError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                         Foreground="#E57373" FontSize="12" TextWrapping="Wrap"/>
-            </StackPanel>
           </StackPanel>
 
-          <TextBlock Grid.Row="1" Text="{Binding PeerLibrary.ErrorMessage}"
-                     IsVisible="{Binding PeerLibrary.ErrorMessage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                     Opacity="0.6" FontSize="13" TextWrapping="Wrap" VerticalAlignment="Top"/>
+          <!-- The server's own settings: the same SettingsPanel its browser UI
+               serves, over a RemoteServerSettingsBackend. Filled in from
+               code-behind (UpdateServerSettingsPane) rather than declared here,
+               since SettingsPanel takes its ViewModel through a constructor. -->
+          <ContentControl Grid.Row="1" x:Name="ServerSettingsHost"/>
 
-          <Grid Grid.Row="1" ColumnDefinitions="220,*"
-                IsVisible="{Binding PeerLibrary.ErrorMessage, Converter={x:Static avc:ObjectConverters.IsNull}}">
-            <ListBox Grid.Column="0" x:Name="PeerAlbumList"
-                     ItemsSource="{Binding PeerLibrary.Albums}"
-                     SelectedItem="{Binding PeerLibrary.SelectedAlbum}"
-                     SelectionChanged="PeerAlbumList_SelectionChanged">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="services:AlbumID3">
-                  <StackPanel Spacing="2" Margin="0,4">
-                    <TextBlock Text="{Binding Name}" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis"/>
-                  </StackPanel>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+          <!-- Why there is no panel, when there is none: a server that has not
+               approved this device yet has nothing it will let us read, and one
+               that has approved us but not as an administrator says so itself. -->
+          <TextBlock Grid.Row="1" x:Name="ServerSettingsMessage"
+                     Opacity="0.6" FontSize="13" TextWrapping="Wrap"
+                     VerticalAlignment="Top"/>
 
-            <ListBox Grid.Column="1" x:Name="PeerSongList" Margin="16,0,0,0"
-                     ItemsSource="{Binding PeerLibrary.AlbumSongs}"
-                     DoubleTapped="PeerSongList_DoubleTapped">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="services:Child">
-                  <Grid ColumnDefinitions="32,*,Auto">
-                    <TextBlock Grid.Column="0" Text="{Binding Track}" Opacity="0.5"/>
-                    <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="2" Text="{Binding Duration}" Opacity="0.5"/>
-                  </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-          </Grid>
         </Grid>
       </Grid>
 
