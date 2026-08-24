@@ -304,13 +304,23 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     public bool IsPairedServerAwaitingApproval =>
         !string.IsNullOrEmpty(PairedServerFingerprint) && !IsPairedServerTrustConfirmed;
 
-    // Every currently-discovered server - the pool ServerPickerView picks a
-    // pairing from. Everything discovery finds is one now, so this is simply
-    // what it knows about. Unrelated to trust: an untrusted server still
-    // appears here, it just will not sync until a code has been redeemed
-    // against it.
+    // Every currently-discovered server - the pool ServerPickerView (and
+    // mobile's SettingsView) picks a pairing from. Everything discovery finds
+    // is one now, so this is simply what it knows about. Unrelated to trust:
+    // an untrusted server still appears here, it just will not sync until a
+    // code has been redeemed against it.
+    //
+    // One entry per server that has said who it is. KnownDevices already
+    // dedupes by fingerprint, but it deliberately keeps entries that have
+    // none - an address that has never answered /info - since it cannot prove
+    // those are duplicates of anything. For a *picker* that is the wrong
+    // trade: an unidentified address is not a server anyone can pair with
+    // (pairing pins a fingerprint), so each one only ever appeared as an
+    // extra dead row labelled with a raw URL. Filtered here rather than in
+    // either view, so both heads agree on what "an available server" is.
     public IEnumerable<DiscoveredDevice> AvailableServers =>
-        _networkDiscovery?.KnownDevices ?? Enumerable.Empty<DiscoveredDevice>();
+        _networkDiscovery?.KnownDevices.Where(d => !string.IsNullOrEmpty(d.Fingerprint))
+        ?? Enumerable.Empty<DiscoveredDevice>();
 
     // What this device calls itself to the server (shown in its Devices list,
     // and against this device's log snapshots there) - see DeviceIdentity.Alias

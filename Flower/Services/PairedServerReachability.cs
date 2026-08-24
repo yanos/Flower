@@ -125,8 +125,36 @@ public class PairedServerReachability : IDisposable
 
         _logger.LogInformation("Paired server reports {Count} address(es): {Addresses}",
             addresses.Count, string.Join(", ", addresses));
+
+        // Dropped addresses are unregistered, not merely forgotten. A
+        // remembered peer is exempt from the ordinary staleness pruning (see
+        // DiscoveredDevice.IsRemembered), so replacing the persisted list
+        // without this leaves one dead entry per address the server has ever
+        // held, for the rest of the session - and each shows up as its own
+        // never-resolving row, since an entry with no fingerprint cannot be
+        // deduped against anything (see NetworkDiscoveryService.KnownDevices).
+        // That is not hypothetical: a machine with a transient interface whose
+        // ULA prefix is regenerated on every attach - an iPhone over USB, a VM
+        // bridge - grows two rows every time it comes and goes.
+        //
+        // Addresses the user typed are left alone. They are not this server's
+        // to withdraw, they are removed by the user via
+        // PeerSyncCoordinator.RemoveManualServer, and they overlap with the
+        // reported set often enough (a LAN address that is also bookmarked)
+        // that ignoring the distinction would delete one out from under them.
+        var dropped = _appSettings.PairedServerAddresses
+            .Except(addresses, StringComparer.OrdinalIgnoreCase)
+            .Except(_appSettings.ManualServerAddresses, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         _appSettings.PairedServerAddresses = [.. addresses];
         _ = _appSettingsStore.SaveAsync(_appSettings);
+
+        foreach (var address in dropped)
+        {
+            _logger.LogInformation("Paired server no longer reports {Address}; forgetting it", address);
+            _networkDiscovery.RemoveRemembered(address);
+        }
 
         // Newly-reported addresses are registered immediately rather than at
         // the next restart. This is the self-healing case: the server joins a
