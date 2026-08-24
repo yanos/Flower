@@ -103,11 +103,39 @@ take `/rest` away from every other caller sharing that key. Behind an
 unconfigured tunnel that is everyone; on a LAN it is already everyone behind
 the same NAT. Two listeners in the same house share a public IP.
 
-**Fix:** refuse to start a remote transport with `TrustedProxies` unset, or at
-minimum log a warning that names the consequence. Separately, reconsider
-whether the failed-auth budget should lock out the whole surface or only the
-unauthenticated portion of it — a request that presents a valid credential has
-already proved it is not the guesser.
+**Fixed, in both halves.**
+
+*Refusing to start turned out not to be available.* `cloudflared` dials **out**
+and delivers over loopback, so nothing about the process, the bind or the config
+says a tunnel exists — there is no startup state to check, and a check on
+`TrustedProxies` being empty alone would fire on every ordinary LAN deployment.
+The one signal that does exist is a request carrying an `X-Forwarded-For` from a
+hop that is not trusted to write one, which is exactly the shape of an
+undeclared proxy. `ProxyHeaderAudit` watches for it and logs a warning naming
+the address and the consequence, at most once every five minutes. Also catches
+the likelier Docker mistake: `TrustedProxies` set, but to the wrong address, so
+nothing is believed and the operator has no way to tell.
+
+A warning rather than a refusal on purpose. A refusal would have to be a 403 at
+request time — turning "your rate limits are pooled" into "your server is down",
+on a signal any caller can produce by sending a header.
+
+*The lockout is now a throttle on guessing rather than on the surface.*
+`FailedAuthLimiter` gates only the password path, and only after signatures and
+stream tickets have had their turn — neither can be guessed, so nothing is
+bought by refusing one because somebody sharing the address got a password
+wrong. A paired Flower device is therefore unaffected by a guesser behind the
+same NAT, which was the sharp consequence above.
+
+The guessing bound is preserved where it matters: an over-budget attempt is
+refused **without being evaluated**, so burning the budget can never admit a
+lucky guess. The budget is now keyed by source *and* username, so hammering one
+account cannot lock out another client behind the same address. An attacker
+rotating usernames does get a fresh budget each, bounded only by
+`RequestLimiter` at 600/60s — which is worth stating plainly: against
+`SubsonicCredentialStore`'s 32-char CSPRNG secrets, never human-chosen,
+guessing was never the threat this bounds. What it bounds is a probe flood, and
+it still does.
 
 ### 3. Per-IP keying is close to free to evade over IPv6
 
@@ -244,9 +272,9 @@ Ordered by what blocks what, not by severity:
 
 1. ~~**Before any transport:** #1 (`/info` gating) and #5 (canonicalization).~~
    **Done** — see each finding above.
-2. **Before Cloudflare Tunnel:** #2 — an exposed server must not start with
-   `TrustedProxies` unset, and the failed-auth lockout needs revisiting. Plus a
-   decision on #7's admin session.
+2. ~~**Before Cloudflare Tunnel:** #2 — `TrustedProxies` enforcement and the
+   failed-auth lockout.~~ **Done** — see the finding above. Still open before
+   the tunnel is anything but a test: a decision on #7's admin session bearer.
 3. **Before a mapped public port:** #6 — TLS, which means the certificate
    design in `REMOTE-TRANSPORT-PLAN.md` has to land first. This is the reason
    step 4 of that sequence is genuinely downstream of step 3 rather than
@@ -256,13 +284,15 @@ Ordered by what blocks what, not by severity:
 
 ## Status
 
-**Reviewed; everything not gated on a specific transport is fixed.**
+**Reviewed; everything Cloudflare Tunnel needs is fixed.**
 
 Built: #1 (`/info` answers its address list and `TrustsCaller` only to a
 verified trusted peer, and the client signs its poll to be one), #5 (an
 unambiguous canonical form), #3 (one shared per-source rate-limit key, IPv6
-collapsed to its /64) and #4 (a budget on `/api/admin`). Both suites pass —
-`Flower.Tests` 1092/1092, `Flower.Server.Tests` 170/170 — and a live server was
+collapsed to its /64), #4 (a budget on `/api/admin`) and #2 (an undeclared proxy
+warns about itself, and the failed-auth lockout no longer takes the surface away
+from bystanders). Both suites pass — `Flower.Tests` 1092/1092,
+`Flower.Server.Tests` 178/178 — and a live server was
 confirmed by hand to answer an anonymous `/info` with `addresses: null`, where
 it previously listed every address it had. Pairing was confirmed by hand to
 still work afterwards.
@@ -272,6 +302,10 @@ any of this: the tailnet leg — that a paired client off the LAN reaches the
 server on its `100.x` address and hands back to the LAN one on the way home.
 Nothing here can stand in for it.
 
-Findings #2, #6, #7 and #8 are untouched. Each of the first three is a decision
-attached to a specific transport rather than a fix that stands on its own, so
-they are sequenced above against the transports they gate; #8 is notes.
+The proxy warning was confirmed by hand as well: a request carrying an
+`X-Forwarded-For` logs it naming `127.0.0.1`, a second one inside the interval
+does not, and a request without the header logs nothing.
+
+Findings #6 and #7 are untouched — both are decisions attached to a mapped
+public port rather than fixes that stand on their own, and are sequenced above
+against it. #8 is notes.

@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 
+using Flower.Server.Configuration;
+
 namespace Flower.Server.Tests;
 
 // A server told there is a proxy in front of it (FlowerServerOptions
@@ -169,5 +171,81 @@ public class ForwardedHeaderTests(ProxiedServerFixture proxied, SubsonicServerFi
 
         for (var i = 0; i < 6; i++)
             Assert.Equal(HttpStatusCode.Unauthorized, await RedeemAsync($"100.64.11.{i + 1}"));
+    }
+}
+
+// The detector behind docs/OPEN-INTERNET-REVIEW.md finding #2's fix: a proxy or
+// tunnel in front of this server that TrustedProxies does not name. It cannot
+// be caught at startup - cloudflared dials out and delivers over loopback, so
+// nothing about the process or the config says a tunnel exists - which leaves
+// one runtime signal: an X-Forwarded-For from a hop not trusted to write one.
+public class ProxyHeaderAuditTests
+{
+    private static readonly IPNetwork Loopback = IPNetwork.Parse("127.0.0.1/32");
+
+    [Fact]
+    public void A_direct_client_with_no_forwarded_header_is_not_a_finding()
+    {
+        // The ordinary LAN deployment. Warning here would be noise on every
+        // server anyone runs.
+        var audit = new ProxyHeaderAudit([]);
+
+        Assert.False(audit.IsUndeclaredHop(IPAddress.Parse("192.168.1.20"), carriesForwardedFor: false));
+    }
+
+    [Fact]
+    public void A_forwarded_header_with_no_trusted_proxies_configured_is_the_finding()
+    {
+        // cloudflared running, TrustedProxies forgotten: every client is now
+        // 127.0.0.1, sharing one rate-limit bucket and one pass through
+        // LanGuard.
+        var audit = new ProxyHeaderAudit([]);
+
+        Assert.True(audit.IsUndeclaredHop(IPAddress.Loopback, carriesForwardedFor: true));
+    }
+
+    [Fact]
+    public void A_forwarded_header_from_a_declared_proxy_is_not_a_finding()
+    {
+        var audit = new ProxyHeaderAudit([Loopback]);
+
+        Assert.False(audit.IsUndeclaredHop(IPAddress.Loopback, carriesForwardedFor: true));
+    }
+
+    [Fact]
+    public void A_forwarded_header_from_an_address_no_configured_CIDR_covers_is_the_finding()
+    {
+        // The Docker case: TrustedProxies names 127.0.0.1/32 but the container
+        // network delivers from 172.20.0.3, so nothing is believed and the
+        // operator has no way to tell without being told.
+        var audit = new ProxyHeaderAudit([Loopback]);
+
+        Assert.True(audit.IsUndeclaredHop(IPAddress.Parse("172.20.0.3"), carriesForwardedFor: true));
+    }
+
+    [Fact]
+    public void Warnings_are_throttled_so_a_caller_cannot_flood_the_log()
+    {
+        // The header is written by whoever sent the request, so a caller can
+        // trigger this on demand. That is worth surfacing once, not every time.
+        var audit = new ProxyHeaderAudit([]);
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.True(audit.ShouldWarn(IPAddress.Loopback, true, now));
+        Assert.False(audit.ShouldWarn(IPAddress.Loopback, true, now));
+        Assert.False(audit.ShouldWarn(IPAddress.Loopback, true, now + TimeSpan.FromMinutes(1)));
+        Assert.True(audit.ShouldWarn(IPAddress.Loopback, true, now + ProxyHeaderAudit.RepeatInterval));
+    }
+
+    [Fact]
+    public void A_request_that_is_not_a_finding_never_spends_the_throttle()
+    {
+        // Otherwise ordinary traffic would silently consume the one warning the
+        // interval allows, and the real misconfiguration would go unlogged.
+        var audit = new ProxyHeaderAudit([]);
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.False(audit.ShouldWarn(IPAddress.Parse("192.168.1.20"), carriesForwardedFor: false, now));
+        Assert.True(audit.ShouldWarn(IPAddress.Loopback, carriesForwardedFor: true, now));
     }
 }

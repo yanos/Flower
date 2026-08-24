@@ -241,7 +241,21 @@ app.Logger.LogInformation("Logging to: {LogFile}", logFile);
 // on a box where anything else is listening, loopback is reachable by every
 // local process.
 var trustedProxies = app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value.TrustedProxies;
-if (trustedProxies.Count > 0)
+var trustedProxyNetworks = new List<System.Net.IPNetwork>();
+foreach (var cidr in trustedProxies)
+{
+    // System.Net's parser is strict about the address being the network's
+    // base one, so 192.168.1.5/24 is rejected rather than quietly read as
+    // 192.168.1.0/24 - hence the warning naming both ways this can fail.
+    if (System.Net.IPNetwork.TryParse(cidr, out var parsed))
+        trustedProxyNetworks.Add(parsed);
+    else
+        app.Logger.LogWarning(
+            "Ignoring {Cidr} in TrustedProxies: not a CIDR, or not written as the network's base address (192.168.1.0/24, not 192.168.1.5/24). Nothing forwarded by it will be believed",
+            cidr);
+}
+
+if (trustedProxyNetworks.Count > 0)
 {
     var forwarded = new ForwardedHeadersOptions
     {
@@ -259,22 +273,13 @@ if (trustedProxies.Count > 0)
         // not recognise. Sized from the configured list because the deployment
         // this exists for has one entry and one hop, and a chain can only get
         // longer by an operator naming the extra hops here too.
-        ForwardLimit = trustedProxies.Count,
+        ForwardLimit = trustedProxyNetworks.Count,
     };
     forwarded.KnownIPNetworks.Clear();
     forwarded.KnownProxies.Clear();
-
-    foreach (var cidr in trustedProxies)
+    foreach (var network in trustedProxyNetworks)
     {
-        // System.Net's parser is strict about the address being the network's
-        // base one, so 192.168.1.5/24 is rejected rather than quietly read as
-        // 192.168.1.0/24 - hence the warning naming both ways this can fail.
-        if (System.Net.IPNetwork.TryParse(cidr, out var parsed))
-            forwarded.KnownIPNetworks.Add(parsed);
-        else
-            app.Logger.LogWarning(
-                "Ignoring {Cidr} in TrustedProxies: not a CIDR, or not written as the network's base address (192.168.1.0/24, not 192.168.1.5/24). Nothing forwarded by it will be believed",
-                cidr);
+        forwarded.KnownIPNetworks.Add(network);
     }
 
     app.UseForwardedHeaders(forwarded);
@@ -282,6 +287,33 @@ if (trustedProxies.Count > 0)
         "Believing X-Forwarded-For from {ProxyCount} configured proxy network(s): {Proxies}",
         forwarded.KnownIPNetworks.Count, string.Join(", ", trustedProxies));
 }
+
+// Behind UseForwardedHeaders, so RemoteIpAddress is already whatever a trusted
+// hop said it was - which is what makes "still not a trusted proxy" mean an
+// undeclared one. A hop that was believed also consumes its entry from the
+// header, so the fully-configured single-hop deployment sees no header left
+// here and says nothing. A chain longer than ForwardLimit does leave entries
+// behind, and that warns - correctly: the address being rate-limited is then a
+// middle hop rather than the client, and naming the extra hop is the fix.
+// See ProxyHeaderAudit for why this warns rather than refuses.
+var proxyAudit = new ProxyHeaderAudit(trustedProxyNetworks);
+app.Use(async (context, next) =>
+{
+    if (proxyAudit.ShouldWarn(
+            context.Connection.RemoteIpAddress,
+            context.Request.Headers.ContainsKey("X-Forwarded-For"),
+            DateTimeOffset.UtcNow))
+    {
+        app.Logger.LogWarning(
+            proxyAudit.HasTrustedProxies
+                ? "An X-Forwarded-For arrived from {RemoteAddress}, which no CIDR in TrustedProxies covers, so it is being ignored. If that address is your proxy or tunnel, add it to Flower:TrustedProxies - until you do, every client behind it shares one address, one rate-limit bucket, and one pass through the LanGuard allow-list. (Repeats at most every {Minutes} minutes.)"
+                : "An X-Forwarded-For arrived from {RemoteAddress} but Flower:TrustedProxies is empty, so it is being ignored. If you are running a tunnel or reverse proxy, name it there - for cloudflared on this machine that is 127.0.0.1/32. Until you do, every client behind it shares one address, one rate-limit bucket, and one pass through the LanGuard allow-list. (Repeats at most every {Minutes} minutes.)",
+            context.Connection.RemoteIpAddress,
+            ProxyHeaderAudit.RepeatInterval.TotalMinutes);
+    }
+
+    await next(context);
+});
 
 app.Use(async (context, next) =>
 {
