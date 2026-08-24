@@ -365,19 +365,22 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // RedeemPairingCodeAsync.
     private async Task RedeemPairingCodeThenSyncAsync(DiscoveredDevice device, string pairingCode)
     {
-        var redeemed = await (_peerPairingService?.RedeemPairingCodeAsync(device, pairingCode) ?? Task.FromResult(false));
+        var rejection = await (_peerPairingService?.RedeemPairingCodeAsync(device, pairingCode)
+                               ?? Task.FromResult<string?>("Pairing is not available on this device."));
 
         if (_appSettings.PairedServerFingerprint != device.Fingerprint)
             return;
 
-        if (!redeemed)
+        if (rejection != null)
         {
             // Roll the pairing straight back rather than leaving the UI in
             // "Waiting for server..." - nothing is coming. A bad code is a
             // retry, not a state to sit in.
-            _logger.LogWarning("Pairing code for {Alias} ({Fingerprint}) was rejected", device.Alias, device.Fingerprint);
+            _logger.LogWarning(
+                "Pairing code for {Alias} ({Fingerprint}) was rejected: {Reason}",
+                device.Alias, device.Fingerprint, rejection);
             Dispatcher.UIThread.Post(UnpairServer);
-            PairingCodeRejected?.Invoke(this, EventArgs.Empty);
+            PairingCodeRejected?.Invoke(this, rejection);
             return;
         }
 
@@ -390,8 +393,10 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // Raised when a redeem came back rejected, so the view can say so instead
     // of the pairing simply appearing not to have happened. Deliberately an
     // event and not a piece of state: the message is about one attempt, and
-    // the next keystroke in the code box should clear it.
-    public event EventHandler? PairingCodeRejected;
+    // the next keystroke in the code box should clear it. Carries the reason
+    // as a finished, showable sentence - see PeerPairingService.
+    // DescribeRejectionAsync for who phrases what.
+    public event EventHandler<string>? PairingCodeRejected;
 
     // See PairWithServer. Runs under RunTrackedSync so the "syncing" spinner
     // covers the wait for the other device's user to tap Allow/Deny, not just
