@@ -104,7 +104,7 @@ public class OriginPlaylistImporterTests
     [Fact]
     public async Task It_identifies_itself_the_way_every_other_call_from_this_head_does()
     {
-        // A tab's credential is its session token, and GET /playlists sits
+        // A tab's credential is its own signature, and GET /playlists sits
         // behind the same gate as GET /library - so sending nothing here is a
         // 403 and an empty playlist sidebar.
         var credentials = new List<string?>();
@@ -125,14 +125,15 @@ public class OriginPlaylistImporterTests
 
     private sealed class NoCredentials : IPeerCredentials
     {
-        public IEnumerable<(string Key, string Value)> Authorize(
-            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) => [];
+        public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
+            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) =>
+            Task.FromResult<IReadOnlyList<(string Key, string Value)>>([]);
     }
 
     private sealed class HeaderCredentials(string value) : IPeerCredentials
     {
-        public IEnumerable<(string Key, string Value)> Authorize(
+        public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
             string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) =>
-            [("X-Test-Credential", value)];
+            Task.FromResult<IReadOnlyList<(string Key, string Value)>>([("X-Test-Credential", value)]);
     }
 }

@@ -212,7 +212,7 @@ public class LibrarySyncService
             const string path = "/api/flower/v1/log/report";
 
             using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(path));
-            request.AddPeerCredentials(_credentials, bodyBytes);
+            await request.AddPeerCredentialsAsync(_credentials, bodyBytes);
             request.Headers.ConnectionClose = true;
             using var content = new ByteArrayContent(bodyBytes);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");

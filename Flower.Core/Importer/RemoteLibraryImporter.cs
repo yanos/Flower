@@ -113,7 +113,7 @@ public sealed class RemoteLibraryImporter : IMusicImporter
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}{LibraryPath}");
         if (!string.IsNullOrEmpty(ifNoneMatch))
             request.Headers.TryAddWithoutValidation("If-None-Match", ifNoneMatch);
-        request.AddPeerCredentials(_credentials);
+        await request.AddPeerCredentialsAsync(_credentials);
         if (_closeConnection)
             request.Headers.ConnectionClose = true;
 

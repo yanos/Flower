@@ -81,18 +81,19 @@ public static class SyncEndpoints
 
             var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
             var replayGuard = services.GetRequiredService<NonceReplayGuard>();
-            var sessions = services.GetRequiredService<AdminSessionService>();
             // 403 only for a caller this server genuinely has no key on file
             // for - a client treats that as "revoked" and unpairs itself. A
             // signature that just failed to verify (commonly a stale
             // timestamp, after the caller suspended mid-request) is a 401:
             // this attempt failed, the pairing is untouched.
             //
-            // A signature *or* a live admin session, because the browser head
-            // pulls its whole library through GET /library below and has no key
-            // to sign with - see PeerOrSessionAuth for what that widening costs.
-            var auth = PeerOrSessionAuth.Authenticate(
-                http.Request, body, trustedPeers, replayGuard, sessions, DateTimeOffset.UtcNow);
+            // A signature, and only a signature. The browser head pulls its
+            // whole library through GET /library below and used to be admitted
+            // here on an admin-session bearer token instead, because
+            // .NET-for-WebAssembly cannot sign - it signs with a WebCrypto key
+            // now like everything else (see BrowserPeerCredentials).
+            var auth = DeviceSignatureAuth.AuthenticateTrustedPeer(
+                http.Request, body, trustedPeers, replayGuard);
             if (auth.Failure == PeerAuthFailure.NotTrusted)
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             if (auth.Failure != PeerAuthFailure.None)
@@ -100,10 +101,9 @@ public static class SyncEndpoints
 
             // Who the gate actually let through, for the handlers below to
             // attribute a write to. Not the same as the request's own
-            // X-Flower-Fingerprint header: a browser tab sends no fingerprint
-            // at all (see AdminSessionCredentials - an identity claim taken on
-            // trust from an unsigned caller is worse than none), so reading the
-            // header logged every tab's write as "pushed by null".
+            // X-Flower-Fingerprint header, which is a claim rather than a
+            // finding: this is the fingerprint whose signature actually
+            // verified.
             context.HttpContext.Items[AuthenticatedFingerprintKey] = auth.Fingerprint;
 
             return await next(context);
@@ -200,12 +200,10 @@ public static class SyncEndpoints
     // instead (Track.RemotePlayCounts), which is the better instrument for
     // both sides that can keep one.
     //
-    // A tab is authenticated by session token, not by signature, which is what
-    // makes this route reachable from one at all - the same widening GET
-    // /library already relies on (see PeerOrSessionAuth). Worth naming what
-    // that means here specifically: a caller through this route can inflate
-    // this server's play counts. That is a nuisance, not a disclosure, and it
-    // is bounded by the same session the tab needs to see the library at all.
+    // Gated like every other route in this group, on a trusted peer's
+    // signature. Worth naming what a caller through it can do: inflate this
+    // server's play counts. That is a nuisance, not a disclosure, and it is
+    // bounded by being a paired device at all.
     private static async Task<IResult> ReportPlays(
         HttpContext context, PlayReportService plays, ILoggerFactory loggerFactory)
     {

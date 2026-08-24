@@ -56,7 +56,7 @@ public class StreamAuthEndToEndTests
     }
 
     [Fact]
-    public void The_stream_url_handed_to_the_decoder_authenticates_against_a_real_server()
+    public async Task The_stream_url_handed_to_the_decoder_authenticates_against_a_real_server()
     {
         // The URL really goes out this way: LibVLC opens it itself, so it
         // cannot carry headers and every credential travels in the query
@@ -67,21 +67,21 @@ public class StreamAuthEndToEndTests
         var client = new OpenSubsonicClient(
             "http://server.local:4533", username: "", password: "", credentials: Credentials());
 
-        var uri = new Uri(client.GetStreamUrl("sg-1"));
+        var uri = new Uri(await client.GetStreamUrlAsync("sg-1"));
 
         Assert.Equal(Key.Fingerprint, Authenticate(
             new SignedRequest("GET", uri.AbsolutePath, ParseQuery(uri), [], _ => null)));
     }
 
     [Fact]
-    public void A_stream_url_replayed_against_a_different_track_is_refused()
+    public async Task A_stream_url_replayed_against_a_different_track_is_refused()
     {
         // The signature covers the query, so a URL captured for one track must
         // not become a key to the whole library.
         var client = new OpenSubsonicClient(
             "http://server.local:4533", username: "", password: "", credentials: Credentials());
 
-        var uri = new Uri(client.GetStreamUrl("sg-1"));
+        var uri = new Uri(await client.GetStreamUrlAsync("sg-1"));
         var tampered = ParseQuery(uri);
         tampered[tampered.FindIndex(p => p.Key == "id")] = ("id", "sg-2");
 
@@ -89,7 +89,7 @@ public class StreamAuthEndToEndTests
     }
 
     [Fact]
-    public void A_cover_art_request_authenticates_the_same_way_a_stream_does()
+    public async Task A_cover_art_request_authenticates_the_same_way_a_stream_does()
     {
         // The one that actually broke playback. Cover art goes out as an
         // ordinary HttpClient call with header credentials (AlbumArtLoader),
@@ -98,7 +98,7 @@ public class StreamAuthEndToEndTests
         // whole and a refusal here costs the whole surface.
         using var request = new HttpRequestMessage(
             HttpMethod.Get, "http://server.local:4533/rest/getCoverArt?id=al-1");
-        request.AddPeerCredentials(Credentials());
+        await request.AddPeerCredentialsAsync(Credentials());
 
         var headers = new Dictionary<string, string>();
         foreach (var header in request.Headers)

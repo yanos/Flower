@@ -459,7 +459,7 @@ public class NetworkDiscoveryService : IDisposable
             using var request = new HttpRequestMessage(HttpMethod.Get, device.Url(SyncProtocol.InfoPath));
             if (_credentials != null)
             {
-                request.AddPeerCredentials(_credentials);
+                await request.AddPeerCredentialsAsync(_credentials);
             }
             else
             {

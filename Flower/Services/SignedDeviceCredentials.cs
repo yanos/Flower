@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 using Flower.Persistence;
 
@@ -33,7 +34,10 @@ namespace Flower.Services;
 public sealed class SignedDeviceCredentials(
     DeviceIdentity identity, DeviceSigningKey signingKey, AppSettings appSettings) : IPeerCredentials
 {
-    public IEnumerable<(string Key, string Value)> Authorize(
+    // Already-completed, always: this device holds its own key in-process, so
+    // there is nothing to await. The task in the interface is there for the
+    // browser, whose key lives behind crypto.subtle - see IPeerCredentials.
+    public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body)
     {
         // Read live off AppSettings rather than captured at construction: this
@@ -55,8 +59,9 @@ public sealed class SignedDeviceCredentials(
         var (signature, timestamp, nonce) = signingKey.Sign(
             method, absolutePath, query.Concat(identityParams), body);
 
-        return identityParams.Concat(
+        return Task.FromResult<IReadOnlyList<(string Key, string Value)>>(
         [
+            .. identityParams,
             ("X-Flower-Signature", signature),
             ("X-Flower-Timestamp", timestamp),
             ("X-Flower-Nonce", nonce),

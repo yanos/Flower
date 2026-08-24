@@ -21,8 +21,7 @@ namespace Flower.Services;
 // in step with each other, and which now lives in Flower.Core beside the other
 // contracts both hosts share (Services/ServerAdminContracts.cs).
 public sealed record AdminDeviceDto(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin);
-public sealed record AdminPairingCodeDto(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite);
-public sealed record AdminSessionDto(string Token, DateTimeOffset ExpiresAt, string Url);
+public sealed record AdminPairingCodeDto(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
 public sealed record AdminLibraryStatusDto(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
 public sealed record AdminLogEntryDto(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
 public sealed record SubsonicCredentialDto(
@@ -42,14 +41,15 @@ public sealed class ServerAdminException(HttpStatusCode status, string message) 
 
 // Typed client for a Flower server's admin API.
 //
-// Authentication is left to the caller through authorize, because the two
-// callers authenticate differently and neither is a special case of the other:
-// the desktop client signs every request with its device keypair (see
-// PeerOpenSubsonicClientFactory for the same parameter block), while the browser
-// settings page holds only a short-lived session token minted for it by a device
-// that could sign (see AdminSessionService - .NET-for-WebAssembly has no
-// asymmetric crypto at all, so the browser cannot sign anything).
-public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Action<HttpRequestMessage, byte[]> authorize)
+// Authentication is left to the caller through authorize, but there is only one
+// way to authenticate now: an IPeerCredentials signature. The browser used to be
+// the exception, presenting a server-minted session token because
+// .NET-for-WebAssembly cannot sign - it now signs through WebCrypto like every
+// other head (see BrowserPeerCredentials), which is why ForSession and the
+// bearer path it fed are gone. The delegate stays because tests still supply
+// their own, and because the admin surface has no business knowing how a caller
+// proved itself.
+public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Func<HttpRequestMessage, byte[], Task> authorize)
 {
     // Web defaults for the naming policy (the server answers camelCase), but with
     // the source-generated resolver supplying the metadata: Flower.Web is trimmed,
@@ -60,11 +60,6 @@ public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Action<H
         new(JsonSerializerDefaults.Web) { TypeInfoResolver = FlowerJsonContext.Default };
 
     public Uri BaseAddress { get; } = baseAddress;
-
-    // The browser's own origin, with a session token from the URL fragment. No
-    // signing, and none possible - see the class comment.
-    public static ServerAdminClient ForSession(HttpClient http, Uri baseAddress, string token) =>
-        new(http, baseAddress, (request, _) => request.Headers.TryAddWithoutValidation("X-Flower-Admin-Session", token));
 
     public Task<ServerSettingsDto> GetSettingsAsync(CancellationToken ct = default) =>
         SendAsync<ServerSettingsDto>(HttpMethod.Get, "/api/admin/settings", null, ct);
@@ -81,9 +76,6 @@ public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Action<H
     public Task<AdminPairingCodeDto> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
         SendAsync<AdminPairingCodeDto>(
             HttpMethod.Post, $"/api/admin/pairing-codes?grantsAdmin={(grantsAdmin ? "true" : "false")}", null, ct);
-
-    public Task<AdminSessionDto> CreateSessionAsync(CancellationToken ct = default) =>
-        SendAsync<AdminSessionDto>(HttpMethod.Post, "/api/admin/sessions", null, ct);
 
     public Task<AdminLibraryStatusDto> GetLibraryStatusAsync(CancellationToken ct = default) =>
         SendAsync<AdminLibraryStatusDto>(HttpMethod.Get, "/api/admin/library", null, ct);
@@ -122,7 +114,7 @@ public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Action<H
         if (body != null)
             request.Content = new ByteArrayContent(payload) { Headers = { ContentType = new("application/json") } };
 
-        authorize(request, payload);
+        await authorize(request, payload);
 
         var response = await http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
@@ -159,9 +151,8 @@ public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Action<H
         };
     }
 
-    // The signing half of the desktop/mobile case. The identity block, the
-    // canonical form and the query parsing all live in IPeerCredentials now -
-    // this used to be a fifth hand-rolled copy of them.
-    public static Action<HttpRequestMessage, byte[]> SignWith(IPeerCredentials credentials) =>
-        (request, body) => request.AddPeerCredentials(credentials, body);
+    // The identity block, the canonical form and the query parsing all live in
+    // IPeerCredentials now - this used to be a fifth hand-rolled copy of them.
+    public static Func<HttpRequestMessage, byte[], Task> SignWith(IPeerCredentials credentials) =>
+        (request, body) => request.AddPeerCredentialsAsync(credentials, body);
 }

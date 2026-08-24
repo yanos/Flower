@@ -126,10 +126,6 @@ builder.Services.AddSingleton(services => new Library(
 builder.Services.AddScoped<LibraryImportService>();
 builder.Services.AddSingleton<PairingCodeService>();
 builder.Services.AddSingleton<StreamTicketService>();
-// Short-lived derived authority for the browser settings page, which cannot sign
-// its own requests - see AdminSessionService for why that is a property of the
-// WebAssembly runtime rather than a shortcut taken here.
-builder.Services.AddSingleton<AdminSessionService>();
 // Owns "a rescan is running", so the admin API can start one without two
 // operators racing two importers over the same folders.
 builder.Services.AddSingleton<LibraryRescanCoordinator>();
@@ -206,21 +202,27 @@ app.Logger.LogInformation("Logging to: {LogFile}", logFile);
         Console.WriteLine($"  Pair one with this code (valid until {expiresAt.ToLocalTime():HH:mm:ss}): {code}");
         Console.WriteLine($"  Or open: {new PairingInvite(host, code, signingKey.Fingerprint)}");
 
-        // The web UI is administered by a token minted by an admin device, and
-        // at this point there is no admin device - so the console mints one for
-        // itself. Printed under exactly the same gate as the pairing code above,
-        // never on an ordinary boot: this is a live credential, which is also why
-        // it goes to stdout rather than through the ILogger.
+        // The same code again, addressed at a browser. A tab pairs itself with
+        // its own WebCrypto keypair (see BrowserPeerCredentials), so the web UI
+        // needs no separate bootstrap credential any more - it needs this code,
+        // in a form a browser can be opened at. Printed under exactly the same
+        // gate as the invite above, never on an ordinary boot: it is a live
+        // credential, which is also why it goes to stdout rather than through
+        // the ILogger.
         //
         // Addressed differently from the pairing invite above: that one is for
         // some *other* device, so a wildcard bind honestly reads as
         // "<this-server>", while this one is for whoever is reading this console,
         // who is on the machine. So it resolves the configured bind address and
         // turns a wildcard into localhost, giving a link that can just be clicked.
+        //
+        // localhost matters for a second reason now: crypto.subtle is only
+        // exposed to a secure context, and http://localhost is one where
+        // http://192.168.x.y is not. See WebUiHosting.BuildBrowserPairingUrl.
         var browserHost = ResolveLocalHost(builder.Configuration["Urls"]) ?? host;
         Console.WriteLine();
-        Console.WriteLine("  Settings in a browser (valid for one hour):");
-        Console.WriteLine($"  {WebUiHosting.BuildConsoleSessionUrl(app.Services.GetRequiredService<AdminSessionService>(), browserHost)}");
+        Console.WriteLine("  Or set it up in a browser (same code, valid just as long):");
+        Console.WriteLine($"  {WebUiHosting.BuildBrowserPairingUrl($"http://{browserHost}", code)}");
         Console.WriteLine();
     }
 }

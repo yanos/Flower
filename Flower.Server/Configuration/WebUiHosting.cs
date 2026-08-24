@@ -148,13 +148,21 @@ public static class WebUiHosting
         existing bundle. The API is unaffected either way.</p>
         """;
 
-    // Console bootstrap: at first run there is no admin device yet to mint a
-    // browser session, so the server mints one for whoever is reading its output -
-    // the same place, and under the same conditions, as the first pairing code.
-    // See Program.cs.
-    public static string BuildConsoleSessionUrl(AdminSessionService sessions, string host)
-    {
-        var (token, _) = sessions.Issue(AdminSessionService.ConsoleFingerprint);
-        return $"http://{host}/#admin={token}&page=settings";
-    }
+    // How a pairing code reaches a browser tab: in the URL fragment, which -
+    // unlike a query string - is never sent to the server as part of the
+    // request, so it cannot land in an access log or a Referer header. The tab
+    // reads it once, redeems it for a trusted-peer record against its own
+    // WebCrypto keypair, and erases it from the address bar (see
+    // BrowserPeerCredentials and weblocation.js).
+    //
+    // A code, not a session token. What used to travel here was a 60-minute
+    // full-admin bearer credential, live for its whole lifetime wherever the URL
+    // ended up; this is single-use and spent within a second of the page
+    // loading. That is the whole of docs/OPEN-INTERNET-REVIEW.md finding 7.
+    //
+    // page=settings is separate from the code because pairing and administering
+    // are different things: an ordinary listener pairs a tab and gets a jukebox,
+    // and only a link that says so opens the settings overlay.
+    public static string BuildBrowserPairingUrl(string origin, string code) =>
+        $"{origin.TrimEnd('/')}/#pair={Uri.EscapeDataString(code)}&page=settings";
 }

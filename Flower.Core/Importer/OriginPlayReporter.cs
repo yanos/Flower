@@ -148,7 +148,7 @@ public sealed class OriginPlayReporter(
                 Content = new ByteArrayContent(body),
             };
             request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            request.AddPeerCredentials(credentials, body);
+            await request.AddPeerCredentialsAsync(credentials, body);
 
             using var response = await http.SendAsync(request);
             response.EnsureSuccessStatusCode();

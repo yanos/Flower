@@ -13,11 +13,10 @@ using Flower.Services;
 
 namespace Flower.Server.Endpoints;
 
-public sealed record PairingCodeResponse(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite);
+public sealed record PairingCodeResponse(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
 public sealed record TrustedDeviceResponse(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin);
 public sealed record SubsonicCredentialResponse(
     string Username, string Label, DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt, string? Password);
-public sealed record AdminSessionResponse(string Token, DateTimeOffset ExpiresAt, string Url);
 public sealed record LibraryStatusResponse(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
 public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
 
@@ -35,11 +34,13 @@ public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, st
 // endpoint, a configured username and password - was deleted outright rather than
 // kept as a fallback.
 //
-// The one caller that cannot sign is a browser (no asymmetric crypto in
-// .NET-for-WebAssembly at all), so it presents an AdminSessionService token minted
-// for it by a device that can. That is a derived authority, not a second
-// mechanism: the token is only ever as good as the admin peer behind it, and
-// IsAdmin is re-checked against the trust store on every request carrying one.
+// A browser is not an exception to any of that any more. It used to be - it held
+// a server-minted session token because .NET-for-WebAssembly has no asymmetric
+// crypto - and that token was the last bearer credential in the project. It now
+// generates a non-extractable P-256 keypair through WebCrypto, redeems a pairing
+// code like any other device, and signs (see BrowserPeerCredentials, and
+// docs/OPEN-INTERNET-REVIEW.md finding 7 for why a bearer token in a URL was the
+// thing standing between this server and a remote transport).
 public static class AdminEndpoints
 {
     // The admin surface had no budget at all until docs/OPEN-INTERNET-REVIEW.md
@@ -74,47 +75,40 @@ public static class AdminEndpoints
             var services = http.RequestServices;
             var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
             var replayGuard = services.GetRequiredService<NonceReplayGuard>();
-            var sessions = services.GetRequiredService<AdminSessionService>();
 
-            var fingerprint = sessions.Resolve(http.Request.Headers[AdminSessionHeader], DateTimeOffset.UtcNow);
-            if (fingerprint == null)
+            // Signed requests may now carry a body (PUT /settings does), so
+            // it has to be buffered before the signature - which covers a
+            // hash of it - can be checked. No handler below binds the body as
+            // a parameter, which is what makes this possible at all: minimal
+            // APIs bind parameters *before* endpoint filters run, so a
+            // body-bound parameter would have consumed the stream before this
+            // could ever see it.
+            byte[] body = [];
+            if (http.Request.ContentLength is > 0)
             {
-                // Signed requests may now carry a body (PUT /settings does), so
-                // it has to be buffered before the signature - which covers a
-                // hash of it - can be checked. No handler below binds the body as
-                // a parameter, which is what makes this possible at all: minimal
-                // APIs bind parameters *before* endpoint filters run, so a
-                // body-bound parameter would have consumed the stream before this
-                // could ever see it.
-                byte[] body = [];
-                if (http.Request.ContentLength is > 0)
-                {
-                    if (http.Request.ContentLength > MaxBodyBytes)
-                        return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+                if (http.Request.ContentLength > MaxBodyBytes)
+                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
-                    http.Request.EnableBuffering();
-                    using var buffer = new MemoryStream();
-                    await http.Request.Body.CopyToAsync(buffer, http.RequestAborted);
-                    body = buffer.ToArray();
-                    http.Request.Body.Position = 0;
-                }
-
-                fingerprint = DeviceSignatureAuth.VerifyTrustedPeer(http.Request, body, trustedPeers, replayGuard);
-                if (fingerprint == null)
-                    return Results.Unauthorized();
+                http.Request.EnableBuffering();
+                using var buffer = new MemoryStream();
+                await http.Request.Body.CopyToAsync(buffer, http.RequestAborted);
+                body = buffer.ToArray();
+                http.Request.Body.Position = 0;
             }
+
+            var fingerprint = DeviceSignatureAuth.VerifyTrustedPeer(http.Request, body, trustedPeers, replayGuard);
+            if (fingerprint == null)
+                return Results.Unauthorized();
 
             // Authenticated as *a* peer is not authorized as an admin: a paired
             // phone can sign a perfectly valid request to these routes, and must
-            // still be turned away. Checked live rather than baked into the
-            // session token, so demoting or revoking a device takes effect on its
-            // next request instead of at token expiry.
+            // still be turned away.
             // StatusCode(403), not Results.Forbid(): Forbid() runs the ASP.NET
             // Core authentication stack's forbid handler, and this app registers
             // no authentication scheme at all - it authenticates by device
             // signature - so it throws rather than answering, turning every
             // "paired but not an admin" refusal into a 500.
-            if (!IsAdmin(fingerprint, trustedPeers))
+            if (!trustedPeers.IsAdmin(fingerprint))
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
 
             http.Items[AdminFingerprintKey] = fingerprint;
@@ -130,23 +124,16 @@ public static class AdminEndpoints
         {
             var (code, expiresAt) = pairing.GenerateCode(grantsAdmin);
             var invite = BuildInvite(context, signingKey, options.CurrentValue, code);
-            return Results.Json(new PairingCodeResponse(code, expiresAt, grantsAdmin, invite.ToString()), jsonOptions);
-        });
-
-        // Mints the token the browser settings page runs on. Deliberately refused
-        // to a caller that is itself only holding a session token: a bearer token
-        // that can mint its own successor is not short-lived in any meaningful
-        // sense. Re-minting is one click on a device that holds a real key.
-        authenticated.MapPost("/sessions", (HttpContext context, AdminSessionService sessions) =>
-        {
-            if (context.Request.Headers.ContainsKey(AdminSessionHeader))
-                return Results.BadRequest(new { error = "An admin session cannot mint another one." });
-
-            var fingerprint = (string)context.Items[AdminFingerprintKey]!;
-            var (token, expiresAt) = sessions.Issue(fingerprint);
-            var request = context.Request;
-            var url = $"{request.Scheme}://{request.Host}/#admin={token}&page=settings";
-            return Results.Json(new AdminSessionResponse(token, expiresAt, url), jsonOptions);
+            // Two renderings of one code, because the two things that redeem it
+            // cannot read the same thing. A Flower app scans or types the
+            // flower:// invite; a browser tab needs a link it can be opened at,
+            // and redeems the code from the fragment on first load (see
+            // BrowserPeerCredentials). Both consume the same single-use code, so
+            // whichever gets there first is the device that pairs.
+            var browserUrl = WebUiHosting.BuildBrowserPairingUrl(
+                $"{context.Request.Scheme}://{context.Request.Host}", code);
+            return Results.Json(
+                new PairingCodeResponse(code, expiresAt, grantsAdmin, invite.ToString(), browserUrl), jsonOptions);
         });
 
         authenticated.MapGet("/devices", (TrustedPeerStore store) =>
@@ -159,7 +146,7 @@ public static class AdminEndpoints
 
         authenticated.MapDelete("/devices/{fingerprint}", async (
             string fingerprint, HttpContext context, TrustedPeerStore store,
-            StreamTicketService tickets, AdminSessionService sessions) =>
+            StreamTicketService tickets) =>
         {
             // Revoking the key this very request was signed with would lock the
             // caller out mid-session, and is far more likely a misclick on the
@@ -170,10 +157,8 @@ public static class AdminEndpoints
 
             await store.RevokeAsync(fingerprint);
             // Otherwise "revoke this device" would leave its already-minted
-            // stream URLs playable, and any browser session it handed out still
-            // able to administer, for the rest of their lifetime.
+            // stream URLs playable for the rest of their lifetime.
             tickets.RevokeFor(fingerprint);
-            sessions.RevokeFor(fingerprint);
             return Results.NoContent();
         });
 
@@ -370,23 +355,11 @@ public static class AdminEndpoints
 
     internal const string AdminFingerprintKey = "Flower.AdminFingerprint";
 
-    // Where a browser session token travels. A header, not a query parameter:
-    // unlike a stream ticket it is never dropped into a media element's URL, so
-    // there is no reason to let it end up in a referrer or a proxy access log.
-    //
-    // Taken from the client class that sends it rather than restated, so the
-    // two ends cannot drift - see AdminSessionCredentials, the browser's whole
-    // IPeerCredentials implementation.
-    internal const string AdminSessionHeader = AdminSessionCredentials.HeaderName;
-
     // Matches the process-wide Kestrel ceiling (see Program.cs). Nothing here is
     // remotely near it - a settings body is a few hundred bytes - but a signed
     // route has to buffer whatever arrives before it can verify it, so it needs a
     // stated limit rather than an implicit one.
     private const long MaxBodyBytes = 20 * 1024 * 1024;
-
-    private static bool IsAdmin(string fingerprint, TrustedPeerStore trustedPeers) =>
-        fingerprint == AdminSessionService.ConsoleFingerprint || trustedPeers.IsAdmin(fingerprint);
 
     private static List<string> Normalize(IReadOnlyList<string> values) =>
         values.Select(v => v.Trim()).Where(v => v.Length > 0).ToList();

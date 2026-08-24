@@ -120,18 +120,18 @@ public class OriginLibraryImporterTests
         using var server = Server([Song("One")]);
 
         Assert.False(Importer(server).ScansLocalFiles);
-        Assert.False(new EmptyLibraryImporter().ScansLocalFiles);
         // Through the interface, because true is the default IMusicImporter
         // answer rather than something the filesystem scanner states itself.
         Assert.True(((IMusicImporter)new Flower.Importer.Importer(NullLogger<Flower.Importer.Importer>.Instance))
             .ScansLocalFiles);
     }
 
-    // The browser presents a session token; this test's server does not check
+    // The browser presents a signature; this test's server does not check
     // one, so the simplest honest stand-in is a credential that says nothing.
     private sealed class NoCredentials : IPeerCredentials
     {
-        public IEnumerable<(string Key, string Value)> Authorize(
-            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) => [];
+        public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
+            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) =>
+            Task.FromResult<IReadOnlyList<(string Key, string Value)>>([]);
     }
 }

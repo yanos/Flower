@@ -41,7 +41,7 @@ public sealed class OriginPlaylistImporter(
     public async Task<List<Playlist>> ImportAsync(IReadOnlyList<Track> library)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl.TrimEnd('/')}{PlaylistsPath}");
-        request.AddPeerCredentials(credentials);
+        await request.AddPeerCredentialsAsync(credentials);
 
         using var response = await http.SendAsync(request);
         response.EnsureSuccessStatusCode();
