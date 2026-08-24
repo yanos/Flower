@@ -389,13 +389,16 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         var artists = tracks.Select(t => t.EffectiveAlbumArtist).Distinct().ToList();
         var artist = artists.Count == 1 ? artists[0] : "Various Artists";
 
-        return new AlbumTileViewModel
+        var header = new AlbumTileViewModel
         {
             Name = albumName,
             Artist = artist,
             RepresentativeTrack = representative,
             MostRecentlyAdded = tracks.Max(t => t.DateAdded),
+            Tracks = tracks,
         };
+        TrackAvailability.Apply([header], Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+        return header;
     }
 
     // True while DownloadAllVisibleCommand is working through a batch - drives
@@ -764,8 +767,16 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // needs its own live-update subscription to stay correct after the
         // paired server's reachability changes - MainViewModel.Rows gets this
         // for free from its own subscription to the same signal.
+        // The album grids need the same treatment for the same reason, and
+        // even more so: they are only rebuilt on a library change, so one
+        // built while the server was up would otherwise stay at full strength
+        // indefinitely after it went away. Re-marking is in place (see
+        // AlbumTileViewModel.Tracks), so already-loaded art survives it.
         _subscriptions.Add<EventHandler>((_, _) =>
-            TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable),
+        {
+            TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+            ApplyAlbumTileAvailability();
+        },
             h => Main.ReachabilityChanged += h, h => Main.ReachabilityChanged -= h);
         RebuildPlaylistPicker();
         RebuildRecentlyAddedAlbums();
@@ -1073,10 +1084,38 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         RaiseEmptyStateChanged();
     }
 
+    // Every album tile this view model owns, re-marked in place. Called on
+    // every reachability change (see the constructor's subscription) - the
+    // header included, since an album drilled into while the server was up
+    // stays on screen after it goes away.
+    private void ApplyAlbumTileAvailability()
+    {
+        var fingerprint = Main.PairedServerFingerprint;
+        var reachable = Main.IsPairedServerReachable;
+        TrackAvailability.Apply(AlbumTilesIn(RecentlyAddedAlbumRows), fingerprint, reachable);
+        TrackAvailability.Apply(AlbumTilesIn(AlbumGridRows), fingerprint, reachable);
+        TrackAvailability.Apply(AlbumTilesIn(ArtistAlbumGridRows), fingerprint, reachable);
+        TrackAvailability.Apply(SearchAlbumResults, fingerprint, reachable);
+        if (CurrentAlbumHeader is { } header)
+            TrackAvailability.Apply([header], fingerprint, reachable);
+    }
+
+    private static IEnumerable<AlbumTileViewModel> AlbumTilesIn(IEnumerable<AlbumGridRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            yield return row.First;
+            if (row.Second is { } second)
+                yield return second;
+        }
+    }
+
     private void RebuildRecentlyAddedAlbums()
     {
         RecentlyAddedAlbumRows.Clear();
-        foreach (var row in AlbumGridRow.Chunk(RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks)))
+        var tiles = RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks);
+        TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+        foreach (var row in AlbumGridRow.Chunk(tiles))
             RecentlyAddedAlbumRows.Add(row);
 
         RaiseEmptyStateChanged();
@@ -1085,7 +1124,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     private void RebuildAlbumGrid()
     {
         AlbumGridRows.Clear();
-        foreach (var row in AlbumGridRow.Chunk(AlbumGridBuilder.Build(Main.Library.Tracks)))
+        var tiles = AlbumGridBuilder.Build(Main.Library.Tracks);
+        TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+        foreach (var row in AlbumGridRow.Chunk(tiles))
             AlbumGridRows.Add(row);
 
         RaiseEmptyStateChanged();
@@ -1102,7 +1143,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         if (_selectedArtistName != null)
         {
             var tracks = Main.Library.Tracks.Where(t => t.Artists == _selectedArtistName);
-            foreach (var row in AlbumGridRow.Chunk(AlbumGridBuilder.Build(tracks)))
+            var tiles = AlbumGridBuilder.Build(tracks);
+            TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+            foreach (var row in AlbumGridRow.Chunk(tiles))
                 ArtistAlbumGridRows.Add(row);
         }
 
@@ -1191,6 +1234,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             var matchingAlbumTracks = tracks.Where(t =>
                 t.Album?.Contains(text, StringComparison.OrdinalIgnoreCase) == true);
             var allAlbums = AlbumGridBuilder.Build(matchingAlbumTracks);
+            TrackAvailability.Apply(allAlbums, pairedServerFingerprint, pairedServerReachable);
 
             // Same raw per-track field the Artists tab's own picker groups by
             // (see MainViewModel.RebuildSubListItems) - not EffectiveAlbumArtist,

@@ -14,7 +14,8 @@ public readonly record struct TrackRowPlan(
     bool IsFirstInAlbumGroup,
     int AlbumGroupSize,
     bool IsCurrentlyPlaying,
-    bool IsAvailable);
+    bool IsAvailable,
+    bool IsAlbumGroupUnavailable);
 
 // Reconciles the previous row list against a freshly computed plan, reusing the
 // TrackRowViewModel already showing a track rather than allocating a new one.

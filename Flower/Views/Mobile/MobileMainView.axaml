@@ -96,6 +96,16 @@
     <Style Selector="Button.trackRow.placeholder">
       <Setter Property="Opacity" Value="0.5" />
     </Style>
+    <!-- The album-level counterpart, for the art-tile grids and the album
+         header (see AlbumTileViewModel.IsUnavailable): an album is only
+         dimmed once *nothing* in it can be played - one downloaded track
+         keeps it at full strength, since tapping it still lands on
+         something that plays. Same 0.5 as the track rows above, and shared
+         from here so every screen hosted in this view gets the one
+         definition. -->
+    <Style Selector="StackPanel.dimmed">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="*,Auto,Auto">

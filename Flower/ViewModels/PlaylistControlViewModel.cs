@@ -390,8 +390,17 @@ namespace Flower.ViewModels
                 return;
             }
 
-            if (pending.Result is not { } playable)
+            // IsCompletedSuccessfully, not IsCompleted: reading .Result off a
+            // faulted task rethrows, and this runs on the UI thread on the
+            // caller's stack - so a resolver that threw instead of returning
+            // null (the contract, but not something this class can enforce)
+            // turned "activate a track that cannot be played" into a crash.
+            // A track that cannot be resolved is simply not played.
+            if (!pending.IsCompletedSuccessfully || pending.Result is not { } playable)
+            {
+                LogUnplayable(track, pending);
                 return;
+            }
 
             Start(playable);
         }
@@ -437,8 +446,10 @@ namespace Flower.ViewModels
                     return;
                 }
 
-                if (resolved.Result is { } playable)
+                if (resolved.IsCompletedSuccessfully && resolved.Result is { } playable)
                     Start(playable);
+                else
+                    LogUnplayable(null, resolved);
             }));
         }
 
@@ -452,7 +463,10 @@ namespace Flower.ViewModels
             var pending = ResolveForPlaybackAsync(upcoming);
             if (pending.IsCompleted)
             {
-                _audioManager.SetUpcoming(pending.Result);
+                // Same faulted-task care as Play above - arming nothing is the
+                // right answer for a track that could not be resolved, and it
+                // is what SetUpcoming(null) already means.
+                _audioManager.SetUpcoming(pending.IsCompletedSuccessfully ? pending.Result : null);
                 return;
             }
 
@@ -462,8 +476,18 @@ namespace Flower.ViewModels
                 // Nothing to arm for a track that is no longer the current one's
                 // successor.
                 if (generation == _playGeneration)
-                    _audioManager.SetUpcoming(resolved.Result);
+                    _audioManager.SetUpcoming(resolved.IsCompletedSuccessfully ? resolved.Result : null);
             }));
+        }
+
+        // One line for either way a track fails to become playable: the
+        // resolver answered "no" (already logged by it, with the reason), or it
+        // threw, which is a bug in the resolver worth naming here rather than
+        // swallowing silently.
+        private void LogUnplayable(Track? track, Task<Track?> resolve)
+        {
+            if (resolve.Exception is { } ex)
+                _logger.LogWarning(ex, "Resolving {Title} for playback threw instead of declining it", track?.Title);
         }
 
         // A track ready to hand to IAudioManager, or null if it is not playable

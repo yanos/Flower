@@ -295,7 +295,8 @@
                                 SelectedNames="{Binding SelectedSubItems}"
                                 ExpandedName="{Binding ExpandedAlbumName}"
                                 ExpandedTracks="{Binding ExpandedAlbumTracks}"
-                                CurrentlyPlayingPath="{Binding CurrentlyPlayingTrack.Path}"/>
+                                Availability="{Binding Availability}"
+                                CurrentlyPlayingTrackId="{Binding CurrentlyPlayingTrack.Id}"/>
         <controls:AlbumGridView x:Name="RecentlyAddedGrid"
                                 Grid.Column="0" Grid.ColumnSpan="2"
                                 IsVisible="{Binding IsShowingRecentlyAddedGrid}"
@@ -303,7 +304,8 @@
                                 SelectedNames="{Binding SelectedSubItems}"
                                 ExpandedName="{Binding ExpandedAlbumName}"
                                 ExpandedTracks="{Binding ExpandedAlbumTracks}"
-                                CurrentlyPlayingPath="{Binding CurrentlyPlayingTrack.Path}"/>
+                                Availability="{Binding Availability}"
+                                CurrentlyPlayingTrackId="{Binding CurrentlyPlayingTrack.Id}"/>
 
         <!-- Custom track list - Songs/Artists/Playlists only now; Albums/
              Recently Added show their songs inline via the grids above

@@ -50,7 +50,8 @@
     <ScrollViewer IsVisible="{Binding #Root.IsAlbumMode}" controls:RubberBandScroll.IsEnabled="True">
       <StackPanel>
         <Border Padding="24,4,24,16">
-          <StackPanel Spacing="12" HorizontalAlignment="Center">
+          <StackPanel Spacing="12" HorizontalAlignment="Center"
+                      Classes.dimmed="{Binding #Root.DisplayHeader.IsUnavailable}">
             <controls:AlbumArtView AlbumArt="{Binding #Root.DisplayHeader.AlbumArt}"
                                     Width="240" Height="240" />
             <StackPanel Spacing="2" HorizontalAlignment="Center">

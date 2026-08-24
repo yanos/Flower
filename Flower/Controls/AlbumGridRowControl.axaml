@@ -13,6 +13,18 @@
     <converters:DurationConverter x:Key="DurationConverter"/>
   </UserControl.Resources>
 
+  <UserControl.Styles>
+    <!-- A song in an expanded album that can't be played right now - not
+         downloaded, and no reachable server to stream it from. Same 0.5 dim
+         as the main track list's own unavailable rows (TrackRowControl) and
+         mobile's (Button.trackRow.placeholder); applied to the text Grid
+         rather than the row Border so the hover/selection highlights behind
+         it stay at full strength. -->
+    <Style Selector="Grid.dimmedTrack">
+      <Setter Property="Opacity" Value="0.5"/>
+    </Style>
+  </UserControl.Styles>
+
   <StackPanel Margin="0,0,0,16">
     <ItemsControl ItemsSource="{Binding Tiles}">
       <ItemsControl.ItemsPanel>
@@ -89,9 +101,10 @@
                          arrow (TrackRowViewModel.IsCurrentlyPlaying) - same
                          glyph, same size, same dedicated 14px column ahead of
                          the title, just wired through AlbumGridRowViewModel.
-                         CurrentlyPlayingPath instead (see ExpandedTrackRow
+                         CurrentlyPlayingTrackId instead (see ExpandedTrackRow
                          ViewModel.IsCurrentlyPlaying's own comment). -->
-                    <Grid ColumnDefinitions="14,*,Auto" Margin="8,6">
+                    <Grid ColumnDefinitions="14,*,Auto" Margin="8,6"
+                          Classes.dimmedTrack="{Binding IsUnavailable}">
                       <TextBlock Grid.Column="0" Text="▶" FontSize="8"
                                  VerticalAlignment="Center" HorizontalAlignment="Center"
                                  IsVisible="{Binding IsCurrentlyPlaying}"/>
@@ -146,9 +159,10 @@
                          arrow (TrackRowViewModel.IsCurrentlyPlaying) - same
                          glyph, same size, same dedicated 14px column ahead of
                          the title, just wired through AlbumGridRowViewModel.
-                         CurrentlyPlayingPath instead (see ExpandedTrackRow
+                         CurrentlyPlayingTrackId instead (see ExpandedTrackRow
                          ViewModel.IsCurrentlyPlaying's own comment). -->
-                    <Grid ColumnDefinitions="14,*,Auto" Margin="8,6">
+                    <Grid ColumnDefinitions="14,*,Auto" Margin="8,6"
+                          Classes.dimmedTrack="{Binding IsUnavailable}">
                       <TextBlock Grid.Column="0" Text="▶" FontSize="8"
                                  VerticalAlignment="Center" HorizontalAlignment="Center"
                                  IsVisible="{Binding IsCurrentlyPlaying}"/>

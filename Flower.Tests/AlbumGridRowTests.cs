@@ -12,6 +12,7 @@ public class AlbumGridRowTests
     {
         Name = name,
         RepresentativeTrack = new Track { Title = "Song", Album = name, DateAdded = DateTimeOffset.UtcNow },
+        Tracks = [],
     };
 
     [Fact]

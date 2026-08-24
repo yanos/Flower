@@ -232,6 +232,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             OnPropertyChanged();
             OnPropertyChanged(nameof(PairedServerFingerprint));
             OnPropertyChanged(nameof(PairedServerAlias));
+            OnPropertyChanged(nameof(Availability));
             NotifyPairButtonPropertiesChanged();
             // Reachability itself is unaffected by IsServer alone unless the
             // PairedServerFingerprint clear above actually changes the
@@ -254,6 +255,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public void UnpairServer() => Sync.UnpairServer();
 
     public bool IsPairedServerReachable => Sync.IsPairedServerReachable;
+
+    // The two above as one bindable value, for the views that hand "what
+    // counts as playable right now" down to rows they build themselves - see
+    // AlbumGridView.Availability, which pushes it into an expanded album's
+    // track rows. Everything else in the app gets availability already
+    // computed onto its rows/tiles (TrackAvailability.Apply) and has no need
+    // of this.
+    public TrackAvailabilityContext Availability => new(PairedServerFingerprint, IsPairedServerReachable);
 
     // Gates mobile SettingsView's "Server not reachable" line - separate
     // from IsPairedServerReachable's own negation so it only shows once
@@ -932,6 +941,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
             OnPropertyChanged(nameof(PairedServerFingerprint));
             OnPropertyChanged(nameof(PairedServerAlias));
+            OnPropertyChanged(nameof(Availability));
             NotifyPairButtonPropertiesChanged();
             // Identity first, then the reachability glyph - SyncPairedServerRow
             // only ever touches a row that is already pinned, so pinning has to
@@ -1042,6 +1052,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _subscriptions.Add<EventHandler>((_, _) =>
         {
             OnPropertyChanged(nameof(IsPairedServerReachable));
+            OnPropertyChanged(nameof(Availability));
             OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
             OnPropertyChanged(nameof(PairedServerRouteDescription));
             OnPropertyChanged(nameof(CanForceSync));
@@ -1518,7 +1529,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (track == null)
             return;
 
-        if (DisplayedTracks.Any(t => t.Path == track.Path))
+        // By Id: a streamed placeholder is playing as a transient copy carrying
+        // a stream URL (Track.Clone keeps the Id - see
+        // PlaylistControlViewModel.ResolveForPlaybackAsync), so its Path matches
+        // nothing in the library, while every *undownloaded* placeholder's null
+        // Path matches every other one.
+        if (DisplayedTracks.Any(t => t.Id == track.Id))
         {
             NavigateToTrackRequested?.Invoke(this, track);
             return;
@@ -1533,7 +1549,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         switch (_selectedSidebarItem?.Kind)
         {
             case SidebarItemKind.Playlist
-                when _selectedSidebarItem.Playlist?.Tracks.Any(t => t.Path == track.Path) != true:
+                when _selectedSidebarItem.Playlist?.Tracks.Any(t => t.Id == track.Id) != true:
                 var songs = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
                 if (songs != null)
                     SelectedSidebarItem = songs;

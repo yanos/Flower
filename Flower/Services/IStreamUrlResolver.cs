@@ -87,11 +87,26 @@ public sealed class PeerStreamUrlResolver(
             return null;
         }
 
-        var url = await PeerOpenSubsonicClientFactory
-            .Create(peer, deviceIdentity, appSettings, signingKey)
-            .GetStreamUrlAsync(track.OriginTrackId);
-        logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint})", track.Title, peer.Alias, peer.BaseUri);
-        return url;
+        try
+        {
+            var url = await PeerOpenSubsonicClientFactory
+                .Create(peer, deviceIdentity, appSettings, signingKey)
+                .GetStreamUrlAsync(track.OriginTrackId);
+            logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint})", track.Title, peer.Alias, peer.BaseUri);
+            return url;
+        }
+        catch (Exception ex)
+        {
+            // The contract this interface states, honoured here too: a track
+            // that cannot be resolved is declined, not thrown at a caller with
+            // no way to act on it. Building the URL is ordinarily pure
+            // computation, but the peer it is built against went stale between
+            // Resolve above and here often enough to matter - and the caller
+            // reads this task's result on the UI thread, so a throw here
+            // surfaced as a crash on activating the row.
+            logger.LogWarning(ex, "Cannot stream {Title}: building a stream URL from {Alias} failed", track.Title, peer.Alias);
+            return null;
+        }
     }
 }
 

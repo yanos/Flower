@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -22,6 +23,25 @@ public sealed class AlbumTileViewModel : ViewModelBase
     public string? Artist { get; init; }
     public required Track RepresentativeTrack { get; init; }
     public DateTimeOffset MostRecentlyAdded { get; init; }
+
+    // Every track this tile stands for - carried (as references; the Track
+    // instances are the library's own) purely so IsUnavailable below can be
+    // recomputed whenever the paired server comes or goes, without rebuilding
+    // the grid and throwing away art that is already loaded.
+    public required IReadOnlyList<Track> Tracks { get; init; }
+
+    // Greyed-out state for the tile: true only when *none* of Tracks can be
+    // played right now - see TrackAvailability.IsAlbumUnavailable for why one
+    // downloaded track is enough to keep a mostly-not-downloaded album at full
+    // strength. Set by TrackAvailability.Apply, both at build time and again
+    // on every reachability change; false by default, so a tile never flashes
+    // as unavailable before it is known to be.
+    private bool _isUnavailable;
+    public bool IsUnavailable
+    {
+        get => _isUnavailable;
+        set { if (_isUnavailable != value) { _isUnavailable = value; OnPropertyChanged(); } }
+    }
 
     // Desktop-only for now (multi-select + drag-to-playlist on the Albums/
     // Recently Added grids - see AlbumGridView/MainView.axaml.cs) - unused,

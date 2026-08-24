@@ -36,6 +36,7 @@ public static class AlbumGridBuilder
                     Artist = artist,
                     RepresentativeTrack = representative,
                     MostRecentlyAdded = g.Max(t => t.DateAdded),
+                    Tracks = g.ToList(),
                 };
             })
             .OrderBy(a => a.Name)

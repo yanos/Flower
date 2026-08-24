@@ -49,6 +49,7 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
         AlbumGroupSize      = plan.AlbumGroupSize,
         IsCurrentlyPlaying  = plan.IsCurrentlyPlaying,
         IsAvailable         = plan.IsAvailable,
+        IsAlbumGroupUnavailable = plan.IsAlbumGroupUnavailable,
     };
 
     // Re-points a surviving row at what the rebuild says it should now be,
@@ -98,6 +99,7 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
 
         IsCurrentlyPlaying = plan.IsCurrentlyPlaying;
         IsAvailable        = plan.IsAvailable;
+        IsAlbumGroupUnavailable = plan.IsAlbumGroupUnavailable;
     }
 
     private static bool ArtSourceMatches(Track a, Track b) =>
@@ -176,6 +178,26 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
     // that IsAvailable can be played or downloaded right now and should look
     // like any other row.
     public bool IsUnavailable => IsPlaceholder && !IsAvailable;
+
+    // The greyed-out state of the album art cell, which spans the whole album
+    // run this row may only be one line of (see IsFirstInAlbumGroup /
+    // AlbumGroupSize) - so it follows the run, not this row: art beside a
+    // half-downloaded album stays at full strength while any of its tracks can
+    // still be played. Computed per run by TrackListBuilder.PlanRows and
+    // pushed in the same way IsAvailable is, including by
+    // TrackAvailability.Apply when the server comes or goes.
+    private bool _isAlbumGroupUnavailable;
+    public bool IsAlbumGroupUnavailable
+    {
+        get => _isAlbumGroupUnavailable;
+        set
+        {
+            if (_isAlbumGroupUnavailable == value)
+                return;
+            _isAlbumGroupUnavailable = value;
+            OnPropertyChanged();
+        }
+    }
 
     // Gates the row's own download button (see TrackRowTemplate) - hidden
     // entirely rather than shown-then-failing when there's nobody to

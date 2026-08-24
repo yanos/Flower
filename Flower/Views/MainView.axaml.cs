@@ -445,7 +445,13 @@ public partial class MainView : UserControl
 
         if (_viewStates.TryGetValue(newKey, out var saved))
         {
-            MusicList.SelectedRow = _viewModel.Rows.FirstOrDefault(r => r.Track.Path == saved.SelectedTrackPath);
+            // Guarded: a null saved path would otherwise match the first
+            // undownloaded placeholder in the view, which is not what was
+            // selected last session - it is just the one track shape whose Path
+            // is null. See MusicListView's own selection keys.
+            MusicList.SelectedRow = saved.SelectedTrackPath is { } savedPath
+                ? _viewModel.Rows.FirstOrDefault(r => r.Track.Path == savedPath)
+                : null;
             RestoreScrollOffsetForKey(newKey, saved.ScrollOffsetY);
         }
         else
