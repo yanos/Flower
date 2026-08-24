@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -44,7 +45,7 @@ public class PeerPairingService
     // never seen this key before, so the signature proves only that the
     // sender holds the key it is presenting, and the code is what supplies
     // the authorization.
-    public async Task<bool> RedeemPairingCodeAsync(DiscoveredDevice device, string code)
+    public async Task<string?> RedeemPairingCodeAsync(DiscoveredDevice device, string code)
     {
         try
         {
@@ -66,20 +67,61 @@ public class PeerPairingService
             {
                 // A wrong or expired code is the ordinary case here, not an
                 // exceptional one - the user mistyped, or took too long - so
-                // it is logged at Information and reported back as a plain
-                // false for the UI to phrase.
+                // it is logged at Information rather than as a failure.
                 _logger.LogInformation(
                     "Pairing code rejected by {Alias} ({EndPoint}): {Status}",
                     device.Alias, device.BaseUri, response.StatusCode);
-                return false;
+                return await DescribeRejectionAsync(device, response);
             }
 
-            return true;
+            return null;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Pair redeem to {Alias} ({EndPoint}) failed", device.Alias, device.BaseUri);
-            return false;
+            return $"Could not reach \"{device.Alias}\" at {device.BaseUri}: {(ex.InnerException ?? ex).Message}";
+        }
+    }
+
+    // The whole point of returning a sentence rather than a bool: "it did not
+    // pair" on its own leaves the user with nowhere to go, and the four ways
+    // this fails want four different next moves - retype the code, ask for a
+    // fresh one, wait, or go check the server. The server phrases the common
+    // one itself (PairingEndpoints returns {"error": ...} for a bad code), so
+    // that text is preferred over anything invented here.
+    private static async Task<string> DescribeRejectionAsync(DiscoveredDevice device, HttpResponseMessage response)
+    {
+        var served = await ReadServerErrorAsync(response);
+        if (served != null)
+            return served;
+
+        return (int)response.StatusCode switch
+        {
+            401 => "That server would not accept this device's signature. Make sure both ends are on the same Flower version.",
+            404 => $"\"{device.Alias}\" does not accept pairing codes - check the address points at a Flower server.",
+            429 => "Too many attempts. Wait a minute, then try again.",
+            var status => $"{device.Alias} refused the code (HTTP {status}).",
+        };
+    }
+
+    private static async Task<string?> ReadServerErrorAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(body))
+                return null;
+            using var json = JsonDocument.Parse(body);
+            return json.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
+                ? error.GetString()
+                : null;
+        }
+        catch (Exception)
+        {
+            // A server that answered with something other than Flower's own
+            // error shape has nothing useful to quote - fall back to the
+            // status code.
+            return null;
         }
     }
 

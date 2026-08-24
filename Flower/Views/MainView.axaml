@@ -409,6 +409,31 @@
                        Foreground="#E57373" FontSize="12" TextWrapping="Wrap"
                        MaxWidth="260"
                        VerticalAlignment="Center" Margin="8,0,0,0"/>
+            <!-- Adding somebody else's device to this server, from the one
+                 place its administrator already is. Issues an ordinary
+                 (non-admin) one-time code and shows it to be read out or
+                 typed on the device being added - see
+                 MainViewModel.InviteDeviceToSelectedServerAsync. Shown under
+                 the same conditions as "Server Settings…" above, including
+                 the deliberate absence of an is-this-device-an-admin check. -->
+            <Button Content="Add Device…"
+                    IsVisible="{Binding CanInviteDeviceToSelectedServer}"
+                    IsEnabled="{Binding !IsIssuingPairingCode}"
+                    Click="AddDeviceButton_Click"
+                    Margin="8,0,0,0" VerticalAlignment="Center"/>
+            <!-- Selectable: it is as often pasted into a chat message as it is
+                 read aloud. Monospace at size for both - see
+                 PairingCodeService's alphabet, chosen so it survives being
+                 dictated over the phone. -->
+            <SelectableTextBlock Text="{Binding IssuedPairingCode}"
+                                 IsVisible="{Binding IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                                 FontFamily="monospace" FontSize="16" FontWeight="SemiBold"
+                                 VerticalAlignment="Center" Margin="8,0,0,0"/>
+            <TextBlock Text="{Binding IssuedPairingCodeError}"
+                       IsVisible="{Binding IssuedPairingCodeError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                       Foreground="#E57373" FontSize="12" TextWrapping="Wrap"
+                       MaxWidth="260"
+                       VerticalAlignment="Center" Margin="8,0,0,0"/>
           </StackPanel>
 
           <TextBlock Grid.Row="1" Text="{Binding PeerLibrary.ErrorMessage}"

@@ -119,6 +119,12 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand PairWithServerCommand { get; }
     public ICommand UnpairServerCommand { get; }
 
+    // Hands out a one-time pairing code for somebody else's device, if this
+    // phone is an administrator of the server it is paired with - desktop's
+    // equivalent is the "Add Device…" button in the sidebar's device-detail
+    // header. See MainViewModel.InviteDeviceToPairedServerAsync.
+    public ICommand InviteDeviceCommand { get; }
+
     // Bootstrap-only: an address for a server this phone has never shared a
     // network with, and therefore could never discover. A server paired with at
     // home reports its own addresses and needs none of this - see
@@ -511,6 +517,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     private DiscoveredDevice? _pendingServerToPair;
     public string PendingServerToPairAlias => _pendingServerToPair?.Alias ?? "";
 
+    // Only one sheet is up at a time (see ActiveSheet), so raising the pairing
+    // sheet takes Settings' place rather than stacking on top of it. Whichever
+    // sheet it displaced is remembered here and put back when pairing resolves -
+    // otherwise finishing (or cancelling) a pair drops the user all the way out
+    // to the library, when what they did was tap one row inside Settings and
+    // expect to still be in Settings afterwards.
+    private MobileSheet _sheetBeforePairing = MobileSheet.None;
+
     // A headless Flower.Server has nobody in front of it to tap Allow, so it
     // pairs by redeeming an admin-issued code instead of by raising a live
     // approval prompt - which changes the sheet's title, its closing sentence
@@ -521,7 +535,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         ? $"Pair With \"{PendingServerToPairAlias}\"?"
         : $"Ask \"{PendingServerToPairAlias}\" To Pair?";
 
-    public string ConfirmPairServerActionLabel => IsPendingServerPairedByCode ? "Pair" : "Ask to pair";
+    public string ConfirmPairServerActionLabel => IsPairingInProgress
+        ? "Pairing..."
+        : IsPendingServerPairedByCode ? "Pair" : "Ask to pair";
 
     public string ConfirmPairServerMessage =>
         $"This device's library view will be replaced by \"{PendingServerToPairAlias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. "
@@ -571,12 +587,35 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             _pendingPairingCode = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsConfirmPairServerEnabled));
+            // Editing the code is the user retrying, and the message was about
+            // the previous attempt - same rule as desktop's PairingCode setter.
+            Main.PairingCodeError = null;
         }
     }
 
-    // "Pair" on an empty box would only round-trip to be rejected.
+    // Set while a code is being redeemed, which is the whole time the sheet
+    // holds itself open waiting for an answer - see ConfirmPairServerCommand.
+    private bool _isPairingInProgress;
+    public bool IsPairingInProgress
+    {
+        get => _isPairingInProgress;
+        private set
+        {
+            if (_isPairingInProgress == value)
+                return;
+            _isPairingInProgress = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsConfirmPairServerEnabled));
+            OnPropertyChanged(nameof(ConfirmPairServerActionLabel));
+        }
+    }
+
+    // "Pair" on an empty box would only round-trip to be rejected, and a second
+    // tap while the first is still in flight would redeem the same one-use code
+    // twice.
     public bool IsConfirmPairServerEnabled =>
-        !IsPendingServerPairedByCode || !string.IsNullOrWhiteSpace(PendingPairingCode);
+        !IsPairingInProgress
+        && (!IsPendingServerPairedByCode || !string.IsNullOrWhiteSpace(PendingPairingCode));
 
     // Android's media-access permission can be permanently denied, in which case the
     // only way back in is the system app-settings screen; desktop/iOS have nothing
@@ -760,6 +799,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             // longer touches Main.Rows at all.
             if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems))
                 RaiseEmptyStateChanged();
+            if (e.PropertyName is nameof(MainViewModel.PairingCodeError)
+                or nameof(MainViewModel.IsPairedServerTrustConfirmed))
+                SettleCodePairing();
         },
             h => Main.PropertyChanged += h, h => Main.PropertyChanged -= h);
         // SearchSongResults is a separate TrackRowViewModel list from
@@ -1013,6 +1055,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (device == null)
                 return;
             _pendingServerToPair = device;
+            _sheetBeforePairing = ActiveSheet;
             PendingPairingCode = "";
             OnPropertyChanged(nameof(PendingServerToPairAlias));
             OnPropertyChanged(nameof(IsPendingServerPairedByCode));
@@ -1023,6 +1066,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             ActiveSheet = MobileSheet.ConfirmPairServer;
         });
         UnpairServerCommand = new RelayCommand(Main.UnpairServer);
+        InviteDeviceCommand = new RelayCommand(async () => await Main.InviteDeviceToPairedServerAsync());
         AddManualServerCommand = new RelayCommand(async () =>
         {
             var address = ManualServerAddress.Trim();
@@ -1052,21 +1096,64 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         ForceSyncCommand = new RelayCommand(Main.ForceSyncNow);
         ConfirmPairServerCommand = new RelayCommand(() =>
         {
-            if (_pendingServerToPair is { } device)
+            if (_pendingServerToPair is not { } device)
             {
-                Main.PairWithServer(
-                    device,
-                    device.PairsByCode ? PendingPairingCode.Trim() : null);
+                ActiveSheet = _sheetBeforePairing;
+                return;
             }
-            _pendingServerToPair = null;
-            PendingPairingCode = "";
-            ActiveSheet = MobileSheet.None;
+
+            Main.PairingCodeError = null;
+
+            // The app-peer path has nothing to wait for here - approval happens
+            // on the other device's screen, up to a minute later - so the sheet
+            // closes immediately, as it always did.
+            if (!device.PairsByCode)
+            {
+                Main.PairWithServer(device);
+                _pendingServerToPair = null;
+                PendingPairingCode = "";
+                ActiveSheet = _sheetBeforePairing;
+                return;
+            }
+
+            // A code, by contrast, is accepted or refused within one round trip,
+            // and a refusal has to land where the user is looking - next to the
+            // box that produced it, with the typed code still there to correct.
+            // So the sheet holds itself open until SettleCodePairing sees one or
+            // the other.
+            IsPairingInProgress = true;
+            Main.PairWithServer(device, PendingPairingCode.Trim());
         });
         CancelPairServerCommand = new RelayCommand(() =>
         {
             _pendingServerToPair = null;
-            ActiveSheet = MobileSheet.None;
+            PendingPairingCode = "";
+            IsPairingInProgress = false;
+            Main.PairingCodeError = null;
+            ActiveSheet = _sheetBeforePairing;
         });
+    }
+
+    // The other half of ConfirmPairServerCommand's code path: the sheet stays up
+    // through the redeem, so something has to take it back down. Trust confirmed
+    // means the server accepted the code and the sheet is done; an error means it
+    // stays, showing the reason, ready for another try.
+    private void SettleCodePairing()
+    {
+        if (!IsShowingConfirmPairServer || !IsPairingInProgress)
+            return;
+
+        if (Main.IsPairedServerTrustConfirmed)
+        {
+            IsPairingInProgress = false;
+            _pendingServerToPair = null;
+            PendingPairingCode = "";
+            ActiveSheet = _sheetBeforePairing;
+        }
+        else if (!string.IsNullOrEmpty(Main.PairingCodeError))
+        {
+            IsPairingInProgress = false;
+        }
     }
 
     private void ResolvePeerApproval(bool allowed)

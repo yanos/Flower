@@ -467,4 +467,73 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         // populated here - the point being it is not derived from the sidebar.
         Assert.DoesNotContain(vm.AvailableServers, d => d.Fingerprint == "fp-phone");
     }
+
+    // ── Handing out pairing codes ─────────────────────────────────────────────
+
+    // A headless Flower.Server (DeviceType "server", so PairsByCode) that has
+    // already approved this device: the device-detail header offers to issue a
+    // pairing code for somebody else's device against it. Deliberately not also
+    // gated on this device being an administrator - nothing here can know that
+    // without asking, so the button shows and the refusal is reported inline
+    // (see MainViewModel.CanInviteDeviceToSelectedServer).
+    [AvaloniaFact]
+    public void An_approved_headless_server_can_be_asked_for_a_pairing_code()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
+        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop"));
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+
+        Assert.True(vm.CanInviteDeviceToSelectedServer);
+    }
+
+    // An app peer advertising Server mode has no admin API and no code to give -
+    // its own Settings window is where its devices are managed.
+    [AvaloniaFact]
+    public void An_app_peer_in_server_mode_is_never_asked_for_a_pairing_code()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
+        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop", isServer: true));
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+
+        Assert.False(vm.CanInviteDeviceToSelectedServer);
+    }
+
+    // Paired but still waiting for the server to approve this device: any admin
+    // call it made would be refused, so there is nothing to offer yet.
+    [AvaloniaFact]
+    public void A_server_that_has_not_approved_this_device_yet_offers_nothing()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: false));
+        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop"));
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+
+        Assert.False(vm.CanInviteDeviceToSelectedServer);
+    }
+
+    // Mobile's Settings sheet asks the paired server rather than a selected row,
+    // and resolves it through PairedServerReachability - which nothing has
+    // populated here, so there is no reachable server to ask.
+    [AvaloniaFact]
+    public void With_no_reachable_paired_server_mobile_offers_nothing()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
+
+        Assert.False(vm.CanInviteDeviceToPairedServer);
+    }
+
+    private static AppSettings PairedWith(string fingerprint, bool trustConfirmed) => new()
+    {
+        PairedServerFingerprint    = fingerprint,
+        PairedServerAlias          = "Desktop",
+        PairedServerTrustConfirmed = trustConfirmed,
+    };
+
+    // Device(), but advertising itself as a Flower.Server rather than another
+    // copy of the app - the difference PairsByCode reads.
+    private static DiscoveredDevice HeadlessServer(string instanceName, string fingerprint, string alias)
+    {
+        var device = Device(instanceName, fingerprint, alias, isServer: true);
+        device.DeviceType = "server";
+        return device;
+    }
 }

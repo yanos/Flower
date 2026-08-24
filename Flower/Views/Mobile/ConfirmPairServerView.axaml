@@ -4,6 +4,8 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             xmlns:controls="clr-namespace:Flower.Controls"
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.ConfirmPairServerView"
              x:DataType="vm:MobileMainViewModel">
@@ -24,7 +26,11 @@
          only way out other than the pair button. -->
     <Border Background="#66000000" />
 
+    <!-- The keyboard comes up over the bottom of the screen, which is exactly
+         where this sheet sits - and the code box is the first thing it covers.
+         See Flower.Controls.SoftKeyboard. -->
     <Border VerticalAlignment="Bottom"
+            controls:SoftKeyboard.AvoidOcclusion="True"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             CornerRadius="12,12,0,0"
             Padding="20,20,20,28">
@@ -43,7 +49,18 @@
         <TextBox Text="{Binding PendingPairingCode}"
                  PlaceholderText="Pairing code"
                  IsVisible="{Binding IsPendingServerPairedByCode}"
+                 IsEnabled="{Binding !IsPairingInProgress}"
+                 controls:SoftKeyboard.ReopenOnTap="True"
                  MaxLength="20" FontSize="16" Padding="12,10" />
+
+        <!-- The sheet deliberately stays up through the redeem so this can be
+             read next to the code that caused it - see
+             MobileMainViewModel.SettleCodePairing. The text is the server's own
+             words where it gave any (PeerPairingService.DescribeRejectionAsync). -->
+        <TextBlock Text="{Binding Main.PairingCodeError}"
+                   IsVisible="{Binding Main.PairingCodeError, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                   Foreground="{DynamicResource AppWarningBrush}"
+                   FontSize="13" TextWrapping="Wrap" />
 
         <Button Classes="peerAction" Content="{Binding ConfirmPairServerActionLabel}"
                 Command="{Binding ConfirmPairServerCommand}"

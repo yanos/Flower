@@ -1380,6 +1380,12 @@ public partial class MainView : UserControl
     private void ServerSettingsButton_Click(object? sender, RoutedEventArgs e) =>
         _ = _viewModel?.OpenSelectedServerSettingsAsync();
 
+    // Fire-and-forget like ServerSettingsButton_Click above: the ViewModel owns
+    // the whole outcome (the code, the error, the in-flight flag), and the
+    // button is disabled while a request is out.
+    private void AddDeviceButton_Click(object? sender, RoutedEventArgs e) =>
+        _ = _viewModel?.InviteDeviceToSelectedServerAsync();
+
     private async void PairActionButton_Click(object? sender, RoutedEventArgs e)
     {
         if (_viewModel is not { SelectedDevice: { } device } vm)

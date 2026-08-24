@@ -652,8 +652,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-            var client = new ServerAdminClient(
-                http, device.BaseUri, ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity, _signingKey, _appSettings)));
+            var client = CreateServerAdminClient(http, device);
 
             var pairing = await client.IssuePairingCodeAsync(grantsAdmin: true);
             OpenUrlInBrowser(pairing.BrowserUrl);
@@ -681,6 +680,116 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         else
             Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { url } });
     }
+
+
+    // ── Handing out pairing codes ─────────────────────────────────────────────
+
+    // "Add Device…" against the selected server: the same admin-issued one-time
+    // code the server's own browser UI hands out (see SettingsViewModel's
+    // IssuePairingCodeCommand and PairingCodeService), asked for from the place
+    // an administrator already stands when they are thinking about their server -
+    // its sidebar row - rather than only after a trip out to a browser tab.
+    //
+    // Deliberately not an admin code. What this is for is adding a listener's
+    // phone or laptop, and a device that only listens has no business being able
+    // to hand out codes of its own. Making another administrator stays where it
+    // was, behind "Server Settings…" and the server's own Devices screen.
+    private string? _issuedPairingCode;
+    public string? IssuedPairingCode
+    {
+        get => _issuedPairingCode;
+        private set
+        {
+            if (_issuedPairingCode == value)
+                return;
+            _issuedPairingCode = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // Same treatment as ServerSettingsError: "paired, but not an administrator of
+    // that server" is the most likely answer here and is an ordinary outcome of
+    // clicking the button, not a fault worth a dialog.
+    private string? _issuedPairingCodeError;
+    public string? IssuedPairingCodeError
+    {
+        get => _issuedPairingCodeError;
+        private set
+        {
+            if (_issuedPairingCodeError == value)
+                return;
+            _issuedPairingCodeError = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private bool _isIssuingPairingCode;
+    public bool IsIssuingPairingCode
+    {
+        get => _isIssuingPairingCode;
+        private set
+        {
+            if (_isIssuingPairingCode == value)
+                return;
+            _isIssuingPairingCode = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // Exactly the preconditions "Server Settings…" needs, for exactly the same
+    // reasons (see CanOpenSelectedServerSettings, including why this is not also
+    // gated on actually being an admin - nothing here can know that without
+    // asking, and a button that says why it failed beats a button that isn't
+    // there). Named separately so the two can part company later without the
+    // XAML having to be re-read to find out which button meant which.
+    public bool CanInviteDeviceToSelectedServer => CanOpenSelectedServerSettings;
+
+    // The mobile half of the same feature. A phone has no sidebar to select a
+    // server in, so its Settings sheet asks the one server it is paired with -
+    // resolved through PairedServerReachability, which knows the server's current
+    // address whether it was found on this link or remembered from home (see
+    // docs/REMOTE-ACCESS-PLAN.md).
+    public bool CanInviteDeviceToPairedServer =>
+        (_reachability?.PairedServerDevice?.PairsByCode ?? false)
+        && IsPairedServerTrustConfirmed && _signingKey != null && _deviceIdentity != null;
+
+    public Task InviteDeviceToSelectedServerAsync() => IssuePairingCodeAgainstAsync(SelectedDevice);
+
+    public Task InviteDeviceToPairedServerAsync() => IssuePairingCodeAgainstAsync(_reachability?.PairedServerDevice);
+
+    private async Task IssuePairingCodeAgainstAsync(DiscoveredDevice? device)
+    {
+        if (device == null || _signingKey == null || _deviceIdentity == null)
+            return;
+
+        IssuedPairingCodeError = null;
+        // The previous code is dropped before the request rather than after it:
+        // a stale code left on screen next to a spinner reads as the new one.
+        IssuedPairingCode = null;
+        IsIssuingPairingCode = true;
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            var client = CreateServerAdminClient(http, device);
+            var pairing = await client.IssuePairingCodeAsync(grantsAdmin: false);
+            IssuedPairingCode = pairing.Code;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not issue a pairing code on {Device}", device.BaseUri);
+            IssuedPairingCodeError = ex is ServerAdminException ? ex.Message : "Could not reach that server.";
+        }
+        finally
+        {
+            IsIssuingPairingCode = false;
+        }
+    }
+
+    // Both admin calls this ViewModel makes sign as this device with the same
+    // identity; only the route differs.
+    private ServerAdminClient CreateServerAdminClient(HttpClient http, DiscoveredDevice device) =>
+        new(http, device.BaseUri,
+            ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity!, _signingKey!, _appSettings)));
 
     private bool SelectedDevicePairsByCode => SelectedDevice?.PairsByCode ?? false;
 
@@ -774,6 +883,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsPairingCodeRequired));
         OnPropertyChanged(nameof(IsPairSubmittable));
         OnPropertyChanged(nameof(CanOpenSelectedServerSettings));
+        // Same inputs as the line above (see CanInviteDeviceToSelectedServer),
+        // so it rides along on that property's place in the diffed tuple.
+        OnPropertyChanged(nameof(CanInviteDeviceToSelectedServer));
+        // Mobile's Settings sheet asks the *paired* server rather than the
+        // selected one, and one of that property's inputs (trust confirmation)
+        // is already in the tuple above - so it is re-raised from here too.
+        OnPropertyChanged(nameof(CanInviteDeviceToPairedServer));
     }
 
     // ── Constructors ──────────────────────────────────────────────────────────
@@ -956,8 +1072,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         // The redeem happens off the UI thread, so the message it produces has
         // to come back onto it before a binding reads it.
-        _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
-                PairingCodeError = "That pairing code was not accepted. Ask for a new one and try again."),
+        _subscriptions.Add<EventHandler<string>>((_, reason) => Dispatcher.UIThread.Post(() =>
+                PairingCodeError = reason),
             h => Sync.PairingCodeRejected += h, h => Sync.PairingCodeRejected -= h);
 
         _subscriptions.Add<EventHandler>((_, _) =>
@@ -1056,6 +1172,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             OnPropertyChanged(nameof(ShowPairedServerUnreachableWarning));
             OnPropertyChanged(nameof(PairedServerRouteDescription));
             OnPropertyChanged(nameof(CanForceSync));
+            // Whether the paired server can be asked for a code at all turns on
+            // it being reachable right now - see CanInviteDeviceToPairedServer,
+            // which resolves the server through this same service.
+            OnPropertyChanged(nameof(CanInviteDeviceToPairedServer));
             _deviceSidebar.SyncPairedServerRow();
             Browser.ApplyTrackAvailability(PairedServerFingerprint, reachability.IsReachable);
             ReachabilityChanged?.Invoke(this, EventArgs.Empty);
@@ -1457,6 +1577,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // another, so the box empties whenever the selection moves.
         PairingCode = "";
         PairingCodeError = null;
+        // Likewise for a code handed *out* for one server: it is worthless
+        // against another, and leaving it on screen under a different server's
+        // name says otherwise. See IssuedPairingCode. Cleared only here and not
+        // in DeviceRowsChanged, which also runs on the 5s peer poll - a code
+        // that vanished every few seconds could not be read out loud.
+        IssuedPairingCode = null;
+        IssuedPairingCodeError = null;
+        ServerSettingsError = null;
         NotifyPairButtonPropertiesChanged();
         // Live browse, unrestricted by Client/Server role/pairing - see
         // PeerLibraryViewModel's own doc comment. Fire-and-forget: the VM
