@@ -793,9 +793,18 @@ public partial class App : Application
             if (!string.Equals(session.Page, "settings", StringComparison.OrdinalIgnoreCase))
                 return;
 
+            // The fourth argument is why this page is worth special-casing at
+            // all: a tab served over plain http to anything but localhost has no
+            // crypto.subtle, so it holds no key, so every request it makes is
+            // unsigned and comes back 401 - which the settings panel would
+            // otherwise report as "not paired", sending the user to pair again
+            // and again. BrowserPeerCredentials knows the real reason; this
+            // hands it to whoever shows the error.
+            var browserCredentials = Ioc.Default.GetRequiredService<BrowserPeerCredentials>();
             var client = new ServerAdminClient(
                 Ioc.Default.GetRequiredService<HttpClient>(), BrowserLocation.Origin,
-                ServerAdminClient.SignWith(Ioc.Default.GetRequiredService<IPeerCredentials>()));
+                ServerAdminClient.SignWith(browserCredentials),
+                () => browserCredentials.UnauthenticatedReason);
             var settings = new SettingsViewModel(new RemoteServerSettingsBackend(client));
 
             // Posted rather than called inline: the view is not attached to a

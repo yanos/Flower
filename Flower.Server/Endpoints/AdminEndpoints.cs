@@ -131,7 +131,7 @@ public static class AdminEndpoints
             // BrowserPeerCredentials). Both consume the same single-use code, so
             // whichever gets there first is the device that pairs.
             var browserUrl = WebUiHosting.BuildBrowserPairingUrl(
-                $"{context.Request.Scheme}://{context.Request.Host}", code);
+                WebUiHosting.BrowserOriginFor(context.Request), code);
             return Results.Json(
                 new PairingCodeResponse(code, expiresAt, grantsAdmin, invite.ToString(), browserUrl), jsonOptions);
         });

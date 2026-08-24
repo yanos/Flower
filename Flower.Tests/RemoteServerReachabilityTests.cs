@@ -247,6 +247,37 @@ public class LocalAddressesTests
         Assert.DoesNotContain(addresses, a => a.StartsWith("http://[fe80"));
     }
 
+    // Which caller is sitting at this same keyboard. Asked when a client wants
+    // a link its own browser can open: only a page on localhost or https can
+    // hold a WebCrypto key, so a client on this machine has to be handed the
+    // localhost form rather than the LAN address it happened to dial. See
+    // WebUiHosting.BrowserOriginFor.
+    [Fact]
+    public void Recognises_a_caller_on_this_machine()
+    {
+        Assert.True(LocalAddresses.IsThisMachine(IPAddress.Loopback));
+        Assert.True(LocalAddresses.IsThisMachine(IPAddress.IPv6Loopback));
+
+        // The case loopback alone misses, and the one that actually happens: a
+        // client on this machine which found the server over mDNS dials its LAN
+        // address, so that is the source address the connection reports. Every
+        // address this machine advertises must therefore read as this machine.
+        foreach (var origin in LocalAddresses.Reachable(4533))
+        {
+            var host = new Uri(origin).Host.Trim('[', ']');
+            Assert.True(LocalAddresses.IsThisMachine(IPAddress.Parse(host)), origin);
+        }
+    }
+
+    [Fact]
+    public void Does_not_mistake_someone_else_for_this_machine()
+    {
+        // TEST-NET-3, reserved for documentation and guaranteed not to be ours.
+        Assert.False(LocalAddresses.IsThisMachine(IPAddress.Parse("203.0.113.7")));
+        Assert.False(LocalAddresses.IsThisMachine(IPAddress.Parse("2001:db8::1")));
+        Assert.False(LocalAddresses.IsThisMachine(null));
+    }
+
     [Fact]
     public void Every_reported_address_carries_the_port()
     {

@@ -118,6 +118,14 @@ public sealed class BrowserPeerCredentials(
     // the first request forces the question.
     public Task<BrowserSigningKey?> IdentityAsync() => _identity ??= EstablishAsync();
 
+    // Why this tab has no key, once we have tried to get one - null while it has
+    // one, or before anything asked. Read by whoever has to explain a refusal to
+    // a person: a 401 says "unauthenticated" and nothing more, and the guess a
+    // caller makes from that alone ("not paired") is wrong in exactly the case
+    // below, where there was never a key to pair. See
+    // ServerAdminClient.explainUnauthorized.
+    public string? UnauthenticatedReason { get; private set; }
+
     public async Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body)
     {
@@ -159,10 +167,11 @@ public sealed class BrowserPeerCredentials(
     {
         if (!BrowserSigningKey.IsAvailable)
         {
-            logger.LogError(
-                "This page has no WebCrypto, so this browser cannot hold a device key and cannot be paired. " +
-                "Browsers expose crypto.subtle only in a secure context: open Flower over https, or at " +
-                "http://localhost on the machine running the server.");
+            UnauthenticatedReason =
+                "This page cannot hold a device key, so it cannot be paired. Browsers only allow the " +
+                "cryptography Flower signs with on a secure page: reach this server over https, or at " +
+                "http://localhost if you are on the machine running it.";
+            logger.LogError("{Reason}", UnauthenticatedReason);
             return null;
         }
 
@@ -176,6 +185,9 @@ public sealed class BrowserPeerCredentials(
             // A browser that refuses IndexedDB - private mode in some engines,
             // storage blocked by policy - lands here. Nothing to fall back to:
             // no key, no identity, no library.
+            UnauthenticatedReason =
+                "This browser would not let Flower store a device key, so this tab cannot be paired. " +
+                "Private browsing, or a policy blocking site storage, is the usual cause.";
             logger.LogError(ex, "Could not open this browser's device key, so this tab cannot be paired");
             return null;
         }
