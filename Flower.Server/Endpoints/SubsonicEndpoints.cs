@@ -32,17 +32,33 @@ public static class SubsonicEndpoints
     // Classic Subsonic auth is t=md5(password+salt) with no expiry and no
     // nonce, so a captured u/t/s query string replays forever and a wrong one
     // costs an attacker nothing to retry - this surface had no rate limiting
-    // at all. Two budgets, both keyed by source IP via RateLimiter.KeyFor
-    // (there is no pre-auth identity worth keying by):
+    // at all. Two budgets:
     //
-    // - FailedAuthLimiter is charged only when auth actually fails, and is
-    //   peeked before anything else, so a source that burns it is locked out
-    //   of /rest entirely until it drains. That is what bounds password
-    //   guessing against the shipped-default-credentials case.
-    // - RequestLimiter is charged on every request and is sized for real
-    //   client behaviour instead: an album grid pulls one getCoverArt per
-    //   tile, which is bursty enough that SyncHttpServer's 120/60s browse
-    //   ceiling would be too tight here.
+    // - RequestLimiter is charged on every request, keyed by source via
+    //   RateLimiter.KeyFor, and sized for real client behaviour: an album grid
+    //   pulls one getCoverArt per tile, which is bursty enough that
+    //   SyncHttpServer's 120/60s browse ceiling would be too tight here.
+    // - FailedAuthLimiter is charged only when a *password* attempt fails, and
+    //   gates only the password path.
+    //
+    // That scoping is docs/OPEN-INTERNET-REVIEW.md finding #2. This used to be
+    // peeked before anything else, which made it a lockout of the whole surface
+    // rather than a throttle on guessing: ten bad passwords from any one source
+    // took /rest away from every other caller sharing that key - already a real
+    // outcome for two listeners behind one house NAT, and behind a tunnel with
+    // TrustedProxies unset, everyone. A signature or a stream ticket cannot be
+    // guessed, so nothing is bought by refusing one because somebody else got a
+    // password wrong.
+    //
+    // The guessing bound itself is unchanged where it matters: an over-budget
+    // password attempt is refused *without being evaluated*, so burning the
+    // budget can never admit a lucky guess. Keyed by source and username
+    // together, so hammering one account cannot lock out another client behind
+    // the same address. An attacker rotating usernames does get a fresh budget
+    // each, bounded only by RequestLimiter - which is 600/60s against a 32-char
+    // CSPRNG secret (SubsonicCredentialStore.GenerateSecret, never a
+    // human-chosen password), so guessing was never the threat this bounds.
+    // What it bounds is a probe flood, and it still does.
     private static readonly RateLimiter FailedAuthLimiter = new(max: 10, TimeSpan.FromSeconds(60));
     private static readonly RateLimiter RequestLimiter = new(max: 600, TimeSpan.FromSeconds(60));
 
@@ -55,27 +71,20 @@ public static class SubsonicEndpoints
             var key = RateLimiter.KeyFor(context.HttpContext.Connection.RemoteIpAddress);
             var now = DateTimeOffset.UtcNow;
 
-            if (!FailedAuthLimiter.WouldAllow(key, now) || !RequestLimiter.TryAcquire(key, now))
+            if (!RequestLimiter.TryAcquire(key, now))
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
 
-            // Three ways in, deliberately unequal in power. A path-B credential
-            // (SubsonicCredentialStore) authenticates the whole /rest surface,
-            // which is what a third-party Subsonic client needs. A path-A
-            // device signature does the same for a paired Flower device, which
-            // never holds a username/password at all. A stream ticket
+            // Three ways in, deliberately unequal in power. A path-A device
+            // signature authenticates the whole /rest surface for a paired
+            // Flower device, which never holds a username/password at all. A
+            // path-B credential (SubsonicCredentialStore) does the same for a
+            // third-party Subsonic client, which cannot sign. A stream ticket
             // authenticates one track, because that is all an <audio>
             // element's unsignable request should ever be able to reach - see
             // StreamTicketService.
-            var credentials = services.GetRequiredService<SubsonicCredentialStore>();
-            var username = SubsonicAuth.Validate(query, credentials);
-            if (username != null)
-            {
-                // Fire-and-forget, and rate-limited inside the store itself:
-                // last-seen is an admin convenience, not something a stream
-                // request should wait on a file write for.
-                _ = credentials.TouchAsync(username, now);
-                return await next(context);
-            }
+            //
+            // The two unguessable ones are tried first, so a caller holding one
+            // never touches the failed-auth budget in either direction.
 
             // Path A: another Flower device browsing/streaming this server the
             // same way it browses a peer's embedded SyncHttpServer, which gates
@@ -94,7 +103,27 @@ public static class SubsonicEndpoints
             if (tickets.TryRedeem(query["ticket"].ToString(), query["id"].ToString(), now))
                 return await next(context);
 
-            FailedAuthLimiter.TryAcquire(key, now);
+            // Path B, and the only guessable credential on this surface - hence
+            // the budget, and hence checking it before the comparison rather
+            // than after. An over-budget attempt is refused unevaluated, so no
+            // amount of burning it can turn into a lucky guess being admitted.
+            var attempted = query["u"].ToString();
+            var failedAuthKey = $"{key}|{attempted}";
+            if (!FailedAuthLimiter.WouldAllow(failedAuthKey, now))
+                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+
+            var credentials = services.GetRequiredService<SubsonicCredentialStore>();
+            var username = SubsonicAuth.Validate(query, credentials);
+            if (username != null)
+            {
+                // Fire-and-forget, and rate-limited inside the store itself:
+                // last-seen is an admin convenience, not something a stream
+                // request should wait on a file write for.
+                _ = credentials.TouchAsync(username, now);
+                return await next(context);
+            }
+
+            FailedAuthLimiter.TryAcquire(failedAuthKey, now);
             // A Flower device that signed but is not trusted is a pairing
             // problem, not a password problem, and saying "wrong username or
             // password" to a client that holds neither sends the user looking

@@ -363,6 +363,15 @@ in both servers now goes through one helper that collapses IPv6 to its /64, so
 the budgets bound a caller rather than an address; and `/api/admin`, which had
 no budget at all, has one.
 
+**And so is the one this step gates on.** An undeclared proxy now warns about
+itself — it cannot be caught at startup, because `cloudflared` dials out and
+delivers over loopback, so the server watches for the one signal that exists (an
+`X-Forwarded-For` from a hop `TrustedProxies` does not name) and says what it
+costs. The failed-auth budget no longer locks out the whole `/rest` surface
+either: it gates password attempts only, so a paired device sharing an address
+with a guesser keeps playing. **Cloudflare Tunnel can be tested now.** What is
+still open before it is more than a test is the admin-session decision (#7).
+
 What remains there is sequenced against the steps above, including the one that
 hardens the ordering here — a mapped public port cannot ship before TLS, because
 classic Subsonic auth puts a permanent credential in a query string, so step 4

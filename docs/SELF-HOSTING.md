@@ -154,11 +154,25 @@ Restart the server. The log will confirm it:
 Believing X-Forwarded-For from 1 configured proxy network(s): 127.0.0.1/32
 ```
 
-Skipping this does not break anything visibly, which is what makes it worth
-calling out. What breaks is per-device accounting: every device on your tailnet
-arrives as the same address, so they share one rate-limit bucket. Five bad
-pairing attempts from one phone then lock out every other device for a minute,
-and the logs attribute all of it to `127.0.0.1`.
+Skipping this breaks nothing you can see. What breaks is per-device accounting:
+every device on your tailnet arrives as the same address, so they share one
+rate-limit bucket — five bad pairing attempts from one phone then lock out every
+other device for a minute, and the logs attribute all of it to `127.0.0.1`. It
+also means the allow-list is admitting the proxy rather than the caller, so the
+network-level check underneath authentication is no longer checking anything.
+
+Because none of that is visible, the server says so itself. If a request arrives
+with an `X-Forwarded-For` from an address `TrustedProxies` does not cover, it
+logs a warning naming that address, at most once every five minutes:
+
+```
+An X-Forwarded-For arrived from 127.0.0.1 but Flower:TrustedProxies is empty, so
+it is being ignored. If you are running a tunnel or reverse proxy, name it there
+```
+
+That is the one signal available — a tunnel dials *out*, so nothing at startup
+can tell the server it is behind one. If you see it, the address it names is
+almost certainly what belongs in `TrustedProxies`.
 
 The empty default is deliberate. `X-Forwarded-For` is written by whoever sent
 the request, so a server that believed it from anyone would let any caller
@@ -203,9 +217,13 @@ anything. See "Reaching it from a browser" below.
 
 If you want to share your library with someone who will not install Tailscale,
 [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-publishes a service to the internet without opening a port, the same way. Set
-`TrustedProxies` to the tunnel daemon's address, and `AllowedCidrs` to whatever
-range it forwards from.
+publishes a service to the internet without opening a port, the same way. Run
+`cloudflared` on the same machine as the server and set `TrustedProxies` to
+`127.0.0.1/32`, exactly as in step 3 — that is where it delivers from. If it
+runs elsewhere, set `TrustedProxies` to its address and `AllowedCidrs` to the
+range it forwards from. Start the server, make one request through the tunnel,
+and check the log: the `X-Forwarded-For arrived from ...` warning above is how
+you find out you named the wrong address.
 
 Understand the trade before you do: **Cloudflare terminates TLS at their edge**,
 so your traffic is decrypted on someone else's machine. That is a materially
@@ -245,8 +263,16 @@ proxy's address unless `TrustedProxies` names it.
 **403 only from one device.** It is not on the tailnet, or `TrustTailscaleRange`
 has been turned off.
 
-**One device's failed attempts lock out the others.** `TrustedProxies` is not
-set. See step 3.
+**A device is getting 429s it did not earn.** Every per-source rate limit is
+keyed by the address the request arrived from, so if `TrustedProxies` is not set
+that is the proxy's address and every device shares one budget. See step 3, and
+check the log for the `X-Forwarded-For arrived from ...` warning.
+
+Failed logins are narrower than the rest: that budget is keyed by address *and*
+username, and it only ever gates password attempts. A paired Flower device
+signs its requests rather than sending a password, so it is never locked out by
+someone else's wrong guesses — but two third-party Subsonic clients sharing one
+username would be.
 
 **The server does not appear in a client's sidebar.** mDNS does not cross
 subnets and does not reach into a tailnet, so a client only ever *discovers* a

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 using Microsoft.AspNetCore.Hosting;
@@ -466,10 +467,109 @@ public class SubsonicRateLimitTests(SubsonicServerFixture server) : IClassFixtur
             await server.SendAsync(wrong, ip);
         }
 
-        // The lockout is on the source, not on the guess - otherwise finally
-        // landing the right password would clear the penalty.
+        // The lockout is on the attempt, not on the guess - otherwise finally
+        // landing the right password would clear the penalty. Which is why the
+        // budget is checked *before* the credential is compared: an over-budget
+        // attempt is refused unevaluated, so no amount of burning it can turn
+        // into a lucky guess being admitted.
         var (status, _) = await server.SendAsync("/rest/ping" + server.AuthQuery, ip);
         Assert.Equal(HttpStatusCode.TooManyRequests, status);
+    }
+
+    // docs/OPEN-INTERNET-REVIEW.md finding #2: the failed-auth budget used to be
+    // peeked before authentication, which made it a lockout of the whole /rest
+    // surface. Two listeners behind one house NAT already shared that key, and
+    // behind a tunnel with TrustedProxies unset it is everybody - so ten bad
+    // passwords from one caller took the library away from all of them.
+
+    [Fact]
+    public async Task A_paired_device_gets_in_while_a_password_guesser_shares_its_address()
+    {
+        const string ip = "10.20.30.45";
+        var wrong = "/rest/ping" + SubsonicServerFixture.AuthAs(server.Credential.Username, "wrong");
+
+        for (var i = 0; i < 11; i++)
+        {
+            await server.SendAsync(wrong, ip);
+        }
+
+        // A signature cannot be guessed, so nothing is bought by refusing one
+        // because somebody sharing the address got a password wrong.
+        var device = NewDevice();
+        await server.Services.GetRequiredService<TrustedPeerStore>()
+            .ApproveAsync(device.Fingerprint, "Kitchen iPad", device.PublicKeyBase64);
+        try
+        {
+            var (status, body) = await SendSignedAsync(device, "/rest/ping", ip);
+
+            Assert.Equal(HttpStatusCode.OK, status);
+            using var document = JsonDocument.Parse(body);
+            Assert.Equal("ok", document.RootElement.GetProperty("subsonic-response").GetProperty("status").GetString());
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task Hammering_one_account_does_not_lock_out_another_from_the_same_address()
+    {
+        const string ip = "10.20.30.46";
+        var guessing = "/rest/ping" + SubsonicServerFixture.AuthAs("an-account-that-was-never-issued", "wrong");
+
+        for (var i = 0; i < 11; i++)
+        {
+            await server.SendAsync(guessing, ip);
+        }
+
+        // The budget is keyed by source *and* username, so the client this
+        // server actually issued a credential to keeps working.
+        var (status, _) = await server.SendAsync("/rest/ping" + server.AuthQuery, ip);
+        Assert.Equal(HttpStatusCode.OK, status);
+    }
+
+    private static DeviceSigningKey NewDevice()
+    {
+        var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKeyRaw = ecdsa.ExportParameters(false) is { Q.X: { } x, Q.Y: { } y }
+            ? (byte[])[0x04, .. x, .. y]
+            : throw new InvalidOperationException("no public point");
+        return new DeviceSigningKey(ecdsa, publicKeyRaw);
+    }
+
+    // The same shape PeerOpenSubsonicClientFactory sends: empty u/t/s, identity
+    // and signature in headers.
+    private async Task<(HttpStatusCode Status, string Body)> SendSignedAsync(
+        DeviceSigningKey device, string path, string remoteIp)
+    {
+        var query = new List<(string Key, string Value)>
+        {
+            ("u", ""), ("t", ""), ("s", ""), ("v", "1.16.1"), ("c", "tests"), ("f", "json"),
+        };
+        var identity = new List<(string Key, string Value)>
+        {
+            ("X-Flower-Fingerprint", device.Fingerprint),
+            ("X-Flower-PublicKey", device.PublicKeyBase64),
+        };
+        var (signature, timestamp, nonce) = device.Sign("GET", path, query.Concat(identity), body: []);
+
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = HttpMethods.Get;
+            c.Request.Path = path;
+            c.Request.QueryString = new QueryString("?" + string.Join("&", query.Select(p =>
+                $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}")));
+            c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+            foreach (var (key, value) in identity)
+                c.Request.Headers[key] = value;
+            c.Request.Headers["X-Flower-Signature"] = signature;
+            c.Request.Headers["X-Flower-Timestamp"] = timestamp;
+            c.Request.Headers["X-Flower-Nonce"] = nonce;
+        });
+
+        using var reader = new StreamReader(context.Response.Body);
+        return ((HttpStatusCode)context.Response.StatusCode, await reader.ReadToEndAsync());
     }
 
     [Fact]
