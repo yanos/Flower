@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 using CommunityToolkit.Mvvm.Input;
 
+using Flower.Logging;
 using Flower.Persistence;
 
 namespace Flower.ViewModels;
@@ -31,11 +32,25 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // merely restoring the persisted state.
     private bool _loaded;
 
-    public SettingsViewModel(ISettingsBackend backend)
+    // appSettings/appSettingsStore are only the Logs tab's viewer preferences
+    // (font size, minimum level, word wrap) and where to persist them - shared
+    // with the app's own Log window, so the two read the way the same person
+    // set them up. Defaulted because most callers have no Logs tab at all: the
+    // local backend switches it off, and the tests construct this bare.
+    public SettingsViewModel(
+        ISettingsBackend backend,
+        AppSettings? appSettings = null,
+        AppSettingsStore? appSettingsStore = null)
     {
         _backend = backend;
         Capabilities = backend.Capabilities;
+        LogViewer = new LogViewerViewModel(appSettings ?? new AppSettings(), appSettingsStore);
     }
+
+    // The Logs tab's viewer, the same one the app's Log window uses - see
+    // LogViewerViewModel. What differs is only what gets loaded into it: there,
+    // this device's live log; here, whichever row of LogSources is selected.
+    public LogViewerViewModel LogViewer { get; }
 
     public ISettingsBackend Backend => _backend;
     public SettingsCapabilities Capabilities { get; }
@@ -196,13 +211,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         get => _pairingCode;
         private set => SetProperty(ref _pairingCode, value);
-    }
-
-    private string _logText = "";
-    public string LogText
-    {
-        get => _logText;
-        private set => SetProperty(ref _logText, value);
     }
 
     private string _newCredentialLabel = "";
@@ -438,44 +446,89 @@ public sealed partial class SettingsViewModel : ViewModelBase
         await RefreshSubsonicCredentialsAsync(ct);
     });
 
-    // Which log the Logs tab is showing: the server's own, or one paired
-    // device's last pushed snapshot. Rebuilt from the device roster whenever
-    // that is loaded, so the two lists cannot disagree about who exists.
-    public ObservableCollection<string> LogSources { get; } = ["This server"];
+    // Which logs the Logs tab can show: the server's own, then one row per
+    // device on its roster. Rebuilt from that roster whenever it is loaded, so
+    // the two cannot disagree about who exists.
+    public ObservableCollection<LogSourceRow> LogSources { get; } = [];
 
-    private int _selectedLogSourceIndex;
-    public int SelectedLogSourceIndex
+    private LogSourceRow? _selectedLogSource;
+    public LogSourceRow? SelectedLogSource
     {
-        get => _selectedLogSourceIndex;
-        set => SetProperty(ref _selectedLogSourceIndex, value);
+        get => _selectedLogSource;
+        set
+        {
+            if (!SetProperty(ref _selectedLogSource, value))
+                return;
+            _ = RefreshLogAsync();
+        }
     }
 
-    // Index 0 is the server itself; everything after it lines up with Devices,
-    // in the order RefreshDevicesAsync filled it.
-    private TrustedPeerRow? SelectedLogDevice =>
-        SelectedLogSourceIndex >= 1 && SelectedLogSourceIndex - 1 < Devices.Count
-            ? Devices[SelectedLogSourceIndex - 1]
-            : null;
+    // Guards against a slow fetch for a row the user has already moved away
+    // from painting its lines under a different name - the same stale-response
+    // problem PeerLibraryViewModel solves with its own _requestId, and the one
+    // failure here that would actively mislead rather than merely annoy.
+    private int _logRequestId;
+
+    // How many lines a row asks the server for - the equivalent ceiling, for a
+    // log arriving over the wire, of whatever InMemoryLogStore holds locally.
+    private const int LogLimit = 2000;
 
     [RelayCommand]
-    private Task RefreshLogAsync() => RunAsync(async ct =>
+    private async Task RefreshLogAsync()
     {
-        if (SelectedLogDevice is { } device)
+        var source = SelectedLogSource;
+        var requestId = ++_logRequestId;
+
+        if (source == null)
         {
-            var deviceLines = await _backend.LoadDeviceLogAsync(device.Fingerprint, 500, ct);
-            LogText = deviceLines.Count == 0
-                // Deliberately not the same sentence as the server's: nothing has
-                // arrived from this device yet, which is a different thing from
-                // this device having been quiet, and only the first is worth
-                // waiting on.
-                ? $"(no log snapshot received from \"{device.Alias}\" yet - it sends one at the end of each sync, if log sharing is on there)"
-                : string.Join(Environment.NewLine, deviceLines);
+            LogViewer.ShowPlaceholder("(nothing selected)");
             return;
         }
 
-        var lines = await _backend.LoadLogAsync(500, ct);
-        LogText = lines.Count == 0 ? "(the server has logged nothing yet)" : string.Join(Environment.NewLine, lines);
-    });
+        LogViewer.ShowPlaceholder("(loading...)");
+
+        // Deliberately not RunAsync: that owns the panel's busy flag and its
+        // one error line, both of which belong to saving and to the roster.
+        // Reading a log is a browse, and a failed one has its own pane to say
+        // so in rather than a banner over the whole screen.
+        IReadOnlyList<InMemoryLogEntry>? entries;
+        try
+        {
+            entries = source.Fingerprint == null
+                ? await _backend.LoadLogAsync(LogLimit)
+                : await _backend.LoadDeviceLogAsync(source.Fingerprint, LogLimit);
+        }
+        catch (Exception ex)
+        {
+            if (requestId == _logRequestId)
+                LogViewer.ShowPlaceholder($"(could not read this log: {ex.Message})");
+            return;
+        }
+
+        if (requestId != _logRequestId)
+            return; // The selection moved on while this was in flight.
+
+        if (entries == null)
+        {
+            // Deliberately not the same sentence as an empty log: nothing has
+            // arrived from this device yet, which is a different thing from
+            // this device having been quiet, and only the first is worth
+            // waiting on.
+            LogViewer.ShowPlaceholder(
+                $"(no log snapshot received from \"{source.Name}\" yet - it sends one at the end of each sync, if log sharing is on there)");
+            return;
+        }
+
+        if (entries.Count == 0)
+        {
+            LogViewer.ShowPlaceholder(source.Fingerprint == null
+                ? "(the server has logged nothing yet)"
+                : $"(\"{source.Name}\" pushed a log with nothing in it)");
+            return;
+        }
+
+        LogViewer.ShowLog(entries);
+    }
 
     public async Task RefreshDevicesAsync(CancellationToken ct = default)
     {
@@ -487,14 +540,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
         foreach (var device in await _backend.LoadDeniedDevicesAsync(ct))
             DeniedDevices.Add(device);
 
-        // Keep the Logs tab's picker in step with the roster it names, and put
-        // the selection back on the server rather than on whichever device
-        // happens to now sit at the old index.
+        // Keep the Logs tab's list in step with the roster it names. The
+        // selection goes back to the server itself rather than following
+        // whichever device happens to now sit where the old one did.
         LogSources.Clear();
-        LogSources.Add("This server");
+        LogSources.Add(new LogSourceRow("This server", null));
         foreach (var device in Devices)
-            LogSources.Add(device.Alias);
-        SelectedLogSourceIndex = 0;
+            LogSources.Add(new LogSourceRow(device.Alias, device.Fingerprint));
+        SelectedLogSource = LogSources[0];
 
         OnPropertyChanged(nameof(HasDevices));
         OnPropertyChanged(nameof(ShowsDeniedDevices));

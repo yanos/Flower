@@ -3,6 +3,7 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             xmlns:views="clr-namespace:Flower.Views"
              x:Class="Flower.Views.SettingsPanel"
              x:DataType="vm:SettingsViewModel">
 
@@ -408,27 +409,38 @@
       </TabItem>
 
       <TabItem Header="Logs" IsVisible="{Binding Capabilities.Log}">
-        <Grid RowDefinitions="Auto,*" Margin="0,12,0,0">
-          <!-- Whose log: this server's own, or the last snapshot one of its
-               paired devices pushed (see AppSettings.ShareLogsWithPairedServer,
-               and ISettingsBackend.LoadDeviceLogAsync). The whole point is that
-               the owner of the server is the one who ends up diagnosing a
-               listener's phone. -->
-          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
-            <ComboBox ItemsSource="{Binding LogSources}"
-                      SelectedIndex="{Binding SelectedLogSourceIndex, Mode=TwoWay}"
-                      MinWidth="180" VerticalAlignment="Center"/>
-            <Button Content="Refresh" Command="{Binding RefreshLogCommand}"/>
-          </StackPanel>
-          <!-- A plain read-only TextBox, not the app's AvaloniaEdit-backed Log
-               window: this is a bounded 500-line tail fetched on demand, not a
-               live-growing document that needs virtualization. -->
-          <TextBox Grid.Row="1"
-                   Text="{Binding LogText}"
-                   IsReadOnly="True" AcceptsReturn="True"
-                   TextWrapping="NoWrap"
-                   FontFamily="monospace"
-                   FontSize="11"/>
+        <!-- Whose log: this server's own, or the last snapshot one of its
+             paired devices pushed (see AppSettings.ShareLogsWithPairedServer,
+             and ISettingsBackend.LoadDeviceLogAsync). The whole point is that
+             the owner of the server is the one who ends up diagnosing a
+             listener's phone - which is also why this is the one screen that
+             lists everyone. A client's own Log window shows only itself. -->
+        <Grid RowDefinitions="*" ColumnDefinitions="200,Auto,*" Margin="0,12,0,0">
+          <Grid Grid.Column="0" RowDefinitions="*,Auto">
+            <ListBox Grid.Row="0"
+                     ItemsSource="{Binding LogSources}"
+                     SelectedItem="{Binding SelectedLogSource, Mode=TwoWay}"
+                     Background="Transparent">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:LogSourceRow">
+                  <TextBlock Text="{Binding Name}" Margin="8,6" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <!-- A fetched tail rather than a live tail: a server pushes nothing
+                 to this page, and a device's snapshot only changes when it next
+                 syncs, so refreshing is something the reader asks for. -->
+            <Button Grid.Row="1" Content="Refresh" Margin="0,8,8,0"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Command="{Binding RefreshLogCommand}"/>
+          </Grid>
+
+          <GridSplitter Grid.Column="1" Width="4" Background="Transparent" ResizeDirection="Columns"/>
+
+          <!-- The app's own log viewer, unchanged - filtering, minimum level,
+               font size, word wrap and an AvaloniaEdit document that handles a
+               real log's worth of lines. -->
+          <views:LogViewer Grid.Column="2" DataContext="{Binding LogViewer}"/>
         </Grid>
       </TabItem>
 

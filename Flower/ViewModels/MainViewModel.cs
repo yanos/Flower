@@ -846,7 +846,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         _adminHttp ??= new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         SelectedServerSettings = new SettingsViewModel(
-            new RemoteServerSettingsBackend(CreateServerAdminClient(_adminHttp, device)));
+            new RemoteServerSettingsBackend(CreateServerAdminClient(_adminHttp, device)),
+            _appSettings, _appSettingsStore);
     }
 
     // What the user typed into that box. Cleared on a successful pair and
@@ -1016,9 +1017,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         DeviceIdentity? deviceIdentity = null,
         DeviceSigningKey? signingKey = null,
         // Trailing + defaulted for the same reason as the sync stack above,
-        // though for a different reason on the other side: LogViewModel pulls
-        // in six stores, and a test that only wants a MainViewModel should not
-        // have to stand all of them up to get one.
+        // though for a different reason on the other side: a test that only
+        // wants a MainViewModel should not have to stand up the log buffer and
+        // the settings store to get one.
         LogViewModel? log = null)
     {
         Library                = library;

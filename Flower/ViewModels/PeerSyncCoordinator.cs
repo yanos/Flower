@@ -102,7 +102,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
         // Any new log line at all (playing a track, a setting changed, an
         // error, routine peer-polling chatter, ...) marks that there is
-        // something new for a paired Server's Log window to pick up - the
+        // something new for a paired Server to pick up - the
         // timer below periodically checks that flag and syncs if it is set,
         // entirely independent of ScheduleContentSync's debounce.
         // A debounce cannot work here: NetworkDiscoveryService's own routine

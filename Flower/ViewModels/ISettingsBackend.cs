@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Flower.Logging;
 using Flower.Persistence;
 
 namespace Flower.ViewModels;
@@ -153,16 +154,20 @@ public interface ISettingsBackend
     Task RescanAsync(CancellationToken ct = default);
     Task RebuildDatabaseAsync(CancellationToken ct = default);
 
-    Task<IReadOnlyList<string>> LoadLogAsync(int limit, CancellationToken ct = default);
+    // This server's own log. Structured entries rather than rendered lines:
+    // the Logs tab is a real log viewer now (see LogViewerViewModel), and its
+    // minimum-level filter needs each entry's level, not a string that happens
+    // to start with one.
+    Task<IReadOnlyList<InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default);
 
     // One paired device's own log, as last pushed to the server at the end of a
     // sync (see AppSettings.ShareLogsWithPairedServer on the pushing side). The
     // point of the feature is that the person who runs the server is the one who
     // ends up diagnosing a listener's phone, and the listener cannot be talked
-    // through finding a log file - so this reads the same surface the desktop
-    // Log window's device rows read, from the browser.
+    // through finding a log file.
     //
-    // Returns an empty list for a device that has not pushed anything yet, which
-    // the caller renders as a sentence rather than as a blank pane.
-    Task<IReadOnlyList<string>> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default);
+    // Null for a device that has never pushed anything - distinct from an empty
+    // list (a device that pushed a log with nothing in it), and rendered as a
+    // sentence rather than as a blank pane.
+    Task<IReadOnlyList<InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default);
 }

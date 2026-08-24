@@ -183,10 +183,10 @@ public class LibrarySyncService
         if (servedToken != null)
             _lastSeenTokens[device.Fingerprint] = servedToken;
 
-        // Piggybacks the Log window's remote-log feature on this exact sync
-        // session, so it fires "at the same time as the library" with no
-        // extra caller-side wiring - see docs plan / LogViewModel's own doc
-        // comment. Defense-in-depth, not reliance on the caller's own gating
+        // Piggybacks log sharing on this exact sync session, so it fires "at
+        // the same time as the library" with no extra caller-side wiring - the
+        // server serves what lands here back from the Logs tab of its own
+        // settings screen (see SettingsViewModel). Defense-in-depth, not reliance on the caller's own gating
         // (see SyncRolePolicy's doc comment above): a Server must never push
         // logs to anything, only a Client pushes its own snapshot to its one
         // paired Server.

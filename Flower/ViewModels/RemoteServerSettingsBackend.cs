@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Flower.Logging;
 using Flower.Persistence;
 using Flower.Services;
 
@@ -152,29 +153,29 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
 
     // A device on the roster that has never pushed answers 404, which is an
     // ordinary state rather than a failure - it has not synced since the server
-    // last started, or has log sharing switched off - so it comes back as an
-    // empty list for the caller to phrase.
-    public async Task<IReadOnlyList<string>> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default)
+    // last started, or has log sharing switched off - so it comes back as null
+    // for the caller to phrase.
+    public async Task<IReadOnlyList<InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default)
     {
         try
         {
-            return Render((await client.GetDeviceLogAsync(fingerprint, limit, ct)).Entries);
+            return ToEntries((await client.GetDeviceLogAsync(fingerprint, limit, ct)).Entries);
         }
         catch (ServerAdminException ex) when (ex.Status == System.Net.HttpStatusCode.NotFound)
         {
-            return [];
+            return null;
         }
     }
 
-    public async Task<IReadOnlyList<string>> LoadLogAsync(int limit, CancellationToken ct = default) =>
-        Render(await client.GetLogAsync(limit, ct));
+    public async Task<IReadOnlyList<InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default) =>
+        ToEntries(await client.GetLogAsync(limit, ct));
 
-    private static List<string> Render(List<AdminLogEntryDto> entries) =>
+    // Straight back into the shape both the app's own log buffer and the Logs
+    // tab's viewer already speak, so a server's log filters, renders and reads
+    // exactly like a local one.
+    private static List<InMemoryLogEntry> ToEntries(List<AdminLogEntryDto> entries) =>
         entries
-            // Rendered through the same shape the app's own Log window uses, so a
-            // server's log reads identically to a local one.
-            .Select(e => new Logging.InMemoryLogEntry(e.Timestamp, e.Level, e.SourceContext, e.Message, e.Exception)
-                .ToDisplayLine())
+            .Select(e => new InMemoryLogEntry(e.Timestamp, e.Level, e.SourceContext, e.Message, e.Exception))
             .ToList();
 
     // Exposed so the page can poll a rescan it started without the panel needing

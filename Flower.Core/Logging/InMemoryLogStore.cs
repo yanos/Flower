@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace Flower.Logging
 {
-    // Bounded live log buffer backing the Log window's "This Device" view (see
+    // Bounded live log buffer backing the Log window's view of this device (see
     // Flower.ViewModels.LogViewModel) and the payload LibrarySyncService pushes
     // to a paired Server (see LogSyncContracts). Must be a static singleton,
     // not a DI-registered instance: it's wired into Serilog inside

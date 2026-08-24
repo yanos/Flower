@@ -8,7 +8,6 @@ using Avalonia.Threading;
 
 using Flower.Logging;
 using Flower.Persistence;
-using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 
@@ -20,46 +19,27 @@ using Xunit;
 
 namespace Flower.Tests;
 
-// docs/ARCHITECTURE-REVIEW.md §5.8. LogViewModel is the "This Device live log
-// vs. a log read off the paired server" selector behind the Log window, and
-// its whole contract with the View is two events rather than a bindable
-// collection: LinesReset (replace the document) and LinesAppended (append one
-// coalesced batch). Both are asserted here directly.
+// docs/ARCHITECTURE-REVIEW.md §5.8. LogViewModel is the Log window's view of
+// this device's own live log - and only that one: the rows for the paired
+// server and its other devices now live on the server's own settings screen
+// (see SettingsLogTabTests). Its contract with the View is two events rather
+// than a bindable collection: LinesReset (replace the document) and
+// LinesAppended (append one coalesced batch). Both are asserted here directly.
 //
 // InMemoryLogStore is a process-wide singleton with a private constructor, so
 // there is no fresh instance to hand this ViewModel - every test therefore
 // tags its entries with a unique marker and sets FilterText to it, which
 // isolates DisplayLines from whatever the rest of the suite is logging in
-// parallel. [AvaloniaFact] because the local-entry flush and every remote
-// fetch land back on the UI thread through Dispatcher.UIThread.Post.
+// parallel. [AvaloniaFact] because the entry flush lands back on the UI thread
+// through Dispatcher.UIThread.Post.
 [Collection("PlatformDataDirectory")]
 public class LogViewModelTests : PinnedDataDirectory
 {
-    private readonly FakeRemoteLogSource _remote = new();
-    private readonly DeviceNicknameStore _nicknameStore = new(NullLogger<DeviceNicknameStore>.Instance);
     private readonly string _marker = "marker-" + Guid.NewGuid().ToString("N");
 
-    private LogViewModel Make(AppSettings? settings = null) =>
+    private static LogViewModel Make(AppSettings? settings = null) =>
         new(InMemoryLogStore.Instance, settings ?? new AppSettings(),
-            new AppSettingsStore(NullLogger<AppSettingsStore>.Instance),
-            _nicknameStore, _remote);
-
-    // The roster arrives asynchronously, so a test that wants the extra rows
-    // has to let the fetch land before asserting on SidebarItems.
-    private LogViewModel MakeWithRoster(params string[] fingerprints)
-    {
-        _remote.Devices = fingerprints.Select(f => new RemoteDevice(f, f.ToUpperInvariant())).ToList();
-        var vm = Make();
-        PumpUntil(() => vm.SidebarItems.Count == fingerprints.Length + 2);
-        return vm;
-    }
-
-    // Selecting a remote row starts a fetch; the pane fills when it lands.
-    private static void Select(LogViewModel vm, string fingerprint)
-    {
-        vm.SelectedSidebarItem = vm.SidebarItems.First(i => i.Fingerprint == fingerprint);
-        PumpUntil(() => !vm.DisplayLines.SequenceEqual(new[] { "(loading...)" }));
-    }
+            new AppSettingsStore(NullLogger<AppSettingsStore>.Instance));
 
     // Logs one entry to the shared local store, tagged so this test can find it.
     private void LogLocal(string message, string level = "Information", string? source = null) =>
@@ -80,155 +60,6 @@ public class LogViewModelTests : PinnedDataDirectory
             Dispatcher.UIThread.RunJobs();
         }
         Assert.True(condition(), "the expected dispatcher work never completed");
-    }
-
-    // Drains for a fixed span, asserting nothing - for "this must NOT happen".
-    private static void Drain(int milliseconds)
-    {
-        var deadline = Environment.TickCount64 + milliseconds;
-        while (Environment.TickCount64 < deadline)
-        {
-            Thread.Sleep(10);
-            Dispatcher.UIThread.RunJobs();
-        }
-    }
-
-    // ── Sidebar / selection ───────────────────────────────────────────────────
-
-    // "This Device" is always index 0 and is what a fresh window lands on.
-    [Fact]
-    public void It_starts_on_This_Device()
-    {
-        var vm = Make();
-
-        Assert.NotEmpty(vm.SidebarItems);
-        Assert.Equal(LogSidebarItemKind.ThisDevice, vm.SidebarItems[0].Kind);
-        Assert.Same(vm.SidebarItems[0], vm.SelectedSidebarItem);
-    }
-
-    // With no paired server there is no roster, so the window is just the one
-    // row - the same answer an unreachable server gives.
-    [AvaloniaFact]
-    public void With_no_server_roster_only_This_Device_is_listed()
-    {
-        _remote.Devices = null;
-
-        Assert.Single(Make().SidebarItems);
-    }
-
-    [AvaloniaFact]
-    public void A_roster_adds_the_server_and_one_row_per_device()
-    {
-        var vm = MakeWithRoster("fp-1");
-
-        Assert.Equal(3, vm.SidebarItems.Count);
-        Assert.Equal(LogSidebarItemKind.ThisDevice, vm.SidebarItems[0].Kind);
-        Assert.Equal(LogSidebarItemKind.Server, vm.SidebarItems[1].Kind);
-        Assert.Equal("fp-1", vm.SidebarItems[2].Fingerprint);
-    }
-
-    // RefreshSidebarItems runs again every time the window is reopened, since
-    // the server admitting a new device has no live notification of its own.
-    [AvaloniaFact]
-    public void Refreshing_the_sidebar_keeps_the_current_selection_when_it_still_exists()
-    {
-        var vm = MakeWithRoster("fp-1");
-        Select(vm, "fp-1");
-
-        _remote.Devices!.Add(new RemoteDevice("fp-2", "Another Phone"));
-        vm.RefreshSidebarItems();
-        PumpUntil(() => vm.SidebarItems.Count == 4);
-
-        Assert.Equal("fp-1", vm.SelectedSidebarItem!.Fingerprint);
-    }
-
-    // A revoked device's row is gone, so the selection has to fall back rather
-    // than dangle.
-    [AvaloniaFact]
-    public void Refreshing_the_sidebar_falls_back_to_This_Device_when_the_selection_vanished()
-    {
-        var vm = MakeWithRoster("fp-1");
-        Select(vm, "fp-1");
-
-        _remote.Devices!.Clear();
-        vm.RefreshSidebarItems();
-        PumpUntil(() => vm.SidebarItems.Count == 1);
-
-        Assert.Equal(LogSidebarItemKind.ThisDevice, vm.SelectedSidebarItem!.Kind);
-    }
-
-    // A device that has never pushed anything gets an explicit placeholder, not
-    // a blank pane indistinguishable from "connected but silent".
-    [AvaloniaFact]
-    public void A_device_with_no_snapshot_yet_shows_a_placeholder_line()
-    {
-        var vm = MakeWithRoster("fp-1");
-
-        Select(vm, "fp-1");
-
-        Assert.Equal(new[] { "(no log snapshot received from this device yet)" }, vm.DisplayLines.ToArray());
-    }
-
-    // Distinct from the placeholder above: "the server would not tell us" is a
-    // different thing from "that phone has not pushed yet", and reading one as
-    // the other sends the user looking in the wrong place.
-    [AvaloniaFact]
-    public void A_log_the_server_will_not_serve_says_so_rather_than_looking_empty()
-    {
-        var vm = MakeWithRoster("fp-1");
-        _remote.ServerLog = null;
-
-        vm.SelectedSidebarItem = vm.SidebarItems.First(i => i.Kind == LogSidebarItemKind.Server);
-        PumpUntil(() => vm.DisplayLines.Count == 1 && vm.DisplayLines[0].StartsWith("(could not read"));
-
-        Assert.Contains("unreachable", Assert.Single(vm.DisplayLines));
-    }
-
-    [AvaloniaFact]
-    public void Selecting_a_device_shows_its_pushed_snapshot()
-    {
-        var vm = MakeWithRoster("fp-1");
-        _remote.DeviceLogs["fp-1"] = FakeRemoteLogSource.Lines("client line one", "client line two");
-
-        Select(vm, "fp-1");
-
-        Assert.Equal(2, vm.DisplayLines.Count);
-        Assert.Contains("client line one", vm.DisplayLines[0]);
-        Assert.Contains("client line two", vm.DisplayLines[1]);
-    }
-
-    [AvaloniaFact]
-    public void Selecting_the_server_row_shows_the_servers_own_log()
-    {
-        var vm = MakeWithRoster("fp-1");
-        _remote.ServerLog = FakeRemoteLogSource.Lines("server line");
-
-        vm.SelectedSidebarItem = vm.SidebarItems.First(i => i.Kind == LogSidebarItemKind.Server);
-        PumpUntil(() => vm.DisplayLines.Count == 1 && vm.DisplayLines[0].Contains("server line"));
-
-        Assert.Contains("server line", Assert.Single(vm.DisplayLines));
-    }
-
-    // A fetch for a row the user has already navigated away from must not paint
-    // its lines under the new selection - the failure this guards against is
-    // one device's log appearing under another device's name.
-    [AvaloniaFact]
-    public void A_fetch_that_lands_after_the_selection_moved_is_discarded()
-    {
-        var vm = MakeWithRoster("fp-1", "fp-2");
-        _remote.DeviceLogs["fp-1"] = FakeRemoteLogSource.Lines("belongs to fp-1");
-        _remote.DeviceLogs["fp-2"] = FakeRemoteLogSource.Lines("belongs to fp-2");
-
-        // Hold fp-1's fetch open, move to fp-2, then let both complete.
-        var gate = new TaskCompletionSource();
-        _remote.Gate = gate;
-        vm.SelectedSidebarItem = vm.SidebarItems.First(i => i.Fingerprint == "fp-1");
-        vm.SelectedSidebarItem = vm.SidebarItems.First(i => i.Fingerprint == "fp-2");
-        _remote.Gate = null;
-        gate.SetResult();
-
-        PumpUntil(() => vm.DisplayLines.Count == 1 && vm.DisplayLines[0].Contains("belongs to fp-2"));
-        Assert.DoesNotContain(vm.DisplayLines, l => l.Contains("belongs to fp-1"));
     }
 
     // ── Filtering ─────────────────────────────────────────────────────────────
@@ -324,32 +155,28 @@ public class LogViewModelTests : PinnedDataDirectory
         Assert.All(grew, g => Assert.False(g));
     }
 
-    // Switching selection resets the comparison, so the newly loaded content
-    // counts as growth rather than being measured against the last device.
-    // The count comparison only makes sense within one selection. Switching
-    // from a long local log to a client's one-line snapshot must still report
-    // growth - measured against the previous device it would read as a
-    // shrink, and the newly loaded pane would never scroll into view.
-    [AvaloniaFact]
-    public void Switching_selection_reports_growth_for_the_newly_loaded_content()
+    // Reloading is what reopening the window does, and the freshly attached
+    // view has to be scrolled to the end of what it just painted - so a reload
+    // counts as growth even though it is measured against a log that already
+    // had at least as many lines in it.
+    [Fact]
+    public void Reloading_reports_growth_so_the_reopened_window_scrolls_to_the_end()
     {
-        for (var i = 0; i < 5; i++)
-            LogLocal($"local line {i}");
-        var vm = MakeWithRoster("fp-1");
-        _remote.DeviceLogs["fp-1"] = FakeRemoteLogSource.Lines("one");
-        Assert.True(vm.DisplayLines.Count > 1, "This Device should have more lines than the pushed snapshot");
+        LogLocal("a line");
+        var vm = Make();
+        vm.FilterText = _marker;
 
         bool? grew = null;
         vm.LinesReset += (_, g) => grew = g;
-        Select(vm, "fp-1");
+        vm.Reload();
 
         Assert.True(grew);
     }
 
-    // ── Live local entries ────────────────────────────────────────────────────
+    // ── Live entries ──────────────────────────────────────────────────────────
 
     [AvaloniaFact]
-    public void A_new_local_entry_is_appended_rather_than_re_rendering_the_document()
+    public void A_new_entry_is_appended_rather_than_re_rendering_the_document()
     {
         var vm = Make();
         vm.FilterText = _marker;
@@ -370,11 +197,11 @@ public class LogViewModelTests : PinnedDataDirectory
     // The whole point of the pending-entry buffer: a burst becomes a handful of
     // LinesAppended events (and so a handful of TextEditor.AppendText calls),
     // not one per line. Note this pins the drain-all batching in
-    // FlushPendingLocalEntries, not the _flushScheduled flag - that flag only
+    // FlushPendingEntries, not the _flushScheduled flag - that flag only
     // suppresses redundant dispatcher posts, which have no effect on the events
     // this class emits and so cannot be observed from out here.
     [AvaloniaFact]
-    public void A_burst_of_local_entries_is_coalesced_into_fewer_batches_than_lines()
+    public void A_burst_of_entries_is_coalesced_into_fewer_batches_than_lines()
     {
         var vm = Make();
         vm.FilterText = _marker;
@@ -404,7 +231,7 @@ public class LogViewModelTests : PinnedDataDirectory
     // A live entry that the current filter excludes updates the backing entry
     // list but must not reach the View.
     [AvaloniaFact]
-    public void A_filtered_out_local_entry_appends_nothing()
+    public void A_filtered_out_entry_appends_nothing()
     {
         var vm = Make();
         vm.FilterText = _marker + " keep";
@@ -419,27 +246,5 @@ public class LogViewModelTests : PinnedDataDirectory
         var lines = appended.SelectMany(b => b).ToList();
         Assert.Contains(lines, l => l.Contains("keep this one"));
         Assert.DoesNotContain(lines, l => l.Contains("drop this one"));
-    }
-
-    // Local entries are this device's live log, so they must not leak into a
-    // client's pane while it is selected. Two guards enforce that - one in
-    // OnLocalEntryAdded and one in FlushPendingLocalEntries - and only the
-    // second is load-bearing: it also covers the selection moving away while a
-    // flush is already in flight, which is the case that actually happens.
-    [AvaloniaFact]
-    public void Local_entries_are_ignored_while_a_client_is_selected()
-    {
-        var vm = MakeWithRoster("fp-1");
-        _remote.DeviceLogs["fp-1"] = FakeRemoteLogSource.Lines("client line");
-        Select(vm, "fp-1");
-
-        var appended = 0;
-        vm.LinesAppended += (_, _) => appended++;
-
-        LogLocal("local line while a client is shown");
-        Drain(200);
-
-        Assert.Equal(0, appended);
-        Assert.Equal(new[] { "client line" }, vm.DisplayLines.Select(l => l[^"client line".Length..]).ToArray());
     }
 }

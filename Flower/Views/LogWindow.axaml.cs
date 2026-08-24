@@ -1,41 +1,29 @@
-using System;
-using System.Collections.Generic;
-
 using Avalonia.Controls;
-using Avalonia.Threading;
 
 using Flower.ViewModels;
 
 namespace Flower.Views;
 
+// View > Log... - a window around LogViewer, showing this device's own live
+// log. Everything about rendering a log lives in that control; all this adds
+// is the window, and the one thing that is genuinely per-window (see the
+// NativeMenu note below).
 public partial class LogWindow : Window
 {
-    private readonly LogViewModel _viewModel;
-
     // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) -
     // never called directly; the real constructor below is what's actually used.
-#pragma warning disable CS8618
     public LogWindow() => InitializeComponent();
-#pragma warning restore CS8618
 
     public LogWindow(LogViewModel viewModel)
     {
         InitializeComponent();
 
-        _viewModel = viewModel;
+        // Re-reads the buffer before the viewer attaches: this ViewModel is a
+        // DI singleton, so on every reopen after the first its events have long
+        // since fired and there would be nothing for the fresh control to paint
+        // from.
+        viewModel.Reload();
         DataContext = viewModel;
-
-        // Wired before RefreshSidebarItems() below, which synchronously
-        // triggers LoadSelection -> RenderLines -> LinesReset - subscribing
-        // first is what makes the initial content actually show up instead
-        // of firing into nothing.
-        _viewModel.LinesReset += OnLinesReset;
-        _viewModel.LinesAppended += OnLinesAppended;
-
-        // Picks up any pairing or server-roster change since this ViewModel
-        // (a DI singleton) was last used, without needing a live
-        // cross-ViewModel notification - see LogViewModel.RefreshSidebarItems.
-        _viewModel.RefreshSidebarItems();
 
         // Deliberately NOT NativeMenuHelper.InheritFromMainWindow(this) -
         // every other caller of that helper (Settings, Track Info, ...) is
@@ -51,52 +39,4 @@ public partial class LogWindow : Window
         // Application" fallback menu while this window has focus is a small
         // price for not risking MainWindow's own menu again.
     }
-
-    // LinesReset is a discrete, deliberate event (switching sidebar
-    // selection, a filter/level change, or a remote snapshot refreshing) -
-    // grew (see LogViewModel.LinesReset's own doc comment) already means
-    // "the underlying log actually has something new," so this always jumps
-    // to the bottom when it does, regardless of where the view was scrolled
-    // beforehand - unlike LinesAppended below, this is not a continuous
-    // stream the user could already be reading somewhere else in.
-    private void OnLinesReset(object? sender, bool grew)
-    {
-        LogTextEditor.Text = string.Join(Environment.NewLine, _viewModel.DisplayLines);
-        if (grew)
-            ScrollToEndAfterLayout();
-    }
-
-    // Unlike LinesReset, this fires continuously while "This Device" is
-    // selected and logging keeps happening - only follows the tail if the
-    // view was already scrolled all the way to the bottom before this batch
-    // arrived (the same "stick to bottom" convention a terminal or browser
-    // console uses), so reading something further up is never interrupted
-    // by new lines landing at the end.
-    private void OnLinesAppended(object? sender, IReadOnlyList<string> lines)
-    {
-        var wasAtBottom = IsScrolledToBottom();
-        LogTextEditor.AppendText(string.Join(Environment.NewLine, lines) + Environment.NewLine);
-        if (wasAtBottom)
-            ScrollToEndAfterLayout();
-    }
-
-    private bool IsScrolledToBottom()
-    {
-        const double epsilon = 2.0; // sub-pixel/rounding tolerance
-        return LogTextEditor.VerticalOffset >= LogTextEditor.ExtentHeight - LogTextEditor.ViewportHeight - epsilon;
-    }
-
-    // TextEditor.ScrollToEnd() scrolls to the literal maximum scroll offset,
-    // which text editors commonly extend past the last line on purpose (so
-    // it can be positioned anywhere in the viewport, not pinned to the
-    // bottom) - wrong for "keep the latest line visible," and it also moves
-    // the horizontal offset. ScrollToLine(line) (TextEditor.ScrollTo with
-    // column <= 0) scrolls only the vertical axis - confirmed directly
-    // against the AvaloniaEdit source: its horizontal-offset branch is
-    // gated on column > 0, so passing no column leaves HorizontalOffset
-    // completely untouched, which is what "never scroll horizontally" needs.
-    private void ScrollToEndAfterLayout() =>
-        Dispatcher.UIThread.Post(() => LogTextEditor.ScrollToLine(LogTextEditor.Document.LineCount), DispatcherPriority.Background);
-
-    private void CopyMenuItem_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => LogTextEditor.Copy();
 }

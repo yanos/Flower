@@ -312,10 +312,6 @@ public partial class App : Application
             .AddSingleton<LibraryDownloadService>()
             .AddSingleton<PeerPairingService>()
             .AddSingleton<PairedServerReachability>()
-            // Registered by its interface alone - the Log window is the only
-            // consumer, and it wants the seam rather than the implementation
-            // (see IRemoteLogSource).
-            .AddSingleton<IRemoteLogSource, PairedServerAdminAccess>()
             .AddSingleton<PeerTrackResolver>()
             // How this device proves who it is to a peer, for every signed call
             // into one (see IPeerCredentials). On this branch because it needs
@@ -828,7 +824,10 @@ public partial class App : Application
                 Ioc.Default.GetRequiredService<HttpClient>(), BrowserLocation.Origin,
                 ServerAdminClient.SignWith(browserCredentials),
                 () => browserCredentials.UnauthenticatedReason);
-            var settings = new SettingsViewModel(new RemoteServerSettingsBackend(client));
+            var settings = new SettingsViewModel(
+                new RemoteServerSettingsBackend(client),
+                Ioc.Default.GetRequiredService<AppSettings>(),
+                Ioc.Default.GetRequiredService<AppSettingsStore>());
 
             // Posted rather than called inline: the view is not attached to a
             // visual tree yet at this point in OnFrameworkInitializationCompleted,

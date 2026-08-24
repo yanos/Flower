@@ -112,7 +112,8 @@ namespace Flower.Persistence
 
         // Whether this Client pushes its own recent log lines to its paired
         // Server at the end of each library sync (LibrarySyncService.
-        // PushLogSnapshotAsync, read back by the Log window's remote view).
+        // PushLogSnapshotAsync, read back from the Logs tab of that server's
+        // own settings screen).
         //
         // On by default: the person who runs the server is the person who ends
         // up diagnosing a listener's phone, and a listener cannot be talked
@@ -126,9 +127,10 @@ namespace Flower.Persistence
         // not hand that over, even to their own server, can say so.
         public bool ShareLogsWithPairedServer { get; set; } = true;
 
-        // Log window preferences (View > Log...), remembered between
-        // launches the same way IsRepeatEnabled/IsShuffleEnabled are - see
-        // LogViewModel.
+        // Log viewer preferences, remembered between launches the same way
+        // IsRepeatEnabled/IsShuffleEnabled are - see LogViewerViewModel. Shared
+        // by both places a log is read: the app's own Log window (View > Log...)
+        // and the Logs tab of a server's settings.
         public double        LogFontSize        { get; set; } = 12;
         public LogEventLevel LogMinimumLevel    { get; set; } = LogEventLevel.Verbose;
         public bool          LogWordWrapEnabled { get; set; } = false;
