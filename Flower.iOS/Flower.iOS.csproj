@@ -24,6 +24,14 @@
          $(Version) by the target in Directory.Build.targets, not here - a
          plain property assignment here would freeze at the SDK's static
          default instead of MinVer's computed value. -->
+    <!-- The managed HTTP stack rather than NSUrlSessionHandler, which does not
+         support ServerCertificateCustomValidationCallback and throws
+         PlatformNotSupportedException when one is set. That callback is how
+         this app accepts a self-hosted server's certificate at all - see
+         PeerHttpClient - so without this, pairing with a server over https
+         fails on iOS and nowhere else. -->
+    <UseNativeHttpHandler>false</UseNativeHttpHandler>
+
     <ApplicationVersion>1</ApplicationVersion>
     <!-- Names the AppIcon.appiconset in Resources/Assets.xcassets - without this,
          actool silently compiles the asset catalog with no app icon output and no

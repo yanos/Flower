@@ -24,15 +24,15 @@ namespace Flower.Tests;
 // is what a server accepts.
 //
 // So these tests take the URL and the headers the app really produces and run
-// them through PeerSignatureAuth - the *same* verification both Flower.Server's
-// /rest gate and a peer's SyncHttpServer use. No fake auth, no restating the
+// them through PeerSignatureAuth - the *same* verification Flower.Server's
+// /rest gate uses. No fake auth, no restating the
 // rules: if this passes, a trusted device's request authenticates.
 public class StreamAuthEndToEndTests
 {
     private static readonly DeviceSigningKey Key = TestSigningKey.Create();
 
     private static IPeerCredentials Credentials() => new SignedDeviceCredentials(
-        new DeviceIdentity { Fingerprint = Key.Fingerprint, Alias = "Us" }, Key, new AppSettings());
+        new DeviceIdentity { Fingerprint = Key.Fingerprint, Alias = "Us" }, Key);
 
     // What a server does with an incoming request: look the caller's public key
     // up by the fingerprint it claims, then verify. A key on file means paired.

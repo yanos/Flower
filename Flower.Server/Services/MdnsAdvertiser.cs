@@ -96,8 +96,21 @@ public sealed class MdnsAdvertiser(
     // box is real. That is a dev-instance mistake rather than a deployment
     // one, which is exactly why it is worth catching here: the symptom shows
     // up on someone else's screen, a hop away from the cause.
-    public static int? AdvertisablePort(IEnumerable<string> boundAddresses) =>
-        boundAddresses.Select(Parse).FirstOrDefault(uri => uri is { IsLoopback: false })?.Port;
+    // The port of the first non-loopback listener, optionally restricted to one
+    // scheme. Loopback-only is excluded because the question this answers is
+    // always "what would someone else dial", and nobody else can dial 127.0.0.1.
+    //
+    // The scheme filter is what lets /info report the https and the plain
+    // listener separately now that there are two (see DiscoveryEndpoints
+    // .ReachableOrigins). mDNS itself still asks without one and so keeps
+    // getting the plain port, which is right: a sighting is dialled at a bare
+    // IP with no name for a certificate to be issued for, and pairing happens
+    // over it before this device holds anything to pin with.
+    public static int? AdvertisablePort(IEnumerable<string> boundAddresses, string? scheme = null) =>
+        boundAddresses
+            .Select(Parse)
+            .FirstOrDefault(uri => uri is { IsLoopback: false } && (scheme == null || uri.Scheme == scheme))
+            ?.Port;
 
     private static Uri? Parse(string address)
     {

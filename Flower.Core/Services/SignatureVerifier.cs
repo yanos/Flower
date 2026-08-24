@@ -8,7 +8,7 @@ namespace Flower.Services;
 // request against a specific caller's public key (see
 // SignedRequestCanonicalizer for the shared canonical form both sides
 // build). Pure/stateless except for the caller-owned NonceReplayGuard
-// passed in (see SyncHttpServer's single instance).
+// passed in (Flower.Server holds one, in DI).
 public static class SignatureVerifier
 {
     public static readonly TimeSpan ClockSkewWindow = TimeSpan.FromSeconds(60);
@@ -53,9 +53,9 @@ public static class SignatureVerifier
         return ecdsa.VerifyData(toVerify, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
     }
 
-    // Also used by SyncHttpServer.HandlePairRequestAsync/HandleUnpairNotifyAsync
-    // to check "fingerprint == hash(offered public key)" before trusting a
-    // self-signed proof-of-possession request.
+    // Also used by the pair-redeem route to check
+    // "fingerprint == hash(offered public key)" before trusting a self-signed
+    // proof-of-possession request.
     public static bool TryParsePublicKey(string publicKeyBase64, out ECPoint point)
     {
         point = default;

@@ -25,16 +25,17 @@ namespace Flower.Server.Endpoints;
 //   GET  /playlists       - this server's playlists, for the merge
 //   POST /playlists/apply - the merged result the client resolved
 //   POST /plays           - what a browser tab played, to count here
+//   POST /log/report      - the caller's own recent log lines, for the owner
+//                           to read back through the admin API
 //
 // Not here, and not accidentally omitted: pair-request (this server pairs by
-// code instead - see PairingEndpoints), unpair-notify (nothing server-side
-// initiates a revoke that way yet; the admin API revokes directly), and
-// log/report (the client's ShareLogsWithPairedServer feature targets an app
-// peer's ClientLogStore, which has no equivalent here).
+// code instead - see PairingEndpoints) and unpair-notify (nothing server-side
+// initiates a revoke that way; the admin API revokes directly, and the client
+// finds out from the 403 its next request gets).
 public static class SyncEndpoints
 {
-    // Matches SyncHttpServer's own Bulk category: these are a handful of large
-    // requests per sync session, not a stream of small ones.
+    // These are a handful of large requests per sync session, not a stream of
+    // small ones, so the budget is small and the window is long.
     private static readonly RateLimiter BulkLimiter = new(max: 20, TimeSpan.FromSeconds(60));
 
     // A playlist manifest for a large library, with a wide margin - the same
@@ -113,6 +114,7 @@ public static class SyncEndpoints
         sync.MapGet("/playlists", GetPlaylists);
         sync.MapPost("/playlists/apply", ApplyPlaylists);
         sync.MapPost("/plays", ReportPlays);
+        sync.MapPost("/log/report", ReportLog);
 
         // The same album art /rest/getCoverArt serves, behind this group's gate
         // instead of the Subsonic one. A browser tab holds a session token and
@@ -126,9 +128,8 @@ public static class SyncEndpoints
 
     private const string AuthenticatedFingerprintKey = "flower.auth.fingerprint";
 
-    // Conditional on Library.ChangeToken, served as the ETag, exactly as
-    // SyncHttpServer does it: a client that sends back the token it already
-    // holds gets a 304 and no body. Worth as much here as there - this is
+    // Conditional on Library.ChangeToken, served as the ETag: a client that
+    // sends back the token it already holds gets a 304 and no body. Worth as much here as there - this is
     // megabytes of JSON at a real library size, rebuilt for every peer that
     // asks otherwise - so the serialized body is cached alongside the token it
     // was built from, and several peers missing the cache at once still only
@@ -204,6 +205,38 @@ public static class SyncEndpoints
     // signature. Worth naming what a caller through it can do: inflate this
     // server's play counts. That is a nuisance, not a disclosure, and it is
     // bounded by being a paired device at all.
+    // A paired device's own recent log lines, pushed at the end of each sync
+    // session it runs (see LibrarySyncService.PushLogSnapshotAsync). The whole
+    // point is the person who runs the server being able to see why somebody
+    // else's phone is misbehaving without asking them to find a log file, so
+    // it is stored against the device and read back through the admin API -
+    // see AdminEndpoints' /devices/{fingerprint}/logs.
+    //
+    // Filed under the fingerprint the *signature* proved, never the one the
+    // body claims: the body is attacker-controlled on a route any trusted
+    // device can call, and believing it would let one paired device overwrite
+    // another's log with whatever it liked.
+    private static async Task<IResult> ReportLog(
+        HttpContext context, ClientLogStore logs, ILoggerFactory loggerFactory)
+    {
+        using var reader = new StreamReader(context.Request.Body);
+        var report = JsonSerializer.Deserialize<LogReportDto>(
+            await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+        if (report == null)
+            return Results.BadRequest();
+
+        if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+
+        logs.SetSnapshot(fingerprint, report.Alias, report.Entries, DateTimeOffset.UtcNow);
+
+        loggerFactory.CreateLogger(typeof(SyncEndpoints)).LogInformation(
+            "Stored {LineCount} log line(s) from {Alias} ({Fingerprint})",
+            report.Entries.Count, report.Alias, fingerprint);
+
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> ReportPlays(
         HttpContext context, PlayReportService plays, ILoggerFactory loggerFactory)
     {

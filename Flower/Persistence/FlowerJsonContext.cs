@@ -9,8 +9,7 @@ namespace Flower.Persistence
     // Trim/AOT-safe source-generated metadata for every type this project
     // controls both ends of - local files (settings.json, library.json, etc.)
     // and Flower's own bespoke device-to-device wire protocol
-    // (/api/flower/v1/*, see SyncHttpServer/PlaylistSyncService/
-    // LibrarySyncService) - as opposed to a real third-party protocol we have
+    // (/api/flower/v1/*, see PlaylistSyncService/LibrarySyncService) - as opposed to a real third-party protocol we have
     // to match byte-for-byte (OpenSubsonic, LocalSend's /api/localsend/v2/info -
     // see ExternalProtocolJsonContext for those). WriteIndented is cosmetic
     // either way; PropertyNameCaseInsensitive costs nothing and is a bit more
@@ -54,6 +53,7 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(AdminPairingCodeDto))]
     [JsonSerializable(typeof(AdminLibraryStatusDto))]
     [JsonSerializable(typeof(List<AdminLogEntryDto>), TypeInfoPropertyName = "AdminLogEntryList")]
+    [JsonSerializable(typeof(AdminDeviceLogDto))]
     [JsonSerializable(typeof(SubsonicCredentialDto))]
     [JsonSerializable(typeof(List<SubsonicCredentialDto>), TypeInfoPropertyName = "SubsonicCredentialList")]
     internal partial class FlowerJsonContext : JsonSerializerContext

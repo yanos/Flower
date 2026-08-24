@@ -53,7 +53,7 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         MainViewModelHarness.BuildParts(
             new Library(new List<Track>()),
             new MainPlaylist(new List<Track>()),
-            new AppSettings { IsServer = false },
+            new AppSettings(),
             discoveryHttpClient: new HttpClient(new FakeInfoHandler()));
 
     // Puts the control in a real (headless) window, because everything under
@@ -142,21 +142,22 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
     }
 
     // The trusted-device list is now part of SettingsPanel and is fed by
-    // SettingsViewModel over an ISettingsBackend, so what used to be asserted
-    // against TrustedDevicesView's ItemsSource is asserted against the model that
-    // fills it. A per-test TrustedPeerStore is still the whole point: this row
-    // exists because *this* test put it there, which was impossible while the
-    // store came out of the process-wide container.
+    // The local backend has no trusted-device roster at all - this device
+    // accepts no incoming connections, so the list of devices allowed to sync
+    // lives on the server and is edited there. Capabilities says so, and the
+    // call itself refuses rather than quietly returning an empty list (see
+    // ISettingsBackend's note on unsupported actions).
     [AvaloniaFact]
-    public async Task Settings_lists_the_trusted_peers_its_view_model_was_given()
+    public async Task This_device_has_no_trusted_device_roster_of_its_own()
     {
         using var parts = BuildClient();
-        await parts.Main.TrustedPeers.ApproveAsync(ServerFingerprint, "Living Room", "test-public-key");
 
         var settings = new SettingsViewModel(new LocalSettingsBackend(parts.Main));
         await settings.LoadAsync();
 
-        Assert.Equal("Living Room", Assert.Single(settings.Devices).Alias);
+        Assert.False(settings.Capabilities.TrustedDevices);
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () => new LocalSettingsBackend(parts.Main).LoadDevicesAsync());
     }
 
     // Loads the real XAML and walks every tab, which is the only thing that
@@ -200,29 +201,27 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
 
         Assert.True(settings.Capabilities.ThemePicker);
         Assert.True(settings.Capabilities.ITunesIntegration);
-        Assert.True(settings.Capabilities.SyncRole);
+        Assert.True(settings.Capabilities.PairedServerPicker);
         Assert.True(settings.Capabilities.RebuildDatabase);
 
         Assert.False(settings.Capabilities.ServerNetwork);
+        Assert.False(settings.Capabilities.TrustedDevices);
         Assert.False(settings.Capabilities.PairingCodes);
         Assert.False(settings.Capabilities.SubsonicCredentials);
         Assert.False(settings.Capabilities.Log);
     }
 
-    // An unpaired Client still curates its own library; only "Client, paired"
-    // disables it, and ticking "Act as Server" re-enables it straight away rather
-    // than after a save-and-reopen.
+    // An unpaired device still curates its own library - only pairing with a
+    // server takes that over, because only then is there another library for
+    // this one to be a view of.
     [AvaloniaFact]
-    public async Task An_unpaired_client_can_still_manage_its_own_library()
+    public async Task An_unpaired_device_can_still_manage_its_own_library()
     {
         using var parts = BuildClient();
 
         var settings = new SettingsViewModel(new LocalSettingsBackend(parts.Main));
         await settings.LoadAsync();
 
-        Assert.True(settings.CanManageLibrary);
-
-        settings.IsServer = true;
         Assert.True(settings.CanManageLibrary);
     }
 }

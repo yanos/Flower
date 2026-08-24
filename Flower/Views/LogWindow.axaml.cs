@@ -32,7 +32,7 @@ public partial class LogWindow : Window
         _viewModel.LinesReset += OnLinesReset;
         _viewModel.LinesAppended += OnLinesAppended;
 
-        // Picks up any IsServer/trusted-peer change since this ViewModel
+        // Picks up any pairing or server-roster change since this ViewModel
         // (a DI singleton) was last used, without needing a live
         // cross-ViewModel notification - see LogViewModel.RefreshSidebarItems.
         _viewModel.RefreshSidebarItems();

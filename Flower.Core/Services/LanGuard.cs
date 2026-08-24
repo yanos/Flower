@@ -6,9 +6,9 @@ using System.Net.Sockets;
 
 namespace Flower.Services;
 
-// Restricts SyncHttpServer (and, with extraAllowedCidrs, Flower.Server) to
-// LAN-originating callers only. Both bind a wildcard interface (SyncHttpServer's
-// "http://+:{port}/", Flower.Server's "0.0.0.0:4533"), so this check is the
+// Restricts Flower.Server (with extraAllowedCidrs for a reverse proxy or a
+// tailnet) to LAN-originating callers only. It binds a wildcard interface
+// ("0.0.0.0:4533"), so this check is the
 // only thing standing between "LAN-only" and "reachable from the internet if
 // the port is ever forwarded/exposed" - see each call site, which treats a
 // failure here as a hard reject, not a warning.

@@ -26,8 +26,11 @@ by name as the containing control in five separate places:
 - ~~`PeerOrSessionAuth` — widening that bearer token past `/api/admin` to the
   catalog and to ticket minting ("LanGuard still keeps it unusable from off
   the LAN").~~ **Gone** — deleted with it; see #7.
-- `SyncHttpServer`'s class comment — "the only thing standing between
-  LAN-only and reachable from the internet if the port is ever forwarded."
+- ~~`SyncHttpServer`'s class comment — "the only thing standing between
+  LAN-only and reachable from the internet if the port is ever forwarded."~~
+  **Gone** — a client no longer serves anything, so that wildcard bind, and the
+  boundary that stood on it, no longer exist on every phone in the house. See
+  `SYNC-PLAN.md`, "Peer-to-peer, built and removed".
 - `Program.cs`'s Kestrel body cap — the LanGuard middleware described as "the
   only thing between an unauthenticated caller and a 30 MB buffered upload."
 
@@ -86,9 +89,10 @@ signature buys is a fuller answer, not access.
 
 Five limiters key on `Connection.RemoteIpAddress`: `RedeemRateLimiter` (5/60s),
 `SyncEndpoints.BulkLimiter` (20/60s), `SubsonicEndpoints.FailedAuthLimiter`
-(10/60s) and `RequestLimiter` (600/60s), plus `SyncHttpServer`'s info and pair
-categories. Behind a tunnel or proxy with `TrustedProxies` unset, every client
-arrives as one address and shares one bucket.
+(10/60s) and `RequestLimiter` (600/60s). (Written when the app's own
+`SyncHttpServer` had two more of its own, info and pair; it is gone.) Behind a
+tunnel or proxy with `TrustedProxies` unset, every client arrives as one address
+and shares one bucket.
 
 `FlowerServerOptions.TrustedProxies` exists precisely for this and its comment
 says so. The gap is that **nothing enforces it** — an operator who enables a
@@ -215,7 +219,7 @@ alias in flight changes a display string. Swapping the code requires already
 holding a valid one. Neither is worth a change; recorded so the exclusion is
 not re-derived from scratch next time.
 
-### 6. Classic Subsonic auth is unencrypted-transport-hostile by construction
+### 6. Classic Subsonic auth is unencrypted-transport-hostile by construction — **transport now exists**
 
 `SubsonicAuth` accepts `t=md5(password+salt)` and `apiKey=<password>`, both in
 the query string, both with no expiry and no nonce. That is the published
@@ -231,6 +235,37 @@ UPnP-mapped port on a plain-HTTP Kestrel is not, and that is a hard gate on
 step 4 of the transport sequence rather than a nice-to-have. It is the same
 conclusion `REMOTE-TRANSPORT-PLAN.md`'s certificate section reaches from the
 other direction.
+
+**The server now serves TLS**, on a second port, with nothing to configure — the
+certificate is minted from its own device key and a paired client validates it
+against the key it already holds (`DeviceCertificate`, `PeerHttpClient`,
+`ServerTls`). That removes the gate this finding put on step 4, but it does not
+by itself make this finding go away, and the distinction matters:
+
+- **A self-signed certificate does not help the caller this finding is about.**
+  A third-party OpenSubsonic client has no Flower pairing to validate against,
+  so it either rejects the certificate or is configured to ignore it — and a
+  client ignoring certificates is not protected by one. For that caller, a
+  *real* certificate is the answer, which the server will now load from a PEM
+  pair (`CertificatePath`/`CertificateKeyPath`), and which `tailscale cert`
+  supplies for free to anyone already on the tailnet.
+- **Flower's own clients were never the exposure here.** They sign per request
+  with a timestamp and nonce; there is no permanent credential in their query
+  strings to capture.
+
+So the finding narrows rather than closes: exposing a mapped public port is now
+possible without handing out plaintext credentials, provided the deployment has
+a certificate a third-party client will accept. That is a documented step
+(`SELF-HOSTING.md`, "Using a real certificate instead") rather than a code gap.
+
+One gap in the other direction, recorded here because it is the kind of thing
+that otherwise gets discovered later: **audio is encrypted but not
+authenticated** under a self-signed certificate. Playback hands the URL to
+LibVLC, whose TLS stack takes no validation callback, so the pin covers every
+request except the stream itself. The exposure is one track to an attacker
+already on the path, since the stream URL is signed rather than password-bearing
+— the very distinction this finding draws. See `VlcCertificateDialogs`, which
+carries the argument in full, and `REMOTE-TRANSPORT-PLAN.md` for the fix.
 
 ### 7. Bearer tokens in URLs, once URLs leave the house — **fixed**
 
@@ -337,11 +372,10 @@ whole path end to end, in the thing it was written for.
   self-signed path lets an unauthenticated caller add entries under an
   attacker-chosen fingerprint. Bounded by the redeem rate limit today; would
   need a bound of its own if that limiter is ever keyed more loosely.
-- `SyncHttpServer` keys its bulk/browse/stream limiters by self-reported
-  fingerprint with no per-IP backstop. Its own comment argues this correctly —
-  fake fingerprints buy only rejections — but the rejections are unbudgeted and
-  the keys are attacker-chosen. This is the desktop app's embedded server,
-  which no transport in the plan exposes, so it stays a note.
+- ~~`SyncHttpServer` keys its bulk/browse/stream limiters by self-reported
+  fingerprint with no per-IP backstop.~~ **Moot** — the desktop app's embedded
+  server has been removed outright; there is nothing left on the client to key
+  a limiter by. See `SYNC-PLAN.md`, "Peer-to-peer, built and removed".
 - Track and cover-art ids resolve through `Library.Find` and the album grouping,
   never through a caller-supplied path, so there is no traversal surface on
   `/rest/stream`, `/download` or `/getCoverArt`. Checked; nothing to do.
@@ -365,10 +399,13 @@ Ordered by what blocks what, not by severity:
    by an `AllowedCidrs` of `0.0.0.0/0`, warns at every startup, and cannot be
    set from the browser page. `PublicAccessTests` pins both halves — that a
    public caller gets in, and that getting in still buys them nothing unsigned.
-4. **Before a mapped public port:** #6 — TLS, which means the certificate
-   design in `REMOTE-TRANSPORT-PLAN.md` has to land first. This is the reason
-   step 4 of that sequence is genuinely downstream of step 3 rather than
-   parallel to it.
+4. ~~**Before a mapped public port:** #6 — TLS, which means the certificate
+   design in `REMOTE-TRANSPORT-PLAN.md` has to land first.~~ **Built.** The
+   server serves TLS on its own, from its own device key, with no configuration
+   — so a mapped public port is no longer gated on a certificate the operator
+   has to go and get. What remains is not a gate but a deployment note: a
+   third-party OpenSubsonic client needs a *real* certificate, which the server
+   will load but does not obtain. See #6 above.
 5. ~~**Whenever convenient:** #3 (IPv6 /64 keying) and #4 (`/api/admin`
    budget).~~ **Done** — see each finding above.
 
@@ -405,5 +442,12 @@ It has since been confirmed inside an actual browser tab as well, opened the way
 a user opens it — the "Server Settings…" button — which is what turned up the
 LAN-address link and the misleading 401 described in #7.
 
-Finding #6 is untouched — a decision attached to a mapped public port rather
-than a fix that stands on its own, and sequenced above against it. #8 is notes.
+Finding #6 is no longer a gate. The server serves TLS from its own device key
+with nothing to configure, and a paired client validates it against the key it
+already stores — verified by hand against a live server (both listeners answer;
+the served certificate's public key is byte-identical to `device-key.json`'s;
+`curl` without `-k` refuses it) and pinned over a real handshake by
+`PinnedTlsHandshakeTests`. What is left of #6 is a deployment note for
+third-party clients rather than a fix, and one new gap recorded under it: audio
+is encrypted but not authenticated, because LibVLC does its own TLS. #8 is
+notes.

@@ -51,6 +51,12 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     private readonly LibraryDownloadService? _libraryDownloadService;
     private readonly PeerPairingService? _peerPairingService;
     private readonly PeerTrackResolver? _peerTrackResolver;
+
+    // Where a successfully-paired server's own public key is recorded, so
+    // PeerHttpClient can pin its TLS certificate against it - see
+    // PairWithServer. This device never approves anything else into it: it
+    // does not serve, so nothing else ever asks.
+    private readonly TrustedPeerStore? _trustedPeerStore;
     private readonly NetworkDiscoveryService? _networkDiscovery;
     private readonly PairedServerReachability? _reachability;
     private readonly DeviceIdentity? _deviceIdentity;
@@ -72,6 +78,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         LibraryDownloadService? libraryDownloadService = null,
         PeerPairingService? peerPairingService = null,
         PeerTrackResolver? peerTrackResolver = null,
+        TrustedPeerStore? trustedPeerStore = null,
         DeviceIdentity? deviceIdentity = null,
         DeviceSigningKey? signingKey = null,
         Library? library = null)
@@ -88,6 +95,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _libraryDownloadService = libraryDownloadService;
         _peerPairingService     = peerPairingService;
         _peerTrackResolver      = peerTrackResolver;
+        _trustedPeerStore       = trustedPeerStore;
         _deviceIdentity         = deviceIdentity;
         _signingKey             = signingKey;
         _library                = library;
@@ -244,13 +252,12 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // _syncedDeviceFingerprints (that dedup is specifically for "don't
         // double-sync from DeviceDiscovered re-firing at first contact" - see
         // TriggerSyncIfReady - and is orthogonal to resyncing on a later
-        // change). Collapses to at most one device (the Client's paired
-        // Server) under role gating; empty for a Server, which never initiates.
-        var isServer = _appSettings.IsServer;
+        // change). Collapses to at most one device - the paired server - since
+        // that is the only peer this device is allowed to dial at all.
         var pairedServerFingerprint = _appSettings.PairedServerFingerprint;
         var devices = _host.ListedPeers
             .Where(d => d.Fingerprint.Length > 0 &&
-                        SyncRolePolicy.ShouldInitiateSync(isServer, pairedServerFingerprint, d.Fingerprint))
+                        SyncRolePolicy.MayRequestFrom(pairedServerFingerprint, d.Fingerprint))
             .ToList();
 
         if (devices.Count == 0)
@@ -259,8 +266,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         foreach (var device in devices)
         {
             // forceInitiator: true - see TriggerSyncIfReady's identical
-            // reasoning; every device here is already the Client's own
-            // paired Server (ShouldInitiateSync above guarantees it).
+            // reasoning; every device here is already this device's own
+            // paired server (MayRequestFrom above guarantees it).
             RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
             RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
         }
@@ -292,25 +299,26 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     public bool IsPairedServerTrustConfirmed =>
         !string.IsNullOrEmpty(PairedServerFingerprint) && _appSettings.PairedServerTrustConfirmed;
 
-    // Paired but not yet approved - the request has been sent and is sitting
-    // at the server's own approval popup.
+    // Paired but not yet confirmed - the code was redeemed and the first sync
+    // that proves the server really did accept it has not landed yet.
     public bool IsPairedServerAwaitingApproval =>
         !string.IsNullOrEmpty(PairedServerFingerprint) && !IsPairedServerTrustConfirmed;
 
-    // Every currently-discovered peer advertising Server mode - the pool
-    // ServerPickerView picks a pairing from. Unrelated to trust: an
-    // untrusted server can still appear here, it just won't actually sync
-    // until it approves this device (see SyncHttpServer.AuthorizeAsync).
+    // Every currently-discovered server - the pool ServerPickerView picks a
+    // pairing from. Everything discovery finds is one now, so this is simply
+    // what it knows about. Unrelated to trust: an untrusted server still
+    // appears here, it just will not sync until a code has been redeemed
+    // against it.
     public IEnumerable<DiscoveredDevice> AvailableServers =>
-        _networkDiscovery?.KnownDevices.Where(d => d.IsServer) ?? Enumerable.Empty<DiscoveredDevice>();
+        _networkDiscovery?.KnownDevices ?? Enumerable.Empty<DiscoveredDevice>();
 
-    // What this device calls itself to peers (shown in the sidebar's Devices
-    // section on the other end, and in the trust-gate approval prompt) - see
-    // DeviceIdentity.Alias for why this has to be user-editable rather than
-    // read from the OS. The same DeviceIdentity instance is shared with
-    // SyncHttpServer/PlaylistSyncService/LibrarySyncService/LibraryDownloadService
-    // (see App.axaml.cs), so mutating it here takes effect immediately - no
-    // restart needed for a rename to reach the next peer that asks.
+    // What this device calls itself to the server (shown in its Devices list,
+    // and against this device's log snapshots there) - see DeviceIdentity.Alias
+    // for why this has to be user-editable rather than read from the OS. The
+    // same DeviceIdentity instance is shared with NetworkDiscoveryService/
+    // PlaylistSyncService/LibrarySyncService/LibraryDownloadService (see
+    // App.axaml.cs), so mutating it here takes effect immediately - no restart
+    // needed for a rename to reach the server's next answer.
     public string DeviceAlias
     {
         get => _deviceIdentity?.Alias ?? "";
@@ -325,15 +333,16 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         }
     }
 
-    // Manual pairing (see decision: a Client picks its one server explicitly,
-    // no automatic first-found pairing, and no popup offering it the moment
-    // a Server is seen - the user has to go looking, via the sidebar's
-    // device-detail "Ask to pair" button or ServerPickerView) - called from
+    // Manual pairing (see decision: this device picks its one server
+    // explicitly, no automatic first-found pairing and no popup offering it
+    // the moment a server is seen - the user has to go looking, via the
+    // sidebar's device-detail Pair button or ServerPickerView) - called from
     // either of those.
-    // pairingCode is non-null only for a headless server (DiscoveredDevice.
-    // PairsByCode), which has nobody to answer a live approval prompt and
-    // hands out admin-issued codes instead.
-    public void PairWithServer(DiscoveredDevice device, string? pairingCode = null)
+    //
+    // pairingCode is the whole of the authorization: a server is headless, so
+    // there is nobody in front of it to tap Allow, and an admin issues a
+    // one-time code instead (SYNC-PLAN.md, "Passwordless by design").
+    public void PairWithServer(DiscoveredDevice device, string pairingCode)
     {
         _appSettings.PairedServerFingerprint = device.Fingerprint;
         _appSettings.PairedServerAlias = device.Alias;
@@ -347,22 +356,17 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // next DeviceDiscovered re-fire to notice.
         _reachability?.Recompute();
 
-        // The server doesn't trust us yet - that's the whole point of asking -
-        // so a bulk sync attempt right now would just get a flat 403 (see
-        // SyncHttpServer's top-of-file doc comment: a sync request is never
-        // itself treated as a pairing attempt anymore). Explicitly request
-        // pairing first and only start syncing once - if - a human on the
-        // other end actually approves it.
-        RunTrackedSync(() => pairingCode is null
-            ? RequestPairingThenSyncAsync(device)
-            : RedeemPairingCodeThenSyncAsync(device, pairingCode));
+        // The server doesn't trust us yet, so a bulk sync attempt right now
+        // would just get a flat 403 - a sync request is never itself treated
+        // as a pairing attempt. Redeem the code first, and only start syncing
+        // once that comes back accepted.
+        RunTrackedSync(() => RedeemPairingCodeThenSyncAsync(device, pairingCode));
     }
 
-    // The headless-server path: the code the admin issued *is* the approval,
-    // so there is no waiting state at all - the redeem either comes back
-    // trusted or the code was wrong, and the difference is known within one
-    // round trip rather than up to a minute. See PeerPairingService.
-    // RedeemPairingCodeAsync.
+    // The code the admin issued *is* the approval, so there is no waiting
+    // state at all - the redeem either comes back trusted or the code was
+    // wrong, and the difference is known within one round trip. See
+    // PeerPairingService.RedeemPairingCodeAsync.
     private async Task RedeemPairingCodeThenSyncAsync(DiscoveredDevice device, string pairingCode)
     {
         var rejection = await (_peerPairingService?.RedeemPairingCodeAsync(device, pairingCode)
@@ -384,6 +388,16 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             return;
         }
 
+        // Record the server on this side too, which is what lets
+        // PeerHttpClient pin its TLS certificate from here on instead of
+        // falling back to ordinary chain validation a self-signed server
+        // cannot pass - see DiscoveredDevice.PublicKey and PeerHttpClient.
+        // IsPinnedServerKey. Skipped, rather than guessed at, if /info has
+        // not produced a key yet: pinning nothing is a refusal, and pinning
+        // the wrong thing is worse.
+        if (_trustedPeerStore != null && device.PublicKey.Length > 0)
+            await _trustedPeerStore.ApproveAsync(device.Fingerprint, device.Alias, device.PublicKey);
+
         ConfirmServerTrust(device.Fingerprint);
         _syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0);
         await (_playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
@@ -398,39 +412,9 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // DescribeRejectionAsync for who phrases what.
     public event EventHandler<string>? PairingCodeRejected;
 
-    // See PairWithServer. Runs under RunTrackedSync so the "syncing" spinner
-    // covers the wait for the other device's user to tap Allow/Deny, not just
-    // the sync that follows approval.
-    private async Task RequestPairingThenSyncAsync(DiscoveredDevice device)
-    {
-        var approved = await (_peerPairingService?.RequestPairingAsync(device) ?? Task.FromResult(false));
-
-        // The user may have unpaired, or paired with someone else, while this
-        // was in flight (approval can take up to a minute) - don't act on a
-        // stale result either way.
-        if (_appSettings.PairedServerFingerprint != device.Fingerprint)
-            return;
-
-        if (!approved)
-        {
-            _logger.LogWarning("Pair request to {Alias} ({Fingerprint}) was denied or timed out", device.Alias, device.Fingerprint);
-            Dispatcher.UIThread.Post(UnpairServer);
-            return;
-        }
-
-        ConfirmServerTrust(device.Fingerprint);
-        // Marks this as TriggerSyncIfReady's own "first contact" so a later
-        // DeviceDiscovered re-fire for this same peer this session doesn't
-        // redundantly sync again right on top of this.
-        _syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0);
-        await (_playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
-        await SyncLibraryAndConfirmTrust(device);
-    }
-
     // Marks the paired server as having actually approved this device - see
     // AppSettings.PairedServerTrustConfirmed's own doc comment. Called directly
-    // once RequestPairingThenSyncAsync's own pair-request comes back approved,
-    // and again (a cheap no-op by then) after any later bulk sync attempt that
+    // once the code redeem comes back accepted, and again (a cheap no-op by then) after any later bulk sync attempt that
     // reaches the server and gets past its trust gate (a 403 surfaces as
     // LibrarySyncResult.Success == false, so a true here really does mean
     // approved, not just reachable) - belt-and-suspenders in case trust was
@@ -479,6 +463,13 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         if (_appSettings.PairedServerFingerprint is { } origin)
             _library?.RemoveTracksFromOrigin(origin);
 
+        // Drops the TLS pin along with the pairing - see PairWithServer for
+        // why it was recorded. A certificate this device would have accepted
+        // on the strength of a pairing should stop being acceptable the moment
+        // the pairing does.
+        if (_appSettings.PairedServerFingerprint is { } paired && _trustedPeerStore != null)
+            _ = _trustedPeerStore.RevokeAsync(paired);
+
         _appSettings.PairedServerFingerprint = null;
         _appSettings.PairedServerAlias = null;
         _appSettings.PairedServerTrustConfirmed = false;
@@ -487,17 +478,6 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _reachability?.Recompute();
     }
 
-    // Clears the pairing pointer without the save/notify UnpairServer does -
-    // used by MainViewModel's IsServer setter, which is already saving and
-    // notifying around its own flip to Server mode. Not syncing again with the
-    // old paired server (a deliberate requirement, not an oversight) -
-    // library/playlists themselves are untouched by that flip, this only
-    // clears the now-stale pairing pointer.
-    public void ClearPairingForServerMode()
-    {
-        _appSettings.PairedServerFingerprint = null;
-        _appSettings.PairedServerAlias = null;
-    }
 
     // A paired Server no longer trusting us surfaces here every time this
     // device is in any kind of contact with it - not just while actively
@@ -517,9 +497,10 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         HandleTrustRevoked(device.Alias, device.Fingerprint);
     }
 
-    // The 403/unpair-notify counterpart to HandlePeerTrustChanged above -
-    // wired to PlaylistSyncService/LibrarySyncService.PeerTrustRejected and
-    // SyncHttpServer.PeerUnpairNotified. Same handler, same effect either way.
+    // The 403 counterpart to HandlePeerTrustChanged above - wired to
+    // PlaylistSyncService/LibrarySyncService.PeerTrustRejected. Same handler,
+    // same effect whether the revoke is noticed from a refused request or from
+    // the /info poll.
     public void HandleTrustRevoked(string alias, string fingerprint)
     {
         if (fingerprint != PairedServerFingerprint)
@@ -678,8 +659,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // Closes ARCHITECTURE-REVIEW Tier 1.4's correctness gap: a change made on
     // the Server was never noticed while both apps stayed running, because
     // sync fired only on first mDNS contact (TriggerSyncIfReady) or a
-    // debounced *local* change (ScheduleContentSync). The ~5s /info poll every
-    // Client already runs now carries the Server's library token, so a
+    // debounced *local* change (ScheduleContentSync). The ~5s /info poll this
+    // device already runs now carries the server's library token, so a
     // server-side edit shows up as that token changing and syncs promptly -
     // no new endpoint, no long-lived connection to keep alive on mobile.
     //
@@ -692,7 +673,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     {
         if (string.IsNullOrEmpty(device.Fingerprint) || string.IsNullOrEmpty(device.LibraryToken))
             return;
-        if (!SyncRolePolicy.ShouldInitiateSync(_appSettings.IsServer, _appSettings.PairedServerFingerprint, device.Fingerprint))
+        if (!SyncRolePolicy.MayRequestFrom(_appSettings.PairedServerFingerprint, device.Fingerprint))
             return;
 
         var isFirstObservation = !_observedPeerLibraryTokens.TryGetValue(device.Fingerprint, out var previousToken);
@@ -717,22 +698,22 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
             return;
-        // Server never initiates bulk sync; Client only ever bulk-syncs with
-        // its one paired Server - see SyncRolePolicy.
-        if (!SyncRolePolicy.ShouldInitiateSync(_appSettings.IsServer, _appSettings.PairedServerFingerprint, device.Fingerprint))
+        // This device only ever bulk-syncs with its one paired server - see
+        // SyncRolePolicy.
+        if (!SyncRolePolicy.MayRequestFrom(_appSettings.PairedServerFingerprint, device.Fingerprint))
             return;
         if (!_syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0))
             return;
 
         _logger.LogInformation("First contact with {Alias} ({Fingerprint}) this session, triggering initial sync",
             device.Alias, device.Fingerprint);
-        // forceInitiator: true - this is always the Client's own paired
-        // Server here (ShouldInitiateSync above already guarantees that), and
-        // a Server never calls SyncWithAsync back (its own trigger paths are
-        // gated off) - without this, PlaylistSyncService's ordinal-fingerprint
-        // election could decide the Client isn't the initiator for roughly
-        // half of all possible fingerprint pairs, and since the Server never
-        // reciprocates, that pair would permanently never sync playlists.
+        // forceInitiator: true - this is always this device's own paired
+        // server here (MayRequestFrom above already guarantees that), and a
+        // server never calls SyncWithAsync back (it does not dial out at all)
+        // - without this, PlaylistSyncService's ordinal-fingerprint election
+        // could decide this side isn't the initiator for roughly half of all
+        // possible fingerprint pairs, and since the server never reciprocates,
+        // that pair would permanently never sync playlists.
         RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
         RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
     }
@@ -740,7 +721,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // ── Peer track resolution ─────────────────────────────────────────────
 
     // Shared by DownloadTrackAsync and GetStreamUrl - delegates the actual
-    // resolution (and the "only the currently paired Server" gating that goes
+    // resolution (and the "only the currently paired server" gating that goes
     // with it) to PeerTrackResolver, the one place that logic lives - see that
     // class's own doc comment. This wrapper only adds the warning log, since a
     // user-initiated download/stream attempt failing is worth reporting,

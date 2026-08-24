@@ -51,8 +51,7 @@ public class OpenSubsonicClientTests
 
         return new SignedDeviceCredentials(
             new DeviceIdentity { Fingerprint = signingKey.Fingerprint, Alias = "test-device" },
-            signingKey,
-            new AppSettings());
+            signingKey);
     }
 
     private static OpenSubsonicClient MakeClient(string responseBody, out FakeHandler handler)

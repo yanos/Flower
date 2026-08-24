@@ -1,6 +1,6 @@
 namespace Flower.ViewModels;
 
-public enum LogSidebarItemKind { ThisDevice, PairedClient }
+public enum LogSidebarItemKind { ThisDevice, Server, PairedClient }
 
 // Row shape for the Log window's sidebar (see LogViewModel/LogWindow) -
 // deliberately not SidebarItem: that class models the library sidebar's much
@@ -11,7 +11,8 @@ public class LogSidebarItem
     public LogSidebarItemKind Kind { get; }
     public string Name { get; }
 
-    // Null for ThisDevice - only PairedClient rows key into ClientLogStore.
+    // Only PairedClient rows carry one - ThisDevice reads a local buffer, and
+    // Server asks its own admin route rather than one keyed by fingerprint.
     public string? Fingerprint { get; }
 
     public LogSidebarItem(LogSidebarItemKind kind, string name, string? fingerprint = null)

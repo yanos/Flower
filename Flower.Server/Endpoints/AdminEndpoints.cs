@@ -20,6 +20,13 @@ public sealed record SubsonicCredentialResponse(
 public sealed record LibraryStatusResponse(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
 public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
 
+// A device's pushed log, plus when it arrived - the timestamp matters here in
+// a way it does not for the server's own live log: these lines are as old as
+// that device's last sync, and a reader who does not know that will misread a
+// stale snapshot as a current one.
+public sealed record DeviceLogResponse(
+    string Fingerprint, string Alias, DateTimeOffset ReceivedAt, IReadOnlyList<LogEntryResponse> Entries);
+
 // The admin API: issuing pairing codes, listing and revoking devices, minting the
 // per-client credentials third-party Subsonic clients need, and - for the browser
 // settings page - reading and writing this server's own configuration, triggering
@@ -335,6 +342,29 @@ public static class AdminEndpoints
             return Results.Json(
                 new LibraryStatusResponse(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError),
                 jsonOptions);
+        });
+
+        // One paired device's log, as last pushed by that device at the end of
+        // a sync (see SyncEndpoints' /log/report and ClientLogStore). The whole
+        // reason this exists: the owner of the server is the one who ends up
+        // diagnosing a listener's phone, and the listener cannot be talked
+        // through finding a log file.
+        //
+        // 404 rather than an empty list for a device that has not pushed yet -
+        // "nothing has arrived from this device" and "this device logged
+        // nothing" are different answers, and only the first one is worth
+        // telling the reader to wait about.
+        authenticated.MapGet("/devices/{fingerprint}/logs", (string fingerprint, int? limit, ClientLogStore logs) =>
+        {
+            if (logs.Get(fingerprint) is not { } snapshot)
+                return Results.NotFound();
+
+            var take = Math.Clamp(limit ?? 500, 1, snapshot.Entries.Count == 0 ? 1 : snapshot.Entries.Count);
+            var lines = snapshot.Entries
+                .Skip(Math.Max(0, snapshot.Entries.Count - take))
+                .Select(e => new LogEntryResponse(e.Timestamp, e.Level, e.SourceContext, e.Message, e.Exception))
+                .ToList();
+            return Results.Json(new DeviceLogResponse(snapshot.Fingerprint, snapshot.Alias, snapshot.ReceivedAt, lines), jsonOptions);
         });
 
         // This server's own log, from the same in-memory buffer the app's Log

@@ -56,8 +56,7 @@ public class AlbumArtLoaderTests : IDisposable
 
     private static IPeerCredentials Credentials() => new SignedDeviceCredentials(
         new DeviceIdentity { Fingerprint = SigningKey.Fingerprint, Alias = "Us" },
-        SigningKey,
-        new AppSettings());
+        SigningKey);
 
     public AlbumArtLoaderTests()
     {
@@ -327,7 +326,7 @@ public class AlbumArtLoaderTests : IDisposable
     public async Task The_remote_fetch_is_signed_so_a_real_server_will_serve_it()
     {
         // Cover art used to go out with a bare fingerprint and alias and no
-        // signature. A peer's own SyncHttpServer tolerated that; Flower.Server
+        // signature. The app's own listener tolerated that; Flower.Server
         // does not - and this is not a cosmetic difference, because its refusal
         // charges a FailedAuthLimiter that gates the WHOLE /rest surface. Ten
         // album tiles were enough to push it over, after which every

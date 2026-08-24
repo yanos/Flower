@@ -129,7 +129,6 @@ public partial class MainView : UserControl
             _viewModel.EqualizerWindowRequested -= OnEqualizerWindowRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
-            _viewModel.PeerApprovalRequested -= OnPeerApprovalRequested;
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
             StopSpinner();
@@ -147,7 +146,6 @@ public partial class MainView : UserControl
             _viewModel.EqualizerWindowRequested += OnEqualizerWindowRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
-            _viewModel.PeerApprovalRequested += OnPeerApprovalRequested;
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
             BuildColumnMenu();
@@ -1039,27 +1037,6 @@ public partial class MainView : UserControl
         e.Resolution.TrySetResult(choice);
     }
 
-    // Raised by MainViewModel (forwarding SyncHttpServer.PeerApprovalRequested)
-    // the first time an unrecognized peer fingerprint calls a gated sync endpoint
-    // - see SYNC-PLAN.md Phase 3's trust gate. Reuses the generic confirm dialog
-    // rather than a bespoke window - Cancel is that dialog's default/Escape
-    // action, which conveniently doubles as "deny" here too.
-    private async void OnPeerApprovalRequested(object? sender, PeerApprovalRequestedEventArgs e)
-    {
-        if (TopLevel.GetTopLevel(this) is not Window owner)
-        {
-            e.Resolution.TrySetResult(false);
-            return;
-        }
-
-        var allowed = await ConfirmDialogWindow.ShowAsync(
-            owner,
-            "Allow Pairing?",
-            $"\"{e.Alias}\" wants to pair to this server. It will be able to sync the whole library data with this device. Only allow devices you recognize - it will not be asked again.",
-            "Allow");
-        e.Resolution.TrySetResult(allowed);
-    }
-
     private async void OnDeletePlaylistConfirmationRequested(object? sender, DeletePlaylistConfirmationEventArgs e)
     {
         if (TopLevel.GetTopLevel(this) is not Window owner)
@@ -1383,7 +1360,7 @@ public partial class MainView : UserControl
     // Fire-and-forget like ServerSettingsButton_Click above: the ViewModel owns
     // the whole outcome (the code, the error, the in-flight flag), and the
     // button is disabled while a request is out.
-    private void AddDeviceButton_Click(object? sender, RoutedEventArgs e) =>
+    private void GeneratePairingCodeButton_Click(object? sender, RoutedEventArgs e) =>
         _ = _viewModel?.InviteDeviceToSelectedServerAsync();
 
     private async void PairActionButton_Click(object? sender, RoutedEventArgs e)
@@ -1412,27 +1389,23 @@ public partial class MainView : UserControl
         // CanManageLocalLibrary) - worth a clear warning before it happens,
         // same copy as ServerPickerView's own Pair confirmation.
         //
-        // A headless server takes an admin-issued code instead of a live
-        // approval (MainViewModel.IsPairingCodeRequired), so the last sentence
-        // and the button both change: nothing is being asked, the code the
-        // user already holds is the approval.
-        var byCode = vm.IsPairingCodeRequired;
-        if (byCode && string.IsNullOrWhiteSpace(vm.PairingCode))
+        // Nothing is being asked: a server is headless, so the admin-issued
+        // code the user already holds is the whole of the approval, and the
+        // copy says so rather than promising a prompt nobody will ever see.
+        if (string.IsNullOrWhiteSpace(vm.PairingCode))
         {
             vm.PairingCodeError = "Enter the pairing code first.";
             return;
         }
 
-        var approvalSentence = byCode
-            ? $"The pairing code you entered authorizes this device on \"{alias}\" immediately."
-            : $"\"{alias}\" will need to approve the request before syncing begins.";
         var confirmedPair = await ConfirmDialogWindow.ShowAsync(
             owner,
-            byCode ? $"Pair With \"{alias}\"?" : $"Ask \"{alias}\" To Pair?",
-            $"This device's library view will be replaced by \"{alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. {approvalSentence}",
-            byCode ? "Pair" : "Ask to pair");
+            $"Pair With \"{alias}\"?",
+            $"This device's library view will be replaced by \"{alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. "
+            + $"The pairing code you entered authorizes this device on \"{alias}\" immediately.",
+            "Pair");
         if (confirmedPair)
-            vm.PairWithServer(device, byCode ? vm.PairingCode.Trim() : null);
+            vm.PairWithServer(device, vm.PairingCode.Trim());
     }
 
     // Enter in the pairing-code box runs the same flow as the button - typing

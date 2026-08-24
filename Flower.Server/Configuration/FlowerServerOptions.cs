@@ -70,6 +70,32 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // See WebUiHosting.Resolve.
     public string WebUiPath { get; set; } = "";
 
+    // The port for this server's https listener, alongside - not instead of -
+    // the plain one in Urls. 0 turns TLS off entirely.
+    //
+    // A second port rather than a scheme change on 4533, because the plain
+    // listener has callers that cannot follow: third-party OpenSubsonic
+    // clients configured with an http address, and anything holding a
+    // bookmark. Serving both costs a port and breaks nothing, and Flower's own
+    // clients move over on their own - the server lists its https origins from
+    // /info and the client's candidate ranking prefers them (see
+    // LocalAddresses.Reachable's scheme parameter, and REMOTE-ACCESS-PLAN.md).
+    //
+    // On by default, and that is the point: with a self-signed certificate
+    // minted from this server's own device key, TLS needs no certificate
+    // authority, no domain and no operator action at all - a paired client
+    // already holds the key that validates it. See ServerTls and
+    // DeviceCertificate.
+    public int HttpsPort { get; set; } = 4534;
+
+    // A real certificate to serve instead of the self-signed one, as a PEM
+    // pair. Empty means self-signed, which is right for every client that
+    // paired with this server; set these for the two that cannot pin - a
+    // browser tab and a third-party OpenSubsonic client. Both files are
+    // needed; naming only one is a configuration error and startup says so.
+    public string CertificatePath { get; set; } = "";
+    public string CertificateKeyPath { get; set; } = "";
+
     // Whether this server is deliberately reachable from the open internet,
     // which switches LanGuard's gate off entirely (see Program.cs).
     //

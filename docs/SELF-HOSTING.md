@@ -64,6 +64,34 @@ each browser pairs separately, and clearing site data un-pairs it.
 > plain-HTTP LAN browsing. Flower *clients* are unaffected — they hold their own
 > keys and never needed a browser.
 
+### Adding devices later
+
+The first code makes an admin. Every code after that is issued by one, from
+whichever screen is already open:
+
+- **The browser UI** — settings page → **Generate Pairing Code**.
+- **The Flower desktop app**, if it is paired with the server as an admin —
+  click the server in the sidebar and press **Generate Pairing Code**. The code
+  appears under the button.
+- **The Flower phone app**, same condition — Settings → **Generate Pairing
+  Code**.
+
+All three hand out the same thing: one code, good for ten minutes and one
+device. It is an ordinary listener's code unless the **Administrator** checkbox
+beside the button is ticked, which is off every time the screen is opened —
+adding somebody's phone is the common case, and a box left ticked from an hour
+ago would quietly make the next guest an administrator.
+
+More than one device may be an administrator. Your own desktop and your own
+phone both being one is the expected shape, not a workaround.
+
+An app that is paired but is *not* an admin does not show the button at all: the
+server reports whether the caller is one of its administrators on the same
+handshake the client already polls, so this is known without asking, and a
+control whose every press returns a refusal reads as broken rather than as
+forbidden. (**Server Settings…** next to it is still shown to everyone — opening
+a page you cannot read costs one trip that says so.)
+
 ### Settings
 
 Edit `flower-server.json` in the data directory — it is seeded with a commented
@@ -71,6 +99,81 @@ description of every knob. Anything there overrides the `appsettings.json` next
 to the binary and survives redeploying it. Environment variables
 (`Flower__Alias=Basement`) and command-line switches (`--Flower:Alias=Basement`)
 still win over both.
+
+---
+
+## HTTPS, without setting anything up
+
+The server serves **two ports**: `4533` in the clear, and `4534` over TLS. Both
+are on by default and you do not have to do anything to get the second one.
+
+It works without a certificate authority because of what the certificate is made
+of. The server mints one on startup from the same keypair it already uses to
+identify itself — the key whose fingerprint appears in every pairing invite. A
+Flower app that has paired with this server therefore *already holds* the key
+that validates the certificate, so it can check it against something it has
+rather than against an authority nobody set up. No domain, no Let's Encrypt, no
+warning to click through, nothing in `flower-server.json`.
+
+Paired Flower clients move over to `4534` on their own: the server lists both
+origins when a paired device asks where it can be reached, and the client prefers
+the encrypted one. If it cannot validate the certificate for any reason it
+falls back to the plain port rather than failing.
+
+`4533` stays exactly as it was, because two kinds of caller cannot do any of the
+above:
+
+- **Third-party OpenSubsonic clients**, which have no idea what a Flower pairing
+  is. They keep using the plain port and their own username/password.
+- **A browser**, which meets arbitrary servers for a living and so cannot assume
+  it knows which one it means. It shows an interstitial for a self-signed
+  certificate — see "Reaching it from a browser" below.
+
+Two things this does *not* do, stated plainly:
+
+- **It is not a reason to skip the sections below.** A self-signed certificate
+  encrypts the LAN; it does not publish the server, punch through NAT, or give
+  a browser a usable address. Tailscale, Cloudflare Tunnel and port forwarding
+  are all still exactly as necessary as they were.
+- **Audio is encrypted but not authenticated.** Playback hands the stream URL to
+  the media stack (LibVLC), which does its own TLS and cannot be given Flower's
+  certificate check. Everything else — the catalog, admin, sync, cover art — is
+  both encrypted and pinned. The gap costs a single track to an attacker already
+  positioned on your network, because a stream URL is signed per request rather
+  than carrying a reusable password. See `REMOTE-TRANSPORT-PLAN.md`.
+
+### Using a real certificate instead
+
+Point the server at a PEM pair and it serves that instead of the self-signed
+one. This is what satisfies browsers and third-party clients, and it is the
+right move for anything reachable from outside:
+
+```json
+{
+  "Flower": {
+    "CertificatePath": "/etc/flower/fullchain.pem",
+    "CertificateKeyPath": "/etc/flower/privkey.pem"
+  }
+}
+```
+
+Both must be set together; naming only one stops the server at startup rather
+than quietly serving the self-signed certificate to callers that will reject it.
+
+Where to get the pair, cheapest first:
+
+- **`tailscale cert basement.tail1234.ts.net`** — free, renews itself, and needs
+  no domain of your own. If you followed the Tailscale section, you already have
+  everything this needs.
+- **Let's Encrypt over DNS-01**, against a free subdomain (DuckDNS and friends).
+  Proves ownership through a TXT record, so the name may point at `192.168.1.40`
+  and the certificate still issues — publicly trusted, no open ports.
+- **A domain you own**, through certbot or your provider.
+
+You can also skip this entirely and let a reverse proxy terminate TLS, which is
+what the Tailscale, Cloudflare and Caddy sections below each do. Then set
+`"HttpsPort": 0` to turn the server's own TLS listener off — the proxy is
+already doing the job, and one listener is one less thing to reason about.
 
 ---
 
@@ -263,7 +366,8 @@ two options exist.
 ### Pairing a device over the tailnet
 
 **Pair on your home Wi-Fi first, before you travel.** Open the settings page,
-press **Add Device…**, and enter the code in the client's **Pairing code** box.
+press **Generate Pairing Code**, and enter the code in the client's **Pairing
+code** box.
 
 The Flower app finds servers by mDNS, which is a local-network protocol — it does
 not reach into a tailnet. So a client that has never shared a network with this
@@ -404,7 +508,10 @@ The failure this setup produces is quiet, so look for it deliberately:
 
 ### 7. Give a listener access
 
-Settings page → **Add Device…** → read them the code. They open
+Settings page → **Generate Pairing Code** → read them the code (or press the
+same button
+in a Flower app you administer the server from — see *Adding devices later*).
+They open
 `https://music.example.com`, paste it, and their browser is a paired device from
 then on — or they enter it in the Flower app's **Pairing code** box.
 
@@ -559,16 +666,30 @@ clear the browser's site data.
 
 The one constraint is the one already noted: the page has to be served over
 HTTPS or `localhost`, because that is the only place browsers expose the
-cryptography the key depends on. Every remote-access option below terminates
-TLS, so in practice this only affects browsing to a LAN address over plain
-`http://`.
+cryptography the key depends on.
+
+The server's own TLS port does not fully solve this, and it is worth being clear
+about why. A browser will not accept the self-signed certificate the way a paired
+Flower client does — it has no pairing to appeal to — so `https://192.168.1.40:4534`
+shows an interstitial. Clicking through it does yield a secure context and a
+working page, which is fine for your own machine and unpleasant to ask of anyone
+else. The good answers are the ones above: a real certificate, or a proxy that
+terminates TLS for you (`tailscale serve`, Cloudflare, Caddy). On the machine
+running the server, `http://localhost:4533` remains the simplest option of all.
 
 ## Not yet covered
 
-- **Certificates from the server itself**, via LettuceEncrypt, so that a
-  port-forwarded deployment needs no reverse proxy in front of it. Planned; see
-  `SYNC-PLAN.md` and the certificate section of `REMOTE-TRANSPORT-PLAN.md`.
-  Until then, Caddy above is the answer and works fine.
+- **Certificates the server obtains for itself**, via LettuceEncrypt, so a
+  port-forwarded deployment needs no reverse proxy in front of it. The server
+  now *serves* TLS on its own (see "HTTPS, without setting anything up") and
+  will load a PEM pair you point it at, but it does not go and get one. Until
+  it does, `tailscale cert`, certbot, or Caddy above are the answer and work
+  fine.
+- **Pinned audio.** Playback goes through the media stack's own TLS, which
+  Flower's certificate check cannot reach, so streams are encrypted but not
+  authenticated. Closing this means reading the stream through Flower's own HTTP
+  client and handing the decoder the bytes, which also means owning seeking. See
+  `REMOTE-TRANSPORT-PLAN.md`.
 - **Automatic port mapping** (UPnP / NAT-PMP). See the note at the end of the
   port-forwarding section.
 - **Docker packaging.** Planned. Note that mDNS announcement (`AdvertiseOnLan`)

@@ -35,7 +35,8 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         Log = true,
         ThemePicker = false,
         ITunesIntegration = true,
-        SyncRole = false,
+        PairedServerPicker = false,
+        TrustedDevices = true,
         RevealAppDataLocation = false,
         RebuildDatabase = false,
     };
@@ -60,7 +61,6 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             AllowedCidrs = settings.AllowedCidrs,
             DataDirectory = settings.DataDirectory,
             Version = settings.Version,
-            IsServer = true,
         };
     }
 
@@ -150,8 +150,27 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
     public Task RebuildDatabaseAsync(CancellationToken ct = default) =>
         throw new NotSupportedException("A server migrates its own schema on startup.");
 
+    // A device on the roster that has never pushed answers 404, which is an
+    // ordinary state rather than a failure - it has not synced since the server
+    // last started, or has log sharing switched off - so it comes back as an
+    // empty list for the caller to phrase.
+    public async Task<IReadOnlyList<string>> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default)
+    {
+        try
+        {
+            return Render((await client.GetDeviceLogAsync(fingerprint, limit, ct)).Entries);
+        }
+        catch (ServerAdminException ex) when (ex.Status == System.Net.HttpStatusCode.NotFound)
+        {
+            return [];
+        }
+    }
+
     public async Task<IReadOnlyList<string>> LoadLogAsync(int limit, CancellationToken ct = default) =>
-        (await client.GetLogAsync(limit, ct))
+        Render(await client.GetLogAsync(limit, ct));
+
+    private static List<string> Render(List<AdminLogEntryDto> entries) =>
+        entries
             // Rendered through the same shape the app's own Log window uses, so a
             // server's log reads identically to a local one.
             .Select(e => new Logging.InMemoryLogEntry(e.Timestamp, e.Level, e.SourceContext, e.Message, e.Exception)

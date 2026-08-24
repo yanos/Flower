@@ -484,13 +484,12 @@ public class DeviceSidebarSectionTests
 
     private static int _port = 7000;
 
-    private static DiscoveredDevice Device(string instanceName, string fingerprint = "", string? alias = null, bool isServer = false) =>
+    private static DiscoveredDevice Device(string instanceName, string fingerprint = "", string? alias = null) =>
         new()
         {
             InstanceName = instanceName,
             Fingerprint = fingerprint,
             Alias = alias ?? instanceName,
-            IsServer = isServer,
             BaseUri = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, System.Threading.Interlocked.Increment(ref _port))),
         };
 
@@ -517,39 +516,42 @@ public class DeviceSidebarSectionTests
         Assert.DoesNotContain(items, i => i.Kind == SidebarItemKind.Device);
     }
 
+    // One section, because there is one kind of thing to find. This used to
+    // fork on the peer's advertised role, back when a Flower app could be
+    // flipped into being a server too.
     [Fact]
-    public void Servers_and_ordinary_devices_land_in_their_own_sections()
+    public void Every_discovered_device_lands_under_one_Servers_section()
     {
         var (section, items, _) = Make();
 
         section.AddOrUpdate(Device("laptop", "fp-laptop", "Laptop"));
-        section.AddOrUpdate(Device("nas", "fp-nas", "NAS", isServer: true));
+        section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
 
-        Assert.Contains(items, i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
-        Assert.Contains(items, i => i.Kind == SidebarItemKind.Header && i.Name == "Server");
+        Assert.DoesNotContain(items, i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
+        var header = Assert.Single(items, i => i.Kind == SidebarItemKind.Header && i.Name == "Servers");
 
-        // Each section's members sit contiguously right after its own header,
+        // The section's members sit contiguously right after its own header,
         // which is what lets a row's section be found by walking backward.
-        var serverHeader = items.First(i => i.Kind == SidebarItemKind.Header && i.Name == "Server");
-        Assert.Equal("NAS", items[items.IndexOf(serverHeader) + 1].Name);
+        var headerIndex = items.IndexOf(header);
+        Assert.Equal("Laptop", items[headerIndex + 1].Name);
+        Assert.Equal("NAS", items[headerIndex + 2].Name);
     }
 
+    // A second sighting of a peer already listed updates the row in place
+    // rather than adding another, and does not disturb the selection sitting
+    // on it.
     [Fact]
-    public void A_peer_that_flips_into_server_mode_moves_sections_and_keeps_its_selection()
+    public void Re_announcing_a_listed_peer_keeps_its_row_and_its_selection()
     {
         var (section, items, host) = Make();
         section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
         var row = items.Single(i => i.Kind == SidebarItemKind.Device);
         host.SelectedSidebarItem = row;
 
-        section.AddOrUpdate(Device("nas", "fp-nas", "NAS", isServer: true));
+        section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
 
         Assert.Same(row, items.Single(i => i.Kind == SidebarItemKind.Device));
         Assert.Same(row, host.SelectedSidebarItem);
-        var serverHeader = items.First(i => i.Kind == SidebarItemKind.Header && i.Name == "Server");
-        Assert.Equal(items.IndexOf(serverHeader) + 1, items.IndexOf(row));
-        // The vacated section's header goes with it.
-        Assert.DoesNotContain(items, i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
     }
 
     [Fact]
@@ -623,7 +625,7 @@ public class DeviceSidebarSectionTests
     {
         var (section, items, host) = Make();
         host.PairedServerFingerprint = "fp-nas";
-        section.AddOrUpdate(Device("nas", "fp-nas", "NAS", isServer: true));
+        section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
         Assert.True(items.Single(i => i.Kind == SidebarItemKind.Device).IsPairedServer);
 
         section.Remove("nas");
@@ -640,13 +642,13 @@ public class DeviceSidebarSectionTests
         var (section, items, host) = Make();
         // What MainViewModel's BuildSidebarItems seeds at launch: the pairing is
         // known from settings, but this session has discovered nothing yet.
-        items.Add(new SidebarItem(SidebarItemKind.Header, "Server"));
+        items.Add(new SidebarItem(SidebarItemKind.Header, "Servers"));
         items.Add(new SidebarItem(SidebarItemKind.Device, "NAS") { IsPairedServer = true });
 
         section.UnpinPairedServerRow();
 
         Assert.DoesNotContain(items, i => i.Kind == SidebarItemKind.Device);
-        Assert.DoesNotContain(items, i => i.Kind == SidebarItemKind.Header && i.Name == "Server");
+        Assert.DoesNotContain(items, i => i.Kind == SidebarItemKind.Header && i.Name == "Servers");
     }
 
     [Fact]
@@ -654,7 +656,7 @@ public class DeviceSidebarSectionTests
     {
         var (section, items, host) = Make();
         host.PairedServerFingerprint = "fp-nas";
-        section.AddOrUpdate(Device("nas", "fp-nas", "NAS", isServer: true));
+        section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
 
         host.PairedServerFingerprint = null;
         section.UnpinPairedServerRow();
@@ -668,10 +670,10 @@ public class DeviceSidebarSectionTests
     {
         var (section, items, host) = Make();
         host.PairedServerFingerprint = "fp-nas";
-        items.Add(new SidebarItem(SidebarItemKind.Header, "Server"));
+        items.Add(new SidebarItem(SidebarItemKind.Header, "Servers"));
         items.Add(new SidebarItem(SidebarItemKind.Device, "NAS") { IsPairedServer = true });
 
-        section.AddOrUpdate(Device("nas", "fp-nas", "NAS", isServer: true));
+        section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
 
         var row = Assert.Single(items.Where(i => i.Kind == SidebarItemKind.Device));
         Assert.NotNull(row.Device);
@@ -685,7 +687,7 @@ public class DeviceSidebarSectionTests
         host.PairedServerFingerprint = "fp-nas";
         host.IsSyncing = true;
 
-        section.AddOrUpdate(Device("nas", "fp-nas", "NAS", isServer: true));
+        section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
 
         // The spinner is only pushed on IsSyncing's own edges, so a row created
         // or re-created mid-sync has to carry the current state forward.

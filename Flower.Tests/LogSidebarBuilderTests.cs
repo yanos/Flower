@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 
-using Flower.Persistence;
 using Flower.Services;
 using Flower.ViewModels;
 
@@ -11,58 +10,66 @@ public class LogSidebarBuilderTests
 {
     private static readonly Func<string, string?> NoNicknames = _ => null;
 
+    // Nothing to ask, so nothing to show but the log this device keeps itself.
+    // Same answer whether there is no paired server or the server could not be
+    // reached: both arrive here as an empty roster.
     [Fact]
-    public void Non_server_instance_only_shows_This_Device_regardless_of_trusted_peer_count()
+    public void With_no_server_roster_only_This_Device_is_listed()
     {
-        var peers = new List<TrustedPeer>
-        {
-            new("fp-1", "Alias1", DateTimeOffset.UtcNow, "key"),
-            new("fp-2", "Alias2", DateTimeOffset.UtcNow, "key")
-        };
-
-        var items = LogSidebarBuilder.Build(isServer: false, peers, NoNicknames);
+        var items = LogSidebarBuilder.Build([], ownFingerprint: "fp-me", NoNicknames);
 
         Assert.Single(items);
         Assert.Equal(LogSidebarItemKind.ThisDevice, items[0].Kind);
     }
 
     [Fact]
-    public void Server_instance_shows_This_Device_plus_one_row_per_trusted_peer_in_order()
+    public void A_roster_adds_the_server_itself_then_one_row_per_device_in_order()
     {
-        var peers = new List<TrustedPeer>
+        var devices = new List<RemoteDevice>
         {
-            new("fp-1", "Alias1", DateTimeOffset.UtcNow, "key"),
-            new("fp-2", "Alias2", DateTimeOffset.UtcNow, "key")
+            new("fp-1", "Alias1"),
+            new("fp-2", "Alias2"),
         };
 
-        var items = LogSidebarBuilder.Build(isServer: true, peers, NoNicknames);
+        var items = LogSidebarBuilder.Build(devices, ownFingerprint: "fp-me", NoNicknames);
+
+        Assert.Equal(4, items.Count);
+        Assert.Equal(LogSidebarItemKind.ThisDevice, items[0].Kind);
+        Assert.Equal(LogSidebarItemKind.Server, items[1].Kind);
+        Assert.Equal(LogSidebarItemKind.PairedClient, items[2].Kind);
+        Assert.Equal("fp-1", items[2].Fingerprint);
+        Assert.Equal("Alias1", items[2].Name);
+        Assert.Equal(LogSidebarItemKind.PairedClient, items[3].Kind);
+        Assert.Equal("fp-2", items[3].Fingerprint);
+    }
+
+    // This device is on its own server's roster. Its row there would show the
+    // same log "This Device" already shows live, only as stale as the last
+    // sync - two rows disagreeing about one log.
+    [Fact]
+    public void This_devices_own_row_on_the_server_is_left_out()
+    {
+        var devices = new List<RemoteDevice>
+        {
+            new("fp-me", "This Phone"),
+            new("fp-other", "Someone Else"),
+        };
+
+        var items = LogSidebarBuilder.Build(devices, ownFingerprint: "fp-me", NoNicknames);
 
         Assert.Equal(3, items.Count);
-        Assert.Equal(LogSidebarItemKind.ThisDevice, items[0].Kind);
-        Assert.Equal(LogSidebarItemKind.PairedClient, items[1].Kind);
-        Assert.Equal("fp-1", items[1].Fingerprint);
-        Assert.Equal("Alias1", items[1].Name);
-        Assert.Equal(LogSidebarItemKind.PairedClient, items[2].Kind);
-        Assert.Equal("fp-2", items[2].Fingerprint);
+        Assert.DoesNotContain(items, i => i.Fingerprint == "fp-me");
+        Assert.Equal("fp-other", items[2].Fingerprint);
     }
 
     [Fact]
-    public void Nickname_override_wins_over_the_peers_stored_alias()
+    public void Nickname_override_wins_over_the_alias_the_server_reported()
     {
-        var peers = new List<TrustedPeer> { new("fp-1", "StoredAlias", DateTimeOffset.UtcNow, "key") };
+        var devices = new List<RemoteDevice> { new("fp-1", "StoredAlias") };
         string? Nickname(string fingerprint) => fingerprint == "fp-1" ? "My Nickname" : null;
 
-        var items = LogSidebarBuilder.Build(isServer: true, peers, Nickname);
+        var items = LogSidebarBuilder.Build(devices, ownFingerprint: "fp-me", Nickname);
 
-        Assert.Equal("My Nickname", items[1].Name);
-    }
-
-    [Fact]
-    public void Server_instance_with_no_trusted_peers_still_shows_only_This_Device()
-    {
-        var items = LogSidebarBuilder.Build(isServer: true, new List<TrustedPeer>(), NoNicknames);
-
-        Assert.Single(items);
-        Assert.Equal(LogSidebarItemKind.ThisDevice, items[0].Kind);
+        Assert.Equal("My Nickname", items[2].Name);
     }
 }

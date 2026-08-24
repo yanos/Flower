@@ -20,7 +20,7 @@
   </UserControl.Styles>
 
   <Grid>
-    <!-- Deliberately no backdrop-tap-to-dismiss, same as PeerApprovalView -
+    <!-- Deliberately no backdrop-tap-to-dismiss -
          an unattended dismissal should not silently start replacing this
          device's library view, so the explicit Cancel button below is the
          only way out other than the pair button. -->
@@ -44,11 +44,10 @@
         <TextBlock Text="{Binding ConfirmPairServerMessage}"
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
-        <!-- Only for a headless server (IsPendingServerPairedByCode) - an app
-             peer has no code to give and keeps the live approval prompt. -->
+        <!-- The code is the whole of the authorization - a server is headless
+             and has nobody to raise an approval prompt in front of. -->
         <TextBox Text="{Binding PendingPairingCode}"
                  PlaceholderText="Pairing code"
-                 IsVisible="{Binding IsPendingServerPairedByCode}"
                  IsEnabled="{Binding !IsPairingInProgress}"
                  controls:SoftKeyboard.ReopenOnTap="True"
                  MaxLength="20" FontSize="16" Padding="12,10" />

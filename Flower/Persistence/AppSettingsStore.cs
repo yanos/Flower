@@ -73,27 +73,16 @@ namespace Flower.Persistence
         public string? LastPlaylistName   { get; set; }
         public double  LastScrollOffsetY  { get; set; }
 
-        // Whether this device accepts incoming bulk-sync from Client devices
-        // (Server) or initiates bulk-sync toward exactly one chosen Server
-        // (Client, the default) - see Settings' General tab and
-        // Flower.Services.SyncRolePolicy. This only governs the
-        // LibrarySyncService/PlaylistSyncService bulk merge - browsing/
-        // streaming another device's catalog (PeerOpenSubsonicClientFactory)
-        // is unrestricted by role.
-        public bool IsServer { get; set; } = false;
-
-        // The one Server this Client currently bulk-syncs with, picked
-        // manually from MainViewModel.AvailableServers - null if not yet
-        // paired. PairedServerAlias is a display-only cache so Settings can
+        // The one server this device currently syncs with, picked manually
+        // from MainViewModel.AvailableServers - null if not yet paired. PairedServerAlias is a display-only cache so Settings can
         // show the paired server's name even while it is not currently
         // reachable, without a live lookup.
         public string? PairedServerFingerprint { get; set; }
         public string? PairedServerAlias       { get; set; }
 
         // Set once a bulk sync with PairedServerFingerprint has actually
-        // succeeded - i.e. the server-side approval popup (SyncHttpServer.
-        // AuthorizeAsync/PeerApprovalRequested) has been answered "yes", not
-        // merely that this Client has asked to pair. False the whole time
+        // succeeded - i.e. the server really did accept the redeemed pairing
+        // code, not merely that this device pointed itself at one. False the whole time
         // PairedServerFingerprint is set but every sync attempt is still
         // getting a 403 - see MainViewModel.IsAwaitingServerApproval, shown
         // as the device-detail header's "Waiting for server..." spinner.
@@ -125,15 +114,17 @@ namespace Flower.Persistence
         // Server at the end of each library sync (LibrarySyncService.
         // PushLogSnapshotAsync, read back by the Log window's remote view).
         //
-        // Off by default, and deliberately opt-in rather than merely
-        // role-gated: the P2P transport is plaintext HTTP by design (TLS is
-        // permanently deferred there - see SYNC-PLAN.md), and a log snapshot
-        // is the highest-value payload that path carries. It contains
-        // exception text and absolute filesystem paths, i.e. usernames and
-        // library layout, which nothing else in the sync protocol exposes.
-        // Sending that in the clear on someone else's Wi-Fi has to be a
-        // choice the user made, not a default.
-        public bool ShareLogsWithPairedServer { get; set; } = false;
+        // On by default: the person who runs the server is the person who ends
+        // up diagnosing a listener's phone, and a listener cannot be talked
+        // through finding a log file over the phone. A snapshot that is only
+        // there when somebody thought to turn it on ahead of time is a
+        // snapshot that is never there when it is wanted.
+        //
+        // Still a switch, because of what the payload is: exception text and
+        // absolute filesystem paths, i.e. usernames and library layout, which
+        // nothing else in the sync protocol exposes. Anyone who would rather
+        // not hand that over, even to their own server, can say so.
+        public bool ShareLogsWithPairedServer { get; set; } = true;
 
         // Log window preferences (View > Log...), remembered between
         // launches the same way IsRepeatEnabled/IsShuffleEnabled are - see

@@ -286,7 +286,7 @@ public class StoreRoundTripTests : IDisposable
     // Simulates a trusted-peers.json written before PublicKey existed - such
     // an entry must still deserialize (rather than throwing and silently
     // trusting nobody), but has no usable key: GetPublicKey treats that
-    // identically to "not trusted" (see SyncHttpServer's verification path),
+    // identically to "not trusted" (see PeerSignatureAuth.VerifyTrustedPeer),
     // which is what forces the one-time re-pairing this signing scheme's
     // migration relies on.
     [Fact]
@@ -534,11 +534,10 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
-    public async Task AppSettingsStore_round_trips_server_role_and_paired_server()
+    public async Task AppSettingsStore_round_trips_the_paired_server()
     {
         var settings = new AppSettings
         {
-            IsServer                 = true,
             PairedServerFingerprint  = "abc123",
             PairedServerAlias        = "Living Room Mac",
         };
@@ -546,7 +545,6 @@ public class StoreRoundTripTests : IDisposable
         await new AppSettingsStore().SaveAsync(settings);
         var loaded = new AppSettingsStore().Load();
 
-        Assert.True(loaded.IsServer);
         Assert.Equal("abc123",          loaded.PairedServerFingerprint);
         Assert.Equal("Living Room Mac", loaded.PairedServerAlias);
     }

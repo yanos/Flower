@@ -44,16 +44,14 @@ public interface IDeviceSidebarHost
     void DeviceRowsChanged();
 }
 
-// The Devices/Server sections of the sidebar: which rows exist, which section
-// each belongs to, what each is called, and which one is the pinned paired
-// Server. Extracted wholesale from MainViewModel, where it was ~350 lines of
-// one of that class's six unrelated jobs - it only ever touched the sidebar
-// collection, the nickname store and reachability, never anything else there.
+// The sidebar's Servers section: which rows exist, what each is called, and
+// which one is the pinned paired server. Extracted wholesale from
+// MainViewModel, where it was ~350 lines of one of that class's six unrelated
+// jobs - it only ever touched the sidebar collection, the nickname store and
+// reachability, never anything else there.
 //
-// Rows arrive one at a time from NetworkDiscoveryService, so these sections are
-// built up live rather than as part of MainViewModel's BuildSidebarItems. A
-// peer advertising Server mode (DiscoveredDevice.IsServer) goes under its own
-// "Server" section instead of "Devices".
+// Rows arrive one at a time from NetworkDiscoveryService, so the section is
+// built up live rather than as part of MainViewModel's BuildSidebarItems.
 public sealed class DeviceSidebarSection
 {
     private readonly ObservableCollection<SidebarItem> _items;
@@ -104,19 +102,18 @@ public sealed class DeviceSidebarSection
             // first time this session. Either way, SyncPairedServerRow below
             // flips its glyph back to reachable now that it's live again.
             existing.IsPairedServer = device.Fingerprint == _host.PairedServerFingerprint;
-            RelocateIfNeeded(existing, device);
             RemoveDuplicates(existing, device);
             RefreshDisplayNames();
             SyncPairedServerRow();
             return;
         }
 
-        var added = new SidebarItem(SidebarItemKind.Device, ResolveDisplayName(device), IconFor(device), device: device)
+        var added = new SidebarItem(SidebarItemKind.Device, ResolveDisplayName(device), MaterialIconKind.Server, device: device)
         {
             IsSyncing = device.Fingerprint == _host.PairedServerFingerprint && _host.IsSyncing,
             IsPairedServer = device.Fingerprint == _host.PairedServerFingerprint,
         };
-        Insert(added, device);
+        Insert(added);
         RemoveDuplicates(added, device);
         RefreshDisplayNames();
         SyncPairedServerRow();
@@ -182,19 +179,19 @@ public sealed class DeviceSidebarSection
             item.IsSyncing = isSyncing;
     }
 
-    private static string SectionHeaderName(DiscoveredDevice device) => device.IsServer ? "Server" : "Devices";
-    private static MaterialIconKind IconFor(DiscoveredDevice device) => device.IsServer ? MaterialIconKind.Server : MaterialIconKind.Laptop;
+    // One section, because there is one kind of thing to find: a server.
+    // This used to fork on the peer's advertised role - a Flower app that had
+    // been flipped into Server mode went under "Servers" and every other app
+    // under "Devices" - and there is no such fork left now that an app does
+    // not advertise at all (see NetworkDiscoveryService).
+    private const string SectionHeaderName = "Servers";
 
-    // Inserts a brand-new Device row into the section matching the device's
-    // current role (see SectionHeaderName), creating that section's Header row
-    // first if this is its first member. Appends the section itself at the end
-    // of the sidebar the first time it's needed (same as the old
-    // single-"Devices"-section behavior), but keeps each section's own members
-    // contiguous so RelocateIfNeeded/SectionHeaderFor can find a row's section
-    // by walking backward to the nearest preceding Header.
-    private void Insert(SidebarItem item, DiscoveredDevice device)
+    // Inserts a brand-new Device row into the Servers section, creating that
+    // section's Header row first if this is its first member, and appending
+    // the section itself at the end of the sidebar the first time it's needed.
+    private void Insert(SidebarItem item)
     {
-        var headerName = SectionHeaderName(device);
+        var headerName = SectionHeaderName;
         var headerIndex = -1;
         for (var i = 0; i < _items.Count; i++)
         {
@@ -218,35 +215,9 @@ public sealed class DeviceSidebarSection
         _items.Insert(insertAt, item);
     }
 
-    // A device's advertised role can change after its sidebar row was
-    // created (e.g. the peer flips its own "Act as Server" setting) - moves
-    // the row to the section matching its current role and updates its icon
-    // to match, no-op if it's already in the right place. Preserves
-    // selection across the move since the row is the same SidebarItem
-    // instance throughout, just removed and reinserted elsewhere in the
-    // collection - Remove briefly drops it out of SelectedSidebarItem via
-    // the sidebar ListBox's two-way binding, so it's explicitly restored
-    // after Insert if it was selected going in.
-    private void RelocateIfNeeded(SidebarItem item, DiscoveredDevice device)
-    {
-        item.Icon = IconFor(device);
-
-        var targetHeaderName = SectionHeaderName(device);
-        var currentHeader = SectionHeaderFor(item);
-        if (currentHeader?.Name == targetHeaderName)
-            return;
-
-        var wasSelected = _host.SelectedSidebarItem == item;
-        _items.Remove(item);
-        RemoveHeaderIfEmpty(currentHeader);
-        Insert(item, device);
-        if (wasSelected)
-            _host.SelectedSidebarItem = item;
-    }
-
-    // The Header row immediately preceding a sidebar item, i.e. the section
-    // it currently belongs to - relies on Insert always keeping a section's
-    // members contiguous right after its Header.
+    // The Header row immediately preceding a sidebar item, i.e. the section it
+    // belongs to - relies on Insert always keeping the section's members
+    // contiguous right after its Header.
     private SidebarItem? SectionHeaderFor(SidebarItem item)
     {
         var index = _items.IndexOf(item);
@@ -258,9 +229,8 @@ public sealed class DeviceSidebarSection
         return null;
     }
 
-    // Drops a section's Header row once its last member is gone - shared by
-    // RemoveItem (a device actually left) and RelocateIfNeeded (a device moved
-    // to the other section).
+    // Drops the section's Header row once its last member is gone, so an empty
+    // "Servers" heading never sits there on its own.
     private void RemoveHeaderIfEmpty(SidebarItem? header)
     {
         if (header == null)

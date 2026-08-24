@@ -12,37 +12,41 @@ iOS owns its music files itself — its own sandboxed Documents-folder library, 
 
 ---
 
-## The unifying decision: one OpenSubsonic client, three interchangeable servers
+## The unifying decision: one OpenSubsonic client, one kind of server
 
-Peer-to-peer WiFi sync and self-hosted-server support were originally scoped as separate protocols. They're now one client protocol with three interchangeable things on the other end.
+Peer-to-peer WiFi sync and self-hosted-server support were originally scoped as separate protocols. They became one client protocol, and then — see "Peer-to-peer, built and removed" below — one thing on the other end of it.
 
 - **Protocol: OpenSubsonic** (actively-maintained open successor to the classic Subsonic API, JSON-first, backwards compatible). Building a client means **zero server code** to get self-hosting working — point Flower at Navidrome, Gonic, Airsonic-Advanced, or Ampache.
 - **Target server: Navidrome** (Go, Docker-first, drives OpenSubsonic's evolution). Feature coverage confirmed sufficient: browsing, ranged `/stream`, playlist CRUD, favorites, cover art, search, scrobble.
 - **Auth**: classic `token=md5(password+salt)` or OpenSubsonic's API-key extension.
-- **No usable .NET client library existed**, so Flower hand-rolled one. **Done**: `OpenSubsonicClient`/`OpenSubsonicContracts.cs` (`Flower/Services/`) — auth, ID3-based browsing (`getArtists`/`getArtist`/`getAlbumList2`/`getAlbum`/`getSong`), `search3`, playlist CRUD, star/scrobble, and URL builders for `stream`/`download`/`getCoverArt`. Unit tested against a fake `HttpMessageHandler`. Not yet wired into UI/Settings/an `IMusicImporter` backend.
-
-**The insight that reshapes both halves of this doc:** once Flower speaks OpenSubsonic as a client, the server on the other end can be a third-party Navidrome/Jellyfin instance, a first-party headless `Flower.Server`, or **another Flower app on the network hosting the protocol embedded, in-process, no separate server**. All three look identical to the client.
-
-- **Flower.Desktop hosts the OpenSubsonic API itself, in-process, with no database** — a thin mapping layer over the `Library` already loaded in memory. Unlike a standalone `Flower.Server`, which needs SQLite because it's headless — though both ended up on the same `Flower.Core` persistence layer in the end, see the Tier 4.1 note below.
+- **No usable .NET client library existed**, so Flower hand-rolled one. **Done**: `OpenSubsonicClient`/`OpenSubsonicContracts.cs` (`Flower.Core/Services/`) — auth, ID3-based browsing (`getArtists`/`getArtist`/`getAlbumList2`/`getAlbum`/`getSong`), `search3`, playlist CRUD, star/scrobble, and URL builders for `stream`/`download`/`getCoverArt`.
 - **Mobile's sync client and the self-hosting client are the same code** — just two different base URLs.
+
+The server on the other end is a third-party Navidrome/Jellyfin instance or a first-party headless `Flower.Server`. Both look identical to the client.
+
+### Peer-to-peer, built and removed
+
+There used to be a third option, and for a while it was the interesting one: **a Flower app hosting the protocol itself, embedded, in-process, no separate server**. Any desktop or phone could be flipped into "Server" mode from Settings, and `SyncHttpServer` — a raw `HttpListener` inside the shared Avalonia library — served `/info`, pairing, the bulk library and playlist manifests, a log-report endpoint, and an OpenSubsonic browse/stream surface over the `Library` already in memory. Every client advertised itself over mDNS so other apps could find it. It worked, and it was fully built: the trust gate, the signed-request hardening, the AirDrop-style approval prompt, a two-section sidebar for "Servers" versus "Devices", 22 real-socket round-trip tests.
+
+**It is gone.** What it cost was not the listener but everything shaped around it: a Client/Server role concept in two Settings screens and a persisted setting, two pairing flows (redeem a code / wait for someone to tap Allow) that every pairing surface had to fork on, two kinds of discovered peer, a trusted-device roster on a device that had no business having one, and a security boundary — `LanGuard` standing between a wildcard bind and the open internet — duplicated on every phone in the house. For a deployment model that is *one person runs one server* (see `CLAUDE.md`), the second server implementation was carrying the complexity of a mesh to serve a topology that is a star.
+
+So: **a client is never a server.** Only `Flower.Server` serves, only `Flower.Server` advertises over mDNS, and a client browses without advertising. Pairing is always a redeemed code. Every discovered device is a server, which is what collapsed the role concept, the two sidebar sections and the two pairing paths into one each.
+
+**What that gave up, and what should come back.** Browsing another *device's* library on the LAN — opening your desktop's collection from your phone and playing a track off it, with no server involved — went with the listener. It is wanted, and it is not deferred by accident. It should return as its own design rather than as a revived `SyncHttpServer`: the old one earned its keep by also carrying sync, pairing and trust, and a browse-only feature does not need any of that. The client half is still here and still works — `PeerLibraryViewModel` is the device-detail browse pane, pointed at `Flower.Server` today — so what is missing is a minimal, opt-in, browse-and-stream-only listener on the serving side, and an honest answer about what it means for a phone to open a port.
 
 ### Staged path to "always available to sync with"
 
-An embedded-in-the-GUI server only serves while Flower.Desktop is open. Natural staged path toward always-on:
+`Flower.Server` is a headless daemon already, so there are no stages left here: run it on the NAS, the home box or the VPS and it survives logout and starts at boot. See `SELF-HOSTING.md`. This section used to describe a ladder — tray/menu-bar mode, then auto-start on login, then a true daemon — climbed to keep an in-GUI host alive; the daemon at the top of it is what got built, and the ladder went with the host.
 
-1. **Tray/menu-bar mode** — closing the window hides it instead of quitting; embedded host keeps serving. Cheap.
-2. **Auto-start on login** (`LaunchAgent`/Windows startup/systemd `--user`). Per-OS installer plumbing, not new sync logic.
-3. **A true headless daemon** — survives logout, starts at boot. This is really `Flower.Server` deployed locally instead of on a NAS/VPS; `Flower.CLI` (`CLI-PLAN.md`) is the natural process to register as an OS service.
+### `Flower.Core` exists
 
-Stages 1-2 are cheap; stage 3 is real OS-service-installer work and isn't worth building speculatively.
-
-### Sequencing: don't split `Flower.Core` out until there's a concrete reason to
-
-The OpenSubsonic contracts/client and the embedded host are built directly in the existing `Flower` project — no Avalonia/LibVLC boundary to cross yet. Only extract `Flower.Core` once something needs to run where it *can't* reference Avalonia/LibVLC (stage 3 above, or a standalone `Flower.Server`). See "Project structure" below for the deferred design.
+The OpenSubsonic contracts, the client, the wire shapes, the signature and trust machinery, and the SQLite layer all live in `Flower.Core`, which is what `Flower.Server` reaches for and `Flower` (Avalonia-coupled) shares. See "Project structure" below. This section used to argue for *deferring* that split until something needed to run where it could not reference Avalonia/LibVLC — `Flower.Server` was that something.
 
 ---
 
 ## Recommendation: build WiFi/LAN sync, skip Bluetooth, treat USB as secondary
+
+> **Read the rest of this section, and Phase 3 below, as a record of what was built rather than of what runs.** All of it shipped; the half of it that made a Flower app *serve* — `SyncHttpServer`, its endpoints, the approval prompt, the client's own mDNS advertisement — has since been removed, and the client half now talks to `Flower.Server` instead. See "Peer-to-peer, built and removed" above for why. Endpoints named below still exist and still carry the same shapes; they are answered by `Flower.Server`'s `SyncEndpoints`/`DiscoveryEndpoints`, not by another phone.
 
 ### 1. WiFi/LAN sync — the transport to actually build
 
@@ -259,16 +263,17 @@ by reimplementing the record and response shapes on the server: `IMdnsBackend`/`
 `MakaretuMdnsBackend` (extracted out of `NetworkDiscoveryService.cs` and made public), the
 `Makaretu.Dns.Multicast.New` package reference, plus a new `SyncProtocol` holding the three facts
 both sides must agree on - the service type, the default port, and the `/info` path - and the
-`SyncInfoResponseDto` wire shape with its own `SyncProtocolJsonContext`. `SyncHttpServer` and
-`NetworkDiscoveryService` now reference those constants instead of owning private copies, so the
-two implementations cannot drift. `Flower.iOS`'s `BonjourMdnsBackend` needed no change (same
-namespace).
+`SyncInfoResponseDto` wire shape with its own `SyncProtocolJsonContext`. `Flower.iOS`'s
+`BonjourMdnsBackend` needed no change (same namespace). (Written when both ends advertised and
+both had to be kept from drifting; only the server advertises now, and `NetworkDiscoveryService`
+browses. The shared constants stayed, since a browser and an advertiser still have to agree.)
 
 The server side is then small: `MdnsAdvertiser`, an `IHostedLifecycleService` that advertises in
 `StartedAsync` (the bound port is only known once Kestrel has started) and unadvertises on
-shutdown so clients prune the row immediately; and `DiscoveryEndpoints`, serving the same DTO the
-app serves, with `IsServer` always true and `trustsCaller` answered from `TrustedPeerStore` for
-the ~5s poll every client already runs. Both failure modes are warnings, not startup failures -
+shutdown so clients prune the row immediately; and `DiscoveryEndpoints`, serving
+`SyncInfoResponseDto` with `trustsCaller` answered from `TrustedPeerStore` for the ~5s poll every
+client already runs. (It carried an `isServer` flag too, back when a Flower app could answer this
+same handshake; it is the only thing answering it now, and the flag is gone.) Both failure modes are warnings, not startup failures -
 an undiscoverable server still serves every request, it just has to be reached by address.
 New options: `Flower:Alias` (sidebar name, defaults to the machine name) and
 `Flower:AdvertiseOnLan` (on by default; off for tailnet/reverse-proxy-only deployments).
@@ -286,8 +291,7 @@ This bites dev instances rather than deployments, which is exactly why it is wor
 code: the symptom shows up on a *different* machine, a hop away from the cause. `AdvertisablePort`
 now returns null unless some bound address is non-loopback, and a loopback-only server logs that
 it is skipping the advertisement and serves on. A wildcard bind (`0.0.0.0`, `[::]`, `+`, `*`) is
-not loopback and still advertises, which is the normal path. The app-as-peer `SyncHttpServer`
-needs no equivalent guard - it always binds `http://+:{port}/`.
+not loopback and still advertises, which is the normal path.
 
 ### Pairing from the client: "Pair" plus a code box
 
@@ -351,11 +355,11 @@ So `SignatureVerifier` (`SignatureVerifier.cs:51`) accepts browser-produced sign
 get gated by the same `DeviceSignatureAuth` middleware as device routes, plus an `IsAdmin` flag
 on the peer record. Devices differ by capability, not by authentication mechanism.
 
-**Pairing, one mechanism for all of them.** Today's `SyncHttpServer.PeerApprovalRequested` flow
-holds an incoming request open for 60 seconds waiting on a human to click Approve, and fails
-closed if nobody's listening — fine when the admin is at the machine, a bad fit for a headless
-box nobody's watching. `Flower.Server` replaces it with an **admin-issued, one-time pairing
-code**, proactive instead of reactive:
+**Pairing, one mechanism for all of them.** The app-to-app flow held an incoming request open for
+60 seconds waiting on a human to click Approve, and failed closed if nobody was listening — fine
+when the admin is at the machine, a bad fit for a headless box nobody's watching. `Flower.Server`
+replaces it with an **admin-issued, one-time pairing code**, proactive instead of reactive — and
+since the app-to-app flow is gone, this is now the only way anything pairs with anything:
 
 1. Admin hits "Add device" → server generates a short single-use code with a ~10 minute expiry,
    displayed on-screen both as text and as a QR encoding
@@ -451,15 +455,15 @@ backend can't reference that (the browser UI is a different story — see below)
 
 - **`Models/`** (`Track`, `Playlist`/`MainPlaylist`, `Library`) — pure move, no Avalonia references. `TimeSpanTicksConverter` had to go from `internal` to `public`: a source-generated `JsonSerializerContext` can't see an `internal` converter type from a different assembly.
 - **`Importer/`** (`Importer`, `IMusicImporter`, `PlatformMusicImporter`, the iTunes importers) — `Flower.Server`'s scanner becomes the same `Importer.ImportAsync` desktop already uses. Brought `TagLibSharp`/`plist-cil` along (`Flower.csproj` still references `TagLibSharp` too, for its own non-import uses like `AlbumArtLoader`/`TrackInfoWindow`).
-- **The OpenSubsonic wire contracts + REST client** (`OpenSubsonicContracts.cs`/`OpenSubsonicClient.cs`) — moved as-is. **Not** `LibraryOpenSubsonicMapper` (the `Track`→`Child` mapping) — that stays in `Flower`, since it calls `AlbumArtLoader` (Avalonia `Bitmap`-backed); `Flower.Server` will write its own `TrackEntity`→`SubsonicSongDto` mapping instead, per the "Reuse boundary" note below. `OpenSubsonicClient`'s own JSON parsing needed a new `OpenSubsonicJsonContext` in `Flower.Core` (mirroring `Flower`'s `ExternalProtocolJsonContext`, which stays put since it also covers `SyncHttpServer.SyncInfoResponseDto`) — two source-generated contexts for the same `SubsonicEnvelope` shape, harmless duplication.
-- **The pairing/trust primitives** — `DeviceKeyStore`/`DeviceSigningKey`, `SignedRequestCanonicalizer`/`SignatureVerifier`/`NonceReplayGuard`, `TrustedPeerStore`, `RateLimiter`, `LanGuard`. (`DeviceIdentity`/`DeviceIdentityStore` did **not** move — it's this device's own display alias, a client-only concern, unchanged from the "Stays in `Flower`" list below.) `DeviceKeyStore`/`TrustedPeerStore` needed their own `FlowerCoreJsonContext` (`DeviceKeyMaterial`/`TrustedPeer`/`DeniedPeer`) since `Flower`'s `FlowerJsonContext` can't be referenced from `Flower.Core`. Also moved, as a necessary transitive dependency not originally called out here: `AppDataDirectory`/`PlatformDataDirectory` (the app-support-directory resolver — `AppDataDirectory` went from `internal` to `public`; still `Flower`'s own resolution logic for now, `Flower.Server` will likely want its own config-driven data directory rather than reusing this as-is). `SyncHttpServer` itself (the `HttpListener`-based P2P host) stays in `Flower` — it's mobile/desktop-specific — but `Flower.Server` gets its own Kestrel-based route layer calling the same moved-out primitives instead of reimplementing them.
+- **The OpenSubsonic wire contracts + REST client** (`OpenSubsonicContracts.cs`/`OpenSubsonicClient.cs`) — moved as-is. **Not** `LibraryOpenSubsonicMapper` (the `Track`→`Child` mapping) — that stays in `Flower`, since it calls `AlbumArtLoader` (Avalonia `Bitmap`-backed); `Flower.Server` will write its own `TrackEntity`→`SubsonicSongDto` mapping instead, per the "Reuse boundary" note below. `OpenSubsonicClient`'s own JSON parsing needed a new `OpenSubsonicJsonContext` in `Flower.Core` (mirroring `Flower`'s `ExternalProtocolJsonContext`, which stays put) — two source-generated contexts for the same `SubsonicEnvelope` shape, harmless duplication.
+- **The pairing/trust primitives** — `DeviceKeyStore`/`DeviceSigningKey`, `SignedRequestCanonicalizer`/`SignatureVerifier`/`NonceReplayGuard`, `TrustedPeerStore`, `RateLimiter`, `LanGuard`. (`DeviceIdentity`/`DeviceIdentityStore` did **not** move — it's this device's own display alias, a client-only concern, unchanged from the "Stays in `Flower`" list below.) `DeviceKeyStore`/`TrustedPeerStore` needed their own `FlowerCoreJsonContext` (`DeviceKeyMaterial`/`TrustedPeer`/`DeniedPeer`) since `Flower`'s `FlowerJsonContext` can't be referenced from `Flower.Core`. Also moved, as a necessary transitive dependency not originally called out here: `AppDataDirectory`/`PlatformDataDirectory` (the app-support-directory resolver — `AppDataDirectory` went from `internal` to `public`; still `Flower`'s own resolution logic for now, `Flower.Server` will likely want its own config-driven data directory rather than reusing this as-is). (`SyncHttpServer`, the `HttpListener`-based P2P host, stayed in `Flower` at the time, on the grounds that it was mobile/desktop-specific; it has since been removed outright, and `Flower.Server`'s Kestrel route layer — which already called these same moved-out primitives rather than reimplementing them — is the only server left.)
 - **`Flower/Logging/`** (`AppLogging`, `InMemoryLogStore`/`InMemoryLogEventSink`/`InMemoryLogEntry`, `CrashReportScanner`, `PlatformCrashInfo`) — no Avalonia coupling, and a headless `Flower.Server` needs the exact same Serilog file/console bootstrap rather than a duplicated copy, so it moved too even though nothing in `Flower.Core` strictly required it (see the `Importer` fix below, which *removed* the one forcing dependency but the logging infrastructure stayed moved anyway on its own merits). `AppLogging.LogsDirectory` uses the now-`public` `AppDataDirectory` above. `Flower.Core.csproj` carries the Serilog/`System.Diagnostics.EventLog` package refs this needs.
 
 **`Importer.TryResolveAppleMusicFolder` no longer needs a static logger.** It's called from `AppSettingsStore.Load()` (to auto-populate a configured library path) before any `Importer` instance necessarily exists, which briefly justified a static `AppLogging.CreateLogger<Importer>()` field — but the method only needed to *accept* a logger from whichever caller already has one, not manufacture its own from a global. Fixed with an `ILogger? logger = null` parameter instead: `AppSettingsStore` passes its own `_logger`, and `Importer.Import()`'s instance `_logger` flows through its own `ResolveMusicPath` the same way. (This was going to shrink `Flower.Core` back to excluding `Flower/Logging/` entirely, until the "why not just move it, it's Avalonia-free and `Flower.Server` wants it too" call above superseded that — the `Importer` fix is still worth keeping on its own: a static global logger for one call site when the caller already has a perfectly good instance one was avoidable either way.)
 
 **Startup logging/DI setup tightened as part of this pass, in `Flower` (prompted by looking at `AppLogging` closely, not really about what moved into `Flower.Core`):** `App.axaml.cs`'s DI container (`ServiceCollection`) is now created near the very top of `OnFrameworkInitializationCompleted`, immediately after `AppLogging.Initialize()` configures Serilog's sinks — and the *first* thing registered on it is `.AddLogging(builder => builder.AddSerilog())`, the standard `Microsoft.Extensions.Logging` DI pipeline, rather than `AppLogging` building its own separate `SerilogLoggerFactory` internally. That one collection then threads through the rest of `Bootstrap`, accumulating `.AddSingleton(...)` registrations as each service gets constructed exactly as before, and only gets built + handed to `Ioc.Default.ConfigureServices(...)` once, at the end (`CommunityToolkit.Mvvm`'s `Ioc.Default` can only be configured once, so the container itself still can't be *finished* until everything it holds exists — only the logging registration genuinely moved earlier). `AppLogging.CreateLogger`/`CreateTypedLogger` (used throughout `Bootstrap` for ad-hoc-`new`'d services, plus genuinely-static call sites like `RubberBandScroll`/`AlbumArtLoader` that can't take constructor-injected loggers at all) now read from that same DI-built `ILoggerFactory` via a new `AppLogging.UseLoggerFactory(...)` setter, instead of wrapping `Log.Logger` a second, independent time.
 
-**Stays in `Flower`:** `LibraryStore`/`PlaylistStore` (thin wrappers now — their storage moved to the shared `Flower.Core/Persistence/Sql/` repositories in Tier 4.1, which is what the parenthetical here originally argued was impossible while they were JSON); `AppSettingsStore`/`ColumnVisibilityStore`/`DeviceIdentityStore`/`PlaylistSyncStateStore` (client-only concerns); `LibraryOpenSubsonicMapper` (Avalonia `Bitmap`-coupled via `AlbumArtLoader`, see above); `TrackListBuilder`/`TrackRowViewModel` (holds an Avalonia `Bitmap`); `SyncHttpServer`/`NetworkDiscoveryService`/`PlaylistSyncService` (P2P sync is a different feature from `Flower.Server`).
+**Stays in `Flower`:** `LibraryStore`/`PlaylistStore` (thin wrappers now — their storage moved to the shared `Flower.Core/Persistence/Sql/` repositories in Tier 4.1, which is what the parenthetical here originally argued was impossible while they were JSON); `AppSettingsStore`/`ColumnVisibilityStore`/`DeviceIdentityStore`/`PlaylistSyncStateStore` (client-only concerns); `LibraryOpenSubsonicMapper` (Avalonia `Bitmap`-coupled via `AlbumArtLoader`, see above); `TrackListBuilder`/`TrackRowViewModel` (holds an Avalonia `Bitmap`); `NetworkDiscoveryService`/`PlaylistSyncService` (finding a server and syncing with it are the client's side of the conversation). `ClientLogStore`/`LogSyncContracts` were on this list too, until the log-sharing feature gained a server-side home and they moved into `Flower.Core` — see "Give log sharing a server-side home" in the changelog below.
 
 **Reuse boundary:** `Importer.ImportAsync()` produces shared `Flower.Core.Track`s → the shared SQLite schema and repositories (`Flower.Core/Persistence/Sql/`) → server-internal mapping to shared `SubsonicSongDto` → HTTP/JSON → OpenSubsonic client maps back to its own `Flower.Core.Track`. One deliberate seam remains, `SubsonicSongDto`, which keeps the Path-can't-cross-the-wire rule out of the shared model.
 
@@ -893,8 +897,10 @@ restores the pairing with a real key captured this time. Every device's own
 fingerprint also changes on upgrade (now derived from its new keypair), so
 this is a one-time "everyone re-pairs once" event.
 
-**Also done in this pass**: a declarative route table (`SyncHttpServer`'s
-`Route`/`AuthMode`/`RateLimitCategory`) replaced the old `if`/`else if`
+**Also done in this pass** (all of it on the app's own `SyncHttpServer`, since
+removed - what survives is what `Flower.Server` had already adopted alongside
+it, noted per item): a declarative route table
+(`Route`/`AuthMode`/`RateLimitCategory`) replaced the old `if`/`else if`
 dispatch chain; rate limiting (`RateLimiter`, fixed-window, IP-keyed for
 pre-trust endpoints, fingerprint-keyed post-trust); LAN-only enforcement
 (`LanGuard`, hard reject on any non-private/loopback `RemoteEndPoint` -
@@ -909,8 +915,9 @@ cap (`RequestBodyReader.ReadWithCapAsync`).
 
 ### 403 means revoked; a bad signature is 401
 
-Both peer servers (`SyncHttpServer` and `Flower.Server`'s `SyncEndpoints`)
-used to answer *every* trusted-peer check failure with a 403, and
+Both peer servers of the day (the app's `SyncHttpServer`, since removed, and
+`Flower.Server`'s `SyncEndpoints`) answered *every* trusted-peer check failure
+with a 403, and
 `LibrarySyncService`/`PlaylistSyncService` read a 403 off a sync route as
 "this server has revoked me" and responded by unpairing this device for
 good. Those two facts together lost a real pairing: the client signed a

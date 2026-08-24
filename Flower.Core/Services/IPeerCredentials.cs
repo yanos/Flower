@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 
 namespace Flower.Services;
 
-// How this process proves who it is to a Flower host - a peer's embedded
-// SyncHttpServer or a headless Flower.Server - for one specific request.
+// How this process proves who it is to a Flower server, for one specific
+// request.
 //
 // This used to be five hand-rolled copies of the same identity block:
 // LibrarySyncService's two calls, PlaylistSyncService.AddSignedIdentityHeaders,

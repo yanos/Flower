@@ -62,42 +62,32 @@
         <TextBlock Text="Device Name" FontSize="13" Opacity="0.6"/>
         <TextBox Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"
                  controls:SoftKeyboard.ReopenOnTap="True"/>
-        <TextBlock Text="Shown to other Flower devices when syncing over Wi-Fi"
+        <TextBlock Text="Shown on the server this device syncs with"
                    FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
       </StackPanel>
 
-      <!-- Client/Server bulk-sync topology (see SyncRolePolicy) - same
-           meaning as desktop's Settings > General checkbox. Doesn't affect
-           browsing/streaming another device's catalog, which always works
-           regardless of role. -->
+      <!-- On by default, same as desktop: whoever runs the server is the one
+           who ends up diagnosing a phone, and a phone's owner cannot be asked
+           to find a log file. See AppSettings.ShareLogsWithPairedServer. -->
       <StackPanel Margin="20,4,20,16" Spacing="6">
-        <CheckBox Content="Act as Server" IsChecked="{Binding Main.IsServer}"/>
-        <TextBlock Text="Browsing and streaming other devices always works regardless of this setting - it only affects automatic library/playlist syncing."
-                   FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
-      </StackPanel>
-
-      <!-- Opt-in, off by default: the log snapshot travels over plaintext
-           HTTP and contains exception text and absolute file paths (see
-           AppSettings.ShareLogsWithPairedServer). -->
-      <StackPanel IsVisible="{Binding !Main.IsServer}" Margin="20,4,20,16" Spacing="6">
         <CheckBox Content="Send logs to paired server" IsChecked="{Binding Main.ShareLogsWithPairedServer}"/>
-        <TextBlock Text="Sends this device's recent log lines after each sync so they can be read on the server. Sent unencrypted over your local network, and they include file paths and error details."
+        <TextBlock Text="Sends this device's recent log lines after each sync so they can be read on the server. They include file paths and error details."
                    FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
       </StackPanel>
 
-      <!-- Client-only: pick/see the one Server this device bulk-syncs with -
-           desktop's equivalent is ServerPickerView, embedded in Settings'
-           Devices tab; mobile has no separate tab surface, so this is just
-           another block in the same flat sheet. -->
-      <StackPanel IsVisible="{Binding !Main.IsServer}" Margin="20,4,20,16" Spacing="6">
+      <!-- Pick/see the one server this device syncs with - desktop's
+           equivalent is ServerPickerView, embedded in Settings' Devices tab;
+           mobile has no separate tab surface, so this is just another block in
+           the same flat sheet. -->
+      <StackPanel Margin="20,4,20,16" Spacing="6">
         <TextBlock Text="Server" FontSize="13" Opacity="0.6"/>
 
         <Grid IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
               ColumnDefinitions="*,Auto">
           <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <!-- Only once the paired server has actually approved this
+            <!-- Only once the paired server has actually accepted this
                  device (see MainViewModel.IsPairedServerTrustConfirmed) -
-                 not just requested, which is PairedServerAlias alone (see
+                 not just pointed at, which is PairedServerAlias alone (see
                  the "waiting" spinner below). -->
             <materialIcons:MaterialIcon Kind="CheckCircle"
                                          Width="14" Height="14"
@@ -150,24 +140,39 @@
                    Text="{Binding Main.PairedServerRouteDescription}"
                    Opacity="0.6" FontSize="12" Margin="0,2,0,0"/>
 
-        <!-- Adding somebody else's phone or laptop to this server, without
-             needing a desktop or a browser to do it - shown only if this
-             device is paired with a headless Flower.Server that is reachable
-             right now (see MainViewModel.CanInviteDeviceToPairedServer). The
-             code it issues is an ordinary listener's code, never an admin one.
-             A device that is paired but not an administrator gets the server's
-             own refusal said plainly below rather than a hidden button. -->
+        <!-- Adding another phone or laptop to this server, without needing a
+             desktop or a browser to do it - shown only if this device is
+             paired with a Flower.Server that is reachable right now *and* that
+             server counts this device as one of its administrators (see
+             MainViewModel.CanInviteDeviceToPairedServer). A listener's phone
+             sees nothing here rather than a button the server can only
+             refuse. -->
         <StackPanel IsVisible="{Binding Main.CanInviteDeviceToPairedServer}" Spacing="6" Margin="0,12,0,0">
-          <Button Content="Add Device…"
+          <Button Content="Generate Pairing Code"
                   Command="{Binding InviteDeviceCommand}"
                   IsEnabled="{Binding !Main.IsIssuingPairingCode}"
                   HorizontalAlignment="Left"/>
+          <TextBlock Text="Creates a one-time code to type on the device being added. It expires in a few minutes."
+                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+          <!-- More than one device may be an administrator - an owner's own
+               desktop and their own phone both being one is the expected
+               shape. See MainViewModel.PairingCodeGrantsAdmin. -->
+          <CheckBox Content="Administrator" IsChecked="{Binding Main.PairingCodeGrantsAdmin}"/>
+          <TextBlock IsVisible="{Binding Main.PairingCodeGrantsAdmin}"
+                     Text="An administrator can also change this server's settings and add devices of their own."
+                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
           <SelectableTextBlock Text="{Binding Main.IssuedPairingCode}"
                                IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                                FontFamily="monospace" FontSize="20" FontWeight="SemiBold"/>
           <TextBlock IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                     Text="Enter this code on the device you are adding. It expires in a few minutes and works once."
+                     Text="Enter this code on the device you are adding. It works once."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+          <!-- What the code on screen grants, which the checkbox above stops
+               describing the moment it is un-ticked - see
+               MainViewModel.IssuedPairingCodeGrantsAdmin. -->
+          <TextBlock IsVisible="{Binding Main.IssuedPairingCodeGrantsAdmin}"
+                     Text="This code grants administrator access."
+                     FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
           <TextBlock IsVisible="{Binding Main.IssuedPairingCodeError, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                      Text="{Binding Main.IssuedPairingCodeError}"
                      Foreground="{DynamicResource AppWarningBrush}"
@@ -203,25 +208,35 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <!-- Pair buttons disabled entirely while already paired with
-             anything - matches decision: switching requires an explicit
-             unpair-first step (Unpair above), not a one-click switch.
-             Reaches back up to the page's own root DataContext
-             (MobileMainViewModel) for the command/paired-state, since each
-             row's own DataContext here is a DiscoveredDevice instead. -->
-        <ItemsControl ItemsSource="{Binding Main.AvailableServers}" Margin="0,8,0,0">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="services:DiscoveredDevice">
-              <Grid ColumnDefinitions="*,Auto" Margin="0,4">
-                <TextBlock Grid.Column="0" Text="{Binding Alias}" VerticalAlignment="Center"/>
-                <Button Grid.Column="1" Content="Pair"
-                        Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).PairWithServerCommand}"
-                        CommandParameter="{Binding}"
-                        IsEnabled="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"/>
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <!-- Flower servers seen on this network right now (mDNS), each one
+             offering to pair with it - tapping Pair opens the code sheet, the
+             same flow the desktop sidebar runs.
+             Hidden outright once this phone is paired with something, rather
+             than shown with every button greyed out: switching servers takes
+             an explicit unpair first (Unpair above), so a list whose every row
+             is dead only invites the question of what it was for.
+             Rows reach back up to the page's own root DataContext
+             (MobileMainViewModel) for the command, since each row's own
+             DataContext here is a DiscoveredDevice instead. -->
+        <StackPanel Margin="0,8,0,0" Spacing="4"
+                    IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
+          <TextBlock Text="Servers on this network" FontSize="13" Opacity="0.6"/>
+          <TextBlock Text="No servers found yet. One has to be running and on the same Wi-Fi."
+                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"
+                     IsVisible="{Binding !Main.HasAvailableServers}"/>
+          <ItemsControl ItemsSource="{Binding Main.AvailableServers}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="services:DiscoveredDevice">
+                <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                  <TextBlock Grid.Column="0" Text="{Binding Alias}" VerticalAlignment="Center"/>
+                  <Button Grid.Column="1" Content="Pair"
+                          Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).PairWithServerCommand}"
+                          CommandParameter="{Binding}"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
       </StackPanel>
 
       <Button Classes="action" Command="{Binding RescanCommand}">

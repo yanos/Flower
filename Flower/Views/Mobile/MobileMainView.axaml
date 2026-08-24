@@ -291,8 +291,6 @@
                               IsVisible="{Binding IsShowingAddToPlaylist}" />
     <views:SettingsView Grid.Row="0" Grid.RowSpan="3"
                          IsVisible="{Binding IsShowingSettings}" />
-    <views:PeerApprovalView Grid.Row="0" Grid.RowSpan="3"
-                             IsVisible="{Binding IsShowingPeerApproval}" />
     <views:ConfirmPairServerView Grid.Row="0" Grid.RowSpan="3"
                                   IsVisible="{Binding IsShowingConfirmPairServer}" />
     <views:ConfirmDeleteFileView Grid.Row="0" Grid.RowSpan="3"

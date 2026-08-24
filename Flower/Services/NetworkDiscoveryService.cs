@@ -63,29 +63,24 @@ public class DiscoveredDevice
     // as "not ready to sync yet" rather than guessing an identity for the peer.
     public string Fingerprint { get; set; } = "";
 
-    // Whether this peer currently advertises itself as a Server (see
-    // AppSettings.IsServer, SyncHttpServer.HandleInfoAsync) - resolved
-    // alongside Alias/Fingerprint via the same /info handshake. Drives
-    // MainViewModel.AvailableServers; unrelated to trust/pairing.
-    public bool IsServer { get; set; }
-
-    // The peer's self-reported kind - "desktop"/"mobile" for another Flower
-    // app, "server" for a headless Flower.Server. Resolved via the same /info
-    // handshake as the rest. Empty until that resolves, which reads as "an
-    // app" - the conservative default, since it keeps the live-approval flow
-    // rather than demanding a code nobody can produce.
+    // The peer's self-reported kind, resolved via the same /info handshake as
+    // the rest. Only ever "server" now that a client no longer advertises
+    // itself at all (see NetworkDiscoveryService.Start) - kept because it is
+    // what a sighting says about itself, and a peer that answers with anything
+    // else is a Flower this one does not understand rather than something to
+    // guess about.
     public string DeviceType { get; set; } = "";
 
-    // Whether pairing with this peer means redeeming an admin-issued code
-    // rather than waiting on a live approval prompt. A headless server has no
-    // one sitting in front of it to tap Allow, which is exactly why it issues
-    // codes instead (SYNC-PLAN.md, "Passwordless by design"); an app peer has
-    // no way to produce one. See PeerPairingService.
-    public bool PairsByCode => DeviceType == "server";
+    // The peer's signing public key, as it reports on /info, in
+    // DeviceSigningKey.PublicKeyBase64's encoding. Empty until resolved.
+    // Recorded into this device's own TrustedPeerStore when pairing succeeds,
+    // which is what lets PeerHttpClient pin the server's TLS certificate -
+    // see PeerSyncCoordinator.PairWithServer.
+    public string PublicKey { get; set; } = "";
 
-    // Whether this peer currently trusts *us* (see SyncHttpServer.
-    // HandleInfoAsync's trustsCaller field and AuthorizeAsync/TrustedPeerStore)
-    // - resolved alongside the rest via the same /info handshake, since
+    // Whether this peer currently trusts *us* (the trustsCaller field of
+    // Flower.Server's DiscoveryEndpoints /info answer, from its own
+    // TrustedPeerStore) - resolved alongside the rest via the same /info handshake, since
     // ResolveAliasAsync now identifies us on that request too. Defaults true
     // so a not-yet-resolved device, or one running old code with no
     // trustsCaller field at all, isn't mistaken for an active rejection -
@@ -93,6 +88,16 @@ public class DiscoveredDevice
     // a peer that isn't our paired Server (every peer answers it, but only
     // MainViewModel.PairedServerFingerprint's own trust status matters).
     public bool TrustsUs { get; set; } = true;
+
+    // Whether this peer counts *us* as one of its administrators (the
+    // callerIsAdmin field of the same /info answer). Defaults false, the
+    // opposite way round from TrustsUs, and for the same reason: TrustsUs
+    // guards against wrongly reading silence as a revocation, while this one
+    // guards against offering a control that only the server can actually
+    // authorise. An unresolved peer, or one that says nothing, is treated as
+    // "not an administrator here" - the admin-only buttons stay hidden until
+    // the server says otherwise. See MainViewModel.CanInviteDeviceToSelectedServer.
+    public bool WeAreAdmin { get; set; }
 
     // This peer's Library.ChangeToken as of its last /info answer - the same
     // opaque token GET /api/flower/v1/library serves as its ETag. Empty until
@@ -135,8 +140,13 @@ public class DiscoveredDevice
 
 // See SYNC-PLAN.md: mDNS discovery (proven working macOS <-> iOS Simulator, and -
 // via Flower.iOS's Bonjour-API backend, see PlatformMdns.cs - real iOS hardware
-// too) plus the start of the real sync protocol - device identity exchange over
-// plain HTTP (see SyncHttpServer). File transfer itself is a later phase.
+// too) plus the /info identity handshake against everything it finds.
+//
+// Browse-only. A client does not advertise itself, because a client is not a
+// server: the only thing on the network worth finding is a Flower.Server, and
+// it is the one advertising (Flower.Server/Services/MdnsAdvertiser.cs). This
+// used to be symmetric, back when every app hosted its own listener - see
+// SYNC-PLAN.md's "Peer-to-peer, built and removed".
 public class NetworkDiscoveryService : IDisposable
 {
     private const string ServiceType = SyncProtocol.ServiceType;
@@ -144,10 +154,9 @@ public class NetworkDiscoveryService : IDisposable
     // How often an already-known peer's /info is re-fetched, independent of
     // any fresh mDNS announcement - see PollKnownDevicesAsync. A peer that
     // renames itself (DeviceIdentityStore.Alias, MainViewModel.DeviceAlias)
-    // or changes role (AppSettings.IsServer) while both apps are already
-    // running and connected would otherwise not be noticed here until
-    // something else naturally re-triggers discovery (that peer's app
-    // relaunching, dropping off and rejoining the network, etc.) - mDNS's own
+    // while both ends are already running and connected would otherwise not be
+    // noticed here until something else naturally re-triggers discovery (the
+    // server restarting, dropping off and rejoining the network, etc.) - mDNS's own
     // passive re-announcement cadence isn't something this codebase controls
     // or can rely on for a timely update. Only a tiny /info GET per known
     // peer and only while the app is foregrounded (not a background
@@ -197,13 +206,6 @@ public class NetworkDiscoveryService : IDisposable
     private const int MaxConsecutiveResolveFailures = 3;
     private readonly ConcurrentDictionary<string, int> _consecutiveResolveFailures = new();
 
-    // Env.MachineName alone collides between desktop and the iOS Simulator, since
-    // the simulator shares the host Mac's actual hostname rather than having a
-    // network identity of its own - tag with the platform so the two are
-    // distinguishable when testing that way. Also used as the alias SyncHttpServer
-    // reports over /info, so both sides of the sync protocol agree on our identity.
-    public string OwnInstanceName { get; } = $"{Environment.MachineName}-{PlatformTag()}";
-
     public event EventHandler<DiscoveredDevice>? DeviceDiscovered;
     public event EventHandler<string>? DeviceLost;
 
@@ -234,7 +236,11 @@ public class NetworkDiscoveryService : IDisposable
         _credentials = credentials;
         _logger = logger;
         _backend = backend ?? PlatformMdns.Current ?? new MakaretuMdnsBackend();
-        _http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        // PeerHttpClient, because this is the client that probes an https
+        // origin a server just advertised - so it is where a certificate this
+        // device cannot validate has to present as "did not answer" rather than
+        // as an exception. See KnownDevices' scheme tie-break.
+        _http = httpClient ?? PeerHttpClient.Create(TimeSpan.FromSeconds(3));
         _backend.InstanceFound += OnInstanceFound;
         _backend.InstanceLost += (_, name) =>
         {
@@ -247,39 +253,31 @@ public class NetworkDiscoveryService : IDisposable
         };
     }
 
-    // port is whatever SyncHttpServer actually bound (see SyncHttpServer.Start) - not
-    // necessarily SyncHttpServer.DefaultPort, since that can be taken by another
-    // Flower instance on the same machine (e.g. the iOS Simulator). Advertising the
-    // real port means peers never need to assume a fixed one; they read it from the
-    // SRV record in the discovery answer instead (see OnInstanceFound).
-    public void Start(int port)
+    // Nothing to advertise and no port to advertise it on - this device is
+    // only ever the one looking. A server's own port arrives in the SRV record
+    // of the answer it sends back (see OnInstanceFound), so it never has to be
+    // assumed either.
+    public void Start()
     {
-        _backend.Advertise(OwnInstanceName, ServiceType, port);
         _backend.Browse(ServiceType);
 
         _pollCts = new CancellationTokenSource();
         _ = PollKnownDevicesAsync(_pollCts.Token);
     }
 
-    // Re-publishes this device's own advertisement and re-issues Browse() -
-    // meant to be called when an app returns to the foreground after being
-    // backgrounded (see Flower.iOS's AppDelegate.WillEnterForeground). The
-    // poll loop above just pauses under iOS suspension and resumes ticking
-    // on its own once unsuspended, needing no explicit restart - but
-    // NSNetService's own Bonjour publication (BonjourMdnsBackend, real iOS
-    // hardware only) is a known exception: it can silently drop while
-    // backgrounded and does not automatically resume just because the
-    // process becomes active again. Without this, a phone that locks for a
-    // while stops being discoverable by any peer for the rest of the app's
-    // lifetime, even though the process itself never died - observed in
-    // practice as the phone never reappearing in the desktop's sidebar after
-    // being brought back from sleep. Harmless to call when nothing was
-    // actually stale (e.g. on desktop, which has no such quirk) - Advertise/
-    // Browse are just a re-publish/re-query, not a state reset.
-    public void Restart(int port)
+    // Re-issues Browse() - meant to be called when an app returns to the
+    // foreground after being backgrounded (see Flower.iOS's
+    // AppDelegate.WillEnterForeground). The poll loop above just pauses under
+    // iOS suspension and resumes ticking on its own once unsuspended, needing
+    // no explicit restart, but a browse issued before suspension is not
+    // reliably still live afterwards - and a phone that comes back from sleep
+    // having quietly stopped seeing its server is indistinguishable, to its
+    // owner, from the server being gone. Harmless to call when nothing was
+    // actually stale (e.g. on desktop, which has no such quirk) - Browse is a
+    // re-query, not a state reset.
+    public void Restart()
     {
-        _logger.LogInformation("Restarting mDNS advertise/browse");
-        _backend.Advertise(OwnInstanceName, ServiceType, port);
+        _logger.LogInformation("Re-browsing for peers");
         _backend.Browse(ServiceType);
     }
 
@@ -345,9 +343,6 @@ public class NetworkDiscoveryService : IDisposable
         // unlikely but cheap to guard) reports something else.
         if (!IsOurServiceType(found.InstanceName))
             return;
-
-        if (found.InstanceName.StartsWith(OwnInstanceName + ".", StringComparison.OrdinalIgnoreCase))
-            return; // mDNS reflects our own advertisement back to us - not a peer.
 
         // A dual-stack peer (the common case on Wi-Fi) can answer the same
         // multicast query from more than one of its own addresses - observed
@@ -430,7 +425,7 @@ public class NetworkDiscoveryService : IDisposable
     }
 
     // Fetches the peer's real alias and fingerprint via the /info handshake
-    // (SyncHttpServer), replacing the raw mDNS instance name shown until this
+    // (Flower.Server's DiscoveryEndpoints), replacing the raw mDNS name shown until this
     // resolves. Best-effort: a peer that is not yet listening, or never will be,
     // just keeps the fallback (and PlaylistSyncService won't attempt to sync with
     // it, since Fingerprint stays empty). Also called periodically for
@@ -444,7 +439,7 @@ public class NetworkDiscoveryService : IDisposable
         try
         {
             // Signed the same way every gated endpoint's calls are, even though
-            // /info itself stays ungated (see SyncHttpServer.RequiresTrust): a
+            // /info itself stays ungated: a
             // peer has to be able to learn our fingerprint and public key here
             // before either side can evaluate trust at all, so the route stays
             // open - what the signature buys is the half of the answer that is
@@ -498,24 +493,17 @@ public class NetworkDiscoveryService : IDisposable
                 device.Fingerprint = fingerprint;
                 changed = true;
             }
-            if (doc.RootElement.TryGetProperty("isServer", out var isServerProp))
+            // The key this device pins the peer's TLS certificate against once
+            // pairing records it - see DiscoveredDevice.PublicKey.
+            if (doc.RootElement.TryGetProperty("publicKey", out var keyProp) &&
+                keyProp.GetString() is { } publicKey && publicKey != device.PublicKey)
             {
-                // JsonElement has no TryGetBoolean - a JSON literal true/false
-                // parses to ValueKind.True/False directly.
-                var isServer = isServerProp.ValueKind == JsonValueKind.True;
-                if (isServer != device.IsServer)
-                {
-                    device.IsServer = isServer;
-                    changed = true;
-                }
+                device.PublicKey = publicKey;
+                changed = true;
             }
             // What kind of peer this is, straight from the handshake's
-            // deviceType field: "desktop"/"mobile" for another Flower app,
-            // "server" for a headless Flower.Server. Distinct from IsServer,
-            // which an app in Server role also sets - this is what decides
-            // *how* pairing works, since only the headless server has an
-            // admin issuing pairing codes and only an app has a human sitting
-            // in front of an approval prompt. See DiscoveredDevice.PairsByCode.
+            // deviceType field. Only "server" answers now that clients no
+            // longer advertise - see DiscoveredDevice.DeviceType.
             if (doc.RootElement.TryGetProperty("deviceType", out var deviceTypeProp) &&
                 deviceTypeProp.GetString() is { } deviceType && deviceType != device.DeviceType)
             {
@@ -533,6 +521,19 @@ public class NetworkDiscoveryService : IDisposable
                 if (trustsUs != device.TrustsUs)
                 {
                     device.TrustsUs = trustsUs;
+                    changed = true;
+                }
+            }
+            // Same present-and-boolean-only treatment as trustsCaller, with the
+            // opposite resting state: absent or null leaves WeAreAdmin as it
+            // was, which starts out false.
+            if (doc.RootElement.TryGetProperty("callerIsAdmin", out var adminProp) &&
+                adminProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                var weAreAdmin = adminProp.ValueKind == JsonValueKind.True;
+                if (weAreAdmin != device.WeAreAdmin)
+                {
+                    device.WeAreAdmin = weAreAdmin;
                     changed = true;
                 }
             }
@@ -664,9 +665,9 @@ public class NetworkDiscoveryService : IDisposable
     public DiscoveredDevice? FindByFingerprint(string fingerprint) =>
         _knownDevices.Values.FirstOrDefault(d => d.Fingerprint == fingerprint);
 
-    // Every peer currently known on the LAN, regardless of trust/role - used
-    // by MainViewModel.AvailableServers to filter down to just the ones
-    // advertising IsServer. Snapshot, not a live view - callers that need to
+    // Every server currently known on the LAN, regardless of trust or
+    // pairing - what MainViewModel.AvailableServers offers. Snapshot, not a
+    // live view - callers that need to
     // react to changes should also subscribe to DeviceDiscovered/DeviceLost.
     //
     // Deduped by Fingerprint: the same physical device can end up as more
@@ -692,7 +693,21 @@ public class NetworkDiscoveryService : IDisposable
     public IReadOnlyCollection<DiscoveredDevice> KnownDevices =>
         _knownDevices.Values
             .GroupBy(d => string.IsNullOrEmpty(d.Fingerprint) ? $"instance:{d.InstanceName}" : $"fingerprint:{d.Fingerprint}")
-            .Select(g => g.OrderByDescending(d => d.IsResponding).ThenBy(ReachRank).First())
+            .Select(g => g
+                .OrderByDescending(d => d.IsResponding)
+                .ThenBy(ReachRank)
+                // Same peer, same network, two schemes: prefer TLS. ReachRank
+                // deliberately asks only which network an address is on, so
+                // without this the https and http origins of one server tie and
+                // whichever the server happened to list first wins.
+                //
+                // Below IsResponding on purpose. A server whose certificate this
+                // device cannot validate - a real one that expired, a self-signed
+                // one from a key this device never paired with - fails the probe
+                // rather than answering it, so it is the plain origin that gets
+                // used, not nothing. See PeerHttpClient.
+                .ThenByDescending(d => d.BaseUri.Scheme == Uri.UriSchemeHttps)
+                .First())
             .ToList();
 
     // How good a route to a peer this entry is, lowest first. Only meaningful
@@ -781,9 +796,10 @@ public class NetworkDiscoveryService : IDisposable
                     Ip = ip,
                     Alias = existing.Alias,
                     Fingerprint = existing.Fingerprint,
-                    IsServer = existing.IsServer,
+                    PublicKey = existing.PublicKey,
                     DeviceType = existing.DeviceType,
                     TrustsUs = existing.TrustsUs,
+                    WeAreAdmin = existing.WeAreAdmin,
                     LibraryToken = existing.LibraryToken,
                     Addresses = existing.Addresses,
                     IsRemembered = true,
@@ -892,26 +908,12 @@ public class NetworkDiscoveryService : IDisposable
         new($"http://{endPoint}");
 
     // Flower.Server's default listening port - deliberately not
-    // SyncProtocol.DefaultPort (53317), which is the app-to-app one.
+    // SyncProtocol.DefaultPort (53317), which is what the app-to-app listener
+    // used to bind before it was removed.
     private const int FlowerServerPort = 4533;
 
     private static bool IsOurServiceType(string instanceName) =>
         instanceName.EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);
-
-    private static string PlatformTag()
-    {
-        if (OperatingSystem.IsIOS())
-            return "iOS";
-        if (OperatingSystem.IsAndroid())
-            return "Android";
-        if (OperatingSystem.IsMacOS())
-            return "macOS";
-        if (OperatingSystem.IsWindows())
-            return "Windows";
-        if (OperatingSystem.IsLinux())
-            return "Linux";
-        return "Unknown";
-    }
 
     public void Stop()
     {

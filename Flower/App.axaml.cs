@@ -175,7 +175,6 @@ public partial class App : Application
             .AddSingleton<SidebarRenameService>()
             .AddSingleton<TrustedPeerStore>()
             .AddSingleton<PlaylistSyncStateStore>()
-            .AddSingleton<ClientLogStore>()
             .AddSingleton(InMemoryLogStore.Instance)
 
             // Loaded-from-disk state. AppSettings and the cached library are
@@ -308,13 +307,15 @@ public partial class App : Application
                 sp.GetRequiredService<DeviceIdentity>(),
                 sp.GetRequiredService<ILogger<NetworkDiscoveryService>>(),
                 credentials: sp.GetRequiredService<IPeerCredentials>()))
-            .AddSingleton<SyncHttpServer>()
             .AddSingleton<PlaylistSyncService>()
             .AddSingleton<LibrarySyncService>()
             .AddSingleton<LibraryDownloadService>()
             .AddSingleton<PeerPairingService>()
-            .AddSingleton<PeerUnpairNotifier>()
             .AddSingleton<PairedServerReachability>()
+            // Registered by its interface alone - the Log window is the only
+            // consumer, and it wants the seam rather than the implementation
+            // (see IRemoteLogSource).
+            .AddSingleton<IRemoteLogSource, PairedServerAdminAccess>()
             .AddSingleton<PeerTrackResolver>()
             // How this device proves who it is to a peer, for every signed call
             // into one (see IPeerCredentials). On this branch because it needs
@@ -462,7 +463,12 @@ public partial class App : Application
             .AddSingleton(_ =>
             {
                 VlcNativeSetup.Initialize();
-                return new LibVLC();
+                var libVLC = new LibVLC();
+                // Before anything opens a stream URL on it - see
+                // VlcCertificateDialogs for what this accepts and what it does
+                // not.
+                Manager.VlcCertificateDialogs.AnswerUnattended(libVLC);
+                return libVLC;
             })
             .AddSingleton(sp => PlatformAudioManager.Current
                                 ?? new MiniaudioSink(sp.GetRequiredService<ILogger<MiniaudioSink>>()))
@@ -491,6 +497,23 @@ public partial class App : Application
         // this is the single hand-off point from registration to resolution.
         var provider = services.BuildServiceProvider();
         Ioc.Default.ConfigureServices(provider);
+
+        // Which TLS certificates this device will accept from a Flower server:
+        // the ones whose key it already paired with. Set here rather than
+        // injected because the HttpClients that consult it are static or
+        // self-constructed - see PeerHttpClient.IsPinnedServerKey for why that
+        // shape, and DeviceCertificate for why a paired key is a sufficient
+        // answer on its own.
+        //
+        // TrustedPeerStore caches, and every approval and revocation goes
+        // through it, so a server paired after this line is accepted without
+        // anything being re-registered and a revoked one stops being accepted
+        // at once.
+        {
+            var trustedPeers = provider.GetRequiredService<TrustedPeerStore>();
+            PeerHttpClient.IsPinnedServerKey = publicKey =>
+                trustedPeers.IsTrusted(SignedRequestCanonicalizer.ComputeFingerprint(publicKey));
+        }
 
         var appSettings = provider.GetRequiredService<AppSettings>();
         // Before any window is created, so the very first frame already
@@ -617,26 +640,26 @@ public partial class App : Application
 
         base.OnFrameworkInitializationCompleted();
 
-        // See SYNC-PLAN.md: mDNS discovery + the start of the real sync protocol.
-        // SyncHttpServer starts first so networkDiscovery can advertise whichever
-        // port it actually bound (see SyncHttpServer.Start for why that can differ
-        // from SyncHttpServer.DefaultPort).
+        // See SYNC-PLAN.md: mDNS discovery, then the /info handshake against
+        // whatever it finds. Browse-only - this app has nothing to advertise,
+        // because it is not a server (see NetworkDiscoveryService's own
+        // top-of-file comment).
         //
-        // Neither exists under WASM: SyncHttpServer binds a raw HttpListener
-        // socket and NetworkDiscoveryService sends/receives mDNS multicast UDP,
-        // both flatly unavailable inside a browser sandbox. Flower.Web instead
-        // talks to Flower.Server's REST API directly (see SYNC-PLAN.md) - LAN
-        // peer-to-peer sync is a desktop/mobile-only feature.
+        // Not under WASM: NetworkDiscoveryService sends and receives mDNS
+        // multicast UDP, flatly unavailable inside a browser sandbox. A tab
+        // does not need to discover anything anyway - it was served by the one
+        // server it talks to (see SYNC-PLAN.md).
         if (!OperatingSystem.IsBrowser())
         {
             // Registered only on the matching !IsBrowser() branch of
-            // RegisterServices, so resolving them is safe exactly here.
-            var syncHttpServer = provider.GetRequiredService<SyncHttpServer>();
+            // RegisterServices, so resolving it is safe exactly here.
             var networkDiscovery = provider.GetRequiredService<NetworkDiscoveryService>();
 
+            // Still needed with nothing to advertise: Android drops inbound
+            // multicast without it, so this is what lets a browse be answered
+            // at all (see AndroidMulticastLockHolder).
             PlatformMulticastLock.Current?.Acquire();
-            syncHttpServer.Start();
-            networkDiscovery.Start(syncHttpServer.BoundPort ?? SyncHttpServer.DefaultPort);
+            networkDiscovery.Start();
 
             // Every address the paired server has told us about, registered as
             // a peer so the ordinary poll loop starts probing them. This is

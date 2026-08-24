@@ -367,4 +367,80 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
             await trustedPeers.RevokeAsync(device.Fingerprint);
         }
     }
+
+    // The whole point of the feature: the owner of the server can read why a
+    // listener's phone is misbehaving without asking them to find a log file.
+    [Fact]
+    public async Task POST_log_report_stores_the_snapshot_against_the_pushing_device()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var logs = server.Services.GetRequiredService<ClientLogStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var report = new LogReportDto(device.Fingerprint, "Kitchen iPad", DateTimeOffset.UtcNow,
+                [new LogEntryDto(DateTimeOffset.UtcNow, "Warning", "Flower.Something", "it went wrong", null)]);
+
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/log/report", "10.0.2.8",
+                body: JsonSerializer.Serialize(report));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            var stored = logs.Get(device.Fingerprint);
+            Assert.NotNull(stored);
+            Assert.Equal("Kitchen iPad", stored!.Alias);
+            Assert.Equal("it went wrong", Assert.Single(stored.Entries).Message);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The body is attacker-controlled on a route any trusted device can call.
+    // Believing its claimed fingerprint would let one paired device overwrite
+    // another's log with whatever it liked - so the snapshot is filed under the
+    // fingerprint the signature actually proved.
+    [Fact]
+    public async Task A_log_report_is_filed_under_the_signed_identity_not_the_body_claim()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var logs = server.Services.GetRequiredService<ClientLogStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var report = new LogReportDto("somebody-elses-fingerprint", "Not Me", DateTimeOffset.UtcNow,
+                [new LogEntryDto(DateTimeOffset.UtcNow, "Information", null, "planted", null)]);
+
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/log/report", "10.0.2.9",
+                body: JsonSerializer.Serialize(report));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Null(logs.Get("somebody-elses-fingerprint"));
+            Assert.Equal("planted", Assert.Single(logs.Get(device.Fingerprint)!.Entries).Message);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // An untrusted caller is refused before the body is even looked at - the
+    // same gate every other route in this group sits behind.
+    [Fact]
+    public async Task An_untrusted_device_cannot_push_a_log_snapshot()
+    {
+        using var stranger = NewDevice();
+        var report = new LogReportDto(stranger.Fingerprint, "Stranger", DateTimeOffset.UtcNow, []);
+
+        var (status, _, _) = await SendAsync(
+            stranger, "POST", "/api/flower/v1/log/report", "10.0.2.10",
+            body: JsonSerializer.Serialize(report));
+
+        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Null(server.Services.GetRequiredService<ClientLogStore>().Get(stranger.Fingerprint));
+    }
 }

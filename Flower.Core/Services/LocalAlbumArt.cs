@@ -11,14 +11,14 @@ namespace Flower.Services;
 // carried out of the lookup rather than sniffed back out of the bytes later:
 // an embedded picture states its own MIME type in the tag, and a cover file
 // states it in its extension, so re-deriving it downstream only ever loses
-// information (SyncHttpServer used to sniff PNG-vs-JPEG magic bytes and call
-// everything else JPEG).
+// information (the app's own listener used to sniff PNG-vs-JPEG magic bytes and
+// call everything else JPEG).
 public sealed record LocalAlbumArt(byte[] Bytes, string MimeType);
 
 // The one implementation of "what is this album's art file, on this disk":
 // the embedded tag picture first, then a cover.*/folder.* image beside the
 // track. This existed three times - AlbumArtLoader (Bitmap decoding and the
-// CoverArt hash), SyncHttpServer.HandleGetCoverArtAsync, and a private copy
+// CoverArt hash), the app listener's own cover-art handler, and a private copy
 // in Flower.Server's SubsonicEndpoints - which is three places to edit when
 // someone adds a format, and they had already drifted: the server's copy
 // accepted only .jpg/.jpeg/.png as a cover file, so an album with a

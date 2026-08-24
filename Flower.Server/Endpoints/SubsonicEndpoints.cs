@@ -36,8 +36,8 @@ public static class SubsonicEndpoints
     //
     // - RequestLimiter is charged on every request, keyed by source via
     //   RateLimiter.KeyFor, and sized for real client behaviour: an album grid
-    //   pulls one getCoverArt per tile, which is bursty enough that
-    //   SyncHttpServer's 120/60s browse ceiling would be too tight here.
+    //   pulls one getCoverArt per tile, which is bursty enough that a
+    //   120/60s browse ceiling would be too tight here.
     // - FailedAuthLimiter is charged only when a *password* attempt fails, and
     //   gates only the password path.
     //
@@ -86,9 +86,9 @@ public static class SubsonicEndpoints
             // The two unguessable ones are tried first, so a caller holding one
             // never touches the failed-auth budget in either direction.
 
-            // Path A: another Flower device browsing/streaming this server the
-            // same way it browses a peer's embedded SyncHttpServer, which gates
-            // its own /rest routes on exactly this check. Without it, pairing
+            // Path A: a paired Flower device browsing/streaming this server
+            // with its device signature rather than a username and password.
+            // Without it, pairing
             // succeeded (TrustedPeerStore) but every /rest call the client made
             // afterwards came back "Wrong username or password", because
             // PeerOpenSubsonicClientFactory deliberately sends empty u/p and
@@ -531,8 +531,8 @@ public static class SubsonicEndpoints
 
         foreach (var candidate in candidates)
         {
-            // Shared with the client and SyncHttpServer - see
-            // LocalAlbumArtReader, which this used to be a private copy of.
+            // Shared with the client - see LocalAlbumArtReader, which this used
+            // to be a private copy of.
             var art = LocalAlbumArtReader.ForFile(candidate.Path);
             if (art is not null)
                 return Results.Bytes(art.Bytes, art.MimeType);

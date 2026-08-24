@@ -36,8 +36,7 @@ public class MobilePairingSheetTests : PinnedDataDirectory
             BaseUri = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, 1)),
             Alias = "Attic",
             Fingerprint = "fp-attic",
-            IsServer = true,
-            DeviceType = "server", // what makes it pair by code - see DiscoveredDevice.PairsByCode
+            DeviceType = "server",
         };
 
     private static MainViewModelHarness.MobileParts Build()
@@ -111,24 +110,6 @@ public class MobilePairingSheetTests : PinnedDataDirectory
         Assert.Null(scope.Mobile.Main.PairingCodeError);
     }
 
-    // An app peer has no code to redeem and nothing to wait for - its approval
-    // happens on the other device's screen, minutes later - so that path still
-    // closes the sheet immediately.
-    [AvaloniaFact]
-    public void Asking_an_app_peer_to_pair_closes_the_sheet_as_before()
-    {
-        using var scope = Build();
-        var peer = UnreachableHeadlessServer();
-        peer.DeviceType = "";
-        peer.IsServer = false;
-        scope.Mobile.PairWithServerCommand.Execute(peer);
-
-        scope.Mobile.ConfirmPairServerCommand.Execute(null);
-
-        Assert.False(scope.Mobile.IsShowingConfirmPairServer);
-        Assert.False(scope.Mobile.IsPairingInProgress);
-    }
-
     // The pairing sheet takes Settings' place while it is up (one sheet at a
     // time), so resolving it has to put Settings back rather than leave the
     // user standing in the library - tapping one row inside Settings should not
@@ -142,21 +123,6 @@ public class MobilePairingSheetTests : PinnedDataDirectory
         Assert.True(scope.Mobile.IsShowingConfirmPairServer);
 
         scope.Mobile.CancelPairServerCommand.Execute(null);
-
-        Assert.True(scope.Mobile.IsShowingSettings);
-    }
-
-    [AvaloniaFact]
-    public void Asking_an_app_peer_to_pair_goes_back_to_settings_too()
-    {
-        using var scope = Build();
-        scope.Mobile.OpenSettingsCommand.Execute(null);
-        var peer = UnreachableHeadlessServer();
-        peer.DeviceType = "";
-        peer.IsServer = false;
-        scope.Mobile.PairWithServerCommand.Execute(peer);
-
-        scope.Mobile.ConfirmPairServerCommand.Execute(null);
 
         Assert.True(scope.Mobile.IsShowingSettings);
     }

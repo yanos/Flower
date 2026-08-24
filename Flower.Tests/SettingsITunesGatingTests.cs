@@ -61,6 +61,9 @@ public class SettingsITunesGatingTests
 
         public Task<IReadOnlyList<string>> LoadLogAsync(int limit, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task<IReadOnlyList<string>> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
     }
 
     // The server's capability set (see RemoteServerSettingsBackend), which now
@@ -126,7 +129,7 @@ public class SettingsITunesGatingTests
     public async Task The_apps_own_message_names_this_device_rather_than_a_server()
     {
         var viewModel = await LoadAsync(
-            new SettingsCapabilities { ITunesIntegration = true, SyncRole = true, ThemePicker = true },
+            new SettingsCapabilities { ITunesIntegration = true, PairedServerPicker = true, ThemePicker = true },
             new SettingsSnapshot { AppleMusicFolder = null });
 
         Assert.True(viewModel.ShowsITunesUnavailable);

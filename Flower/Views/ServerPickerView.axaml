@@ -88,9 +88,8 @@
                           IsEnabled="{Binding CanForceSync}"
                           Padding="10,4"
                           Click="ForceSyncButton_Click"/>
-                  <!-- Only for a headless server (ServerRow.
-                       IsPairingCodeRequired): an app peer has no code to
-                       give, and keeps the live approval prompt. -->
+                  <!-- Hidden once paired (ServerRow.IsPairingCodeRequired) -
+                       there is nothing left to redeem. -->
                   <TextBox Text="{Binding PairingCode}"
                            PlaceholderText="Pairing code"
                            IsVisible="{Binding IsPairingCodeRequired}"

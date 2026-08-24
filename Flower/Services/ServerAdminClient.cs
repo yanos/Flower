@@ -24,6 +24,12 @@ public sealed record AdminDeviceDto(string Fingerprint, string Alias, DateTimeOf
 public sealed record AdminPairingCodeDto(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
 public sealed record AdminLibraryStatusDto(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
 public sealed record AdminLogEntryDto(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
+
+// One device's pushed log snapshot. ReceivedAt is load-bearing rather than
+// decoration: these lines are as old as that device's last sync, and a reader
+// who does not know that will misread a stale snapshot as a live tail.
+public sealed record AdminDeviceLogDto(
+    string Fingerprint, string Alias, DateTimeOffset ReceivedAt, List<AdminLogEntryDto> Entries);
 public sealed record SubsonicCredentialDto(
     string Username, string Label, DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt, string? Password);
 
@@ -89,6 +95,15 @@ public sealed class ServerAdminClient(
 
     public Task<List<AdminLogEntryDto>> GetLogAsync(int limit, CancellationToken ct = default) =>
         SendAsync<List<AdminLogEntryDto>>(HttpMethod.Get, $"/api/admin/logs?limit={limit}", null, ct);
+
+    // A paired device's own log, as last pushed to the server - the counterpart
+    // to GetLogAsync above, which is the server's own. Throws
+    // ServerAdminException with NotFound when that device has not pushed
+    // anything yet, which the Log window shows as "no snapshot yet" rather than
+    // as a failure.
+    public Task<AdminDeviceLogDto> GetDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
+        SendAsync<AdminDeviceLogDto>(
+            HttpMethod.Get, $"/api/admin/devices/{Uri.EscapeDataString(fingerprint)}/logs?limit={limit}", null, ct);
 
     public Task<List<SubsonicCredentialDto>> GetSubsonicCredentialsAsync(CancellationToken ct = default) =>
         SendAsync<List<SubsonicCredentialDto>>(HttpMethod.Get, "/api/admin/subsonic-credentials", null, ct);

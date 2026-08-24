@@ -5,21 +5,22 @@ using Flower.Services;
 namespace Flower.Server.Endpoints;
 
 // New-device half of the admin-issued pairing-code flow (SYNC-PLAN.md's
-// "Passwordless by design", path A). Kept as its own route, separate from
-// SyncHttpServer's existing device-to-device /api/flower/v1/pair-request, so
-// that flow's semantics (live 60-second approval prompt) don't change at all -
-// this one trades the prompt for a code the admin already vetted out-of-band.
+// "Passwordless by design", path A), and now the only way anything pairs with
+// anything: there used to be a device-to-device route that held a request open
+// for a live 60-second approval prompt, which needs a human in front of the
+// thing being paired with. This trades that prompt for a code the admin already
+// vetted out-of-band, which a headless box can actually issue.
 public static class PairingEndpoints
 {
-    // Deliberately tighter than SyncHttpServer's own _pairRateLimiter (5/60s):
-    // a code is only valid for ~10 minutes total, so a hard per-IP cap here is
+    // Deliberately tight: a code is only valid for ~10 minutes total, so a hard
+    // per-IP cap here is
     // most of what stands between "brute-forceable 8-char code" and not - see
     // PairingCodeService's alphabet/length for the resulting keyspace.
     private static readonly RateLimiter RedeemRateLimiter = new(max: 5, TimeSpan.FromSeconds(60));
 
     // Largest legitimate body here is empty - the redeem request carries
-    // everything it needs in headers/query (mirrors SyncHttpServer's own
-    // self-signed routes) - but the signature covers the body hash regardless,
+    // everything it needs in headers/query - but the signature covers the body
+    // hash regardless,
     // so this still has to read *a* body, even a zero-length one, the same way.
     private const long MaxBodyBytes = 4 * 1024;
 

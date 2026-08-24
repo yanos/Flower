@@ -154,22 +154,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _syncDateAddedFromITunes, value);
     }
 
-    private bool _isServer;
-    public bool IsServer
-    {
-        get => _isServer;
-        set
-        {
-            if (!SetProperty(ref _isServer, value))
-                return;
-
-            OnPropertyChanged(nameof(CanManageLibrary));
-            OnPropertyChanged(nameof(CanIntegrateWithITunes));
-            OnPropertyChanged(nameof(CanSyncFromITunes));
-            DeviceListChanged?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
     private bool _shareLogsWithPairedServer;
     public bool ShareLogsWithPairedServer
     {
@@ -232,18 +216,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public string ITunesLibraryDescription => _snapshot.ITunesLibraryDescription;
     public string VersionDisplay => _snapshot.Version is { Length: > 0 } version ? $"Version {version}" : "";
 
-    // See SettingsSnapshot.IsPairedToServer: combined with the *draft* role, so
-    // ticking "Act as Server" re-enables the library controls straight away
-    // instead of only after saving and reopening.
+    // See SettingsSnapshot.IsPairedToServer. A server always manages its own
+    // library; a device that pairs to one stops managing its own the moment it
+    // does, because from then on the library is synced in rather than curated.
     public bool CanManageLibrary =>
-        !Capabilities.SyncRole || IsServer || !_snapshot.IsPairedToServer;
+        !Capabilities.PairedServerPicker || !_snapshot.IsPairedToServer;
 
     public bool ShowsDeniedDevices => DeniedDevices.Count > 0;
     public bool HasDevices => Devices.Count > 0;
 
-    // Raised when the Devices tab's content should be rebuilt - the panel decides
-    // between a trusted-device list and the server picker from the live role, and
-    // the role is editable right there on the General tab.
+    // Raised when the Devices tab's content should be rebuilt.
     public event EventHandler? DeviceListChanged;
 
     public async Task LoadAsync(CancellationToken ct = default)
@@ -264,8 +246,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(IntegrateWithITunes));
             SyncPlayCountFromITunes = _snapshot.SyncPlayCountFromITunes;
             SyncDateAddedFromITunes = _snapshot.SyncDateAddedFromITunes;
-            _isServer = _snapshot.IsServer;
-            OnPropertyChanged(nameof(IsServer));
             ShareLogsWithPairedServer = _snapshot.ShareLogsWithPairedServer;
             AdvertisedHost = _snapshot.AdvertisedHost;
             AdvertiseOnLan = _snapshot.AdvertiseOnLan;
@@ -325,7 +305,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 IntegrateWithITunes = IntegrateWithITunes,
                 SyncPlayCountFromITunes = SyncPlayCountFromITunes,
                 SyncDateAddedFromITunes = SyncDateAddedFromITunes,
-                IsServer = IsServer,
                 ShareLogsWithPairedServer = ShareLogsWithPairedServer,
                 AdvertisedHost = AdvertisedHost,
                 AdvertiseOnLan = AdvertiseOnLan,
@@ -379,18 +358,26 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private Task RebuildDatabaseAsync() => RunAsync(ct => _backend.RebuildDatabaseAsync(ct));
 
+    // What the next code will grant, ticked beside the one button that issues
+    // them. Two buttons ("Add Device…"/"Add Administrator…") used to say this
+    // instead, which made the rarer, more dangerous one just as easy to press
+    // by accident as the ordinary one. Not remembered between presses, for the
+    // same reason MainViewModel.PairingCodeGrantsAdmin isn't.
+    private bool _pairingCodeGrantsAdmin;
+    public bool PairingCodeGrantsAdmin
+    {
+        get => _pairingCodeGrantsAdmin;
+        set => SetProperty(ref _pairingCodeGrantsAdmin, value);
+    }
+
     [RelayCommand]
     private Task IssuePairingCodeAsync() => RunAsync(async ct =>
     {
-        PairingCode = await _backend.IssuePairingCodeAsync(grantsAdmin: false, ct);
-        StatusMessage = "Enter this code on the device you are adding. It expires in a few minutes.";
-    });
-
-    [RelayCommand]
-    private Task IssueAdminPairingCodeAsync() => RunAsync(async ct =>
-    {
-        PairingCode = await _backend.IssuePairingCodeAsync(grantsAdmin: true, ct);
-        StatusMessage = "This code grants administrator access. It expires in a few minutes.";
+        var grantsAdmin = PairingCodeGrantsAdmin;
+        PairingCode = await _backend.IssuePairingCodeAsync(grantsAdmin, ct);
+        StatusMessage = grantsAdmin
+            ? "This code grants administrator access. Enter it on the device you are adding; it expires in a few minutes."
+            : "Enter this code on the device you are adding. It expires in a few minutes.";
     });
 
     [RelayCommand]
@@ -451,9 +438,41 @@ public sealed partial class SettingsViewModel : ViewModelBase
         await RefreshSubsonicCredentialsAsync(ct);
     });
 
+    // Which log the Logs tab is showing: the server's own, or one paired
+    // device's last pushed snapshot. Rebuilt from the device roster whenever
+    // that is loaded, so the two lists cannot disagree about who exists.
+    public ObservableCollection<string> LogSources { get; } = ["This server"];
+
+    private int _selectedLogSourceIndex;
+    public int SelectedLogSourceIndex
+    {
+        get => _selectedLogSourceIndex;
+        set => SetProperty(ref _selectedLogSourceIndex, value);
+    }
+
+    // Index 0 is the server itself; everything after it lines up with Devices,
+    // in the order RefreshDevicesAsync filled it.
+    private TrustedPeerRow? SelectedLogDevice =>
+        SelectedLogSourceIndex >= 1 && SelectedLogSourceIndex - 1 < Devices.Count
+            ? Devices[SelectedLogSourceIndex - 1]
+            : null;
+
     [RelayCommand]
     private Task RefreshLogAsync() => RunAsync(async ct =>
     {
+        if (SelectedLogDevice is { } device)
+        {
+            var deviceLines = await _backend.LoadDeviceLogAsync(device.Fingerprint, 500, ct);
+            LogText = deviceLines.Count == 0
+                // Deliberately not the same sentence as the server's: nothing has
+                // arrived from this device yet, which is a different thing from
+                // this device having been quiet, and only the first is worth
+                // waiting on.
+                ? $"(no log snapshot received from \"{device.Alias}\" yet - it sends one at the end of each sync, if log sharing is on there)"
+                : string.Join(Environment.NewLine, deviceLines);
+            return;
+        }
+
         var lines = await _backend.LoadLogAsync(500, ct);
         LogText = lines.Count == 0 ? "(the server has logged nothing yet)" : string.Join(Environment.NewLine, lines);
     });
@@ -467,6 +486,15 @@ public sealed partial class SettingsViewModel : ViewModelBase
         DeniedDevices.Clear();
         foreach (var device in await _backend.LoadDeniedDevicesAsync(ct))
             DeniedDevices.Add(device);
+
+        // Keep the Logs tab's picker in step with the roster it names, and put
+        // the selection back on the server rather than on whichever device
+        // happens to now sit at the old index.
+        LogSources.Clear();
+        LogSources.Add("This server");
+        foreach (var device in Devices)
+            LogSources.Add(device.Alias);
+        SelectedLogSourceIndex = 0;
 
         OnPropertyChanged(nameof(HasDevices));
         OnPropertyChanged(nameof(ShowsDeniedDevices));

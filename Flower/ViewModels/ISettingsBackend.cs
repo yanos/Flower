@@ -23,10 +23,15 @@ public sealed record SettingsCapabilities
     // and neither does a browser.
     public bool ITunesIntegration { get; init; }
 
-    // "Act as Server" and "Send logs to paired server": the Client/Server sync
-    // role (see SyncRolePolicy). A Flower.Server is unconditionally a server, so
-    // there is nothing to choose.
-    public bool SyncRole { get; init; }
+    // "Send logs to paired server", and the Devices tab's server picker: the
+    // things that only mean something for a device that pairs *to* a server.
+    // A Flower.Server does none of them - it is the thing being paired with.
+    public bool PairedServerPicker { get; init; }
+
+    // The Devices tab's roster of devices allowed to sync with the thing being
+    // configured, and the Forget/rename actions on it. Server-only for the same
+    // reason: a client accepts no incoming connections, so it has no roster.
+    public bool TrustedDevices { get; init; }
 
     // "Open App Data Location" - only meaningful when the data directory is on
     // the machine the UI is running on.
@@ -36,8 +41,8 @@ public sealed record SettingsCapabilities
     // own equivalents are not operator-configurable.
     public bool ServerNetwork { get; init; }
 
-    // Issue a pairing code for a new device. Only a server pairs by code - an app
-    // peer prompts its user to Allow instead (see MainViewModel.IsPairingCodeRequired).
+    // Issue a pairing code for a new device. Server-only - it is the end that
+    // hands codes out.
     public bool PairingCodes { get; init; }
 
     // SYNC-PLAN.md path B - credentials for third-party Subsonic clients.
@@ -63,7 +68,6 @@ public sealed record SettingsSnapshot
     public bool IntegrateWithITunes { get; init; }
     public bool SyncPlayCountFromITunes { get; init; }
     public bool SyncDateAddedFromITunes { get; init; }
-    public bool IsServer { get; init; }
     public bool ShareLogsWithPairedServer { get; init; }
     public string AdvertisedHost { get; init; } = "";
     public bool AdvertiseOnLan { get; init; } = true;
@@ -83,11 +87,9 @@ public sealed record SettingsSnapshot
     // switch adds/removes it from the pending library-paths list.
     public string? AppleMusicFolder { get; init; }
 
-    // Whether this device is currently a Client paired to a Server. Its library
-    // is then synced in rather than locally curated, so the library-folder
-    // controls are disabled - see SettingsViewModel.CanManageLibrary, which
-    // combines this with the *draft* role so toggling "Act as Server" re-enables
-    // them immediately rather than only after saving.
+    // Whether this device is currently paired to a server. Its library is then
+    // synced in rather than locally curated, so the library-folder controls are
+    // disabled - see SettingsViewModel.CanManageLibrary.
     public bool IsPairedToServer { get; init; }
 }
 
@@ -102,7 +104,6 @@ public sealed record SettingsDraft
     public required bool IntegrateWithITunes { get; init; }
     public required bool SyncPlayCountFromITunes { get; init; }
     public required bool SyncDateAddedFromITunes { get; init; }
-    public required bool IsServer { get; init; }
     public required bool ShareLogsWithPairedServer { get; init; }
     public required string AdvertisedHost { get; init; }
     public required bool AdvertiseOnLan { get; init; }
@@ -153,4 +154,15 @@ public interface ISettingsBackend
     Task RebuildDatabaseAsync(CancellationToken ct = default);
 
     Task<IReadOnlyList<string>> LoadLogAsync(int limit, CancellationToken ct = default);
+
+    // One paired device's own log, as last pushed to the server at the end of a
+    // sync (see AppSettings.ShareLogsWithPairedServer on the pushing side). The
+    // point of the feature is that the person who runs the server is the one who
+    // ends up diagnosing a listener's phone, and the listener cannot be talked
+    // through finding a log file - so this reads the same surface the desktop
+    // Log window's device rows read, from the browser.
+    //
+    // Returns an empty list for a device that has not pushed anything yet, which
+    // the caller renders as a sentence rather than as a blank pane.
+    Task<IReadOnlyList<string>> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default);
 }

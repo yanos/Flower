@@ -21,6 +21,12 @@ long term:
  themes
  back / forward arrows
  UI tests (Playwright?)
+ fix stale build issue on ios
+ main view of the server on the desktop client should be the setting page
+ recent icon without the plus sign
+ only a single note icon on ios
+ no utf on the web version
+ ios editing not native 
 
 build:
  dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
@@ -33,7 +39,6 @@ details:
  add an issue link in about box
  readme
  folder in playlist
- view logs from devices from the device section of the sidebar
  landscape mode on mobile needs polishing
  download spinner still not centred on mobile
  server status for client

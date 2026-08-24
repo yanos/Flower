@@ -20,8 +20,8 @@ namespace Flower.Services;
 // alongside the current one and charge a request against
 // previous * (fraction of the window still overlapped) + current. Costs one
 // extra int per key, needs no per-request timestamp list, and never
-// over-admits the way a fixed window does. See SyncHttpServer for the five
-// category instances and their limits/keying.
+// over-admits the way a fixed window does. See Flower.Server's endpoint groups
+// for the live instances and their limits/keying.
 public sealed class RateLimiter
 {
     // Idle keys are dropped after this many windows with no traffic. Keys are

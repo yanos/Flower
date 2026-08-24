@@ -107,7 +107,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
         using var service = new NetworkDiscoveryService(
             identity, NullLogger<NetworkDiscoveryService>.Instance, new FakeMdnsBackend(),
             new HttpClient(handler),
-            new SignedDeviceCredentials(identity, signingKey, new AppSettings()));
+            new SignedDeviceCredentials(identity, signingKey));
 
         await service.AddRememberedAsync("192.168.1.40:4533");
 
@@ -274,35 +274,34 @@ public class NetworkDiscoveryServiceTests : IDisposable
         Assert.Empty(_service.KnownDevices);
     }
 
+    // Browse-only, and the "only" is the point: a client is not a server, so
+    // it has nothing to publish and no port to publish it on. This used to
+    // advertise as well, back when every app hosted its own listener.
     [Fact]
-    public void Start_advertises_and_browses_for_our_own_service_type()
+    public void Start_browses_for_our_own_service_type_and_advertises_nothing()
     {
-        _service.Start(port: 4533);
+        _service.Start();
 
-        var advertised = Assert.Single(_backend.Advertised);
-        Assert.Equal(_service.OwnInstanceName, advertised.InstanceName);
-        Assert.Equal(ServiceType, advertised.ServiceType);
-        Assert.Equal(4533, advertised.Port);
         Assert.Contains(ServiceType, _backend.Browsed);
+        Assert.Empty(_backend.Advertised);
     }
 
     [Fact]
-    public void Restart_re_advertises_and_re_browses()
+    public void Restart_re_browses_and_still_advertises_nothing()
     {
-        _service.Start(port: 4533);
+        _service.Start();
 
-        _service.Restart(port: 5000);
+        _service.Restart();
 
-        Assert.Equal(2, _backend.Advertised.Count);
-        Assert.Equal(5000, _backend.Advertised[^1].Port);
         Assert.Equal(2, _backend.Browsed.Count);
+        Assert.Empty(_backend.Advertised);
     }
 
     [Fact]
     public void OnInstanceFound_discovers_a_new_peer_and_resolves_its_info()
     {
         var endpoint = Routable(10);
-        _handler.RespondWith(endpoint.Port, """{"alias":"Kitchen","fingerprint":"peer-fp","isServer":true,"trustsCaller":true}""");
+        _handler.RespondWith(endpoint.Port, """{"alias":"Kitchen","fingerprint":"peer-fp","publicKey":"peer-key","trustsCaller":true}""");
 
         DiscoveredDevice? discovered = null;
         _service.DeviceDiscovered += (_, d) => discovered = d;
@@ -311,21 +310,22 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         WaitUntil(() => discovered?.Fingerprint == "peer-fp", "the peer's real alias/fingerprint should resolve via /info");
         Assert.Equal("Kitchen", discovered!.Alias);
-        Assert.True(discovered.IsServer);
+        Assert.Equal("peer-key", discovered.PublicKey);
         Assert.True(discovered.TrustsUs);
         Assert.Same(discovered, Assert.Single(_service.KnownDevices));
     }
 
+    // deviceType is carried through as the peer reported it. Only "server"
+    // answers now that a client does not advertise itself, so this is less a
+    // decision than a record of what the handshake said - but a peer that
+    // reports something else is a Flower this one does not understand, and
+    // that is worth being able to see.
     [Fact]
-    public void Resolves_a_headless_server_as_pairing_by_code()
+    public void Resolves_the_peers_reported_device_type()
     {
-        // deviceType is what separates a headless Flower.Server from a Flower
-        // app running in Server role - both report isServer, but only the
-        // server issues pairing codes, and only the app has a human who can
-        // answer a live approval prompt. See DiscoveredDevice.PairsByCode.
         var endpoint = Routable(30);
         _handler.RespondWith(endpoint.Port,
-            """{"alias":"Basement NAS","fingerprint":"server-fp","deviceType":"server","isServer":true}""");
+            """{"alias":"Basement NAS","fingerprint":"server-fp","deviceType":"server"}""");
 
         DiscoveredDevice? discovered = null;
         _service.DeviceDiscovered += (_, d) => discovered = d;
@@ -334,58 +334,50 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         WaitUntil(() => discovered?.Fingerprint == "server-fp", "the server's info should resolve");
         Assert.Equal("server", discovered!.DeviceType);
-        Assert.True(discovered.PairsByCode);
     }
 
+    // Whether this server counts us as one of its administrators, which is what
+    // decides if the admin-only controls are offered at all - see
+    // DiscoveredDevice.WeAreAdmin and MainViewModel.CanInviteDeviceToSelectedServer.
     [Fact]
-    public void Resolves_an_app_peer_in_server_role_as_pairing_by_approval()
+    public void Resolves_whether_the_peer_makes_us_an_administrator()
     {
-        // The distinction that matters: isServer alone must not put the UI
-        // into the code-entry flow, because this peer has no code to give.
         var endpoint = Routable(31);
         _handler.RespondWith(endpoint.Port,
-            """{"alias":"Studio Mac","fingerprint":"app-fp","deviceType":"desktop","isServer":true}""");
+            """{"alias":"Basement NAS","fingerprint":"admin-fp","callerIsAdmin":true}""");
 
         DiscoveredDevice? discovered = null;
         _service.DeviceDiscovered += (_, d) => discovered = d;
 
-        _backend.RaiseInstanceFound(InstanceName("Studio-Mac"), endpoint);
+        _backend.RaiseInstanceFound(InstanceName("Basement-NAS"), endpoint);
 
-        WaitUntil(() => discovered?.Fingerprint == "app-fp", "the peer's info should resolve");
-        Assert.True(discovered!.IsServer);
-        Assert.False(discovered.PairsByCode);
+        WaitUntil(() => discovered?.Fingerprint == "admin-fp", "the server's info should resolve");
+        Assert.True(discovered!.WeAreAdmin);
     }
 
+    // The resting state is the cautious one, the opposite way round from
+    // TrustsUs: a peer that says nothing about it leaves the admin-only
+    // controls hidden rather than showing ones it would refuse.
     [Fact]
-    public void Treats_a_peer_that_reports_no_deviceType_as_an_app()
+    public void A_peer_that_says_nothing_about_admin_rights_grants_none()
     {
-        // The conservative default: keep the live-approval flow rather than
-        // demanding a code nobody on the other end can produce.
         var endpoint = Routable(32);
         _handler.RespondWith(endpoint.Port,
-            """{"alias":"Old Peer","fingerprint":"old-fp","isServer":true}""");
+            """{"alias":"Basement NAS","fingerprint":"quiet-fp","callerIsAdmin":null}""");
 
         DiscoveredDevice? discovered = null;
         _service.DeviceDiscovered += (_, d) => discovered = d;
 
-        _backend.RaiseInstanceFound(InstanceName("Old-Peer"), endpoint);
+        _backend.RaiseInstanceFound(InstanceName("Basement-NAS"), endpoint);
 
-        WaitUntil(() => discovered?.Fingerprint == "old-fp", "the peer's info should resolve");
-        Assert.False(discovered!.PairsByCode);
+        WaitUntil(() => discovered?.Fingerprint == "quiet-fp", "the server's info should resolve");
+        Assert.False(discovered!.WeAreAdmin);
     }
 
     [Fact]
     public void OnInstanceFound_ignores_announcements_of_a_different_service_type()
     {
         _backend.RaiseInstanceFound("SomeAirplayDevice._airplay._tcp.local", Routable(11));
-
-        Assert.Empty(_service.KnownDevices);
-    }
-
-    [Fact]
-    public void OnInstanceFound_ignores_our_own_advertisement_reflected_back()
-    {
-        _backend.RaiseInstanceFound($"{_service.OwnInstanceName}.{ServiceType}.local", Routable(12));
 
         Assert.Empty(_service.KnownDevices);
     }

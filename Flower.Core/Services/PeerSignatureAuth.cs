@@ -3,11 +3,13 @@ using System.Collections.Generic;
 
 namespace Flower.Services;
 
-// One signed request, decoupled from whichever HTTP stack delivered it -
-// HttpListener in SyncHttpServer, Kestrel/Minimal-API in Flower.Server. Both
-// stacks describe the same five things; only the accessors differ, so only
-// the accessors are per-stack (see SyncHttpServer.ToSignedRequest and
-// Flower.Server's DeviceSignatureAuth.ToSignedRequest, both one method).
+// One signed request, decoupled from whichever HTTP stack delivered it. Any
+// stack can describe the same five things; only the accessors differ, so only
+// the accessors are per-stack (see Flower.Server's
+// DeviceSignatureAuth.ToSignedRequest, one method). It was written for two
+// stacks - Kestrel here, and an HttpListener inside the app back when a client
+// could serve too - and stays decoupled because that is the shape that makes
+// the policy below testable without a server at all.
 //
 // Query is materialized rather than lazy because it is enumerated more than
 // once (identity lookup below, then the canonical string) and because a
@@ -53,11 +55,14 @@ public sealed class SignedRequest
     }
 }
 
-// The two device-identity checks the sync protocol defines, shared by both
-// servers. These were hand-copied between SyncHttpServer and Flower.Server's
+// The two device-identity checks the sync protocol defines. These were once
+// hand-copied between the app's own listener and Flower.Server's
 // DeviceSignatureAuth, down to the header/query fallback helper - which for
 // security-critical code means a fix to one silently leaves the other wrong
-// (ARCHITECTURE-REVIEW Tier 2.2).
+// (ARCHITECTURE-REVIEW Tier 2.2). The app's listener is gone, so there is one
+// caller now; the policy still belongs in one place, and this is where the
+// header-else-query decision - which is really "where is an attacker allowed to
+// put an identity" - is made.
 public static class PeerSignatureAuth
 {
     // Proof-of-possession, for pair-request/unpair-notify/pair-redeem: the

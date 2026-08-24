@@ -32,9 +32,9 @@ public readonly record struct LibrarySyncResult(bool Success, int FetchedCount, 
 // Pulls a peer's full track catalog in one request (GET /api/flower/v1/library
 // - see LibrarySyncContracts) and merges anything this device doesn't already
 // have as Path == null placeholders - see SYNC-PLAN.md Phase 3. Talks to the
-// peer's embedded SyncHttpServer host directly (same plain-HTTP identity
-// headers as PlaylistSyncService, not real OpenSubsonic credentials - see
-// SyncHttpServer.AuthorizeAsync) rather than through OpenSubsonicClient: an
+// server's bulk endpoint directly (same signed identity headers as
+// PlaylistSyncService, not real OpenSubsonic credentials - see Flower.Server's
+// SyncEndpoints) rather than through OpenSubsonicClient: an
 // earlier version used the OpenSubsonic-shaped getAlbumList2/getAlbum pair,
 // one request per album, which for a library of hundreds/thousands of albums
 // meant hundreds/thousands of individual connections in a burst - observed in
@@ -64,7 +64,7 @@ public class LibrarySyncService
     // The ETag (Library.ChangeToken) each peer served with the manifest we
     // last successfully merged from it, sent back as If-None-Match so an
     // unchanged catalog costs one 304 instead of 6-8 MB - see
-    // SyncHttpServer.HandleGetLibraryAsync, ARCHITECTURE-REVIEW Tier 1.4.
+    // SyncEndpoints' GET /library, ARCHITECTURE-REVIEW Tier 1.4.
     // In-memory only: the token is session-scoped on the serving side anyway
     // (see Library.ChangeToken), so persisting it would buy nothing.
     private readonly ConcurrentDictionary<string, string> _lastSeenTokens = new();
@@ -93,7 +93,7 @@ public class LibrarySyncService
         // Constructed here rather than injected: every caller that could supply
         // one would build it from exactly these three, which the container
         // already hands this service.
-        _credentials = new SignedDeviceCredentials(deviceIdentity, signingKey, appSettings);
+        _credentials = new SignedDeviceCredentials(deviceIdentity, signingKey);
         _appSettings = appSettings;
         _logStore = logStore;
         _logger = logger;
@@ -195,7 +195,7 @@ public class LibrarySyncService
         // snapshot travels over plaintext HTTP and carries exception text and
         // absolute file paths, so it ships off by default (see the setting's
         // own comment in AppSettingsStore).
-        if (!_appSettings.IsServer && _appSettings.ShareLogsWithPairedServer)
+        if (_appSettings.ShareLogsWithPairedServer)
             await PushLogSnapshotAsync(device);
 
         return new LibrarySyncResult(true, fetchedCount, addedCount);

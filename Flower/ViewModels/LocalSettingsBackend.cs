@@ -23,14 +23,15 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     {
         ThemePicker = true,
         ITunesIntegration = true,
-        SyncRole = true,
+        PairedServerPicker = true,
+        TrustedDevices = false,
         RevealAppDataLocation = true,
         RebuildDatabase = true,
         // The app has its own Log window (View > Log...), which does far more
         // than a flat tail - a Logs tab here would be a worse second copy.
         Log = false,
-        // An app peer pairs by prompting its user to Allow, and has no Subsonic
-        // credential store - both are a headless server's problem.
+        // Handing out pairing codes and keeping Subsonic credentials are both
+        // the server's job; this device redeems a code, it never issues one.
         PairingCodes = false,
         SubsonicCredentials = false,
         ServerNetwork = false,
@@ -44,7 +45,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         IntegrateWithITunes = ViewModel.IntegrateWithITunes,
         SyncPlayCountFromITunes = ViewModel.SyncPlayCountFromITunes,
         SyncDateAddedFromITunes = ViewModel.SyncDateAddedFromITunes,
-        IsServer = ViewModel.IsServer,
         ShareLogsWithPairedServer = ViewModel.ShareLogsWithPairedServer,
         ITunesLibraryDescription = ITunesIntegration.DescribeSource(),
         AppleMusicFolder = Flower.Importer.Importer.TryResolveAppleMusicFolder(),
@@ -54,23 +54,20 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     });
 
     // The Library tab's *content* only stops making sense once this device is
-    // actually pulling its library from a paired Server - a Server manages its own
-    // library as always, and a Client that hasn't paired with anyone yet still has
-    // (and can keep curating) its own local library right up until it actually
-    // picks a server. So this is true whenever EITHER holds: acting as Server, or
-    // a Client not currently paired to anyone.
+    // actually pulling its library from a paired server. A device that hasn't
+    // paired with anyone yet still has - and can keep curating - its own local
+    // library, right up until it picks one.
     //
-    // Read off the *live* role rather than the snapshot taken when the screen
-    // opened, so flipping "Act as Server" re-enables the tab immediately - the
-    // panel re-asks on every change.
-    public bool CanManageLocalLibrary =>
-        ViewModel.IsServer || string.IsNullOrEmpty(ViewModel.PairedServerFingerprint);
+    // Read off the *live* pairing rather than the snapshot taken when the
+    // screen opened, so unpairing re-enables the tab immediately - the panel
+    // re-asks on every change.
+    public bool CanManageLocalLibrary => string.IsNullOrEmpty(ViewModel.PairedServerFingerprint);
 
     // Deliberately applied property-by-property rather than through one settings
     // object: each of these setters already persists and already no-ops when the
     // value is unchanged (see MainViewModel), and several have side effects -
-    // ThemePreference repaints, IsServer re-evaluates the sync role - that a bulk
-    // write would have to reimplement.
+    // ThemePreference repaints, the library paths kick off a rescan - that a
+    // bulk write would have to reimplement.
     public async Task<string?> SaveAsync(SettingsDraft draft, CancellationToken ct = default)
     {
         // An empty alias is never persisted (it would show peers a blank name);
@@ -82,7 +79,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         ViewModel.IntegrateWithITunes = draft.IntegrateWithITunes;
         ViewModel.SyncPlayCountFromITunes = draft.SyncPlayCountFromITunes;
         ViewModel.SyncDateAddedFromITunes = draft.SyncDateAddedFromITunes;
-        ViewModel.IsServer = draft.IsServer;
         ViewModel.ShareLogsWithPairedServer = draft.ShareLogsWithPairedServer;
 
         if (draft.LibraryPathsChanged)
@@ -90,8 +86,8 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 
         // Gated on CanManageLocalLibrary as well as each box's own value: a
         // disabled CheckBox still reports whatever it was set to before it went
-        // disabled, so trusting IsChecked alone would let a paired Client kick off
-        // an iTunes import it is not supposed to run.
+        // disabled, so trusting IsChecked alone would let a paired device kick
+        // off an iTunes import it is not supposed to run.
         var syncPlayCount = CanManageLocalLibrary && draft.IntegrateWithITunes && draft.SyncPlayCountFromITunes;
         var syncDateAdded = CanManageLocalLibrary && draft.IntegrateWithITunes && draft.SyncDateAddedFromITunes;
 
@@ -120,48 +116,23 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
             t => t.Path?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true);
     }
 
-    public Task<IReadOnlyList<TrustedPeerRow>> LoadDevicesAsync(CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<TrustedPeerRow>>(ViewModel.TrustedPeers.Load()
-            .OrderByDescending(p => p.ApprovedAt)
-            // A local nickname (see DeviceNicknameStore - also editable from the
-            // sidebar's "Rename Device" context menu) wins over the alias the peer
-            // reported when it was first approved.
-            .Select(p => new TrustedPeerRow
-            {
-                Fingerprint = p.Fingerprint,
-                Alias = ViewModel.DeviceNicknames.Get(p.Fingerprint) ?? p.Alias,
-                ApprovedAt = p.ApprovedAt,
-            })
-            .ToList());
+    // Capabilities.TrustedDevices is false here, so the panel never renders the
+    // roster that would call any of these - see ISettingsBackend's note on why
+    // an unsupported action throws rather than quietly doing nothing. A device
+    // that accepts no incoming connections has no roster to show: the list of
+    // devices allowed to sync lives on the server, and is edited there.
+    private static NotSupportedException NoRoster() =>
+        new("This device has no trusted-device roster - it does not accept incoming connections.");
 
-    public Task<IReadOnlyList<DeniedPeerRow>> LoadDeniedDevicesAsync(CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<DeniedPeerRow>>(ViewModel.TrustedPeers.LoadDenied()
-            .OrderByDescending(p => p.DeniedAt)
-            .Select(p => new DeniedPeerRow { Fingerprint = p.Fingerprint, Alias = p.Alias, DeniedAt = p.DeniedAt })
-            .ToList());
+    public Task<IReadOnlyList<TrustedPeerRow>> LoadDevicesAsync(CancellationToken ct = default) => throw NoRoster();
 
-    public async Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default)
-    {
-        await ViewModel.TrustedPeers.RevokeAsync(device.Fingerprint);
-        // Best-effort - lets the peer clear its own stale pairing proactively if
-        // it's currently reachable; harmless no-op otherwise, since it falls back
-        // to discovering the revoke passively either way (see PeerUnpairNotifier).
-        ViewModel.PeerUnpair?.NotifyFireAndForget(device.Fingerprint);
-    }
+    public Task<IReadOnlyList<DeniedPeerRow>> LoadDeniedDevicesAsync(CancellationToken ct = default) => throw NoRoster();
 
-    public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) =>
-        ViewModel.TrustedPeers.ForgetDenialAsync(device.Fingerprint);
+    public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => throw NoRoster();
 
-    public async Task RenameDeviceAsync(TrustedPeerRow device, CancellationToken ct = default)
-    {
-        await ViewModel.DeviceNicknames.SetAsync(device.Fingerprint, device.Alias);
+    public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => throw NoRoster();
 
-        // Without this, a rename made here only ever reaches the sidebar (and the
-        // device-detail pane, which shares the same SidebarItem) once that device
-        // happens to be mDNS-rediscovered again - which might not happen again all
-        // session if it stays continuously connected.
-        ViewModel.RefreshDeviceDisplayNames();
-    }
+    public Task RenameDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => throw NoRoster();
 
     public Task RescanAsync(CancellationToken ct = default) => ViewModel.RescanLibraryAsync();
 
@@ -184,5 +155,8 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         throw new NotSupportedException("Only a Flower server issues Subsonic credentials.");
 
     public Task<IReadOnlyList<string>> LoadLogAsync(int limit, CancellationToken ct = default) =>
+        throw new NotSupportedException("The app has its own Log window.");
+
+    public Task<IReadOnlyList<string>> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
         throw new NotSupportedException("The app has its own Log window.");
 }

@@ -147,7 +147,6 @@ public sealed class BrowserPeerCredentials(
             // A tab is a listener, never a host: it has no library of its own to
             // serve and nothing can sync *from* it. See SyncRolePolicy for what
             // the other heads make of this.
-            ("X-Flower-Role", "client"),
             ("X-Flower-PublicKey", key.PublicKeyBase64),
         };
 

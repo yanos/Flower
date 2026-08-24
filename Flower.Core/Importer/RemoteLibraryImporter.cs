@@ -69,10 +69,10 @@ public sealed class RemoteLibraryImporter : IMusicImporter
     // passes an empty string, which matches nothing, which is exactly right: it
     // is not a device that has ever played anything for a peer to echo.
     //
-    // closeConnection asks for a fresh connection per request. True when
-    // talking to a peer's embedded SyncHttpServer, whose HttpListener (or the
-    // OS) may have torn a pooled keep-alive connection down without telling us
-    // - see PlaylistSyncService. False in the browser, where the fetch stack
+    // closeConnection asks for a fresh connection per request. True when talking
+    // to a server over the LAN, which (or whose OS) may have torn a pooled
+    // keep-alive connection down without telling us - see PlaylistSyncService.
+    // False in the browser, where the fetch stack
     // owns connection reuse and the header is not ours to set.
     public RemoteLibraryImporter(
         HttpClient http,

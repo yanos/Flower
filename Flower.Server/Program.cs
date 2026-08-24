@@ -79,13 +79,72 @@ var logFile = AppLogging.Initialize(fileSizeLimitBytes: 32 * 1024 * 1024);
 builder.Logging.ClearProviders();
 builder.Logging.AddSerilog();
 
-// Nothing in this process should ever accept a body larger than the sync
-// server's own ceiling (SyncHttpServer.MaxBodyBytes, 20 MB) - before this,
+// Nothing in this process should ever accept a body larger than 20 MB (the
+// ceiling the app's own listener used, back when there were two) - before this,
 // only pair-redeem had a cap (4 KB, enforced by hand) and every other route
 // inherited Kestrel's 30 MB default, with the LanGuard middleware the only
 // thing between an unauthenticated caller and a 30 MB buffered upload.
 // Per-endpoint caps still apply on top; this is the backstop.
 builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 20 * 1024 * 1024);
+
+// This server's own keypair, loaded here rather than left to the container
+// because the https listener below needs it before the container exists. The
+// same instance is registered as DeviceSigningKey further down, so the process
+// still holds exactly one - loading twice would read the same file and work,
+// but it would also quietly create a second ECDsa over identical material and
+// invite the two to drift if the store ever gained caching.
+var (deviceKey, devicePublicKeyRaw) = new DeviceKeyStore(
+    LoggerFactory.Create(logging => logging.AddSerilog()).CreateLogger<DeviceKeyStore>()).Load();
+
+// TLS, alongside the plain listener rather than instead of it.
+//
+// The reason this needs no configuration is DeviceCertificate: the certificate
+// is minted from the keypair just loaded, and a client that paired with this
+// server already stores that key, so it can validate the certificate against
+// something it has rather than against an authority nobody set up. The plain
+// port stays exactly as it was for the callers that cannot do that - third
+// party OpenSubsonic clients, and anything holding an http bookmark.
+//
+// UseUrls rather than a Kestrel Listen call, deliberately: an explicit Listen
+// makes Kestrel ignore the Urls configuration entirely, which would silently
+// discard an operator's ASPNETCORE_URLS or a container's published bind
+// address. Adding a URL to the list keeps every existing way of configuring
+// the http listener working untouched.
+{
+    var httpsPort = builder.Configuration.GetValue($"{FlowerServerOptions.SectionName}:HttpsPort", 4534);
+    var certificatePath = builder.Configuration[$"{FlowerServerOptions.SectionName}:CertificatePath"] ?? "";
+    var certificateKeyPath = builder.Configuration[$"{FlowerServerOptions.SectionName}:CertificateKeyPath"] ?? "";
+
+    if (httpsPort > 0)
+    {
+        // Named one but not the other: refusing to start is right here rather
+        // than falling back to self-signed, because an operator who configured
+        // a certificate did so for the callers that cannot pin, and silently
+        // serving one those callers reject would present as "TLS is broken"
+        // with nothing in the logs pointing at the typo.
+        if (string.IsNullOrWhiteSpace(certificatePath) != string.IsNullOrWhiteSpace(certificateKeyPath))
+        {
+            throw new InvalidOperationException(
+                $"{FlowerServerOptions.SectionName}:CertificatePath and " +
+                $"{FlowerServerOptions.SectionName}:CertificateKeyPath must be set together.");
+        }
+
+        var certificate = string.IsNullOrWhiteSpace(certificatePath)
+            ? ServerTls.SelfSigned(deviceKey, Environment.MachineName)
+            : ServerTls.FromFiles(certificatePath, certificateKeyPath);
+
+        // The host of the existing http listener, so the https one binds the
+        // same way: a wildcard bind stays a wildcard, and a deployment that
+        // deliberately bound one interface does not get a second listener
+        // quietly opened on all of them.
+        var httpsHost = ResolveBindHost(builder.Configuration["Urls"]) ?? "0.0.0.0";
+        var urls = (builder.Configuration["Urls"] ?? "http://0.0.0.0:4533")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        builder.WebHost.UseUrls([.. urls, $"https://{httpsHost}:{httpsPort}"]);
+        builder.WebHost.ConfigureKestrel(kestrel =>
+            kestrel.ConfigureHttpsDefaults(https => https.ServerCertificate = certificate));
+    }
+}
 
 // One FlowerDb for the process, exactly as the client registers it. It owns
 // the connection string, the WAL/synchronous/foreign-key pragmas and the busy
@@ -134,6 +193,10 @@ builder.Services.AddSingleton<TrustedPeerStore>();
 builder.Services.AddSingleton<SubsonicCredentialStore>();
 builder.Services.AddSingleton<LibraryManifestCache>();
 builder.Services.AddSingleton<PlayReportService>();
+// Where a paired device's pushed log snapshot lands (SyncEndpoints'
+// /log/report) and is read back from (AdminEndpoints' /devices/{fp}/logs).
+// In memory, deliberately - see ClientLogStore.
+builder.Services.AddSingleton<ClientLogStore>();
 builder.Services.AddSingleton<DeviceKeyStore>();
 
 // Announces the server on the LAN so it shows up in a client's sidebar without
@@ -142,16 +205,16 @@ builder.Services.AddSingleton<DeviceKeyStore>();
 builder.Services.AddSingleton<MdnsAdvertiser>();
 builder.Services.AddHostedService(services => services.GetRequiredService<MdnsAdvertiser>());
 
-// This server's own keypair, loaded once for the process exactly as the client
-// does it in App.axaml.cs. It is not used to sign anything outbound here - what
-// the server needs is its Fingerprint, which goes into every pairing invite so
-// the redeeming device can pin the server's key instead of trusting whatever
-// answers at that address. See PairingInvite.
-builder.Services.AddSingleton(services =>
-{
-    var (key, publicKeyRaw) = services.GetRequiredService<DeviceKeyStore>().Load();
-    return new DeviceSigningKey(key, publicKeyRaw);
-});
+// This server's own keypair, loaded above (the https listener needed it before
+// the container existed) and registered here. It is not used to sign anything
+// outbound - what the server needs is its Fingerprint, which goes into every
+// pairing invite so the redeeming device can pin the server's key instead of
+// trusting whatever answers at that address. See PairingInvite.
+//
+// That pin is now load-bearing twice over: the same key is what the server's
+// TLS certificate is built from, so a client that redeemed a pairing code can
+// validate the https listener with nothing further. See DeviceCertificate.
+builder.Services.AddSingleton(new DeviceSigningKey(deviceKey, devicePublicKeyRaw));
 
 var app = builder.Build();
 
@@ -413,6 +476,21 @@ static string? ResolveLocalHost(string? configuredUrls)
     // the one that always reaches it from here.
     var hostName = uri.Host is "0.0.0.0" or "[::]" or "::" or "+" or "*" ? "localhost" : uri.Host;
     return $"{hostName}:{uri.Port}";
+}
+
+// The host portion of the configured bind address, kept exactly as written -
+// unlike ResolveLocalHost above, which turns a wildcard into something dialable
+// because it is building a link for a human. This one is building a second
+// bind address, where a wildcard is the answer rather than the problem.
+static string? ResolveBindHost(string? configuredUrls)
+{
+    var first = configuredUrls?.Split(';', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+    if (first == null || !Uri.TryCreate(first.Trim(), UriKind.Absolute, out var uri))
+        return null;
+
+    // Uri.Host strips the brackets an IPv6 literal needs to sit in a URL, and a
+    // bind address is going straight back into one.
+    return uri.HostNameType == UriHostNameType.IPv6 ? $"[{uri.Host}]" : uri.Host;
 }
 
 // Exposed so Flower.Server.Tests's WebApplicationFactory<Program> can boot the

@@ -139,6 +139,11 @@ namespace Flower.Manager
             : this(sharedRing, (track, ring) => new TrackDecoder(libVLC, track, ring, trackDecoderLogger), logger, stagingCapacityBytes)
         {
             _secondCore = new LibVLC();
+            // The armed role's core is a second, independent LibVLC (see this
+            // class's remarks), so it needs the dialog handlers set on it too -
+            // it is the one that opens the *next* track's URL, which is exactly
+            // where a certificate question would appear and stall a handover.
+            VlcCertificateDialogs.AnswerUnattended(_secondCore);
             _cores = [libVLC, _secondCore];
             _currentDecoderFactory = (track, ring) => new TrackDecoder(_cores[_currentCoreIndex], track, ring, trackDecoderLogger);
             _armedDecoderFactory = (track, ring) => new TrackDecoder(_cores[1 - _currentCoreIndex], track, ring, trackDecoderLogger);
