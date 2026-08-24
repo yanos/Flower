@@ -97,7 +97,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public event EventHandler? EqualizerWindowRequested;
     public event EventHandler<Track>? NavigateToTrackRequested;
     public event EventHandler<PlaylistConflictEventArgs>? PlaylistConflictRequested;
-    public event EventHandler<PeerApprovalRequestedEventArgs>? PeerApprovalRequested;
 
     // Forwards PairedServerReachability.Changed - see the constructor's own
     // subscription to it. Lets MobileMainViewModel (SearchSongResults, a row
@@ -188,10 +187,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
-    // Whether this Client pushes its recent log lines to its paired Server
-    // after each library sync - see AppSettings.ShareLogsWithPairedServer for
-    // why that is opt-in (plaintext transport, exception text and absolute
-    // paths in the payload). Persist-immediately, same as the two above.
+    // Whether this device pushes its recent log lines to its paired server
+    // after each library sync - on by default, so a listener who cannot be
+    // asked to read a log file still leaves one where the owner can find it.
+    // See AppSettings.ShareLogsWithPairedServer for what the payload carries.
+    // Persist-immediately, same as the two above.
     public bool ShareLogsWithPairedServer
     {
         get => _appSettings.ShareLogsWithPairedServer;
@@ -205,51 +205,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
-    // Whether this device accepts incoming bulk-sync from Client devices
-    // (Server) or initiates bulk-sync toward exactly one chosen Server
-    // (Client, the default) - see Settings' General tab, AppSettings.IsServer,
-    // and SyncRolePolicy. Takes effect immediately, live - unlike
-    // SyncHttpServer/mDNS (which keep running unconditionally on every
-    // device regardless of role, so browsing/streaming stays unrestricted),
-    // nothing here needs a restart.
-    public bool IsServer
-    {
-        get => _appSettings.IsServer;
-        set
-        {
-                if (_appSettings.IsServer == value)
-                return;
-            _appSettings.IsServer = value;
-            if (value)
-            {
-                // Nothing else reads IsServer except the sync-trigger gating
-                // in PeerSyncCoordinator - see ClearPairingForServerMode.
-                Sync.ClearPairingForServerMode();
-                _deviceSidebar.UnpinPairedServerRow();
-            }
-            _logger.LogInformation("IsServer changed {Old} -> {New}", !value, value);
-            SaveSettings();
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(PairedServerFingerprint));
-            OnPropertyChanged(nameof(PairedServerAlias));
-            OnPropertyChanged(nameof(Availability));
-            NotifyPairButtonPropertiesChanged();
-            // Reachability itself is unaffected by IsServer alone unless the
-            // PairedServerFingerprint clear above actually changes the
-            // computed value (e.g. flipping to Server mode while paired) -
-            // Recompute() figures that out and fires Changed only if so; see
-            // that method's own doc comment for why this nudge is necessary.
-            _reachability?.Recompute();
-            _deviceSidebar.SyncPairedServerRow();
-        }
-    }
-
     public string? PairedServerFingerprint => Sync.PairedServerFingerprint;
     public string? PairedServerAlias       => Sync.PairedServerAlias;
 
     public IEnumerable<DiscoveredDevice> AvailableServers => Sync.AvailableServers;
 
-    public void PairWithServer(DiscoveredDevice device, string? pairingCode = null) =>
+    // Whether that list has anything in it, so mobile's Settings sheet can say
+    // "none found yet" instead of leaving an empty gap under a heading - a
+    // phone that has never paired has no other clue about whether discovery is
+    // working at all.
+    public bool HasAvailableServers => AvailableServers.Any();
+
+    public void PairWithServer(DiscoveredDevice device, string pairingCode) =>
         Sync.PairWithServer(device, pairingCode);
 
     public void UnpairServer() => Sync.UnpairServer();
@@ -339,16 +306,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public EqualizerViewModel Equalizer { get; }
     public SidebarRenameService Rename { get; }
 
-    // Settings' Devices tab (TrustedDevicesView on a Server, ServerPickerView
-    // on a Client) used to resolve these four out of Ioc.Default in its own
-    // field initializers. They arrive the same way as everything above now -
-    // through the one object the view is handed - which is what lets a test
-    // build that view against fakes. The two nullable ones are the P2P stack
-    // that does not exist on WASM at all; the views that read them are only
-    // ever constructed on a platform that has it.
+    // Settings' Devices tab (ServerPickerView) used to resolve these out of
+    // Ioc.Default in its own field initializers. They arrive the same way as
+    // everything above now - through the one object the view is handed - which
+    // is what lets a test build that view against fakes. The nullable one is
+    // the discovery stack, which does not exist on WASM at all; the views that
+    // read it are only ever constructed on a platform that has it.
     public DeviceNicknameStore DeviceNicknames { get; }
-    public TrustedPeerStore TrustedPeers { get; }
-    public PeerUnpairNotifier? PeerUnpair { get; }
     public NetworkDiscoveryService? NetworkDiscovery { get; }
 
     // ── Selection ─────────────────────────────────────────────────────────────
@@ -528,13 +492,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public PeerLibraryViewModel? PeerLibrary { get; }
 
     // Whether the device-detail header's Pair/Unpair button should show at
-    // all for SelectedDevice - only meaningful for a Client looking at a
-    // peer advertising Server mode; a Server itself never pairs with anyone.
-    // Also true for the pinned paired-server row while it's unreachable
-    // (SelectedDevice null - see RemoveDeviceItem) so "Unpair" stays
-    // available even when there's no live device to check IsServer on.
+    // all for SelectedDevice. Every discovered device is a server now, so the
+    // only question left is whether there is a row to act on: a live one, or
+    // the pinned paired-server row while it is unreachable (SelectedDevice
+    // null - see RemoveDeviceItem), so "Unpair" stays available even with
+    // nothing currently answering.
     public bool CanPairWithSelectedDevice =>
-        !IsServer && ((SelectedDevice?.IsServer ?? false) || (_selectedSidebarItem?.IsPairedServer ?? false));
+        SelectedDevice != null || (_selectedSidebarItem?.IsPairedServer ?? false);
 
     // Driven by the sidebar row's own IsPairedServer flag rather than
     // re-matching SelectedDevice's Fingerprint - stays correct even while
@@ -572,32 +536,29 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // "Waiting for server..." still runs the Unpair flow (PairActionButton_Click
     // branches on IsSelectedDevicePaired, not on trust) - it's the only way
     // to cancel a pending request.
-    // "Pair" rather than "Ask to pair" for a headless server: nothing is being
-    // asked. The code the admin already issued is the approval, so the action
-    // completes in one round trip instead of leaving a request sitting at
-    // somebody else's prompt. An app peer still asks. See
-    // DiscoveredDevice.PairsByCode.
+    // "Pair" rather than "Ask to pair": nothing is being asked. The code the
+    // admin already issued is the approval, so the action completes in one
+    // round trip instead of leaving a request sitting at somebody else's
+    // prompt - which is just as well, since a headless server has no prompt.
     public string PairActionLabel =>
-        !IsSelectedDevicePaired ? (SelectedDevicePairsByCode ? "Pair" : "Ask to pair") :
+        !IsSelectedDevicePaired ? "Pair" :
         IsSelectedDeviceTrustConfirmed ? "Unpair" :
         "Waiting for server...";
 
-    // Whether to show the pairing-code box next to the button. Only for a
-    // not-yet-paired headless server - an app peer has no code to give, and a
-    // peer already paired has nothing left to redeem.
-    public bool IsPairingCodeRequired => SelectedDevicePairsByCode && !IsSelectedDevicePaired;
+    // Whether to show the pairing-code box next to the button. A server already
+    // paired with has nothing left to redeem.
+    public bool IsPairingCodeRequired => !IsSelectedDevicePaired;
 
     // Whether the device-detail header offers "Server Settings...". Only for a
-    // headless Flower.Server (PairsByCode, the same signal IsPairingCodeRequired
-    // uses) that has already approved this device - a server has a browser UI to
-    // open, and an app peer has its own Settings window on its own screen.
+    // server that has already accepted this device, since that button opens its
+    // browser UI.
     //
     // Deliberately not also gated on this device being an *admin* of that server:
     // nothing here can know that without asking, TrustedPeer.IsAdmin lives on the
     // server, and a hidden button is a worse answer than a button that says why it
     // did not work (see ServerSettingsError).
     public bool CanOpenSelectedServerSettings =>
-        SelectedDevicePairsByCode && IsSelectedDeviceTrustConfirmed && _signingKey != null && _deviceIdentity != null;
+        IsSelectedDeviceTrustConfirmed && _signingKey != null && _deviceIdentity != null;
 
     // Set when minting a browser session against the selected server failed -
     // most usefully when this device is paired but not an administrator, which is
@@ -684,16 +645,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // ── Handing out pairing codes ─────────────────────────────────────────────
 
-    // "Add Device…" against the selected server: the same admin-issued one-time
+    // "Generate Pairing Code" against the selected server: the same one-time
     // code the server's own browser UI hands out (see SettingsViewModel's
     // IssuePairingCodeCommand and PairingCodeService), asked for from the place
     // an administrator already stands when they are thinking about their server -
     // its sidebar row - rather than only after a trip out to a browser tab.
     //
-    // Deliberately not an admin code. What this is for is adding a listener's
-    // phone or laptop, and a device that only listens has no business being able
-    // to hand out codes of its own. Making another administrator stays where it
-    // was, behind "Server Settings…" and the server's own Devices screen.
+    // An ordinary listener's code unless PairingCodeGrantsAdmin is ticked, which
+    // is what the checkbox beside the button is for: the common case is adding
+    // somebody's phone, and a device that only listens has no business handing
+    // out codes of its own - but an owner's second device is a real case too,
+    // and used to mean a trip out to the server's own browser UI to do a thing
+    // the sidebar was already standing in front of.
     private string? _issuedPairingCode;
     public string? IssuedPairingCode
     {
@@ -703,6 +666,23 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             if (_issuedPairingCode == value)
                 return;
             _issuedPairingCode = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // Whether the code currently on screen is an administrator's. Said out loud
+    // next to it rather than left to the checkbox above: the checkbox describes
+    // the *next* press, and the two disagree the moment it is un-ticked with a
+    // code still showing.
+    private bool _issuedPairingCodeGrantsAdmin;
+    public bool IssuedPairingCodeGrantsAdmin
+    {
+        get => _issuedPairingCodeGrantsAdmin;
+        private set
+        {
+            if (_issuedPairingCodeGrantsAdmin == value)
+                return;
+            _issuedPairingCodeGrantsAdmin = value;
             OnPropertyChanged();
         }
     }
@@ -736,22 +716,56 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
-    // Exactly the preconditions "Server Settings…" needs, for exactly the same
-    // reasons (see CanOpenSelectedServerSettings, including why this is not also
-    // gated on actually being an admin - nothing here can know that without
-    // asking, and a button that says why it failed beats a button that isn't
-    // there). Named separately so the two can part company later without the
-    // XAML having to be re-read to find out which button meant which.
-    public bool CanInviteDeviceToSelectedServer => CanOpenSelectedServerSettings;
+    // "Server Settings…"'s preconditions, plus the one that button deliberately
+    // does without: this device actually being an administrator of that server.
+    //
+    // The two part company here because the buttons fail differently. Opening a
+    // settings page a non-admin cannot read is a wasted trip that says so;
+    // handing out pairing codes is an administrator's job in a way a listener
+    // has no reason to see offered at all, and a control whose every press
+    // returns the server's 403 reads as broken rather than as forbidden. The
+    // server now answers whether the caller is one of its admins on the same
+    // /info poll everything else here rides on (DiscoveredDevice.WeAreAdmin),
+    // so this can be known without asking - which is what the old comment here
+    // said could not be done.
+    //
+    // Still only a display decision. AdminEndpoints re-checks
+    // TrustedPeer.IsAdmin on every request, so a client that lies to itself
+    // about this gains nothing.
+    public bool CanInviteDeviceToSelectedServer =>
+        CanOpenSelectedServerSettings && SelectedDevice?.WeAreAdmin == true;
 
     // The mobile half of the same feature. A phone has no sidebar to select a
     // server in, so its Settings sheet asks the one server it is paired with -
     // resolved through PairedServerReachability, which knows the server's current
     // address whether it was found on this link or remembered from home (see
-    // docs/REMOTE-ACCESS-PLAN.md).
+    // docs/REMOTE-ACCESS-PLAN.md). Same admin gate as above.
     public bool CanInviteDeviceToPairedServer =>
-        (_reachability?.PairedServerDevice?.PairsByCode ?? false)
+        _reachability?.PairedServerDevice is { WeAreAdmin: true }
         && IsPairedServerTrustConfirmed && _signingKey != null && _deviceIdentity != null;
+
+    // Whether the code the next "Generate Pairing Code" press asks for should
+    // grant administrator rights - the checkbox next to that button, on both
+    // the desktop sidebar and mobile's Settings sheet.
+    //
+    // Off by default and deliberately not remembered between presses: adding a
+    // listener's phone is the ordinary case, and a checkbox that stayed ticked
+    // from an hour ago would quietly turn the next guest into an administrator.
+    // More than one device may hold it at once, though - somebody's own desktop
+    // and their own phone both being admins is the expected shape, not an
+    // exception (see TrustedPeerStore.TrustedPeer.IsAdmin).
+    private bool _pairingCodeGrantsAdmin;
+    public bool PairingCodeGrantsAdmin
+    {
+        get => _pairingCodeGrantsAdmin;
+        set
+        {
+            if (_pairingCodeGrantsAdmin == value)
+                return;
+            _pairingCodeGrantsAdmin = value;
+            OnPropertyChanged();
+        }
+    }
 
     public Task InviteDeviceToSelectedServerAsync() => IssuePairingCodeAgainstAsync(SelectedDevice);
 
@@ -766,13 +780,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // The previous code is dropped before the request rather than after it:
         // a stale code left on screen next to a spinner reads as the new one.
         IssuedPairingCode = null;
+        IssuedPairingCodeGrantsAdmin = false;
         IsIssuingPairingCode = true;
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             var client = CreateServerAdminClient(http, device);
-            var pairing = await client.IssuePairingCodeAsync(grantsAdmin: false);
+            var pairing = await client.IssuePairingCodeAsync(PairingCodeGrantsAdmin);
             IssuedPairingCode = pairing.Code;
+            IssuedPairingCodeGrantsAdmin = PairingCodeGrantsAdmin;
         }
         catch (Exception ex)
         {
@@ -789,9 +805,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // identity; only the route differs.
     private ServerAdminClient CreateServerAdminClient(HttpClient http, DiscoveredDevice device) =>
         new(http, device.BaseUri,
-            ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity!, _signingKey!, _appSettings)));
-
-    private bool SelectedDevicePairsByCode => SelectedDevice?.PairsByCode ?? false;
+            ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity!, _signingKey!)));
 
     // What the user typed into that box. Cleared on a successful pair and
     // whenever the sidebar selection moves, so a code left over from one
@@ -839,8 +853,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // Single place raising every pair-button property's PropertyChanged -
     // called whenever any input to them changes: the sidebar selection
-    // (OnSidebarSelectionChanged), this device's own role (IsServer's
-    // setter), the paired server (PairWithServer/UnpairServer), server
+    // (OnSidebarSelectionChanged), the paired server
+    // (PairWithServer/UnpairServer), server
     // approval (ConfirmServerTrust), or SelectedDevice's underlying
     // DiscoveredDevice being refreshed (RefreshDeviceDisplayNames).
     //
@@ -849,7 +863,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // runs off the 5s peer poll, where the answer is the same every time, and
     // each of these is a computed property the bindings then re-evaluate.
     // See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
-    private (bool, bool, bool, bool, bool, bool, string?, bool, string?, bool, bool)? _lastPairButtonState;
+    private (bool, bool, bool, bool, bool, bool, string?, bool, string?, bool, bool, bool, bool)? _lastPairButtonState;
 
     private void NotifyPairButtonPropertiesChanged()
     {
@@ -864,7 +878,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             IsPairActionEnabled,
             PairActionHint,
             IsPairingCodeRequired,
-            CanOpenSelectedServerSettings);
+            CanOpenSelectedServerSettings,
+            // Both carry their own term now that they are gated on being an
+            // administrator of the server in question, which the 5s /info poll
+            // can flip on its own - see DiscoveredDevice.WeAreAdmin.
+            CanInviteDeviceToSelectedServer,
+            CanInviteDeviceToPairedServer);
 
         if (_lastPairButtonState == state)
             return;
@@ -883,12 +902,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsPairingCodeRequired));
         OnPropertyChanged(nameof(IsPairSubmittable));
         OnPropertyChanged(nameof(CanOpenSelectedServerSettings));
-        // Same inputs as the line above (see CanInviteDeviceToSelectedServer),
-        // so it rides along on that property's place in the diffed tuple.
         OnPropertyChanged(nameof(CanInviteDeviceToSelectedServer));
         // Mobile's Settings sheet asks the *paired* server rather than the
-        // selected one, and one of that property's inputs (trust confirmation)
-        // is already in the tuple above - so it is re-raised from here too.
+        // selected one.
         OnPropertyChanged(nameof(CanInviteDeviceToPairedServer));
     }
 
@@ -950,8 +966,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         LibraryDownloadService? libraryDownloadService = null,
         PeerPairingService? peerPairingService = null,
         PeerTrackResolver? peerTrackResolver = null,
-        PeerUnpairNotifier? peerUnpairNotifier = null,
-        SyncHttpServer? syncHttpServer = null,
         DeviceIdentity? deviceIdentity = null,
         DeviceSigningKey? signingKey = null,
         // Trailing + defaulted for the same reason as the sync stack above,
@@ -977,8 +991,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             ? new PeerLibraryViewModel(deviceIdentity, signingKey, appSettings, playlistControlViewModel, AppLogging.CreateTypedLogger<PeerLibraryViewModel>())
             : null;
         DeviceNicknames        = deviceNicknameStore;
-        TrustedPeers           = trustedPeerStore;
-        PeerUnpair             = peerUnpairNotifier;
         NetworkDiscovery       = networkDiscovery;
         _appSettingsStore      = appSettingsStore;
         _busy                  = busy;
@@ -1030,7 +1042,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             this, appSettings, appSettingsStore, deviceIdentityStore,
             AppLogging.CreateTypedLogger<PeerSyncCoordinator>(),
             networkDiscovery, reachability, playlistSyncService, librarySyncService,
-            libraryDownloadService, peerPairingService, peerTrackResolver, deviceIdentity, signingKey,
+            libraryDownloadService, peerPairingService, peerTrackResolver, trustedPeerStore, deviceIdentity, signingKey,
             Library);
 
         _deviceSidebar = new DeviceSidebarSection(_sidebarItems, this, deviceNicknameStore, reachability);
@@ -1141,6 +1153,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             Dispatcher.UIThread.Post(() =>
             {
                 OnPropertyChanged(nameof(AvailableServers));
+                OnPropertyChanged(nameof(HasAvailableServers));
                 OnPropertyChanged(nameof(ManualServerAddresses));
             });
             Sync.HandlePeerTrustChanged(device);
@@ -1155,6 +1168,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             Dispatcher.UIThread.Post(() =>
             {
                 OnPropertyChanged(nameof(AvailableServers));
+                OnPropertyChanged(nameof(HasAvailableServers));
                 OnPropertyChanged(nameof(ManualServerAddresses));
             });
         },
@@ -1206,8 +1220,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // of whether the revoke happened while this device was reachable or
         // not: NetworkDiscoveryService.ResolveAliasAsync polls every known
         // peer's /info roughly every 5s independent of any sync attempt (see
-        // DiscoveredDevice.TrustsUs, SyncHttpServer.HandleInfoAsync's
-        // trustsCaller), and DeviceDiscovered re-fires whenever that (or
+        // DiscoveredDevice.TrustsUs and Flower.Server's DiscoveryEndpoints
+        // trustsCaller field), and DeviceDiscovered re-fires whenever that (or
         // anything else in a device's /info) changes - handled by
         // HandlePeerTrustChanged below. PlaylistSyncService/LibrarySyncService's
         // PeerTrustRejected is the same information arriving slightly earlier,
@@ -1223,31 +1237,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (librarySyncService != null)
             _subscriptions.Add<EventHandler<PeerTrustRejectedEventArgs>>(HandlePeerTrustRejected,
                 h => librarySyncService.PeerTrustRejected += h, h => librarySyncService.PeerTrustRejected -= h);
-        // Server-initiated counterpart to the two above - a peer that
-        // proactively told us (via SyncHttpServer's unpair-notify endpoint)
-        // it revoked our trust, rather than us finding out from a 403/poll -
-        // see PeerUnpairNotifier. Same handler, same effect either way.
-        if (syncHttpServer != null)
-            _subscriptions.Add<EventHandler<PeerTrustRejectedEventArgs>>(HandlePeerTrustRejected,
-                h => syncHttpServer.PeerUnpairNotified += h, h => syncHttpServer.PeerUnpairNotified -= h);
-
-        // Same no-UI-listening fallback shape as ConflictDetected above, but fails
-        // *closed* (deny) rather than defaulting to "keep local" - granting a
-        // stranger access to this device's playlists/library is a security
-        // decision, not a content merge, so an unattended device shouldn't ever
-        // silently trust an unrecognized peer. See SyncHttpServer.AuthorizeAsync.
-        if (syncHttpServer != null)
-            _subscriptions.Add<EventHandler<PeerApprovalRequestedEventArgs>>((_, e) =>
-        {
-            if (PeerApprovalRequested == null)
-            {
-                e.Resolution.TrySetResult(false);
-                return;
-            }
-            Dispatcher.UIThread.Post(() => PeerApprovalRequested?.Invoke(this, e));
-        },
-                h => syncHttpServer.PeerApprovalRequested += h, h => syncHttpServer.PeerApprovalRequested -= h);
-
         _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
             if (e.PropertyName == nameof(PlaylistControlViewModel.SelectedTrack))
@@ -1402,17 +1391,17 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 _sidebarItems.Add(new SidebarItem(SidebarItemKind.Playlist, pl.Name, MaterialIconKind.PlaylistPlay, pl));
         }
 
-        // The paired Server's row is pinned in place for the whole session
+        // The paired server's row is pinned in place for the whole session
         // (see RemoveDeviceItem) instead of only existing while mDNS
-        // currently has it in view like an ordinary Devices/Server row -
-        // added here up front so it shows immediately at launch, before this
+        // currently has it in view like an ordinary row - added here up
+        // front so it shows immediately at launch, before this
         // session's first DeviceDiscovered has had a chance to find it (or
         // even if it never does, this run). AddOrUpdateDeviceSidebarItem's
         // FindDeviceSidebarItem claims this same row once the peer actually
         // is (re)discovered, rather than creating a second one for it.
         if (_appSettings.PairedServerFingerprint is { Length: > 0 } && _appSettings.PairedServerAlias is { } pairedAlias)
         {
-            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Server"));
+            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Servers"));
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, pairedAlias, MaterialIconKind.Server)
             {
                 IsPairedServer = true,

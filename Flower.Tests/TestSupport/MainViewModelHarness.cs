@@ -24,8 +24,8 @@ namespace Flower.Tests.TestSupport;
 // Every one of these dependencies is either a plain data holder or a service
 // whose constructor only wires up event subscriptions: none of them start
 // network listeners or timers on their own (NetworkDiscoveryService's polling
-// and SyncHttpServer's listener both need an explicit Start(), which
-// MainViewModel's constructor never calls), so building one touches neither
+// needs an explicit Start(), which MainViewModel's constructor never calls),
+// so building one touches neither
 // the network nor the real filesystem beyond whatever PlatformDataDirectory
 // is currently pinned to. Callers must pin it (see PinnedDataDirectory), or
 // these will write into the developer's own settings.json.
@@ -76,7 +76,6 @@ public static class MainViewModelHarness
         NetworkDiscoveryService NetworkDiscovery,
         PairedServerReachability Reachability,
         FakeMdnsBackend MdnsBackend,
-        SyncHttpServer SyncHttpServer,
         // Non-null only when the caller asked for stubbed sync services - see
         // BuildParts' stubSyncServices.
         StubLibrarySyncService? StubLibrarySync = null,
@@ -94,7 +93,6 @@ public static class MainViewModelHarness
             Main.Dispose();
             PlaylistControl.Dispose();
             CurrentlyPlaying.Dispose();
-            SyncHttpServer.Dispose();
             Reachability.Dispose();
             NetworkDiscovery.Dispose();
         }
@@ -211,12 +209,7 @@ public static class MainViewModelHarness
             deviceIdentity, signingKey, NullLogger<PeerPairingService>.Instance);
         var peerTrackResolver = new PeerTrackResolver(reachability);
         var trustedPeerStore = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
-        var syncHttpServer = new SyncHttpServer(
-            deviceIdentity, signingKey, appSettings, library, trustedPeerStore, new ClientLogStore(),
-            NullLogger<SyncHttpServer>.Instance);
         var deviceIdentityStore = new DeviceIdentityStore(NullLogger<DeviceIdentityStore>.Instance);
-        var peerUnpairNotifier = new PeerUnpairNotifier(
-            networkDiscovery, deviceIdentity, signingKey, NullLogger<PeerUnpairNotifier>.Instance);
 
         var busy = new BusyState();
         var main = new MainViewModel(
@@ -231,10 +224,10 @@ public static class MainViewModelHarness
             new SidebarRenameService(deviceNicknameStore, NullLogger<SidebarRenameService>.Instance),
             NullLogger<MainViewModel>.Instance,
             networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
-            peerPairingService, peerTrackResolver, peerUnpairNotifier, syncHttpServer, deviceIdentity, signingKey);
+            peerPairingService, peerTrackResolver, deviceIdentity, signingKey);
 
         return new Parts(main, playlistControl, currentlyPlaying, audio, appSettings, library, mainPlaylist,
-            networkDiscovery, reachability, mdnsBackend, syncHttpServer, stubLibrarySync, stubPlaylistSync);
+            networkDiscovery, reachability, mdnsBackend, stubLibrarySync, stubPlaylistSync);
     }
 
     public static MobileParts BuildMobile(Library library, MainPlaylist mainPlaylist)

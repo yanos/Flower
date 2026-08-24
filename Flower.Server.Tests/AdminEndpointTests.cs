@@ -247,6 +247,51 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
         }
     }
 
+    // The read side of the log-sharing feature: a device pushes its snapshot
+    // through /api/flower/v1/log/report, and the owner reads it back here.
+    [Fact]
+    public async Task A_devices_pushed_log_is_readable_from_the_admin_api()
+    {
+        using var admin = await NewAdminAsync();
+        server.Services.GetRequiredService<ClientLogStore>().SetSnapshot(
+            "fp-phone", "Kitchen iPad",
+            [new LogEntryDto(DateTimeOffset.UtcNow, "Warning", null, "it went wrong", null)],
+            DateTimeOffset.UtcNow);
+
+        try
+        {
+            var context = await SignedAsync(admin, "GET", "/api/admin/devices/fp-phone/logs", query: "limit=50");
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var log = await ReadAsync<DeviceLogResponse>(context);
+            Assert.Equal("Kitchen iPad", log.Alias);
+            Assert.Equal("it went wrong", Assert.Single(log.Entries).Message);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // 404 rather than an empty list: "nothing has arrived from this device" and
+    // "this device logged nothing" are different answers, and only the first is
+    // worth telling the reader to wait about.
+    [Fact]
+    public async Task A_device_that_has_never_pushed_a_log_is_a_404()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var context = await SignedAsync(admin, "GET", "/api/admin/devices/fp-never-seen/logs");
+
+            Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
     [Fact]
     public async Task An_unsigned_request_is_unauthorized()
     {

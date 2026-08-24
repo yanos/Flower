@@ -7,8 +7,8 @@ using Xunit;
 
 namespace Flower.Tests;
 
-// The lookup that used to exist three times (AlbumArtLoader, SyncHttpServer,
-// Flower.Server's SubsonicEndpoints) and had drifted between them - the
+// The lookup that used to exist three times (AlbumArtLoader, the app's own
+// listener, Flower.Server's SubsonicEndpoints) and had drifted between them - the
 // server's copy accepted only .jpg/.jpeg/.png, so an album with a cover.webp
 // showed art in the app and 404'd from a self-hosted server for the same
 // library. Now one implementation, so these cases hold for all three.

@@ -4,9 +4,9 @@ using System.Security.Cryptography;
 namespace Flower.Server.Services;
 
 // Admin-issued one-time pairing codes (SYNC-PLAN.md's "Passwordless by design"
-// section, path A) - proactive replacement for SyncHttpServer's reactive
-// 60-second live-approval prompt, which has no one to answer it on a headless
-// box. Deliberately in-memory, not persisted to the database at all: a code
+// section, path A) - proactive replacement for the reactive 60-second
+// live-approval prompt the app-to-app flow used, which has no one to answer it
+// on a headless box. Deliberately in-memory, not persisted to the database at all: a code
 // only needs to survive its own ~10-minute expiry window, and losing all
 // outstanding codes on a server restart (which also drops any in-flight
 // pairing attempt) is an acceptable, easily-retried cost for not needing a

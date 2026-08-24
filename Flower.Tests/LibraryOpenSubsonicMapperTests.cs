@@ -234,8 +234,8 @@ public class LibraryOpenSubsonicMapperTests
         // id from Artists fragments the album into one id per track, and the
         // grouped id nothing ever hands out - which is exactly how remote
         // cover art for every compilation used to 404 (AlbumArtLoader and
-        // SyncHttpServer.HandleGetCoverArtAsync both asked with the track
-        // artist while the manifest was built with the album artist).
+        // the cover-art handler both asked with the track artist while the
+        // manifest was built with the album artist).
         var first = new Track
         {
             Title = "One", Artists = "Artist A", AlbumArtists = "Various Artists",

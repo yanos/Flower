@@ -11,8 +11,7 @@ using Flower.Services;
 namespace Flower.Server.Tests;
 
 // Path A over /rest: a paired Flower client browses this server with a device
-// signature and no username/password at all, exactly the way it browses
-// another client's embedded SyncHttpServer (see PeerOpenSubsonicClientFactory,
+// signature and no username/password at all (see PeerOpenSubsonicClientFactory,
 // which sends empty u/p on purpose). Without this the pairing flow completed
 // and then every browse came back "Wrong username or password", because the
 // /rest filter only knew about path-B credentials and stream tickets.

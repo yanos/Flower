@@ -9,11 +9,10 @@ using Xunit;
 
 namespace Flower.Tests;
 
-// Direct coverage of the check both servers now share (Tier 2.2). The
-// end-to-end behaviour is asserted over a real socket in
-// SyncHttpServerRoundTripTests and through the real route table in
-// Flower.Server.Tests; what those two cannot show is that the *same* code is
-// answering, which is the entire point of the extraction - so the cases here
+// Direct coverage of the check the server's route table runs (Tier 2.2). The
+// end-to-end behaviour is asserted through that real route table in
+// Flower.Server.Tests; what that cannot show is which rule was applied where -
+// the header-else-query policy in particular - so the cases here
 // are the ones that used to have two implementations to keep in step,
 // especially the header-else-query rule that decides where an attacker is
 // allowed to put an identity.

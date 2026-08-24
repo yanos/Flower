@@ -45,9 +45,10 @@ travel by itself, and typing one should be the bootstrap case only.
 
 Every peer already performs an `/info` handshake before it is usable at all
 (`SyncProtocol.InfoPath`, `NetworkDiscoveryService.ResolveAliasAsync`), and
-`SyncInfoResponseDto` already carries the fingerprint, `IsServer` and
-`TrustsCaller`. It gains one more field: the addresses the server believes it can
-be reached on.
+`SyncInfoResponseDto` already carries the fingerprint and `TrustsCaller` (and,
+at the time, an `IsServer` flag - dropped once a Flower app stopped answering
+this handshake at all). It gains one more field: the addresses the server
+believes it can be reached on.
 
 ```
 GET /api/localsend/v2/info
@@ -143,9 +144,11 @@ the client's probes at hosts of its choosing.
 
 **Built here:**
 
-1. `SyncInfoResponseDto.Addresses`, filled by both servers — `Flower.Server`
-   (`DiscoveryEndpoints`) and the app's own `SyncHttpServer.HandleInfoAsync`, so
-   a desktop acting as a server behaves the same way as the headless one.
+1. `SyncInfoResponseDto.Addresses`, filled by `Flower.Server`
+   (`DiscoveryEndpoints`). The app's own `SyncHttpServer.HandleInfoAsync` filled
+   it too, so that a desktop acting as a server behaved the same way as the
+   headless one; that listener has since been removed and the headless one is
+   the only one left.
 2. Remembered candidates on `AppSettings`, refreshed on every successful `/info`.
 3. Candidate-based `PairedServerReachability` with the ranking above,
    synthesising a `DiscoveredDevice` for a remembered peer rather than requiring

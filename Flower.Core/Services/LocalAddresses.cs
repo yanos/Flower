@@ -8,10 +8,10 @@ using System.Net.Sockets;
 namespace Flower.Services;
 
 // Every address a server believes it can be reached on, for the addresses field
-// of the /info handshake (SyncInfoResponseDto). Shared by both servers - the
-// headless Flower.Server and the app's own SyncHttpServer - because "where am I
-// reachable" is the same question on both and a second copy would be a second
-// answer.
+// of the /info handshake (SyncInfoResponseDto). Lives here, in the project both
+// heads share, rather than inside Flower.Server: "where am I reachable" is a
+// question about a machine rather than about a web host, and it was once asked
+// by two servers at a time.
 //
 // This is what lets a client keep hold of a server it can no longer discover:
 // mDNS is link-local, so it never crosses a tailnet or a subnet, and a client
@@ -50,6 +50,25 @@ public static class LocalAddresses
         if (!string.IsNullOrWhiteSpace(advertisedHost))
             addresses.Add(AdvertisedOrigin(advertisedHost.Trim(), port, scheme));
 
+        foreach (var address in Own())
+            addresses.Add(Format(address, port, scheme));
+
+        return addresses.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    // The addresses this machine holds, as addresses rather than as origins -
+    // the same enumeration Reachable formats, exposed for the one caller that
+    // needs the values themselves rather than URLs to dial: the subject
+    // alternative names of the server's own TLS certificate (see
+    // DeviceCertificate.CreateSelfSigned). Sharing the enumeration is the point.
+    // A certificate listing a different set of addresses than /info advertises
+    // would fail to validate at exactly the address a client was told to use,
+    // and the two drifting apart is the kind of thing nobody notices until a
+    // machine grows an interface.
+    public static List<IPAddress> Own()
+    {
+        var addresses = new List<IPAddress>();
+
         foreach (var nic in SafeInterfaces())
         {
             if (nic.OperationalStatus != OperationalStatus.Up)
@@ -62,11 +81,11 @@ public static class LocalAddresses
                 if (!IsReportable(unicast.Address))
                     continue;
 
-                addresses.Add(Format(unicast.Address, port, scheme));
+                addresses.Add(unicast.Address);
             }
         }
 
-        return addresses.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return addresses;
     }
 
     // Whether a caller reached us from the machine we are running on.

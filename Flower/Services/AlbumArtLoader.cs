@@ -48,7 +48,10 @@ public class AlbumArtLoader
     // the loggers-for-non-DI-classes patterns it offers.
     private static readonly ILogger StaticLogger = AppLogging.CreateLogger("Flower.Services.AlbumArtLoader");
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    // Through PeerHttpClient rather than `new HttpClient()` so cover art is
+    // fetched over the same accepted-certificate rule as everything else - this
+    // client talks to the same peer the catalog came from, on the same origin.
+    private static readonly HttpClient Http = PeerHttpClient.Create(TimeSpan.FromSeconds(10));
 
     private readonly ICoverArtUrlResolver? _artUrls;
     private readonly IPeerCredentials? _credentials;
@@ -252,10 +255,10 @@ public class AlbumArtLoader
 
     // Raw art bytes for a track this device actually has a file for - see
     // LocalAlbumArtReader, which is the one implementation of the embedded-
-    // tag-then-cover-file lookup and is shared with SyncHttpServer (serving
-    // /rest/getCoverArt), LibraryOpenSubsonicMapper (hashing for CoverArt) and
-    // Flower.Server. Callers that also need to know what to serve the bytes
-    // *as* should use LocalAlbumArtReader.ForFile directly rather than sniff.
+    // tag-then-cover-file lookup and is shared with LibraryOpenSubsonicMapper
+    // (hashing for CoverArt) and Flower.Server (serving /rest/getCoverArt).
+    // Callers that also need to know what to serve the bytes *as* should use
+    // LocalAlbumArtReader.ForFile directly rather than sniff.
     public static byte[]? TryGetLocalArtBytes(Track track) =>
         LocalAlbumArtReader.ForFile(track.Path, StaticLogger)?.Bytes;
 
@@ -302,7 +305,7 @@ public class AlbumArtLoader
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             // Signed, like every other call into a peer's /rest surface. This
             // used to send a bare fingerprint and alias with no signature at
-            // all, which a peer's own SyncHttpServer tolerated but Flower.Server
+            // all, which the app's own listener tolerated but Flower.Server
             // does not - and its refusal is a *Subsonic* refusal, so it comes
             // back as HTTP 200 carrying an error envelope. Two things followed
             // from that, both of them bad: the JSON error body was written
@@ -348,8 +351,8 @@ public class AlbumArtLoader
         catch (Exception ex)
         {
             // Debug, not Warning - peer unreachable/offline or not (yet) trusted
-            // is routine, not a real error (SyncHttpServer/NetworkDiscoveryService
-            // log the actual trust/reachability decisions themselves already).
+            // is routine, not a real error (NetworkDiscoveryService and the sync
+            // services log the actual trust/reachability decisions already).
             _logger.LogDebug(ex, "Could not fetch remote album art for {Album} from {Fingerprint}; showing the placeholder icon instead",
                 track.Album, track.OriginDeviceFingerprint);
             return null;

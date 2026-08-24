@@ -24,9 +24,9 @@ public interface ICoverArtUrlResolver
     // placeholder icon, not to substitute anything.
     string? Resolve(Track track);
 
-    // Whether to ask for a fresh connection per request. True against a peer's
-    // embedded SyncHttpServer, whose HttpListener (or the OS) may have torn a
-    // pooled keep-alive connection down without saying so - the same hazard
+    // Whether to ask for a fresh connection per request. True against a server
+    // over the LAN, which (or whose OS) may have torn a pooled keep-alive
+    // connection down without saying so - the same hazard
     // RemoteLibraryImporter's closeConnection covers. False in the browser,
     // where the fetch stack owns connection reuse and the header is not ours
     // to set.

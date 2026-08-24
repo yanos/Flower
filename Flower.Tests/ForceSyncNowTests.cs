@@ -53,7 +53,6 @@ public class ForceSyncNowTests : PinnedDataDirectory
             new MainPlaylist(new List<Track>()),
             new AppSettings
             {
-                IsServer                = false,
                 PairedServerFingerprint = ServerFingerprint,
                 PairedServerAlias       = "Living Room",
             },

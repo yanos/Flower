@@ -9,9 +9,10 @@ using Flower.Models;
 namespace Flower.Services;
 
 // Maps this device's own real (Path != null) tracks into OpenSubsonic ID3-shaped
-// DTOs for SyncHttpServer's embedded host - see SYNC-PLAN.md Phase 3's "one
-// client, three interchangeable servers". Never includes placeholder tracks
-// (Path == null): a real OpenSubsonic server, and Flower's own embedded one, only
+// DTOs. Written for the app's own embedded host, since removed; what still uses
+// it is the album-id and cover-art hashing AlbumArtLoader and
+// RecentlyAddedAlbumsBuilder need. Never includes placeholder tracks
+// (Path == null): a real OpenSubsonic server only
 // ever reports tracks it actually has - see the plan's no-multi-hop-provenance
 // note (a device wanting the full known universe of tracks queries each peer
 // directly rather than trusting any one peer to relay what it heard secondhand).
@@ -72,9 +73,9 @@ public static class LibraryOpenSubsonicMapper
         // hashes per request (ARCHITECTURE-REVIEW Tier 1.4). Keyed by path +
         // last-write time + length so re-tagging a file invalidates the entry
         // on its own, with no cache-busting call sites to remember. The bulk
-        // /library manifest is additionally cached wholesale by
-        // SyncHttpServer; this covers the OpenSubsonic browse endpoints, which
-        // are per-request by nature.
+        // /library manifest is additionally cached wholesale on the serving
+        // side; this covers the OpenSubsonic browse shapes, which are
+        // per-request by nature.
         FileInfo info;
         try
         {

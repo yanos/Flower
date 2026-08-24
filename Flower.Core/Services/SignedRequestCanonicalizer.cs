@@ -18,7 +18,7 @@ public static class SignedRequestCanonicalizer
     // Every X-Flower-* transport parameter - the signature itself, and the
     // identity it is signed under - is excluded from the canonical query, so
     // the canonical form is identical whether those values travel as headers
-    // (OpenSubsonicClient.SendAsync, SyncHttpServer's own API calls) or as
+    // (OpenSubsonicClient.SendAsync, the sync services' own calls) or as
     // query-string fallbacks alongside everything else in the URL (the
     // LibVLC/OpenSubsonicClient.BuildUrl case - see SignedRequest.Identity).
     //

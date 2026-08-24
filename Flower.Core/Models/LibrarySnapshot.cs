@@ -22,10 +22,10 @@ public enum StarTarget
 // surface reads through - grouped albums, tracks by id, tracks by album artist.
 //
 // Owned by Library, which rebuilds it lazily after any change to Tracks, and
-// used by both hosts that answer OpenSubsonic requests: the standalone
-// Flower.Server and the client's own embedded SyncHttpServer. It exists
-// because both were doing the same grouping per request - the server as an
-// aggregate SQL query, the client as a LINQ GroupBy over the whole library
+// used wherever an OpenSubsonic request has to be answered out of it. It exists
+// because the two hosts that then existed were doing the same grouping per
+// request - the server as an aggregate SQL query, the client as a LINQ GroupBy
+// over the whole library
 // (LibraryOpenSubsonicMapper.FindAlbum grouped 16k tracks to pull out one
 // album) - which meant the "what is an album" rule had two implementations
 // that only tests held to the same answer.

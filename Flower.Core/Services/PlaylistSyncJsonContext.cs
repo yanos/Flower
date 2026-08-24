@@ -9,8 +9,8 @@ namespace Flower.Services;
 // is internal to Flower.
 //
 // The options are the wire format rather than a preference, and are the ones
-// both serializing sides already write - SyncHttpServer through
-// FlowerJsonContext, Flower.Server through SyncEndpoints' JsonOptions.
+// both sides already write - the client through FlowerJsonContext, Flower.Server
+// through SyncEndpoints' JsonOptions.
 [JsonSourceGenerationOptions(
     WriteIndented = false,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

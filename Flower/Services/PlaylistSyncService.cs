@@ -16,12 +16,12 @@ namespace Flower.Services;
 
 public enum PlaylistConflictChoice { KeepLocal, KeepRemote }
 
-// Raised when a peer's SyncHttpServer answers 403 to a gated request - i.e. it
-// has actively decided this device is not (or no longer) trusted, as opposed
-// to being merely unreachable. Shared by PlaylistSyncService and
-// LibrarySyncService, both of which hit the same trust gate (see
-// SyncHttpServer.AuthorizeAsync) as the first request of their own sync
-// session. MainViewModel uses this to notice a paired Server has revoked (or
+// Raised when the server answers 403 to a gated request - i.e. it has actively
+// decided this device is not (or no longer) trusted, as opposed to being merely
+// unreachable. Shared by PlaylistSyncService and LibrarySyncService, both of
+// which hit the same trust gate (see Flower.Server's SyncEndpoints) as the first
+// request of their own sync session. MainViewModel uses this to notice a paired
+// server has revoked (or
 // never granted) trust and clear the stale local PairedServerFingerprint,
 // rather than leaving the UI claiming "paired" indefinitely - see
 // MainViewModel's own subscription for why that drift is otherwise invisible.
@@ -73,7 +73,7 @@ public class PlaylistSyncService
         _deviceIdentity = deviceIdentity;
         // See LibrarySyncService's own note: built here from the three the
         // container already supplies, rather than injected separately.
-        _credentials = new SignedDeviceCredentials(deviceIdentity, signingKey, appSettings);
+        _credentials = new SignedDeviceCredentials(deviceIdentity, signingKey);
         _syncStateStore = syncStateStore;
         _deviceNicknameStore = deviceNicknameStore;
         _logger = logger;
@@ -192,7 +192,7 @@ public class PlaylistSyncService
             newBaselines[decision.PlaylistId] = resolved.UpdatedAt;
         }
 
-        // Persisted by Library.PlaylistsChanged; see SyncHttpServer's twin.
+        // Persisted by Library.PlaylistsChanged.
         _library.ReplacePlaylists(finalPlaylists);
         await _syncStateStore.SaveBaselinesAsync(device.Fingerprint, newBaselines);
 
@@ -220,15 +220,15 @@ public class PlaylistSyncService
         }
     }
 
-    // See SyncHttpServer's trust gate - every gated endpoint requires these
+    // See Flower.Server's trust gate - every gated endpoint requires these
     // (now including a signature proving possession of the private key behind
     // Fingerprint, not just the fingerprint string itself - see
     // DeviceSigningKey/SignatureVerifier) to evaluate trust. ConnectionClose
     // forces a fresh connection per request rather than pooling/reusing one -
     // sync sessions are now just a couple of requests each (see LibrarySyncService's
     // own history of this), so the extra handshake is negligible, and it avoids
-    // HttpClient trying to reuse a keep-alive connection SyncHttpServer's
-    // HttpListener (or the OS, e.g. after iOS backgrounds the app - see
+    // HttpClient trying to reuse a keep-alive connection the server (or the
+    // OS, e.g. after iOS backgrounds the app - see
     // SYNC-PLAN.md's foreground-only note) has already torn down - observed in
     // practice as "Connection reset by peer" / "Socket is not connected" on iOS.
     private async Task AddSignedIdentityHeadersAsync(HttpRequestMessage request, byte[] body)

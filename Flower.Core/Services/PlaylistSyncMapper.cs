@@ -6,9 +6,9 @@ using Flower.Models;
 namespace Flower.Services;
 
 // Conversions between Flower.Models.Playlist and the sync wire DTOs, shared by
-// SyncHttpServer (handling GET/POST), Flower.Server's SyncEndpoints (the same
-// two routes on a headless server) and PlaylistSyncService (driving a sync
-// session as the initiator).
+// Flower.Server's SyncEndpoints (which answers GET /playlists and
+// POST /playlists/apply) and PlaylistSyncService (which drives a sync session
+// from the client side).
 public static class PlaylistSyncMapper
 {
     public static PlaylistSyncPlaylistDto ToDto(Playlist playlist) =>

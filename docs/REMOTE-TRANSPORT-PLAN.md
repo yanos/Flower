@@ -270,10 +270,12 @@ network" indicator exists for precisely this, and is the right thing to copy.
 than nothing when it happens to work. As the primary remote path it needs a
 certificate story it does not have and fails silently behind CGNAT.
 
-## The certificate, once TLS actually lands
+## The certificate — **built**
 
 Decided ahead of the code, because it is the question that determines whether
-remote access needs a domain at all. It does not.
+remote access needs a domain at all. It does not. Everything below is now
+implemented; see the note at the end of this section for what shipped and what
+it turned out to cost.
 
 **A self-signed certificate is the floor.** The server generates one on first
 run and the app pins it to the fingerprint it already paired with. A browser
@@ -305,6 +307,38 @@ is one mechanism with a configuration switch, not three code paths. A local CA
 installed on each device was considered and rejected: it is the most privilege
 of any option and the most tedious to install on iOS, and the two above make it
 unnecessary.
+
+### What it took, and the one thing it did not buy
+
+The design survived contact with the code essentially unchanged, and one detail
+made it cheaper than written. "Pins it to the fingerprint it already paired
+with" turned out to be literal: the certificate is minted *from the server's own
+`DeviceKeyStore` keypair*, so validating it is a byte comparison against
+`TrustedPeer.PublicKey`, a value the client already stores from redeeming the
+pairing code. No new field in the invite, no certificate fingerprint store, no
+second trust root — `DeviceCertificate` and `PeerHttpClient` are the whole
+mechanism, and the operator configures nothing. The plain listener stays
+alongside the TLS one (`FlowerServerOptions.HttpsPort`, 4534) so third-party
+OpenSubsonic clients and old bookmarks are untouched, and `/info` reports both
+origins so a paired client moves itself over.
+
+The thing it did not buy is **audio**. `TrackDecoder` hands the stream URL to
+LibVLC, which opens it with its own TLS stack — one that knows nothing about
+`trusted-peers.json` and takes no validation callback. So the pin covers the
+catalog, admin, sync and cover art, and audio over a self-signed certificate is
+encrypted but not authenticated. `VlcCertificateDialogs` answers the certificate
+question LibVLC would otherwise stall on, and carries the full argument for why
+that is a tolerable place to stand: the origin was authenticated over the pinned
+client before the URL existed, and the URL is signed per request with a
+timestamp and nonce rather than carrying a reusable credential, so what an
+already-positioned attacker gets is one track.
+
+Closing it means taking the fetching away from LibVLC: read the stream with the
+pinned `HttpClient` and hand the decoder a `StreamMediaInput` over it, the way
+`LibVlcRawStreamSink` already does. That requires a seekable stream over HTTP
+range requests, which means owning seeking and duration — currently free from
+LibVLC — so it is deliberately deferred rather than done alongside. It is the
+one piece of the certificate story still outstanding.
 
 ## Decision
 
@@ -362,14 +396,20 @@ nothing above changes what happens to someone who never turns it on.
 
 ## Status
 
-**Steps 1, 2 and 3 are built; steps 4 and 5 are still a decision on paper.** The scheme rework landed (see above) and both suites pass —
-`Flower.Tests` 1095/1095, `Flower.Server.Tests` 178/178. Nothing serves TLS yet, no transport
-was added, and no behaviour changed: what changed is that a scheme other than
-`http` is now expressible end to end, which nothing else here could proceed
-without.
+**Steps 1, 2 and 3 are built, and so is the certificate design; steps 4 and 5
+are still a decision on paper.** The scheme rework landed (see above) and both
+suites pass — `Flower.Tests` 1107/1107, `Flower.Server.Tests` 190/190.
 
-The `tsnet` rejection is a decision. The Cloudflare adoption and the certificate
-design above are directions.
+The server now serves TLS on a second port with no configuration at all, and a
+paired client validates it against the key it already holds. Confirmed by hand
+against a live server: both listeners answer, the served certificate's public
+key is byte-identical to `device-key.json`'s, its subject alternative names
+cover loopback, the LAN address and the tailnet one, and an ordinary client
+(`curl` without `-k`) refuses it as it should. `PinnedTlsHandshakeTests` pins
+the same thing over a real handshake rather than by inspection.
+
+The `tsnet` rejection is a decision. The Cloudflare adoption is a direction; the
+certificate design above is now code.
 
 **Step 2 — the auth review — has now been done, and is written up in
 `OPEN-INTERNET-REVIEW.md`.** It found no live vulnerability, because nothing is

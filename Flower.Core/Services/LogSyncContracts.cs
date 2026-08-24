@@ -5,11 +5,11 @@ using Flower.Logging;
 
 namespace Flower.Services;
 
-// Wire shape for POST /api/flower/v1/log/report - a Client pushes its own
-// recent log lines to its paired Server as one extra step inside the same
-// sync session LibrarySyncService.SyncWithAsync already runs (see that
-// class's PushLogSnapshotAsync). Never pulled by a Server - see
-// SyncRolePolicy's own doc comment on why a Server never dials out.
+// Wire shape for POST /api/flower/v1/log/report - a device pushes its own
+// recent log lines to its paired server as one extra step inside the same sync
+// session LibrarySyncService.SyncWithAsync already runs (see that class's
+// PushLogSnapshotAsync). Always a push, never a pull: a server does not dial
+// out, and the device it would want to ask is usually a phone that is asleep.
 public sealed record LogEntryDto(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception)
 {
     public static LogEntryDto FromEntry(InMemoryLogEntry entry) =>

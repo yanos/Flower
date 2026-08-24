@@ -60,7 +60,7 @@ public class OriginLibraryImporterTests
             object payload = path == SyncProtocol.InfoPath
                 ? new SyncInfoResponseDto(
                     "Study Server", "2.0", null, "server", fingerprint!, "public-key",
-                    IsServer: true, Download: false, TrustsCaller: null, LibraryToken: "token-1")
+                    Download: false, TrustsCaller: null, LibraryToken: "token-1")
                 : new LibrarySyncManifestDto(ServerFingerprint, songs);
 
             var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, payload.GetType(), JsonOptions));

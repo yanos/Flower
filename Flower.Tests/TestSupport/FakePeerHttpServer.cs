@@ -5,9 +5,9 @@ using System.Threading.Tasks;
 
 namespace Flower.Tests.TestSupport;
 
-// Minimal real HTTP server standing in for a peer's embedded SyncHttpServer/
-// OpenSubsonic host (LibraryDownloadServiceTests) or a plain network audio
-// stream (StreamingNetworkOutageTests). Exists because those tests need real
+// Minimal real HTTP server standing in for a paired Flower.Server
+// (LibraryDownloadServiceTests, LibrarySyncConditionalPullTests) or a plain
+// network audio stream (StreamingNetworkOutageTests). Exists because those tests need real
 // socket-level failure modes - a connection that's flat-out refused, or one
 // that opens and then drops mid-response - which OpenSubsonicClientTests'
 // fake HttpMessageHandler can't produce, since that never touches a real

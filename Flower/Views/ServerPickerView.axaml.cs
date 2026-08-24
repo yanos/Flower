@@ -28,12 +28,6 @@ public sealed class ServerRow : ViewModelBase
     public required string Alias { get; init; }
     public required bool IsPaired { get; init; }
 
-    // Whether this server pairs by redeeming an admin-issued code rather than
-    // by waiting on a live approval prompt - true for a headless
-    // Flower.Server, which has nobody in front of it to tap Allow. See
-    // DiscoveredDevice.PairsByCode.
-    public required bool PairsByCode { get; init; }
-
     // What the user typed into this row's code box. Per-row rather than
     // per-view: the list can show several servers, and a code is only valid
     // for the one it was issued by.
@@ -50,7 +44,7 @@ public sealed class ServerRow : ViewModelBase
     }
     private string _pairingCode = "";
 
-    public bool IsPairingCodeRequired => PairsByCode && !IsPaired;
+    public bool IsPairingCodeRequired => !IsPaired;
 
     // True only for the paired row while MainViewModel.IsSyncing is set - see
     // ServerPickerView's PropertyChanged subscription, which re-runs Refresh()
@@ -73,7 +67,7 @@ public sealed class ServerRow : ViewModelBase
     public required string? BlockedByAlias { get; init; }
 
     public string ActionLabel =>
-        !IsPaired ? (PairsByCode ? "Pair" : "Ask to pair") :
+        !IsPaired ? "Pair" :
         IsTrustConfirmed ? "Unpair" :
         "Waiting for server...";
     public bool IsAwaitingApproval => IsPaired && !IsTrustConfirmed;
@@ -182,7 +176,6 @@ public partial class ServerPickerView : UserControl
                 IsTrustConfirmed = d.Fingerprint == pairedFingerprint && _mainViewModel.IsPairedServerTrustConfirmed,
                 CanForceSync = d.Fingerprint == pairedFingerprint && _mainViewModel.CanForceSync,
                 BlockedByAlias = pairedFingerprint != null && d.Fingerprint != pairedFingerprint ? pairedAlias : null,
-                PairsByCode = d.PairsByCode,
                 PairingCode = typedCodes.GetValueOrDefault(d.Fingerprint, ""),
             })
             .ToList();
@@ -201,9 +194,6 @@ public partial class ServerPickerView : UserControl
                 IsTrustConfirmed = _mainViewModel.IsPairedServerTrustConfirmed,
                 CanForceSync = _mainViewModel.CanForceSync,
                 BlockedByAlias = null,
-                // Already paired, so there is nothing left to redeem - the
-                // box never shows on this row regardless.
-                PairsByCode = false,
             });
         }
 
@@ -247,25 +237,22 @@ public partial class ServerPickerView : UserControl
             // reassurance that this is only about the synced *view*, not
             // about deleting anything already on disk.
             //
-            // A headless server takes an admin-issued code rather than a live
-            // approval (ServerRow.PairsByCode), so the copy and the button
-            // change with it: nothing is being asked.
-            var byCode = row.IsPairingCodeRequired;
-            if (byCode && string.IsNullOrWhiteSpace(row.PairingCode))
+            // Nothing is being asked here: the admin-issued code the user just
+            // typed *is* the authorization, so the copy says so rather than
+            // promising an approval that will never be prompted for.
+            if (string.IsNullOrWhiteSpace(row.PairingCode))
                 return;
 
-            var approvalSentence = byCode
-                ? $"The pairing code you entered authorizes this device on \"{row.Alias}\" immediately."
-                : $"\"{row.Alias}\" will need to approve the request before syncing begins.";
             var confirmed = await ConfirmDialogWindow.ShowAsync(
                 owner,
-                byCode ? $"Pair With \"{row.Alias}\"?" : $"Ask \"{row.Alias}\" To Pair?",
-                $"This device's library view will be replaced by \"{row.Alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. {approvalSentence}",
-                byCode ? "Pair" : "Ask to pair");
+                $"Pair With \"{row.Alias}\"?",
+                $"This device's library view will be replaced by \"{row.Alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. "
+                + $"The pairing code you entered authorizes this device on \"{row.Alias}\" immediately.",
+                "Pair");
             if (!confirmed)
                 return;
 
-            _mainViewModel.PairWithServer(device, byCode ? row.PairingCode.Trim() : null);
+            _mainViewModel.PairWithServer(device, row.PairingCode.Trim());
         }
 
         Refresh();

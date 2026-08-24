@@ -37,30 +37,18 @@
             <ComboBoxItem Content="Dark"/>
           </ComboBox>
 
-          <!-- Client/Server bulk-sync topology (see SyncRolePolicy) - a Server
-               accepts bulk-sync from Client devices and never initiates any
-               itself; a Client (the default) bulk-syncs with exactly one chosen
-               Server, picked from the Devices tab. Deliberately doesn't affect
-               browsing/streaming another device's catalog, which stays open to any
-               trusted peer regardless of role. -->
-          <CheckBox Content="Act as Server"
-                    Margin="0,20,0,0"
-                    IsChecked="{Binding IsServer, Mode=TwoWay}"
-                    IsVisible="{Binding Capabilities.SyncRole}"/>
-          <TextBlock Text="Browsing and streaming other devices always works regardless of this setting - it only affects automatic library/playlist syncing."
-                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                     IsVisible="{Binding Capabilities.SyncRole}"/>
-
-          <!-- Opt-in, off by default: the log snapshot travels over plaintext HTTP
-               and contains exception text and absolute file paths (see
+          <!-- On by default: whoever runs the server is the one who ends up
+               diagnosing a listener's phone, and a listener cannot be asked to
+               find a log file. Still a switch, because the snapshot carries
+               exception text and absolute file paths (see
                AppSettings.ShareLogsWithPairedServer). -->
           <CheckBox Content="Send logs to paired server"
-                    Margin="0,16,0,0"
+                    Margin="0,20,0,0"
                     IsChecked="{Binding ShareLogsWithPairedServer, Mode=TwoWay}"
-                    IsVisible="{Binding Capabilities.SyncRole}"/>
-          <TextBlock Text="Sends this device's recent log lines after each sync so they can be read on the server. Sent unencrypted over your local network, and they include file paths and error details."
+                    IsVisible="{Binding Capabilities.PairedServerPicker}"/>
+          <TextBlock Text="Sends this device's recent log lines after each sync so they can be read on the server. They include file paths and error details."
                      Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                     IsVisible="{Binding Capabilities.SyncRole}"/>
+                     IsVisible="{Binding Capabilities.PairedServerPicker}"/>
 
           <!-- "Where does my data live" is a general, not library-specific,
                question. Shown as a button on the machine you are sitting at, and
@@ -210,17 +198,32 @@
 
           <Grid x:Name="TrustedDevicesSection" RowDefinitions="Auto,Auto,*,Auto,Auto">
             <StackPanel Grid.Row="0" Spacing="0">
-              <TextBlock Text="Devices approved to sync playlists and library data with this one."
+              <TextBlock Text="Devices approved to sync playlists and library data with this server."
                          TextWrapping="Wrap" Opacity="0.75" FontSize="12" Margin="0,0,0,12"/>
 
-              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12"
+              <!-- One button, with the far rarer and far more dangerous
+                   variant behind a checkbox rather than behind a second button
+                   sitting flush against it - see
+                   SettingsViewModel.PairingCodeGrantsAdmin. More than one
+                   device may be an administrator; an owner's own desktop and
+                   their own phone both being one is the expected shape. -->
+              <StackPanel Spacing="6" Margin="0,0,0,12"
                           IsVisible="{Binding Capabilities.PairingCodes}">
-                <Button Content="Add Device…" Command="{Binding IssuePairingCodeCommand}"/>
-                <Button Content="Add Administrator…" Command="{Binding IssueAdminPairingCodeCommand}"/>
-                <SelectableTextBlock Text="{Binding PairingCode}"
-                                     FontFamily="monospace"
-                                     FontSize="18" FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <Button Content="Generate Pairing Code" Command="{Binding IssuePairingCodeCommand}"/>
+                  <CheckBox Content="Administrator"
+                            IsChecked="{Binding PairingCodeGrantsAdmin}"
+                            VerticalAlignment="Center"/>
+                  <SelectableTextBlock Text="{Binding PairingCode}"
+                                       FontFamily="monospace"
+                                       FontSize="18" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Text="Creates a one-time code to type on the device being added. It expires in a few minutes."
+                           Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
+                <TextBlock Text="An administrator can also change this server's settings and add devices of their own."
+                           IsVisible="{Binding PairingCodeGrantsAdmin}"
+                           Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
               </StackPanel>
             </StackPanel>
 
@@ -406,8 +409,17 @@
 
       <TabItem Header="Logs" IsVisible="{Binding Capabilities.Log}">
         <Grid RowDefinitions="Auto,*" Margin="0,12,0,0">
-          <Button Grid.Row="0" Content="Refresh" HorizontalAlignment="Left"
-                  Command="{Binding RefreshLogCommand}" Margin="0,0,0,8"/>
+          <!-- Whose log: this server's own, or the last snapshot one of its
+               paired devices pushed (see AppSettings.ShareLogsWithPairedServer,
+               and ISettingsBackend.LoadDeviceLogAsync). The whole point is that
+               the owner of the server is the one who ends up diagnosing a
+               listener's phone. -->
+          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+            <ComboBox ItemsSource="{Binding LogSources}"
+                      SelectedIndex="{Binding SelectedLogSourceIndex, Mode=TwoWay}"
+                      MinWidth="180" VerticalAlignment="Center"/>
+            <Button Content="Refresh" Command="{Binding RefreshLogCommand}"/>
+          </StackPanel>
           <!-- A plain read-only TextBox, not the app's AvaloniaEdit-backed Log
                window: this is a bounded 500-line tail fetched on demand, not a
                live-growing document that needs virtualization. -->

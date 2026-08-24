@@ -36,14 +36,13 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
     private static int _port = 5000;
 
     private static DiscoveredDevice Device(
-        string instanceName, string fingerprint = "", string? alias = null, bool isServer = false) =>
+        string instanceName, string fingerprint = "", string? alias = null) =>
         new()
         {
             InstanceName = instanceName,
             BaseUri     = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Parse("192.168.1." + (++_port % 250 + 2)), 53317)),
             Alias        = alias ?? instanceName,
             Fingerprint  = fingerprint,
-            IsServer     = isServer,
         };
 
     private static DiscoveredDevice DeviceAt(string instanceName, string ip, string fingerprint = "", string? alias = null) =>
@@ -81,52 +80,39 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
 
     // ── Sections ──────────────────────────────────────────────────────────────
 
+    // One section, one icon. This used to fork on the peer's advertised role,
+    // with a Flower app flipped into Server mode landing under "Servers" and
+    // every other app under "Devices" - there is no such fork left now that an
+    // app does not advertise itself at all.
     [AvaloniaFact]
-    public void An_ordinary_peer_lands_under_Devices_and_a_server_under_Server()
+    public void Every_discovered_device_lands_under_one_Servers_section()
     {
         var vm = Make();
 
         vm.AddOrUpdateDeviceSidebarItem(Device("phone", "fp-phone", "Phone"));
-        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop", isServer: true));
+        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop"));
 
         var phone = DeviceRows(vm).Single(i => i.Name == "Phone");
         var desk  = DeviceRows(vm).Single(i => i.Name == "Desktop");
-        Assert.Equal("Devices", SectionOf(vm, phone));
-        Assert.Equal("Server", SectionOf(vm, desk));
-        Assert.Equal(MaterialIconKind.Laptop, phone.Icon);
+        Assert.Equal("Servers", SectionOf(vm, phone));
+        Assert.Equal("Servers", SectionOf(vm, desk));
+        Assert.Equal(MaterialIconKind.Server, phone.Icon);
         Assert.Equal(MaterialIconKind.Server, desk.Icon);
-    }
-
-    // A peer flipping its own "Act as Server" setting moves its row between
-    // sections in place, keeping the same SidebarItem instance.
-    [AvaloniaFact]
-    public void A_peer_that_starts_advertising_server_mode_moves_sections()
-    {
-        var vm = Make();
-        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop"));
-        var row = SingleDeviceRow(vm);
-        Assert.Equal("Devices", SectionOf(vm, row));
-
-        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop", isServer: true));
-
-        Assert.Same(row, SingleDeviceRow(vm));
-        Assert.Equal("Server", SectionOf(vm, row));
-        Assert.Equal(MaterialIconKind.Server, row.Icon);
-    }
-
-    // The vacated section's header goes with its last member rather than
-    // lingering as an empty heading.
-    [AvaloniaFact]
-    public void A_section_header_disappears_once_its_last_member_leaves()
-    {
-        var vm = Make();
-        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop"));
-        Assert.Contains(vm.SidebarItems, i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
-
-        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop", isServer: true));
-
         Assert.DoesNotContain(vm.SidebarItems, i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
-        Assert.Contains(vm.SidebarItems, i => i.Kind == SidebarItemKind.Header && i.Name == "Server");
+    }
+
+    // The section header goes with its last member rather than lingering as an
+    // empty heading.
+    [AvaloniaFact]
+    public void The_section_header_disappears_once_its_last_member_leaves()
+    {
+        var vm = Make();
+        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop"));
+        Assert.Contains(vm.SidebarItems, i => i.Kind == SidebarItemKind.Header && i.Name == "Servers");
+
+        vm.RemoveDeviceSidebarItem("desk");
+
+        Assert.DoesNotContain(vm.SidebarItems, i => i.Kind == SidebarItemKind.Header && i.Name == "Servers");
     }
 
     // Moving a row removes and reinserts it, which drops it out of the
@@ -139,7 +125,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         var row = SingleDeviceRow(vm);
         vm.SelectedSidebarItem = row;
 
-        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop", isServer: true));
+        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop"));
 
         Assert.Same(row, vm.SelectedSidebarItem);
     }
@@ -267,10 +253,10 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
     public void Pairing_pins_the_devices_row_as_the_paired_server()
     {
         var vm = Make();
-        var device = Device("desk", "fp-desk", "Desktop", isServer: true);
+        var device = Device("desk", "fp-desk", "Desktop");
         vm.AddOrUpdateDeviceSidebarItem(device);
 
-        vm.PairWithServer(device);
+        vm.PairWithServer(device, "code-1");
 
         var row = SingleDeviceRow(vm);
         Assert.True(row.IsPairedServer);
@@ -282,9 +268,9 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
     public void Unpairing_clears_the_pointer_and_unpins_the_row()
     {
         var vm = Make();
-        var device = Device("desk", "fp-desk", "Desktop", isServer: true);
+        var device = Device("desk", "fp-desk", "Desktop");
         vm.AddOrUpdateDeviceSidebarItem(device);
-        vm.PairWithServer(device);
+        vm.PairWithServer(device, "code-1");
 
         vm.UnpairServer();
 
@@ -295,43 +281,6 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         Assert.False(SingleDeviceRow(vm).IsPairedServer);
     }
 
-    // Becoming a Server yourself makes any pairing you held as a Client stale -
-    // the pointer is cleared and its row unpinned, deliberately without
-    // syncing with the old server again.
-    [AvaloniaFact]
-    public void Becoming_a_server_clears_the_pairing_and_unpins_its_row()
-    {
-        var vm = Make();
-        var device = Device("desk", "fp-desk", "Desktop", isServer: true);
-        vm.AddOrUpdateDeviceSidebarItem(device);
-        vm.PairWithServer(device);
-
-        vm.IsServer = true;
-
-        Assert.Null(vm.PairedServerFingerprint);
-        Assert.Null(vm.PairedServerAlias);
-        Assert.False(SingleDeviceRow(vm).IsPairedServer);
-    }
-
-    // The same flip while holding a pairing whose server was never discovered:
-    // that row is a placeholder with no live Device, so unpinning leaves it
-    // with nothing to show and it goes entirely.
-    [AvaloniaFact]
-    public void Becoming_a_server_removes_an_undiscovered_paired_server_row_outright()
-    {
-        var vm = Make(new AppSettings
-        {
-            PairedServerFingerprint = "fp-desk",
-            PairedServerAlias       = "Desktop",
-        });
-        Assert.Single(DeviceRows(vm));
-
-        vm.IsServer = true;
-
-        Assert.Empty(DeviceRows(vm));
-        Assert.DoesNotContain(vm.SidebarItems, i => i.Kind == SidebarItemKind.Header && i.Name == "Server");
-    }
-
     // The paired server's row is pinned for the whole session rather than
     // disappearing the moment mDNS loses sight of it - it flips to
     // unreachable instead, so the user can see it is paired but offline.
@@ -339,9 +288,9 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
     public void A_paired_server_going_offline_keeps_its_row_and_marks_it_unreachable()
     {
         var vm = Make();
-        var device = Device("desk", "fp-desk", "Desktop", isServer: true);
+        var device = Device("desk", "fp-desk", "Desktop");
         vm.AddOrUpdateDeviceSidebarItem(device);
-        vm.PairWithServer(device);
+        vm.PairWithServer(device, "code-1");
 
         vm.RemoveDeviceSidebarItem("desk");
 
@@ -361,7 +310,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         vm.RemoveDeviceSidebarItem("phone");
 
         Assert.Empty(DeviceRows(vm));
-        Assert.DoesNotContain(vm.SidebarItems, i => i.Kind == SidebarItemKind.Header && i.Name == "Devices");
+        Assert.DoesNotContain(vm.SidebarItems, i => i.Kind == SidebarItemKind.Header && i.Name == "Servers");
     }
 
     // Removing the row the user is looking at has to move the selection
@@ -409,7 +358,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         Assert.False(row.IsReachable);
         Assert.Equal("Desktop", row.Name);
         Assert.Null(row.Device); // nothing discovered yet this session
-        Assert.Equal("Server", SectionOf(vm, row));
+        Assert.Equal("Servers", SectionOf(vm, row));
     }
 
     // The placeholder is claimed by the real device when it turns up, rather
@@ -427,7 +376,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         });
         var placeholder = Assert.Single(DeviceRows(vm));
 
-        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop", isServer: true));
+        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop"));
 
         var row = Assert.Single(DeviceRows(vm));
         Assert.Same(placeholder, row);
@@ -461,7 +410,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
     {
         var vm = Make();
         vm.AddOrUpdateDeviceSidebarItem(Device("phone", "fp-phone", "Phone"));
-        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop", isServer: true));
+        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop"));
 
         // Sourced from NetworkDiscoveryService.KnownDevices, which nothing has
         // populated here - the point being it is not derived from the sidebar.
@@ -470,32 +419,37 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
 
     // ── Handing out pairing codes ─────────────────────────────────────────────
 
-    // A headless Flower.Server (DeviceType "server", so PairsByCode) that has
-    // already approved this device: the device-detail header offers to issue a
-    // pairing code for somebody else's device against it. Deliberately not also
-    // gated on this device being an administrator - nothing here can know that
-    // without asking, so the button shows and the refusal is reported inline
-    // (see MainViewModel.CanInviteDeviceToSelectedServer).
+    // A headless Flower.Server that has already approved this device *and*
+    // counts it as one of its administrators: the device-detail header offers
+    // to generate a pairing code against it.
     [AvaloniaFact]
     public void An_approved_headless_server_can_be_asked_for_a_pairing_code()
     {
         var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
-        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop"));
+        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
 
         Assert.True(vm.CanInviteDeviceToSelectedServer);
     }
 
-    // An app peer advertising Server mode has no admin API and no code to give -
-    // its own Settings window is where its devices are managed.
+    // Paired, approved, and an ordinary listener there. Handing out pairing
+    // codes is an administrator's job, and this server would refuse every one
+    // of this device's attempts - so the control is not offered at all rather
+    // than offered and then explained away (see
+    // MainViewModel.CanInviteDeviceToSelectedServer, DiscoveredDevice.WeAreAdmin).
     [AvaloniaFact]
-    public void An_app_peer_in_server_mode_is_never_asked_for_a_pairing_code()
+    public void A_server_that_does_not_make_us_an_administrator_offers_nothing()
     {
         var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
-        vm.AddOrUpdateDeviceSidebarItem(Device("desk", "fp-desk", "Desktop", isServer: true));
+        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop"));
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
 
         Assert.False(vm.CanInviteDeviceToSelectedServer);
+
+        // "Server Settings…" is deliberately *not* gated the same way: opening
+        // a page a non-admin cannot read costs a wasted trip that says so,
+        // where a code button costs a control that only ever fails.
+        Assert.True(vm.CanOpenSelectedServerSettings);
     }
 
     // Paired but still waiting for the server to approve this device: any admin
@@ -529,11 +483,14 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
     };
 
     // Device(), but advertising itself as a Flower.Server rather than another
-    // copy of the app - the difference PairsByCode reads.
-    private static DiscoveredDevice HeadlessServer(string instanceName, string fingerprint, string alias)
+    // copy of the app. weAreAdmin stands in for what the server reports about
+    // the caller on /info - see DiscoveredDevice.WeAreAdmin.
+    private static DiscoveredDevice HeadlessServer(
+        string instanceName, string fingerprint, string alias, bool weAreAdmin = false)
     {
-        var device = Device(instanceName, fingerprint, alias, isServer: true);
+        var device = Device(instanceName, fingerprint, alias);
         device.DeviceType = "server";
+        device.WeAreAdmin = weAreAdmin;
         return device;
     }
 }

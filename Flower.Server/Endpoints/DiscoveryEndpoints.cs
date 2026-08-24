@@ -18,16 +18,18 @@ namespace Flower.Server.Endpoints;
 // client discards any peer whose handshake it cannot resolve (see
 // NetworkDiscoveryService.ResolveAliasAsync).
 //
-// The response shape is shared with the app's own SyncHttpServer
-// (SyncInfoResponseDto in Flower.Core), because the client cannot tell - and
-// should not have to - whether the peer answering is another Flower app or a
-// headless server. IsServer is the one field that differs, and it is always
-// true here.
+// The response shape (SyncInfoResponseDto, in Flower.Core) is where a client
+// learns who it is talking to: the alias to show, the fingerprint and public
+// key to pin and sign against, whether this server currently trusts the
+// caller, the library token that tells it whether anything changed, and every
+// address it can be reached on. This is the only thing on the network that
+// answers it - a Flower app used to serve the same shape, back when an app
+// could be a server too.
 public static class DiscoveryEndpoints
 {
     public static void MapDiscoveryEndpoints(this WebApplication app)
     {
-        // Deliberately ungated, exactly as SyncHttpServer's is: a peer has to
+        // Deliberately ungated: a peer has to
         // learn our fingerprint and public key here before either side can
         // evaluate trust at all. LanGuard still fronts it, so this is reachable
         // from the local network and not the open internet.
@@ -72,7 +74,6 @@ public static class DiscoveryEndpoints
                 "server",
                 signingKey.Fingerprint,
                 signingKey.PublicKeyBase64,
-                IsServer: true,
                 Download: false,
                 // Only NotTrusted is a statement about the caller. A signature
                 // that merely failed to verify says nothing about whether this
@@ -100,14 +101,53 @@ public static class DiscoveryEndpoints
                 // its identity, and it is only ever of use to a peer that has
                 // paired - which is exactly the peer that can sign for it.
                 callerIsTrusted
-                    ? LocalAddresses.Reachable(
-                        MdnsAdvertiser.AdvertisablePort(
-                            boundServer.Features.Get<IServerAddressesFeature>()?.Addresses ?? [])
-                            ?? SyncProtocol.DefaultPort,
-                        options.Value.AdvertisedHost)
-                    : null);
+                    ? ReachableOrigins(boundServer, options.Value)
+                    : null,
+                // Whether this caller is one of this server's administrators,
+                // on the same terms as TrustsCaller above: only a caller whose
+                // signature verified gets an answer, and everyone else gets
+                // null rather than a "no" they did not earn. A client uses it
+                // to decide whether to show the administrator-only controls -
+                // see MainViewModel.CanInviteDeviceToSelectedServer. It grants
+                // nothing: AdminEndpoints checks the same store itself on
+                // every request.
+                callerIsTrusted ? trustedPeers.IsAdmin(caller.Fingerprint!) : null);
 
             return Results.Json(response, SyncProtocolJsonContext.Default.SyncInfoResponseDto);
         });
+    }
+
+    // Every origin this server can be reached on, https first.
+    //
+    // Both schemes, because both listeners are real and they serve different
+    // callers: the plain one is what a third-party OpenSubsonic client and an
+    // old bookmark use, the TLS one is what a paired Flower client should
+    // prefer. Listing both and letting the client choose is what makes moving
+    // to TLS cost the operator nothing - see FlowerServerOptions.HttpsPort.
+    //
+    // Ordered rather than merely collected: the client breaks a tie between two
+    // origins for the same peer on the same network by scheme, but only after
+    // ranking by whether they answered at all, so a certificate this client
+    // cannot validate degrades to the plain origin instead of to nothing. See
+    // NetworkDiscoveryService.KnownDevices.
+    private static List<string> ReachableOrigins(IServer boundServer, FlowerServerOptions options)
+    {
+        var bound = boundServer.Features.Get<IServerAddressesFeature>()?.Addresses ?? [];
+        var origins = new List<string>();
+
+        if (MdnsAdvertiser.AdvertisablePort(bound, Uri.UriSchemeHttps) is { } httpsPort)
+            origins.AddRange(LocalAddresses.Reachable(httpsPort, advertisedHost: null, Uri.UriSchemeHttps));
+
+        // AdvertisedHost travels with the plain listener only. It describes
+        // whatever terminates in front of this server - a reverse proxy, a
+        // remapped container port - and nothing here knows whether that front
+        // end speaks TLS on the https port too. An operator whose proxy does
+        // says so by writing the scheme into AdvertisedHost itself, which
+        // LocalAddresses honours over the one passed here.
+        origins.AddRange(LocalAddresses.Reachable(
+            MdnsAdvertiser.AdvertisablePort(bound, Uri.UriSchemeHttp) ?? SyncProtocol.DefaultPort,
+            options.AdvertisedHost));
+
+        return origins;
     }
 }

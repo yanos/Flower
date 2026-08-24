@@ -18,9 +18,10 @@ public class SidebarItem : ViewModelBase
 
     public SidebarItemKind Kind { get; }
 
-    // Settable, not just init - a Device row's icon changes in place if the
-    // peer's advertised role (DiscoveredDevice.IsServer) changes after this
-    // row was created - see MainViewModel.RelocateDeviceSidebarItemIfNeeded.
+    // Settable, not just init. It was written when a Device row's icon changed
+    // in place as a peer flipped its advertised role; there is one kind of row
+    // and one icon now (see DeviceSidebarSection), and this stays settable
+    // because nothing wants an init-only property here.
     private MaterialIconKind _icon;
     public MaterialIconKind Icon
     {

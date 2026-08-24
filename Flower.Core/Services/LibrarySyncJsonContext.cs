@@ -10,8 +10,8 @@ namespace Flower.Services;
 // referenced from here.
 //
 // The options are the wire format, not a preference: the serializing side
-// (SyncHttpServer via FlowerJsonContext, Flower.Server via SyncEndpoints'
-// JsonOptions) writes PascalCase with nulls omitted. Only the case-insensitive
+// (Flower.Server, via SyncEndpoints' JsonOptions) writes PascalCase with nulls
+// omitted. Only the case-insensitive
 // flag actually matters for a reader, but stating all three keeps this next to
 // the shape it has to match rather than a step removed from it.
 [JsonSourceGenerationOptions(

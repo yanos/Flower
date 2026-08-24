@@ -77,14 +77,14 @@ public class CompositionRootTests : PinnedDataDirectory
         {
             typeof(LibraryStore), typeof(AppSettingsStore), typeof(PlaylistStore),
             typeof(DeviceKeyStore), typeof(DeviceIdentityStore), typeof(DeviceNicknameStore),
-            typeof(TrustedPeerStore), typeof(PlaylistSyncStateStore), typeof(ClientLogStore),
+            typeof(TrustedPeerStore), typeof(PlaylistSyncStateStore),
             typeof(InMemoryLogStore),
             typeof(AppSettings), typeof(Library), typeof(MainPlaylist),
             typeof(Importer.IMusicImporter), typeof(ColumnManager), typeof(AlbumArtLoader),
             typeof(DeviceSigningKey), typeof(DeviceIdentity),
-            typeof(NetworkDiscoveryService), typeof(SyncHttpServer), typeof(PlaylistSyncService),
+            typeof(NetworkDiscoveryService), typeof(PlaylistSyncService),
             typeof(LibrarySyncService), typeof(LibraryDownloadService), typeof(PeerPairingService),
-            typeof(PeerUnpairNotifier), typeof(PairedServerReachability), typeof(PeerTrackResolver),
+            typeof(PairedServerReachability), typeof(IRemoteLogSource), typeof(PeerTrackResolver),
         }.Select(t => new object[] { t });
 
     [Theory]
@@ -135,12 +135,9 @@ public class CompositionRootTests : PinnedDataDirectory
         Assert.Same(provider.GetRequiredService<LogViewModel>(), mainViewModel.Log);
         Assert.Same(provider.GetRequiredService<SidebarRenameService>(), mainViewModel.Rename);
 
-        // Settings' Devices tab (TrustedDevicesView, ServerPickerView) reads
-        // these four off the same face - the last of the Views/Controls layer's
-        // own Ioc.Default calls.
+        // Settings' Devices tab (ServerPickerView) reads these off the same
+        // face - the last of the Views/Controls layer's own Ioc.Default calls.
         Assert.Same(provider.GetRequiredService<DeviceNicknameStore>(), mainViewModel.DeviceNicknames);
-        Assert.Same(provider.GetRequiredService<TrustedPeerStore>(), mainViewModel.TrustedPeers);
-        Assert.Same(provider.GetRequiredService<PeerUnpairNotifier>(), mainViewModel.PeerUnpair);
         Assert.Same(provider.GetRequiredService<NetworkDiscoveryService>(), mainViewModel.NetworkDiscovery);
     }
 
@@ -188,18 +185,15 @@ public class CompositionRootTests : PinnedDataDirectory
                 .Select(h => (h.Instance, Field: h.Fields.SingleOrDefault(f => f.FieldType == type)))
                 .FirstOrDefault(x => x.Field != null);
 
-            if (match.Field == null)
-            {
-                // SyncHttpServer is the one optional dependency neither class
-                // keeps a field for - MainViewModel only subscribes to its
-                // PeerUnpairNotified/PeerApprovalRequested events in the
-                // constructor and never touches it again. Named explicitly
-                // rather than skipped silently, so a future parameter that
-                // quietly stops being stored fails here instead of passing
-                // vacuously.
-                Assert.Equal(typeof(SyncHttpServer), type);
-                continue;
-            }
+            // Every optional dependency is kept in a field by one class or the
+            // other. There used to be one that was not - the app's own HTTP
+            // listener, which
+            // MainViewModel only subscribed to and never touched again - and it
+            // was named here explicitly rather than skipped, so that a
+            // parameter which quietly stopped being stored would fail instead
+            // of passing vacuously. That property is worth keeping now that the
+            // exception is gone.
+            Assert.NotNull(match.Field);
 
             Assert.NotNull(match.Field.GetValue(match.Instance));
         }
@@ -233,9 +227,10 @@ public class CompositionRootTests : PinnedDataDirectory
         using var provider = BuildContainer();
 
         var settings = provider.GetRequiredService<AppSettings>();
-        settings.IsServer = !settings.IsServer;
+        settings.ShareLogsWithPairedServer = !settings.ShareLogsWithPairedServer;
 
-        Assert.Equal(settings.IsServer, provider.GetRequiredService<MainViewModel>().IsServer);
+        Assert.Equal(settings.ShareLogsWithPairedServer,
+            provider.GetRequiredService<MainViewModel>().ShareLogsWithPairedServer);
     }
 
     // Fingerprint is the hash of the signing key's public key, not an
@@ -273,9 +268,9 @@ public class CompositionRootTests : PinnedDataDirectory
         Type[] browserAbsent =
         [
             typeof(DeviceSigningKey), typeof(DeviceIdentity),
-            typeof(NetworkDiscoveryService), typeof(SyncHttpServer), typeof(PlaylistSyncService),
+            typeof(NetworkDiscoveryService), typeof(PlaylistSyncService),
             typeof(LibrarySyncService), typeof(LibraryDownloadService), typeof(PeerPairingService),
-            typeof(PeerUnpairNotifier), typeof(PairedServerReachability), typeof(PeerTrackResolver),
+            typeof(PairedServerReachability), typeof(IRemoteLogSource), typeof(PeerTrackResolver),
             typeof(IStreamUrlResolver), typeof(ICoverArtUrlResolver), typeof(IPeerCredentials),
         ];
 

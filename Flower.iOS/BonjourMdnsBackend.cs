@@ -23,8 +23,8 @@ namespace Flower.iOS;
 // NWListener/NWBrowser either - NWListener doesn't work for this app at all.
 // Confirmed on a real device: it throws "A connection handler should be set
 // before starting a NWListener", and even past that it would need to itself
-// own the TCP socket on the advertised port, which SyncHttpServer already
-// owns - Network.framework has no "advertise-only, for a socket something
+// own the TCP socket on the advertised port, which the app's own listener owned
+// at the time - Network.framework has no "advertise-only, for a socket something
 // else owns" mode (Apple's own developer forums confirm this is a hard
 // limitation, not a missing setup call: search "NSNetService is deprecated,
 // how to advertise network service that is written using non-Apple API?").
@@ -90,12 +90,17 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
     public event EventHandler<MdnsInstanceFound>? InstanceFound;
     public event EventHandler<string>? InstanceLost;
 
+    // Unreachable on this platform, and left rather than stubbed out: nothing
+    // on a phone advertises itself any more (see NetworkDiscoveryService -
+    // a client browses, and only Flower.Server advertises), so IMdnsBackend's
+    // advertising half has no caller here. It is kept working because the
+    // interface is shared with the backend Flower.Server does advertise
+    // through, and a member that quietly throws is worse than one that does
+    // what it says.
     public void Advertise(string instanceName, string serviceType, int port)
     {
-        // Advertise()/Restart() can be called again later (foreground resume -
-        // see NetworkDiscoveryService.Restart) - tear down any previous
-        // registration first, or it leaks and ends up advertising the same
-        // name twice.
+        // Can be called again later - tear down any previous registration
+        // first, or it leaks and ends up advertising the same name twice.
         if (_registerRef != IntPtr.Zero)
         {
             DNSServiceRefDeallocate(_registerRef);

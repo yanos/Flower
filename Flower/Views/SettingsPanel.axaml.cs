@@ -72,18 +72,19 @@ public partial class SettingsPanel : UserControl
 
     private void OnDeviceListChanged(object? sender, EventArgs e) => RefreshDevicesTab();
 
-    // Decided by the live (draft) role, not the value persisted when the panel
-    // opened, so toggling "Act as Server" swaps the tab content immediately -
-    // safe since nothing about SyncHttpServer/mDNS needs a restart, so there is no
-    // stale-content window to worry about.
+    // Which half of the Devices tab this backend gets: a device configuring
+    // itself picks the one server it syncs with, and a server being configured
+    // shows the roster of devices allowed to sync with it. Never both, and -
+    // unlike when either end could be either thing - never a choice that can
+    // change while the panel is open.
     private void RefreshDevicesTab()
     {
-        var showsPicker = _mainViewModel != null && _viewModel.Capabilities.SyncRole && !_viewModel.IsServer;
+        var showsPicker = _mainViewModel != null && _viewModel.Capabilities.PairedServerPicker;
 
         ServerPickerHost.IsVisible = showsPicker;
         ServerPickerHost.Content = showsPicker ? new ServerPickerView(_mainViewModel!) : null;
 
-        TrustedDevicesSection.IsVisible = !showsPicker;
+        TrustedDevicesSection.IsVisible = _viewModel.Capabilities.TrustedDevices;
     }
 
     private async void AddFolderButton_Click(object? sender, RoutedEventArgs e)

@@ -26,13 +26,12 @@ namespace Flower.Services;
 //     consulted by the self-signed pairing check (PeerSignatureAuth.
 //     VerifySelfSigned, reached from the pairing routes alone); a gated
 //     endpoint looks the trusted key up by fingerprint and ignores it
-//     entirely. X-Flower-Role is read only by SyncHttpServer's own role check,
-//     which admin calls never reach.
+//     entirely.
 //
 // So the uniform set costs a few bytes per request and removes the standing
 // question of which subset a new call site is supposed to copy.
 public sealed class SignedDeviceCredentials(
-    DeviceIdentity identity, DeviceSigningKey signingKey, AppSettings appSettings) : IPeerCredentials
+    DeviceIdentity identity, DeviceSigningKey signingKey) : IPeerCredentials
 {
     // Already-completed, always: this device holds its own key in-process, so
     // there is nothing to await. The task in the interface is there for the
@@ -40,15 +39,10 @@ public sealed class SignedDeviceCredentials(
     public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body)
     {
-        // Read live off AppSettings rather than captured at construction: this
-        // instance outlives a role change (Settings can flip this device
-        // between Client and Server - see SyncRolePolicy), and a stale role
-        // would misdescribe the caller for the rest of the session.
         var identityParams = new List<(string Key, string Value)>
         {
             ("X-Flower-Fingerprint", identity.Fingerprint),
             ("X-Flower-Alias", identity.Alias),
-            ("X-Flower-Role", appSettings.IsServer ? "server" : "client"),
             ("X-Flower-PublicKey", signingKey.PublicKeyBase64),
         };
 

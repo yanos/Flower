@@ -93,13 +93,15 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
     [Fact]
     public async Task Always_identifies_itself_as_a_server()
     {
-        // The one field that distinguishes this from another Flower app
-        // answering the same handshake - it is what puts the peer under the
-        // sidebar's servers section rather than its devices one.
+        // This is now the only thing on the network answering this handshake at
+        // all - a Flower app browses, and no longer advertises itself. The
+        // field survives the collapse of the two-kinds-of-peer distinction
+        // because it is what a sighting says it is, and a peer answering with
+        // anything else is a Flower this client does not understand.
         var (_, body) = await GetInfoAsync();
 
-        Assert.True(body.GetProperty("isServer").GetBoolean());
         Assert.Equal("server", body.GetProperty("deviceType").GetString());
+        Assert.False(body.TryGetProperty("isServer", out _));
     }
 
     [Fact]
@@ -135,6 +137,80 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
         {
             var (_, body) = await GetInfoAsync(signer: device);
             Assert.True(body.GetProperty("trustsCaller").GetBoolean());
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // What a client reads to decide whether to offer its holder the
+    // administrator-only controls at all - "Generate Pairing Code", mainly.
+    // Same three-state shape as trustsCaller, and for the same reason: a
+    // caller who proved nothing is told nothing.
+    [Fact]
+    public async Task Omits_callerIsAdmin_when_the_caller_did_not_identify_itself()
+    {
+        var (_, body) = await GetInfoAsync();
+
+        Assert.True(!body.TryGetProperty("callerIsAdmin", out var admin)
+                    || admin.ValueKind == JsonValueKind.Null);
+    }
+
+    // Paired, and an ordinary listener. Every admin route would refuse this
+    // device, so the client hides those controls rather than showing ones that
+    // can only fail - see MainViewModel.CanInviteDeviceToSelectedServer.
+    [Fact]
+    public async Task Reports_callerIsAdmin_false_for_a_paired_listener()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Listener", device.PublicKeyBase64);
+
+        try
+        {
+            var (_, body) = await GetInfoAsync(signer: device);
+            Assert.False(body.GetProperty("callerIsAdmin").GetBoolean());
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task Reports_callerIsAdmin_true_for_a_paired_administrator()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Owner's desktop", device.PublicKeyBase64, isAdmin: true);
+
+        try
+        {
+            var (_, body) = await GetInfoAsync(signer: device);
+            Assert.True(body.GetProperty("callerIsAdmin").GetBoolean());
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // A fingerprint is public - it is in this very response - so claiming one
+    // must buy nothing. Answering "yes, you are an administrator" to an unsigned
+    // claim would tell an attacker which device to go after.
+    [Fact]
+    public async Task Withholds_callerIsAdmin_from_a_caller_that_only_claims_an_admin_fingerprint()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Owner's desktop", device.PublicKeyBase64, isAdmin: true);
+
+        try
+        {
+            var (_, body) = await GetInfoAsync(callerFingerprint: device.Fingerprint);
+            Assert.True(!body.TryGetProperty("callerIsAdmin", out var admin)
+                        || admin.ValueKind == JsonValueKind.Null);
         }
         finally
         {
@@ -292,5 +368,36 @@ public class MdnsAdvertisablePortTests
     public void The_reachable_bind_wins_over_a_loopback_one_listed_first()
     {
         Assert.Equal(4533, MdnsAdvertiser.AdvertisablePort(["http://127.0.0.1:5599", "http://0.0.0.0:4533"]));
+    }
+
+    // Two listeners is the ordinary shape now: a plain one for third-party
+    // OpenSubsonic clients and old bookmarks, a TLS one for paired Flower
+    // clients. /info reports both, which means asking for each by scheme.
+    // See DiscoveryEndpoints.ReachableOrigins.
+    [Fact]
+    public void Each_scheme_reports_its_own_listener()
+    {
+        string[] bound = ["http://0.0.0.0:4533", "https://0.0.0.0:4534"];
+
+        Assert.Equal(4533, MdnsAdvertiser.AdvertisablePort(bound, Uri.UriSchemeHttp));
+        Assert.Equal(4534, MdnsAdvertiser.AdvertisablePort(bound, Uri.UriSchemeHttps));
+    }
+
+    // TLS turned off (Flower:HttpsPort = 0), which has to read as "there is no
+    // https origin" rather than falling back to the plain port under an https
+    // scheme - a client told to dial https on 4533 would fail every probe.
+    [Fact]
+    public void A_scheme_nothing_is_bound_for_reports_nothing()
+    {
+        Assert.Null(MdnsAdvertiser.AdvertisablePort(["http://0.0.0.0:4533"], Uri.UriSchemeHttps));
+    }
+
+    // Unfiltered, the answer is still the plain listener - mDNS asks this way,
+    // and a sighting is dialled at a bare IP where a certificate has no name to
+    // be issued for and the client holds nothing to pin with yet.
+    [Fact]
+    public void Asking_without_a_scheme_still_finds_the_plain_listener_first()
+    {
+        Assert.Equal(4533, MdnsAdvertiser.AdvertisablePort(["http://0.0.0.0:4533", "https://0.0.0.0:4534"]));
     }
 }

@@ -354,11 +354,10 @@
                  is a Client (see MainViewModel.CanPairWithSelectedDevice) - mirrors
                  ServerPickerView's Pair/Unpair button (Settings' Devices tab) so
                  pairing doesn't require a trip to Settings. -->
-            <!-- Pairing code, for a headless Flower.Server only (see
-                 MainViewModel.IsPairingCodeRequired): there is nobody in front
-                 of a server to tap Allow, so an admin issues a one-time code
-                 out of band and this redeems it. An app peer keeps the live
-                 approval prompt and shows no box at all. -->
+            <!-- Pairing code (see MainViewModel.IsPairingCodeRequired): there
+                 is nobody in front of a server to tap Allow, so an admin issues
+                 a one-time code out of band and this redeems it. Hidden once
+                 paired, when there is nothing left to redeem. -->
             <TextBox Text="{Binding PairingCode}"
                      PlaceholderText="Pairing code"
                      IsVisible="{Binding IsPairingCodeRequired}"
@@ -409,31 +408,49 @@
                        Foreground="#E57373" FontSize="12" TextWrapping="Wrap"
                        MaxWidth="260"
                        VerticalAlignment="Center" Margin="8,0,0,0"/>
-            <!-- Adding somebody else's device to this server, from the one
-                 place its administrator already is. Issues an ordinary
-                 (non-admin) one-time code and shows it to be read out or
-                 typed on the device being added - see
-                 MainViewModel.InviteDeviceToSelectedServerAsync. Shown under
-                 the same conditions as "Server Settings…" above, including
-                 the deliberate absence of an is-this-device-an-admin check. -->
-            <Button Content="Add Device…"
-                    IsVisible="{Binding CanInviteDeviceToSelectedServer}"
-                    IsEnabled="{Binding !IsIssuingPairingCode}"
-                    Click="AddDeviceButton_Click"
-                    Margin="8,0,0,0" VerticalAlignment="Center"/>
-            <!-- Selectable: it is as often pasted into a chat message as it is
-                 read aloud. Monospace at size for both - see
-                 PairingCodeService's alphabet, chosen so it survives being
-                 dictated over the phone. -->
-            <SelectableTextBlock Text="{Binding IssuedPairingCode}"
-                                 IsVisible="{Binding IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                                 FontFamily="monospace" FontSize="16" FontWeight="SemiBold"
-                                 VerticalAlignment="Center" Margin="8,0,0,0"/>
-            <TextBlock Text="{Binding IssuedPairingCodeError}"
-                       IsVisible="{Binding IssuedPairingCodeError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                       Foreground="#E57373" FontSize="12" TextWrapping="Wrap"
-                       MaxWidth="260"
-                       VerticalAlignment="Center" Margin="8,0,0,0"/>
+            <!-- Adding another device to this server, from the one place its
+                 administrator already is. Shown only to a device the server
+                 itself says is one of its administrators - see
+                 MainViewModel.CanInviteDeviceToSelectedServer; a listener sees
+                 nothing here rather than a button that can only be refused. -->
+            <StackPanel IsVisible="{Binding CanInviteDeviceToSelectedServer}"
+                        Spacing="4" MaxWidth="320"
+                        VerticalAlignment="Center" Margin="12,0,0,0">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button Content="Generate Pairing Code"
+                        IsEnabled="{Binding !IsIssuingPairingCode}"
+                        Click="GeneratePairingCodeButton_Click"
+                        VerticalAlignment="Center"/>
+                <!-- More than one device may be an administrator - somebody's
+                     own desktop and their own phone both being one is the
+                     expected shape. See MainViewModel.PairingCodeGrantsAdmin
+                     for why this is never remembered between presses. -->
+                <CheckBox Content="Administrator"
+                          IsChecked="{Binding PairingCodeGrantsAdmin}"
+                          VerticalAlignment="Center"/>
+              </StackPanel>
+              <TextBlock Text="Creates a one-time code to type on the device being added. It expires in a few minutes."
+                         Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
+              <TextBlock Text="An administrator can also change this server's settings and add devices of their own."
+                         IsVisible="{Binding PairingCodeGrantsAdmin}"
+                         Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
+              <!-- Selectable: it is as often pasted into a chat message as it is
+                   read aloud. Monospace at size for both - see
+                   PairingCodeService's alphabet, chosen so it survives being
+                   dictated over the phone. -->
+              <SelectableTextBlock Text="{Binding IssuedPairingCode}"
+                                   IsVisible="{Binding IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                                   FontFamily="monospace" FontSize="16" FontWeight="SemiBold"/>
+              <!-- What the code on screen actually grants, which the checkbox
+                   above stops describing the moment it is un-ticked - see
+                   MainViewModel.IssuedPairingCodeGrantsAdmin. -->
+              <TextBlock Text="This code grants administrator access."
+                         IsVisible="{Binding IssuedPairingCodeGrantsAdmin}"
+                         Opacity="0.6" FontSize="12" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding IssuedPairingCodeError}"
+                         IsVisible="{Binding IssuedPairingCodeError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                         Foreground="#E57373" FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
           </StackPanel>
 
           <TextBlock Grid.Row="1" Text="{Binding PeerLibrary.ErrorMessage}"

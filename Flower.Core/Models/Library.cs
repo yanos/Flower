@@ -65,8 +65,8 @@ namespace Flower.Models
         public List<Track> Tracks { get; private set; }
         // Same copy-on-write discipline as Tracks, and for the same reason:
         // ReplacePlaylists runs on the sync path (PlaylistSyncService's poll
-        // loop, and SyncHttpServer on an HttpListener thread) concurrently with
-        // UI-thread create/delete, and every mutation below is a
+        // loop on the client, a Kestrel request thread on the server)
+        // concurrently with UI-thread create/delete, and every mutation below is a
         // read-modify-write. Guarded by the same _lock, and - critically -
         // exposed as IReadOnlyList over a list that is never mutated in place,
         // so a reader enumerating Playlists (MainViewModel rebuilding the
@@ -122,7 +122,7 @@ namespace Flower.Models
         // ETag on GET /api/flower/v1/library and advertised on /info so a
         // client can tell a changed server-side catalog from an unchanged one
         // without pulling 6-8 MB of manifest to find out (see
-        // ARCHITECTURE-REVIEW Tier 1.4, SyncHttpServer.HandleGetLibraryAsync,
+        // ARCHITECTURE-REVIEW Tier 1.4, SyncEndpoints' GET /library,
         // LibrarySyncService).
         //
         // Session id + counter rather than a bare counter, and deliberately
@@ -159,8 +159,9 @@ namespace Flower.Models
         // columns. See docs/ARCHITECTURE-REVIEW.md Tier 1.1.
         public event EventHandler<TrackStatsChangedEventArgs>? TrackStatsChanged;
 
-        // Fired when PlaylistSyncService/SyncHttpServer replace the playlist set as
-        // a result of syncing with another device - see ReplacePlaylists. Local UI
+        // Fired when a sync replaces the playlist set wholesale - PlaylistSyncService
+        // on the client, SyncEndpoints' /playlists/apply on the server. See
+        // ReplacePlaylists. Local UI
         // actions (create/rename/add-track) manage sidebar state inline instead of
         // relying on this event, so this only needs to cover the sync path.
         public event EventHandler? PlaylistsUpdated;

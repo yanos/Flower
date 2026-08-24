@@ -76,9 +76,9 @@ public sealed class TrustedPeerRow : ViewModelBase
     public bool IsNotConfirmingForget => !_isConfirmingForget;
 }
 
-// A fingerprint this device explicitly denied (or let time out unanswered -
-// see SyncHttpServer.RequestApprovalAsync) rather than approved - lets the
-// user see who got turned away and forget that refusal, so a since-legitimate
+// A fingerprint a server explicitly denied (or let time out unanswered) rather
+// than approved - lets the owner see who got turned away and forget that
+// refusal, so a since-legitimate
 // device isn't left permanently unable to re-request (denials aren't
 // re-prompted from scratch, but nothing here blocks a fresh pair-request
 // either way - this list is purely visibility/cleanup, see

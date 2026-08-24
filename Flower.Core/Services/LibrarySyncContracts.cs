@@ -13,7 +13,7 @@ namespace Flower.Services;
 // it). This single bulk endpoint returns every real track in one response
 // instead, the same way /api/flower/v1/playlists already does for playlists.
 //
-// In Flower.Core, not the app project, because both hosts serve this endpoint:
-// the app's SyncHttpServer and Flower.Server's SyncEndpoints. A client paired
-// to a headless server pulls its catalog through exactly this shape.
+// In Flower.Core, not the app project, because it is the shape a client sends
+// and a server answers: Flower.Server's SyncEndpoints serves it, and a paired
+// client pulls its whole catalog through exactly this shape.
 public sealed record LibrarySyncManifestDto(string DeviceFingerprint, List<Child> Songs);

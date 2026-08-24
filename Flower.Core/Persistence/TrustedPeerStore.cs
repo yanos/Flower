@@ -25,10 +25,9 @@ namespace Flower.Persistence
 
     public sealed record DeniedPeer(string Fingerprint, string Alias, DateTimeOffset DeniedAt);
 
-    // Peers this device has approved for the OpenSubsonic-shaped sync endpoints
-    // (see SyncHttpServer's trust gate, SYNC-PLAN.md Phase 3). Approval is a
-    // one-time "Allow" prompt per unrecognized fingerprint - same interaction
-    // shape as Bluetooth pairing/AirDrop's "Accept" - after which that peer is
+    // Peers approved for the sync endpoints (see SyncEndpoints' gate,
+    // SYNC-PLAN.md Phase 3). Approval is redeeming an admin-issued one-time code
+    // (PairingEndpoints), after which that peer is
     // never prompted again. Revoking is the manual "forget this device" action
     // in TrustedDevicesView. Denials are persisted separately (DeniedPeer/
     // denied-peers.json) so a device can see who it turned away and forget
@@ -54,12 +53,12 @@ namespace Flower.Persistence
 
         // A corrupt/unreadable trusted-peers.json silently means "0 trusted
         // peers" - every previously-approved device would start getting denied
-        // by SyncHttpServer.AuthorizeAsync with no clue why, which is why this
+        // by the signature gate with no clue why, which is why this
         // goes through AtomicJsonFile's recover-from-.bak path rather than just
         // shrugging and returning empty.
         //
         // Cached in memory after the first read. This is not a cold-path
-        // settings load: SyncHttpServer.VerifyTrustedPeer calls GetPublicKey on
+        // settings load: PeerSignatureAuth.VerifyTrustedPeer calls GetPublicKey on
         // *every* gated request, so a browsing peer turned this into a
         // synchronous File.ReadAllText plus a full deserialize on the streaming
         // hot path, dozens of times a minute. Every mutation below runs through
@@ -155,9 +154,9 @@ namespace Flower.Persistence
             }
         }
 
-        // Called for both an explicit Deny tap and an unanswered/timed-out
-        // pairing prompt (see SyncHttpServer.RequestApprovalAsync) - both are
-        // "this device did not approve fingerprint X," which is exactly what
+        // Written when an app could be paired *to* and a human tapped Deny, or
+        // let the prompt time out - both being "this device did not approve
+        // fingerprint X," which is exactly what
         // the denied-devices list is for. Replaces rather than duplicates a
         // repeat denial of the same fingerprint.
         public async Task DenyAsync(string fingerprint, string alias)

@@ -10,10 +10,10 @@ namespace Flower.Persistence
     {
         public string Fingerprint { get; set; } = "";
 
-        // What this device calls itself to peers (the /info "alias" field and
-        // X-Flower-Alias header - see SyncHttpServer/PlaylistSyncService/
-        // LibrarySyncService/LibraryDownloadService) and what the desktop
-        // sidebar shows for a discovered device. User-editable via Settings
+        // What this device calls itself to its server (the X-Flower-Alias header -
+        // see NetworkDiscoveryService/PlaylistSyncService/LibrarySyncService/
+        // LibraryDownloadService) and what the server's own Devices list shows
+        // for it. User-editable via Settings
         // (MainViewModel.DeviceAlias) since there is no reliable, permission-
         // prompt-free way to read a device's real user-assigned name on iOS
         // (UIDevice.name has returned a generic placeholder to third-party apps
@@ -22,8 +22,8 @@ namespace Flower.Persistence
     }
 
     // Persists this device's display identity (Alias, and a cached
-    // Fingerprint) used in the "/api/localsend/v2/info" response (see
-    // SyncHttpServer) and shown throughout the sidebar/pairing UI. Fingerprint
+    // Fingerprint) sent on every request to its paired server and shown
+    // throughout the sidebar/pairing UI. Fingerprint
     // is not an independent value: it's always kept in sync with the device's
     // signing keypair (see DeviceKeyStore, Services.SignedRequestCanonicalizer.
     // ComputeFingerprint) - Load() takes the currently-derived fingerprint and

@@ -3,21 +3,20 @@ using System.Collections.Generic;
 namespace Flower.Services;
 
 // The three facts both ends of LAN discovery have to agree on, in the one place
-// neither end owns privately. Before this they lived in the Flower app project:
-// the service type inside NetworkDiscoveryService, the port and the /info
-// response shape inside SyncHttpServer. Flower.Server cannot reference that
-// project (it is the Avalonia one), so a server that wanted to be discoverable
-// had no way to advertise the name the client browses for or answer the handshake
-// the client makes - which is exactly why it never appeared in the sidebar.
+// neither end owns privately. Before this they lived in the Flower app project,
+// which Flower.Server cannot reference (it is the Avalonia one), so a server
+// that wanted to be discoverable had no way to advertise the name the client
+// browses for or answer the handshake the client makes - which is exactly why
+// it never appeared in the sidebar.
 public static class SyncProtocol
 {
     // What NetworkDiscoveryService browses for and every discoverable Flower
-    // instance - app or server - advertises itself as.
+    // server advertises itself as, and the client browses for.
     public const string ServiceType = "_flowersync._tcp";
 
-    // LocalSend's own default. Only a starting point: SyncHttpServer walks
-    // upward from here when it is taken, and discovery never assumes it, since
-    // the real port arrives in the mDNS SRV record.
+    // LocalSend's own default, kept for the protocol lineage. Discovery never
+    // assumes it - the real port arrives in the mDNS SRV record - and
+    // Flower.Server binds its own port (4533) rather than this one.
     public const int DefaultPort = 53317;
 
     // LocalSend's identity handshake, which this protocol borrows wholesale.
@@ -46,7 +45,15 @@ public static class SyncProtocol
 // "https://music.example.com" - not a bare host:port. The scheme has to travel
 // with the address because only the server knows whether it is behind TLS, and
 // a client that assumed http could never reach one that is.
+// CallerIsAdmin follows TrustsCaller's shape and its reasoning: null when the
+// caller did not prove who it is, so an anonymous probe never reads as a
+// refusal. It is what lets a client decide whether to offer its holder the
+// server's administrator-only controls at all - handing out pairing codes,
+// most of it - instead of showing a button whose only outcome is the server's
+// own 403. Never a permission in itself: the server re-checks
+// TrustedPeer.IsAdmin on every admin route regardless of what a client
+// believes about itself.
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
-    string Fingerprint, string PublicKey, bool IsServer, bool Download, bool? TrustsCaller,
-    string LibraryToken, List<string>? Addresses = null);
+    string Fingerprint, string PublicKey, bool Download, bool? TrustsCaller,
+    string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null);

@@ -50,7 +50,7 @@ This is additive to `SYNC-PLAN.md`'s "iOS owns its files, no `MPMediaLibrary` in
 
 **Seam 2 — multiple `IAudioManager`s + a router (expensive, DRM services only):** for Spotify/Apple Music, `ResolvePlayableUrlAsync` returns `null` and playback needs a per-backend `IAudioManager` (`MusicKitAudioManager`, `LibrespotAudioManager`) behind an `AudioManagerRouter` that picks the engine from `track.Source`. Hard problems: reconciling two engines' clocks, gapless handoff across engines, volume normalization, running a native SDK player alongside LibVLC. This is why DRM-service playback is a late phase, not a quick win.
 
-**Credentials:** store via OS secret stores (Keychain/DPAPI/libsecret/mobile keystores), never `settings.json` — new `ISecretStore` abstraction. Desktop OAuth redirects via a loopback listener (Flower already runs one for sync, `SyncHttpServer`) or a custom URI scheme.
+**Credentials:** store via OS secret stores (Keychain/DPAPI/libsecret/mobile keystores), never `settings.json` — new `ISecretStore` abstraction. Desktop OAuth redirects via a short-lived loopback listener of its own, or a custom URI scheme. (This used to note that Flower already ran one for sync, `SyncHttpServer`, and could borrow it — that listener has been removed, so an OAuth flow now has to open and close its own.)
 
 ---
 

@@ -36,13 +36,12 @@ public class OpenSubsonicClient
     private readonly string _clientName;
     private readonly IPeerCredentials? _credentials;
 
-    // credentials is for talking to a Flower host - another device's embedded
-    // SyncHttpServer, or a headless Flower.Server - rather than a real
-    // Subsonic server: auth there is the signed trust gate
-    // (X-Flower-Fingerprint/-Alias/-Role/-PublicKey/-Signature/-Timestamp/
-    // -Nonce - see SignedDeviceCredentials, SyncHttpServer), not real Subsonic
-    // credentials, but this is still the same client either way - see
-    // SYNC-PLAN.md's "one client, three interchangeable servers". It is an
+    // credentials is for talking to a Flower.Server rather than a real Subsonic
+    // server: auth there is the signed trust gate
+    // (X-Flower-Fingerprint/-Alias/-PublicKey/-Signature/-Timestamp/-Nonce - see
+    // SignedDeviceCredentials), not real Subsonic credentials, but this is still
+    // the same client either way - see SYNC-PLAN.md's "one OpenSubsonic client,
+    // one kind of server". It is an
     // object consulted per request rather than a fixed header list because a
     // signature/nonce must be unique per call (see DeviceSigningKey.Sign) -
     // this client instance is long-lived and calls it repeatedly (once per
@@ -57,7 +56,7 @@ public class OpenSubsonicClient
         _username = username;
         _password = password;
         _clientName = clientName;
-        _http = httpClient ?? new HttpClient();
+        _http = httpClient ?? PeerHttpClient.Create();
         _credentials = credentials;
     }
 
@@ -89,7 +88,7 @@ public class OpenSubsonicClient
     // TrackDecoder.EnsureMedia's "://" check, or GetDownloadUrl/GetCoverArtUrl
     // returned for the caller's own use), which can't carry the custom
     // headers an authenticated HttpClient call can - see
-    // SyncHttpServer.GetIdentityValue, which accepts either. Not used by
+    // SignedRequest.Identity, which accepts either. Not used by
     // SendAsync/DownloadTrackAsync below, which send the identical
     // information as headers instead (see BuildPlainUrl) - harmless against a
     // real third-party OpenSubsonic server either way, which just ignores

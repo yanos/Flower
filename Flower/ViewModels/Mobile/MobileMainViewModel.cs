@@ -30,7 +30,7 @@ public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists, Search
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings, PeerApproval, ConfirmPairServer, ConfirmDeleteFile }
+public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings, ConfirmPairServer, ConfirmDeleteFile }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -109,8 +109,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand OpenSettingsCommand { get; }
     public ICommand RescanCommand { get; }
     public ICommand OpenAppSettingsCommand { get; }
-    public ICommand AllowPeerCommand { get; }
-    public ICommand DenyPeerCommand { get; }
     public ICommand DownloadTrackCommand { get; }
     public ICommand DeleteDownloadedFileCommand { get; }
     public ICommand ConfirmDeleteFileCommand { get; }
@@ -121,7 +119,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
     // Hands out a one-time pairing code for somebody else's device, if this
     // phone is an administrator of the server it is paired with - desktop's
-    // equivalent is the "Add Device…" button in the sidebar's device-detail
+    // equivalent is the "Generate Pairing Code" button in the sidebar's device-detail
     // header. See MainViewModel.InviteDeviceToPairedServerAsync.
     public ICommand InviteDeviceCommand { get; }
 
@@ -482,7 +480,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingTrackInfo));
             OnPropertyChanged(nameof(IsShowingAddToPlaylist));
             OnPropertyChanged(nameof(IsShowingSettings));
-            OnPropertyChanged(nameof(IsShowingPeerApproval));
             OnPropertyChanged(nameof(IsShowingConfirmPairServer));
             OnPropertyChanged(nameof(IsShowingConfirmDeleteFile));
         }
@@ -493,20 +490,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public bool IsShowingTrackInfo => ActiveSheet == MobileSheet.TrackInfo;
     public bool IsShowingAddToPlaylist => ActiveSheet == MobileSheet.AddToPlaylist;
     public bool IsShowingSettings => ActiveSheet == MobileSheet.Settings;
-    public bool IsShowingPeerApproval => ActiveSheet == MobileSheet.PeerApproval;
     public bool IsShowingConfirmPairServer => ActiveSheet == MobileSheet.ConfirmPairServer;
     public bool IsShowingConfirmDeleteFile => ActiveSheet == MobileSheet.ConfirmDeleteFile;
-
-    // Set when Main.PeerApprovalRequested fires (see SyncHttpServer's trust gate,
-    // SYNC-PLAN.md Phase 3) and cleared once Allow/Deny resolves it - see
-    // ResolvePeerApproval. Without a subscriber here, MainViewModel's own fallback
-    // denies every peer outright (fails closed, matching desktop's behavior when no
-    // MainView is attached), which - since mobile never had a MainView to begin
-    // with - would otherwise silently block every sync request.
-    private PeerApprovalRequestedEventArgs? _pendingPeerApproval;
-    public string PeerApprovalAlias => _pendingPeerApproval?.Alias ?? "";
-    public string PeerApprovalMessage =>
-        $"\"{PeerApprovalAlias}\" wants to sync playlists and library data with this device. Only allow devices you recognize - it will not be asked again.";
 
     // Set by PairWithServerCommand (Settings' server list) before switching to
     // the ConfirmPairServer sheet, cleared once ConfirmPairServerCommand/
@@ -525,25 +510,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // expect to still be in Settings afterwards.
     private MobileSheet _sheetBeforePairing = MobileSheet.None;
 
-    // A headless Flower.Server has nobody in front of it to tap Allow, so it
-    // pairs by redeeming an admin-issued code instead of by raising a live
-    // approval prompt - which changes the sheet's title, its closing sentence
-    // and its button, and adds the code box. See DiscoveredDevice.PairsByCode.
-    public bool IsPendingServerPairedByCode => _pendingServerToPair?.PairsByCode ?? false;
+    public string ConfirmPairServerTitle => $"Pair With \"{PendingServerToPairAlias}\"?";
 
-    public string ConfirmPairServerTitle => IsPendingServerPairedByCode
-        ? $"Pair With \"{PendingServerToPairAlias}\"?"
-        : $"Ask \"{PendingServerToPairAlias}\" To Pair?";
-
-    public string ConfirmPairServerActionLabel => IsPairingInProgress
-        ? "Pairing..."
-        : IsPendingServerPairedByCode ? "Pair" : "Ask to pair";
+    public string ConfirmPairServerActionLabel => IsPairingInProgress ? "Pairing..." : "Pair";
 
     public string ConfirmPairServerMessage =>
         $"This device's library view will be replaced by \"{PendingServerToPairAlias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. "
-        + (IsPendingServerPairedByCode
-            ? "The pairing code below authorizes this device immediately."
-            : $"\"{PendingServerToPairAlias}\" will need to approve the request before syncing begins.");
+        + "The pairing code below authorizes this device immediately.";
 
     // What the user typed into Settings' "add a server by address" box, and
     // the result of the last attempt. See AddManualServerCommand.
@@ -614,8 +587,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // tap while the first is still in flight would redeem the same one-use code
     // twice.
     public bool IsConfirmPairServerEnabled =>
-        !IsPairingInProgress
-        && (!IsPendingServerPairedByCode || !string.IsNullOrWhiteSpace(PendingPairingCode));
+        !IsPairingInProgress && !string.IsNullOrWhiteSpace(PendingPairingCode);
 
     // Android's media-access permission can be permanently denied, in which case the
     // only way back in is the system app-settings screen; desktop/iOS have nothing
@@ -765,15 +737,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 ActiveSheet = MobileSheet.None;
         },
             h => PlaylistControl.PropertyChanged += h, h => PlaylistControl.PropertyChanged -= h);
-
-        _subscriptions.Add<EventHandler<PeerApprovalRequestedEventArgs>>((_, e) =>
-        {
-            _pendingPeerApproval = e;
-            OnPropertyChanged(nameof(PeerApprovalAlias));
-            OnPropertyChanged(nameof(PeerApprovalMessage));
-            ActiveSheet = MobileSheet.PeerApproval;
-        },
-            h => Main.PeerApprovalRequested += h, h => Main.PeerApprovalRequested -= h);
 
         _subscriptions.Add<NotifyCollectionChangedEventHandler>((_, _) => RebuildPlaylistPicker(),
             h => Main.SidebarItems.CollectionChanged += h, h => Main.SidebarItems.CollectionChanged -= h);
@@ -960,8 +923,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         });
         RescanCommand = new RelayCommand(async () => await Main.RescanLibraryAsync());
         OpenAppSettingsCommand = new RelayCommand(() => PlatformPermissions.Current?.OpenAppSettings());
-        AllowPeerCommand = new RelayCommand(() => ResolvePeerApproval(true));
-        DenyPeerCommand = new RelayCommand(() => ResolvePeerApproval(false));
         DownloadTrackCommand = new RelayCommand<TrackRowViewModel>(async row =>
         {
             if (row == null || row.IsDownloading)
@@ -1058,7 +1019,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             _sheetBeforePairing = ActiveSheet;
             PendingPairingCode = "";
             OnPropertyChanged(nameof(PendingServerToPairAlias));
-            OnPropertyChanged(nameof(IsPendingServerPairedByCode));
             OnPropertyChanged(nameof(ConfirmPairServerTitle));
             OnPropertyChanged(nameof(ConfirmPairServerActionLabel));
             OnPropertyChanged(nameof(ConfirmPairServerMessage));
@@ -1104,22 +1064,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
             Main.PairingCodeError = null;
 
-            // The app-peer path has nothing to wait for here - approval happens
-            // on the other device's screen, up to a minute later - so the sheet
-            // closes immediately, as it always did.
-            if (!device.PairsByCode)
-            {
-                Main.PairWithServer(device);
-                _pendingServerToPair = null;
-                PendingPairingCode = "";
-                ActiveSheet = _sheetBeforePairing;
-                return;
-            }
-
-            // A code, by contrast, is accepted or refused within one round trip,
-            // and a refusal has to land where the user is looking - next to the
-            // box that produced it, with the typed code still there to correct.
-            // So the sheet holds itself open until SettleCodePairing sees one or
+            // A code is accepted or refused within one round trip, and a
+            // refusal has to land where the user is looking - next to the box
+            // that produced it, with the typed code still there to correct. So
+            // the sheet holds itself open until SettleCodePairing sees one or
             // the other.
             IsPairingInProgress = true;
             Main.PairWithServer(device, PendingPairingCode.Trim());
@@ -1154,13 +1102,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         {
             IsPairingInProgress = false;
         }
-    }
-
-    private void ResolvePeerApproval(bool allowed)
-    {
-        _pendingPeerApproval?.Resolution.TrySetResult(allowed);
-        _pendingPeerApproval = null;
-        ActiveSheet = MobileSheet.None;
     }
 
     private void RebuildPlaylistPicker()

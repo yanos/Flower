@@ -72,13 +72,12 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     private const int ClosedPort = 9;
 
     private static DiscoveredDevice Peer(
-        string fingerprint, string alias = "Peer", bool isServer = true, string libraryToken = "") => new()
+        string fingerprint, string alias = "Peer", string libraryToken = "") => new()
     {
         InstanceName = alias.ToLowerInvariant(),
         BaseUri     = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, ClosedPort)),
         Alias        = alias,
         Fingerprint  = fingerprint,
-        IsServer     = isServer,
         LibraryToken = libraryToken,
     };
 
@@ -93,7 +92,6 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     {
         var vm = Make(new AppSettings
         {
-            IsServer                = false,
             PairedServerFingerprint = "fp-server",
             PairedServerAlias       = "Server",
         });
@@ -134,21 +132,10 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         }
     }
 
-    // ── Role gating ───────────────────────────────────────────────────────────
+    // ── Pairing gating ────────────────────────────────────────────────────────
 
-    // A Server never initiates a bulk sync - it only ever answers.
-    [AvaloniaFact]
-    public void A_server_never_initiates_a_sync()
-    {
-        var vm = Make(new AppSettings { IsServer = true });
-
-        vm.TriggerSyncIfReady(Peer("fp-client", "A Client", isServer: false));
-
-        Assert.False(vm.IsSyncing);
-    }
-
-    // A Client bulk-syncs with its one paired Server and nothing else, however
-    // many other peers are on the network.
+    // This device syncs with its one paired server and nothing else, however
+    // many other servers are on the network.
     [AvaloniaFact]
     public void A_client_does_not_sync_with_an_unpaired_peer()
     {
@@ -160,9 +147,9 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void A_client_with_no_pairing_at_all_syncs_with_nobody()
+    public void A_device_with_no_pairing_at_all_syncs_with_nobody()
     {
-        var vm = Make(new AppSettings { IsServer = false });
+        var vm = Make(new AppSettings());
 
         vm.TriggerSyncIfReady(Peer("fp-server", "Server"));
 
@@ -264,7 +251,6 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     {
         var vm = Make(new AppSettings
         {
-            IsServer                = false,
             PairedServerFingerprint = "fp-server",
             PairedServerAlias       = "Server",
         });
@@ -278,7 +264,7 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     [AvaloniaFact]
     public void ForceSyncNow_does_nothing_at_all_when_not_paired()
     {
-        var vm = Make(new AppSettings { IsServer = false });
+        var vm = Make(new AppSettings());
 
         vm.ForceSyncNow();
 
@@ -361,12 +347,13 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         Assert.Equal(2, edges());
     }
 
-    // A Server never initiates, so local edits on one schedule nothing.
+    // An unpaired device has nowhere to send a local edit, so it schedules
+    // nothing rather than fanning out to whatever it can see.
     [AvaloniaFact]
-    public void ScheduleContentSync_on_a_server_syncs_with_nobody()
+    public void ScheduleContentSync_while_unpaired_syncs_with_nobody()
     {
-        var vm = Make(new AppSettings { IsServer = true });
-        vm.AddOrUpdateDeviceSidebarItem(Peer("fp-client", "A Client", isServer: false));
+        var vm = Make(new AppSettings());
+        vm.AddOrUpdateDeviceSidebarItem(Peer("fp-server", "A Server"));
         using var cooldown = Cooldown();
 
         vm.ScheduleContentSync();
@@ -378,7 +365,7 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     // ── Catalog-change trigger ────────────────────────────────────────────────
     //
     // The peer advertises an opaque library token on /info; a change in it is
-    // how a Client notices a server-side edit without polling the manifest
+    // how a client notices a server-side edit without polling the manifest
     // (Tier 1.4). Runs *before* TriggerSyncIfReady on each discovery, so the
     // first observation of a peer must be told apart from a later change.
 

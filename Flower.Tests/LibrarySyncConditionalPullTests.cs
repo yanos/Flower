@@ -54,10 +54,12 @@ public class LibrarySyncConditionalPullTests : IDisposable
         new(library,
             new DeviceIdentity { Fingerprint = key.Fingerprint, Alias = "Client" },
             key,
-            new AppSettings { IsServer = false },
+            new AppSettings(),
             InMemoryLogStore.Instance,
             NullLogger<LibrarySyncService>.Instance,
             NullLogger<RemoteLibraryImporter>.Instance);
+
+    private const string LibraryPath = "/api/flower/v1/library";
 
     private static Child RemoteSong(string title) => new(
         Id: "sync:" + title,
@@ -75,6 +77,15 @@ public class LibrarySyncConditionalPullTests : IDisposable
         const string token = "abc12345-7";
         using var peer = new FakePeerHttpServer(async context =>
         {
+            // A sync session also pushes this device's log snapshot (see
+            // LibrarySyncService.PushLogSnapshotAsync, on by default) - only
+            // the manifest requests are what this is counting.
+            if (context.Request.Url?.AbsolutePath != LibraryPath)
+            {
+                context.Response.Close();
+                return;
+            }
+
             conditions.Add(context.Request.Headers["If-None-Match"]);
             context.Response.Headers["ETag"] = token;
             var manifest = new LibrarySyncManifestDto("peer-fingerprint", [RemoteSong("Remote One")]);
@@ -111,6 +122,13 @@ public class LibrarySyncConditionalPullTests : IDisposable
         var served = 0;
         using var peer = new FakePeerHttpServer(async context =>
         {
+            // See the note above: the log push shares this listener.
+            if (context.Request.Url?.AbsolutePath != LibraryPath)
+            {
+                context.Response.Close();
+                return;
+            }
+
             // Serve the catalog once, then answer 304 to the conditional
             // request the service is expected to make next.
             if (context.Request.Headers["If-None-Match"] == token)
@@ -162,6 +180,13 @@ public class LibrarySyncConditionalPullTests : IDisposable
         var requestCount = 0;
         using var peer = new FakePeerHttpServer(context =>
         {
+            // See the note above: the log push shares this listener.
+            if (context.Request.Url?.AbsolutePath != LibraryPath)
+            {
+                context.Response.Close();
+                return Task.CompletedTask;
+            }
+
             conditions.Add(context.Request.Headers["If-None-Match"]);
             // Serves an ETag alongside a response the service can't merge, so
             // remembering the token here would mean the next sync gets 304'd

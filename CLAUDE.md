@@ -27,6 +27,13 @@ the whole deployment model, and it settles arguments in both directions:
   phone cannot ask for anything beyond opening a link or a pairing screen. When
   a design trades server-side complexity for client-side simplicity, take the
   trade — see `REMOTE-TRANSPORT-PLAN.md`, which is that argument in full.
+- **`Flower.Server` is the only server.** A client never serves: it browses
+  mDNS without advertising itself, pairs by redeeming an admin-issued code, and
+  accepts no incoming connections. The app used to be able to host the protocol
+  itself, and the cost of keeping both was a Client/Server role concept running
+  through the settings screens, the sidebar and two pairing flows — for a
+  topology that is a star. See `SYNC-PLAN.md`, "Peer-to-peer, built and
+  removed", which also records what that gave up and should come back.
 
 ## No Users Yet
 

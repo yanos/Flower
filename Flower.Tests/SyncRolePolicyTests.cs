@@ -5,80 +5,29 @@ namespace Flower.Tests;
 public class SyncRolePolicyTests
 {
     [Fact]
-    public void ShouldInitiateSync_is_false_for_a_server_even_with_a_paired_fingerprint()
-    {
-        Assert.False(SyncRolePolicy.ShouldInitiateSync(isServer: true, pairedServerFingerprint: "abc", peerFingerprint: "abc"));
-    }
-
-    [Fact]
-    public void ShouldInitiateSync_is_true_for_a_client_whose_peer_is_its_paired_server()
-    {
-        Assert.True(SyncRolePolicy.ShouldInitiateSync(isServer: false, pairedServerFingerprint: "abc", peerFingerprint: "abc"));
-    }
-
-    [Fact]
-    public void ShouldInitiateSync_is_false_for_a_client_whose_peer_is_not_its_paired_server()
-    {
-        Assert.False(SyncRolePolicy.ShouldInitiateSync(isServer: false, pairedServerFingerprint: "abc", peerFingerprint: "xyz"));
-    }
-
-    [Fact]
-    public void ShouldInitiateSync_is_false_for_a_client_with_no_paired_server_yet()
-    {
-        Assert.False(SyncRolePolicy.ShouldInitiateSync(isServer: false, pairedServerFingerprint: null, peerFingerprint: "abc"));
-    }
-
-    [Fact]
-    public void ShouldInitiateSync_is_false_when_the_peer_fingerprint_is_empty()
-    {
-        Assert.False(SyncRolePolicy.ShouldInitiateSync(isServer: false, pairedServerFingerprint: "abc", peerFingerprint: ""));
-    }
-
-    [Fact]
-    public void ShouldRejectPeerAsServer_rejects_a_server_to_server_call()
-    {
-        Assert.True(SyncRolePolicy.ShouldRejectPeerAsServer(weAreServer: true, callerIsServer: true));
-    }
-
-    [Fact]
-    public void ShouldRejectPeerAsServer_allows_a_client_calling_a_server()
-    {
-        Assert.False(SyncRolePolicy.ShouldRejectPeerAsServer(weAreServer: true, callerIsServer: false));
-    }
-
-    [Fact]
-    public void ShouldRejectPeerAsServer_allows_a_server_calling_a_client()
-    {
-        Assert.False(SyncRolePolicy.ShouldRejectPeerAsServer(weAreServer: false, callerIsServer: true));
-    }
-
-    [Fact]
-    public void ShouldRejectPeerAsServer_allows_a_client_calling_a_client()
-    {
-        Assert.False(SyncRolePolicy.ShouldRejectPeerAsServer(weAreServer: false, callerIsServer: false));
-    }
-
-    [Fact]
-    public void MayRequestFrom_is_true_for_the_currently_paired_server()
+    public void MayRequestFrom_allows_the_one_paired_server()
     {
         Assert.True(SyncRolePolicy.MayRequestFrom(pairedServerFingerprint: "abc", peerFingerprint: "abc"));
     }
 
     [Fact]
-    public void MayRequestFrom_is_false_for_a_stale_fingerprint_that_is_no_longer_paired()
+    public void MayRequestFrom_refuses_any_other_peer()
     {
         Assert.False(SyncRolePolicy.MayRequestFrom(pairedServerFingerprint: "abc", peerFingerprint: "xyz"));
     }
 
     [Fact]
-    public void MayRequestFrom_is_false_with_no_paired_server_at_all()
+    public void MayRequestFrom_refuses_everything_while_unpaired()
     {
         Assert.False(SyncRolePolicy.MayRequestFrom(pairedServerFingerprint: null, peerFingerprint: "abc"));
     }
 
+    // An unresolved peer has an empty fingerprint, which must not be allowed to
+    // match an equally-empty paired pointer into a free pass.
     [Fact]
-    public void MayRequestFrom_is_false_when_the_peer_fingerprint_is_empty()
+    public void MayRequestFrom_refuses_an_unresolved_peer()
     {
         Assert.False(SyncRolePolicy.MayRequestFrom(pairedServerFingerprint: "abc", peerFingerprint: ""));
+        Assert.False(SyncRolePolicy.MayRequestFrom(pairedServerFingerprint: "", peerFingerprint: ""));
     }
 }

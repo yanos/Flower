@@ -7,9 +7,9 @@ namespace Flower.Server.Services;
 
 // Kestrel/Minimal-API adapter onto the shared PeerSignatureAuth - the check
 // itself (proof-of-possession, and the header-else-query rule for where the
-// identity may be read from) lives in Flower.Core so it cannot drift from
-// SyncHttpServer's copy, which is what it used to be. All that is left here
-// is turning an HttpRequest into a SignedRequest.
+// identity may be read from) lives in Flower.Core, extracted when the app had a
+// listener of its own for this to drift from. All that is left here is turning
+// an HttpRequest into a SignedRequest.
 //
 // Two callers, one mechanism: PairingEndpoints' pair-redeem uses the
 // self-signed form (there is nothing to look up yet for a device that has not
