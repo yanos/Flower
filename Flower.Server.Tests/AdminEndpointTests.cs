@@ -45,7 +45,8 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
     // A signed admin request, exactly as ServerAdminClient builds one: identity in
     // headers, the signature over method + path + query + a hash of the body.
     private async Task<HttpContext> SignedAsync(
-        DeviceSigningKey device, string method, string path, string? query = null, string? body = null)
+        DeviceSigningKey device, string method, string path, string? query = null, string? body = null,
+        string? remoteIp = null, string? host = null)
     {
         var bodyBytes = body == null ? [] : Encoding.UTF8.GetBytes(body);
         var queryPairs = ParseQuery(query);
@@ -62,7 +63,9 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             c.Request.Path = path;
             if (query != null)
                 c.Request.QueryString = new QueryString("?" + query);
-            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.50");
+            c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp ?? "10.0.0.50");
+            if (host != null)
+                c.Request.Host = new HostString(host);
             foreach (var (key, value) in identity)
                 c.Request.Headers[key] = value;
             c.Request.Headers["X-Flower-Signature"] = signature;
@@ -320,6 +323,48 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, last.Response.StatusCode);
     }
+    // The link a client's "Server Settings..." button opens, and the one thing
+    // about it that is not obvious: which origin it names.
+    //
+    // A browser only exposes crypto.subtle in a secure context, so a tab at
+    // http://192.168.x.y holds no device key and cannot pair - it just gets a
+    // 401 on everything. When the caller asking for the code is on this very
+    // machine, its browser is too, and http://localhost *is* a secure context.
+    // See WebUiHosting.BrowserOriginFor.
+    [Fact]
+    public async Task A_pairing_link_for_a_client_on_this_machine_points_at_localhost()
+    {
+        var admin = await NewAdminAsync("Same Machine");
+
+        var context = await SignedAsync(
+            admin, "POST", "/api/admin/pairing-codes", query: "grantsAdmin=true",
+            // What a client on this machine that found us over mDNS looks like:
+            // it dialled our LAN address, not loopback.
+            remoteIp: "127.0.0.1", host: "192.168.1.40:4533");
+
+        Assert.Equal(200, context.Response.StatusCode);
+        var pairing = await ReadAsync<PairingCodeResponse>(context);
+        Assert.StartsWith("http://localhost:4533/#pair=", pairing.BrowserUrl);
+    }
+
+    // The other half, and the reason this is not simply hardcoded to localhost:
+    // for a browser anywhere else, localhost is this server rather than the one
+    // being administered, and the address the caller reached us on is the only
+    // one known to work.
+    [Fact]
+    public async Task A_pairing_link_for_a_client_elsewhere_keeps_the_address_it_reached_us_on()
+    {
+        var admin = await NewAdminAsync("Another Machine");
+
+        var context = await SignedAsync(
+            admin, "POST", "/api/admin/pairing-codes", query: "grantsAdmin=true",
+            remoteIp: "10.0.0.77", host: "192.168.1.40:4533");
+
+        Assert.Equal(200, context.Response.StatusCode);
+        var pairing = await ReadAsync<PairingCodeResponse>(context);
+        Assert.StartsWith("http://192.168.1.40:4533/#pair=", pairing.BrowserUrl);
+    }
+
 }
 
 // The other half of the not-deployed page: a bundle that *is* there gets served,

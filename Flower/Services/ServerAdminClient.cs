@@ -49,7 +49,11 @@ public sealed class ServerAdminException(HttpStatusCode status, string message) 
 // bearer path it fed are gone. The delegate stays because tests still supply
 // their own, and because the admin surface has no business knowing how a caller
 // proved itself.
-public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Func<HttpRequestMessage, byte[], Task> authorize)
+public sealed class ServerAdminClient(
+    HttpClient http,
+    Uri baseAddress,
+    Func<HttpRequestMessage, byte[], Task> authorize,
+    Func<string?>? explainUnauthorized = null)
 {
     // Web defaults for the naming policy (the server answers camelCase), but with
     // the source-generated resolver supplying the metadata: Flower.Web is trimmed,
@@ -126,7 +130,7 @@ public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Func<Htt
     // The admin API answers a refusal with {"error": "..."} - worth showing, and
     // worth falling back gracefully when the body is something else entirely (a
     // proxy's HTML error page, an empty 403).
-    private static async Task<string> DescribeFailureAsync(HttpResponseMessage response, CancellationToken ct)
+    private async Task<string> DescribeFailureAsync(HttpResponseMessage response, CancellationToken ct)
     {
         try
         {
@@ -145,7 +149,14 @@ public sealed class ServerAdminClient(HttpClient http, Uri baseAddress, Func<Htt
 
         return response.StatusCode switch
         {
-            HttpStatusCode.Unauthorized => "This device is not paired with that server.",
+            // A caller that already knows why it could not authenticate gets to
+            // say so, because "not paired" is a guess made from the status code
+            // alone and is sometimes simply wrong: a browser tab in an insecure
+            // context never held a key to be paired *with*, and telling its user
+            // to pair again sends them round a loop that cannot terminate. See
+            // BrowserPeerCredentials and WebUiHosting.BrowserOriginFor.
+            HttpStatusCode.Unauthorized =>
+                explainUnauthorized?.Invoke() ?? "This device is not paired with that server.",
             HttpStatusCode.Forbidden => "This device is paired, but is not an administrator of that server.",
             _ => $"The server refused the request ({(int)response.StatusCode} {response.ReasonPhrase}).",
         };

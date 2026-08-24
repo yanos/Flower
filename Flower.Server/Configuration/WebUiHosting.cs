@@ -3,6 +3,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 
 using Flower.Server.Services;
+using Flower.Services;
 
 namespace Flower.Server.Configuration;
 
@@ -165,4 +166,33 @@ public static class WebUiHosting
     // and only a link that says so opens the settings overlay.
     public static string BuildBrowserPairingUrl(string origin, string code) =>
         $"{origin.TrimEnd('/')}/#pair={Uri.EscapeDataString(code)}&page=settings";
+
+    // Which origin that link should name, given the request that asked for it.
+    //
+    // Normally the one the caller dialled, because that is demonstrably an
+    // address which reaches this server. The exception is a caller on this very
+    // machine, and it exists because of a browser rule rather than a Flower one:
+    // crypto.subtle is exposed only in a secure context, so a tab at
+    // http://192.168.x.y cannot hold a device key and cannot pair at all, while
+    // the same tab at http://localhost can (see BrowserPeerCredentials).
+    //
+    // A client on this machine that found us over mDNS dials our LAN address, so
+    // without this it would hand its own browser a link that is guaranteed to
+    // fail - and fail as a flat "not paired", which names neither the cause nor
+    // the fix. Program.cs's console link already resolves to localhost for the
+    // same reason; this is the other way into the same page.
+    //
+    // Nothing here helps a browser on a *different* machine over plain http.
+    // That case wants TLS, and is why the certificate design in
+    // docs/REMOTE-TRANSPORT-PLAN.md gates the transports it does.
+    public static string BrowserOriginFor(HttpRequest request)
+    {
+        var scheme = request.Scheme;
+        if (scheme == Uri.UriSchemeHttps || !LocalAddresses.IsThisMachine(request.HttpContext.Connection.RemoteIpAddress))
+            return $"{scheme}://{request.Host}";
+
+        return request.Host.Port is { } port
+            ? $"{scheme}://localhost:{port}"
+            : $"{scheme}://localhost";
+    }
 }

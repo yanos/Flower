@@ -69,6 +69,51 @@ public static class LocalAddresses
         return addresses.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    // Whether a caller reached us from the machine we are running on.
+    //
+    // Loopback is the easy half. The hard half is that a client on this same
+    // machine which dialled our *LAN* address - which is what one that found us
+    // over mDNS does - arrives with that LAN address as its source, not with
+    // 127.0.0.1. So "is this us" has to be asked of every address we hold, not
+    // just of the loopback ones.
+    //
+    // Worth one caveat: two machines behind the same NAT do not collide here,
+    // because this compares interface addresses rather than a public one. What
+    // it cannot distinguish is a container sharing the host's network namespace,
+    // which is close enough to the same machine for the one thing this decides.
+    public static bool IsThisMachine(IPAddress? address)
+    {
+        if (address == null)
+            return false;
+
+        // An IPv4-mapped IPv6 address is what a dual-stack listener reports for
+        // an IPv4 client, and it matches nothing in the interface list as it
+        // stands.
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        if (IPAddress.IsLoopback(address))
+            return true;
+
+        foreach (var nic in SafeInterfaces())
+        {
+            foreach (var unicast in SafeUnicastAddresses(nic))
+            {
+                // Bytes rather than IPAddress.Equals, which also compares an
+                // IPv6 scope id - and a scope id belongs to the interface that
+                // reported it, so the same address seen on a connection and in
+                // the interface list can carry two different ones.
+                if (unicast.Address.AddressFamily == address.AddressFamily &&
+                    unicast.Address.GetAddressBytes().AsSpan().SequenceEqual(address.GetAddressBytes()))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     // Link-local is excluded rather than merely ranked last: a 169.254/fe80
     // address is only meaningful on the link it was minted for, and a client
     // that remembered one would keep probing an address that cannot work from
