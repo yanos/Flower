@@ -42,6 +42,21 @@ public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, st
 // IsAdmin is re-checked against the trust store on every request carrying one.
 public static class AdminEndpoints
 {
+    // The admin surface had no budget at all until docs/OPEN-INTERNET-REVIEW.md
+    // went looking for one. Severity is low - every route below is gated on a
+    // device signature or a live session, and an unknown fingerprint is refused
+    // by a dictionary lookup before any ECDSA verification happens, so a flood
+    // of unauthenticated requests is cheap to turn away. But this is the one
+    // surface where a single request triggers a rescan or writes settings, and
+    // "cheap to refuse" is an argument for a generous ceiling, not for none.
+    //
+    // Keyed by source IP, like every other pre-auth budget: the filter runs
+    // before authentication, so there is no verified identity to key by yet.
+    // Sized for a human driving the settings page - which opens by fetching
+    // devices, credentials, settings and the log at once - rather than for a
+    // poll loop, since nothing polls these routes.
+    private static readonly RateLimiter RequestLimiter = new(max: 120, TimeSpan.FromSeconds(60));
+
     public static void MapAdminEndpoints(this WebApplication app)
     {
         var jsonOptions = new JsonSerializerOptions
@@ -53,6 +68,9 @@ public static class AdminEndpoints
         var authenticated = app.MapGroup("/api/admin").AddEndpointFilter(async (context, next) =>
         {
             var http = context.HttpContext;
+            if (!RequestLimiter.TryAcquire(RateLimiter.KeyFor(http.Connection.RemoteIpAddress), DateTimeOffset.UtcNow))
+                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+
             var services = http.RequestServices;
             var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
             var replayGuard = services.GetRequiredService<NonceReplayGuard>();

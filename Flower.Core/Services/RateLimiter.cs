@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
 using System.Threading;
 
 namespace Flower.Services;
@@ -27,6 +29,37 @@ public sealed class RateLimiter
     // this the dictionary is an unbounded memory sink that a spoofed-source
     // flood grows for free.
     private const int IdleWindowsBeforeEviction = 4;
+
+    // The key every per-source limiter should use, rather than the address
+    // string itself. An IPv6 caller is not one caller: an ordinary residential
+    // or hosting allocation is a /64, so a full-address key hands an attacker
+    // 2^64 free buckets and the per-IP ceilings bound nothing they are willing
+    // to rotate addresses for. It also feeds the memory sink
+    // IdleWindowsBeforeEviction exists to bound, since keys are attacker-chosen
+    // and eviction runs four windows behind. Collapsing to the /64 makes the
+    // budgets mean what they read as meaning. See docs/OPEN-INTERNET-REVIEW.md.
+    //
+    // Link-local is deliberately left at full precision. Nothing off-link can
+    // source an fe80:: address, so there is no rotation to bound - while
+    // collapsing it would put every device on the same link into one bucket,
+    // which is exactly the LAN case these limiters have to keep working for.
+    public static string KeyFor(IPAddress? address)
+    {
+        if (address == null)
+            return "unknown";
+
+        // Kestrel hands out ::ffff:a.b.c.d for an IPv4 client on a dual-stack
+        // socket; keying that as IPv6 would put every IPv4 caller in one /64.
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        if (address.AddressFamily != AddressFamily.InterNetworkV6 || address.IsIPv6LinkLocal)
+            return address.ToString();
+
+        var bytes = address.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+        return new IPAddress(bytes) + "/64";
+    }
 
     private readonly int _max;
     private readonly TimeSpan _window;

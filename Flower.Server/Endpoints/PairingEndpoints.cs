@@ -30,7 +30,7 @@ public static class PairingEndpoints
             NonceReplayGuard replayGuard) =>
         {
             var request = context.Request;
-            var key = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var key = RateLimiter.KeyFor(context.Connection.RemoteIpAddress);
             if (!RedeemRateLimiter.TryAcquire(key, DateTimeOffset.UtcNow))
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
 

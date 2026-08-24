@@ -354,7 +354,7 @@ public class SyncHttpServer : IDisposable
         };
     }
 
-    private static string RemoteIpKey(HttpListenerContext context) => context.Request.RemoteEndPoint?.Address.ToString() ?? "unknown";
+    private static string RemoteIpKey(HttpListenerContext context) => RateLimiter.KeyFor(context.Request.RemoteEndPoint?.Address);
 
     // Self-reported at this point (auth hasn't run yet when rate limiting is
     // checked) - fine for a rate-limit key: a TrustedPeer route still 403s an

@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 
 using Flower.Services;
 
@@ -124,5 +125,66 @@ public class RateLimiterTests
         var later = now.AddSeconds(60 * 5);
         Assert.True(limiter.TryAcquire("other", later));
         Assert.Equal(1, limiter.TrackedKeyCount);
+    }
+}
+
+// What counts as "one caller" for a per-source budget. See
+// docs/OPEN-INTERNET-REVIEW.md finding #3: keying on the full address string
+// hands an IPv6 caller its whole /64 as free buckets, so the ceilings bound
+// nothing anyone willing to rotate addresses cares about.
+public class RateLimitKeyTests
+{
+    [Fact]
+    public void An_IPv4_caller_is_keyed_by_its_own_address()
+    {
+        Assert.Equal("203.0.113.7", RateLimiter.KeyFor(IPAddress.Parse("203.0.113.7")));
+        Assert.NotEqual(RateLimiter.KeyFor(IPAddress.Parse("203.0.113.7")),
+                        RateLimiter.KeyFor(IPAddress.Parse("203.0.113.8")));
+    }
+
+    [Fact]
+    public void Two_addresses_in_one_IPv6_slash_64_share_a_key()
+    {
+        // The whole finding: these are one allocation, and an attacker holding
+        // it can mint 2^64 of them.
+        Assert.Equal(RateLimiter.KeyFor(IPAddress.Parse("2001:db8:1:2::1")),
+                     RateLimiter.KeyFor(IPAddress.Parse("2001:db8:1:2:dead:beef:cafe:f00d")));
+    }
+
+    [Fact]
+    public void Different_IPv6_slash_64s_do_not_share_a_key()
+    {
+        Assert.NotEqual(RateLimiter.KeyFor(IPAddress.Parse("2001:db8:1:2::1")),
+                        RateLimiter.KeyFor(IPAddress.Parse("2001:db8:1:3::1")));
+    }
+
+    // Kestrel hands out ::ffff:a.b.c.d for an IPv4 client on a dual-stack
+    // socket. Keyed as IPv6 that collapses to ::ffff:0:0/64 - every IPv4 caller
+    // on the internet in one bucket, which is worse than no limiting at all.
+    [Fact]
+    public void An_IPv4_mapped_address_is_keyed_as_the_IPv4_address_it_is()
+    {
+        Assert.Equal(RateLimiter.KeyFor(IPAddress.Parse("203.0.113.7")),
+                     RateLimiter.KeyFor(IPAddress.Parse("::ffff:203.0.113.7")));
+        Assert.NotEqual(RateLimiter.KeyFor(IPAddress.Parse("::ffff:203.0.113.7")),
+                        RateLimiter.KeyFor(IPAddress.Parse("::ffff:203.0.113.8")));
+    }
+
+    // Nothing off-link can source an fe80:: address, so there is no rotation to
+    // bound - and collapsing them would put every device on the LAN into one
+    // bucket, which is the case these limiters exist to keep working.
+    [Fact]
+    public void Link_local_neighbours_keep_their_own_keys()
+    {
+        Assert.NotEqual(RateLimiter.KeyFor(IPAddress.Parse("fe80::1")),
+                        RateLimiter.KeyFor(IPAddress.Parse("fe80::2")));
+    }
+
+    [Fact]
+    public void A_caller_with_no_address_still_gets_a_key()
+    {
+        // HttpListener and Kestrel both hand back a nullable address, and a
+        // throw on the rate-limit path would be a denial of service of its own.
+        Assert.False(string.IsNullOrEmpty(RateLimiter.KeyFor(null)));
     }
 }

@@ -310,6 +310,36 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
     }
+
+    // Finding #4 of docs/OPEN-INTERNET-REVIEW.md: this surface had no budget at
+    // all. It is the one place a single request starts a rescan or writes
+    // settings, so an unauthenticated caller must run out of requests rather
+    // than only out of patience. From its own source address, so burning the
+    // budget cannot starve the other tests in this assembly.
+    [Fact]
+    public async Task An_unauthenticated_flood_runs_out_of_budget_before_it_runs_out_of_requests()
+    {
+        var flooder = IPAddress.Parse("10.0.0.99");
+        Task<HttpContext> Poke() => server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = "/api/admin/devices";
+            c.Connection.RemoteIpAddress = flooder;
+        });
+
+        // The budget is 120/60s, so the first request is refused on its merits
+        // and a request well past the ceiling is refused before them.
+        var first = await Poke();
+        Assert.Equal(StatusCodes.Status401Unauthorized, first.Response.StatusCode);
+
+        HttpContext last = first;
+        for (var i = 0; i < 130; i++)
+        {
+            last = await Poke();
+        }
+
+        Assert.Equal(StatusCodes.Status429TooManyRequests, last.Response.StatusCode);
+    }
 }
 
 // The other half of the not-deployed page: a bundle that *is* there gets served,

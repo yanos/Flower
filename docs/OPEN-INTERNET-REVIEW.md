@@ -121,9 +121,17 @@ attacker-chosen and eviction is four windows behind.
 This does not matter on a LAN, where addresses are scarce and the caller is
 already inside. It matters as soon as the caller is not.
 
-**Fix:** key IPv6 by its /64 prefix rather than the full address, in one helper
-shared by both servers. Cheap, and it makes the budgets mean what they read as
-meaning.
+**Fixed.** `RateLimiter.KeyFor(IPAddress?)` is the one helper every per-source
+budget in both servers now keys through — the four call sites that each built
+their own `RemoteIpAddress?.ToString() ?? "unknown"` string no longer do.
+
+Two carve-outs, both deliberate. An IPv4-mapped address (`::ffff:a.b.c.d`, what
+Kestrel hands out for an IPv4 client on a dual-stack socket) is keyed as the
+IPv4 address it is; collapsing it as IPv6 would have put *every* IPv4 caller in
+one bucket, which is worse than the problem being fixed. And link-local is left
+at full precision: nothing off-link can source an `fe80::` address, so there is
+no rotation to bound, while collapsing it would put every device on a link into
+one bucket — exactly the LAN case these limiters have to keep working for.
 
 ### 4. `/api/admin` has no rate limit at all
 
@@ -137,6 +145,13 @@ verification happens, so an unauthenticated flood is cheap to refuse. But it is
 the one surface where a request can trigger a rescan or a settings write, it is
 unbudgeted, and the comment asserting otherwise is wrong. Worth fixing for the
 same reason `PairingEndpoints` was.
+
+**Fixed.** A 120/60s per-source budget on the `/api/admin` group's filter,
+charged before authentication runs — "cheap to refuse" is an argument for a
+generous ceiling, not for none. Sized for a human driving the settings page,
+which opens by fetching devices, credentials, settings and the log at once,
+rather than for a poll loop; nothing polls these routes. The wrong comment in
+`SubsonicEndpoints` is gone with it.
 
 ### 5. The signed canonical form is ambiguous across `&` and `=`
 
@@ -236,26 +251,27 @@ Ordered by what blocks what, not by severity:
    design in `REMOTE-TRANSPORT-PLAN.md` has to land first. This is the reason
    step 4 of that sequence is genuinely downstream of step 3 rather than
    parallel to it.
-4. **Whenever convenient:** #3 (IPv6 /64 keying) and #4 (`/api/admin` budget).
+4. ~~**Whenever convenient:** #3 (IPv6 /64 keying) and #4 (`/api/admin`
+   budget).~~ **Done** — see each finding above.
 
 ## Status
 
-**Reviewed; the two pre-transport findings are fixed, the rest is backlog.**
+**Reviewed; everything not gated on a specific transport is fixed.**
 
 Built: #1 (`/info` answers its address list and `TrustsCaller` only to a
-verified trusted peer, and the client signs its poll to be one) and #5 (an
-unambiguous canonical form). Both suites pass — `Flower.Tests` 1086/1086,
-`Flower.Server.Tests` 169/169 — and a live server was confirmed by hand to
-answer an anonymous `/info` with `addresses: null`, where it previously listed
-every address it had.
+verified trusted peer, and the client signs its poll to be one), #5 (an
+unambiguous canonical form), #3 (one shared per-source rate-limit key, IPv6
+collapsed to its /64) and #4 (a budget on `/api/admin`). Both suites pass —
+`Flower.Tests` 1092/1092, `Flower.Server.Tests` 170/170 — and a live server was
+confirmed by hand to answer an anonymous `/info` with `addresses: null`, where
+it previously listed every address it had. Pairing was confirmed by hand to
+still work afterwards.
 
-Not verified by hand: that a *paired* client still learns those addresses over
-a real network. It is covered by tests at both ends — including
-`SyncHttpServerRoundTripTests`, which runs a real `HttpListener` over real
-sockets — but the failure mode this change could plausibly introduce is
-"pairing still works and the client quietly stops learning addresses", and only
-pairing a real client proves it did not happen. That is step 3 of
-`REMOTE-ACCESS-PLAN.md`'s own hand-run, which was already outstanding.
+Still outstanding from `REMOTE-ACCESS-PLAN.md`'s own hand-run, and unchanged by
+any of this: the tailnet leg — that a paired client off the LAN reaches the
+server on its `100.x` address and hands back to the LAN one on the way home.
+Nothing here can stand in for it.
 
-Findings #2, #3, #4, #6, #7 and #8 are untouched, and sequenced above against
-the transports they gate.
+Findings #2, #6, #7 and #8 are untouched. Each of the first three is a decision
+attached to a specific transport rather than a fix that stands on its own, so
+they are sequenced above against the transports they gate; #8 is notes.
