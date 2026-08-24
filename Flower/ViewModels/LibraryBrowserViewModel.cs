@@ -306,6 +306,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     {
         AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(AlbumGridBuilder.Build(_allTracks));
         RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(RecentlyAddedAlbumsBuilder.Build(_allTracks));
+        ApplyTileAvailability();
 
         // An expanded album's tracks were resolved against the previous
         // _allTracks snapshot - refresh them so a library change (a rescan,
@@ -587,6 +588,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         {
             AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles!);
             RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(recentTiles!);
+            ApplyTileAvailability();
         }
         OnPropertyChanged(nameof(StatusBarText));
     }
@@ -633,7 +635,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     {
         var playing = _host.CurrentlyPlayingTrack;
         foreach (var row in _rows)
-            row.IsCurrentlyPlaying = row.Track.Path == playing?.Path;
+            row.IsCurrentlyPlaying = playing != null && row.Track.Id == playing.Id;
     }
 
     // A play-count / LastPlayedAt bump only affects two columns on one row -
@@ -650,6 +652,22 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         }
     }
 
-    public void ApplyTrackAvailability(string? pairedServerFingerprint, bool reachable) =>
+    public void ApplyTrackAvailability(string? pairedServerFingerprint, bool reachable)
+    {
         TrackAvailability.Apply(_rows, pairedServerFingerprint, reachable);
+        ApplyTileAvailability();
+    }
+
+    // The tile grids are rebuilt far less often than the rows are (only on a
+    // library change, or on entering one of the two views that paint them),
+    // so they need re-marking on their own whenever the server's reachability
+    // moves under them - otherwise a grid built while the server was up stays
+    // at full strength for as long as it is left on screen. Reads the host
+    // rather than taking parameters: unlike the rows, this also runs from
+    // RebuildAlbumGrids, which has no reachability arguments to hand.
+    private void ApplyTileAvailability()
+    {
+        TrackAvailability.Apply(AlbumGridTiles, _host.PairedServerFingerprint, _host.IsPairedServerReachable);
+        TrackAvailability.Apply(RecentlyAddedGridTiles, _host.PairedServerFingerprint, _host.IsPairedServerReachable);
+    }
 }

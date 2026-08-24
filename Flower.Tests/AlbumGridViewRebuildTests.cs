@@ -37,6 +37,7 @@ public class AlbumGridViewRebuildTests
         {
             Name = $"Album {i}",
             RepresentativeTrack = new Track { Path = $"/music/{i}.mp3", Album = $"Album {i}" },
+            Tracks = [],
         }));
 
     private static (AlbumGridView Grid, ItemsControl Rows) Show()

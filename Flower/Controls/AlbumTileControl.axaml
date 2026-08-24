@@ -15,6 +15,14 @@
     <Style Selector="UserControl:pointerover Border#HoverBorder">
       <Setter Property="IsVisible" Value="True"/>
     </Style>
+    <!-- Greyed-out album: nothing in it can be played right now (see
+         AlbumTileViewModel.IsUnavailable - a single downloaded track is
+         enough to keep it at full strength). Same 0.5 as an unavailable
+         track row, and on the content only, so the selection/hover
+         backgrounds behind it are unaffected. -->
+    <Style Selector="StackPanel#TileContent.dimmed">
+      <Setter Property="Opacity" Value="0.5"/>
+    </Style>
   </UserControl.Styles>
 
   <Panel>
@@ -33,7 +41,9 @@
          first and never rendered - ItemsControl's per-item container clips
          its content to bounds, so anything hanging outside AlbumTileControl's
          own edge was silently cut off. -->
-    <StackPanel Spacing="6" Width="180" Margin="8,8,8,16">
+    <StackPanel x:Name="TileContent"
+                Classes.dimmed="{Binding IsUnavailable}"
+                Spacing="6" Width="180" Margin="8,8,8,16">
       <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="180" Height="180"/>
       <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
       <TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis"/>

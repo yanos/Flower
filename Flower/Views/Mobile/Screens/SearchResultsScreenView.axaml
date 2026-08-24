@@ -49,7 +49,8 @@
               <Button Classes="pickerRow"
                       Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectSearchAlbumCommand}"
                       CommandParameter="{Binding Name}">
-                <StackPanel Orientation="Horizontal" Spacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="12"
+                            Classes.dimmed="{Binding IsUnavailable}">
                   <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="40" Height="40" />
                   <StackPanel Spacing="2" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />

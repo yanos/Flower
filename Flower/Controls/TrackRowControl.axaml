@@ -14,6 +14,16 @@
     <Style Selector="UserControl:pointerover Border#HoverBorder">
       <Setter Property="IsVisible" Value="True"/>
     </Style>
+    <!-- Dimmed: a not-yet-downloaded track with nobody to stream it from
+         right now (see TrackRowViewModel.IsUnavailable), and separately the
+         album art beside it, which follows its whole album run rather than
+         this one row (IsAlbumGroupUnavailable). Same 0.5 as mobile's own
+         Button.trackRow.placeholder, so an unavailable song reads the same on
+         every client. Applied to the content, not the row itself, so the
+         selection/hover backgrounds behind it stay at full strength. -->
+    <Style Selector="StackPanel#CellsPanel.dimmed, Panel#ArtCell.dimmed">
+      <Setter Property="Opacity" Value="0.5"/>
+    </Style>
   </UserControl.Styles>
 
   <Grid ColumnDefinitions="80,*">
@@ -38,6 +48,8 @@
     <!-- ClipToBounds="False" lets the image overflow downward into subsequent rows of the same group. -->
     <!-- VerticalAlignment="Top" on Image ensures overflow goes downward, not upward. -->
     <Panel Grid.Column="0"
+           x:Name="ArtCell"
+           Classes.dimmed="{Binding IsAlbumGroupUnavailable}"
            Margin="2,2,2,0"
            ClipToBounds="False"
            IsVisible="{Binding IsFirstInAlbumGroup}">
@@ -54,6 +66,7 @@
     <!-- ── Data cells (built in code-behind from ColumnManager) ──────────── -->
     <StackPanel x:Name="CellsPanel"
                 Grid.Column="1"
+                Classes.dimmed="{Binding IsUnavailable}"
                 Orientation="Horizontal"
                 VerticalAlignment="Stretch"/>
   </Grid>

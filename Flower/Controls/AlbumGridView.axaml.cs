@@ -9,6 +9,7 @@ using Avalonia.Controls;
 using Avalonia.VisualTree;
 
 using Flower.Models;
+using Flower.Services;
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 
@@ -70,21 +71,36 @@ public partial class AlbumGridView : UserControl
         set => SetValue(ExpandedTracksProperty, value);
     }
 
-    // The path of whichever track is currently playing, if any - see
+    // Whichever track is currently playing, if any - see
     // MainViewModel.CurrentlyPlayingTrack. Drives the little "now playing"
     // arrow on the matching row inside an expanded album's track list (see
-    // AlbumGridRowViewModel.CurrentlyPlayingPath), the same indicator
+    // AlbumGridRowViewModel.CurrentlyPlayingTrackId), the same indicator
     // MusicListView's own rows already have (TrackRowViewModel.
     // IsCurrentlyPlaying) - independent of ExpandedName/SelectedNames above,
     // since a track can be playing whether or not its album happens to be
-    // the one currently expanded or selected.
-    public static readonly StyledProperty<string?> CurrentlyPlayingPathProperty =
-        AvaloniaProperty.Register<AlbumGridView, string?>(nameof(CurrentlyPlayingPath));
+    // the one currently expanded or selected. Identified by Id rather than by
+    // Path, which is null for every placeholder and therefore identifies none
+    // of them.
+    public static readonly StyledProperty<Guid?> CurrentlyPlayingTrackIdProperty =
+        AvaloniaProperty.Register<AlbumGridView, Guid?>(nameof(CurrentlyPlayingTrackId));
 
-    public string? CurrentlyPlayingPath
+    public Guid? CurrentlyPlayingTrackId
     {
-        get => GetValue(CurrentlyPlayingPathProperty);
-        set => SetValue(CurrentlyPlayingPathProperty, value);
+        get => GetValue(CurrentlyPlayingTrackIdProperty);
+        set => SetValue(CurrentlyPlayingTrackIdProperty, value);
+    }
+
+    // What counts as playable right now (see TrackAvailability) - bound from
+    // MainViewModel.Availability. Only the expanded album's own track rows
+    // need it: the tiles carry their own already-computed IsUnavailable,
+    // marked wherever they are built.
+    public static readonly StyledProperty<TrackAvailabilityContext> AvailabilityProperty =
+        AvaloniaProperty.Register<AlbumGridView, TrackAvailabilityContext>(nameof(Availability));
+
+    public TrackAvailabilityContext Availability
+    {
+        get => GetValue(AvailabilityProperty);
+        set => SetValue(AvailabilityProperty, value);
     }
 
     public AlbumGridView()
@@ -123,9 +139,13 @@ public partial class AlbumGridView : UserControl
         {
             ApplyExpansion();
         }
-        else if (change.Property == CurrentlyPlayingPathProperty)
+        else if (change.Property == CurrentlyPlayingTrackIdProperty)
         {
             ApplyPlayingIndicator();
+        }
+        else if (change.Property == AvailabilityProperty)
+        {
+            ApplyAvailability();
         }
     }
 
@@ -191,8 +211,20 @@ public partial class AlbumGridView : UserControl
         {
             var isMatch = expandedName != null && row.Tiles.Any(t => t.Name == expandedName);
             row.IsExpanded = isMatch;
+            // Availability first: ExpandedTracks builds the row objects, and
+            // each one reads it as it is constructed rather than waiting for a
+            // second pass to grey it in.
+            row.Availability = Availability;
             row.ExpandedTracks = isMatch ? tracks : Array.Empty<Track>();
         }
+    }
+
+    // Same shape (and same near-no-op cost) as ApplyPlayingIndicator above -
+    // only the one expanded row has any track rows to re-mark.
+    private void ApplyAvailability()
+    {
+        foreach (var row in _rows)
+            row.Availability = Availability;
     }
 
     // Cheap even though it touches every row - only the one currently
@@ -202,7 +234,7 @@ public partial class AlbumGridView : UserControl
     private void ApplyPlayingIndicator()
     {
         foreach (var row in _rows)
-            row.CurrentlyPlayingPath = CurrentlyPlayingPath;
+            row.CurrentlyPlayingTrackId = CurrentlyPlayingTrackId;
     }
 
     // Resolves whichever AlbumTileControl (if any) a raw pointer event's

@@ -33,6 +33,7 @@ public static class RecentlyAddedAlbumsBuilder
                     Artist = g.Key.Artist,
                     RepresentativeTrack = mostRecent,
                     MostRecentlyAdded = g.Max(t => t.DateAdded),
+                    Tracks = g.ToList(),
                 };
             })
             .OrderByDescending(a => a.MostRecentlyAdded)

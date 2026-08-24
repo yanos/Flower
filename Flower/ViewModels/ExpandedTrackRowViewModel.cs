@@ -13,6 +13,17 @@ public sealed class ExpandedTrackRowViewModel : ViewModelBase
 {
     public required Track Track { get; init; }
 
+    // Greyed-out state, same rule and same look as the main track list's
+    // TrackRowViewModel.IsUnavailable: a not-yet-downloaded track with nobody
+    // to stream it from right now. Set at construction and kept live by
+    // AlbumGridRowViewModel.Availability.
+    private bool _isUnavailable;
+    public bool IsUnavailable
+    {
+        get => _isUnavailable;
+        set { if (_isUnavailable != value) { _isUnavailable = value; OnPropertyChanged(); } }
+    }
+
     private bool _isSelected;
     public bool IsSelected
     {
@@ -39,7 +50,7 @@ public sealed class ExpandedTrackRowViewModel : ViewModelBase
     // Drives the little "now playing" arrow - see AlbumGridRowControl.axaml,
     // same "▶" indicator TrackRowControl already shows for its own rows
     // (TrackRowViewModel.IsCurrentlyPlaying), just wired through
-    // AlbumGridRowViewModel.CurrentlyPlayingPath instead since this row has
+    // AlbumGridRowViewModel.CurrentlyPlayingTrackId instead since this row has
     // no equivalent of TrackListBuilder.BuildRows to compute it centrally.
     private bool _isCurrentlyPlaying;
     public bool IsCurrentlyPlaying

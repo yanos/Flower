@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 using Flower.Models;
+using Flower.Services;
 using Flower.ViewModels.Mobile;
 
 namespace Flower.ViewModels;
@@ -24,6 +25,24 @@ public sealed class AlbumGridRowViewModel : ViewModelBase
         set { if (_isExpanded != value) { _isExpanded = value; OnPropertyChanged(); } }
     }
 
+    // What counts as playable right now, pushed in by AlbumGridView alongside
+    // the tracks themselves - an expanded album's rows are built here from raw
+    // Tracks (there is no TrackListBuilder pass behind them), so without this
+    // they would be the one song list in the app with no way to know the
+    // server had gone away. Set before ExpandedTracks by ApplyExpansion, and
+    // re-applied to the rows already built when it changes on its own.
+    private TrackAvailabilityContext _availability;
+    public TrackAvailabilityContext Availability
+    {
+        get => _availability;
+        set
+        {
+            _availability = value;
+            foreach (var row in _trackRows)
+                row.IsUnavailable = !value.IsPlayable(row.Track);
+        }
+    }
+
     private IReadOnlyList<Track> _expandedTracks = Array.Empty<Track>();
     public IReadOnlyList<Track> ExpandedTracks
     {
@@ -36,7 +55,12 @@ public sealed class AlbumGridRowViewModel : ViewModelBase
             // album (or its track list) changed, so any previous selection is
             // stale anyway (see SelectTrack).
             _trackRows = value
-                .Select(t => new ExpandedTrackRowViewModel { Track = t, IsCurrentlyPlaying = t.Path == _currentlyPlayingPath })
+                .Select(t => new ExpandedTrackRowViewModel
+                {
+                    Track = t,
+                    IsCurrentlyPlaying = _currentlyPlayingTrackId is { } id && t.Id == id,
+                    IsUnavailable = !_availability.IsPlayable(t),
+                })
                 .ToList();
             OnPropertyChanged();
             OnPropertyChanged(nameof(Column1Tracks));
@@ -44,22 +68,27 @@ public sealed class AlbumGridRowViewModel : ViewModelBase
         }
     }
 
-    // The path of whichever track is currently playing, if any - see
-    // AlbumGridView.CurrentlyPlayingPath. Pushed in independently of
+    // Whichever track is currently playing, if any - see
+    // AlbumGridView.CurrentlyPlayingTrackId. Pushed in independently of
     // ExpandedTracks above (a track can start/stop playing without this
     // row's own expansion state changing at all), but also applied to any
     // *new* rows ExpandedTracks produces (see its setter above), so
     // whichever one becomes newly expanded still shows the right indicator
     // immediately rather than waiting for the next playback change.
-    private string? _currentlyPlayingPath;
-    public string? CurrentlyPlayingPath
+    //
+    // The track's Id, not its Path: every undownloaded placeholder has a null
+    // Path, so a path comparison lit the indicator on all of them at once
+    // whenever nothing was playing - see TrackListBuilder.PlanRows, which had
+    // to guard against exactly that.
+    private Guid? _currentlyPlayingTrackId;
+    public Guid? CurrentlyPlayingTrackId
     {
-        get => _currentlyPlayingPath;
+        get => _currentlyPlayingTrackId;
         set
         {
-            _currentlyPlayingPath = value;
+            _currentlyPlayingTrackId = value;
             foreach (var row in _trackRows)
-                row.IsCurrentlyPlaying = row.Track.Path == value;
+                row.IsCurrentlyPlaying = value is { } id && row.Track.Id == id;
         }
     }
 

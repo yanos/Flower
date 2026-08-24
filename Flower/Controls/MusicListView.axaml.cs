@@ -49,12 +49,21 @@ public partial class MusicListView : UserControl
     public event EventHandler?                    HeaderContextMenu; // right-click on header
 
     // ── Selection ─────────────────────────────────────────────────────────────
-    // Keyed by Track.Path rather than TrackRowViewModel identity: rows are
-    // rebuilt from scratch on every SetItems() (filter/sort/view-switch), but
-    // path is the stable identity used everywhere else in this control.
-    private readonly HashSet<string?> _selectedPaths = new();
+    // Keyed by Track.Id rather than TrackRowViewModel identity: rows are
+    // rebuilt from scratch on every SetItems() (filter/sort/view-switch), so
+    // IsSelected never survives on its own and the selection has to be
+    // re-matched against the new instances.
+    //
+    // Id, not Path, because Path is not an identity: it is null for every
+    // not-yet-downloaded placeholder, so all of them hashed to the same key.
+    // Selecting one greyed-out track therefore re-selected *every* greyed-out
+    // track in the view on the next rebuild - and dragging it to a playlist
+    // dropped all of them in. Id is the same identity TrackRowMerge already
+    // reuses rows by, and it survives a rescan (Library.CarryForwardMutableState
+    // copies it onto the new Track instance).
+    private readonly HashSet<Guid> _selectedIds = new();
     private readonly List<TrackRowViewModel> _selectedRows = new();
-    private string? _anchorPath; // Shift+click range-select anchor
+    private Guid? _anchorId; // Shift+click range-select anchor
 
     public IReadOnlyList<FlowerTrack> SelectedTracks => _selectedRows.Select(r => r.Track).ToList();
 
@@ -100,8 +109,8 @@ public partial class MusicListView : UserControl
         {
             row.IsSelected = true;
             _selectedRows.Add(row);
-            _selectedPaths.Add(row.Track.Path);
-            _anchorPath = row.Track.Path;
+            _selectedIds.Add(row.Track.Id);
+            _anchorId = row.Track.Id;
         }
     }
 
@@ -110,7 +119,7 @@ public partial class MusicListView : UserControl
         foreach (var row in _selectedRows)
             row.IsSelected = false;
         _selectedRows.Clear();
-        _selectedPaths.Clear();
+        _selectedIds.Clear();
     }
 
     private void ToggleRow(TrackRowViewModel row)
@@ -118,14 +127,14 @@ public partial class MusicListView : UserControl
         row.IsSelected = !row.IsSelected;
         if (row.IsSelected)
         {
-            _selectedPaths.Add(row.Track.Path);
+            _selectedIds.Add(row.Track.Id);
             _selectedRows.Add(row);
             _selectedRow = row;
-            _anchorPath = row.Track.Path;
+            _anchorId = row.Track.Id;
         }
         else
         {
-            _selectedPaths.Remove(row.Track.Path);
+            _selectedIds.Remove(row.Track.Id);
             _selectedRows.Remove(row);
             if (_selectedRow == row)
                 _selectedRow = _selectedRows.Count > 0 ? _selectedRows[^1] : null;
@@ -135,7 +144,7 @@ public partial class MusicListView : UserControl
 
     private void SelectRange(TrackRowViewModel row)
     {
-        var anchorRow = _anchorPath != null ? _items.FirstOrDefault(r => r.Track.Path == _anchorPath) : null;
+        var anchorRow = _anchorId is { } anchorId ? _items.FirstOrDefault(r => r.Track.Id == anchorId) : null;
         int anchorIdx = anchorRow != null ? IndexOf(_items, anchorRow) : IndexOf(_items, row);
         int clickIdx  = IndexOf(_items, row);
         if (anchorIdx < 0)
@@ -149,7 +158,7 @@ public partial class MusicListView : UserControl
         for (int i = lo; i <= hi; i++)
         {
             _items[i].IsSelected = true;
-            _selectedPaths.Add(_items[i].Track.Path);
+            _selectedIds.Add(_items[i].Track.Id);
             _selectedRows.Add(_items[i]);
         }
         _selectedRow = row;
@@ -175,7 +184,7 @@ public partial class MusicListView : UserControl
         _selectedTrack = track;
         if (_isRaisingSelectedTrack)
             return; // echo of our own change via the TwoWay binding - see RaiseSelectedTrackChanged
-        var row = _items.FirstOrDefault(r => r.Track.Path == track?.Path);
+        var row = track != null ? _items.FirstOrDefault(r => r.Track.Id == track.Id) : null;
         if (row != _selectedRow)
             SelectSingleRow(row);
     }
@@ -335,7 +344,7 @@ public partial class MusicListView : UserControl
     {
         int index = -1;
         for (int i = 0; i < _items.Count; i++)
-            if (_items[i].Track.Path == track.Path) { index = i; break; }
+            if (_items[i].Track.Id == track.Id) { index = i; break; }
         if (index < 0)
             return false;
 
@@ -357,29 +366,29 @@ public partial class MusicListView : UserControl
         _items = items;
         _panel.SetItems(items);
 
-        // Re-apply selection (path-based match) against the new row instances -
-        // rows are rebuilt from scratch on every SetItems() call, so IsSelected
-        // never survives on its own. Anything no longer present in this view
+        // Re-apply the selection against the new row instances - rows are
+        // rebuilt from scratch on every SetItems() call, so IsSelected never
+        // survives on its own. Anything no longer present in this view
         // (filtered/sorted out) is dropped from the selection.
         _selectedRows.Clear();
-        if (_selectedPaths.Count > 0)
+        if (_selectedIds.Count > 0)
         {
-            var stillPresent = new HashSet<string?>();
+            var stillPresent = new HashSet<Guid>();
             foreach (var row in items)
             {
-                if (_selectedPaths.Contains(row.Track.Path))
+                if (_selectedIds.Contains(row.Track.Id))
                 {
                     row.IsSelected = true;
                     _selectedRows.Add(row);
-                    stillPresent.Add(row.Track.Path);
+                    stillPresent.Add(row.Track.Id);
                 }
             }
-            _selectedPaths.IntersectWith(stillPresent);
+            _selectedIds.IntersectWith(stillPresent);
         }
 
         if (_selectedTrack != null)
         {
-            var match = items.FirstOrDefault(r => r.Track.Path == _selectedTrack.Path);
+            var match = items.FirstOrDefault(r => r.Track.Id == _selectedTrack.Id);
             if (match != null)
                 _selectedRow = match;
         }

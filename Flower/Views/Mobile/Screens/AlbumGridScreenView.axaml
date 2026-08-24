@@ -26,7 +26,8 @@
             <Button Grid.Column="0" Classes="pickerRow" Padding="10"
                     Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
                     CommandParameter="{Binding First.Name}">
-              <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
+              <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170"
+                          Classes.dimmed="{Binding First.IsUnavailable}">
                 <controls:AlbumArtView AlbumArt="{Binding First.AlbumArt}" Width="170" Height="170" />
                 <TextBlock Text="{Binding First.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="{Binding First.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
@@ -36,7 +37,8 @@
                     IsVisible="{Binding Second, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                     Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
                     CommandParameter="{Binding Second.Name}">
-              <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170">
+              <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170"
+                          Classes.dimmed="{Binding Second.IsUnavailable}">
                 <controls:AlbumArtView AlbumArt="{Binding Second.AlbumArt}" Width="170" Height="170" />
                 <TextBlock Text="{Binding Second.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
                 <TextBlock Text="{Binding Second.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />

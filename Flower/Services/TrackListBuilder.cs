@@ -158,24 +158,44 @@ public static class TrackListBuilder
             while (j < tracks.Count && (tracks[j].Album ?? "") == albumKey) j++;
             int groupSize = j - i;
 
+            // One answer for the whole run, since the art cell it greys out
+            // belongs to the run rather than to any one row - an album whose
+            // first track happens to be an unreachable placeholder is still
+            // fully listenable if any of the rows below it is not. See
+            // TrackAvailability.IsAlbumUnavailable, the same rule the album
+            // grids' tiles use.
+            // (Spelled out rather than calling TrackAvailability.IsAlbumUnavailable
+            // over a slice - this runs on every keystroke across the whole
+            // library, and a per-group GetRange copy is exactly the kind of
+            // allocation Tier 1.5 spent its effort removing. IsPlayable, the
+            // rule itself, is still the shared one.)
+            var groupUnavailable = true;
+            for (int k = i; k < j && groupUnavailable; k++)
+                groupUnavailable = !TrackAvailability.IsPlayable(tracks[k], pairedServerFingerprint, pairedServerReachable);
+
             for (int k = i; k < j; k++)
             {
                 result.Add(new TrackRowPlan(
                     Track: tracks[k],
                     IsFirstInAlbumGroup: k == i,
                     AlbumGroupSize: groupSize,
-                    // tracks[k].Path == currentlyPlaying?.Path alone is wrong
-                    // whenever nothing is playing (currentlyPlaying == null):
-                    // null == null is true, so every not-yet-downloaded track
-                    // (Path == null too) matched "currently playing" and got
-                    // the bold/accent-color styling (Button.trackRow.playing)
-                    // meant for an actual playing row.
-                    IsCurrentlyPlaying: tracks[k].Path != null && currentlyPlaying != null && tracks[k].Path == currentlyPlaying.Path,
+                    // Compared by Track.Id, not by Path. Path is not an
+                    // identity: it is null for every not-yet-downloaded
+                    // placeholder, so `a.Path == b.Path` made all of them equal
+                    // to each other and - with nothing playing at all - equal to
+                    // "currently playing" too, putting the play indicator on
+                    // every placeholder row at once. Id also survives the
+                    // transient stream-URL copy a streamed placeholder plays as
+                    // (Track.Clone keeps it - see
+                    // PlaylistControlViewModel.ResolveForPlaybackAsync), which a
+                    // path comparison never matched at all.
+                    IsCurrentlyPlaying: currentlyPlaying != null && tracks[k].Id == currentlyPlaying.Id,
                     // See TrackAvailability.IsAvailable - computed here so a
                     // freshly-built row is correct from the moment it exists,
                     // rather than starting from a default and waiting for a
                     // separate post-build pass to catch up.
-                    IsAvailable: TrackAvailability.IsAvailable(tracks[k], pairedServerFingerprint, pairedServerReachable)));
+                    IsAvailable: TrackAvailability.IsAvailable(tracks[k], pairedServerFingerprint, pairedServerReachable),
+                    IsAlbumGroupUnavailable: groupUnavailable));
             }
             i = j;
         }
