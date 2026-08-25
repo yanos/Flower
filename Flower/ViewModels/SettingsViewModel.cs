@@ -299,7 +299,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(ShowsITunesUnavailable));
             OnPropertyChanged(nameof(ITunesUnavailableMessage));
 
-            await RefreshDevicesAsync(ct);
+            // Only ask a backend that actually has a roster. LocalSettingsBackend
+            // throws NotSupportedException from LoadDevicesAsync (a client
+            // approves nobody), and that throw used to be caught below as a
+            // failure - painting the red error line under every tab of this
+            // device's own settings, and leaving IsLoaded false so the iTunes
+            // switch's ApplyAppleMusicFolder side effect never armed.
+            if (Capabilities.TrustedDevices)
+                await RefreshDevicesAsync(ct);
             if (Capabilities.SubsonicCredentials)
                 await RefreshSubsonicCredentialsAsync(ct);
 
