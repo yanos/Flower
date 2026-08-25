@@ -25,20 +25,15 @@ public sealed record LibraryPathRow(string Path, int SongCount)
     };
 }
 
-// Extends ViewModelBase (not a plain record) - Alias and IsEditing both need
-// settable, change-notifying properties: Alias so the row's TextBox can bind
-// it, IsEditing so the row can toggle between its plain-text display and the
-// pencil-clicked edit state - see TrustedDevicesView.EditAliasButton_Click.
+// Extends ViewModelBase (not a plain record) for IsConfirmingForget alone - the
+// inline "Forget?" state below needs to notify. Alias is the name the peer
+// reported for itself at pairing time and is shown as-is: the roster only ever
+// renders against a server, which has no alias override to write.
 public sealed class TrustedPeerRow : ViewModelBase
 {
     public required string Fingerprint { get; init; }
 
-    private string _alias = "";
-    public string Alias
-    {
-        get => _alias;
-        set => SetProperty(ref _alias, value);
-    }
+    public required string Alias { get; init; }
 
     public required DateTimeOffset ApprovedAt { get; init; }
 
@@ -49,13 +44,6 @@ public sealed class TrustedPeerRow : ViewModelBase
 
     public string ApprovedAtDisplay =>
         IsAdmin ? $"Administrator - approved {ApprovedAt.LocalDateTime:g}" : $"Approved {ApprovedAt.LocalDateTime:g}";
-
-    private bool _isEditing;
-    public bool IsEditing
-    {
-        get => _isEditing;
-        set => SetProperty(ref _isEditing, value);
-    }
 
     // Set while this row is asking "forget this device?" in place. An inline
     // confirmation rather than a modal: this list is rendered both in a desktop

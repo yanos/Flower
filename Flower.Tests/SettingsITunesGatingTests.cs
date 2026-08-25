@@ -43,7 +43,6 @@ public class SettingsITunesGatingTests
 
         public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => Task.CompletedTask;
         public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => Task.CompletedTask;
-        public Task RenameDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => Task.CompletedTask;
 
         public Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
             throw new NotSupportedException();

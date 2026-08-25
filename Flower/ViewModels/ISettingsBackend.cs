@@ -150,7 +150,6 @@ public interface ISettingsBackend
     Task<IReadOnlyList<DeniedPeerRow>> LoadDeniedDevicesAsync(CancellationToken ct = default);
     Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default);
     Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default);
-    Task RenameDeviceAsync(TrustedPeerRow device, CancellationToken ct = default);
 
     Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default);
 
