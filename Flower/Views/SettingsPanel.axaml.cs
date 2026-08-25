@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
@@ -116,6 +117,18 @@ public partial class SettingsPanel : UserControl
             Process.Start(new ProcessStartInfo { FileName = "explorer.exe", ArgumentList = { row.Path } });
         else
             Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { row.Path } });
+    }
+
+    // The addresses are shown so they can be typed into another device, and a
+    // phone at the other end of the room is not going to be typed into from a
+    // selection: copying is the actual gesture. TopLevel rather than a service -
+    // this panel is hosted both by a window and, in the browser, full-page.
+    private void CopyAddressButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.DataContext is not ServerAddressRow row)
+            return;
+
+        _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(row.Address);
     }
 
     private void OpenAppDataLocationButton_Click(object? sender, RoutedEventArgs e) =>

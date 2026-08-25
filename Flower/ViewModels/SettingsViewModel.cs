@@ -242,12 +242,36 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public string DataDirectory => _snapshot.DataDirectory;
     public string ITunesLibraryDescription => _snapshot.ITunesLibraryDescription;
 
-    // One per line, read-only. An operator deciding whether to open this server
-    // to the internet, or what to type into a client that cannot discover it,
-    // needs the address in front of them - it is not knowable from a browser tab
-    // that reached the server through a proxy, or from a phone that has never
-    // been on this LAN.
-    public string AddressesText => string.Join(Environment.NewLine, _snapshot.Addresses);
+    // Read-only, one row per origin. An operator deciding whether to open this
+    // server to the internet, or what to type into a client that cannot discover
+    // it, needs the address in front of them - it is not knowable from a browser
+    // tab that reached the server through a proxy, or from a phone that has never
+    // been on this LAN. A list rather than one newline-joined block because each
+    // address is its own thing to click, copy and read (see SettingsPanel's
+    // General tab), and a wrapped block of them all ran together.
+    // Grouped by how the origin names the server (see ServerAddressKind), in a
+    // fixed order rather than the order the server happened to report them: a
+    // hostname works from anywhere and is the one to hand out, IPv4 is what the
+    // rest of the house understands, IPv6 last. Empty groups are dropped.
+    public IReadOnlyList<ServerAddressGroup> AddressGroups =>
+        _snapshot.Addresses
+            .Select(a => new ServerAddressRow(a))
+            .GroupBy(r => r.Kind)
+            .OrderBy(g => g.Key switch
+            {
+                ServerAddressKind.Hostname => 0,
+                ServerAddressKind.IPv4 => 1,
+                _ => 2,
+            })
+            .Select(g => new ServerAddressGroup(
+                g.Key switch
+                {
+                    ServerAddressKind.Hostname => "By name",
+                    ServerAddressKind.IPv4 => "IPv4",
+                    _ => "IPv6",
+                },
+                g.ToList()))
+            .ToList();
     public bool HasAddresses => _snapshot.Addresses.Count > 0;
 
     public string VersionDisplay => _snapshot.Version is { Length: > 0 } version ? $"Version {version}" : "";
@@ -295,7 +319,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             RefreshPathRows();
 
             OnPropertyChanged(nameof(DataDirectory));
-            OnPropertyChanged(nameof(AddressesText));
+            OnPropertyChanged(nameof(AddressGroups));
             OnPropertyChanged(nameof(HasAddresses));
             OnPropertyChanged(nameof(ITunesLibraryDescription));
             OnPropertyChanged(nameof(VersionDisplay));
