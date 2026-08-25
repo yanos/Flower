@@ -373,6 +373,25 @@ public class NetworkDiscoveryServiceTests : IDisposable
         Assert.Empty(_backend.Advertised);
     }
 
+    // Until /info answers, the mDNS name is all there is to go on - so it has
+    // to be a name, not the DNS-SD record it arrived wrapped in. The service
+    // type belongs to the protocol, not to the machine, and an Alias is a
+    // thing shown to a person (DeviceSidebarSection.ResolveDisplayName).
+    [Fact]
+    public void An_unresolved_peer_stands_in_under_its_own_name()
+    {
+        var endpoint = Routable(41);
+        DiscoveredDevice? discovered = null;
+        _service.DeviceDiscovered += (_, d) => discovered = d;
+
+        // No RespondWith for this port: /info throws, exactly like a peer that
+        // announced itself but is not listening yet.
+        _backend.RaiseInstanceFound(InstanceName("Mr Téléphone"), endpoint);
+
+        WaitUntil(() => discovered != null, "the peer should be discovered before its info resolves");
+        Assert.Equal("Mr Téléphone", discovered!.Alias);
+    }
+
     [Fact]
     public void OnInstanceFound_discovers_a_new_peer_and_resolves_its_info()
     {
