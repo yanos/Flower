@@ -1259,8 +1259,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         var pairedServerReachable   = Main.IsPairedServerReachable;
         var (albums, albumsTotal, artists, artistsTotal, songs, songsTotal) = await Task.Run(() =>
         {
-            var matchingAlbumTracks = tracks.Where(t =>
-                t.Album?.Contains(text, StringComparison.OrdinalIgnoreCase) == true);
+            // SearchText, not a plain Contains, so these two agree with the
+            // song rows below - those go through TrackListBuilder, which folds
+            // accents. Searching "bjork" must not return the songs and then an
+            // empty artist strip.
+            var matchingAlbumTracks = tracks.Where(t => SearchText.Contains(t.Album, text));
             var allAlbums = AlbumGridBuilder.Build(matchingAlbumTracks);
             TrackAvailability.Apply(allAlbums, pairedServerFingerprint, pairedServerReachable);
 
@@ -1270,7 +1273,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             // same-named album spanning several artists as "Various Artists").
             var allArtists = tracks
                 .Select(t => t.Artists)
-                .Where(a => !string.IsNullOrEmpty(a) && a.Contains(text, StringComparison.OrdinalIgnoreCase))
+                .Where(a => SearchText.Contains(a, text))
                 .Distinct()
                 .OrderBy(a => a)
                 .ToList();

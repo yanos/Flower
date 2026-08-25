@@ -134,6 +134,9 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
             Song("/m/a2.mp3", "Second Song", "Aurora", "Alpha Album", "2002", "Pop", days: 30),
             Song("/m/b1.mp3", "Beta Song", "Aurora", "Beta Album", "2010", "Jazz", days: 5),
             Song("/m/c1.mp3", "Love Song", "Zephyr", "Gamma Album", "1999", "Folk", days: 1),
+            // Accented on purpose. Same artist and album as the row above so
+            // that artist/album counts elsewhere in this class do not move.
+            Song("/m/c2.mp3", "Café Crème", "Zephyr", "Gamma Album", "1999", "Folk", days: 1),
         ];
 
         new TrackRepository(Services.GetRequiredService<FlowerDb>()).ReplaceAll(Seeded);
@@ -355,6 +358,19 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
         Assert.Equal(
             lower.GetProperty("searchResult3").GetProperty("song").GetArrayLength(),
             upper.GetProperty("searchResult3").GetProperty("song").GetArrayLength());
+    }
+
+    // Beside SearchText's own tests rather than instead of them: this one pins
+    // that the server's search endpoint is actually wired to the shared fold, so
+    // a phone searching its local library and the same phone searching the
+    // server get the same answer for the same query.
+    [Fact]
+    public async Task search3_finds_an_accented_title_without_the_accent()
+    {
+        var response = await server.GetAsync($"/rest/search3{server.AuthQuery}&query=cafe");
+
+        Assert.Equal("Café Crème", response.GetProperty("searchResult3").GetProperty("song")
+            .EnumerateArray().Single().GetProperty("title").GetString());
     }
 
     [Fact]
