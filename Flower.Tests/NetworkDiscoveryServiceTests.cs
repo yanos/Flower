@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Persistence;
@@ -200,6 +201,81 @@ public class NetworkDiscoveryServiceTests : IDisposable
         _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
         await _service.AddRememberedAsync("192.168.1.40:4533");
         Assert.True(device.IsResponding);
+    }
+
+    // ── How loudly a peer that is simply not there fails ─────────────────
+    //
+    // A missed /info poll is the steady state of a peer that is off, out of
+    // range, or refusing us, and the poll repeats every AliasPollInterval for
+    // as long as the app runs. So the first miss is a state change worth a
+    // Debug line, and every repeat after it belongs at Trace - otherwise one
+    // absent peer writes a line every few seconds, forever, into the
+    // 2000-entry buffer the Log window and the client log push both read from,
+    // and pushes out everything that was worth keeping.
+
+    [Fact]
+    public async Task A_remembered_address_that_keeps_missing_says_so_once_at_Debug()
+    {
+        // The case that made this a bug rather than a design: a remembered
+        // address is deliberately never pruned, so it misses on every poll -
+        // and the miss count used to be incremented only on the pruning path
+        // it never reaches. It read as first-miss forever and took the Debug
+        // branch every time.
+        var logger = new RecordingLogger<NetworkDiscoveryService>();
+        var handler = new FakeInfoHandler();
+        using var service = new NetworkDiscoveryService(
+            new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" },
+            logger, new FakeMdnsBackend(), new HttpClient(handler));
+
+        for (var attempt = 0; attempt < 6; attempt++)
+            await service.AddRememberedAsync("192.168.1.40:4533");
+
+        Assert.Equal(1, logger.CountAt(LogLevel.Debug, "Could not resolve /info"));
+        Assert.Equal(5, logger.CountAt(LogLevel.Trace, "Still could not resolve /info"));
+    }
+
+    [Fact]
+    public async Task Forgetting_a_remembered_address_lets_it_report_its_first_miss_again()
+    {
+        // The counter is the only thing keeping the repeats quiet, and a
+        // remembered address is never pruned - so if forgetting one left its
+        // count behind, re-adding the same address would inherit the silence
+        // and never say it was unreachable at all.
+        var logger = new RecordingLogger<NetworkDiscoveryService>();
+        var handler = new FakeInfoHandler();
+        using var service = new NetworkDiscoveryService(
+            new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" },
+            logger, new FakeMdnsBackend(), new HttpClient(handler));
+
+        await service.AddRememberedAsync("192.168.1.40:4533");
+        await service.AddRememberedAsync("192.168.1.40:4533");
+        service.RemoveRemembered("192.168.1.40:4533");
+        await service.AddRememberedAsync("192.168.1.40:4533");
+
+        Assert.Equal(2, logger.CountAt(LogLevel.Debug, "Could not resolve /info"));
+    }
+
+    [Fact]
+    public async Task A_peer_that_comes_back_reports_its_next_miss_at_Debug_again()
+    {
+        // Quiet must mean "still the same failure", not "this peer is muted".
+        // A success resets the count, so the next outage is a state change
+        // once more.
+        var logger = new RecordingLogger<NetworkDiscoveryService>();
+        var handler = new FakeInfoHandler();
+        using var service = new NetworkDiscoveryService(
+            new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" },
+            logger, new FakeMdnsBackend(), new HttpClient(handler));
+
+        await service.AddRememberedAsync("192.168.1.40:4533");
+        await service.AddRememberedAsync("192.168.1.40:4533");
+
+        handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
+        await service.AddRememberedAsync("192.168.1.40:4533");
+        handler.StopResponding(4533);
+        await service.AddRememberedAsync("192.168.1.40:4533");
+
+        Assert.Equal(2, logger.CountAt(LogLevel.Debug, "Could not resolve /info"));
     }
 
     [Fact]

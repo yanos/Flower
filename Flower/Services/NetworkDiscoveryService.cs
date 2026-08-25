@@ -664,10 +664,21 @@ public class NetworkDiscoveryService : IDisposable
         // every AliasPollInterval is the definition of a line nobody needs
         // until they are specifically looking at discovery. The first miss
         // stays at Debug: that one is a state change.
-        var attempt = _consecutiveResolveFailures.GetValueOrDefault(device.InstanceName);
-        if (attempt == 0 && !IsRoutineUnreachable(ex))
+        //
+        // The miss is counted here, above every early return below, and not on
+        // the pruning path where the count used to be incremented. The two
+        // peers that take those early returns - one reached at a link-local
+        // address, and a remembered one - are exactly the peers that miss on
+        // every single poll and are deliberately never pruned for it, so
+        // counting only where pruning happens left both of them reading as
+        // first-miss forever. "First miss" then stayed true on every poll, the
+        // Debug branch was taken every time, and a peer that was simply not
+        // there wrote one line per AliasPollInterval for as long as the app ran
+        // - the exact flood the Trace branch below exists to prevent.
+        var failures = _consecutiveResolveFailures.AddOrUpdate(device.InstanceName, 1, (_, count) => count + 1);
+        if (failures == 1 && !IsRoutineUnreachable(ex))
             _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.BaseUri);
-        else if (attempt == 0)
+        else if (failures == 1)
             _logger.LogDebug("Could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
                 device.InstanceName, device.BaseUri, Describe(ex));
         else
@@ -704,7 +715,6 @@ public class NetworkDiscoveryService : IDisposable
             return;
         }
 
-        var failures = _consecutiveResolveFailures.AddOrUpdate(device.InstanceName, 1, (_, count) => count + 1);
         if (failures >= MaxConsecutiveResolveFailures && _knownDevices.TryRemove(device.InstanceName, out _))
         {
             _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
@@ -888,6 +898,11 @@ public class NetworkDiscoveryService : IDisposable
     public void RemoveRemembered(string address)
     {
         var instanceName = RememberedInstancePrefix + address;
+        // The miss count goes with it: a remembered address is never pruned, so
+        // this is the only place its counter is ever dropped, and an address
+        // that is forgotten and later added back should get its one Debug line
+        // again rather than inheriting the old entry's silence.
+        _consecutiveResolveFailures.TryRemove(instanceName, out _);
         if (_knownDevices.TryRemove(instanceName, out _))
             DeviceLost?.Invoke(this, instanceName);
     }
