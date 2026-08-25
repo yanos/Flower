@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
@@ -32,6 +33,9 @@ namespace Flower.Logging
 
         private static ILoggerFactory? _factory;
 
+        private static readonly IReadOnlyDictionary<string, LogEventLevel> EmptyOverrides =
+            new Dictionary<string, LogEventLevel>();
+
         public static string LogsDirectory => Path.Combine(AppDataDirectory.Path, "logs");
 
         // Call once, as early as possible in startup - configures Serilog's sinks
@@ -54,16 +58,31 @@ namespace Flower.Logging
         // (discovery polls, LibVLC callback tracing) log at Trace precisely so
         // they cost nothing until somebody is chasing a bug and asks for them -
         // at the default floor they are never written at all.
+        // categoryOverrides raises or lowers that floor for one source-context
+        // prefix - "Microsoft.AspNetCore" to mute the framework's per-request
+        // narration, "Flower" to let this app's own Debug lines through under a
+        // higher floor. This is the only level gate that does anything: the
+        // Microsoft.Extensions.Logging filters that look like they sit in front
+        // of it do not, because AddSerilog registers a provider-scoped Trace
+        // rule that outranks them (see LogLevelSettings in Flower.Server, which
+        // is where the server's Logging:LogLevel section gets translated into
+        // these arguments).
         public static string Initialize(
-            long? fileSizeLimitBytes = null, LogEventLevel minimumLevel = LogEventLevel.Debug)
+            long? fileSizeLimitBytes = null,
+            LogEventLevel minimumLevel = LogEventLevel.Debug,
+            IReadOnlyDictionary<string, LogEventLevel>? categoryOverrides = null)
         {
             Directory.CreateDirectory(LogsDirectory);
             DeleteOldLogs();
 
             var path = Path.Combine(LogsDirectory, $"flower-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.log");
 
-            Log.Logger = new LoggerConfiguration()
-                .MinimumLevel.Is(minimumLevel)
+            var configuration = new LoggerConfiguration()
+                .MinimumLevel.Is(minimumLevel);
+            foreach (var (category, level) in categoryOverrides ?? EmptyOverrides)
+                configuration = configuration.MinimumLevel.Override(category, level);
+
+            Log.Logger = configuration
                 .Enrich.FromLogContext()
                 .WriteTo.File(path,
                     outputTemplate:

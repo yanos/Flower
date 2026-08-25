@@ -9,7 +9,6 @@ using Serilog;
 
 using Flower.Logging;
 
-using Serilog.Events;
 using Flower.Persistence;
 using Flower.Models;
 using Flower.Persistence.Sql;
@@ -74,20 +73,18 @@ builder.Configuration.AddInMemoryCollection(
 // crash at 3am is whatever the init system happened to retain.
 //
 // ClearProviders first: AppLogging's own console sink replaces the default
-// console provider rather than doubling every line. The Logging:LogLevel
-// section still applies on top of Serilog's minimum level, so appsettings.json
-// remains the way to turn the noise up or down.
+// console provider rather than doubling every line.
 //
-// Flower:LogLevel raises Serilog's own floor, for the per-tick Trace lines that
-// are not written at all at the Debug default. It is separate from the
-// Logging:LogLevel section below, which filters on top of this one: Serilog
-// decides what is written, MEL decides what is passed to it, and a line has to
-// clear both. Set in appsettings.json or flower-server.json, same as everything
-// else.
-var configuredLevel = builder.Configuration.GetValue<LogEventLevel?>("Flower:LogLevel")
-                      ?? LogEventLevel.Debug;
+// Logging:LogLevel is read here and handed to Serilog rather than left to
+// Microsoft.Extensions.Logging, which is what it looks like it configures. It
+// isn't: AddSerilog registers a provider-scoped Trace rule that outranks every
+// rule the section can produce, so the section was inert and the levels an
+// operator set in appsettings.json - or on the command line - changed nothing.
+// LogLevelSettings translates it into the floor and the per-category overrides
+// Serilog does honour, so the familiar keys keep their familiar meaning.
+var (logFloor, logOverrides) = LogLevelSettings.Read(builder.Configuration);
 var logFile = AppLogging.Initialize(
-    fileSizeLimitBytes: 32 * 1024 * 1024, minimumLevel: configuredLevel);
+    fileSizeLimitBytes: 32 * 1024 * 1024, minimumLevel: logFloor, categoryOverrides: logOverrides);
 builder.Logging.ClearProviders();
 builder.Logging.AddSerilog();
 

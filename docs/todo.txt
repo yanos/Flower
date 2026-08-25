@@ -2,54 +2,57 @@ long term:
  improve cli
  album mode
  artist / playlist icon instead of album art
- lyric service
  liked song tab
- artist image service
- most popular track for an artist service
  localisation
- intelligent playlist like favorite songs, recently played, etc.
  export playlist with actual songs
  on each startup, choose an flower emoji and make that the app icon. show it in the about box and in the ios splash screen. different flower species in  dark mode
- push library sync events instead of polling
- account for family and friends, can only read the library, no playlist, update play count etc.
- ui customization
- better currently playing controls that looks like an lcd panel
- a way to only see downloaded music
- queue after this song or this album
- pulling down the view in mobile should reveal a filter field
+ Currently playing controls that looks like an lcd panel
  visualizers
- themes
- back / forward arrows
+ themes / ui customization
  UI tests (Playwright?)
- fix stale build issue on ios
- main view of the server on the desktop client should be the setting page
+ 
+external services
+ most popular track for an artist service
+ artist image service
+ lyric service
+ 
+short term
+ plan cleanup
+ intelligent playlist like favorite songs, recently played, etc.
+ pulling down the view in mobile should reveal a filter field
+ push library sync events instead of polling
+ a way to only see downloaded music
+ back / forward arrows
  recent icon without the plus sign
- only a single note icon on ios
- no utf on the web version
- ios editing not native 
-
-build:
- dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
- script to make the provisioning profile.
- more tests
- ui tests
- 
- do an investigation as to why there's almost always a problem with a stale build on ios when launching through Rider. We made a script to build and laucnh
-  on my device because of that, but it would be much simplier if i could just use rider.
-  
-details:
- open log folder in log view
- add an issue link in about box
- readme
- folder in playlist
- landscape mode on mobile needs polishing
- download spinner still not centred on mobile
- server status for client
- when reaching the end of an album, the queued song is the first song from this album
- lock screen widget should stay with the queue song
- album art top align on mobile
- next song doesn't always play
  track last played for each song
  option to toggle each log category (level, category, timestamp) 
  SubSonic vs our own endpoints
  Event bus?
+ no utf on the web version
+ add an issue link in about box
+ write a readme
+ folder in playlist
+ landscape mode on mobile needs polishing
+ download spinner still not centred on mobile
+ 
+build:
+ dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
+ script to make the provisioning profile.
+ 
+i also got tons of these, despite the server being up:  Connection refused ([fd42:801e:5334:4bc5:c92:ebba:2e6:7551]:4534) -> Connection refused
+  12:27:03.258 [DBG] Flower.Services.NetworkDiscoveryService: Could not resolve /info for remembered:https://192.168.50.172:4534 at
+  https://192.168.50.172:4534/: The SSL connection could not be established, see inner exception. -> The remote certificate was rejected by the provided
+  RemoteCertificateValidationCallback.
+  
+details:
+ queue song:
+  when reaching the end of an album, the queued song should be the first song from this album
+  lock screen widget should stay with the queue song
+  
+ mobile:
+  album art top align on mobile
+  do an investigation as to why there's almost always a problem with a stale build on ios when launching through Rider. We made a script to build and launch on my device because of that, but it would be much simplier if i could just use rider.
+  ios editing not native 
+  only a single note icon on ios
+  
+ 
