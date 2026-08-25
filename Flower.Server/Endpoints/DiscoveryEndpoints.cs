@@ -53,10 +53,24 @@ public static class DiscoveryEndpoints
         // caller did not prove who it is, so an anonymous probe reads as
         // "unknown", never as a rejection.
         app.MapGet(SyncProtocol.InfoPath, (
-            HttpContext context, IOptions<FlowerServerOptions> options,
+            HttpContext context, IOptionsMonitor<FlowerServerOptions> optionsMonitor,
             DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, Library library,
             NonceReplayGuard replayGuard, IServer boundServer) =>
         {
+            // Monitor, not IOptions, for the same reason Program.cs's LanGuard
+            // gate uses one: both settings this reads - the alias and
+            // AdvertisedHost - are editable from the admin API, and IOptions
+            // binds once for the life of the process. Bound once, the settings
+            // page would show an operator the value they just saved while this
+            // route kept handing clients the old one, with nothing to say which
+            // was true but a restart. AdvertisedHost is the one that makes it
+            // more than cosmetic: it is how a client learns where to find this
+            // server after leaving the LAN (see docs/REMOTE-ACCESS-PLAN.md), so
+            // a stale one is a phone that cannot get home.
+            //
+            // Read once per request rather than per use, so the two fields
+            // below cannot come from different edits of the same file.
+            var options = optionsMonitor.CurrentValue;
             // GET, so the signed body is always empty.
             var caller = DeviceSignatureAuth.AuthenticateTrustedPeer(
                 context.Request, [], trustedPeers, replayGuard);
@@ -68,7 +82,7 @@ public static class DiscoveryEndpoints
             var callerClaimedIdentity = !string.IsNullOrEmpty(
                 DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Fingerprint"));
             var response = new SyncInfoResponseDto(
-                MdnsAdvertiser.InstanceName(options.Value),
+                MdnsAdvertiser.InstanceName(options),
                 "2.0",
                 null,
                 "server",
@@ -101,7 +115,7 @@ public static class DiscoveryEndpoints
                 // its identity, and it is only ever of use to a peer that has
                 // paired - which is exactly the peer that can sign for it.
                 callerIsTrusted
-                    ? ReachableOrigins(boundServer, options.Value)
+                    ? ReachableOrigins(boundServer, options)
                     : null,
                 // Whether this caller is one of this server's administrators,
                 // on the same terms as TrustsCaller above: only a caller whose
