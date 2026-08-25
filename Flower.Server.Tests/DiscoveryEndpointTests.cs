@@ -4,6 +4,7 @@ using System.Text.Json;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 using Flower.Persistence;
@@ -300,6 +301,42 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
         }
         finally
         {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    private static IEnumerable<string?> Addresses(JsonElement body) =>
+        body.GetProperty("addresses").EnumerateArray().Select(a => a.GetString());
+
+    [Fact]
+    public async Task Reports_an_AdvertisedHost_changed_since_startup_without_a_restart()
+    {
+        // The settings route lets an administrator edit AdvertisedHost and
+        // promises no restart (AdminEndpoints leaves it out of RestartRequired).
+        // This route is what has to make that promise true: bound through
+        // IOptions it answered with the value from process start, so the page
+        // showed the new host while every client kept being handed the old one.
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var configuration = server.Services.GetRequiredService<IConfiguration>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Test peer", device.PublicKeyBase64);
+
+        const string advertised = "https://flower.example:4543";
+        try
+        {
+            var (_, before) = await GetInfoAsync(signer: device);
+            Assert.DoesNotContain(advertised, Addresses(before));
+
+            configuration["Flower:AdvertisedHost"] = advertised;
+            (configuration as IConfigurationRoot)?.Reload();
+
+            var (_, after) = await GetInfoAsync(signer: device);
+            Assert.Contains(advertised, Addresses(after));
+        }
+        finally
+        {
+            configuration["Flower:AdvertisedHost"] = "";
+            (configuration as IConfigurationRoot)?.Reload();
             await trustedPeers.RevokeAsync(device.Fingerprint);
         }
     }
