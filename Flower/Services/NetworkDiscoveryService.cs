@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -597,6 +598,53 @@ public class NetworkDiscoveryService : IDisposable
     // overloaded, transient network stall) - the two aren't distinguishable
     // from here, and the retry/eventual-prune handling below is the right
     // response to either.
+    // Whether a failed /info call is just "nothing there" - the peer is off, out
+    // of range, sitting behind an address mDNS cached before it moved, or alive
+    // and refusing us - rather than something that needs looking into. This is
+    // the normal steady state of polling a peer that has gone away, and it is
+    // not an error: attaching the exception makes the Log window render a stack
+    // trace for a connection refused, which reads like a crash and says nothing
+    // the message doesn't already. Anything else - a malformed response, a bug
+    // in this method - still gets the full exception.
+    internal static bool IsRoutineUnreachable(Exception ex) => ex switch
+    {
+        // HttpClient's own timeout surfaces as a cancellation, not a
+        // TimeoutException.
+        OperationCanceledException or TimeoutException or SocketException => true,
+        // A status code means the peer answered and said no (chiefly a 403 from
+        // a server that doesn't trust this device yet) - a real answer, and
+        // nothing a stack trace explains.
+        HttpRequestException { StatusCode: not null } => true,
+        HttpRequestException { HttpRequestError: HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError } => true,
+        HttpRequestException { InnerException: SocketException } => true,
+        // A TLS handshake this side refused. Routine because it is what a
+        // still-starting server looks like from here: PeerHttpClient pins the
+        // peer's certificate against the public key /info itself is on its way
+        // to fetch, so the first poll after a restart - or the first ever, for
+        // a remembered server whose key is not learned yet - is rejected by our
+        // own RemoteCertificateValidationCallback and then succeeds on a later
+        // one. The stack trace is always the same six frames of SslStream and
+        // explains nothing; which certificate was refused, and why, is in the
+        // inner message that Describe pulls out below.
+        HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError } => true,
+        AuthenticationException => true,
+        _ => false,
+    };
+
+    // HttpRequestException's own message for a TLS failure is the useless "The
+    // SSL connection could not be established, see inner exception." - so for
+    // the one-line form, follow the chain and say what actually went wrong.
+    // Only the innermost message is appended: the intermediate ones are the
+    // same generic wrapper text at every level.
+    internal static string Describe(Exception ex)
+    {
+        var innermost = ex;
+        while (innermost.InnerException is { } inner)
+            innermost = inner;
+
+        return ReferenceEquals(innermost, ex) ? ex.Message : $"{ex.Message} -> {innermost.Message}";
+    }
+
     private void HandleUnreachable(DiscoveredDevice device, Exception ex)
     {
         // Peer unreachable or not running the /info endpoint yet - keep the
@@ -605,18 +653,22 @@ public class NetworkDiscoveryService : IDisposable
         // which case treat it the same as an mDNS goodbye - see
         // MaxConsecutiveResolveFailures's own doc comment.
         //
-        // Full exception (with stack trace) only on the first miss for
-        // this peer - a still-unreachable peer fails again every
-        // AliasPollInterval until it's pruned, and logging the same
-        // multi-line stack trace on every one of those is exactly the
-        // kind of log flood that made the Log window sluggish to render
-        // (see LogViewModel). A one-line message carries the same
-        // "still failing" information for the repeats.
-        if (_consecutiveResolveFailures.GetValueOrDefault(device.InstanceName) == 0)
+        // Full exception (with stack trace) only for a failure that is worth
+        // diagnosing, and then only on the first miss for this peer - a
+        // still-unreachable peer fails again every AliasPollInterval until it's
+        // pruned, and logging the same multi-line stack trace on every one of
+        // those is exactly the kind of log flood that made the Log window
+        // sluggish to render (see LogViewModel). A one-line message carries the
+        // same "still failing" information for the repeats.
+        var attempt = _consecutiveResolveFailures.GetValueOrDefault(device.InstanceName);
+        if (attempt == 0 && !IsRoutineUnreachable(ex))
             _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.BaseUri);
+        else if (attempt == 0)
+            _logger.LogDebug("Could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
+                device.InstanceName, device.BaseUri, Describe(ex));
         else
             _logger.LogDebug("Still could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
-                device.InstanceName, device.BaseUri, ex.Message);
+                device.InstanceName, device.BaseUri, Describe(ex));
 
         // A link-local address failing doesn't mean the peer is gone -
         // see OnInstanceFound's own comment - it just means this
