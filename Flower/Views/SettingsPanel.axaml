@@ -19,12 +19,11 @@
 
       <TabItem Header="General">
         <StackPanel Margin="0,12,0,0" Spacing="0">
-          <Grid ColumnDefinitions="Auto,*">
-            <TextBlock Grid.Column="0" Text="Name" VerticalAlignment="Center" Margin="0,0,10,0"/>
-            <TextBox Grid.Column="1" Text="{Binding Alias, Mode=TwoWay}"/>
-          </Grid>
-          <TextBlock Text="Shown to other Flower devices when syncing over Wi-Fi"
-                     Margin="0,2,0,0" FontSize="11" Opacity="0.6"/>
+          <!-- Label above its control, like Theme below and every other field on
+               this screen - the one place that put them side by side needed a
+               caption underneath to say what the field was for. -->
+          <TextBlock Text="Name" FontWeight="SemiBold" Margin="0,0,0,8"/>
+          <TextBox Text="{Binding Alias, Mode=TwoWay}"/>
 
           <TextBlock Text="Theme"
                      FontWeight="SemiBold"
@@ -47,7 +46,7 @@
                     Margin="0,20,0,0"
                     IsChecked="{Binding ShareLogsWithPairedServer, Mode=TwoWay}"
                     IsVisible="{Binding Capabilities.PairedServerPicker}"/>
-          <TextBlock Text="Sends this device's recent log lines after each sync so they can be read on the server. They include file paths and error details."
+          <TextBlock Text="Lets whoever runs the server read this device's error log when something breaks. It contains file names from this device."
                      Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                      IsVisible="{Binding Capabilities.PairedServerPicker}"/>
 
@@ -166,28 +165,33 @@
               </ListBox>
             </Border>
 
-            <StackPanel Grid.Row="7" Orientation="Horizontal" Margin="0,12,0,0"
-                        HorizontalAlignment="Left" Spacing="8">
-              <Button Content="Add Folder…" Click="AddFolderButton_Click"/>
-              <Button Content="Remove Selected"
-                      Command="{Binding RemoveLibraryPathCommand}"
-                      CommandParameter="{Binding #PathsList.SelectedItem}"/>
-            </StackPanel>
-
-            <StackPanel Grid.Row="8" Orientation="Horizontal" Margin="0,8,0,0"
-                        HorizontalAlignment="Left" Spacing="8">
-              <Button Content="Rebuild Database"
-                      Command="{Binding RebuildDatabaseCommand}"
-                      IsVisible="{Binding Capabilities.RebuildDatabase}"/>
-              <Button Content="Rescan Now"
+            <!-- The three things you can do to the folder list above, on its own
+                 row: the two that change what is in it on the left, and the one
+                 that acts on all of it pushed to the right, away from them. -->
+            <Grid Grid.Row="7" Margin="0,12,0,0">
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="8">
+                <Button Content="Add Folder…" Click="AddFolderButton_Click"/>
+                <Button Content="Remove Selected"
+                        Command="{Binding RemoveLibraryPathCommand}"
+                        CommandParameter="{Binding #PathsList.SelectedItem}"/>
+              </StackPanel>
+              <Button Content="Rescan Files"
+                      HorizontalAlignment="Right"
                       Command="{Binding RescanCommand}"
                       IsVisible="{Binding !Capabilities.RebuildDatabase}"/>
+            </Grid>
+
+            <StackPanel Grid.Row="8" Orientation="Horizontal" Margin="0,8,0,0"
+                        HorizontalAlignment="Left" Spacing="8"
+                        IsVisible="{Binding Capabilities.RebuildDatabase}">
+              <Button Content="Rebuild Database"
+                      Command="{Binding RebuildDatabaseCommand}"/>
             </StackPanel>
           </Grid>
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="Devices">
+      <TabItem Header="{Binding DevicesTabHeader}">
         <Panel Margin="0,12,0,0">
 
           <!-- A Client picks which one Server it bulk-syncs with; there is no
@@ -199,7 +203,7 @@
 
           <Grid x:Name="TrustedDevicesSection" RowDefinitions="Auto,Auto,*,Auto,Auto">
             <StackPanel Grid.Row="0" Spacing="0">
-              <TextBlock Text="Devices approved to sync playlists and library data with this server."
+              <TextBlock Text="Phones and computers allowed to use this server."
                          TextWrapping="Wrap" Opacity="0.75" FontSize="12" Margin="0,0,0,12"/>
 
               <!-- One button, with the far rarer and far more dangerous
@@ -220,9 +224,9 @@
                                        FontSize="18" FontWeight="SemiBold"
                                        VerticalAlignment="Center"/>
                 </StackPanel>
-                <TextBlock Text="Creates a one-time code to type on the device being added. It expires in a few minutes."
+                <TextBlock Text="Type this code on the new device. It works once, and only for a few minutes."
                            Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
-                <TextBlock Text="An administrator can also change this server's settings and add devices of their own."
+                <TextBlock Text="Administrators can also change these settings and add devices themselves."
                            IsVisible="{Binding PairingCodeGrantsAdmin}"
                            Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
               </StackPanel>
@@ -232,11 +236,11 @@
                   BorderThickness="1"
                   BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
             <Grid>
-              <TextBlock Text="No devices have been approved yet."
+              <TextBlock Text="No devices allowed yet."
                          Opacity="0.6"
                          HorizontalAlignment="Center" VerticalAlignment="Center"
                          IsVisible="{Binding !HasDevices}"/>
-              <ListBox x:Name="DevicesList" ItemsSource="{Binding Devices}">
+              <ListBox ItemsSource="{Binding Devices}">
                 <!-- Zeroes FluentTheme's own default ListBoxItem padding/MinHeight
                      cushion, same as MainView.axaml's sidebar list - otherwise it
                      pads on top of this DataTemplate's own (already-tight) margins
@@ -288,7 +292,7 @@
           </Border>
 
           <TextBlock Grid.Row="3"
-                     Text="Devices you've denied."
+                     Text="Devices you turned down."
                      TextWrapping="Wrap" Opacity="0.75" FontSize="12" Margin="0,16,0,8"
                      IsVisible="{Binding ShowsDeniedDevices}"/>
 
@@ -333,7 +337,7 @@
           <StackPanel Margin="0,12,0,0" Spacing="0">
             <CheckBox Content="Announce this server on the local network"
                       IsChecked="{Binding AdvertiseOnLan, Mode=TwoWay}"/>
-            <TextBlock Text="Lets Flower apps on the same network find this server without being given an address. Turn it off for a deployment reached only over a tunnel or a reverse proxy."
+            <TextBlock Text="Flower apps on the same network find this server by themselves, with nothing to type in. Turn it off if everyone reaches it through a tunnel or proxy instead."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
             <!-- Read-only, and first: everything below it is a decision about
@@ -353,30 +357,30 @@
             <CheckBox Content="Accept connections from outside this network"
                       Margin="0,20,0,0"
                       IsChecked="{Binding AllowPublicAccess, Mode=TwoWay}"/>
-            <TextBlock Text="Off, this server answers only the local network, the Tailscale range and any additional networks below - anything else is dropped without a reply. On, it answers any address, and a paired device's signature is the only thing left keeping strangers out. Turn it on for a deployment reached through a tunnel, a reverse proxy or a forwarded port, and name that proxy in Flower:TrustedProxies so each listener is rate-limited as itself."
+            <TextBlock Text="Off: only devices on your own network (plus anything allowed below) get an answer - everything else is ignored. On: anyone can reach it, and a paired device's key is the only thing keeping strangers out. Turn it on if you reach this server through a tunnel, a proxy or a forwarded port."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
             <TextBlock Text="Advertised address" FontWeight="SemiBold" Margin="0,20,0,4"/>
             <TextBox Text="{Binding AdvertisedHost, Mode=TwoWay}" Watermark="host:port"/>
-            <TextBlock Text="Put in pairing invites when the address a device should dial isn't the one the request arrived on - a reverse proxy, or a container publishing a different port than it binds. Leave empty to use whatever address the request came in on."
+            <TextBlock Text="The address to put in pairing invites, when it isn't the one this server sees requests arrive on - behind a proxy, or in a container that changes the port. Leave empty otherwise."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
             <CheckBox Content="Trust the Tailscale range (100.64.0.0/10)"
                       Margin="0,20,0,0"
                       IsChecked="{Binding TrustTailscaleRange, Mode=TwoWay}"/>
-            <TextBlock Text="Also covers generic carrier-grade NAT. Turn it off on a deployment that is never reached over a tailnet."
+            <TextBlock Text="Leave this on if you use Tailscale to reach this server from outside. Turn it off if you don't."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
             <TextBlock Text="Additional allowed networks" FontWeight="SemiBold" Margin="0,20,0,4"/>
             <TextBox Text="{Binding AllowedCidrsText, Mode=TwoWay}"
                      AcceptsReturn="True" Height="80"
                      Watermark="One CIDR per line, e.g. 10.8.0.0/24"/>
-            <TextBlock Text="Private, loopback and (optionally) Tailscale addresses are always allowed. Add a range here for a trusted tunnel or proxy on its own subnet."
+            <TextBlock Text="Your own network is always allowed, and Tailscale too if it's ticked above. Add a range here for a tunnel or proxy that sits on its own network."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
             <TextBlock Text="Subsonic clients" FontWeight="SemiBold" Margin="0,24,0,4"
                        IsVisible="{Binding Capabilities.SubsonicCredentials}"/>
-            <TextBlock Text="Third-party Subsonic apps can't hold a device key, so each gets a generated username and password instead. The password is shown once, when it is created."
+            <TextBlock Text="Other music apps can't pair the way Flower does, so give each one its own username and password. The password is shown once, right after you create it."
                        Margin="0,0,0,8" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                        IsVisible="{Binding Capabilities.SubsonicCredentials}"/>
 

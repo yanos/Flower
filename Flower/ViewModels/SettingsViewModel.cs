@@ -55,6 +55,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public ISettingsBackend Backend => _backend;
     public SettingsCapabilities Capabilities { get; }
 
+    // The same tab holds two different things depending on who is being
+    // configured (see SettingsPanel's Devices tab and RefreshDevicesTab): a
+    // client picks the one server it pairs with, a server lists the devices it
+    // has approved. Naming it "Devices" on a client was naming the wrong half -
+    // a client has no device list at all.
+    public string DevicesTabHeader => Capabilities.PairedServerPicker ? "Servers" : "Devices";
+
     public ObservableCollection<LibraryPathRow> LibraryPaths { get; } = [];
     public ObservableCollection<TrustedPeerRow> Devices { get; } = [];
     public ObservableCollection<DeniedPeerRow> DeniedDevices { get; } = [];
