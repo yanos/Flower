@@ -54,11 +54,13 @@ public static class TrackListBuilder
     {
         if (string.IsNullOrWhiteSpace(text))
             return tracks;
+        // Accent-insensitive as well as case-insensitive - see SearchText for
+        // why the fold is written out rather than left to the framework.
         return tracks.Where(t =>
-            t.Title?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true ||
-            t.Artists?.Contains(text, StringComparison.OrdinalIgnoreCase) == true ||
-            t.Album?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true ||
-            t.Genre?.Contains(text,   StringComparison.OrdinalIgnoreCase) == true);
+            SearchText.Contains(t.Title,   text) ||
+            SearchText.Contains(t.Artists, text) ||
+            SearchText.Contains(t.Album,   text) ||
+            SearchText.Contains(t.Genre,   text));
     }
 
     // Descending inverts the *primary* key only, via Order(..., asc); the

@@ -317,8 +317,7 @@ public static class SubsonicEndpoints
     // send search3 on every keystroke, and returning the whole library for the
     // empty string is not a search result.
     private static bool Matches(string? value, string query) =>
-        !string.IsNullOrEmpty(query) && value is not null &&
-        value.Contains(query, StringComparison.OrdinalIgnoreCase);
+        !string.IsNullOrEmpty(query) && SearchText.Contains(value, query);
 
     private static IResult GetPlaylists(Library library)
     {
