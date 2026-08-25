@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -265,32 +266,11 @@ public partial class ServerPickerView : UserControl
             if (device == null)
                 return;
 
-            if (TopLevel.GetTopLevel(this) is not Window owner)
-                return;
-
-            // Pairing switches this device's own Songs/Albums view over to
-            // what it syncs in from the server (see SettingsWindow's
-            // CanManageLocalLibrary - the Library tab disables once paired) -
-            // worth a clear warning before it happens, and an explicit
-            // reassurance that this is only about the synced *view*, not
-            // about deleting anything already on disk.
-            //
-            // Nothing is being asked here: the admin-issued code the user just
-            // typed *is* the authorization, so the copy says so rather than
-            // promising an approval that will never be prompted for.
             if (string.IsNullOrWhiteSpace(row.PairingCode))
                 return;
 
-            var confirmed = await ConfirmDialogWindow.ShowAsync(
-                owner,
-                $"Pair With \"{row.Alias}\"?",
-                $"This device's library view will be replaced by \"{row.Alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. "
-                + $"The pairing code you entered authorizes this device on \"{row.Alias}\" immediately.",
-                "Pair");
-            if (!confirmed)
-                return;
-
-            _mainViewModel.PairWithServer(device, row.PairingCode.Trim());
+            await PairWithAsync(device, row.Alias, row.PairingCode.Trim());
+            return;
         }
 
         Refresh();
@@ -298,6 +278,12 @@ public partial class ServerPickerView : UserControl
 
     private void ForceSyncButton_Click(object? sender, RoutedEventArgs e) => _mainViewModel.ForceSyncNow();
 
+    // The bootstrap path: a server this device has never shared a network with
+    // cannot appear in the list above, so it cannot be paired with there. This
+    // one button does both halves - resolve the typed address, then redeem the
+    // typed code against what answered - because splitting them left the user
+    // pressing "Add" and then hunting for the row that had just appeared.
+    //
     // Adding an address is a DNS lookup plus an /info round trip, so the button
     // is disabled for the duration rather than left clickable - a second click
     // would otherwise queue a duplicate probe of the same host.
@@ -307,29 +293,75 @@ public partial class ServerPickerView : UserControl
         if (address.Length == 0)
             return;
 
+        var code = ManualPairingCodeBox.Text?.Trim() ?? "";
+
         AddManualServerButton.IsEnabled = false;
         ManualAddressStatus.IsVisible = true;
         ManualAddressStatus.Text = "Looking for a server...";
+        DiscoveredDevice? found;
         try
         {
-            var found = await _mainViewModel.AddManualServerAsync(address);
-
-            // Kept either way: a server that merely happens to be switched off
-            // right now is still the server the user meant. Saying which
-            // happened is the useful part, since a typo is by far the likelier
-            // of the two and is worth catching here rather than from a coffee
-            // shop.
-            ManualAddressStatus.Text = found
-                ? $"Found a server at {address}."
-                : $"Nothing answered at {address}. It is saved anyway - check the address, and that both ends are on the tailnet.";
-            if (found)
-                ManualAddressBox.Text = "";
+            found = await _mainViewModel.AddManualServerAsync(address);
         }
         finally
         {
             AddManualServerButton.IsEnabled = true;
         }
 
+        // The address is kept either way: a server that merely happens to be
+        // switched off right now is still the server the user meant. Saying
+        // which happened is the useful part, since a typo is by far the likelier
+        // of the two and is worth catching here rather than from a coffee shop.
+        if (found == null)
+        {
+            ManualAddressStatus.Text =
+                $"Nothing answered at {address}. It is saved anyway - check the address, and that both ends are on the tailnet.";
+            Refresh();
+            return;
+        }
+
+        ManualAddressBox.Text = "";
+
+        // No code typed: the server is now in the list above, where its own row
+        // has a code box of its own. Nothing was lost, so say what to do next
+        // rather than reporting a failure.
+        if (code.Length == 0)
+        {
+            ManualAddressStatus.Text = $"Found {found.Alias}. Enter its pairing code on its row above.";
+            Refresh();
+            return;
+        }
+
+        ManualAddressStatus.Text = "";
+        ManualAddressStatus.IsVisible = false;
+        ManualPairingCodeBox.Text = "";
+        Refresh();
+
+        await PairWithAsync(found, found.Alias, code);
+    }
+
+    // The pair confirmation, shared by the list's own Pair button and the
+    // address box below it - the warning is about what pairing does to this
+    // device's library view, which is the same either way.
+    //
+    // Nothing is being asked of the server here: the admin-issued code the user
+    // just typed *is* the authorization, so the copy says so rather than
+    // promising an approval that will never be prompted for.
+    private async Task PairWithAsync(DiscoveredDevice device, string alias, string pairingCode)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+            return;
+
+        var confirmed = await ConfirmDialogWindow.ShowAsync(
+            owner,
+            $"Pair With \"{alias}\"?",
+            $"Your Songs and Albums will show \"{alias}\"'s music instead of this device's own. Nothing on this device gets deleted. "
+            + "The code you typed lets this device in straight away - there is nothing to approve.",
+            "Pair");
+        if (!confirmed)
+            return;
+
+        _mainViewModel.PairWithServer(device, pairingCode);
         Refresh();
     }
 }
