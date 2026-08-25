@@ -254,6 +254,36 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public string? LastForceSyncResult => Sync.LastForceSyncResult;
 
+    // When the paired server last successfully synced - see
+    // PeerSyncCoordinator.LastSyncedAt.
+    public DateTimeOffset? LastSyncedAt => Sync.LastSyncedAt;
+
+    // Plain English rather than a timestamp: the question this answers is "is
+    // what I'm looking at current?", and "8 min ago" answers it without the
+    // reader subtracting anything. Falls back to a date once it is old enough
+    // that the exact gap has stopped mattering. Null before a pairing's first
+    // successful sync - which is exactly while the screen is still saying
+    // "Waiting for server...". Shown on both settings screens (desktop's
+    // ServerPickerView row, mobile's SettingsView).
+    public string? LastSyncedDisplay
+    {
+        get
+        {
+            if (LastSyncedAt is not { } at)
+                return null;
+
+            var ago = DateTimeOffset.Now - at;
+            return ago switch
+            {
+                { TotalSeconds: < 60 } => "Synced just now",
+                { TotalMinutes: < 60 } => $"Synced {(int)ago.TotalMinutes} min ago",
+                { TotalHours: < 24 } => $"Synced {(int)ago.TotalHours} hour{((int)ago.TotalHours == 1 ? "" : "s")} ago",
+                { TotalDays: < 7 } => $"Synced {(int)ago.TotalDays} day{((int)ago.TotalDays == 1 ? "" : "s")} ago",
+                _ => $"Synced {at.LocalDateTime:d}",
+            };
+        }
+    }
+
     public void ForceSyncNow() => Sync.ForceSyncNow();
 
     // Settings' Appearance picker (Follow System / Light / Dark) - see
@@ -1105,6 +1135,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                     break;
                 case nameof(PeerSyncCoordinator.LastForceSyncResult):
                     OnPropertyChanged(nameof(LastForceSyncResult));
+                    break;
+                case nameof(PeerSyncCoordinator.LastSyncedAt):
+                    OnPropertyChanged(nameof(LastSyncedAt));
+                    OnPropertyChanged(nameof(LastSyncedDisplay));
                     break;
             }
         },

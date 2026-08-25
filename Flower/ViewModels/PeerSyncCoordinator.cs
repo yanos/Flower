@@ -504,6 +504,25 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         Dispatcher.UIThread.Post(NotifyPairingChanged);
     }
 
+    // "Last synced" for the Devices screen, stamped wherever a bulk sync with
+    // the paired server actually came back successful - the forced one and the
+    // discovery-driven one alike, since a user asking how fresh their library is
+    // does not care which of the two fetched it. Same guard as
+    // ConfirmServerTrust: a stale in-flight sync landing after an unpair must
+    // not stamp a server this device is no longer paired to.
+    private void RecordSyncedNow(string? fingerprint)
+    {
+        if (string.IsNullOrEmpty(fingerprint) || fingerprint != _appSettings.PairedServerFingerprint)
+            return;
+
+        _appSettings.PairedServerLastSyncedAt = DateTimeOffset.Now;
+        _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+        Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(LastSyncedAt)));
+    }
+
+    // Null until this device has ever completed one with its current pairing.
+    public DateTimeOffset? LastSyncedAt => _appSettings.PairedServerLastSyncedAt;
+
     // Wraps LibrarySyncService.SyncWithAsync with the ConfirmServerTrust hook
     // above - used anywhere a bulk sync is kicked off via RunTrackedSync
     // (TriggerSyncIfReady, RunPendingDeviceSyncs), which otherwise discards
@@ -514,7 +533,10 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     {
         var result = await (_librarySyncService?.SyncWithAsync(device) ?? Task.FromResult(new LibrarySyncResult(false, 0, 0)));
         if (result.Success)
+        {
             ConfirmServerTrust(device.Fingerprint);
+            RecordSyncedNow(device.Fingerprint);
+        }
     }
 
     // ServerPickerView's "Unpair" action - must be called before pairing
@@ -545,6 +567,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _appSettings.PairedServerFingerprint = null;
         _appSettings.PairedServerAlias = null;
         _appSettings.PairedServerTrustConfirmed = false;
+        _appSettings.PairedServerLastSyncedAt = null;
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         NotifyPairingChanged();
         _reachability?.Recompute();
@@ -701,7 +724,10 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
             var libraryResult = await libraryTask;
             if (libraryResult.Success)
+            {
                 ConfirmServerTrust(device.Fingerprint);
+                RecordSyncedNow(device.Fingerprint);
+            }
             LastForceSyncResult = !libraryResult.Success
                 ? $"Could not reach {device.Alias} - check it's still on the network and paired"
                 // Unchanged means the server answered 304 - its catalog is
