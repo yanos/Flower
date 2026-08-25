@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
@@ -451,5 +452,60 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         Wait(300);
 
         Assert.Equal(0, edges());
+    }
+
+    // ── Periodic log push ─────────────────────────────────────────────────────
+
+    // A paired client with the two sync entry points stubbed, so what a tick
+    // asks the server for is directly observable.
+    private MainViewModelHarness.Parts StubbedPairedClient(out DiscoveredDevice server)
+    {
+        var parts = Own(MainViewModelHarness.BuildParts(
+            new Library(new List<Track>()), new MainPlaylist(new List<Track>()),
+            new AppSettings { PairedServerFingerprint = "fp-server", PairedServerAlias = "Server" },
+            stubSyncServices: true));
+        server = Peer("fp-server", "Server");
+        parts.Main.AddOrUpdateDeviceSidebarItem(server);
+        return parts;
+    }
+
+    private static void LogSomething() =>
+        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(
+            DateTimeOffset.Now, "Information", "Test", Guid.NewGuid().ToString(), null));
+
+    // The point of the whole tick: new log lines arrive at roughly its own
+    // cadence, so pulling the catalog and the playlists on every one of them
+    // spent four bulk-group requests every five seconds and put the client
+    // permanently over the server's rate limit. Only the logs move here.
+    [AvaloniaFact]
+    public void A_log_push_tick_pushes_logs_without_pulling_the_catalog()
+    {
+        var parts = StubbedPairedClient(out var server);
+        LogSomething();
+
+        parts.Main.Sync.LogPushTick();
+        PumpUntil(() => parts.StubLibrarySync!.PushedLogsTo.Count > 0);
+
+        Assert.Equal(server.Fingerprint, Assert.Single(parts.StubLibrarySync!.PushedLogsTo).Fingerprint);
+        Assert.Empty(parts.StubLibrarySync.SyncedWith);
+        Assert.Empty(parts.StubPlaylistSync!.SyncedWith);
+    }
+
+    // An idle app has to actually go quiet, and it only does if the flag is
+    // cleared after the push rather than before it: the push writes its own log
+    // line on the way out (see StubLibrarySyncService, which reproduces that),
+    // which would otherwise arm the very next tick, forever.
+    [AvaloniaFact]
+    public void A_tick_with_nothing_newly_logged_pushes_nothing()
+    {
+        var parts = StubbedPairedClient(out _);
+        LogSomething();
+
+        parts.Main.Sync.LogPushTick();
+        PumpUntil(() => parts.StubLibrarySync!.PushedLogsTo.Count > 0);
+        parts.Main.Sync.LogPushTick();
+        Wait(200);
+
+        Assert.Single(parts.StubLibrarySync!.PushedLogsTo);
     }
 }
