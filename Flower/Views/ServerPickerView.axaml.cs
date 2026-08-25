@@ -253,7 +253,7 @@ public partial class ServerPickerView : UserControl
             var confirmed = await ConfirmDialogWindow.ShowAsync(
                 owner,
                 $"Unpair From \"{row.Alias}\"?",
-                $"This device will no longer bulk-sync library/playlist data with \"{row.Alias}\". Browsing and streaming will still work.",
+                $"This device will stop getting music and playlists from \"{row.Alias}\". You can still browse and play from it.",
                 "Unpair");
             if (!confirmed)
                 return;

@@ -71,7 +71,7 @@
            to find a log file. See AppSettings.ShareLogsWithPairedServer. -->
       <StackPanel Margin="20,4,20,16" Spacing="6">
         <CheckBox Content="Send logs to paired server" IsChecked="{Binding Main.ShareLogsWithPairedServer}"/>
-        <TextBlock Text="Sends this device's recent log lines after each sync so they can be read on the server. They include file paths and error details."
+        <TextBlock Text="Lets whoever runs the server read this device's error log when something breaks. It contains file names from this device."
                    FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
       </StackPanel>
 
@@ -157,14 +157,14 @@
                   Command="{Binding InviteDeviceCommand}"
                   IsEnabled="{Binding !Main.IsIssuingPairingCode}"
                   HorizontalAlignment="Left"/>
-          <TextBlock Text="Creates a one-time code to type on the device being added. It expires in a few minutes."
+          <TextBlock Text="Type this code on the new device. It works once, and only for a few minutes."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
           <!-- More than one device may be an administrator - an owner's own
                desktop and their own phone both being one is the expected
                shape. See MainViewModel.PairingCodeGrantsAdmin. -->
           <CheckBox Content="Administrator" IsChecked="{Binding Main.PairingCodeGrantsAdmin}"/>
           <TextBlock IsVisible="{Binding Main.PairingCodeGrantsAdmin}"
-                     Text="An administrator can also change this server's settings and add devices of their own."
+                     Text="Administrators can also change these settings and add devices themselves."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
           <SelectableTextBlock Text="{Binding Main.IssuedPairingCode}"
                                IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
