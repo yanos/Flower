@@ -40,10 +40,18 @@ public sealed class SignedRequest
     // Header wins when both are somehow present. This fallback *policy* is
     // the part that must not be written twice - it decides what an attacker
     // is allowed to put where.
+    //
+    // Only the header branch is percent-decoded (see IdentityHeaderEncoding):
+    // a header is ASCII, so the sender encoded it, while a query param was
+    // already unescaped by whichever stack parsed the URL. Decoding both would
+    // strip a second layer off the query one - an alias containing a literal
+    // "%41" would arrive as "A" - and the two transports have to yield the
+    // same string for the same device, since this is what the trusted-device
+    // row is named after.
     public string? Identity(string name)
     {
         if (_header(name) is { Length: > 0 } header)
-            return header;
+            return IdentityHeaderEncoding.Decode(header);
 
         foreach (var (key, value) in Query)
         {

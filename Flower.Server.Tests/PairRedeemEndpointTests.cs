@@ -128,6 +128,36 @@ public class PairRedeemEndpointTests(SubsonicServerFixture server) : IClassFixtu
     }
 
     [Fact]
+    public async Task A_device_with_a_non_ascii_name_pairs_under_that_name()
+    {
+        // A phone called "Mr Téléphone" is an ordinary phone - the alias is
+        // typed by its owner (DeviceIdentity.Alias). An HTTP header is ASCII,
+        // so the client percent-encodes it (IdentityHeaderEncoding); this is
+        // the end that has to turn it back into the name the server's Devices
+        // list shows. Before that encoding existed the request never left the
+        // phone at all, and every screen said "Server not reachable" - see
+        // Flower.Tests.NonAsciiAliasTests for the sending half.
+        const string alias = "Mr Téléphone";
+        var pairingCodes = server.Services.GetRequiredService<PairingCodeService>();
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var (code, _) = pairingCodes.GenerateCode();
+        using var device = NewDevice();
+
+        var status = await RedeemAsync(
+            device, code, alias: IdentityHeaderEncoding.Encode(alias), remoteIp: "10.0.0.20");
+
+        try
+        {
+            Assert.Equal(HttpStatusCode.OK, status);
+            Assert.Equal(alias, trustedPeers.Load().Single(p => p.Fingerprint == device.Fingerprint).Alias);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    [Fact]
     public async Task A_wrong_code_is_rejected_and_trusts_nobody()
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();

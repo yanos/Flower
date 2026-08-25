@@ -57,6 +57,12 @@ public static class PeerCredentialsExtensions
     // torn the pooled connection down - see PlaylistSyncService's note) rather
     // than of how the call is authenticated, and the admin client deliberately
     // does not set it.
+    //
+    // Values are percent-encoded on the way onto the request, because this is
+    // the header transport and a header is ASCII - see IdentityHeaderEncoding,
+    // and SignedRequest.Identity which decodes them again. The query transport
+    // (OpenSubsonicClient.BuildUrlAsync) escapes for itself and must not be
+    // encoded here as well.
     public static async Task AddPeerCredentialsAsync(
         this HttpRequestMessage request, IPeerCredentials credentials, byte[]? body = null)
     {
@@ -64,7 +70,7 @@ public static class PeerCredentialsExtensions
         foreach (var (key, value) in await credentials.AuthorizeAsync(
                      request.Method.Method, uri.AbsolutePath, ParseQuery(uri.Query), body ?? []))
         {
-            request.Headers.TryAddWithoutValidation(key, value);
+            request.Headers.TryAddWithoutValidation(key, IdentityHeaderEncoding.Encode(value));
         }
     }
 

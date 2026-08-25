@@ -371,11 +371,19 @@ public class AlbumArtLoaderTests : IDisposable
 
         Assert.NotNull(await loader.LoadAsync(RemoteTrack(Unique("hash"))));
 
-        Assert.Equal(SigningKey.Fingerprint, headers.GetValueOrDefault("X-Flower-Fingerprint"));
-        Assert.Equal(SigningKey.PublicKeyBase64, headers.GetValueOrDefault("X-Flower-PublicKey"));
-        Assert.False(string.IsNullOrEmpty(headers.GetValueOrDefault("X-Flower-Signature")));
-        Assert.False(string.IsNullOrEmpty(headers.GetValueOrDefault("X-Flower-Timestamp")));
-        Assert.False(string.IsNullOrEmpty(headers.GetValueOrDefault("X-Flower-Nonce")));
+        // Read back the way a server reads them (SignedRequest.Identity), not
+        // as raw wire bytes: identity params are percent-encoded onto a header
+        // so a non-ASCII alias can travel at all (see IdentityHeaderEncoding
+        // and NonAsciiAliasTests), which also escapes the +/=  in a base64
+        // public key. What has to match is what the other end recovers.
+        string? Identity(string name) =>
+            headers.GetValueOrDefault(name) is { } raw ? IdentityHeaderEncoding.Decode(raw) : null;
+
+        Assert.Equal(SigningKey.Fingerprint, Identity("X-Flower-Fingerprint"));
+        Assert.Equal(SigningKey.PublicKeyBase64, Identity("X-Flower-PublicKey"));
+        Assert.False(string.IsNullOrEmpty(Identity("X-Flower-Signature")));
+        Assert.False(string.IsNullOrEmpty(Identity("X-Flower-Timestamp")));
+        Assert.False(string.IsNullOrEmpty(Identity("X-Flower-Nonce")));
     }
 
     [AvaloniaFact]
