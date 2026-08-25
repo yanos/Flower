@@ -49,7 +49,7 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
         _serviceDiscovery = new ServiceDiscovery(_mdns);
         _serviceDiscovery.ServiceInstanceDiscovered += (_, e) =>
         {
-            var name = e.ServiceInstanceName.ToString();
+            var name = InstanceNameOf(e.ServiceInstanceName);
 
             // No separate resolve round-trip needed: the discovery answer already
             // carries the sender's real address (RemoteEndPoint) and, per DNS-SD
@@ -60,7 +60,7 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
             InstanceFound?.Invoke(this, new MdnsInstanceFound { InstanceName = name, EndPoint = endpoint });
         };
         _serviceDiscovery.ServiceInstanceShutdown += (_, e) =>
-            InstanceLost?.Invoke(this, e.ServiceInstanceName.ToString());
+            InstanceLost?.Invoke(this, InstanceNameOf(e.ServiceInstanceName));
 
         _mdns.NetworkInterfaceDiscovered += (_, _) =>
         {
@@ -69,6 +69,28 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
                 _serviceDiscovery.QueryServiceInstances(serviceType);
         };
     }
+
+    // The instance name as the peer actually spelled it, which is not what
+    // DomainName.ToString() gives. DNS-SD instance labels are UTF-8 (RFC 6763
+    // s4.1.1) and the wire carries them that way - a server called "Café"
+    // announces 43 61 66 c3 a9 - but ToString() renders the decoded labels back
+    // into DNS master-file presentation form, escaping anything outside the
+    // printable-ASCII range as a decimal \DDD: "Caf\233._flowersync._tcp.local".
+    // Spaces go the same way ("Basement\032NAS"), so this hits ordinary names,
+    // not just accented ones. Worse, that escape is only defined up to one byte
+    // and Makaretu writes the whole code point regardless, so a name outside
+    // Latin-1 comes out as "\22826\37070" - not even reversible.
+    //
+    // Joining the labels instead gives the string the user typed on the other
+    // machine, which is what belongs in a log line, in the sidebar's fallback
+    // label, and in the KnownDevices key. It also makes this backend agree with
+    // Flower.iOS's BonjourMdnsBackend, which builds the same
+    // "<instance>.<type>.local" out of the unescaped service name Bonjour hands
+    // it - two backends that keyed the same server differently were a bug
+    // waiting for the platform they both ran on.
+    // Public only so a test can drive it off real wire bytes without a LAN -
+    // see Flower.Tests' MdnsInstanceNameTests.
+    public static string InstanceNameOf(DomainName name) => string.Join(".", name.Labels);
 
     public void Advertise(string instanceName, string serviceType, int port)
     {

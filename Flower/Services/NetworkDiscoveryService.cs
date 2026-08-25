@@ -16,9 +16,10 @@ using Flower.Persistence;
 
 namespace Flower.Services;
 
-// A Flower instance found on the LAN. Alias starts out as the raw mDNS
-// instance name and is replaced once the /info handshake resolves - see
-// NetworkDiscoveryService.ResolveAliasAsync.
+// A Flower instance found on the LAN. Alias starts out as the mDNS instance
+// label - the peer's own name, minus the service type the announcement wraps it
+// in - and is replaced by whatever it calls itself once the /info handshake
+// resolves. See NetworkDiscoveryService.ResolveAliasAsync.
 public class DiscoveredDevice
 {
     public required string InstanceName { get; init; }
@@ -416,7 +417,7 @@ public class NetworkDiscoveryService : IDisposable
             InstanceName = found.InstanceName,
             BaseUri = announced,
             Ip = found.EndPoint.Address,
-            Alias = found.InstanceName,
+            Alias = InstanceLabel(found.InstanceName),
         };
         _knownDevices[found.InstanceName] = device;
         _logger.LogInformation("Discovered peer {InstanceName} at {EndPoint}", found.InstanceName, found.EndPoint);
@@ -989,6 +990,15 @@ public class NetworkDiscoveryService : IDisposable
 
     private static bool IsOurServiceType(string instanceName) =>
         instanceName.EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);
+
+    // The peer's own name out of "<name>.<service type>.local". An Alias is a
+    // thing shown to a person, so the DNS-SD wrapper has no business being in
+    // it - and this one is only ever a stand-in anyway, until /info answers with
+    // the name the peer actually reports for itself.
+    private static string InstanceLabel(string instanceName) =>
+        instanceName.EndsWith($".{ServiceType}.local", StringComparison.OrdinalIgnoreCase)
+            ? instanceName[..^$".{ServiceType}.local".Length]
+            : instanceName;
 
     public void Stop()
     {
