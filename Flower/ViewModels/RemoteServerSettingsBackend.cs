@@ -62,6 +62,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             AllowedCidrs = settings.AllowedCidrs,
             AllowPublicAccess = settings.AllowPublicAccess,
             Addresses = settings.Addresses,
+            PublicAddress = settings.PublicAddress,
             DataDirectory = settings.DataDirectory,
             Version = settings.Version,
         };

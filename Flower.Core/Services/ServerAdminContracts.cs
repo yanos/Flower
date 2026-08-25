@@ -49,6 +49,13 @@ public sealed record ServerSettingsDto(
     // answer about a machine you are not sitting at: what an empty advertised
     // address resolves to, and which address to hand out once the door is open.
     List<string> Addresses,
+    // What the internet sees this server as, or null when nothing could be
+    // found out - see PublicAddressProbe. Read-only, and shown next to the
+    // switch that opens the door, because that is the moment it is needed: a
+    // machine behind a router holds none of the addresses above from outside,
+    // so none of them answers "what do I forward to, and what do I then type
+    // into a phone that is not on this network".
+    string? PublicAddress,
     // The fields whose new value is on disk and bound but not yet acted on, so
     // the page can say so instead of appearing to have done nothing:
     // MdnsAdvertiser reads its options once, when the hosted service starts.

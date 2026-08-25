@@ -278,6 +278,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
             .ToList();
     public bool HasAddresses => _snapshot.Addresses.Count > 0;
 
+    // Sits under the switch that opens this server to the internet, because it
+    // is what that switch is about: the addresses listed on the General tab are
+    // all inside-the-house ones, and none of them is what a phone off the LAN
+    // would dial. Read-only, and absent rather than apologetic when there is no
+    // answer - see SettingsSnapshot.PublicAddress.
+    // The bare address, with the sentence around it left to the view - it reads
+    // as prose plus one value to copy, and gluing them together would make the
+    // whole line monospace or the address unselectable on its own.
+    public string PublicAddressDisplay => _snapshot.PublicAddress ?? "";
+
+    public bool HasPublicAddress => _snapshot.PublicAddress is { Length: > 0 };
+
     public string VersionDisplay => _snapshot.Version is { Length: > 0 } version ? $"Version {version}" : "";
 
     // See SettingsSnapshot.IsPairedToServer. A server always manages its own
@@ -325,6 +337,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(DataDirectory));
             OnPropertyChanged(nameof(AddressGroups));
             OnPropertyChanged(nameof(HasAddresses));
+            OnPropertyChanged(nameof(PublicAddressDisplay));
+            OnPropertyChanged(nameof(HasPublicAddress));
             OnPropertyChanged(nameof(ITunesLibraryDescription));
             OnPropertyChanged(nameof(VersionDisplay));
             OnPropertyChanged(nameof(CanManageLibrary));

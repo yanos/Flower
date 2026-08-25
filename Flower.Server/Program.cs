@@ -217,6 +217,10 @@ builder.Services.AddSingleton<PlayReportService>();
 // In memory, deliberately - see ClientLogStore.
 builder.Services.AddSingleton<ClientLogStore>();
 builder.Services.AddSingleton<DeviceKeyStore>();
+// Answers "what does the internet see this server as" for the settings page's
+// network tab, by asking somebody else - see PublicAddressProbe. Nothing calls
+// it until that page is opened.
+builder.Services.AddSingleton<PublicAddressProbe>();
 
 // Announces the server on the LAN so it shows up in a client's sidebar without
 // anyone typing an address. Registered as a lifecycle service because the port
