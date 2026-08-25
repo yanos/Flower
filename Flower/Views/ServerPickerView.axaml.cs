@@ -73,6 +73,14 @@ public sealed class ServerRow : ViewModelBase
     // user's business when there is nothing to tell apart. See Refresh.
     public string? Detail { get; init; }
 
+    // When this device last successfully pulled from this server, already
+    // phrased - see MainViewModel.LastSyncedDisplay, which mobile's settings
+    // screen shows too. Only ever set on the paired row: there is nothing to
+    // have synced with any other. Null until the first sync of a pairing
+    // completes, which is exactly the window in which the row is still saying
+    // "Waiting for server...".
+    public string? LastSyncedDisplay { get; init; }
+
     public string ActionLabel =>
         !IsPaired ? "Pair" :
         IsTrustConfirmed ? "Unpair" :
@@ -135,7 +143,9 @@ public partial class ServerPickerView : UserControl
 
         _subscriptions.Add<PropertyChangedEventHandler>((_, args) =>
         {
-            if (args.PropertyName == nameof(MainViewModel.IsSyncing) || args.PropertyName == nameof(MainViewModel.IsPairedServerTrustConfirmed))
+            if (args.PropertyName == nameof(MainViewModel.IsSyncing)
+                || args.PropertyName == nameof(MainViewModel.IsPairedServerTrustConfirmed)
+                || args.PropertyName == nameof(MainViewModel.LastSyncedAt))
                 Dispatcher.UIThread.Post(Refresh);
             if (args.PropertyName == nameof(MainViewModel.LastForceSyncResult))
                 Dispatcher.UIThread.Post(RefreshSyncResultText);
@@ -202,6 +212,7 @@ public partial class ServerPickerView : UserControl
                 IsTrustConfirmed = d.Fingerprint == pairedFingerprint && _mainViewModel.IsPairedServerTrustConfirmed,
                 CanForceSync = d.Fingerprint == pairedFingerprint && _mainViewModel.CanForceSync,
                 BlockedByAlias = pairedFingerprint != null && d.Fingerprint != pairedFingerprint ? pairedAlias : null,
+                LastSyncedDisplay = d.Fingerprint == pairedFingerprint ? _mainViewModel.LastSyncedDisplay : null,
                 PairingCode = typedCodes.GetValueOrDefault(d.Fingerprint, ""),
             })
             .ToList();
@@ -220,6 +231,7 @@ public partial class ServerPickerView : UserControl
                 IsTrustConfirmed = _mainViewModel.IsPairedServerTrustConfirmed,
                 CanForceSync = _mainViewModel.CanForceSync,
                 BlockedByAlias = null,
+                LastSyncedDisplay = _mainViewModel.LastSyncedDisplay,
             });
         }
 

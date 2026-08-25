@@ -90,6 +90,13 @@ namespace Flower.Persistence
         // request starts unconfirmed again).
         public bool PairedServerTrustConfirmed { get; set; }
 
+        // When a bulk sync with PairedServerFingerprint last actually succeeded.
+        // Persisted rather than kept in memory because the question it answers -
+        // "is what I'm looking at current?" - is asked right after a relaunch as
+        // often as during a session. Cleared on unpair, along with the pointer
+        // itself. Shown under the server's name in Settings > Devices.
+        public DateTimeOffset? PairedServerLastSyncedAt { get; set; }
+
         // Every address the paired Server has told us it can be reached on,
         // from the addresses field of its /info handshake (see
         // SyncInfoResponseDto and LocalAddresses). Refreshed - replaced, not

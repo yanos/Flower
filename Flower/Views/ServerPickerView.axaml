@@ -52,43 +52,51 @@
           </ListBox.Styles>
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="views:ServerRow">
-              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4,4">
-                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                  <!-- Only once the paired server has actually approved this
-                       device (see ServerRow.IsTrustConfirmed) - not just
-                       requested, which is IsPaired alone (see ActionLabel's
-                       "Waiting for server..." state). -->
-                  <materialIcons:MaterialIcon Kind="CheckCircle"
-                                               Width="14" Height="14"
-                                               Foreground="#4CAF50"
-                                               VerticalAlignment="Center"
-                                               IsVisible="{Binding IsTrustConfirmed}"/>
-                  <TextBlock Text="{Binding Alias}"
-                             FontWeight="SemiBold"
-                             FontSize="13"
-                             VerticalAlignment="Center"
-                             Margin="4,0,0,0"/>
-                  <materialIcons:MaterialIcon Kind="Sync"
-                                               Classes="spinning"
-                                               Width="12" Height="12"
-                                               Opacity="0.6"
-                                               VerticalAlignment="Center"
-                                               IsVisible="{Binding IsSyncing}"/>
+              <!-- One row, two columns: everything about the server on the left
+                   as a vertically-centred stack, its buttons on the right. The
+                   name used to sit in its own grid row while the buttons spanned
+                   both, which left the name riding above the middle of the
+                   buttons beside it whenever the second line had anything in it. -->
+              <Grid ColumnDefinitions="*,Auto" Margin="4,4">
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="1">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <!-- Only once the paired server has actually approved this
+                         device (see ServerRow.IsTrustConfirmed) - not just
+                         requested, which is IsPaired alone (see ActionLabel's
+                         "Waiting for server..." state). -->
+                    <materialIcons:MaterialIcon Kind="CheckCircle"
+                                                 Width="14" Height="14"
+                                                 Foreground="#4CAF50"
+                                                 VerticalAlignment="Center"
+                                                 IsVisible="{Binding IsTrustConfirmed}"/>
+                    <TextBlock Text="{Binding Alias}"
+                               FontWeight="SemiBold"
+                               FontSize="13"
+                               VerticalAlignment="Center"
+                               Margin="4,0,0,0"/>
+                    <materialIcons:MaterialIcon Kind="Sync"
+                                                 Classes="spinning"
+                                                 Width="12" Height="12"
+                                                 Opacity="0.6"
+                                                 VerticalAlignment="Center"
+                                                 IsVisible="{Binding IsSyncing}"/>
+                  </StackPanel>
+                  <!-- Detail only appears when two servers share a name - see
+                       ServerRow.Detail. All three live on one line so a row
+                       showing any combination of them keeps its height. -->
+                  <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,0,0,0">
+                    <TextBlock Text="{Binding Detail}"
+                               IsVisible="{Binding Detail, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                               Opacity="0.6" FontSize="11"/>
+                    <TextBlock Text="{Binding LastSyncedDisplay}"
+                               IsVisible="{Binding LastSyncedDisplay, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                               Opacity="0.6" FontSize="11"/>
+                    <TextBlock Text="{Binding HintText}"
+                               IsVisible="{Binding HintText, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                               Opacity="0.6" FontSize="11"/>
+                  </StackPanel>
                 </StackPanel>
-                <!-- Detail only appears when two servers share a name - see
-                     ServerRow.Detail. Both live on the same line so a row
-                     showing one, the other or both keeps its height. -->
-                <StackPanel Grid.Row="1" Grid.Column="0"
-                            Orientation="Horizontal" Spacing="8"
-                            Margin="4,1,0,0">
-                  <TextBlock Text="{Binding Detail}"
-                             IsVisible="{Binding Detail, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                             Opacity="0.6" FontSize="11"/>
-                  <TextBlock Text="{Binding HintText}"
-                             IsVisible="{Binding HintText, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                             Opacity="0.6" FontSize="11"/>
-                </StackPanel>
-                <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                <StackPanel Grid.Column="1"
                             Orientation="Horizontal" Spacing="6"
                             VerticalAlignment="Center" Margin="8,0,0,0">
                   <Button Content="Sync Now"

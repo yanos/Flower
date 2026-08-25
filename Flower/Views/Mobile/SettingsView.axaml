@@ -126,6 +126,11 @@
                    Text="Server not reachable"
                    Foreground="{DynamicResource AppWarningBrush}"
                    FontSize="12" Margin="0,2,0,0"/>
+        <!-- How fresh the synced library is - see MainViewModel.LastSyncedDisplay.
+             Desktop shows the same line under the server's name in its picker. -->
+        <TextBlock IsVisible="{Binding Main.LastSyncedDisplay, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                   Text="{Binding Main.LastSyncedDisplay}"
+                   Opacity="0.6" FontSize="12" Margin="0,2,0,0"/>
         <TextBlock IsVisible="{Binding Main.LastForceSyncResult, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                    Text="{Binding Main.LastForceSyncResult}"
                    Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
