@@ -354,6 +354,26 @@
             <TextBlock Text="Lets Flower apps on the same network find this server without being given an address. Turn it off for a deployment reached only over a tunnel or a reverse proxy."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
+            <!-- Read-only, and first: everything below it is a decision about
+                 reachability, and this is the thing being reached. -->
+            <TextBlock Text="This server is reachable at" FontWeight="SemiBold" Margin="0,20,0,4"
+                       IsVisible="{Binding HasAddresses}"/>
+            <SelectableTextBlock Text="{Binding AddressesText}"
+                                 FontFamily="monospace" FontSize="12" TextWrapping="Wrap"
+                                 IsVisible="{Binding HasAddresses}"/>
+            <TextBlock Text="Type one of these into a Flower app that can't find this server on its own."
+                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                       IsVisible="{Binding HasAddresses}"/>
+
+            <!-- The switch that retires LanGuard. Worded as what it does rather
+                 than as a setting name, because it is the most consequential one
+                 here by a distance - see FlowerServerOptions.AllowPublicAccess. -->
+            <CheckBox Content="Accept connections from outside this network"
+                      Margin="0,20,0,0"
+                      IsChecked="{Binding AllowPublicAccess, Mode=TwoWay}"/>
+            <TextBlock Text="Off, this server answers only the local network, the Tailscale range and any additional networks below - anything else is dropped without a reply. On, it answers any address, and a paired device's signature is the only thing left keeping strangers out. Turn it on for a deployment reached through a tunnel, a reverse proxy or a forwarded port, and name that proxy in Flower:TrustedProxies so each listener is rate-limited as itself."
+                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
             <TextBlock Text="Advertised address" FontWeight="SemiBold" Margin="0,20,0,4"/>
             <TextBox Text="{Binding AdvertisedHost, Mode=TwoWay}" Watermark="host:port"/>
             <TextBlock Text="Put in pairing invites when the address a device should dial isn't the one the request arrived on - a reverse proxy, or a container publishing a different port than it binds. Leave empty to use whatever address the request came in on."

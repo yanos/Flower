@@ -60,6 +60,8 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             AdvertiseOnLan = settings.AdvertiseOnLan,
             TrustTailscaleRange = settings.TrustTailscaleRange,
             AllowedCidrs = settings.AllowedCidrs,
+            AllowPublicAccess = settings.AllowPublicAccess,
+            Addresses = settings.Addresses,
             DataDirectory = settings.DataDirectory,
             Version = settings.Version,
         };
@@ -81,7 +83,8 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
                 draft.LibraryPaths.ToList(),
                 draft.IntegrateWithITunes,
                 draft.SyncPlayCountFromITunes,
-                draft.SyncDateAddedFromITunes),
+                draft.SyncDateAddedFromITunes,
+                draft.AllowPublicAccess),
             ct);
         _lastLoaded = result;
 

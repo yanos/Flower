@@ -181,8 +181,10 @@ already doing the job, and one listener is one less thing to reason about.
 
 Every request is checked against an allow-list before anything else looks at it.
 Private, loopback and link-local addresses are allowed, plus `100.64.0.0/10` —
-the range Tailscale hands out. Everything else gets a flat `403`, whether or not
-it has a valid credential.
+the range Tailscale hands out. Everything else is **dropped without a reply**,
+whether or not it has a valid credential: the connection closes with nothing
+written to it, because a `403` would still tell a scanner there is something
+here worth coming back to.
 
 This matters for the rest of this guide. A directly-exposed music server gets
 found by scanners within hours, and the allow-list is what stands between "on my
@@ -207,10 +209,10 @@ Three settings change it, and they answer different questions:
 - **`TrustedProxies`** — *who is allowed to tell the server who someone else
   is*. See below. Deployment-shaped, so it is read once at startup.
 - **`AllowPublicAccess`** — *turn the allow-list off entirely*. For a server
-  deliberately published to the internet, through a tunnel or a mapped port.
-  Off by default. Not editable from the settings page, on purpose: whether your
-  library faces the internet is a fact about how you deployed it, not a
-  preference a browser tab should be able to flip.
+  deliberately published to the internet, through a tunnel or a mapped port. Off
+  by default. On the settings page it is **Accept connections from outside this
+  network**, in Network, with the server's own addresses shown above it; it
+  applies immediately, in both directions.
 
 Turning that last one on is the single most consequential thing you can do to
 this server, so it says so in the log every time it starts. What holds the door
@@ -466,7 +468,7 @@ Two settings, and neither is optional:
 }
 ```
 
-- **`AllowPublicAccess`** — without it, every listener gets a `403`. `cloudflared`
+- **`AllowPublicAccess`** — without it, every listener is dropped. `cloudflared`
   delivers over loopback, so the allow-list would admit the *tunnel* — but with
   `TrustedProxies` set the server correctly sees the real client's public
   address instead, and refuses it. The two settings only make sense together.
@@ -482,8 +484,9 @@ Two settings, and neither is optional:
   an *extra* way in, not a replacement. Clients rank a LAN address ahead of it
   and only fall back to the tunnel from outside.
 
-Restart the server after editing; `TrustedProxies` and `AllowPublicAccess` are
-read once at startup.
+Restart the server after editing: `TrustedProxies` is read once at startup.
+(`AllowPublicAccess` is not — it applies immediately, and can also be switched
+from the settings page — but you are editing the file for both here.)
 
 ### 5. Run it
 
@@ -700,15 +703,18 @@ running the server, `http://localhost:4533` remains the simplest option of all.
 
 ## Troubleshooting
 
-**Everything returns 403.** The caller is outside the allow-list. Check the
-address it actually arrives from — if there is a proxy in front, that is the
-proxy's address unless `TrustedProxies` names it.
+**Every request hangs or the connection is refused, with nothing in reply.**
+That is the allow-list dropping the caller — it is what "dropped without a
+reply" looks like from the outside. Check the address it actually arrives from;
+if there is a proxy in front, that is the proxy's address unless
+`TrustedProxies` names it. Run the server at `Debug` level to see each drop
+logged with the address it came from.
 
-**403 only from one device.** It is not on the tailnet, or `TrustTailscaleRange`
-has been turned off.
+**Only one device gets nothing back.** It is not on the tailnet, or
+`TrustTailscaleRange` has been turned off.
 
-**403 for every listener through a tunnel, but the browser on the server works
-fine.** `AllowPublicAccess` is off while `TrustedProxies` is set — so the server
+**Every listener through a tunnel is dropped, but the browser on the server
+works fine.** `AllowPublicAccess` is off while `TrustedProxies` is set — so the server
 correctly resolves each caller to their real public address and then turns it
 away. Both settings, or neither.
 

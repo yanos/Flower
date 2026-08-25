@@ -84,8 +84,8 @@ public class PublicAccessTests(PublicServerFixture publicServer, SubsonicServerF
     public async Task A_public_caller_is_turned_away_unless_the_server_was_told_to_expect_one()
     {
         // The default, and the one every deployment that never touches this
-        // setting keeps.
-        Assert.Equal(HttpStatusCode.Forbidden, await GetAsync(lanOnly.Server, InfoPath, "203.0.113.7"));
+        // setting keeps. Dropped rather than refused - see GuardedRequest.
+        await GuardedRequest.AssertDropped(() => GetAsync(lanOnly.Server, InfoPath, "203.0.113.7"));
     }
 
     [Fact]

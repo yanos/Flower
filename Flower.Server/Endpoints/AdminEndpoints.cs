@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
+using Microsoft.AspNetCore.Hosting.Server;
+
 using Microsoft.Extensions.Options;
 
 using Flower.Importer;
@@ -197,14 +199,14 @@ public static class AdminEndpoints
             return await store.RevokeAsync(username) ? Results.NoContent() : Results.NotFound();
         });
 
-        authenticated.MapGet("/settings", (IOptionsMonitor<FlowerServerOptions> options) =>
-            Results.Json(Describe(options.CurrentValue), jsonOptions));
+        authenticated.MapGet("/settings", (IOptionsMonitor<FlowerServerOptions> options, IServer boundServer) =>
+            Results.Json(Describe(options.CurrentValue, boundServer), jsonOptions));
 
         // Read from the raw (buffered, rewound) stream rather than a bound
         // parameter - see the filter above for why no route here may bind a body.
         authenticated.MapPut("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
-            LibraryRescanCoordinator rescans, ILoggerFactory loggerFactory) =>
+            LibraryRescanCoordinator rescans, ILoggerFactory loggerFactory, IServer boundServer) =>
         {
             ServerSettingsUpdateDto? update;
             try
@@ -237,6 +239,7 @@ public static class AdminEndpoints
                 AdvertisedHost = before.AdvertisedHost,
                 AdvertiseOnLan = before.AdvertiseOnLan,
                 TrustTailscaleRange = before.TrustTailscaleRange,
+                AllowPublicAccess = before.AllowPublicAccess,
                 AllowedCidrs = [.. before.AllowedCidrs],
                 LibraryPaths = [.. before.LibraryPaths],
                 IntegrateWithITunes = before.IntegrateWithITunes,
@@ -244,7 +247,13 @@ public static class AdminEndpoints
                 SyncDateAddedFromITunes = before.SyncDateAddedFromITunes,
             };
 
-            if (update.Alias is { } alias && alias.Trim() != before.Alias)
+            // Compared against the *resolved* name, not the configured one: an
+            // unset Alias reads as the machine name everywhere it is used, and
+            // that is what the page was shown (see Describe). Comparing against
+            // the raw empty string would make simply opening the settings page
+            // and pressing OK write the machine name into flower-server.json and
+            // announce a restart to apply a change nobody made.
+            if (update.Alias is { } alias && alias.Trim() != MdnsAdvertiser.InstanceName(before))
             {
                 after.Alias = alias.Trim();
                 values[nameof(FlowerServerOptions.Alias)] = JsonValue.Create(after.Alias);
@@ -265,6 +274,14 @@ public static class AdminEndpoints
             {
                 after.TrustTailscaleRange = trustTailscale;
                 values[nameof(FlowerServerOptions.TrustTailscaleRange)] = JsonValue.Create(trustTailscale);
+            }
+            // No restart entry: the gate in Program.cs reads this per request
+            // through IOptionsMonitor, so it is shut - or opened - by the time
+            // this response is written.
+            if (update.AllowPublicAccess is { } allowPublic && allowPublic != before.AllowPublicAccess)
+            {
+                after.AllowPublicAccess = allowPublic;
+                values[nameof(FlowerServerOptions.AllowPublicAccess)] = JsonValue.Create(allowPublic);
             }
             if (update.AllowedCidrs is { } allowedCidrs && !Same(allowedCidrs, before.AllowedCidrs))
             {
@@ -325,7 +342,7 @@ public static class AdminEndpoints
                 rescans.TryStart();
             }
 
-            return Results.Json(Describe(after) with { RestartRequired = restartRequired }, jsonOptions);
+            return Results.Json(Describe(after, boundServer) with { RestartRequired = restartRequired }, jsonOptions);
         });
 
         authenticated.MapGet("/library", (LibraryRescanCoordinator rescans) =>
@@ -406,12 +423,17 @@ public static class AdminEndpoints
     }
 
     // The operator-editable half of FlowerServerOptions, as the shared wire
-    // shape - DataDirectory and Version ride along read-only, and WebUiPath
-    // deliberately does not appear at all: it is part of how the server was
-    // deployed, not something the page served from it should move out from
-    // under itself.
-    private static ServerSettingsDto Describe(FlowerServerOptions options) =>
-        new(options.Alias,
+    // shape - DataDirectory, Version and Addresses ride along read-only, and
+    // WebUiPath deliberately does not appear at all: it is part of how the
+    // server was deployed, not something the page served from it should move
+    // out from under itself.
+    //
+    // The alias is reported resolved rather than as configured. Unset, it means
+    // the machine name - that is what mDNS announces and what every client's
+    // sidebar shows - and a settings page that answers "what is this server
+    // called" with an empty box is wrong about a name that plainly exists.
+    private static ServerSettingsDto Describe(FlowerServerOptions options, IServer boundServer) =>
+        new(MdnsAdvertiser.InstanceName(options),
             options.AdvertisedHost,
             options.AdvertiseOnLan,
             options.TrustTailscaleRange,
@@ -423,7 +445,9 @@ public static class AdminEndpoints
             Flower.Importer.Importer.TryResolveAppleMusicFolder(),
             ITunesIntegration.DescribeSource(),
             options.DataDirectory,
-            typeof(AdminEndpoints).Assembly.GetName().Version?.ToString());
+            typeof(AdminEndpoints).Assembly.GetName().Version?.ToString(),
+            options.AllowPublicAccess,
+            DiscoveryEndpoints.ReachableOrigins(boundServer, options));
 
     // The host in the invite is the address the admin's own browser reached
     // this server on, not a configured one: on a box with a LAN address, a

@@ -38,8 +38,10 @@ public sealed record SettingsCapabilities
     // the machine the UI is running on.
     public bool RevealAppDataLocation { get; init; }
 
-    // Advertised host, mDNS announcement, LanGuard CIDRs. Server-only: the app's
-    // own equivalents are not operator-configurable.
+    // Advertised host, mDNS announcement, LanGuard CIDRs, the public-access
+    // switch. Server-only: the app's own equivalents are not
+    // operator-configurable, and a client accepts no incoming connections at
+    // all, so it has no door to open.
     public bool ServerNetwork { get; init; }
 
     // Issue a pairing code for a new device. Server-only - it is the end that
@@ -74,6 +76,13 @@ public sealed record SettingsSnapshot
     public bool AdvertiseOnLan { get; init; } = true;
     public bool TrustTailscaleRange { get; init; } = true;
     public IReadOnlyList<string> AllowedCidrs { get; init; } = [];
+    public bool AllowPublicAccess { get; init; }
+
+    // Every origin the thing being configured believes it can be dialled at,
+    // shown read-only. The network page is otherwise asking an operator to
+    // reason about reachability with no idea what address they are reasoning
+    // about - and once public access is on, this is the address to hand out.
+    public IReadOnlyList<string> Addresses { get; init; } = [];
 
     // Shown read-only, for the "where does this thing keep its stuff" question
     // that is otherwise unanswerable about a machine you are not sitting at.
@@ -110,6 +119,7 @@ public sealed record SettingsDraft
     public required bool AdvertiseOnLan { get; init; }
     public required bool TrustTailscaleRange { get; init; }
     public required IReadOnlyList<string> AllowedCidrs { get; init; }
+    public required bool AllowPublicAccess { get; init; }
 }
 
 // What a settings screen can do, independent of whether "settings" means this

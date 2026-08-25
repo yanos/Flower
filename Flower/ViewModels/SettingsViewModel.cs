@@ -197,6 +197,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _trustTailscaleRange, value);
     }
 
+    // Off by default and deliberately blunt about what it does: with this on,
+    // the only thing between the library and the open internet is the signature
+    // check on every route that matters. See FlowerServerOptions
+    // .AllowPublicAccess, and docs/OPEN-INTERNET-REVIEW.md for the read-through
+    // that decided this was survivable.
+    private bool _allowPublicAccess;
+    public bool AllowPublicAccess
+    {
+        get => _allowPublicAccess;
+        set => SetProperty(ref _allowPublicAccess, value);
+    }
+
     // One CIDR per line. A list control for four rarely-touched strings would be
     // more chrome than content, and this is a field an operator pastes into.
     private string _allowedCidrsText = "";
@@ -222,6 +234,15 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public string DataDirectory => _snapshot.DataDirectory;
     public string ITunesLibraryDescription => _snapshot.ITunesLibraryDescription;
+
+    // One per line, read-only. An operator deciding whether to open this server
+    // to the internet, or what to type into a client that cannot discover it,
+    // needs the address in front of them - it is not knowable from a browser tab
+    // that reached the server through a proxy, or from a phone that has never
+    // been on this LAN.
+    public string AddressesText => string.Join(Environment.NewLine, _snapshot.Addresses);
+    public bool HasAddresses => _snapshot.Addresses.Count > 0;
+
     public string VersionDisplay => _snapshot.Version is { Length: > 0 } version ? $"Version {version}" : "";
 
     // See SettingsSnapshot.IsPairedToServer. A server always manages its own
@@ -258,6 +279,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             AdvertisedHost = _snapshot.AdvertisedHost;
             AdvertiseOnLan = _snapshot.AdvertiseOnLan;
             TrustTailscaleRange = _snapshot.TrustTailscaleRange;
+            AllowPublicAccess = _snapshot.AllowPublicAccess;
             AllowedCidrsText = string.Join(Environment.NewLine, _snapshot.AllowedCidrs);
 
             _paths.Clear();
@@ -266,6 +288,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
             RefreshPathRows();
 
             OnPropertyChanged(nameof(DataDirectory));
+            OnPropertyChanged(nameof(AddressesText));
+            OnPropertyChanged(nameof(HasAddresses));
             OnPropertyChanged(nameof(ITunesLibraryDescription));
             OnPropertyChanged(nameof(VersionDisplay));
             OnPropertyChanged(nameof(CanManageLibrary));
@@ -317,6 +341,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 AdvertisedHost = AdvertisedHost,
                 AdvertiseOnLan = AdvertiseOnLan,
                 TrustTailscaleRange = TrustTailscaleRange,
+                AllowPublicAccess = AllowPublicAccess,
                 AllowedCidrs = ParseCidrs(),
             }, ct);
 

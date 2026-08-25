@@ -40,6 +40,15 @@ public sealed record ServerSettingsDto(
     // that is otherwise unanswerable about a machine you are not sitting at.
     string DataDirectory,
     string? Version,
+    // Whether this server answers callers from outside the LAN at all - see
+    // FlowerServerOptions.AllowPublicAccess, which is the setting this is.
+    bool AllowPublicAccess,
+    // Every origin this server believes it can be dialled at right now, the same
+    // list /info hands a client (DiscoveryEndpoints.ReachableOrigins). Read-only,
+    // and the answer to the two questions the network page otherwise cannot
+    // answer about a machine you are not sitting at: what an empty advertised
+    // address resolves to, and which address to hand out once the door is open.
+    List<string> Addresses,
     // The fields whose new value is on disk and bound but not yet acted on, so
     // the page can say so instead of appearing to have done nothing:
     // MdnsAdvertiser reads its options once, when the hosted service starts.
@@ -54,4 +63,5 @@ public sealed record ServerSettingsUpdateDto(
     List<string>? LibraryPaths,
     bool? IntegrateWithITunes,
     bool? SyncPlayCountFromITunes,
-    bool? SyncDateAddedFromITunes);
+    bool? SyncDateAddedFromITunes,
+    bool? AllowPublicAccess);

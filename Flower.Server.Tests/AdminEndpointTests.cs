@@ -122,6 +122,110 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
         }
     }
 
+    // The settings page used to render an empty Name box on a server that
+    // plainly had a name - every client's sidebar was showing it - because an
+    // unset Alias means "the machine name" everywhere except in the DTO, which
+    // reported the configuration verbatim.
+    [Fact]
+    public async Task The_settings_page_is_told_the_name_the_server_actually_answers_to()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(
+                await SignedAsync(admin, "GET", "/api/admin/settings"));
+
+            // The fixture configures no alias at all, which is the default
+            // deployment and the case that was broken.
+            Assert.Equal(Environment.MachineName, settings.Alias);
+
+            // And the other half of reporting it resolved: sending it straight
+            // back must be a no-op rather than a write. Opening the page and
+            // pressing OK is not a rename, and must not announce a restart.
+            var echoed = await ReadAsync<ServerSettingsDto>(await SignedAsync(
+                admin, "PUT", "/api/admin/settings",
+                body: JsonSerializer.Serialize(new { alias = Environment.MachineName })));
+
+            Assert.Equal(Environment.MachineName, echoed.Alias);
+            Assert.Empty(echoed.RestartRequired!);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // The page cannot say "reachable at" for a machine nobody is sitting at
+    // unless the server says so itself, and the list the handshake hands a
+    // client is the one that is actually true.
+    [Fact]
+    public async Task The_settings_page_is_told_where_this_server_can_be_reached()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(
+                await SignedAsync(admin, "GET", "/api/admin/settings"));
+
+            Assert.All(settings.Addresses, origin => Assert.StartsWith("http", origin));
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // The switch an operator throws to put this server on the internet, end to
+    // end: written from the admin API, and in force on the very next request
+    // rather than at the next restart. Both directions matter, and the one that
+    // matters more is shutting it again.
+    [Fact]
+    public async Task Public_access_can_be_opened_and_shut_from_the_settings_page()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            await GuardedRequest.AssertDropped(() => UnsignedInfoAsync("203.0.113.11"));
+
+            var opened = await ReadAsync<ServerSettingsDto>(await SignedAsync(
+                admin, "PUT", "/api/admin/settings", body: "{\"allowPublicAccess\":true}"));
+
+            Assert.True(opened.AllowPublicAccess);
+            // No restart entry: the gate reads this per request (Program.cs),
+            // which is the property the assertion below actually pins.
+            Assert.Empty(opened.RestartRequired!);
+            Assert.Equal(HttpStatusCode.OK, await UnsignedInfoAsync("203.0.113.11"));
+
+            var written = await File.ReadAllTextAsync(
+                Path.Combine(opened.DataDirectory, ServerDataDirectory.SettingsFileName));
+            Assert.Contains("AllowPublicAccess", written);
+
+            var shut = await ReadAsync<ServerSettingsDto>(await SignedAsync(
+                admin, "PUT", "/api/admin/settings", body: "{\"allowPublicAccess\":false}"));
+
+            Assert.False(shut.AllowPublicAccess);
+            await GuardedRequest.AssertDropped(() => UnsignedInfoAsync("203.0.113.11"));
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // Ungated apart from the LAN guard, so it answers "was this caller admitted
+    // at all" without a signature check getting in the way.
+    private async Task<HttpStatusCode> UnsignedInfoAsync(string remoteIp)
+    {
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = HttpMethods.Get;
+            c.Request.Path = "/api/localsend/v2/info";
+            c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+        });
+
+        return (HttpStatusCode)context.Response.StatusCode;
+    }
+
     // The one thing that has to hold for the settings page to be worth anything:
     // what it writes survives, in the file an operator owns.
     [Fact]

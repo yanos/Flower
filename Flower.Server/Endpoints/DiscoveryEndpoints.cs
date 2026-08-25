@@ -130,7 +130,11 @@ public static class DiscoveryEndpoints
     // ranking by whether they answered at all, so a certificate this client
     // cannot validate degrades to the plain origin instead of to nothing. See
     // NetworkDiscoveryService.KnownDevices.
-    private static List<string> ReachableOrigins(IServer boundServer, FlowerServerOptions options)
+    // Internal rather than private: the settings page shows the same list back
+    // to an operator (AdminEndpoints.Describe), and "where can this server be
+    // reached" having two answers - one told to clients, one shown on the page
+    // that configures it - is the drift worth not having.
+    internal static List<string> ReachableOrigins(IServer boundServer, FlowerServerOptions options)
     {
         var bound = boundServer.Features.Get<IServerAddressesFeature>()?.Addresses ?? [];
         var origins = new List<string>();
