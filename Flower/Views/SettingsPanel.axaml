@@ -18,6 +18,9 @@
     <TabControl Grid.Row="0">
 
       <TabItem Header="General">
+        <!-- Scrolls like every other tab here: a server's General tab carries the
+             address list as well, which is as tall as the server has origins. -->
+        <ScrollViewer>
         <StackPanel Margin="0,12,0,0" Spacing="0">
           <!-- Label above its control, like Theme below and every other field on
                this screen - the one place that put them side by side needed a
@@ -67,9 +70,77 @@
                                FontSize="11" Opacity="0.7" TextWrapping="Wrap"
                                IsVisible="{Binding !Capabilities.RevealAppDataLocation}"/>
 
+          <!-- "Where is this server?" is the first thing anyone asks of it, and
+               the answer is the same one whether they came to set a network
+               option or not - so it lives here rather than buried on the Network
+               tab among the switches that decide who may use these addresses.
+               Read-only: each row is something to click, copy or read off to
+               somebody, never something to edit. -->
+          <TextBlock Text="This server is reachable at"
+                     FontWeight="SemiBold" Margin="0,20,0,6"
+                     IsVisible="{Binding HasAddresses}"/>
+          <Border BorderThickness="1"
+                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                  CornerRadius="4"
+                  Padding="8,6"
+                  IsVisible="{Binding HasAddresses}">
+            <!-- Two levels: a heading per ServerAddressKind, then that kind's
+                 origins under it. Grouped because the same server usually appears
+                 several times over - once per scheme, once per interface - and a
+                 flat list of near-identical strings has to be read character by
+                 character to tell an IPv6 literal from the IPv4 one beside it. -->
+            <ItemsControl ItemsSource="{Binding AddressGroups}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ServerAddressGroup">
+                  <StackPanel Margin="0,0,0,10">
+                    <TextBlock Text="{Binding Title}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Opacity="0.5"
+                               Margin="2,0,0,3"/>
+                    <ItemsControl ItemsSource="{Binding Addresses}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ServerAddressRow">
+                          <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,1">
+                            <!-- Alongside the scheme in the text, not instead of
+                                 it: the glyph is what makes a plain-http row
+                                 findable in a list at a glance, the text is what
+                                 gets read out or typed in. -->
+                            <Panel Grid.Column="0" VerticalAlignment="Center">
+                              <materialIcons:MaterialIcon Kind="Lock"
+                                                           Width="15" Height="15" Opacity="0.55"
+                                                           IsVisible="{Binding IsSecure}"/>
+                              <materialIcons:MaterialIcon Kind="LockOpenVariantOutline"
+                                                           Width="15" Height="15" Opacity="0.4"
+                                                           IsVisible="{Binding !IsSecure}"/>
+                            </Panel>
+                            <HyperlinkButton Grid.Column="1"
+                                             Content="{Binding Address}"
+                                             NavigateUri="{Binding NavigateUri}"
+                                             FontFamily="monospace" FontSize="13"
+                                             Padding="8,2"
+                                             HorizontalAlignment="Left"/>
+                            <Button Grid.Column="2"
+                                    Click="CopyAddressButton_Click"
+                                    Background="Transparent" BorderThickness="0"
+                                    Padding="6"
+                                    VerticalAlignment="Center"
+                                    ToolTip.Tip="Copy address">
+                              <materialIcons:MaterialIcon Kind="ContentCopy" Width="15" Height="15" Opacity="0.7"/>
+                            </Button>
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Border>
+
           <TextBlock Text="{Binding VersionDisplay}"
                      Margin="0,16,0,0" FontSize="11" Opacity="0.5"/>
         </StackPanel>
+        </ScrollViewer>
       </TabItem>
 
       <!-- The tab itself always stays selectable - only its content is disabled
@@ -339,17 +410,6 @@
                       IsChecked="{Binding AdvertiseOnLan, Mode=TwoWay}"/>
             <TextBlock Text="Flower apps on the same network find this server by themselves, with nothing to type in. Turn it off if everyone reaches it through a tunnel or proxy instead."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
-
-            <!-- Read-only, and first: everything below it is a decision about
-                 reachability, and this is the thing being reached. -->
-            <TextBlock Text="This server is reachable at" FontWeight="SemiBold" Margin="0,20,0,4"
-                       IsVisible="{Binding HasAddresses}"/>
-            <SelectableTextBlock Text="{Binding AddressesText}"
-                                 FontFamily="monospace" FontSize="12" TextWrapping="Wrap"
-                                 IsVisible="{Binding HasAddresses}"/>
-            <TextBlock Text="Type one of these into a Flower app that can't find this server on its own."
-                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                       IsVisible="{Binding HasAddresses}"/>
 
             <!-- The switch that retires LanGuard. Worded as what it does rather
                  than as a setting name, because it is the most consequential one

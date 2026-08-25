@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Flower.ViewModels;
 
@@ -104,3 +105,45 @@ public sealed class SubsonicCredentialRow : ViewModelBase
 // admin route rather than one keyed by fingerprint, and it is the row the tab
 // lands on.
 public sealed record LogSourceRow(string Name, string? Fingerprint);
+
+// How an origin names the server, which is what the General tab groups the
+// address list by: an IPv6 literal and the IPv4 one beside it are the same
+// server reached two ways, and reading a flat list of them means checking each
+// string character by character to work out which is which.
+public enum ServerAddressKind
+{
+    IPv4,
+    IPv6,
+    Hostname,
+}
+
+// One origin this server can be dialled at, as shown on the General tab. Address
+// is what the row displays and what a client types in, scheme and all
+// ("https://192.168.1.5:4534") - which of the two schemes a row is decides what
+// an operator hands out (see DiscoveryEndpoints.ReachableOrigins), so it is not
+// something to leave to an icon. The derived pieces group and decorate it.
+public sealed record ServerAddressRow(string Address)
+{
+    private Uri? Parsed => Uri.TryCreate(Address, UriKind.Absolute, out var uri) ? uri : null;
+
+    public bool IsSecure => Parsed?.Scheme == Uri.UriSchemeHttps;
+
+    // Anything that isn't a literal address - a .ts.net name, the operator's own
+    // AdvertisedHost, an origin that didn't parse at all - is a hostname as far as
+    // this list is concerned: none of them commit to a version.
+    public ServerAddressKind Kind => Parsed?.HostNameType switch
+    {
+        UriHostNameType.IPv4 => ServerAddressKind.IPv4,
+        UriHostNameType.IPv6 => ServerAddressKind.IPv6,
+        _ => ServerAddressKind.Hostname,
+    };
+
+    // Null for anything that didn't parse - HyperlinkButton needs a real Uri, and
+    // a dead link is worse than plain text.
+    public Uri? NavigateUri => Parsed;
+}
+
+// One heading plus the origins under it - see SettingsViewModel.AddressGroups.
+// Only groups with something in them are built, so a server with no IPv6 never
+// shows an empty IPv6 heading.
+public sealed record ServerAddressGroup(string Title, IReadOnlyList<ServerAddressRow> Addresses);
