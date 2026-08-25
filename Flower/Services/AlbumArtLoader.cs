@@ -247,7 +247,12 @@ public class AlbumArtLoader
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not decode embedded album art for {Title} ({Path}); showing the placeholder icon instead",
+            // Debug, not Warning: this runs once per rendered row, so a library
+            // with a handful of odd art tags turns a scroll through the album
+            // grid into a wall of warnings for something the app handles by
+            // design - the placeholder icon is the intended outcome here, not a
+            // degraded one.
+            _logger.LogDebug(ex, "Could not decode embedded album art for {Title} ({Path}); showing the placeholder icon instead",
                 track.Title, track.Path);
             return null;
         }
@@ -375,7 +380,7 @@ public class AlbumArtLoader
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not decode {ByteCount} bytes of downloaded remote album art; showing the placeholder icon instead", bytes.Length);
+            _logger.LogDebug(ex, "Could not decode {ByteCount} bytes of downloaded remote album art; showing the placeholder icon instead", bytes.Length);
             return null;
         }
     }

@@ -157,14 +157,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
                 if (_appSettings.SyncPlayCountFromITunes == value)
                 return;
-            // Logged - the only writer of this flag is this setter, but a
-            // user report of it having silently flipped off without them
-            // touching the checkbox ("Settings > Library" is the only UI for
-            // it) turned up nothing conclusive in the code; this at least
-            // gives a timestamped trail (with a stack trace, to catch a
-            // programmatic caller vs. the checkbox's own click handler) if it
-            // happens again.
-            _logger.LogInformation("SyncPlayCountFromITunes changed {Old} -> {New}\n{StackTrace}", _appSettings.SyncPlayCountFromITunes, value, Environment.StackTrace);
+            // Logged because of a user report of this flag silently flipping
+            // off without the checkbox ("Settings > Library" is its only UI)
+            // being touched, which turned up nothing conclusive in the code -
+            // a timestamped trail if it happens again. This used to append
+            // Environment.StackTrace to catch a programmatic caller; that never
+            // caught anything and put a full stack trace in the log on every
+            // toggle, so it is gone. The setter is the only writer, so the
+            // timestamp and the old/new pair are the part that carries the
+            // information.
+            _logger.LogInformation("SyncPlayCountFromITunes changed {Old} -> {New}", _appSettings.SyncPlayCountFromITunes, value);
             _appSettings.SyncPlayCountFromITunes = value;
             SaveSettings();
         }
@@ -181,7 +183,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 if (_appSettings.SyncDateAddedFromITunes == value)
                 return;
             // See SyncPlayCountFromITunes's own comment on this same logging.
-            _logger.LogInformation("SyncDateAddedFromITunes changed {Old} -> {New}\n{StackTrace}", _appSettings.SyncDateAddedFromITunes, value, Environment.StackTrace);
+            _logger.LogInformation("SyncDateAddedFromITunes changed {Old} -> {New}", _appSettings.SyncDateAddedFromITunes, value);
             _appSettings.SyncDateAddedFromITunes = value;
             SaveSettings();
         }

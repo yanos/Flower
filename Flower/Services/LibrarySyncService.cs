@@ -108,7 +108,7 @@ public class LibrarySyncService
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
         {
-            _logger.LogDebug("Library sync skipped for {Alias}: no resolved fingerprint yet", device.Alias);
+            _logger.LogTrace("Library sync skipped for {Alias}: no resolved fingerprint yet", device.Alias);
             return new LibrarySyncResult(false, 0, 0);
         }
 
@@ -134,7 +134,7 @@ public class LibrarySyncService
             var fetch = await importer.FetchAsync(_lastSeenTokens.GetValueOrDefault(device.Fingerprint));
             if (fetch.NotModified)
             {
-                _logger.LogDebug("Library sync with {Alias}: catalog unchanged since {Token}, nothing to merge",
+                _logger.LogTrace("Library sync with {Alias}: catalog unchanged since {Token}, nothing to merge",
                     device.Alias, fetch.ETag);
                 return new LibrarySyncResult(true, 0, 0, Unchanged: true);
             }
@@ -245,7 +245,7 @@ public class LibrarySyncService
 
             using var response = await Http.SendAsync(request);
             response.EnsureSuccessStatusCode();
-            _logger.LogDebug("Pushed {Count} log line(s) to paired server {Alias}", entries.Count, device.Alias);
+            _logger.LogTrace("Pushed {Count} log line(s) to paired server {Alias}", entries.Count, device.Alias);
         }
         catch (Exception ex)
         {

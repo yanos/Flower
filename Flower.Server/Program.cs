@@ -8,6 +8,8 @@ using Microsoft.Extensions.Options;
 using Serilog;
 
 using Flower.Logging;
+
+using Serilog.Events;
 using Flower.Persistence;
 using Flower.Models;
 using Flower.Persistence.Sql;
@@ -75,7 +77,17 @@ builder.Configuration.AddInMemoryCollection(
 // console provider rather than doubling every line. The Logging:LogLevel
 // section still applies on top of Serilog's minimum level, so appsettings.json
 // remains the way to turn the noise up or down.
-var logFile = AppLogging.Initialize(fileSizeLimitBytes: 32 * 1024 * 1024);
+//
+// Flower:LogLevel raises Serilog's own floor, for the per-tick Trace lines that
+// are not written at all at the Debug default. It is separate from the
+// Logging:LogLevel section below, which filters on top of this one: Serilog
+// decides what is written, MEL decides what is passed to it, and a line has to
+// clear both. Set in appsettings.json or flower-server.json, same as everything
+// else.
+var configuredLevel = builder.Configuration.GetValue<LogEventLevel?>("Flower:LogLevel")
+                      ?? LogEventLevel.Debug;
+var logFile = AppLogging.Initialize(
+    fileSizeLimitBytes: 32 * 1024 * 1024, minimumLevel: configuredLevel);
 builder.Logging.ClearProviders();
 builder.Logging.AddSerilog();
 
@@ -93,8 +105,16 @@ builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 
 // still holds exactly one - loading twice would read the same file and work,
 // but it would also quietly create a second ECDsa over identical material and
 // invite the two to drift if the store ever gained caching.
+//
+// The logger comes from AppLogging's own factory rather than a LoggerFactory
+// built inline here: that one was never disposed, and it was a second factory
+// wrapping the very same Log.Logger this one does. Registering it also makes
+// AppLogging.CreateLogger<T>() work for the rest of this process - without
+// this call it returns NullLogger, so any Flower.Core class with a static
+// logger field was silently mute server-side while logging fine in the app.
+AppLogging.UseLoggerFactory(LoggerFactory.Create(logging => logging.AddSerilog()));
 var (deviceKey, devicePublicKeyRaw) = new DeviceKeyStore(
-    LoggerFactory.Create(logging => logging.AddSerilog()).CreateLogger<DeviceKeyStore>()).Load();
+    AppLogging.CreateTypedLogger<DeviceKeyStore>()).Load();
 
 // TLS, alongside the plain listener rather than instead of it.
 //
@@ -161,7 +181,9 @@ var (deviceKey, devicePublicKeyRaw) = new DeviceKeyStore(
 builder.Services.AddSingleton(services =>
 {
     var serverOptions = services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
-    return new FlowerDb(Path.Combine(serverOptions.DataDirectory, "flower.db"));
+    return new FlowerDb(
+        Path.Combine(serverOptions.DataDirectory, "flower.db"),
+        services.GetRequiredService<ILogger<FlowerDb>>());
 });
 // Stateless over FlowerDb, so one instance for the process: it is the shared
 // SQLite layer, registered here so the library and the importer write tracks

@@ -578,7 +578,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         // box, not just on a library change - unlike Repopulate's own line
         // above, which is the once-per-library-update counterpart to Library's
         // "Library updated" and is what tells the two apart in a log.
-        _logger.LogDebug("Rows rebuilt: {Rows} row(s) from {Base} track(s) of {All} ({Kind})",
+        _logger.LogTrace("Rows rebuilt: {Rows} row(s) from {Base} track(s) of {All} ({Kind})",
             rows.Count, baseTracks.Count, allTracks.Count, _host.CurrentKind);
 
         Rows = new ObservableCollection<TrackRowViewModel>(rows);

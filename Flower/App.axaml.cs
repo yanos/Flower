@@ -55,7 +55,13 @@ public partial class App : Application
         // to whatever AppLogging.UseLoggerFactory below has configured *the
         // first time that class is touched*, so these two calls need to be the
         // very first thing that happens.
-        var logPath = AppLogging.Initialize();
+        //
+        // The level comes from settings.json via a deliberately minimal peek -
+        // see AppSettingsStore.ReadLogFileMinimumLevel for why the full Load()
+        // cannot run this early. Debug unless the user has opted into Verbose,
+        // which is what makes the per-tick Trace lines (discovery polls, LibVLC
+        // callback tracing) free rather than merely cheap.
+        var logPath = AppLogging.Initialize(minimumLevel: AppSettingsStore.ReadLogFileMinimumLevel());
 
         // DI container setup starts here, near the top of startup - logging is
         // the first thing registered on it (via the standard
@@ -157,8 +163,9 @@ public partial class App : Application
             // constructor.)
             .AddSingleton(sp =>
             {
-                var db = FlowerDb.OpenDefault();
-                JsonLibraryImport.RunIfNeeded(db, sp.GetRequiredService<ILogger<FlowerDb>>());
+                var dbLogger = sp.GetRequiredService<ILogger<FlowerDb>>();
+                var db = FlowerDb.OpenDefault(dbLogger);
+                JsonLibraryImport.RunIfNeeded(db, dbLogger);
                 return db;
             })
 
@@ -823,11 +830,13 @@ public partial class App : Application
             var client = new ServerAdminClient(
                 Ioc.Default.GetRequiredService<HttpClient>(), BrowserLocation.Origin,
                 ServerAdminClient.SignWith(browserCredentials),
-                () => browserCredentials.UnauthenticatedReason);
+                () => browserCredentials.UnauthenticatedReason,
+                AppLogging.CreateTypedLogger<ServerAdminClient>());
             var settings = new SettingsViewModel(
                 new RemoteServerSettingsBackend(client),
                 Ioc.Default.GetRequiredService<AppSettings>(),
-                Ioc.Default.GetRequiredService<AppSettingsStore>());
+                Ioc.Default.GetRequiredService<AppSettingsStore>(),
+                AppLogging.CreateTypedLogger<SettingsViewModel>());
 
             // Posted rather than called inline: the view is not attached to a
             // visual tree yet at this point in OnFrameworkInitializationCompleted,

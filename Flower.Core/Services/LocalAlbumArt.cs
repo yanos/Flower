@@ -69,7 +69,7 @@ public static class LocalAlbumArtReader
             // Debug, not Warning - TagLib failing to open a file's tags
             // entirely is routine for oddball/corrupt files scattered through
             // a large real library, not something worth a warning for each.
-            logger?.LogDebug(ex, "Could not read embedded art tag for {Path}", path);
+            logger?.LogTrace(ex, "Could not read embedded art tag for {Path}", path);
         }
 
         // 2. cover.*/folder.* in the same directory.
@@ -91,7 +91,7 @@ public static class LocalAlbumArtReader
         }
         catch (Exception ex)
         {
-            logger?.LogDebug(ex, "Could not read a cover/folder image next to {Path}", path);
+            logger?.LogTrace(ex, "Could not read a cover/folder image next to {Path}", path);
         }
 
         return null;

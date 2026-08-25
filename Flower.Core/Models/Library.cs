@@ -641,14 +641,24 @@ namespace Flower.Models
 
         private Track BumpPlayCount(Track playedTrack)
         {
+            Track current;
+            int newCount;
             lock (_lock)
             {
-                var current = ResolveCurrent(playedTrack);
+                current = ResolveCurrent(playedTrack);
                 current.PlayCount++;
+                newCount = current.PlayCount;
                 BumpChangeToken();
-                _logger.LogDebug("PlayCount incremented to {NewCount} for {Title} ({Path})", current.PlayCount, current.Title, current.Path);
-                return current;
             }
+
+            // Outside the lock deliberately: formatting a message and handing it
+            // to three sinks is not work that belongs in a section every rescan
+            // and every concurrent play contends on. Read from the local copy
+            // rather than `current` for the same reason - once the lock is
+            // released, another play may already have bumped it again, and this
+            // line should report the increment it is actually about.
+            _logger.LogTrace("PlayCount incremented to {NewCount} for {Title}", newCount, current.Title);
+            return current;
         }
 
         // Whichever Track object currently represents playedTrack's file.

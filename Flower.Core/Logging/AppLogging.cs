@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Serilog;
+using Serilog.Events;
 
 using Flower.Persistence;
 
@@ -48,7 +49,13 @@ namespace Flower.Logging
         // nobody needed split. Note the interaction with DeleteOldLogs below:
         // retention counts *files*, so a rolling host keeps the newest 10
         // segments rather than the newest 10 runs.
-        public static string Initialize(long? fileSizeLimitBytes = null)
+        // minimumLevel is the floor for every sink. Debug by default, which is
+        // what this used to hard-code. Verbose is the opt-in: the per-tick lines
+        // (discovery polls, LibVLC callback tracing) log at Trace precisely so
+        // they cost nothing until somebody is chasing a bug and asks for them -
+        // at the default floor they are never written at all.
+        public static string Initialize(
+            long? fileSizeLimitBytes = null, LogEventLevel minimumLevel = LogEventLevel.Debug)
         {
             Directory.CreateDirectory(LogsDirectory);
             DeleteOldLogs();
@@ -56,7 +63,7 @@ namespace Flower.Logging
             var path = Path.Combine(LogsDirectory, $"flower-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.log");
 
             Log.Logger = new LoggerConfiguration()
-                .MinimumLevel.Debug()
+                .MinimumLevel.Is(minimumLevel)
                 .Enrich.FromLogContext()
                 .WriteTo.File(path,
                     outputTemplate:

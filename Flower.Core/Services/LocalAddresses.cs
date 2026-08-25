@@ -5,6 +5,10 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
+
 namespace Flower.Services;
 
 // Every address a server believes it can be reached on, for the addresses field
@@ -187,18 +191,26 @@ public static class LocalAddresses
     // is a degraded server - a client falls back to discovering it on the LAN -
     // whereas throwing would take down the handshake every peer needs before it
     // can do anything at all.
+    // A static class with no constructor to inject into - the case
+    // AppLogging.CreateLogger exists for, same as RubberBandScroll's.
+    private static readonly ILogger Logger = AppLogging.CreateLogger(typeof(LocalAddresses).FullName!);
+
     private static IEnumerable<NetworkInterface> SafeInterfaces()
     {
         try
         {
             return NetworkInterface.GetAllNetworkInterfaces();
         }
-        catch (NetworkInformationException)
+        catch (Exception ex) when (ex is NetworkInformationException or PlatformNotSupportedException)
         {
-            return [];
-        }
-        catch (PlatformNotSupportedException)
-        {
+            // Warning: an empty list here means /info advertises no addresses
+            // at all, so a client has nothing to remember and nothing to fall
+            // back to once mDNS stops reaching it. Returning [] keeps the
+            // handshake alive, which is right - but it makes the server look
+            // unreachable for a reason nothing else in the log would explain.
+            Logger.LogWarning(ex,
+                "Could not enumerate this machine's network interfaces; reporting no addresses. "
+                + "Clients will not be able to reach this server anywhere mDNS does not.");
             return [];
         }
     }
@@ -209,12 +221,13 @@ public static class LocalAddresses
         {
             return nic.GetIPProperties().UnicastAddresses;
         }
-        catch (NetworkInformationException)
+        catch (Exception ex) when (ex is NetworkInformationException or PlatformNotSupportedException)
         {
-            return [];
-        }
-        catch (PlatformNotSupportedException)
-        {
+            // Debug, not Warning: one interface refusing to describe itself is
+            // routine (a tunnel going down mid-enumeration, a virtual adapter),
+            // and the others still answer. Only losing all of them, above, is
+            // worth raising.
+            Logger.LogDebug(ex, "Could not read addresses for interface {Interface}; skipping it.", nic.Name);
             return [];
         }
     }

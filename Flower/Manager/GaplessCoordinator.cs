@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -194,7 +193,7 @@ namespace Flower.Manager
             {
                 if (_current != null && _currentPath == track.Path)
                 {
-                    _logger?.LogInformation("Play({Path}): no-op, already current", track.Path);
+                    _logger?.LogTrace("Play({Path}): no-op, already current", track.Path);
                     return;
                 }
 
@@ -263,7 +262,7 @@ namespace Flower.Manager
                 if (_armedTrack != null && _armedTrack.Path == next.Path)
                     return;
 
-                _logger?.LogInformation("SetUpcoming({Path})", next.Path);
+                _logger?.LogTrace("SetUpcoming({Path})", next.Path);
 
                 ClearArmedSlot(retireDecoder: true);
 
@@ -280,7 +279,7 @@ namespace Flower.Manager
 
         public void Seek(float position)
         {
-            _logger?.LogInformation("Seek({Position}) on {Path}", position, _currentPath);
+            _logger?.LogDebug("Seek({Position}) on {Path}", position, _currentPath);
             lock (_gate)
             {
                 if (_current != null)
@@ -340,12 +339,12 @@ namespace Flower.Manager
             {
                 if (!ReferenceEquals(_current, decoder))
                 {
-                    _logger?.LogDebug("HandleSeekSettled for {Path}: stale decoder, ignoring", decoder.Track.Path);
+                    _logger?.LogTrace("HandleSeekSettled for {Path}: stale decoder, ignoring", decoder.Track.Path);
                     return;
                 }
 
                 _currentTrackReadSplit = -landedBytes;
-                _logger?.LogInformation(
+                _logger?.LogTrace(
                     "Seek settled on {Path} at {LandedBytes} bytes - split re-anchored to {Split}",
                     _currentPath, landedBytes, _currentTrackReadSplit);
             }
@@ -354,12 +353,19 @@ namespace Flower.Manager
         private async Task ArmAsync(ITrackDecoder decoder, int generation)
         {
             bool prepared;
+            // Kept so the reason survives to the Warning further down: a bare
+            // catch here discarded it entirely, leaving "Decode-ahead prepare
+            // failed" as the only trace of a track that will not play - a
+            // failure with no cause attached, which is the hardest possible
+            // shape to diagnose from a log somebody mailed in.
+            Exception? prepareFailure = null;
             try
             {
                 prepared = await decoder.PrepareAsync();
             }
-            catch
+            catch (Exception ex)
             {
+                prepareFailure = ex;
                 prepared = false;
             }
 
@@ -389,7 +395,7 @@ namespace Flower.Manager
                 {
                     if (stillArmed)
                     {
-                        _logger?.LogWarning("Decode-ahead prepare failed for {Path} - clearing armed slot", decoder.Track.Path);
+                        _logger?.LogWarning(prepareFailure, "Decode-ahead prepare failed for {Path} - clearing armed slot", decoder.Track.Path);
                         ClearArmedSlot(retireDecoder: true);
                         return;
                     }
@@ -399,6 +405,9 @@ namespace Flower.Manager
                     // other current-decoder failure, but HandleDrainedOrFaulted
                     // can't be called from inside this lock (see its own
                     // remarks on why), so just flag it and handle it below.
+                    _logger?.LogWarning(prepareFailure,
+                        "Decode-ahead prepare failed for {Path} after it was already promoted to current - "
+                        + "reporting it as a playback failure", decoder.Track.Path);
                     promotedWhilePreparingAndFailed = true;
                 }
                 else
@@ -466,7 +475,7 @@ namespace Flower.Manager
             {
                 if (!ReferenceEquals(_current, decoder))
                 {
-                    _logger?.LogDebug("HandleDrainedOrFaulted for {Path}: stale decoder, ignoring", decoder.Track.Path);
+                    _logger?.LogTrace("HandleDrainedOrFaulted for {Path}: stale decoder, ignoring", decoder.Track.Path);
                     return;
                 }
 
@@ -545,9 +554,7 @@ namespace Flower.Manager
 
             if (promoted != null)
             {
-                var stopwatch = Stopwatch.StartNew();
                 promoted.PromoteTarget(_sharedRing);
-                _logger?.LogInformation("PromoteTarget for {Path} took {ElapsedMs}ms", promoted.Track.Path, stopwatch.ElapsedMilliseconds);
 
                 // The just-promoted decoder already reached Drained while
                 // it was still armed (see _armedAlreadyDrained's remarks) -

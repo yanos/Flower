@@ -21,6 +21,9 @@ public static class StreamTicketEndpoints
 {
     public static void MapStreamTicketEndpoints(this WebApplication app)
     {
+        var logger = app.Services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger(typeof(StreamTicketEndpoints));
+
         var jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -36,7 +39,7 @@ public static class StreamTicketEndpoints
             // ticket is still needed, because what cannot authenticate itself
             // here is the <audio> element, not the tab that owns it.
             var auth = DeviceSignatureAuth.AuthenticateTrustedPeer(
-                context.Request, [], trustedPeers, replayGuard);
+                context.Request, [], trustedPeers, replayGuard, logger);
             if (auth.Fingerprint == null)
                 return Results.Unauthorized();
 

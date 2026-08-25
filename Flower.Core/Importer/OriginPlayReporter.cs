@@ -69,7 +69,7 @@ public sealed class OriginPlayReporter(
     {
         if (track.OriginTrackId is not { Length: > 0 } originTrackId)
         {
-            logger.LogDebug(
+            logger.LogTrace(
                 "Not reporting a play of {Title}: it carries no origin track id, so this server has nothing to count it against",
                 track.Title);
             return;
@@ -153,7 +153,7 @@ public sealed class OriginPlayReporter(
             using var response = await http.SendAsync(request);
             response.EnsureSuccessStatusCode();
 
-            logger.LogDebug(
+            logger.LogTrace(
                 "Reported {PlayCount} play event(s) to the origin server at {BaseUrl}", batch.Count, baseUrl);
             return true;
         }

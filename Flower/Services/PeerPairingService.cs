@@ -67,7 +67,7 @@ public class PeerPairingService
                 _logger.LogInformation(
                     "Pairing code rejected by {Alias} ({EndPoint}): {Status}",
                     device.Alias, device.BaseUri, response.StatusCode);
-                return await DescribeRejectionAsync(device, response);
+                return await DescribeRejectionAsync(device, response, _logger);
             }
 
             return null;
@@ -85,9 +85,10 @@ public class PeerPairingService
     // fresh one, wait, or go check the server. The server phrases the common
     // one itself (PairingEndpoints returns {"error": ...} for a bad code), so
     // that text is preferred over anything invented here.
-    private static async Task<string> DescribeRejectionAsync(DiscoveredDevice device, HttpResponseMessage response)
+    private static async Task<string> DescribeRejectionAsync(
+        DiscoveredDevice device, HttpResponseMessage response, ILogger logger)
     {
-        var served = await ReadServerErrorAsync(response);
+        var served = await ReadServerErrorAsync(response, logger);
         if (served != null)
             return served;
 
@@ -100,7 +101,7 @@ public class PeerPairingService
         };
     }
 
-    private static async Task<string?> ReadServerErrorAsync(HttpResponseMessage response)
+    private static async Task<string?> ReadServerErrorAsync(HttpResponseMessage response, ILogger logger)
     {
         try
         {
@@ -112,11 +113,15 @@ public class PeerPairingService
                 ? error.GetString()
                 : null;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // A server that answered with something other than Flower's own
             // error shape has nothing useful to quote - fall back to the
-            // status code.
+            // status code. Logged because the alternative is a pairing failure
+            // whose only explanation is a bare status: if this is a proxy's
+            // HTML page rather than a Flower server at all, this line is what
+            // says so.
+            logger.LogDebug(ex, "Could not read a Flower error body from a pairing refusal; using the status code instead.");
             return null;
         }
     }

@@ -126,10 +126,20 @@ namespace Flower.Manager
             // things is harmless.
             _mediaPlayer.EndReached += (_, _) =>
             {
-                _logger?.LogInformation("EndReached (high-level) for {Path}", Track.Path);
+                _logger?.LogTrace("EndReached (high-level) for {Path}", Track.Path);
                 _ = FallbackDrainIfOnDrainNeverFiresAsync();
             };
 
+            // Every LibVLC callback above logs at Trace, not Information: one
+            // line per callback per track is a running commentary nobody reads
+            // during normal playback, but it is exactly what is wanted when a
+            // handover misbehaves - and this pipeline has had two subtle bugs
+            // found by reading precisely this sequence (see GaplessCoordinator's
+            // _secondCore remarks). So it is demoted rather than deleted, and
+            // turning it back on is a level change, not a rebuild.
+            //
+            // The watchdog below stays at Warning: it is edge-triggered on an
+            // actual anomaly rather than on every callback.
             if (_logger != null)
             {
                 _watchdog = new System.Timers.Timer(1000);
@@ -180,7 +190,7 @@ namespace Flower.Manager
 
         public void StartDecoding()
         {
-            _logger?.LogInformation("StartDecoding() for {Path}", Track.Path);
+            _logger?.LogTrace("StartDecoding() for {Path}", Track.Path);
 
             _nativeGate.Wait();
             try
@@ -239,7 +249,7 @@ namespace Flower.Manager
         // target ring.
         public void Seek(float position)
         {
-            _logger?.LogInformation(
+            _logger?.LogTrace(
                 "Seek({Position}) on {Path}: State={State} IsPlaying={IsPlaying} before seek",
                 position, Track.Path, _mediaPlayer.State, _mediaPlayer.IsPlaying);
             Interlocked.Exchange(ref _seekRequested, 1);
@@ -283,7 +293,7 @@ namespace Flower.Manager
             if (Interlocked.Exchange(ref _retired, 1) == 1)
                 return;
 
-            _logger?.LogInformation("Retire() for {Path}", Track.Path);
+            _logger?.LogTrace("Retire() for {Path}", Track.Path);
             _watchdog?.Stop();
 
             var path = Track.Path;
@@ -374,12 +384,12 @@ namespace Flower.Manager
 
         private void OnPause(IntPtr data, long pts)
         {
-            _logger?.LogInformation("OnPause for {Path}", Track.Path);
+            _logger?.LogTrace("OnPause for {Path}", Track.Path);
         }
 
         private void OnResume(IntPtr data, long pts)
         {
-            _logger?.LogInformation("OnResume for {Path}", Track.Path);
+            _logger?.LogTrace("OnResume for {Path}", Track.Path);
         }
 
         private void OnFlush(IntPtr data, long pts)
@@ -387,7 +397,7 @@ namespace Flower.Manager
             if (Volatile.Read(ref _retired) == 1)
                 return;
 
-            _logger?.LogInformation("OnFlush for {Path} - resetting target ring", Track.Path);
+            _logger?.LogTrace("OnFlush for {Path} - resetting target ring", Track.Path);
 
             if (Interlocked.Exchange(ref _seekRequested, 0) == 1)
                 Interlocked.Exchange(ref _seekAwaitingFirstSample, 1);
@@ -402,7 +412,7 @@ namespace Flower.Manager
             if (Volatile.Read(ref _retired) == 1)
                 return;
 
-            _logger?.LogInformation("OnDrain for {Path}", Track.Path);
+            _logger?.LogTrace("OnDrain for {Path}", Track.Path);
             Drained?.Invoke();
         }
 
@@ -419,7 +429,7 @@ namespace Flower.Manager
 
             var landedBytes = Math.Clamp(BytesForSeconds(timeMs / 1000.0), 0, BytesForSeconds(Track.Duration.TotalSeconds));
 
-            _logger?.LogInformation(
+            _logger?.LogTrace(
                 "Seek settled for {Path}: landed at {LandedMs}ms ({LandedBytes} bytes), was reporting {ReportedBytes}",
                 Track.Path, timeMs, landedBytes, BytesProduced);
 

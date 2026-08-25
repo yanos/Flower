@@ -142,6 +142,20 @@ namespace Flower.Persistence
         public LogEventLevel LogMinimumLevel    { get; set; } = LogEventLevel.Verbose;
         public bool          LogWordWrapEnabled { get; set; } = false;
 
+        // The floor for what reaches the log at all, as opposed to LogMinimumLevel
+        // above, which only filters what an already-written entry shows as. Debug
+        // by default: the per-tick lines (discovery polls every 5s, LibVLC
+        // callback tracing) sit at Verbose so they are not written unless someone
+        // is actually chasing a bug. Raising this to Verbose is the "turn the
+        // noise on" switch; read at startup by App.axaml.cs, so it takes effect
+        // on the next launch rather than immediately.
+        // Written as a name rather than a number, unlike LogMinimumLevel above:
+        // this is the one log setting somebody edits by hand, because turning it
+        // up is what you do *before* the run you want logged, and "Verbose"
+        // survives being read back by a human where 0 does not.
+        [JsonConverter(typeof(JsonStringEnumConverter<LogEventLevel>))]
+        public LogEventLevel LogFileMinimumLevel { get; set; } = LogEventLevel.Debug;
+
         // EQ window (View > Equalizer...) preferences, remembered between
         // launches the same way IsRepeatEnabled/IsShuffleEnabled are - see
         // EqualizerViewModel. Null until the user opens the Equalizer window
@@ -221,6 +235,52 @@ namespace Flower.Persistence
 
         private AppSettings? LoadFromDisk() =>
             AtomicJsonFile.Read(StorePath, FlowerJsonContext.Default.AppSettings, _logger);
+
+        // Reads LogFileMinimumLevel alone, before anything else has run. This
+        // exists because of an ordering knot: AppLogging.Initialize has to be
+        // the very first thing in startup (classes with a static logger field
+        // bind whatever factory exists the first time they are touched), but the
+        // level it should use is stored in settings.json - and a full Load()
+        // logs, seeds library paths and can write the file back, none of which
+        // may happen this early. So this peeks at the one field and nothing
+        // else, deliberately without a logger: there is no log to write to yet,
+        // and a settings file that cannot be read is already reported properly
+        // by the real Load() moments later. Any failure just means the default.
+        public static LogEventLevel ReadLogFileMinimumLevel()
+        {
+            try
+            {
+                using var stream = File.OpenRead(StorePath);
+                using var document = JsonDocument.Parse(stream);
+                if (!document.RootElement.TryGetProperty(nameof(AppSettings.LogFileMinimumLevel), out var level))
+                    return LogEventLevel.Debug;
+
+                // Both forms accepted. The property serializes as a name, but a
+                // settings.json written before that converter existed - or by
+                // hand, or by anything else round-tripping the enum - carries a
+                // number instead, and refusing to read it would silently reset
+                // somebody's chosen level to the default.
+                if (level.ValueKind == JsonValueKind.String
+                    && Enum.TryParse<LogEventLevel>(level.GetString(), ignoreCase: true, out var named))
+                {
+                    return named;
+                }
+
+                if (level.ValueKind == JsonValueKind.Number
+                    && level.TryGetInt32(out var ordinal)
+                    && Enum.IsDefined(typeof(LogEventLevel), ordinal))
+                {
+                    return (LogEventLevel)ordinal;
+                }
+            }
+            catch
+            {
+                // Missing, unreadable or malformed - the default is the right
+                // answer for all three, and this is not the place to say so.
+            }
+
+            return LogEventLevel.Debug;
+        }
 
         // ColumnManager's debounced save fires on every column resize/reorder/
         // hide, so overlapping writes to settings.json are routine rather than

@@ -120,7 +120,7 @@ public sealed class RemoteLibraryImporter : IMusicImporter
         using var response = await _http.SendAsync(request);
         if (response.StatusCode == HttpStatusCode.NotModified)
         {
-            _logger.LogDebug("Remote library at {BaseUrl}: catalog unchanged since {Token}", _baseUrl, ifNoneMatch);
+            _logger.LogTrace("Remote library at {BaseUrl}: catalog unchanged since {Token}", _baseUrl, ifNoneMatch);
             return new RemoteLibraryFetch(NotModified: true, ifNoneMatch, []);
         }
 

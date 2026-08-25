@@ -5,6 +5,9 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
 using Flower.Services;
 
 namespace Flower.iOS;
@@ -42,6 +45,14 @@ namespace Flower.iOS;
 // static method has no other way back to instance state.
 public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
 {
+    // Static, because the two DNSSD callbacks below are UnmanagedCallersOnly
+    // and reach nothing instance-scoped. Every failure in this file used to be
+    // a bare `return`: on a phone where discovery does not work, the managed
+    // side (NetworkDiscoveryService) logs its polling in detail while the layer
+    // that actually failed said nothing at all.
+    private static readonly ILogger Logger =
+        AppLogging.CreateLogger(typeof(BonjourMdnsBackend).FullName!);
+
     private const string DnsSdLib = "/usr/lib/libSystem.B.dylib";
     private const uint InterfaceIndexAny = 0;
 
@@ -117,7 +128,12 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
         var err = DNSServiceRegister(out _registerRef, 0, InterfaceIndexAny,
             instanceName, serviceType, "local.", IntPtr.Zero, networkPort, 0, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         if (err != ErrNoError)
+        {
+            Logger.LogWarning(
+                "DNSServiceRegister failed ({ErrorCode}); this device will not advertise {InstanceName} over mDNS.",
+                err, instanceName);
             _registerRef = IntPtr.Zero;
+        }
     }
 
     public void Browse(string serviceType)
@@ -141,6 +157,12 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
             &OnBrowseReply, GCHandle.ToIntPtr(_browseContext));
         if (err != ErrNoError)
         {
+            // The one that matters most: browsing is how this device finds any
+            // server at all, so failing here means an empty sidebar forever,
+            // with nothing anywhere to say why.
+            Logger.LogWarning(
+                "DNSServiceBrowse for {ServiceType} failed ({ErrorCode}); no peers will be discovered on this network.",
+                serviceType, err);
             _browseRef = IntPtr.Zero;
             _browseContext.Free();
             return;
@@ -168,7 +190,10 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
         IntPtr serviceNamePtr, IntPtr regTypePtr, IntPtr replyDomainPtr, IntPtr context)
     {
         if (errorCode != ErrNoError)
+        {
+            Logger.LogDebug("A browse reply reported error {ErrorCode}; ignoring it.", errorCode);
             return;
+        }
         if (GCHandle.FromIntPtr(context).Target is not BonjourMdnsBackend backend)
             return;
 
@@ -214,7 +239,10 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
                 var err = DNSServiceResolve(out var resolveRef, 0, interfaceIndex, serviceName, regType, domain,
                     &OnResolveReply, GCHandle.ToIntPtr(handle));
                 if (err != ErrNoError)
+                {
+                    Logger.LogDebug("DNSServiceResolve for {ServiceName} failed ({ErrorCode}).", serviceName, err);
                     return;
+                }
 
                 // Resolve delivers exactly one useful reply and isn't
                 // otherwise self-terminating - stop pumping (and deallocate)
@@ -244,7 +272,10 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
 
         state.Done = true;
         if (errorCode != ErrNoError)
+        {
+            Logger.LogDebug("A resolve reply reported error {ErrorCode}; the peer stays unresolved.", errorCode);
             return;
+        }
 
         var hostTarget = Marshal.PtrToStringUTF8(hostTargetPtr) ?? "";
         var hostPort = (ushort)IPAddress.NetworkToHostOrder((short)port);
@@ -255,10 +286,12 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
             if (address != null)
                 state.EndPoint = new IPEndPoint(address, hostPort);
         }
-        catch (SocketException)
+        catch (SocketException ex)
         {
-            // Peer vanished between the mDNS answer and this lookup - just
-            // not found this round; a later re-browse retries.
+            // Trace: a peer vanishing between the mDNS answer and this lookup
+            // is ordinary, and a re-browse retries every few seconds - so this
+            // is per-poll chatter for anything that has actually gone away.
+            Logger.LogTrace(ex, "Could not resolve {HostTarget} to an address; skipping it this round.", hostTarget);
         }
     }
 
