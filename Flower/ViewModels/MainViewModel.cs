@@ -246,7 +246,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // see PeerSyncCoordinator.AddManualServerAsync.
     public IEnumerable<string> ManualServerAddresses => Sync.ManualServerAddresses;
 
-    public Task<bool> AddManualServerAsync(string address) => Sync.AddManualServerAsync(address);
+    public Task<DiscoveredDevice?> AddManualServerAsync(string address) => Sync.AddManualServerAsync(address);
 
     public void RemoveManualServer(string address) => Sync.RemoveManualServer(address);
 

@@ -632,15 +632,18 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // docs/REMOTE-ACCESS-PLAN.md.
     public IEnumerable<string> ManualServerAddresses => _appSettings.ManualServerAddresses;
 
-    // Returns whether the address answered. A caller shows the failure rather
-    // than leaving a row that will never resolve - the overwhelmingly likely
-    // cause is a typo, and finding that out at pairing time is far better than
-    // at the coffee shop.
-    public async Task<bool> AddManualServerAsync(string address)
+    // Returns the server if the address answered, null otherwise. A caller shows
+    // the failure rather than leaving a row that will never resolve - the
+    // overwhelmingly likely cause is a typo, and finding that out at pairing
+    // time is far better than at the coffee shop. The device itself, not just a
+    // bool, because the settings screen pairs with it in the same gesture that
+    // added it (see ServerPickerView's Pair button) and would otherwise have to
+    // go looking for what it just created.
+    public async Task<DiscoveredDevice?> AddManualServerAsync(string address)
     {
         var trimmed = address.Trim();
         if (trimmed.Length == 0 || _networkDiscovery == null)
-            return false;
+            return null;
 
         if (!_appSettings.ManualServerAddresses.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
         {
@@ -651,7 +654,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         var device = await _networkDiscovery.AddRememberedAsync(trimmed);
         _reachability?.Recompute();
         NotifyPairingChanged();
-        return device is { IsResponding: true };
+        return device is { IsResponding: true } ? device : null;
     }
 
     public void RemoveManualServer(string address)

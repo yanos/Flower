@@ -1034,7 +1034,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 return;
 
             ManualServerStatus = "Looking for a server...";
-            var found = await Main.AddManualServerAsync(address);
+            var found = await Main.AddManualServerAsync(address) != null;
 
             // A typo is by far the likeliest reason this fails, and finding
             // that out here beats finding it out from a coffee shop. The entry
