@@ -4,7 +4,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Deliberately NOT InvariantGlobalization. Invariant mode removes Unicode
+         normalization, and it removes it silently: string.Normalize becomes a
+         no-op that returns its input while IsNormalized reports success. That
+         quietly killed ITunesPlayCountImporter.NormalizePath, whose whole job is
+         matching a decomposed path from the Music.app XML against the
+         precomposed one read off disk - see its comment for the real file that
+         proved it necessary. ICU is present by default on macOS, Windows and
+         glibc Linux; a musl container needs icu-libs. -->
   </PropertyGroup>
 
   <ItemGroup>

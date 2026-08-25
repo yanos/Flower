@@ -44,6 +44,56 @@ public class ITunesPlayCountImporterTests
             """;
     }
 
+    // Music.app writes a Location URL for every track. Its path arrives in a
+    // different Unicode composition from the one the same file has when read
+    // off disk: decomposed ("e" + U+0301) there, precomposed (U+00E9) here.
+    // Visually identical, ordinally different, so the dictionary lookup finds
+    // nothing and the play count silently does not transfer - which is the bug
+    // NormalizePath was written against, confirmed on a real file.
+    //
+    // This is also a guard on a build setting. NormalizePath is
+    // string.Normalize, and under InvariantGlobalization that is a no-op which
+    // returns its input while IsNormalized reports success - no exception, just
+    // a match that stops happening. Flower.Server ran that way and had this
+    // quietly broken, hence the comment now sitting in Flower.Server.csproj. If
+    // someone re-adds the switch, this test is what should stop them.
+    [Fact]
+    public void ApplyFromXmlFile_matches_a_path_whose_accents_are_composed_differently()
+    {
+        const string decomposed = "/Music/Cafe\u0301 Bleu/Song.mp3";   // e + combining acute
+        const string precomposed = "/Music/Caf\u00e9 Bleu/Song.mp3";   // single codepoint
+
+        Assert.NotEqual(decomposed, precomposed);   // the whole premise
+
+        // Three slashes, i.e. an empty host, which is what Music.app writes.
+        // With a host ("file://localhost/...") Uri.LocalPath hands back a UNC
+        // path with backslashes on every OS, and no POSIX path ever matches it.
+
+        var xmlPath = WriteLibraryXml($"""
+            <key>1</key>
+            <dict>
+                <key>Track ID</key><integer>1</integer>
+                <key>Name</key><string>Song</string>
+                <key>Artist</key><string>Unrelated Artist</string>
+                <key>Total Time</key><integer>1000</integer>
+                <key>Play Count</key><integer>12</integer>
+                <key>Location</key><string>file://{Uri.EscapeDataString(decomposed).Replace("%2F", "/")}</string>
+            </dict>
+            """);
+
+        // Deliberately mismatched title/artist/duration, so nothing but the
+        // path can produce a match and the metadata fallback cannot rescue it.
+        var track = new Track
+        {
+            Title = "Something Else", Artists = "Someone Else",
+            Duration = TimeSpan.FromMinutes(9), Path = precomposed,
+        };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(12, track.ImportedPlayCount);
+    }
+
     [Fact]
     public void ApplyFromXmlFile_sets_ImportedPlayCount_from_a_matching_entry()
     {
