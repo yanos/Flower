@@ -117,10 +117,19 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // the server reachable, or every remote listener arrives as that proxy's
     // address and shares one rate-limit bucket. Startup says so if it is not.
     //
-    // Deliberately not in ServerSettingsDto, for the same reason as
-    // TrustedProxies below and more so: exposing a server to the internet is a
-    // fact about how it was deployed, and the browser page is the last place
-    // that should be able to decide it.
+    // Editable from the settings page, unlike TrustedProxies below. That was
+    // once the other way round - a server's exposure is a fact about how it was
+    // deployed, and the page served from it is a strange place to decide it -
+    // but the page already offers AllowedCidrs, and an operator who wants this
+    // could always get it by typing 0.0.0.0/0 into that box. Which is the worse
+    // outcome of the two: the same door, opened by a control that does not look
+    // like it is opening it. So it is a switch that says what it does, with the
+    // server's own addresses beside it, and it is the admin surface - a paired
+    // device holding an admin key - that can throw it.
+    //
+    // Read per request through IOptionsMonitor (see Program.cs's gate), so
+    // toggling it takes effect immediately and needs no restart. That matters
+    // most in the direction that closes the door.
     public bool AllowPublicAccess { get; set; } = false;
 
     // Widens LanGuard's built-in private/loopback/CGNAT allow-list (see

@@ -109,9 +109,8 @@ public class ForwardedHeaderTests(ProxiedServerFixture proxied, SubsonicServerFi
         // so a proxy in front of the server is not a way around the gate. A
         // deployment that genuinely fronts public traffic has to say so, with
         // Flower:AllowPublicAccess - see PublicAccessTests.
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            await GetInfoAsync(proxied.Server, "127.0.0.1", forwardedFor: "203.0.113.7"));
+        await GuardedRequest.AssertDropped(
+            () => GetInfoAsync(proxied.Server, "127.0.0.1", forwardedFor: "203.0.113.7"));
     }
 
     [Fact]
@@ -121,9 +120,8 @@ public class ForwardedHeaderTests(ProxiedServerFixture proxied, SubsonicServerFi
         // the configured proxies. Believing it would let any public caller
         // wave itself through the guard - and let any caller shed an
         // exhausted rate-limit bucket by picking a new address.
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            await GetInfoAsync(proxied.Server, "198.51.100.9", forwardedFor: "100.101.102.103"));
+        await GuardedRequest.AssertDropped(
+            () => GetInfoAsync(proxied.Server, "198.51.100.9", forwardedFor: "100.101.102.103"));
     }
 
     [Fact]
@@ -132,9 +130,8 @@ public class ForwardedHeaderTests(ProxiedServerFixture proxied, SubsonicServerFi
         // The default deployment, where a forwarded header can only have been
         // written by the client itself. A public caller claiming a private
         // address gets nothing for it.
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            await GetInfoAsync(direct.Server, "203.0.113.8", forwardedFor: "10.0.0.9"));
+        await GuardedRequest.AssertDropped(
+            () => GetInfoAsync(direct.Server, "203.0.113.8", forwardedFor: "10.0.0.9"));
     }
 
     private async Task<HttpStatusCode> RedeemAsync(string forwardedFor)

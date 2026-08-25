@@ -123,11 +123,12 @@ phone.
    containing control named in five separate places, see
    `OPEN-INTERNET-REVIEW.md`), so it is now `FlowerServerOptions
    .AllowPublicAccess` rather than an `AllowedCidrs` of `0.0.0.0/0` that a
-   reader might not recognise for what it is. Deliberately not editable from the
-   browser settings page, and it warns at every startup. The original note
-   follows, and it is what the setting is for. Today it admits RFC1918, loopback and
-   `100.64/10`, and everything else gets a flat 403 — so authentication has a
-   network-level backstop underneath it. Behind a tunnel every request arrives
+   reader might not recognise for what it is. It warns at every startup, and it
+   is on the settings page as "Accept connections from outside this network"
+   (see `OPEN-INTERNET-REVIEW.md` point 3 for why that reversed). The original
+   note follows, and it is what the setting is for. Today it admits RFC1918,
+   loopback and `100.64/10`, and everything else is dropped without a reply — so
+   authentication has a network-level backstop underneath it. Behind a tunnel every request arrives
    from the tunnel daemon, inside the allow-list by definition, and that backstop
    is gone. `TrustedProxies` must name the daemon so `X-Forwarded-For` is
    believed and rate limiting stays per-client rather than pooling every listener

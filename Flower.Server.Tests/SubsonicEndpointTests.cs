@@ -401,12 +401,10 @@ public class LanGuardTests(SubsonicServerFixture server) : IClassFixture<Subsoni
     [InlineData("172.32.0.1")]  // just outside the 172.16/12 block
     public async Task A_public_client_is_refused_before_reaching_any_endpoint(string ip)
     {
-        // 403 from the middleware, not a Subsonic error body - the request
-        // never reaches the route table or the auth filter.
-        var (status, body) = await server.SendAsync("/rest/ping" + server.AuthQuery, ip);
-
-        Assert.Equal(HttpStatusCode.Forbidden, status);
-        Assert.Empty(body);
+        // Dropped by the middleware, not answered with a Subsonic error body -
+        // the request never reaches the route table or the auth filter.
+        await GuardedRequest.AssertDropped(async () =>
+            (await server.SendAsync("/rest/ping" + server.AuthQuery, ip)).Status);
     }
 
     [Fact]
@@ -414,9 +412,8 @@ public class LanGuardTests(SubsonicServerFixture server) : IClassFixture<Subsoni
     {
         // Order matters: a public client must be cut off before it can even
         // probe which credentials the server accepts.
-        var (status, _) = await server.SendAsync("/rest/getAlbumList2?f=json", "8.8.8.8");
-
-        Assert.Equal(HttpStatusCode.Forbidden, status);
+        await GuardedRequest.AssertDropped(async () =>
+            (await server.SendAsync("/rest/getAlbumList2?f=json", "8.8.8.8")).Status);
     }
 }
 

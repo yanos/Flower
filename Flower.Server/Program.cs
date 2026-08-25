@@ -416,7 +416,7 @@ app.Use(async (context, next) =>
     // caller nothing downstream can budget.
     if (remoteAddress == null)
     {
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        context.Abort();
         return;
     }
 
@@ -428,7 +428,20 @@ app.Use(async (context, next) =>
     if (!serverOptions.AllowPublicAccess
         && !LanGuard.IsPrivateOrLoopback(remoteAddress, serverOptions.AllowedCidrs, serverOptions.TrustTailscaleRange))
     {
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        // Dropped rather than answered 403. A refusal is still a reply, and a
+        // reply to an address that was never allowed to be here confirms there
+        // is something listening on this port worth coming back to - which is
+        // the one thing a server whose door is shut has to gain by saying
+        // nothing. Nobody legitimate ever sees this: a client that belongs on
+        // this network is inside the allow-list by definition.
+        //
+        // Logged at Debug so an operator debugging "my phone cannot reach it
+        // from the coffee shop" has something to find, without a scanned port
+        // filling the Logs tab at Information.
+        app.Logger.LogDebug(
+            "Dropped a request from {RemoteAddress}: it is outside the allowed networks and public access is off.",
+            remoteAddress);
+        context.Abort();
         return;
     }
     await next(context);

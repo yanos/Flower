@@ -396,9 +396,16 @@ Ordered by what blocks what, not by severity:
 3. ~~**Before Cloudflare Tunnel:** the `LanGuard` question the framing finding
    raises — what actually replaces it.~~ **Answered by building the switch**:
    `FlowerServerOptions.AllowPublicAccess` retires the guard by name rather than
-   by an `AllowedCidrs` of `0.0.0.0/0`, warns at every startup, and cannot be
-   set from the browser page. `PublicAccessTests` pins both halves — that a
-   public caller gets in, and that getting in still buys them nothing unsigned.
+   by an `AllowedCidrs` of `0.0.0.0/0`, and warns at every startup.
+   `PublicAccessTests` pins both halves — that a public caller gets in, and that
+   getting in still buys them nothing unsigned.
+
+   It is now settable from the settings page too, which reverses the original
+   decision: the page already offered `AllowedCidrs`, so the same door was
+   already openable there by typing `0.0.0.0/0` — under a control that does not
+   look like it is opening it. A named switch, admin-signature-gated like every
+   other write on that surface, is the better of the two. See the option's own
+   remarks.
 4. ~~**Before a mapped public port:** #6 — TLS, which means the certificate
    design in `REMOTE-TRANSPORT-PLAN.md` has to land first.~~ **Built.** The
    server serves TLS on its own, from its own device key, with no configuration
