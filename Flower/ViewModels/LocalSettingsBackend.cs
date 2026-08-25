@@ -133,7 +133,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 
     public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => throw NoRoster();
 
-    public Task RenameDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => throw NoRoster();
 
     public Task RescanAsync(CancellationToken ct = default) => ViewModel.RescanLibraryAsync();
 

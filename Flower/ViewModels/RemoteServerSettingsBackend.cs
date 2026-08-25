@@ -131,12 +131,6 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
 
     public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => Task.CompletedTask;
 
-    // Nicknames are a local-display concept (DeviceNicknameStore), stored on the
-    // device doing the looking. A server records the alias a peer reported for
-    // itself at pairing time and has no override to write.
-    public Task RenameDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) =>
-        throw new NotSupportedException("A server shows the name each device reports for itself.");
-
     public async Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
         (await client.IssuePairingCodeAsync(grantsAdmin, ct)).Code;
 

@@ -3,14 +3,10 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using Flower.ViewModels;
 
@@ -124,63 +120,6 @@ public partial class SettingsPanel : UserControl
 
     private void OpenAppDataLocationButton_Click(object? sender, RoutedEventArgs e) =>
         _mainViewModel?.OpenAppDataLocationCommand?.Execute(null);
-
-    // Pencil icon click: not-yet-editing starts an edit (an already-realized row's
-    // IsVisible flip doesn't refire Loaded, so the textbox needs focusing manually,
-    // via ContainerFromItem rather than an index since these rows aren't otherwise
-    // tracked by position); already-editing (now showing a checkmark) confirms.
-    private void EditAliasButton_Click(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { DataContext: TrustedPeerRow row })
-            return;
-
-        if (row.IsEditing)
-        {
-            _ = CommitAliasEdit(row);
-            return;
-        }
-
-        row.IsEditing = true;
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (DevicesList.ContainerFromItem(row) is Control container &&
-                container.FindDescendantOfType<TextBox>() is { } textBox)
-            {
-                textBox.Focus();
-                textBox.SelectAll();
-            }
-        });
-    }
-
-    private void AliasTextBox_KeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter)
-            return;
-        if (sender is not TextBox { DataContext: TrustedPeerRow row })
-            return;
-
-        e.Handled = true;
-        _ = CommitAliasEdit(row);
-    }
-
-    // Also commits on LostFocus, not just Enter or the checkmark click - this panel
-    // can plausibly be edited then immediately dismissed (Cancel/OK, Cmd+W, the
-    // native close button) without either of those firing first, which is exactly
-    // what silently discarded a rename before.
-    private void AliasTextBox_LostFocus(object? sender, RoutedEventArgs e)
-    {
-        if (sender is TextBox { DataContext: TrustedPeerRow row })
-            _ = CommitAliasEdit(row);
-    }
-
-    private Task CommitAliasEdit(TrustedPeerRow row)
-    {
-        if (!row.IsEditing)
-            return Task.CompletedTask;
-
-        row.IsEditing = false;
-        return _viewModel.RenameDeviceAsync(row);
-    }
 
     private void ForgetButton_Click(object? sender, RoutedEventArgs e)
     {

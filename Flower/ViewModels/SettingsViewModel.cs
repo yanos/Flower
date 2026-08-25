@@ -440,15 +440,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         await RefreshDevicesAsync(ct);
     });
 
-    public Task RenameDeviceAsync(TrustedPeerRow device) => RunAsync(async ct =>
-    {
-        await _backend.RenameDeviceAsync(device, ct);
-        // Re-derives the displayed value from scratch - in particular, an emptied
-        // field falls back to the alias the peer reported for itself rather than
-        // being left showing blank text.
-        await RefreshDevicesAsync(ct);
-    });
-
     [RelayCommand]
     private Task IssueSubsonicCredentialAsync() => RunAsync(async ct =>
     {

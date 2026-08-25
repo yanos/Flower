@@ -249,48 +249,30 @@
                 </ListBox.Styles>
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:TrustedPeerRow">
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" Margin="4,2">
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4,2">
+                      <!-- Read-only. A server records the name each device
+                           reported for itself at pairing time and has no override
+                           to write, so there is nothing here to edit - see
+                           RemoteServerSettingsBackend and DeviceNicknameStore,
+                           which is where a local nickname lives instead. -->
                       <TextBlock Grid.Row="0" Grid.Column="0"
                                  Text="{Binding Alias}"
-                                 IsVisible="{Binding !IsEditing}"
                                  FontWeight="SemiBold" FontSize="13"
                                  VerticalAlignment="Center" Margin="4,0"/>
-                      <TextBox Grid.Row="0" Grid.Column="0"
-                               Text="{Binding Alias, Mode=TwoWay}"
-                               IsVisible="{Binding IsEditing}"
-                               FontWeight="SemiBold" FontSize="13"
-                               Height="22" MinHeight="0" Padding="4,1"
-                               VerticalContentAlignment="Center"
-                               KeyDown="AliasTextBox_KeyDown"
-                               LostFocus="AliasTextBox_LostFocus"/>
                       <TextBlock Grid.Row="1" Grid.Column="0"
                                  Text="{Binding ApprovedAtDisplay}"
                                  Opacity="0.6" FontSize="11" Margin="4,1,0,0"/>
-
-                      <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
-                              x:Name="RenameButton"
-                              Click="EditAliasButton_Click"
-                              Background="Transparent" BorderThickness="0" Padding="6"
-                              VerticalAlignment="Center"
-                              ToolTip.Tip="Rename">
-                        <Panel>
-                          <materialIcons:MaterialIcon Kind="Pencil" Width="16" Height="16" Opacity="0.7"
-                                                       IsVisible="{Binding !IsEditing}"/>
-                          <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" Opacity="0.7"
-                                                       IsVisible="{Binding IsEditing}"/>
-                        </Panel>
-                      </Button>
 
                       <!-- Confirmed inline rather than in a modal: this list also
                            renders in the browser, where Avalonia is single-view
                            and there is no Window to own a dialog - which used to
                            make Forget silently do nothing there. -->
-                      <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="2"
+                      <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
                               Content="Forget"
                               Padding="10,4" VerticalAlignment="Center" Margin="8,0,0,0"
                               IsVisible="{Binding IsNotConfirmingForget}"
                               Click="ForgetButton_Click"/>
-                      <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="2"
+                      <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
                                   Orientation="Horizontal" Spacing="6"
                                   VerticalAlignment="Center" Margin="8,0,0,0"
                                   IsVisible="{Binding IsConfirmingForget}">
