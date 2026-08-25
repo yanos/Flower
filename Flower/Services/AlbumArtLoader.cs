@@ -286,6 +286,13 @@ public class AlbumArtLoader
                 Retain(cacheKey, bmp);
                 return bmp;
             }
+
+            // Nothing on disk under this hash is ever going to become decodable
+            // - the file is truncated, or it predates the decode-first rule
+            // below and is actually a Subsonic error envelope. Drop it so the
+            // fetch beneath re-fills it, instead of warning about the same
+            // unreadable file on every load for the life of the cache.
+            DiscardCacheFile(cachePath);
         }
 
         // ICoverArtUrlResolver is what actually decides where - and whether -
@@ -373,6 +380,21 @@ public class AlbumArtLoader
         }
     }
 
+    private void DiscardCacheFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            // Losing the race with another head deleting the same file, or a
+            // read-only cache directory: the art still falls back to the
+            // placeholder either way, so this is not worth failing the load for.
+            _logger.LogDebug(ex, "Could not remove undecodable cached album art at {Path}", path);
+        }
+    }
+
     private Bitmap? TryDecodeFile(string path)
     {
         try
@@ -382,7 +404,7 @@ public class AlbumArtLoader
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not decode cached remote album art at {Path}; showing the placeholder icon instead", path);
+            _logger.LogDebug(ex, "Could not decode cached remote album art at {Path}; discarding it and re-fetching", path);
             return null;
         }
     }

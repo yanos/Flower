@@ -262,6 +262,25 @@ public class AlbumArtLoaderTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_cached_art_file_that_cannot_be_decoded_is_removed_from_disk()
+    {
+        // Real libraries have these: art cached before the loader learned to
+        // decode before writing, so what is on disk is a Subsonic error
+        // envelope rather than an image. Falling through to the peer is not
+        // enough on its own - if the fetch also fails (peer offline, or no
+        // peer at all as here) the unreadable file stays and every later load
+        // pays for the same failed decode. Deleting it means the next attempt
+        // is a clean fetch.
+        var hash = Unique("hash");
+        WriteArtCache(hash, "{\"subsonic-response\":{\"status\":\"failed\"}}"u8.ToArray());
+
+        Assert.Null(await _loader.LoadAsync(RemoteTrack(hash)));
+
+        var cachePath = Path.Combine(AppDataDirectory.Path, "AlbumArtCache", $"{hash}.art");
+        Assert.False(File.Exists(cachePath));
+    }
+
+    [AvaloniaFact]
     public async Task Remote_art_is_cached_in_memory_by_hash_across_tracks()
     {
         var hash = Unique("hash");
