@@ -102,9 +102,13 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
         // Any new log line at all (playing a track, a setting changed, an
         // error, routine peer-polling chatter, ...) marks that there is
-        // something new for a paired Server to pick up - the
-        // timer below periodically checks that flag and syncs if it is set,
-        // entirely independent of ScheduleContentSync's debounce.
+        // something new for a paired Server to pick up - the timer below
+        // periodically checks that flag and, if it is set, pushes this
+        // device's log snapshot, entirely independent of ScheduleContentSync's
+        // debounce. Only the log snapshot: the catalog and playlists do not
+        // move because a line was logged, and pulling them on this tick's
+        // cadence is what put a client permanently over the server's bulk
+        // rate limit - see PushPendingLogs.
         // A debounce cannot work here: NetworkDiscoveryService's own routine
         // ~5s polling chatter (and, previously, this sync path's own
         // completion logging) fires at essentially the same cadence as
@@ -122,13 +126,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             h => InMemoryLogStore.Instance.EntryAdded += h, h => InMemoryLogStore.Instance.EntryAdded -= h);
 
         _logPushTimer = new DispatcherTimer { Interval = ContentSyncCooldown };
-        _logPushTimer.Tick += (_, _) =>
-        {
-            if (!_hasUnpushedLogActivity || _activeSyncCount != 0)
-                return;
-            _hasUnpushedLogActivity = false;
-            RunPendingDeviceSyncs();
-        };
+        _logPushTimer.Tick += (_, _) => LogPushTick();
         _logPushTimer.Start();
     }
 
@@ -247,19 +245,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // paired to, right now."
     private void RunPendingDeviceSyncs()
     {
-        // Every currently-known, fingerprint-resolved peer this device should
-        // bulk-sync with per SyncRolePolicy - not gated by
-        // _syncedDeviceFingerprints (that dedup is specifically for "don't
-        // double-sync from DeviceDiscovered re-firing at first contact" - see
-        // TriggerSyncIfReady - and is orthogonal to resyncing on a later
-        // change). Collapses to at most one device - the paired server - since
-        // that is the only peer this device is allowed to dial at all.
-        var pairedServerFingerprint = _appSettings.PairedServerFingerprint;
-        var devices = _host.ListedPeers
-            .Where(d => d.Fingerprint.Length > 0 &&
-                        SyncRolePolicy.MayRequestFrom(pairedServerFingerprint, d.Fingerprint))
-            .ToList();
-
+        var devices = PendingSyncDevices();
         if (devices.Count == 0)
             return;
 
@@ -280,6 +266,82 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // immediately re-schedule another one, forever, from its own message.
         _logger.LogInformation("Content sync running with {Count} known device(s): {Devices}",
             devices.Count, string.Join(", ", devices.Select(d => d.Alias)));
+    }
+
+    // Every currently-known, fingerprint-resolved peer this device should
+    // bulk-sync with per SyncRolePolicy - not gated by
+    // _syncedDeviceFingerprints (that dedup is specifically for "don't
+    // double-sync from DeviceDiscovered re-firing at first contact" - see
+    // TriggerSyncIfReady - and is orthogonal to resyncing on a later change).
+    // Collapses to at most one device - the paired server - since that is the
+    // only peer this device is allowed to dial at all.
+    private List<DiscoveredDevice> PendingSyncDevices()
+    {
+        var pairedServerFingerprint = _appSettings.PairedServerFingerprint;
+        return _host.ListedPeers
+            .Where(d => d.Fingerprint.Length > 0 &&
+                        SyncRolePolicy.MayRequestFrom(pairedServerFingerprint, d.Fingerprint))
+            .ToList();
+    }
+
+    // Set for the duration of one tick's push, so a slow or hanging POST
+    // doesn't have a second one stacked on top of it five seconds later. Only
+    // ever touched from the timer's Tick and the continuation below, both on
+    // the UI thread, so a plain bool is enough - and unlike _activeSyncCount
+    // this deliberately does not drive IsSyncing: a log push is background
+    // chatter, and blinking the spinner next to the server's name every five
+    // seconds would read as the app perpetually syncing.
+    private bool _logPushInFlight;
+
+    // One firing of _logPushTimer. Internal rather than inline in the Tick
+    // handler so a test can drive it directly: parking the headless dispatcher
+    // long enough to let a real DispatcherTimer fire holds up every other
+    // [AvaloniaFact] queued behind it - see MainViewModelSyncTriggerTests'
+    // PumpUntil on why that is avoided throughout this suite.
+    internal void LogPushTick()
+    {
+        if (!_hasUnpushedLogActivity || _activeSyncCount != 0 || _logPushInFlight)
+            return;
+        PushPendingLogs();
+    }
+
+    // The tick's whole job: ship whatever has been logged since the last push
+    // to the paired server, and nothing else.
+    private void PushPendingLogs()
+    {
+        var devices = PendingSyncDevices();
+        if (devices.Count == 0 || _librarySyncService == null)
+        {
+            // Nobody to push to. Clear the flag anyway - holding it would only
+            // mean firing a burst at whichever server pairs next, for lines it
+            // will receive in that push's full snapshot regardless.
+            _hasUnpushedLogActivity = false;
+            return;
+        }
+
+        _logPushInFlight = true;
+        _ = PushPendingLogsAsync(devices);
+    }
+
+    private async Task PushPendingLogsAsync(List<DiscoveredDevice> devices)
+    {
+        try
+        {
+            foreach (var device in devices)
+                await _librarySyncService!.PushLogsOnlyAsync(device);
+        }
+        finally
+        {
+            // Cleared after the push, not before, for the same reason
+            // RunPendingDeviceSyncs logs its line late: the push writes its own
+            // debug line on the way out, and clearing first would let that line
+            // re-arm the flag and keep an otherwise idle app pushing forever.
+            // A genuine line logged inside this window is not lost, only
+            // deferred - the snapshot is the whole store every time, so the
+            // next push carries it.
+            _hasUnpushedLogActivity = false;
+            _logPushInFlight = false;
+        }
     }
 
     // ── Pairing and trust ─────────────────────────────────────────────────

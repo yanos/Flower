@@ -201,6 +201,31 @@ public class LibrarySyncService
         return new LibrarySyncResult(true, fetchedCount, addedCount);
     }
 
+    // The log half of a sync on its own, without the catalog pull above.
+    //
+    // PeerSyncCoordinator's periodic tick wants exactly this and nothing else:
+    // new log lines appear at roughly the same cadence as its timer, so a tick
+    // that ran a whole SyncWithAsync spent a GET /library (plus its playlist
+    // twin) every five seconds to deliver a payload that is usually a handful
+    // of lines - four bulk-group requests a tick against a budget of twenty a
+    // minute, which the server answers with 429s that are themselves logged,
+    // which arms the next tick. The catalog has its own trigger for the only
+    // thing that should move it: an actual local change (ScheduleContentSync).
+    //
+    // Virtual for the same reason SyncWithAsync is - it is the seam a test
+    // drives the coordinator's tick through.
+    public virtual Task PushLogsOnlyAsync(DiscoveredDevice device)
+    {
+        // Same gate the tail of SyncWithAsync applies, restated rather than
+        // shared because this is a second public door into the same push: the
+        // setting ships off by default and a snapshot carries exception text
+        // and absolute paths, so neither door may open without it.
+        if (!_appSettings.ShareLogsWithPairedServer || string.IsNullOrEmpty(device.Fingerprint))
+            return Task.CompletedTask;
+
+        return PushLogSnapshotAsync(device);
+    }
+
     private async Task PushLogSnapshotAsync(DiscoveredDevice device)
     {
         try
