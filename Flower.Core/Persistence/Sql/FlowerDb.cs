@@ -3,6 +3,7 @@ using System.Data;
 using System.IO;
 
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace Flower.Persistence.Sql
 {
@@ -34,9 +35,15 @@ namespace Flower.Persistence.Sql
         // connection. For a file database this is just a warm connection.
         private readonly SqliteConnection? _keepAlive;
 
-        public FlowerDb(string path)
+        private readonly ILogger? _logger;
+
+        // The logger is optional because most construction sites are tests,
+        // which have nothing to log to and no interest in it. Production has
+        // one, and it exists for exactly one line - the quarantine below.
+        public FlowerDb(string path, ILogger? logger = null)
         {
             _path = path;
+            _logger = logger;
 
             if (IsSharedInMemory(path))
             {
@@ -74,6 +81,18 @@ namespace Flower.Persistence.Sql
                 // database takes its place. The library rebuilds from the next
                 // rescan; what is genuinely lost is play counts and DateAdded,
                 // which is the same exposure the JSON quarantine path has.
+                // Critical, and the only place this is ever said. The user is
+                // about to find their play counts and DateAdded gone, with the
+                // library itself rebuilding from the next rescan - a silent
+                // quarantine makes that look like the app losing data at
+                // random rather than recovering from a damaged file, and
+                // leaves nothing to point at the .corrupt copy that was kept
+                // for exactly this conversation.
+                _logger?.LogCritical(ex,
+                    "{Path} is not a readable database ({ErrorCode}); moved it to {CorruptPath} and started a fresh one. "
+                    + "The library rebuilds on the next scan, but play counts and Date Added in it are lost.",
+                    path, ex.SqliteErrorCode, CorruptPath(path));
+
                 Quarantine(path);
                 SqliteMigrations.Apply(this);
             }
@@ -104,7 +123,7 @@ namespace Flower.Persistence.Sql
 
         public static string DefaultPath => Path.Combine(AppDataDirectory.Path, "flower.db");
 
-        public static FlowerDb OpenDefault() => new(DefaultPath);
+        public static FlowerDb OpenDefault(ILogger? logger = null) => new(DefaultPath, logger);
 
         private static bool IsSharedInMemory(string path) =>
             path.Contains(":memory:", StringComparison.Ordinal) || path.Contains("Mode=Memory", StringComparison.OrdinalIgnoreCase);

@@ -69,6 +69,8 @@ public static class AdminEndpoints
 
     public static void MapAdminEndpoints(this WebApplication app)
     {
+        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AdminEndpoints));
+
         var jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -105,7 +107,8 @@ public static class AdminEndpoints
                 http.Request.Body.Position = 0;
             }
 
-            var fingerprint = DeviceSignatureAuth.VerifyTrustedPeer(http.Request, body, trustedPeers, replayGuard);
+            var fingerprint = DeviceSignatureAuth.VerifyTrustedPeer(
+                http.Request, body, trustedPeers, replayGuard, logger);
             if (fingerprint == null)
                 return Results.Unauthorized();
 
@@ -118,7 +121,18 @@ public static class AdminEndpoints
             // signature - so it throws rather than answering, turning every
             // "paired but not an admin" refusal into a 500.
             if (!trustedPeers.IsAdmin(fingerprint))
+            {
+                // Warning, and deliberately louder than a failed signature:
+                // this caller *is* a paired device and its signature verified,
+                // it simply is not an admin. A phone reaching for /api/admin is
+                // either a bug or the most interesting thing in the log.
+                logger.LogWarning(
+                    "Refused {Method} {Path} for {Fingerprint} from {RemoteAddress}: "
+                    + "the device is paired and verified, but is not an admin.",
+                    http.Request.Method, http.Request.Path.Value, fingerprint,
+                    http.Connection.RemoteIpAddress?.ToString() ?? "(unknown)");
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
 
             http.Items[AdminFingerprintKey] = fingerprint;
             return await next(context);
@@ -141,6 +155,16 @@ public static class AdminEndpoints
             // whichever gets there first is the device that pairs.
             var browserUrl = WebUiHosting.BuildBrowserPairingUrl(
                 WebUiHosting.BrowserOriginFor(context.Request), code);
+
+            // Audited because of what it can become: whoever redeems this gets
+            // the library, and with grantsAdmin, this server's settings. The
+            // code itself is never logged - it is a live credential until it is
+            // redeemed or expires, which is exactly why Program.cs prints its
+            // startup code to the console instead of through the logger.
+            logger.LogInformation(
+                "{Fingerprint} issued a pairing code (admin: {GrantsAdmin}) expiring at {ExpiresAt}.",
+                context.Items[AdminFingerprintKey], grantsAdmin, expiresAt);
+
             return Results.Json(
                 new PairingCodeResponse(code, expiresAt, grantsAdmin, invite.ToString(), browserUrl), jsonOptions);
         });
@@ -168,15 +192,31 @@ public static class AdminEndpoints
             // Otherwise "revoke this device" would leave its already-minted
             // stream URLs playable for the rest of their lifetime.
             tickets.RevokeFor(fingerprint);
+
+            // The counterpart to the pairing line above: access granted and
+            // access taken away should both be recoverable from the log, not
+            // just inferable from a device having gone quiet.
+            logger.LogInformation(
+                "{Admin} revoked device {Fingerprint} and its outstanding stream tickets.",
+                context.Items[AdminFingerprintKey], fingerprint);
+
             return Results.NoContent();
         });
 
         // Path B (SYNC-PLAN.md): third-party Subsonic clients can't hold a
         // keypair, so they get a generated credential from the same admin
         // surface instead - one issuer, one list, one revoke button.
-        authenticated.MapPost("/subsonic-credentials", async (SubsonicCredentialStore store, string? label) =>
+        authenticated.MapPost("/subsonic-credentials", async (
+            HttpContext context, SubsonicCredentialStore store, string? label) =>
         {
             var credential = await store.IssueAsync(label ?? "Subsonic client");
+
+            // Username and label only. The password is in the response body and
+            // nowhere else by design (see below), and writing it here would
+            // undo that.
+            logger.LogInformation(
+                "{Fingerprint} issued Subsonic credential {Username} ({Label}).",
+                context.Items[AdminFingerprintKey], credential.Username, credential.Label);
             // The only response that ever carries the password: it is not
             // retrievable afterwards through /subsonic-credentials below, so
             // the admin UI has to show it now or the user re-issues.
@@ -194,9 +234,17 @@ public static class AdminEndpoints
             return Results.Json(credentials, jsonOptions);
         });
 
-        authenticated.MapDelete("/subsonic-credentials/{username}", async (string username, SubsonicCredentialStore store) =>
+        authenticated.MapDelete("/subsonic-credentials/{username}", async (
+            string username, HttpContext context, SubsonicCredentialStore store) =>
         {
-            return await store.RevokeAsync(username) ? Results.NoContent() : Results.NotFound();
+            if (!await store.RevokeAsync(username))
+                return Results.NotFound();
+
+            logger.LogInformation(
+                "{Fingerprint} revoked Subsonic credential {Username}.",
+                context.Items[AdminFingerprintKey], username);
+
+            return Results.NoContent();
         });
 
         authenticated.MapGet("/settings", (IOptionsMonitor<FlowerServerOptions> options, IServer boundServer) =>
@@ -206,7 +254,7 @@ public static class AdminEndpoints
         // parameter - see the filter above for why no route here may bind a body.
         authenticated.MapPut("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
-            LibraryRescanCoordinator rescans, ILoggerFactory loggerFactory, IServer boundServer) =>
+            LibraryRescanCoordinator rescans, IServer boundServer) =>
         {
             ServerSettingsUpdateDto? update;
             try
@@ -322,7 +370,7 @@ public static class AdminEndpoints
                 // change, which is exactly what the page just promised it did.
                 (configuration as IConfigurationRoot)?.Reload();
 
-                loggerFactory.CreateLogger(typeof(AdminEndpoints)).LogInformation(
+                logger.LogInformation(
                     "{Fingerprint} updated server settings: {Keys}",
                     context.Items[AdminFingerprintKey], string.Join(", ", values.Keys));
             }

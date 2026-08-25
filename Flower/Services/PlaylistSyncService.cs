@@ -92,7 +92,7 @@ public class PlaylistSyncService
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
         {
-            _logger.LogDebug("Playlist sync skipped for {Alias}: no resolved fingerprint yet", device.Alias);
+            _logger.LogTrace("Playlist sync skipped for {Alias}: no resolved fingerprint yet", device.Alias);
             return;
         }
 
@@ -167,7 +167,12 @@ public class PlaylistSyncService
         foreach (var decision in decisions)
         {
             var name = decision.Local?.Name ?? decision.Remote?.Name ?? "?";
-            _logger.LogInformation("Playlist sync with {Alias}: \"{Name}\" ({PlaylistId}) -> {Decision}",
+            // One line per playlist per sync session, and the overwhelmingly
+            // common decision is "nothing to do" - Trace, so the interesting
+            // outcomes (the conflict and delete-vs-edit lines further down,
+            // which stay at Information) are not buried under a per-playlist
+            // roll call every time two devices agree.
+            _logger.LogTrace("Playlist sync with {Alias}: \"{Name}\" ({PlaylistId}) -> {Decision}",
                 device.Alias, name, decision.PlaylistId, decision.Kind);
 
             // Deleted on one side (see PlaylistSyncPlanner.Delete) - drop it from

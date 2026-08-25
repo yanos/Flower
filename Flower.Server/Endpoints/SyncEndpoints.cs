@@ -72,6 +72,11 @@ public static class SyncEndpoints
 
     public static void MapSyncEndpoints(this WebApplication app)
     {
+        // Once, at map time, and captured by the filter and handlers below -
+        // not rebuilt from an ILoggerFactory on every request, which is what
+        // this used to do in six separate places.
+        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(SyncEndpoints));
+
         var sync = app.MapGroup(GroupPrefix).AddEndpointFilter(async (context, next) =>
         {
             var http = context.HttpContext;
@@ -80,8 +85,26 @@ public static class SyncEndpoints
             var limiter = http.Request.Path.Equals(CoverArtPath, StringComparison.OrdinalIgnoreCase)
                 ? ArtLimiter
                 : BulkLimiter;
-            if (!limiter.TryAcquire(key, DateTimeOffset.UtcNow))
+            var now = DateTimeOffset.UtcNow;
+            if (!limiter.TryAcquire(key, now))
+            {
+                // Debug: a peer that syncs enthusiastically trips this without
+                // anything being wrong, and the caller is unauthenticated at
+                // this point, so this cannot distinguish a busy phone from a
+                // stranger. It is here so that "sync got slow" has a visible
+                // cause rather than none - and throttled, because being rate
+                // limited is precisely the state that repeats.
+                if (RateLimitLogThrottle.ShouldLog(key, now, out var suppressed))
+                {
+                    RateLimitLogThrottle.Prune(now);
+                    logger.LogDebug(
+                        "Rate-limited {Method} {Path} from {RemoteAddress}.{AlsoSuppressed}",
+                        http.Request.Method, http.Request.Path.Value, key,
+                        suppressed == 0 ? "" : $" ({suppressed} more since the last one.)");
+                }
+
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            }
 
             if (http.Request.ContentLength > MaxBodyBytes)
                 return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
@@ -113,7 +136,7 @@ public static class SyncEndpoints
             // .NET-for-WebAssembly cannot sign - it signs with a WebCrypto key
             // now like everything else (see BrowserPeerCredentials).
             var auth = DeviceSignatureAuth.AuthenticateTrustedPeer(
-                http.Request, body, trustedPeers, replayGuard);
+                http.Request, body, trustedPeers, replayGuard, logger);
             if (auth.Failure == PeerAuthFailure.NotTrusted)
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             if (auth.Failure != PeerAuthFailure.None)
@@ -131,9 +154,15 @@ public static class SyncEndpoints
 
         sync.MapGet("/library", GetLibrary);
         sync.MapGet("/playlists", GetPlaylists);
-        sync.MapPost("/playlists/apply", ApplyPlaylists);
-        sync.MapPost("/plays", ReportPlays);
-        sync.MapPost("/log/report", ReportLog);
+        // Lambdas rather than method-group references purely so the logger
+        // captured above reaches these three: a bare, non-generic ILogger is
+        // not something the container can resolve as a handler parameter.
+        sync.MapPost("/playlists/apply",
+            (HttpContext context, Library library) => ApplyPlaylists(context, library, logger));
+        sync.MapPost("/plays",
+            (HttpContext context, PlayReportService plays) => ReportPlays(context, plays, logger));
+        sync.MapPost("/log/report",
+            (HttpContext context, ClientLogStore logs) => ReportLog(context, logs, logger));
 
         // The same album art /rest/getCoverArt serves, behind this group's gate
         // instead of the Subsonic one. A browser tab holds a session token and
@@ -144,6 +173,8 @@ public static class SyncEndpoints
         // handler rather than a second implementation of "an album's art".
         sync.MapGet(CoverArtRoute, SubsonicEndpoints.GetCoverArt);
     }
+
+    private static readonly RefusalLogThrottle RateLimitLogThrottle = new();
 
     private const string AuthenticatedFingerprintKey = "flower.auth.fingerprint";
 
@@ -192,7 +223,7 @@ public static class SyncEndpoints
     // The initiator resolved every conflict before POSTing here (see
     // PlaylistSyncService), so this side replaces its collection wholesale -
     // no second, independently divergent merge runs on this end.
-    private static async Task<IResult> ApplyPlaylists(HttpContext context, Library library, ILoggerFactory loggerFactory)
+    private static async Task<IResult> ApplyPlaylists(HttpContext context, Library library, ILogger logger)
     {
         using var reader = new StreamReader(context.Request.Body);
         var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(
@@ -207,7 +238,7 @@ public static class SyncEndpoints
         // own Library writes through.
         library.ReplacePlaylists(playlists);
 
-        loggerFactory.CreateLogger(typeof(SyncEndpoints)).LogInformation(
+        logger.LogInformation(
             "Applied {Count} playlist(s) pushed by {Fingerprint}",
             playlists.Count, context.Items[AuthenticatedFingerprintKey]);
 
@@ -236,7 +267,7 @@ public static class SyncEndpoints
     // device can call, and believing it would let one paired device overwrite
     // another's log with whatever it liked.
     private static async Task<IResult> ReportLog(
-        HttpContext context, ClientLogStore logs, ILoggerFactory loggerFactory)
+        HttpContext context, ClientLogStore logs, ILogger logger)
     {
         using var reader = new StreamReader(context.Request.Body);
         var report = JsonSerializer.Deserialize<LogReportDto>(
@@ -249,7 +280,7 @@ public static class SyncEndpoints
 
         logs.SetSnapshot(fingerprint, report.Alias, report.Entries, DateTimeOffset.UtcNow);
 
-        loggerFactory.CreateLogger(typeof(SyncEndpoints)).LogInformation(
+        logger.LogInformation(
             "Stored {LineCount} log line(s) from {Alias} ({Fingerprint})",
             report.Entries.Count, report.Alias, fingerprint);
 
@@ -257,7 +288,7 @@ public static class SyncEndpoints
     }
 
     private static async Task<IResult> ReportPlays(
-        HttpContext context, PlayReportService plays, ILoggerFactory loggerFactory)
+        HttpContext context, PlayReportService plays, ILogger logger)
     {
         using var reader = new StreamReader(context.Request.Body);
         var report = JsonSerializer.Deserialize<PlayReportDto>(
@@ -267,7 +298,7 @@ public static class SyncEndpoints
 
         var applied = plays.Apply(report, DateTimeOffset.UtcNow);
 
-        loggerFactory.CreateLogger(typeof(SyncEndpoints)).LogInformation(
+        logger.LogInformation(
             "Applied {AppliedCount} of {ReportedCount} play event(s) reported by {Fingerprint}",
             applied, report.Plays.Count, context.Items[AuthenticatedFingerprintKey]);
 

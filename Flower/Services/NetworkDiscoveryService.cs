@@ -300,7 +300,7 @@ public class NetworkDiscoveryService : IDisposable
                 // announcement (handled by OnInstanceFound instead) actually
                 // replacing it with something routable.
                 var devices = _knownDevices.Values.Where(d => d.Ip?.IsIPv6LinkLocal != true).ToList();
-                _logger.LogDebug("Polling /info for {Count} known device(s)", devices.Count);
+                _logger.LogTrace("Polling /info for {Count} known device(s)", devices.Count);
                 foreach (var device in devices)
                 {
                     // A remembered peer that is not answering gets its address
@@ -325,7 +325,7 @@ public class NetworkDiscoveryService : IDisposable
                 if (DateTime.UtcNow - lastBrowse >= RebrowseInterval)
                 {
                     lastBrowse = DateTime.UtcNow;
-                    _logger.LogDebug("Re-browsing for {ServiceType} peers", ServiceType);
+                    _logger.LogTrace("Re-browsing for {ServiceType} peers", ServiceType);
                     _backend.Browse(ServiceType);
                 }
             }
@@ -382,7 +382,7 @@ public class NetworkDiscoveryService : IDisposable
             found.EndPoint.Address.IsIPv6LinkLocal &&
             (existing.Ip?.IsIPv6LinkLocal != true || existing.Ip.Equals(found.EndPoint.Address)))
         {
-            _logger.LogDebug("Ignoring link-local (re-)announcement for {InstanceName} at {EndPoint} - already have {Existing}",
+            _logger.LogTrace("Ignoring link-local (re-)announcement for {InstanceName} at {EndPoint} - already have {Existing}",
                 found.InstanceName, found.EndPoint, existing.BaseUri);
             return;
         }
@@ -406,7 +406,7 @@ public class NetworkDiscoveryService : IDisposable
         var announced = HttpOrigin(found.EndPoint);
         if (existing != null && existing.BaseUri == announced)
         {
-            _logger.LogDebug("Ignoring re-announcement for {InstanceName} - already have {EndPoint}, the periodic poll will re-resolve it",
+            _logger.LogTrace("Ignoring re-announcement for {InstanceName} - already have {EndPoint}, the periodic poll will re-resolve it",
                 found.InstanceName, found.EndPoint);
             return;
         }
@@ -659,7 +659,11 @@ public class NetworkDiscoveryService : IDisposable
         // pruned, and logging the same multi-line stack trace on every one of
         // those is exactly the kind of log flood that made the Log window
         // sluggish to render (see LogViewModel). A one-line message carries the
-        // same "still failing" information for the repeats.
+        // same "still failing" information for the repeats - and it sits at
+        // Trace rather than Debug, since "this peer is still down" repeated
+        // every AliasPollInterval is the definition of a line nobody needs
+        // until they are specifically looking at discovery. The first miss
+        // stays at Debug: that one is a state change.
         var attempt = _consecutiveResolveFailures.GetValueOrDefault(device.InstanceName);
         if (attempt == 0 && !IsRoutineUnreachable(ex))
             _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.BaseUri);
@@ -667,7 +671,7 @@ public class NetworkDiscoveryService : IDisposable
             _logger.LogDebug("Could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
                 device.InstanceName, device.BaseUri, Describe(ex));
         else
-            _logger.LogDebug("Still could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
+            _logger.LogTrace("Still could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
                 device.InstanceName, device.BaseUri, Describe(ex));
 
         // A link-local address failing doesn't mean the peer is gone -

@@ -61,7 +61,7 @@ public sealed class ITunesImportCoordinator
     {
         if (lastRunAt is { } last && DateTimeOffset.UtcNow - last < Cooldown)
         {
-            _logger.LogDebug("Skipping iTunes {What} sync - ran {ElapsedSeconds:F0}s ago, inside the {CooldownSeconds:F0}s cooldown",
+            _logger.LogTrace("Skipping iTunes {What} sync - ran {ElapsedSeconds:F0}s ago, inside the {CooldownSeconds:F0}s cooldown",
                 what, (DateTimeOffset.UtcNow - last).TotalSeconds, Cooldown.TotalSeconds);
             return Task.CompletedTask;
         }

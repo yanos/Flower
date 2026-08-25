@@ -146,7 +146,7 @@ namespace Flower.Importer
                     // not something worth a warning per file, but still worth
                     // being able to find in the log when "why isn't track X
                     // showing up" comes up.
-                    _logger.LogDebug(ex, "Skipping unreadable file during import: {Path}", file);
+                    _logger.LogTrace(ex, "Skipping unreadable file during import: {Path}", file);
                 }
             }
         }

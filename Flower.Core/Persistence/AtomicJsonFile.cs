@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
+using Flower.Logging;
+
 namespace Flower.Persistence
 {
     // Crash-safe read/write for every JSON file this app owns.
@@ -132,6 +134,11 @@ namespace Flower.Persistence
         // Commit because File.Replace preserves the *target's* old mode, not
         // the temp file's. No-op on Windows, where the file inherits the
         // per-user profile directory's ACL and SetUnixFileMode throws.
+        // These two helpers are static and reached from methods that take no
+        // logger, so they use AppLogging's hatch rather than threading an
+        // ILogger through four public overloads for a best-effort chmod.
+        private static readonly ILogger Logger = AppLogging.CreateLogger(typeof(AtomicJsonFile).FullName!);
+
         private static void RestrictToOwner(string path, bool ownerOnly)
         {
             if (!ownerOnly || OperatingSystem.IsWindows() || !File.Exists(path))
@@ -141,11 +148,18 @@ namespace Flower.Persistence
             {
                 File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Best-effort: a filesystem without POSIX modes (an Android
-                // external-storage/FAT mount, a network share) is not a reason
-                // to fail the save - the file's contents are still correct.
+                // Still best-effort: a filesystem without POSIX modes (an
+                // Android external-storage/FAT mount, a network share) is not a
+                // reason to fail the save - the file's contents are still
+                // correct. But ownerOnly is only ever asked for by the files
+                // that hold secrets, so failing here leaves a private key
+                // readable by anything else on the machine, and that should not
+                // be the one thing about this process nobody can find out.
+                Logger.LogWarning(ex,
+                    "Could not restrict {Path} to owner-only permissions; it may be readable by other users on this machine.",
+                    path);
             }
         }
 
@@ -248,9 +262,13 @@ namespace Flower.Persistence
             {
                 File.Copy(source, destination, overwrite: true);
             }
-            catch (IOException)
+            catch (IOException ex)
             {
-                // Best-effort: losing the backup is not a reason to fail the save.
+                // Best-effort: losing the backup is not a reason to fail the
+                // save. Debug rather than Warning - nothing is wrong yet; it
+                // only matters if the main file later needs recovering, and the
+                // recovery path says so loudly when that happens.
+                Logger.LogDebug(ex, "Could not refresh the backup copy at {Destination}.", destination);
             }
         }
 

@@ -80,7 +80,10 @@ namespace Flower.Manager
             _coordinator = coordinator;
             _coordinator.EndReached += track =>
             {
-                _logger.LogInformation("EndReached: {Path}", track.Path);
+                // Trace: PlaylistControlViewModel logs the same event with the
+                // track title and the queue decision it led to, which is the
+                // version worth reading. This one is the plumbing underneath it.
+                _logger.LogTrace("EndReached: {Path}", track.Path);
                 EndReached?.Invoke(this, EventArgs.Empty);
             };
             _coordinator.TrackFailed += track =>
@@ -147,7 +150,7 @@ namespace Flower.Manager
 
         public void Play(Track track)
         {
-            _logger.LogInformation("Play({Path})", track.Path);
+            _logger.LogDebug("Play({Path})", track.Path);
             _coordinator.Play(track);
             _sink.Resume();
         }
@@ -156,19 +159,17 @@ namespace Flower.Manager
 
         public void Resume()
         {
-            _logger.LogInformation("Resume()");
             _sink.Resume();
         }
 
         public void Pause()
         {
-            _logger.LogInformation("Pause() - IsPlaying was {IsPlaying}", IsPlaying);
+            _logger.LogTrace("Pause() - IsPlaying was {IsPlaying}", IsPlaying);
             _sink.Pause();
         }
 
         public void Stop()
         {
-            _logger.LogInformation("Stop()");
             _coordinator.Stop();
             _sink.Stop();
         }

@@ -10,6 +10,8 @@ using System.Threading.Tasks;
 
 using Flower.Persistence;
 
+using Microsoft.Extensions.Logging;
+
 namespace Flower.Services;
 
 // Wire shapes for Flower.Server's /api/admin surface (see
@@ -59,7 +61,8 @@ public sealed class ServerAdminClient(
     HttpClient http,
     Uri baseAddress,
     Func<HttpRequestMessage, byte[], Task> authorize,
-    Func<string?>? explainUnauthorized = null)
+    Func<string?>? explainUnauthorized = null,
+    ILogger? logger = null)
 {
     // Web defaults for the naming policy (the server answers camelCase), but with
     // the source-generated resolver supplying the metadata: Flower.Web is trimmed,
@@ -159,7 +162,14 @@ public sealed class ServerAdminClient(
         }
         catch (Exception ex) when (ex is JsonException or HttpRequestException or OperationCanceledException)
         {
-            // Fall through to the status-only description below.
+            // Fall through to the status-only description below - but say so
+            // first. What the caller ends up showing the user is a guess made
+            // from the status code, and the server's actual explanation was
+            // right here and got dropped; without this line there is no way to
+            // tell "the server said nothing" from "the server said something
+            // and we could not read it".
+            logger?.LogDebug(ex, "Could not read the error body of a {Status} from the server; describing it by status code alone.",
+                (int)response.StatusCode);
         }
 
         return response.StatusCode switch

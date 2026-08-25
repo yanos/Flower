@@ -1,5 +1,4 @@
 using System;
-using System.Timers;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -45,7 +44,6 @@ namespace Flower.Manager
         // here to also catch a *silent* wedge - State staying "Playing"
         // while Time stops advancing - which the recovery hook wouldn't see
         // at all. Remove once the actual failure mode is identified.
-        private readonly Timer _watchdog;
 
         public event EventHandler? Playing;
         public event EventHandler? Paused;
@@ -55,22 +53,6 @@ namespace Flower.Manager
         {
             _libVLC = libVLC;
             _logger = logger;
-
-            _watchdog = new Timer(1000);
-            _watchdog.Elapsed += (_, _) => LogWatchdogTick();
-            _watchdog.Start();
-        }
-
-        private void LogWatchdogTick()
-        {
-            var player = _renderPlayer;
-            var ring = _ringBuffer;
-            if (player == null || ring == null)
-                return;
-
-            _logger.LogDebug(
-                "Render watchdog: State={State} IsPlaying={IsPlaying} Time={Time}ms Volume={Volume} RingAvailable={Available}/{Capacity} Underruns={Underruns}",
-                player.State, player.IsPlaying, player.Time, player.Volume, ring.AvailableBytes, ring.Capacity, ring.UnderrunCount);
         }
 
         public bool IsPlaying => _renderPlayer?.IsPlaying ?? false;
@@ -115,23 +97,23 @@ namespace Flower.Manager
 
                 TeardownRenderPlayer();
 
-                _logger.LogInformation("Render player (re)starting");
+                _logger.LogDebug("Render player (re)starting");
 
                 _stream = new GaplessRingBufferStream(_ringBuffer);
                 _renderPlayer = new MediaPlayer(_libVLC);
                 _renderPlayer.Playing += (_, e) =>
                 {
-                    _logger.LogInformation("Render player: Playing");
+                    _logger.LogTrace("Render player: Playing");
                     Playing?.Invoke(this, e);
                 };
                 _renderPlayer.Paused += (_, e) =>
                 {
-                    _logger.LogInformation("Render player: Paused");
+                    _logger.LogTrace("Render player: Paused");
                     Paused?.Invoke(this, e);
                 };
                 _renderPlayer.Stopped += (_, e) =>
                 {
-                    _logger.LogInformation("Render player: Stopped");
+                    _logger.LogTrace("Render player: Stopped");
                     Stopped?.Invoke(this, e);
                 };
 
@@ -187,26 +169,22 @@ namespace Flower.Manager
 
         public void Resume()
         {
-            _logger.LogInformation("Resume() called");
-            _renderPlayer?.SetPause(false);
+                        _renderPlayer?.SetPause(false);
         }
 
         public void Pause()
         {
-            _logger.LogInformation("Pause() called");
-            _renderPlayer?.SetPause(true);
+                        _renderPlayer?.SetPause(true);
         }
 
         public void Stop()
         {
-            _logger.LogInformation("Stop() called");
-            _renderPlayer?.Stop();
+                        _renderPlayer?.Stop();
         }
 
         public void Dispose()
         {
             _disposed = true;
-            _watchdog.Dispose();
             lock (_restartGate)
                 TeardownRenderPlayer();
         }

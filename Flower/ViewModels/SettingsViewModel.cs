@@ -10,6 +10,8 @@ using CommunityToolkit.Mvvm.Input;
 using Flower.Logging;
 using Flower.Persistence;
 
+using Microsoft.Extensions.Logging;
+
 namespace Flower.ViewModels;
 
 // Drives SettingsPanel, for either this device's settings or a remote Flower
@@ -40,8 +42,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public SettingsViewModel(
         ISettingsBackend backend,
         AppSettings? appSettings = null,
-        AppSettingsStore? appSettingsStore = null)
+        AppSettingsStore? appSettingsStore = null,
+        ILogger<SettingsViewModel>? logger = null)
     {
+        _logger = logger;
         _backend = backend;
         Capabilities = backend.Capabilities;
         LogViewer = new LogViewerViewModel(appSettings ?? new AppSettings(), appSettingsStore);
@@ -674,7 +678,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
+    private readonly ILogger<SettingsViewModel>? _logger;
+
     // The server's own words where it gave any (ServerAdminException carries the
     // {"error": ...} body), the exception's otherwise.
-    private void Fail(Exception ex) => ErrorMessage = ex.Message;
+    //
+    // Logged as well as shown: ErrorMessage is a label in a panel the user is
+    // about to close, so every failure to read or write server settings used to
+    // leave no trace at all once they did. The message alone is what the user
+    // gets; the exception is what makes the failure diagnosable afterwards.
+    private void Fail(Exception ex)
+    {
+        _logger?.LogWarning(ex, "A settings operation failed: {Message}", ex.Message);
+        ErrorMessage = ex.Message;
+    }
 }
