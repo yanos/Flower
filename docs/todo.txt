@@ -33,7 +33,10 @@ build:
  script to make the provisioning profile.
  more tests
  ui tests
-
+ 
+ do an investigation as to why there's almost always a problem with a stale build on ios when launching through Rider. We made a script to build and laucnh
+  on my device because of that, but it would be much simplier if i could just use rider.
+  
 details:
  open log folder in log view
  add an issue link in about box
