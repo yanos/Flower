@@ -420,6 +420,20 @@
             <TextBlock Text="Off: only devices on your own network (plus anything allowed below) get an answer - everything else is ignored. On: anyone can reach it, and a paired device's key is the only thing keeping strangers out. Turn it on if you reach this server through a tunnel, a proxy or a forwarded port."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
+            <!-- The address this server answers on from outside, which none of
+                 the ones on the General tab is - see PublicAddressProbe.
+                 Selectable because it exists to be copied into a router's
+                 forwarding rule or into a client that cannot discover it, and
+                 hidden entirely when nothing could be found out. -->
+            <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,6,0,0"
+                        IsVisible="{Binding HasPublicAddress}">
+              <TextBlock Text="Seen from the internet as" FontSize="11" Opacity="0.6"
+                         VerticalAlignment="Center"/>
+              <SelectableTextBlock Text="{Binding PublicAddressDisplay}"
+                                   FontSize="11" FontFamily="monospace"
+                                   VerticalAlignment="Center"/>
+            </StackPanel>
+
             <TextBlock Text="Advertised address" FontWeight="SemiBold" Margin="0,20,0,4"/>
             <TextBox Text="{Binding AdvertisedHost, Mode=TwoWay}" Watermark="host:port"/>
             <TextBlock Text="The address to put in pairing invites, when it isn't the one this server sees requests arrive on - behind a proxy, or in a container that changes the port. Leave empty otherwise."

@@ -84,6 +84,13 @@ public sealed record SettingsSnapshot
     // about - and once public access is on, this is the address to hand out.
     public IReadOnlyList<string> Addresses { get; init; } = [];
 
+    // What the internet sees the server as, when it could be found out - see
+    // PublicAddressProbe. Null on a client (nothing there asks), and null on a
+    // server that has no way out or was refused an answer; the page then simply
+    // does not show the line. None of the addresses above is this one: a machine
+    // behind a router cannot see its own public address.
+    public string? PublicAddress { get; init; }
+
     // Shown read-only, for the "where does this thing keep its stuff" question
     // that is otherwise unanswerable about a machine you are not sitting at.
     public string DataDirectory { get; init; } = "";

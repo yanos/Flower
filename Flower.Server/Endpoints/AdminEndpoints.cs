@@ -247,14 +247,18 @@ public static class AdminEndpoints
             return Results.NoContent();
         });
 
-        authenticated.MapGet("/settings", (IOptionsMonitor<FlowerServerOptions> options, IServer boundServer) =>
-            Results.Json(Describe(options.CurrentValue, boundServer), jsonOptions));
+        authenticated.MapGet("/settings", async (
+            HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IServer boundServer,
+            PublicAddressProbe publicAddress) =>
+            Results.Json(
+                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, context.RequestAborted),
+                jsonOptions));
 
         // Read from the raw (buffered, rewound) stream rather than a bound
         // parameter - see the filter above for why no route here may bind a body.
         authenticated.MapPut("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
-            LibraryRescanCoordinator rescans, IServer boundServer) =>
+            LibraryRescanCoordinator rescans, IServer boundServer, PublicAddressProbe publicAddress) =>
         {
             ServerSettingsUpdateDto? update;
             try
@@ -390,7 +394,8 @@ public static class AdminEndpoints
                 rescans.TryStart();
             }
 
-            return Results.Json(Describe(after, boundServer) with { RestartRequired = restartRequired }, jsonOptions);
+            var described = await DescribeAsync(after, boundServer, publicAddress, context.RequestAborted);
+            return Results.Json(described with { RestartRequired = restartRequired }, jsonOptions);
         });
 
         authenticated.MapGet("/library", (LibraryRescanCoordinator rescans) =>
@@ -471,7 +476,8 @@ public static class AdminEndpoints
     }
 
     // The operator-editable half of FlowerServerOptions, as the shared wire
-    // shape - DataDirectory, Version and Addresses ride along read-only, and
+    // shape - DataDirectory, Version, Addresses and the public address ride
+    // along read-only, and
     // WebUiPath deliberately does not appear at all: it is part of how the
     // server was deployed, not something the page served from it should move
     // out from under itself.
@@ -480,7 +486,8 @@ public static class AdminEndpoints
     // the machine name - that is what mDNS announces and what every client's
     // sidebar shows - and a settings page that answers "what is this server
     // called" with an empty box is wrong about a name that plainly exists.
-    private static ServerSettingsDto Describe(FlowerServerOptions options, IServer boundServer) =>
+    private static async Task<ServerSettingsDto> DescribeAsync(
+        FlowerServerOptions options, IServer boundServer, PublicAddressProbe publicAddress, CancellationToken ct) =>
         new(MdnsAdvertiser.InstanceName(options),
             options.AdvertisedHost,
             options.AdvertiseOnLan,
@@ -495,7 +502,8 @@ public static class AdminEndpoints
             options.DataDirectory,
             typeof(AdminEndpoints).Assembly.GetName().Version?.ToString(),
             options.AllowPublicAccess,
-            DiscoveryEndpoints.ReachableOrigins(boundServer, options));
+            DiscoveryEndpoints.ReachableOrigins(boundServer, options),
+            await publicAddress.GetAsync(ct));
 
     // The host in the invite is the address the admin's own browser reached
     // this server on, not a configured one: on a box with a LAN address, a

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Models;
@@ -68,6 +69,23 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
         // the test host's content root would otherwise pick up. A configured
         // path is authoritative, so this is genuinely "no web UI deployed".
         builder.UseSetting("Flower:WebUiPath", _noWebUi);
+
+        // The admin settings route asks PublicAddressProbe what the internet
+        // sees this server as, which is the one outbound call this server makes
+        // to anybody else. Pinned at a handler that refuses, for the same reason
+        // the library path above is pinned at an empty folder: a test whose
+        // result depends on the developer's internet link is not a test. The
+        // settings DTO then reports no public address, which is also what a
+        // server with no route out reports.
+        builder.ConfigureServices(services =>
+            services.AddSingleton(sp => new PublicAddressProbe(
+                sp.GetRequiredService<ILogger<PublicAddressProbe>>(), new OfflineHandler())));
+    }
+
+    private sealed class OfflineHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            throw new HttpRequestException("Tests do not reach the internet.");
     }
 
     // The credential every /rest request in these tests authenticates with.
