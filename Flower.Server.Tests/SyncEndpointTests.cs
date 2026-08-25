@@ -443,4 +443,35 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         Assert.Equal(HttpStatusCode.Forbidden, status);
         Assert.Null(server.Services.GetRequiredService<ClientLogStore>().Get(stranger.Fingerprint));
     }
+
+    // Cover art shares this group's gate but must not share its budget. It used
+    // to: one request per album tile against a 20-per-60s bulk limit meant a
+    // browser head painting an album grid spent the whole allowance on
+    // pictures, and the 429 landed on GET /library - the sync itself, starved
+    // by the art decorating it.
+    [Fact]
+    public async Task Fetching_more_cover_art_than_the_bulk_budget_does_not_throttle_the_library()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            // Comfortably past the bulk limit of 20, which is roughly one
+            // screenful of album tiles.
+            for (var i = 0; i < 40; i++)
+            {
+                var (artStatus, _, _) = await SendAsync(device, "GET", "/api/flower/v1/cover-art", "10.0.2.11");
+                Assert.NotEqual(HttpStatusCode.TooManyRequests, artStatus);
+            }
+
+            var (status, _, _) = await SendAsync(device, "GET", "/api/flower/v1/library", "10.0.2.11");
+
+            Assert.Equal(HttpStatusCode.OK, status);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
 }
