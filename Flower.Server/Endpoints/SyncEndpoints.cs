@@ -38,6 +38,22 @@ public static class SyncEndpoints
     // small ones, so the budget is small and the window is long.
     private static readonly RateLimiter BulkLimiter = new(max: 20, TimeSpan.FromSeconds(60));
 
+    // Cover art is the exception in this group, and it must not be charged to
+    // the budget above: it is one small request per album tile, so a browser
+    // head painting an album grid spends twenty in the time it takes to scroll
+    // a screen - and then the 429 lands on GET /library, which is the one route
+    // in here that actually matters. The art throttled the sync. Same ceiling
+    // /rest browsing gets (SubsonicEndpoints.RequestLimiter), because it is the
+    // same kind of traffic.
+    private static readonly RateLimiter ArtLimiter = new(max: 600, TimeSpan.FromSeconds(60));
+
+    // Composed from the same two pieces the route is mapped from, so renaming
+    // it can't silently drop cover art back onto BulkLimiter - the filter sees
+    // a whole path, MapGet sees a suffix, and they cannot disagree.
+    private const string GroupPrefix = "/api/flower/v1";
+    private const string CoverArtRoute = "/cover-art";
+    private const string CoverArtPath = GroupPrefix + CoverArtRoute;
+
     // A playlist manifest for a large library, with a wide margin - the same
     // ceiling Kestrel is capped at process-wide (see Program.cs), applied here
     // as the route's own limit so a rejection is a 413 rather than a read that
@@ -56,12 +72,15 @@ public static class SyncEndpoints
 
     public static void MapSyncEndpoints(this WebApplication app)
     {
-        var sync = app.MapGroup("/api/flower/v1").AddEndpointFilter(async (context, next) =>
+        var sync = app.MapGroup(GroupPrefix).AddEndpointFilter(async (context, next) =>
         {
             var http = context.HttpContext;
             var services = http.RequestServices;
             var key = RateLimiter.KeyFor(http.Connection.RemoteIpAddress);
-            if (!BulkLimiter.TryAcquire(key, DateTimeOffset.UtcNow))
+            var limiter = http.Request.Path.Equals(CoverArtPath, StringComparison.OrdinalIgnoreCase)
+                ? ArtLimiter
+                : BulkLimiter;
+            if (!limiter.TryAcquire(key, DateTimeOffset.UtcNow))
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
 
             if (http.Request.ContentLength > MaxBodyBytes)
@@ -123,7 +142,7 @@ public static class SyncEndpoints
         // AlbumArtLoader fetches it with an HttpClient that can send the header
         // (an <audio> element is what cannot). Deliberately the existing
         // handler rather than a second implementation of "an album's art".
-        sync.MapGet("/cover-art", SubsonicEndpoints.GetCoverArt);
+        sync.MapGet(CoverArtRoute, SubsonicEndpoints.GetCoverArt);
     }
 
     private const string AuthenticatedFingerprintKey = "flower.auth.fingerprint";
