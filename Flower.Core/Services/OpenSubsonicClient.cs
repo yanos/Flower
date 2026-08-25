@@ -134,8 +134,13 @@ public class OpenSubsonicClient
         if (_credentials == null)
             return;
 
+        // Percent-encoded, same as every other header-transport call site -
+        // see IdentityHeaderEncoding. BuildUrlAsync above sends the identical
+        // params as query params and escapes them itself; this is the half
+        // that would otherwise throw on a device whose alias has an accent in
+        // it.
         foreach (var header in await _credentials.AuthorizeAsync(method, path, parameters, []))
-            request.Headers.Add(header.Key, header.Value);
+            request.Headers.Add(header.Key, IdentityHeaderEncoding.Encode(header.Value));
         request.Headers.ConnectionClose = true;
     }
 

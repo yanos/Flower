@@ -213,13 +213,17 @@ public sealed class BrowserPeerCredentials(
             var (signature, timestamp, nonce) = await key.SignAsync("POST", RedeemPath, [], body: []);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(origin, RedeemPath));
-            request.Headers.TryAddWithoutValidation("X-Flower-Fingerprint", key.Fingerprint);
-            request.Headers.TryAddWithoutValidation("X-Flower-Alias", key.Alias);
-            request.Headers.TryAddWithoutValidation("X-Flower-PublicKey", key.PublicKeyBase64);
-            request.Headers.TryAddWithoutValidation("X-Flower-PairingCode", code);
-            request.Headers.TryAddWithoutValidation("X-Flower-Signature", signature);
-            request.Headers.TryAddWithoutValidation("X-Flower-Timestamp", timestamp);
-            request.Headers.TryAddWithoutValidation("X-Flower-Nonce", nonce);
+            // Percent-encoded, as everywhere else these travel as headers -
+            // see IdentityHeaderEncoding. fetch() is stricter than HttpClient
+            // rather than looser: a non-ASCII header value throws a TypeError
+            // there too.
+            request.Headers.TryAddWithoutValidation("X-Flower-Fingerprint", IdentityHeaderEncoding.Encode(key.Fingerprint));
+            request.Headers.TryAddWithoutValidation("X-Flower-Alias", IdentityHeaderEncoding.Encode(key.Alias));
+            request.Headers.TryAddWithoutValidation("X-Flower-PublicKey", IdentityHeaderEncoding.Encode(key.PublicKeyBase64));
+            request.Headers.TryAddWithoutValidation("X-Flower-PairingCode", IdentityHeaderEncoding.Encode(code));
+            request.Headers.TryAddWithoutValidation("X-Flower-Signature", IdentityHeaderEncoding.Encode(signature));
+            request.Headers.TryAddWithoutValidation("X-Flower-Timestamp", IdentityHeaderEncoding.Encode(timestamp));
+            request.Headers.TryAddWithoutValidation("X-Flower-Nonce", IdentityHeaderEncoding.Encode(nonce));
 
             using var response = await http.SendAsync(request);
             if (response.IsSuccessStatusCode)
