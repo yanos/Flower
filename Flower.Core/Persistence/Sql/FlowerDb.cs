@@ -108,8 +108,20 @@ namespace Flower.Persistence.Sql
             // SQLITE_CORRUPT (11) - it is one, but its pages are damaged.
             ex.SqliteErrorCode is 26 or 11;
 
-        private static void Quarantine(string path)
+        private void Quarantine(string path)
         {
+            // Microsoft.Data.Sqlite pools connections: the one the failed
+            // migration opened went back to the pool when it was disposed
+            // rather than being closed, and it still holds the file open.
+            // POSIX does not care - a rename over an open file is fine - but
+            // Windows refuses the move outright ("the process cannot access
+            // the file because it is being used by another process"), which
+            // turned the quarantine path into the crash on launch it exists
+            // to prevent. Emptying the pool for this connection string closes
+            // that handle first.
+            using (var pooled = new SqliteConnection(ConnectionString))
+                SqliteConnection.ClearPool(pooled);
+
             foreach (var file in new[] { path, path + "-wal", path + "-shm" })
             {
                 if (!File.Exists(file))
