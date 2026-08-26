@@ -130,6 +130,68 @@ namespace Flower.Persistence
             }
         }
 
+        // A device's name is not settled at pairing. A phone gets renamed by its
+        // owner long afterwards, and the operator reading the Devices list - or
+        // picking whose log to open - wants the name it answers to now, not the
+        // one it happened to have the day it paired. Every signed request
+        // already carries the current one in X-Flower-Alias; this is the write
+        // that lets the server act on it. See DiscoveryEndpoints, which calls
+        // this from /info.
+        //
+        // Deliberately narrower than ApproveAsync, which would also change the
+        // alias: that one restamps ApprovedAt and rewrites the key and the admin
+        // flag, so renaming through it would quietly relabel the pairing as
+        // having happened just now, and would hand a rename the power to grant
+        // itself admin. This touches the alias and nothing else.
+        //
+        // Returns the name that was replaced, or null when nothing changed - so
+        // a caller can log a rename once, naming both halves, instead of on
+        // every poll. The unchanged path - which is very nearly every call, a
+        // paired client polling /info every few seconds - answers from the
+        // cached list, taking neither the lock nor a write.
+        public async Task<string?> RenameAsync(string fingerprint, string alias)
+        {
+            // An empty alias is not a rename to nothing, it is a client that
+            // told us nothing. Pairing already substitutes the fingerprint when
+            // that happens, and overwriting a good name with a worse one is the
+            // opposite of the point.
+            if (string.IsNullOrWhiteSpace(alias))
+                return null;
+
+            if (Load().FirstOrDefault(p => p.Fingerprint == fingerprint) is not { } known ||
+                known.Alias == alias)
+            {
+                return null;
+            }
+
+            await _writeLock.WaitAsync();
+            try
+            {
+                // Re-read under the lock. The entry may have been revoked or
+                // renamed between the check above and here, and reviving a
+                // just-revoked device by writing back a list built before the
+                // revocation is exactly the race the lock exists to stop.
+                var peers = Load();
+                if (peers.FirstOrDefault(p => p.Fingerprint == fingerprint) is not { } existing ||
+                    existing.Alias == alias)
+                {
+                    return null;
+                }
+
+                // Projected in place rather than removed-and-appended the way
+                // ApproveAsync does it: a rename is not a re-approval, and it
+                // has no business moving the device down the operator's list.
+                await SaveAsync(peers
+                    .Select(p => p.Fingerprint == fingerprint ? p with { Alias = alias } : p)
+                    .ToList());
+                return existing.Alias;
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
+        }
+
         public async Task RevokeAsync(string fingerprint)
         {
             await _writeLock.WaitAsync();

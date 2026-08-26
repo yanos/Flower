@@ -29,6 +29,11 @@ public static class DiscoveryEndpoints
 {
     public static void MapDiscoveryEndpoints(this WebApplication app)
     {
+        // Resolved here rather than taken as a handler parameter for the reason
+        // PairingEndpoints does the same: this is a static class, so there is no
+        // type to name as ILogger<T>.
+        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(DiscoveryEndpoints));
+
         // Deliberately ungated: a peer has to
         // learn our fingerprint and public key here before either side can
         // evaluate trust at all. LanGuard still fronts it, so this is reachable
@@ -52,7 +57,7 @@ public static class DiscoveryEndpoints
         // own timetable rather than at its next failed sync. Null when the
         // caller did not prove who it is, so an anonymous probe reads as
         // "unknown", never as a rejection.
-        app.MapGet(SyncProtocol.InfoPath, (
+        app.MapGet(SyncProtocol.InfoPath, async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> optionsMonitor,
             DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, Library library,
             NonceReplayGuard replayGuard, IServer boundServer) =>
@@ -81,6 +86,36 @@ public static class DiscoveryEndpoints
             // rejected and must not be told it was.
             var callerClaimedIdentity = !string.IsNullOrEmpty(
                 DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Fingerprint"));
+
+            // The one thing this handshake learns about the caller rather than
+            // about itself. Every signed request carries the sender's current
+            // alias, but this is the only route every paired device calls on a
+            // timer, so it is where a rename lands: without it the alias is
+            // whatever the device was called the day it redeemed its pairing
+            // code, and the operator's Devices list and log picker keep showing
+            // that name for good.
+            //
+            // Verified callers only, and not merely because it is tidy. The
+            // alias header is unauthenticated text on its own - honouring one
+            // from an anonymous probe would let anything that can reach this
+            // port relabel somebody else's phone in this server's own logs,
+            // which is a way to make an audit trail lie.
+            if (callerIsTrusted &&
+                DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Alias") is { } claimedAlias &&
+                await trustedPeers.RenameAsync(caller.Fingerprint!, claimedAlias) is { } previousAlias)
+            {
+                // Information, on the same footing as PairingEndpoints' line
+                // for the pairing itself: a device changing names is precisely
+                // what makes a months-old log line confusing later, so the
+                // change needs a record joining the two names - which is why
+                // RenameAsync hands back the one it replaced. Reporting the
+                // write at all is also what keeps this to one line per rename
+                // rather than one per poll.
+                logger.LogInformation(
+                    "{PreviousAlias} ({Fingerprint}) is now called {Alias}.",
+                    previousAlias, caller.Fingerprint, claimedAlias);
+            }
+
             var response = new SyncInfoResponseDto(
                 MdnsAdvertiser.InstanceName(options),
                 "2.0",
