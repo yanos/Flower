@@ -359,6 +359,70 @@ public class LibraryTests
         Assert.Equal("new-id", library.Tracks.Single().OriginTrackId);
     }
 
+    // The regression: a SyncKey match short-circuited the merge, so a
+    // placeholder kept whatever metadata it was first created with forever.
+    // Carrying the album artist over the wire therefore appeared to do nothing
+    // for an already-synced library - the field arrived and was discarded, and
+    // a 31-artist compilation stayed 31 album tiles.
+    [Fact]
+    public void MergeSyncedTracks_refreshes_placeholder_metadata_outside_the_sync_key()
+    {
+        var known = new Track
+        {
+            Title = "Sinnerman", Artists = "Nina Simone", Album = "Lazy Sunday",
+            Duration = TimeSpan.FromSeconds(100), Path = null,
+            OriginDeviceFingerprint = "peer-1",
+        };
+        var library = new Library(new List<Track> { known });
+        var incoming = new Track
+        {
+            Title = "Sinnerman", Artists = "Nina Simone", Album = "Lazy Sunday",
+            Duration = TimeSpan.FromSeconds(100), Path = null,
+            OriginDeviceFingerprint = "peer-1",
+            AlbumArtists = "Various Artists", IsCompilation = true,
+            Genre = "Soul", Year = "2003", TrackNumber = 4,
+        };
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { incoming });
+
+        var merged = library.Tracks.Single();
+        Assert.Equal("Various Artists", merged.AlbumArtists);
+        Assert.True(merged.IsCompilation);
+        Assert.Equal("Various Artists", merged.EffectiveAlbumArtist);
+        Assert.Equal("Soul", merged.Genre);
+        Assert.Equal("2003", merged.Year);
+        Assert.Equal(4u, merged.TrackNumber);
+    }
+
+    // A real local file's tags belong to the importer that read them off that
+    // file. A peer's copy must not overwrite them - the next rescan would only
+    // put the local values back, so the two would fight indefinitely.
+    [Fact]
+    public void MergeSyncedTracks_leaves_the_metadata_of_a_real_local_file_alone()
+    {
+        var local = new Track
+        {
+            Title = "Sinnerman", Artists = "Nina Simone", Album = "Lazy Sunday",
+            Duration = TimeSpan.FromSeconds(100), Path = "/music/sinnerman.mp3",
+            Genre = "Jazz", AlbumArtists = "Nina Simone",
+        };
+        var library = new Library(new List<Track> { local });
+        var incoming = new Track
+        {
+            Title = "Sinnerman", Artists = "Nina Simone", Album = "Lazy Sunday",
+            Duration = TimeSpan.FromSeconds(100), Path = null,
+            OriginDeviceFingerprint = "peer-1",
+            AlbumArtists = "Various Artists", IsCompilation = true, Genre = "Soul",
+        };
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { incoming });
+
+        var merged = library.Tracks.Single();
+        Assert.Equal("Nina Simone", merged.AlbumArtists);
+        Assert.False(merged.IsCompilation);
+        Assert.Equal("Jazz", merged.Genre);
+    }
+
     // A track downloaded via LibraryDownloadService (Path now set, but still
     // carrying OriginDeviceFingerprint) must also survive a rescan that doesn't
     // happen to find it - e.g. Android, where a downloaded file lives in

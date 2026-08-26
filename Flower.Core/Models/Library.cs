@@ -582,6 +582,7 @@ namespace Flower.Models
                         existing.OriginAlbumArtHash = remote.OriginAlbumArtHash;
                         existing.DateAdded = remote.DateAdded;
                         MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
+                        RefreshPlaceholderMetadata(existing, remote);
                         continue; // Already known locally, real file or placeholder - only
                                   // the bookkeeping above needed updating, not a whole new Track.
                     }
@@ -609,6 +610,43 @@ namespace Flower.Models
 
             TracksUpdated?.Invoke(this, EventArgs.Empty);
             return removedCount;
+        }
+
+        // A matched track kept its original metadata forever: the merge above
+        // updated origin bookkeeping and play counts and then moved on, on the
+        // reasoning that a SyncKey match means "already known". But SyncKey is
+        // only Title|Artists|Album|rounded duration, so everything *outside* the
+        // key was free to differ - and whatever this device first learned won
+        // permanently, no matter what the origin said later.
+        //
+        // That is what made carrying AlbumArtists/IsCompilation over the wire
+        // (see Child.DisplayAlbumArtist) look like it had no effect: every
+        // already-synced track matched by key, so the newly-populated fields
+        // arrived and were dropped on the floor. It also means a retag on the
+        // origin device never propagated at all.
+        //
+        // Placeholders only. A track with a Path is a real local file, and its
+        // tags belong to whatever the importer last read off that file - letting
+        // a peer's copy overwrite them would fight the next rescan, which would
+        // just put the local values back. A placeholder has no local file and no
+        // such authority: the origin device is the only source its metadata can
+        // possibly come from.
+        //
+        // Restricted to the fields Child actually carries (see
+        // LibrarySyncMapper.ToPlaceholderTrack) rather than every tag on Track -
+        // copying a field the wire never filled would blank out good data with a
+        // default. The four in the SyncKey itself are excluded as well, since a
+        // match already proves they agree.
+        private static void RefreshPlaceholderMetadata(Track existing, Track remote)
+        {
+            if (existing.Path != null)
+                return;
+
+            existing.AlbumArtists = remote.AlbumArtists;
+            existing.IsCompilation = remote.IsCompilation;
+            existing.Genre = remote.Genre;
+            existing.Year = remote.Year;
+            existing.TrackNumber = remote.TrackNumber;
         }
 
         // Per-key max, not overwrite - see Track.RemotePlayCounts' own doc

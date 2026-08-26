@@ -26,6 +26,25 @@ public static class LibrarySyncMapper
     {
         Title = song.Title,
         Artists = song.Artist,
+        // Restores the sender's own EffectiveAlbumArtist, which this side would
+        // otherwise recompute from two fields that never crossed the wire and so
+        // always fell through to the per-track Artists - shattering every
+        // various-artists compilation into one album tile per contributor. See
+        // Child.DisplayAlbumArtist.
+        //
+        // Only stored when it actually differs from this song's own artist. The
+        // sender's fallback ends at Artists for an ordinary single-artist album,
+        // so copying it unconditionally would stamp a redundant AlbumArtists tag
+        // identical to Artists onto the overwhelming majority of a library, for
+        // no change in grouping. Assigning only the differing case reproduces the
+        // sender's EffectiveAlbumArtist exactly in every branch: a real
+        // AlbumArtists tag comes back verbatim, a blank-tagged compilation comes
+        // back as the "Various Artists" its flag stands for, and an ordinary
+        // album falls through to Artists here the same way it did there.
+        AlbumArtists = string.IsNullOrWhiteSpace(song.DisplayAlbumArtist) || song.DisplayAlbumArtist == song.Artist
+            ? null
+            : song.DisplayAlbumArtist,
+        IsCompilation = song.IsCompilation,
         Album = song.Album,
         Duration = TimeSpan.FromSeconds(song.Duration ?? 0),
         Genre = song.Genre,
