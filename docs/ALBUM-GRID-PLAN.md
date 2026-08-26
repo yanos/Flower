@@ -4,7 +4,7 @@ Record of how desktop's Albums/Recently Added sidebar views became a mobile-styl
 
 ## What changed
 
-Albums/Recently Added now show the same big-art tile grid mobile already had (`AlbumGridBuilder`/`RecentlyAddedAlbumsBuilder`, pre-existing shared services — only desktop's rendering was new), replacing a plain-text `ListBox`/flat track list. Clicking a tile expands that album's songs in place (two columns, animated height); only one album is ever expanded at a time, shared across both grids. Multi-select and drag-to-playlist both work on the grid, mirroring the old list's gesture.
+Albums/Recently Added now show the same big-art tile grid mobile already had (`AlbumGridBuilder`/`RecentlyAddedAlbumsBuilder`, pre-existing shared services — only desktop's rendering was new), replacing a plain-text `ListBox`/flat track list. Clicking a tile expands that album's songs in place (two columns, animated height); only one tile is ever expanded at a time, shared across both grids. Multi-select and drag-to-playlist both work on the grid, mirroring the old list's gesture.
 
 ## Why two iterations
 
@@ -17,8 +17,9 @@ Albums/Recently Added now show the same big-art tile grid mobile already had (`A
 - `AlbumGridBuilder`/`RecentlyAddedAlbumsBuilder` (`Flower/Services/`) — group tracks into `AlbumTileViewModel`s.
 - `AlbumGridRowViewModel` — one row's tiles plus `IsExpanded`/`ExpandedTracks`; re-applied after rebuild by `AlbumGridView.ApplyExpansion` rather than being part of the rebuild.
 - `AlbumGridRowControl` (`Flower/Controls/`) — renders tiles + the animated two-column track border. Expansion height is a hardcoded per-row-height estimate (`TrackRowHeight = 26`), not measured from the real template (Avalonia can't animate cleanly to/from "Auto").
-- `AlbumGridView` — hosts the `ItemsControl`+`VirtualizingStackPanel`, owns row-chunking (`RebuildRows`, driven by `ItemsSource`/`SizeChanged`), exposes bindable `SelectedNames`/`ExpandedName`/`ExpandedTracks`.
-- `MainViewModel.ExpandedAlbumName`/`ExpandedAlbumTracks`/`ToggleAlbumExpandedCommand` — single source of truth shared by both grid instances, independent of multi-select state.
+- `AlbumGridView` — hosts the `ItemsControl`+`VirtualizingStackPanel`, owns row-chunking (`RebuildRows`, driven by `ItemsSource`/`SizeChanged`), exposes bindable `SelectedNames`/`ExpandedKey`/`ExpandedTracks`.
+- `MainViewModel.ExpandedAlbumKey`/`ExpandedAlbumTracks`/`ToggleAlbumExpandedCommand` — single source of truth shared by both grid instances, independent of multi-select state.
+- Expansion is identified by `AlbumTileKey` (album *and* artist), not by album name. Recently Added groups by `(Album, Artist)`, so a various-artists compilation is one tile per contributor with a shared name; keyed by name alone, clicking one expanded all of them, each showing the whole compilation. Tile *selection* is still name-based — that is the drag-to-playlist payload, and it is a separate concern.
 - Click vs. drag is resolved on pointer release, not press, since expanding on press would move rows under the cursor mid-drag.
 
 ## Known gaps (each independent, low-risk, not blockers)

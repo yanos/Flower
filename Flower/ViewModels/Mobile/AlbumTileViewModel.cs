@@ -10,6 +10,23 @@ using Flower.Services;
 
 namespace Flower.ViewModels.Mobile;
 
+// Which tile a grid is talking about, for the one thing that has to name a
+// single tile rather than a single album: the inline expansion (see
+// LibraryBrowserViewModel.ExpandedAlbumKey).
+//
+// An album name alone will not do it, and that is not a corner case. Recently
+// Added groups by (Album, Artist), so a various-artists compilation is one tile
+// per contributor - a dozen tiles reading "Virtual Dreams II", differing only
+// in the artist underneath. Keyed by name, clicking any one of them expanded
+// every one of them at once, each showing the whole compilation.
+//
+// Artist is part of the key rather than a tiebreaker because it is exactly what
+// the grouping that produced the tile split on. The Albums grid, which groups
+// by name alone, gives every tile a distinct name anyway, so including the
+// artist there costs nothing and keeps one notion of tile identity instead of
+// one per grid.
+public readonly record struct AlbumTileKey(string Name, string? Artist);
+
 // One tile in mobile's album grids - both the "Recently Added" grid (grouped
 // by (Album, Artist), ordered by recency - see RecentlyAddedAlbumsBuilder) and
 // the Albums tab's own grid (grouped by Album name alone to match desktop's
@@ -23,6 +40,11 @@ public sealed class AlbumTileViewModel : ViewModelBase
     public string? Artist { get; init; }
     public required Track RepresentativeTrack { get; init; }
     public DateTimeOffset MostRecentlyAdded { get; init; }
+
+    // What identifies this tile among its grid's tiles - see AlbumTileKey.
+    // Derived rather than stored so it cannot drift from the two fields it is
+    // made of.
+    public AlbumTileKey Key => new(Name, Artist);
 
     // Every track this tile stands for - carried (as references; the Track
     // instances are the library's own) purely so IsUnavailable below can be

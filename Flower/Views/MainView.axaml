@@ -278,12 +278,12 @@
              alphabetical vs. by-recency (see MainViewModel.AlbumGridTiles/
              RecentlyAddedGridTiles). Spans both columns - unlike the track
              list, this view never has a sub-list pane alongside it. Clicking
-             a tile expands that album's songs in place (ExpandedName/
+             a tile expands that album's songs in place (ExpandedKey/
              ExpandedTracks - see AlbumGridRowControl for the actual
              expand/collapse animation) rather than navigating to a separate
              track-list view, so both grids stay visible the whole time; only
              one album across either grid can be expanded at once
-             (MainViewModel.ExpandedAlbumName is shared by both). Both
+             (MainViewModel.ExpandedAlbumKey is shared by both). Both
              instances also get the full multi-select + drag-to-playlist
              gesture (the old SubList's own gesture, restored here) - see
              MainView.axaml.cs's AlbumGrid_Pointer* handlers, shared by both
@@ -293,7 +293,7 @@
                                 IsVisible="{Binding IsShowingAlbumGrid}"
                                 ItemsSource="{Binding AlbumGridTiles}"
                                 SelectedNames="{Binding SelectedSubItems}"
-                                ExpandedName="{Binding ExpandedAlbumName}"
+                                ExpandedKey="{Binding ExpandedAlbumKey}"
                                 ExpandedTracks="{Binding ExpandedAlbumTracks}"
                                 Availability="{Binding Availability}"
                                 CurrentlyPlayingTrackId="{Binding CurrentlyPlayingTrack.Id}"/>
@@ -302,7 +302,7 @@
                                 IsVisible="{Binding IsShowingRecentlyAddedGrid}"
                                 ItemsSource="{Binding RecentlyAddedGridTiles}"
                                 SelectedNames="{Binding SelectedSubItems}"
-                                ExpandedName="{Binding ExpandedAlbumName}"
+                                ExpandedKey="{Binding ExpandedAlbumKey}"
                                 ExpandedTracks="{Binding ExpandedAlbumTracks}"
                                 Availability="{Binding Availability}"
                                 CurrentlyPlayingTrackId="{Binding CurrentlyPlayingTrack.Id}"/>
