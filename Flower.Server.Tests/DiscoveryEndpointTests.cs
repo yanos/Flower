@@ -35,8 +35,14 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
     // an attacker can trivially produce, since fingerprints are public. Passing
     // `signer` instead proves it, the way NetworkDiscoveryService.
     // ResolveAliasAsync now does.
+    //
+    // `alias` is what the caller says it is called this time round, which the
+    // server writes back to the roster when the caller proved who it is - so it
+    // is a parameter rather than a constant. Percent-encoded on the way onto the
+    // header the way a real client does it (IdentityHeaderEncoding), and signed
+    // in the clear, because the canonical string excludes every X-Flower-* param.
     private async Task<(HttpStatusCode Status, JsonElement Body)> GetInfoAsync(
-        string? callerFingerprint = null, DeviceSigningKey? signer = null)
+        string? callerFingerprint = null, DeviceSigningKey? signer = null, string alias = "Kitchen iPad")
     {
         var context = await server.Server.SendAsync(c =>
         {
@@ -44,7 +50,10 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
             c.Request.Path = SyncProtocol.InfoPath;
             c.Connection.RemoteIpAddress = IPAddress.Loopback;
             if (callerFingerprint != null)
+            {
                 c.Request.Headers["X-Flower-Fingerprint"] = callerFingerprint;
+                c.Request.Headers["X-Flower-Alias"] = IdentityHeaderEncoding.Encode(alias);
+            }
 
             if (signer == null)
                 return;
@@ -52,7 +61,7 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
             var identity = new List<(string Key, string Value)>
             {
                 ("X-Flower-Fingerprint", signer.Fingerprint),
-                ("X-Flower-Alias", "Kitchen iPad"),
+                ("X-Flower-Alias", alias),
                 ("X-Flower-Role", "client"),
                 ("X-Flower-PublicKey", signer.PublicKeyBase64),
             };
@@ -60,7 +69,7 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
             foreach (var (key, value) in identity.Concat(
                 [("X-Flower-Signature", signature), ("X-Flower-Timestamp", timestamp), ("X-Flower-Nonce", nonce)]))
             {
-                c.Request.Headers[key] = value;
+                c.Request.Headers[key] = key == "X-Flower-Alias" ? IdentityHeaderEncoding.Encode(value) : value;
             }
         });
 
@@ -138,6 +147,92 @@ public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixtur
         {
             var (_, body) = await GetInfoAsync(signer: device);
             Assert.True(body.GetProperty("trustsCaller").GetBoolean());
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // A device's name is settled at pairing and then goes stale: rename a phone
+    // six months later and the operator's Devices list, and the Logs tab's
+    // picker, still show whatever it was called the day it redeemed its code.
+    // Every signed request has carried the current name in X-Flower-Alias all
+    // along; this route is where the server finally listens, because it is the
+    // one every paired device calls on a timer.
+    [Fact]
+    public async Task Relearns_a_devices_name_when_its_owner_has_renamed_it()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "iPhone", device.PublicKeyBase64);
+
+        try
+        {
+            // Non-ASCII on purpose. The alias is user-typed - iOS will not tell
+            // an app the real device name - so an accented one is ordinary, and
+            // it is what proves the server decodes the header rather than
+            // storing the percent-encoded form a client puts on the wire.
+            await GetInfoAsync(signer: device, alias: "Mr Téléphone");
+
+            Assert.Equal(
+                "Mr Téléphone",
+                trustedPeers.Load().Single(p => p.Fingerprint == device.Fingerprint).Alias);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The reason this is not just ApproveAsync with a new name. Re-approving
+    // restamps ApprovedAt and rewrites the key and the admin flag, so a rename
+    // routed through it would relabel the pairing as having happened just now -
+    // and would let a device's choice of name decide whether it administers the
+    // server.
+    [Fact]
+    public async Task Renaming_a_device_changes_nothing_else_about_its_pairing()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Owner's phone", device.PublicKeyBase64, isAdmin: true);
+        var before = trustedPeers.Load().Single(p => p.Fingerprint == device.Fingerprint);
+
+        try
+        {
+            var (_, body) = await GetInfoAsync(signer: device, alias: "Owner's other phone");
+
+            var after = trustedPeers.Load().Single(p => p.Fingerprint == device.Fingerprint);
+            Assert.Equal("Owner's other phone", after.Alias);
+            Assert.Equal(before.ApprovedAt, after.ApprovedAt);
+            Assert.Equal(before.PublicKey, after.PublicKey);
+            Assert.True(after.IsAdmin);
+            Assert.True(body.GetProperty("callerIsAdmin").GetBoolean());
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The alias header is unauthenticated text on its own, and a fingerprint is
+    // public - it is in this very response. So a caller that merely claims one
+    // must not be able to relabel somebody else's phone in this server's own
+    // logs, which is a way to make an audit trail lie.
+    [Fact]
+    public async Task Ignores_a_new_name_from_a_caller_that_did_not_prove_who_it_is()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Hallway speaker", device.PublicKeyBase64);
+
+        try
+        {
+            await GetInfoAsync(callerFingerprint: device.Fingerprint, alias: "Something else entirely");
+
+            Assert.Equal(
+                "Hallway speaker",
+                trustedPeers.Load().Single(p => p.Fingerprint == device.Fingerprint).Alias);
         }
         finally
         {
