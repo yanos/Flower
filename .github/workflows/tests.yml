@@ -12,7 +12,12 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      # Full history, so MinVer sees the tags and commit height it versions
+      # these binaries from. actions/checkout defaults to depth 1, which
+      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Flower.csproj (the shared library Flower.Tests references) targets
       # net10.0 only. This comment previously claimed it multi-targeted
@@ -36,7 +41,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Full history, so MinVer sees the tags and commit height it versions
+      # these binaries from. actions/checkout defaults to depth 1, which
+      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -57,14 +67,20 @@ jobs:
       - name: Run server tests
         run: dotnet test Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
 
-  # Everything the two test jobs above don't already compile. A build-only
-  # gate, deliberately: Flower.CLI has no tests worth running yet, but a
-  # project that never gets compiled by CI is a project that silently rots.
-  build-rest:
+  # Flower.Desktop is the one project the jobs above never compile - the test
+  # jobs reach Flower/Flower.Core through Flower.Tests, and the server through
+  # its own tests. A build-only gate, deliberately: a project CI never compiles
+  # is a project that silently rots.
+  build-desktop:
     runs-on: ubuntu-latest
 
     steps:
+      # Full history, so MinVer sees the tags and commit height it versions
+      # these binaries from. actions/checkout defaults to depth 1, which
+      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -72,19 +88,21 @@ jobs:
           cache: true
           cache-dependency-path: |
             Flower/Flower.csproj
-            Flower.CLI/Flower.CLI.csproj
+            Flower.Desktop/Flower.Desktop.csproj
 
       - name: Build Flower.Desktop
         run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
-
-      - name: Build Flower.CLI
-        run: dotnet build Flower.CLI/Flower.CLI.csproj --configuration Release
 
   build-ios:
     runs-on: macos-latest
 
     steps:
+      # Full history, so MinVer sees the tags and commit height it versions
+      # these binaries from. actions/checkout defaults to depth 1, which
+      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # macos-latest defaults to a newer Xcode than the .NET for iOS
       # workload supports (it requires an exact major.minor match); the
@@ -123,7 +141,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Full history, so MinVer sees the tags and commit height it versions
+      # these binaries from. actions/checkout defaults to depth 1, which
+      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -143,7 +166,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Full history, so MinVer sees the tags and commit height it versions
+      # these binaries from. actions/checkout defaults to depth 1, which
+      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
