@@ -86,7 +86,7 @@ class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
-            .WithInterFont()
+            .WithFlowerFonts()
             .LogToTrace()
             // Runs once native platform setup (incl. NSApplication) exists -
             // see MacDockIcon for why this can't just be Window.Icon.
