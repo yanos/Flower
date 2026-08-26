@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 using Flower.Importer;
 using Flower.Persistence;
+using Flower.Services;
 
 namespace Flower.ViewModels;
 
@@ -50,7 +51,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         ITunesLibraryDescription = ITunesIntegration.DescribeSource(),
         AppleMusicFolder = Flower.Importer.Importer.TryResolveAppleMusicFolder(),
         DataDirectory = AppDataDirectory.Path,
-        Version = typeof(LocalSettingsBackend).Assembly.GetName().Version?.ToString(),
+        Version = AppVersion.Display,
         IsPairedToServer = !string.IsNullOrEmpty(ViewModel.PairedServerFingerprint),
     });
 

@@ -500,7 +500,7 @@ public static class AdminEndpoints
             Flower.Importer.Importer.TryResolveAppleMusicFolder(),
             ITunesIntegration.DescribeSource(),
             options.DataDirectory,
-            typeof(AdminEndpoints).Assembly.GetName().Version?.ToString(),
+            AppVersion.Display,
             options.AllowPublicAccess,
             DiscoveryEndpoints.ReachableOrigins(boundServer, options),
             await publicAddress.GetAsync(ct));
