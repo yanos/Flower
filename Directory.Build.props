@@ -3,13 +3,27 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <!-- MinVer: computes $(Version) from git tags for the shipped entry-point
-       projects only (not the shared library or the test project -->
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI' OR '$(MSBuildProjectName)' == 'Flower.Server' OR '$(MSBuildProjectName)' == 'Flower.Web'">
+  <!-- MinVer computes $(Version) from git tags on every build, local included,
+       and the SDK stamps it into each assembly as it is compiled.
+
+       This deliberately applies to every project rather than an allow-list of
+       the shipped entry points. It used to be the latter, and the list was a
+       maintenance trap: each new entry point had to remember to add itself,
+       and Flower.Core - extracted later - never did, so the library holding
+       most of the code shipped stamped 1.0.0 while the exe beside it carried
+       the real version. A stack trace or a crash report naming an assembly is
+       only useful if that assembly says which build it came from -->
+  <PropertyGroup>
     <MinVerTagPrefix>v</MinVerTagPrefix>
+    <!-- A floor for the version, used only until the first v* tag exists.
+         Without it an untagged repo versions everything 0.0.0-alpha.0.<height>,
+         which reads as "unversioned" rather than "heading for 0.1.0". Any tag
+         at or above this wins outright, so it stops mattering the moment one
+         is cut - raise it only if a release is ever tagged below it -->
+    <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Flower.Desktop' OR '$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS' OR '$(MSBuildProjectName)' == 'Flower.CLI' OR '$(MSBuildProjectName)' == 'Flower.Server' OR '$(MSBuildProjectName)' == 'Flower.Web'">
+  <ItemGroup>
     <PackageReference Include="MinVer" Version="7.*">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
