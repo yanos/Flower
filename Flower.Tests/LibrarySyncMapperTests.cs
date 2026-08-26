@@ -129,4 +129,83 @@ public class LibrarySyncMapperTests
         Assert.False(track.RemotePlayCounts.ContainsKey("self-1"));
         Assert.Equal(9, track.RemotePlayCounts["peer-2"]);
     }
+
+    // The regression these three cover: AlbumArtists and IsCompilation had no
+    // field on Child at all, so a synced placeholder recomputed
+    // EffectiveAlbumArtist from two empty fields and always landed on the
+    // per-track Artists. Every various-artists compilation therefore fragmented
+    // into one album tile per contributing artist on the receiving side, while
+    // the sender showed a single album - measured on a real 16k-track library
+    // as 30 albums, one of them a 31-artist compilation showing as 31 tiles.
+    // What matters in each case is that EffectiveAlbumArtist agrees with the
+    // sender's, since that is what every album grouping keys on.
+    [Fact]
+    public void ToPlaceholderTrack_restores_the_album_artist_of_a_compilation_tagged_only_with_the_flag()
+    {
+        // A blank AlbumArtists tag plus the compilation flag - the sender's
+        // EffectiveAlbumArtist resolved this to "Various Artists".
+        var song = new Child(
+            Id: "some-id", Title: "Sinnerman", Album: "Kill Bill Volume 1", Artist: "Nina Simone",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 3, Year: 2003, Genre: null,
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 120, BitRate: null, CoverArt: null,
+            DisplayAlbumArtist: "Various Artists", IsCompilation: true);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Equal("Nina Simone", track.Artists);
+        Assert.True(track.IsCompilation);
+        Assert.Equal("Various Artists", track.EffectiveAlbumArtist);
+    }
+
+    [Fact]
+    public void ToPlaceholderTrack_restores_an_explicit_album_artist_tag()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Blue In Green", Album: "Kind Of Blue", Artist: "Miles Davis & Bill Evans",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 3, Year: 1959, Genre: null,
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 337, BitRate: null, CoverArt: null,
+            DisplayAlbumArtist: "Miles Davis", IsCompilation: false);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Equal("Miles Davis", track.AlbumArtists);
+        Assert.Equal("Miles Davis", track.EffectiveAlbumArtist);
+    }
+
+    // The sender's fallback ends at Artists for an ordinary album, so there is
+    // nothing to store - copying the display value in anyway would stamp a
+    // redundant AlbumArtists tag onto most of a library. EffectiveAlbumArtist
+    // still has to come out the same.
+    [Fact]
+    public void ToPlaceholderTrack_stores_no_album_artist_when_it_only_repeats_the_track_artist()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null,
+            DisplayAlbumArtist: "Beatles", IsCompilation: false);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Null(track.AlbumArtists);
+        Assert.False(track.IsCompilation);
+        Assert.Equal("Beatles", track.EffectiveAlbumArtist);
+    }
+
+    // A third-party OpenSubsonic server that sends neither field must still map
+    // cleanly, the same way a missing DateAdded/LastPlayed already does.
+    [Fact]
+    public void ToPlaceholderTrack_tolerates_a_server_that_sends_no_album_artist_at_all()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Null(track.AlbumArtists);
+        Assert.False(track.IsCompilation);
+        Assert.Equal("Beatles", track.EffectiveAlbumArtist);
+    }
 }

@@ -83,7 +83,12 @@ public static class SubsonicMapper
                 {
                     [selfFingerprint] = track.PlayCount + track.ImportedPlayCount,
                 },
-            LastPlayed: track.LastPlayedAt);
+            LastPlayed: track.LastPlayedAt,
+            // The same albumArtist already used for AlbumId/ArtistId/CoverArt
+            // above, now also sent as a value - see Child.DisplayAlbumArtist for
+            // what a receiving head could not reconstruct without it.
+            DisplayAlbumArtist: albumArtist,
+            IsCompilation: track.IsCompilation);
     }
 
     private static long SizeOf(Track track)

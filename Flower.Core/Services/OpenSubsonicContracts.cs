@@ -114,7 +114,31 @@ public sealed record Child(
     // itself - which for a browser tab means every refresh, since a tab keeps
     // nothing across one. See Track.LastPlayedAt, and IPlayReporter for the
     // road a tab's own plays take in the other direction.
-    System.DateTimeOffset? LastPlayed = null);
+    System.DateTimeOffset? LastPlayed = null,
+    // The sender's Track.EffectiveAlbumArtist - the artist the album is
+    // *grouped* by, as opposed to Artist above, which is this one song's own
+    // credit. This one IS part of the OpenSubsonic spec (it serializes as
+    // "displayAlbumArtist" under the camelCase policy), so a third-party client
+    // gets the same benefit.
+    //
+    // Without it a receiving head had no way to reconstruct the grouping: it
+    // recomputes EffectiveAlbumArtist locally from AlbumArtists/IsCompilation,
+    // and neither field crossed the wire, so every synced track fell through to
+    // its per-track Artists. A various-artists compilation therefore shattered
+    // into one album tile per contributing artist on the client - a 31-artist
+    // compilation became 31 tiles sharing a name. The AlbumId/ArtistId this
+    // record already carried were computed from the album artist and so were
+    // correct all along; only the value they were derived from was missing.
+    string? DisplayAlbumArtist = null,
+    // Flower-specific, same reasoning as PlayCounts above - the OpenSubsonic
+    // spec has no compilation flag. Carried alongside DisplayAlbumArtist rather
+    // than folded into it because EffectiveAlbumArtist is a three-way fallback
+    // and collapsing it to one string loses which branch produced it: a
+    // compilation whose AlbumArtists tag was left blank and an album genuinely
+    // tagged "Various Artists" both arrive as the same display string, and a
+    // receiving head that later downloads the file would disagree with its own
+    // rescan of it. See Track.IsCompilation.
+    bool IsCompilation = false);
 
 public sealed record SearchResult3(
     List<ArtistID3>? Artist,
