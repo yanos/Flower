@@ -110,15 +110,16 @@ namespace Flower.Persistence.Sql
 
         private void Quarantine(string path)
         {
-            // Microsoft.Data.Sqlite pools connections: the one the failed
-            // migration opened went back to the pool when it was disposed
-            // rather than being closed, and it still holds the file open.
-            // POSIX does not care - a rename over an open file is fine - but
-            // Windows refuses the move outright ("the process cannot access
-            // the file because it is being used by another process"), which
-            // turned the quarantine path into the crash on launch it exists
-            // to prevent. Emptying the pool for this connection string closes
-            // that handle first.
+            // Microsoft.Data.Sqlite pools connections, so the one the failed
+            // migration opened is merely idle in the pool by now, not closed,
+            // and it still holds the file open. POSIX does not care - a rename
+            // over an open file is fine - but Windows refuses the move outright
+            // ("the process cannot access the file because it is being used by
+            // another process"), which turned the quarantine path into the
+            // crash on launch it exists to prevent. Emptying the pool for this
+            // connection string closes that handle first. Open()'s dispose-on-
+            // failure is the other half: without it the connection never
+            // reaches the pool at all and this has nothing to clear.
             using (var pooled = new SqliteConnection(ConnectionString))
                 SqliteConnection.ClearPool(pooled);
 
@@ -154,6 +155,26 @@ namespace Flower.Persistence.Sql
         public SqliteConnection Open()
         {
             var connection = new SqliteConnection(ConnectionString);
+            try
+            {
+                Prepare(connection);
+            }
+            catch
+            {
+                // Without this the connection stays open and unreferenced
+                // when a pragma throws - which is exactly what an unreadable
+                // file does - so it never returns to the pool and nothing can
+                // close it. Quarantine's move then fails on Windows against a
+                // handle no one holds a reference to any more.
+                connection.Dispose();
+                throw;
+            }
+
+            return connection;
+        }
+
+        private static void Prepare(SqliteConnection connection)
+        {
             connection.Open();
 
             using var pragma = connection.CreateCommand();
@@ -166,8 +187,6 @@ namespace Flower.Persistence.Sql
             // only an OS/power loss can lose the last commit.
             pragma.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;";
             pragma.ExecuteNonQuery();
-
-            return connection;
         }
     }
 }
