@@ -277,6 +277,11 @@ public partial class MusicListView : UserControl
 
         _columnManager.ColumnsChanged += (_, _) => BuildHeader();
 
+        // The one scroller in the app with both axes live at once (the columns
+        // go wider than the viewport), and so the only one where a two-finger
+        // vertical scroll could drift sideways on its own.
+        PredominantAxisScroll.SetIsEnabled(Scroller, true);
+
         Scroller.ScrollChanged += (_, _) => SyncScroll();
 
         Scroller.PropertyChanged += (_, e) =>
