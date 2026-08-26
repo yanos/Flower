@@ -337,19 +337,92 @@ public class LibraryBrowserViewModelTests
             new Track { Title = "other",  Album = "Two", DiscNumber = 1, TrackNumber = 1, Path = "/4.mp3" });
         vm.Repopulate();
 
-        vm.ToggleAlbumExpanded("One");
+        var one = vm.AlbumGridTiles.Single(t => t.Name == "One");
+        var two = vm.AlbumGridTiles.Single(t => t.Name == "Two");
+
+        vm.ToggleAlbumExpanded(one);
         Assert.Equal("One", vm.ExpandedAlbumName);
         Assert.Equal(new[] { "first", "second", "disc2" }, vm.ExpandedAlbumTracks.Select(t => t.Title));
 
         // Clicking the already-expanded album collapses it.
-        vm.ToggleAlbumExpanded("One");
+        vm.ToggleAlbumExpanded(one);
         Assert.Null(vm.ExpandedAlbumName);
         Assert.Empty(vm.ExpandedAlbumTracks);
 
         // A different one switches straight to it.
-        vm.ToggleAlbumExpanded("One");
-        vm.ToggleAlbumExpanded("Two");
+        vm.ToggleAlbumExpanded(one);
+        vm.ToggleAlbumExpanded(two);
         Assert.Equal("Two", vm.ExpandedAlbumName);
+    }
+
+    // Recently Added groups by (Album, Artist), so a various-artists compilation
+    // arrives as one tile per contributor - all reading the same album name.
+    // Expansion used to be keyed by that name, so clicking any one of them
+    // expanded every one of them at once, and each showed the whole
+    // compilation instead of that contributor's share of it.
+    [AvaloniaFact]
+    public void Expanding_one_tile_of_a_compilation_leaves_its_namesakes_alone()
+    {
+        var (vm, _) = Make(
+            Song("Blown Fruit", "Virtual Dreams II", "Palomatic"),
+            Song("Flutter", "Virtual Dreams II", "Palomatic"),
+            Song("Pause", "Virtual Dreams II", "Virgo"));
+        vm.Repopulate();
+
+        var palomatic = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Palomatic");
+        var virgo = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Virgo");
+        Assert.Equal(palomatic.Name, virgo.Name);
+
+        vm.ToggleAlbumExpanded(palomatic);
+
+        // The tile, not the album name - the two tiles differ only by artist.
+        Assert.Equal(palomatic.Key, vm.ExpandedAlbumKey);
+        Assert.NotEqual(virgo.Key, vm.ExpandedAlbumKey);
+
+        // And it shows that tile's own tracks, not every namesake's.
+        Assert.Equal(
+            new[] { "Blown Fruit", "Flutter" },
+            vm.ExpandedAlbumTracks.Select(t => t.Title).OrderBy(t => t));
+    }
+
+    // Clicking a second namesake is a switch, not a no-op: keyed by name, the
+    // accordion could not tell "the same album again" from "the tile next door".
+    [AvaloniaFact]
+    public void Switching_between_two_tiles_of_a_compilation_swaps_the_expansion()
+    {
+        var (vm, _) = Make(
+            Song("Blown Fruit", "Virtual Dreams II", "Palomatic"),
+            Song("Pause", "Virtual Dreams II", "Virgo"));
+        vm.Repopulate();
+
+        var palomatic = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Palomatic");
+        var virgo = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Virgo");
+
+        vm.ToggleAlbumExpanded(palomatic);
+        vm.ToggleAlbumExpanded(virgo);
+
+        Assert.Equal(virgo.Key, vm.ExpandedAlbumKey);
+        Assert.Equal(new[] { "Pause" }, vm.ExpandedAlbumTracks.Select(t => t.Title));
+    }
+
+    // A rescan replaces every tile instance, so the expansion has to be
+    // re-found by key rather than by holding the old object - and re-found as
+    // the *same* tile, not merely one with the same album name.
+    [AvaloniaFact]
+    public void A_rebuild_keeps_the_expansion_on_the_tile_it_was_opened_on()
+    {
+        var (vm, _) = Make(
+            Song("Blown Fruit", "Virtual Dreams II", "Palomatic"),
+            Song("Pause", "Virtual Dreams II", "Virgo"));
+        vm.Repopulate();
+
+        var palomatic = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Palomatic");
+        vm.ToggleAlbumExpanded(palomatic);
+
+        vm.Repopulate();
+
+        Assert.Equal(palomatic.Key, vm.ExpandedAlbumKey);
+        Assert.Equal(new[] { "Blown Fruit" }, vm.ExpandedAlbumTracks.Select(t => t.Title));
     }
 
     [AvaloniaFact]

@@ -41,7 +41,7 @@ public partial class AlbumGridView : UserControl
 
     // Album names currently selected (see MainViewModel.SelectedSubItems) -
     // drives which tiles render as selected (drag/multi-select), independent
-    // of ExpandedName below.
+    // of ExpandedKey below.
     public static readonly StyledProperty<IEnumerable?> SelectedNamesProperty =
         AvaloniaProperty.Register<AlbumGridView, IEnumerable?>(nameof(SelectedNames));
 
@@ -51,15 +51,20 @@ public partial class AlbumGridView : UserControl
         set => SetValue(SelectedNamesProperty, value);
     }
 
-    // The one album (if any) currently expanded inline - see
-    // MainViewModel.ExpandedAlbumName.
-    public static readonly StyledProperty<string?> ExpandedNameProperty =
-        AvaloniaProperty.Register<AlbumGridView, string?>(nameof(ExpandedName));
+    // The one tile (if any) currently expanded inline - see
+    // MainViewModel.ExpandedAlbumKey.
+    //
+    // A tile, not an album name: Recently Added splits a various-artists
+    // compilation into one tile per contributor, all sharing the album name, so
+    // matching on the name expanded every one of them together. See
+    // AlbumTileKey.
+    public static readonly StyledProperty<AlbumTileKey?> ExpandedKeyProperty =
+        AvaloniaProperty.Register<AlbumGridView, AlbumTileKey?>(nameof(ExpandedKey));
 
-    public string? ExpandedName
+    public AlbumTileKey? ExpandedKey
     {
-        get => GetValue(ExpandedNameProperty);
-        set => SetValue(ExpandedNameProperty, value);
+        get => GetValue(ExpandedKeyProperty);
+        set => SetValue(ExpandedKeyProperty, value);
     }
 
     public static readonly StyledProperty<IEnumerable?> ExpandedTracksProperty =
@@ -76,7 +81,7 @@ public partial class AlbumGridView : UserControl
     // arrow on the matching row inside an expanded album's track list (see
     // AlbumGridRowViewModel.CurrentlyPlayingTrackId), the same indicator
     // MusicListView's own rows already have (TrackRowViewModel.
-    // IsCurrentlyPlaying) - independent of ExpandedName/SelectedNames above,
+    // IsCurrentlyPlaying) - independent of ExpandedKey/SelectedNames above,
     // since a track can be playing whether or not its album happens to be
     // the one currently expanded or selected. Identified by Id rather than by
     // Path, which is null for every placeholder and therefore identifies none
@@ -135,7 +140,7 @@ public partial class AlbumGridView : UserControl
         {
             ApplySelection();
         }
-        else if (change.Property == ExpandedNameProperty || change.Property == ExpandedTracksProperty)
+        else if (change.Property == ExpandedKeyProperty || change.Property == ExpandedTracksProperty)
         {
             ApplyExpansion();
         }
@@ -201,15 +206,15 @@ public partial class AlbumGridView : UserControl
 
     private void ApplyExpansion()
     {
-        var expandedName = ExpandedName;
+        var expandedKey = ExpandedKey;
         var tracks = ExpandedTracks?.Cast<Track>().ToList() ?? new List<Track>();
 
         foreach (var tile in _tiles)
-            tile.IsExpanded = expandedName != null && tile.Name == expandedName;
+            tile.IsExpanded = expandedKey != null && tile.Key == expandedKey;
 
         foreach (var row in _rows)
         {
-            var isMatch = expandedName != null && row.Tiles.Any(t => t.Name == expandedName);
+            var isMatch = expandedKey != null && row.Tiles.Any(t => t.Key == expandedKey);
             row.IsExpanded = isMatch;
             // Availability first: ExpandedTracks builds the row objects, and
             // each one reads it as it is constructed rather than waiting for a
@@ -252,7 +257,7 @@ public partial class AlbumGridView : UserControl
     // about this song-level selection at all and would fall back to treating
     // the whole expanded album as selected instead of just the one song the
     // user actually clicked. At most one row across either grid instance is
-    // ever expanded at a time (MainViewModel.ExpandedAlbumName is shared).
+    // ever expanded at a time (MainViewModel.ExpandedAlbumKey is shared).
     public IReadOnlyList<Track> GetExpandedRowSelectedTracks() =>
         _rows.FirstOrDefault(r => r.IsExpanded)?.SelectedTracks ?? Array.Empty<Track>();
 

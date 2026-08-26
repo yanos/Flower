@@ -231,12 +231,28 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // SelectedSubItems (Ctrl/Shift multi-select for drag-to-playlist, see
     // MainView.axaml.cs's AlbumGrid_PointerPressed) - a plain click toggles
     // this and never touches multi-select; Ctrl/Shift-click never touches this.
-    private string? _expandedAlbumName;
-    public string? ExpandedAlbumName
+    //
+    // Keyed by tile rather than by album name, because in Recently Added a
+    // various-artists compilation is one tile per contributor and they all
+    // share a name - see AlbumTileKey.
+    private AlbumTileKey? _expandedAlbumKey;
+    public AlbumTileKey? ExpandedAlbumKey
     {
-        get => _expandedAlbumName;
-        private set { _expandedAlbumName = value; OnPropertyChanged(); }
+        get => _expandedAlbumKey;
+        private set
+        {
+            _expandedAlbumKey = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ExpandedAlbumName));
+        }
     }
+
+    // The expanded tile's album name, for the callers that genuinely work in
+    // names: Get Info's fallback to "whatever is expanded"
+    // (AlbumTrackInfoSelection) and the tile selection it falls back through,
+    // both of which are name-based because the tile *selection* is. Only the
+    // expansion needed to become finer-grained than a name.
+    public string? ExpandedAlbumName => _expandedAlbumKey?.Name;
 
     private ObservableCollection<Track> _expandedAlbumTracks = new();
     public ObservableCollection<Track> ExpandedAlbumTracks
@@ -250,20 +266,19 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // Recently Added's tiles route through here (see AlbumGrid_PointerPressed),
     // independent of which grid the click came from - the same album showing
     // up in both is exactly the same album either way.
-    public void ToggleAlbumExpanded(string? albumName)
+    public void ToggleAlbumExpanded(AlbumTileViewModel? tile)
     {
-        if (string.IsNullOrEmpty(albumName))
+        if (tile == null)
             return;
 
-        if (_expandedAlbumName == albumName)
+        if (_expandedAlbumKey == tile.Key)
         {
-            ExpandedAlbumName = null;
-            ExpandedAlbumTracks = new ObservableCollection<Track>();
+            CollapseExpandedAlbum();
             return;
         }
 
-        ExpandedAlbumName = albumName;
-        ExpandedAlbumTracks = BuildExpandedAlbumTracks(albumName);
+        ExpandedAlbumKey = tile.Key;
+        ExpandedAlbumTracks = ExpandedTracksFor(tile);
     }
 
     // Every fresh visit to Albums/Recently Added starts with nothing expanded,
@@ -271,12 +286,19 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // always starts at the flat grid too.
     public void CollapseExpandedAlbum()
     {
-        ExpandedAlbumName = null;
+        ExpandedAlbumKey = null;
         ExpandedAlbumTracks = new ObservableCollection<Track>();
     }
 
-    public ObservableCollection<Track> BuildExpandedAlbumTracks(string albumName) =>
-        new(_allTracks.Where(t => t.Album == albumName)
+    // The tile's own tracks, in disc/track order. Taken from the tile rather
+    // than re-derived by filtering the library on the album name, which is what
+    // this used to do: a Recently Added tile stands for one contributor's share
+    // of a compilation, and filtering by name would hand back every
+    // contributor's - the same wrong list the old name-keyed expansion showed
+    // under every tile at once. The tile already carries exactly the tracks its
+    // grid grouped into it, so there is nothing to reconstruct.
+    public static ObservableCollection<Track> ExpandedTracksFor(AlbumTileViewModel tile) =>
+        new(tile.Tracks
             .OrderBy(t => t.DiscNumber)
             .ThenBy(t => t.TrackNumber));
 
@@ -308,12 +330,26 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(RecentlyAddedAlbumsBuilder.Build(_allTracks));
         ApplyTileAvailability();
 
-        // An expanded album's tracks were resolved against the previous
-        // _allTracks snapshot - refresh them so a library change (a rescan,
-        // a download completing, a tag edit) while expanded doesn't leave it
-        // showing stale Track references.
-        if (_expandedAlbumName != null)
-            ExpandedAlbumTracks = BuildExpandedAlbumTracks(_expandedAlbumName);
+        // An expanded album's tracks came from a tile built against the
+        // previous _allTracks snapshot, and every tile has just been replaced -
+        // so re-find the expanded one by key and take its tracks, or a library
+        // change (a rescan, a download completing, a tag edit) leaves the
+        // expansion showing stale Track references.
+        //
+        // Both grids are searched because only one is on screen and this does
+        // not know which; the key identifies at most one tile in either.
+        // Nothing matching means the album stopped existing under that name or
+        // artist, which collapses it rather than leaving an expansion attached
+        // to a tile that is no longer there.
+        if (_expandedAlbumKey is { } expanded)
+        {
+            var tile = AlbumGridTiles.Concat(RecentlyAddedGridTiles)
+                .FirstOrDefault(t => t.Key == expanded);
+            if (tile == null)
+                CollapseExpandedAlbum();
+            else
+                ExpandedAlbumTracks = ExpandedTracksFor(tile);
+        }
     }
 
     // ── Sub-list (Artists picker) ─────────────────────────────────────────

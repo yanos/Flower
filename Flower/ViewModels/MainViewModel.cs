@@ -403,6 +403,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public ObservableCollection<AlbumTileViewModel> AlbumGridTiles         => Browser.AlbumGridTiles;
     public ObservableCollection<AlbumTileViewModel> RecentlyAddedGridTiles => Browser.RecentlyAddedGridTiles;
 
+    public AlbumTileKey? ExpandedAlbumKey                 => Browser.ExpandedAlbumKey;
     public string? ExpandedAlbumName                     => Browser.ExpandedAlbumName;
     public ObservableCollection<Track> ExpandedAlbumTracks => Browser.ExpandedAlbumTracks;
 
@@ -1113,7 +1114,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _deletePlaylistCommand = new AsyncRelayCommand(Playlists.DeleteSelectedAsync, Playlists.CanRenameOrDeleteSelected);
         DeletePlaylistCommand = _deletePlaylistCommand;
 
-        ToggleAlbumExpandedCommand = new RelayCommand<string>(Browser.ToggleAlbumExpanded);
+        ToggleAlbumExpandedCommand = new RelayCommand<AlbumTileViewModel>(Browser.ToggleAlbumExpanded);
 
         Sync = new PeerSyncCoordinator(
             this, appSettings, appSettingsStore, deviceIdentityStore,
@@ -1375,16 +1376,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // in track order and starts playing from the first track, and makes sure
     // it ends up expanded rather than toggling closed (unlike a plain click's
     // ToggleAlbumExpandedCommand).
-    public void PlayAlbum(string albumName)
+    public void PlayAlbum(AlbumTileViewModel tile)
     {
-        var tracks = Browser.BuildExpandedAlbumTracks(albumName);
+        var tracks = LibraryBrowserViewModel.ExpandedTracksFor(tile);
         if (tracks.Count == 0)
             return;
 
         // Unlike a plain click's ToggleAlbumExpandedCommand, this always ends
         // expanded rather than toggling closed.
-        if (Browser.ExpandedAlbumName != albumName)
-            Browser.ToggleAlbumExpanded(albumName);
+        if (Browser.ExpandedAlbumKey != tile.Key)
+            Browser.ToggleAlbumExpanded(tile);
 
         _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
         _playlistControlViewModel.Play(tracks[0], 0);

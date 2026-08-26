@@ -21,6 +21,7 @@ using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
 using Flower.ViewModels;
+using Flower.ViewModels.Mobile;
 
 using Material.Icons;
 using Material.Icons.Avalonia;
@@ -310,6 +311,12 @@ public partial class MainView : UserControl
     // only actually toggles if no drag occurred.
     private bool _albumGridPendingActivate;
 
+    // Which tile that deferred click was on. The gesture only remembers a name,
+    // which is all selection and drag need - but expanding needs the tile
+    // itself, since in Recently Added several tiles share one album name (see
+    // AlbumTileKey).
+    private AlbumTileViewModel? _albumGridPendingTile;
+
     private NameSelectionDragGesture? GestureFor(AlbumGridView grid) =>
         ReferenceEquals(grid, AlbumGrid) ? _albumGridGesture : _recentlyAddedGridGesture;
 
@@ -334,7 +341,7 @@ public partial class MainView : UserControl
         // which would otherwise expand then immediately re-collapse it.
         if (e.ClickCount >= 2 && !shift && !toggle)
         {
-            vm.PlayAlbum(tile.Name);
+            vm.PlayAlbum(tile);
             e.Handled = true;
             e.Pointer.Capture(null);
             EndAlbumGridDrag(gesture);
@@ -349,6 +356,7 @@ public partial class MainView : UserControl
         e.Handled = true;
 
         _albumGridPendingActivate = !shift && !toggle && !alreadySelected;
+        _albumGridPendingTile = _albumGridPendingActivate ? tile : null;
         e.Pointer.Capture(grid);
     }
 
@@ -372,11 +380,11 @@ public partial class MainView : UserControl
 
         if (gesture is { IsDragging: true, DragItems: { } items })
             CompleteNameDrop(grid, e.GetPosition(grid), items);
-        else if (_albumGridPendingActivate && gesture.PressedItem is { } name)
+        else if (_albumGridPendingActivate && _albumGridPendingTile is { } tile)
         {
             // No drag happened - a genuine plain click, now safe to
             // expand/collapse (see _albumGridPendingActivate's doc comment).
-            _viewModel?.ToggleAlbumExpandedCommand?.Execute(name);
+            _viewModel?.ToggleAlbumExpandedCommand?.Execute(tile);
         }
 
         e.Pointer.Capture(null);
@@ -393,6 +401,7 @@ public partial class MainView : UserControl
     {
         gesture.End();
         _albumGridPendingActivate = false;
+        _albumGridPendingTile = null;
         ResetDragVisuals();
     }
 
@@ -415,7 +424,7 @@ public partial class MainView : UserControl
             vm.SetSelectedSubItems(new List<string> { tile.Name });
 
         var tracks = vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
-        BuildAlbumContextMenu(tracks, tile.Name).Open(grid);
+        BuildAlbumContextMenu(tracks, tile).Open(grid);
         e.Handled = true;
     }
 
@@ -921,10 +930,10 @@ public partial class MainView : UserControl
     // targets just the tile actually clicked, same "not a coherent multi-target
     // action" reasoning as that method's own Locate File; Get Info/Add To
     // Playlist act on the full current album selection via tracks.
-    private ContextMenu BuildAlbumContextMenu(IReadOnlyList<Track> tracks, string clickedAlbumName)
+    private ContextMenu BuildAlbumContextMenu(IReadOnlyList<Track> tracks, AlbumTileViewModel clickedTile)
     {
         var playItem = new MenuItem { Header = "Play Album" };
-        playItem.Click += (_, _) => _viewModel?.PlayAlbum(clickedAlbumName);
+        playItem.Click += (_, _) => _viewModel?.PlayAlbum(clickedTile);
 
         var getInfoItem = new MenuItem { Header = "Get Info" };
         getInfoItem.Click += (_, _) => OpenTrackInfoForSelectedAlbums();
