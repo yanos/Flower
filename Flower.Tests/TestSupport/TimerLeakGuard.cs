@@ -45,6 +45,19 @@ namespace Flower.Tests.TestSupport;
 //     right now would otherwise fail an innocent test here. Within a collection
 //     tests are serialized, so a still-alive timer really has outlived its test -
 //     including its class's Dispose, which xUnit runs before the next test.
+//   - Tagging is only trusted when this test had the run to itself. The check
+//     above is collection-scoped, but the tagging that feeds it was not: After
+//     tags every timer it has not seen before with the test that just finished,
+//     even when that timer was created by a *different* collection running
+//     concurrently. Such a timer is then "owned" by an innocent collection, and
+//     fails its next test if the real owner is still legitimately using it -
+//     which is exactly what a live MainViewModel elsewhere looks like, since
+//     PeerSyncCoordinator's log-push timer runs for that view model's whole
+//     lifetime. Observed on CI as SearchTextTests, TaskExtensionsTests and
+//     LibraryOpenSubsonicMapperTests each blaming one of their own fast cases
+//     for a PeerSyncCoordinator none of them constructs. So a timer first seen
+//     while another collection had a test in flight is tagged ambiguous: kept
+//     for the end-of-run backstop, never used to fail a test.
 //   - A leak from the last test of a collection has no following test to fail,
 //     and is caught by HeadlessSessionWarmup's end-of-run backstop instead.
 //   - AnimationClock is skipped per-test, because it cannot be attributed to a
@@ -64,22 +77,66 @@ namespace Flower.Tests.TestSupport;
 [AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class | AttributeTargets.Method)]
 public sealed class TimerLeakGuardAttribute : BeforeAfterTestAttribute
 {
-    private sealed record Tag(WeakReference<DispatcherTimer> Timer, string Owner, string Test, string Collection);
+    private sealed record Tag(
+        WeakReference<DispatcherTimer> Timer, string Owner, string Test, string Collection, bool Ambiguous);
 
     private static readonly List<Tag> s_tagged = new();
 
+    // A test currently between Before and After, and whether it has had the run
+    // to itself for all of that - see the tagging limit in the class comment.
+    private sealed class Running(string collection)
+    {
+        public string Collection { get; } = collection;
+
+        public bool Solo { get; set; } = true;
+    }
+
+    // Keyed by test unique id rather than by the IXunitTest instance, which is
+    // not promised to be the same object in Before and After. Two invocations of
+    // one test never overlap, so the id is unambiguous while it is in here.
+    private static readonly Dictionary<string, Running> s_running = new();
+
     public override void Before(MethodInfo methodUnderTest, IXunitTest test)
     {
-        var leaked = TakeLeaksFrom(CollectionOf(test));
-        if (leaked.Count == 0)
-            return;
+        var collection = CollectionOf(test);
 
-        throw new InvalidOperationException(Explain(leaked));
+        var leaked = TakeLeaksFrom(collection);
+        if (leaked.Count > 0)
+        {
+            // Thrown before this test is registered as running, on purpose:
+            // xUnit skips After for an attribute whose Before threw, so
+            // registering first would leave an entry nothing ever removes and
+            // every later test would look non-solo.
+            throw new InvalidOperationException(Explain(leaked));
+        }
+
+        lock (s_running)
+        {
+            var entry = new Running(collection);
+
+            // Overlap is symmetric: neither this test nor anything already in
+            // flight from another collection can claim a timer that appears
+            // from here on.
+            if (s_running.Values.Any(r => r.Collection != collection))
+            {
+                entry.Solo = false;
+                foreach (var other in s_running.Values)
+                    other.Solo = false;
+            }
+
+            s_running[test.UniqueID] = entry;
+        }
     }
 
     public override void After(MethodInfo methodUnderTest, IXunitTest test)
     {
         var collection = CollectionOf(test);
+
+        bool solo;
+        lock (s_running)
+        {
+            solo = s_running.Remove(test.UniqueID, out var entry) && entry.Solo;
+        }
 
         foreach (var (timer, owner) in FlowerOwnedTimers().Where(t => !IsSharedClock(t.Owner)))
         {
@@ -88,7 +145,8 @@ public sealed class TimerLeakGuardAttribute : BeforeAfterTestAttribute
                 if (s_tagged.Any(t => t.Timer.TryGetTarget(out var known) && ReferenceEquals(known, timer)))
                     continue;
 
-                s_tagged.Add(new Tag(new WeakReference<DispatcherTimer>(timer), owner, test.TestDisplayName, collection));
+                s_tagged.Add(new Tag(
+                    new WeakReference<DispatcherTimer>(timer), owner, test.TestDisplayName, collection, !solo));
             }
         }
     }
@@ -110,7 +168,7 @@ public sealed class TimerLeakGuardAttribute : BeforeAfterTestAttribute
             {
                 if (!tag.Timer.TryGetTarget(out var timer))
                     return true;
-                if (tag.Collection != collection)
+                if (tag.Ambiguous || tag.Collection != collection)
                     return false;
                 if (!alive.Any(a => ReferenceEquals(a, timer)))
                     return true;
@@ -145,7 +203,14 @@ public sealed class TimerLeakGuardAttribute : BeforeAfterTestAttribute
             {
                 var tag = s_tagged.FirstOrDefault(
                     t => t.Timer.TryGetTarget(out var known) && ReferenceEquals(known, a.Timer));
-                return tag is null ? a.Owner : $"{a.Owner} started by {tag.Test}";
+                return tag switch
+                {
+                    null                       => a.Owner,
+                    { Ambiguous: true }        => $"{a.Owner} (first seen during {tag.Test}, which ran "
+                                                  + "alongside other collections - that is where to start looking, "
+                                                  + "not necessarily the culprit)",
+                    _                          => $"{a.Owner} started by {tag.Test}",
+                };
             });
 
             return "A DispatcherTimer owned by Flower code was still running after every test " +
