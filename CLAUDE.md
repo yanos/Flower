@@ -51,7 +51,6 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `CROSS-PLATFORM-PLAN.md` — iOS/Android platform-gap remediation.
 - `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server (same OpenSubsonic client protocol).
 - `MOBILE-PLAN.md` — getting iOS/Android from scaffolding to runnable.
-- `CLI-PLAN.md` — growing `Flower.CLI` past its current one-shot script.
 - `AIRPLAY-BLUETOOTH-PLAN.md` — Bluetooth device picker + AirPlay output routing.
 - `AUDIOPHILE-PLAN.md` — EQ, gapless playback, DSD/APE, hi-res passthrough.
 - `MEDIA-KEYS-PLAN.md` — hardware media keys + OS now-playing integration.
@@ -129,7 +128,6 @@ Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is drive
 | `Flower.Desktop/` | macOS/Windows/Linux entry point |
 | `Flower.Android/` | Android entry point |
 | `Flower.iOS/` | iOS entry point |
-| `Flower.CLI/` | Standalone CLI (minimal, mostly unused) |
 | `Flower.Tests/` | xUnit tests for the shared library |
 
 All meaningful code lives in `Flower/`.
