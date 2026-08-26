@@ -34,7 +34,7 @@ internal sealed partial class Program
         await JSHost.ImportAsync(BrowserSigningKey.ModuleName, "/webcrypto.js");
 
         await BuildAvaloniaApp()
-            .WithInterFont()
+            .WithFlowerFonts()
             .StartBrowserAppAsync("out");
     }
 

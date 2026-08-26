@@ -44,7 +44,7 @@ public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
         PlatformCrashInfo.PendingAndroidExitReasons = CollectCrashExitReasons();
 
         return base.CustomizeAppBuilder(builder)
-            .WithInterFont();
+            .WithFlowerFonts();
     }
 
     // A native crash (e.g. inside libvlc.so) bypasses .NET's own exception

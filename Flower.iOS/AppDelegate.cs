@@ -101,7 +101,7 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
             Ioc.Default.GetService<NetworkDiscoveryService>()?.Restart());
 
         return base.CustomizeAppBuilder(builder)
-            .WithInterFont();
+            .WithFlowerFonts();
     }
 
     private static IntPtr ResolveIosSkiaSharp(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
