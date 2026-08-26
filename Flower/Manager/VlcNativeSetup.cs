@@ -17,8 +17,8 @@ namespace Flower.Manager
 
         // Static class, no constructor to inject into - AppLogging's hatch, the
         // same as RubberBandScroll's. Every caller runs this after
-        // AppLogging.Initialize (App.axaml.cs's Bootstrap, Flower.CLI's
-        // Program), so these lines land in the real log.
+        // AppLogging.Initialize (App.axaml.cs's Bootstrap), so these lines
+        // land in the real log.
         private static readonly ILogger Logger =
             AppLogging.CreateLogger(typeof(VlcNativeSetup).FullName!);
 
