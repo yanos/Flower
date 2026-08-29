@@ -319,27 +319,38 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             return;
         }
 
+        // Consume the activity this attempt is about before it starts. Any
+        // genuine log line written while the request is in flight re-arms the
+        // flag through EntryAdded and must survive for the next tick.
+        _hasUnpushedLogActivity = false;
         _logPushInFlight = true;
         _ = PushPendingLogsAsync(devices);
     }
 
     private async Task PushPendingLogsAsync(List<DiscoveredDevice> devices)
     {
+        var allSucceeded = true;
         try
         {
             foreach (var device in devices)
-                await _librarySyncService!.PushLogsOnlyAsync(device);
+                allSucceeded &= await _librarySyncService!.PushLogsOnlyAsync(device);
+        }
+        catch (Exception ex)
+        {
+            // LibrarySyncService normally converts transport failures to a
+            // false result. Keep the fire-and-forget coordinator safe if an
+            // unexpected implementation failure escapes that boundary.
+            allSucceeded = false;
+            _logger.LogDebug(ex, "Unexpected failure while pushing logs to the paired server");
         }
         finally
         {
-            // Cleared after the push, not before, for the same reason
-            // RunPendingDeviceSyncs logs its line late: the push writes its own
-            // debug line on the way out, and clearing first would let that line
-            // re-arm the flag and keep an otherwise idle app pushing forever.
-            // A genuine line logged inside this window is not lost, only
-            // deferred - the snapshot is the whole store every time, so the
-            // next push carries it.
-            _hasUnpushedLogActivity = false;
+            // A failed snapshot stays pending. The next timer tick retries it,
+            // including after a remembered remote address becomes reachable
+            // again. Do not clear here: EntryAdded may also have re-armed the
+            // flag for activity that arrived while this POST was in flight.
+            if (!allSucceeded)
+                _hasUnpushedLogActivity = true;
             _logPushInFlight = false;
         }
     }

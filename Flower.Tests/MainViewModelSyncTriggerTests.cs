@@ -491,10 +491,8 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         Assert.Empty(parts.StubPlaylistSync!.SyncedWith);
     }
 
-    // An idle app has to actually go quiet, and it only does if the flag is
-    // cleared after the push rather than before it: the push writes its own log
-    // line on the way out (see StubLibrarySyncService, which reproduces that),
-    // which would otherwise arm the very next tick, forever.
+    // An idle app goes quiet after a successful snapshot rather than sending
+    // the same in-memory buffer on every timer tick.
     [AvaloniaFact]
     public void A_tick_with_nothing_newly_logged_pushes_nothing()
     {
@@ -507,5 +505,28 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         Wait(200);
 
         Assert.Single(parts.StubLibrarySync!.PushedLogsTo);
+    }
+
+    // Losing connectivity must leave the snapshot pending. Previously the
+    // finally block cleared the flag whether or not the POST worked, so
+    // returning home did nothing until an unrelated line happened to arm it.
+    [AvaloniaFact]
+    public void A_failed_log_push_is_retried_on_the_next_tick()
+    {
+        var parts = StubbedPairedClient(out _);
+        parts.StubLibrarySync!.LogPushResults.Enqueue(false);
+        parts.StubLibrarySync.LogPushResults.Enqueue(true);
+        LogSomething();
+
+        parts.Main.Sync.LogPushTick();
+        PumpUntil(() => parts.StubLibrarySync.PushedLogsTo.Count == 1);
+
+        parts.Main.Sync.LogPushTick();
+        PumpUntil(() => parts.StubLibrarySync.PushedLogsTo.Count == 2);
+
+        parts.Main.Sync.LogPushTick();
+        Wait(200);
+
+        Assert.Equal(2, parts.StubLibrarySync.PushedLogsTo.Count);
     }
 }

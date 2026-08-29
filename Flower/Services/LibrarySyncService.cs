@@ -214,19 +214,19 @@ public class LibrarySyncService
     //
     // Virtual for the same reason SyncWithAsync is - it is the seam a test
     // drives the coordinator's tick through.
-    public virtual Task PushLogsOnlyAsync(DiscoveredDevice device)
+    public virtual Task<bool> PushLogsOnlyAsync(DiscoveredDevice device)
     {
         // Same gate the tail of SyncWithAsync applies, restated rather than
         // shared because this is a second public door into the same push: the
         // setting ships off by default and a snapshot carries exception text
         // and absolute paths, so neither door may open without it.
         if (!_appSettings.ShareLogsWithPairedServer || string.IsNullOrEmpty(device.Fingerprint))
-            return Task.CompletedTask;
+            return Task.FromResult(true);
 
         return PushLogSnapshotAsync(device);
     }
 
-    private async Task PushLogSnapshotAsync(DiscoveredDevice device)
+    private async Task<bool> PushLogSnapshotAsync(DiscoveredDevice device)
     {
         try
         {
@@ -245,7 +245,7 @@ public class LibrarySyncService
 
             using var response = await Http.SendAsync(request);
             response.EnsureSuccessStatusCode();
-            _logger.LogTrace("Pushed {Count} log line(s) to paired server {Alias}", entries.Count, device.Alias);
+            return true;
         }
         catch (Exception ex)
         {
@@ -253,6 +253,7 @@ public class LibrarySyncService
             // already succeeded and saved; the log snapshot just converges
             // next cycle.
             _logger.LogDebug(ex, "Could not push log snapshot to {Alias} - not fatal to this sync", device.Alias);
+            return false;
         }
     }
 }

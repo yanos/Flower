@@ -126,6 +126,7 @@ public static class MainViewModelHarness
         public List<DiscoveredDevice> SyncedWith { get; } = new();
 
         public List<DiscoveredDevice> PushedLogsTo { get; } = new();
+        public Queue<bool> LogPushResults { get; } = new();
 
         public override Task<LibrarySyncResult> SyncWithAsync(DiscoveredDevice device)
         {
@@ -135,20 +136,10 @@ public static class MainViewModelHarness
 
         // Recorded separately from SyncedWith: the point of several tests is
         // that the periodic log push happens *without* a catalog pull.
-        public override Task PushLogsOnlyAsync(DiscoveredDevice device)
+        public override Task<bool> PushLogsOnlyAsync(DiscoveredDevice device)
         {
             PushedLogsTo.Add(device);
-
-            // The real one writes a line of its own on the way out ("Pushed N
-            // log line(s) to ..."), which lands in this same store. Reproduced
-            // here because it is load-bearing: a coordinator that cleared its
-            // "something was logged" flag before the push instead of after
-            // would see this line as new activity and push again on the very
-            // next tick, forever, on an otherwise idle app.
-            InMemoryLogStore.Instance.Add(new InMemoryLogEntry(
-                DateTimeOffset.Now, "Debug", "StubLibrarySyncService",
-                $"Pushed log lines to {device.Alias}", null));
-            return Task.CompletedTask;
+            return Task.FromResult(LogPushResults.TryDequeue(out var result) ? result : true);
         }
     }
 
