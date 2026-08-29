@@ -22,26 +22,36 @@
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:AlbumGridRow">
-          <Grid ColumnDefinitions="*,*">
-            <Button Grid.Column="0" Classes="pickerRow" Padding="10"
+          <!-- The outside margin and ColumnSpacing intentionally match: each
+               square tile reaches its column edge, so the grid has the same
+               visual gutter at the screen edge and between its two albums.
+               The gap *below* a tile is deliberately much larger than the 6
+               between its art and its caption, so a title reads as belonging
+               to the album above it rather than the one below. -->
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+            <Button Grid.Column="0" Classes="pickerRow" Padding="0"
                     Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
                     CommandParameter="{Binding First.Name}">
-              <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170"
+              <StackPanel Spacing="6" Margin="0,0,0,24" HorizontalAlignment="Stretch"
                           Classes.dimmed="{Binding First.IsUnavailable}">
-                <controls:AlbumArtView AlbumArt="{Binding First.AlbumArt}" Width="170" Height="170" />
-                <TextBlock Text="{Binding First.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding First.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                <controls:SquareAlbumArtView AlbumArt="{Binding First.AlbumArt}" />
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding First.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding First.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
               </StackPanel>
             </Button>
-            <Button Grid.Column="1" Classes="pickerRow" Padding="10"
+            <Button Grid.Column="1" Classes="pickerRow" Padding="0"
                     IsVisible="{Binding Second, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                     Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
                     CommandParameter="{Binding Second.Name}">
-              <StackPanel Spacing="6" HorizontalAlignment="Center" Width="170"
+              <StackPanel Spacing="6" Margin="0,0,0,24" HorizontalAlignment="Stretch"
                           Classes.dimmed="{Binding Second.IsUnavailable}">
-                <controls:AlbumArtView AlbumArt="{Binding Second.AlbumArt}" Width="170" Height="170" />
-                <TextBlock Text="{Binding Second.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding Second.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                <controls:SquareAlbumArtView AlbumArt="{Binding Second.AlbumArt}" />
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding Second.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Second.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
               </StackPanel>
             </Button>
           </Grid>
