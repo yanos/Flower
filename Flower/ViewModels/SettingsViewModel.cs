@@ -541,9 +541,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // failure here that would actively mislead rather than merely annoy.
     private int _logRequestId;
 
-    // How many lines a row asks the server for - the equivalent ceiling, for a
-    // log arriving over the wire, of whatever InMemoryLogStore holds locally.
-    private const int LogLimit = 2000;
+    // A busy client can produce tens of thousands of diagnostic lines in the
+    // seven days ClientLogStore retains. Ask for the whole practical window;
+    // the server still applies this as a hard ceiling to the response.
+    private const int LogLimit = 100_000;
 
     [RelayCommand]
     private async Task RefreshLogAsync()

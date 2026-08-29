@@ -119,8 +119,8 @@ namespace Flower.Persistence
 
         // Whether this Client pushes its own recent log lines to its paired
         // Server at the end of each library sync (LibrarySyncService.
-        // PushLogSnapshotAsync, read back from the Logs tab of that server's
-        // own settings screen).
+        // PushLogSnapshotAsync). The server merges overlapping snapshots into
+        // the rolling seven-day history shown in its Logs tab.
         //
         // On by default: the person who runs the server is the person who ends
         // up diagnosing a listener's phone, and a listener cannot be talked

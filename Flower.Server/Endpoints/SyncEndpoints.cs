@@ -256,7 +256,8 @@ public static class SyncEndpoints
     // server's play counts. That is a nuisance, not a disclosure, and it is
     // bounded by being a paired device at all.
     // A paired device's own recent log lines, pushed at the end of each sync
-    // session it runs (see LibrarySyncService.PushLogSnapshotAsync). The whole
+    // session it runs (see LibrarySyncService.PushLogSnapshotAsync). Overlapping
+    // snapshots merge into the server's durable seven-day history. The whole
     // point is the person who runs the server being able to see why somebody
     // else's phone is misbehaving without asking them to find a log file, so
     // it is stored against the device and read back through the admin API -

@@ -214,8 +214,13 @@ builder.Services.AddSingleton<LibraryManifestCache>();
 builder.Services.AddSingleton<PlayReportService>();
 // Where a paired device's pushed log snapshot lands (SyncEndpoints'
 // /log/report) and is read back from (AdminEndpoints' /devices/{fp}/logs).
-// In memory, deliberately - see ClientLogStore.
-builder.Services.AddSingleton<ClientLogStore>();
+// Kept as timestamped JSON Lines under <DataDirectory>/logs/devices, one
+// folder per device, so it remains directly inspectable alongside server logs.
+builder.Services.AddSingleton(services =>
+{
+    var serverOptions = services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
+    return new ClientLogStore(Path.Combine(serverOptions.DataDirectory, "logs", "devices"));
+});
 builder.Services.AddSingleton<DeviceKeyStore>();
 // Answers "what does the internet see this server as" for the settings page's
 // network tab, by asking somebody else - see PublicAddressProbe. Nothing calls

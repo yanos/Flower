@@ -32,6 +32,10 @@ operator-editable settings file — in one directory:
 
 Point it somewhere else with `--Flower:DataDirectory=/srv/flower`.
 
+Server logs are under `logs/`. Logs pushed by paired clients are kept for seven
+days as daily JSON Lines files in `logs/devices/<alias>--<fingerprint>/`, for
+example `2026-08-28T00-00-00Z.logs.jsonl`.
+
 On first run it prints a pairing code and a browser link to the terminal,
 because no device can administer it yet:
 

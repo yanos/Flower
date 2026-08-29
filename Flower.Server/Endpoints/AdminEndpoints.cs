@@ -414,8 +414,9 @@ public static class AdminEndpoints
                 jsonOptions);
         });
 
-        // One paired device's log, as last pushed by that device at the end of
-        // a sync (see SyncEndpoints' /log/report and ClientLogStore). The whole
+        // One paired device's rolling seven-day log, assembled from the
+        // snapshots pushed at the end of its syncs (see SyncEndpoints'
+        // /log/report and ClientLogStore). The whole
         // reason this exists: the owner of the server is the one who ends up
         // diagnosing a listener's phone, and the listener cannot be talked
         // through finding a log file.
