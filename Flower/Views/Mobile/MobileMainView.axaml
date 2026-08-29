@@ -158,8 +158,15 @@
            pixel math (back button: Padding 10 + 24px icon = 44px wide, at
            outer margin 4 -> right edge 48, +12px gap -> 60; settings button:
            Padding 10 + 22px icon = 42px wide, at outer margin 16 -> 60
-           clearance). -->
-      <Grid ColumnDefinitions="Auto,*,Auto" Height="52" Margin="4,4,16,4" VerticalAlignment="Top">
+           clearance).
+           Vertically the two must share a band, not a margin: this Grid and
+           ScreenSlot's 52px header row are siblings both starting at y=0, and
+           Margin sits *outside* Height - so any top margin here would push
+           these icons that many px below the title and download button. Keep
+           it 0 and let Height="52" alone define the band, which centres these
+           buttons on 26 - the same centre ScreenSlot's own Margin="...,4,...,4"
+           inside its 52px row produces. -->
+      <Grid ColumnDefinitions="Auto,*,Auto" Height="52" Margin="4,0,16,0" VerticalAlignment="Top">
         <Button Grid.Column="0"
                 Click="BackButton_Click"
                 IsVisible="{Binding CanGoBack}"

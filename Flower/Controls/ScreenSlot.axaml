@@ -21,7 +21,9 @@
 
        Margin below (60,4,60,4) must stay in sync with the fixed back/settings
        overlay's own margin in MobileMainView.axaml - see that file's comment
-       for the pixel math. -->
+       for the pixel math, horizontal and vertical both. The 52px row here is
+       what that overlay aligns its own 52px band to, so neither the row height
+       nor the 4px vertical margin can move on its own. -->
   <Grid RowDefinitions="52,*">
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="60,4,60,4">
       <TextBlock Grid.Column="0"
