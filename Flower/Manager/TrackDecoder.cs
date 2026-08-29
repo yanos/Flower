@@ -44,12 +44,10 @@ namespace Flower.Manager
         private readonly SemaphoreSlim _nativeGate = new(1, 1);
         private volatile bool _drainFired;
 
-        // Diagnostic-only, temporary - null everywhere the internal
-        // (LibVLC, Track, GaplessRingBuffer) constructor isn't reached with
-        // a logger (there is no direct TrackDecoder unit test today).
+        // Null in tests/callers that deliberately do not request diagnostics.
         private readonly ILogger<TrackDecoder>? _logger;
 
-        // Diagnostic-only, temporary: watches this decode MediaPlayer's own
+        // Watches this decode MediaPlayer's own
         // reported State/IsPlaying/BytesProduced once a second, so a
         // seek-induced wedge shows up here too - distinguishing "the decode
         // player itself thinks it's paused/stopped" from "it thinks it's
@@ -58,6 +56,7 @@ namespace Flower.Manager
         // a healthy decode ticks silently.
         private readonly System.Timers.Timer? _watchdog;
         private long _watchdogLastBytesProduced = -1;
+        private long _nextProgressLogBytes = BytesForSeconds(10);
 
         public Track Track { get; }
 
@@ -222,6 +221,7 @@ namespace Flower.Manager
             var state = _mediaPlayer.State;
             var isPlaying = _mediaPlayer.IsPlaying;
             var bytesProduced = BytesProduced;
+            var target = _writer.Target;
 
             var stalled = state == VLCState.Playing && isPlaying && bytesProduced == _watchdogLastBytesProduced;
             var stateMismatch = state == VLCState.Playing && !isPlaying;
@@ -231,8 +231,10 @@ namespace Flower.Manager
             if (stalled || stateMismatch || unexpectedState)
             {
                 _logger?.LogWarning(
-                    "Decode watchdog for {Path}: State={State} IsPlaying={IsPlaying} Time={Time}ms BytesProduced={BytesProduced} (Stalled={Stalled} StateMismatch={StateMismatch} UnexpectedState={UnexpectedState})",
-                    Track.Path, state, isPlaying, _mediaPlayer.Time, bytesProduced, stalled, stateMismatch, unexpectedState);
+                    "Decode watchdog for {Path}: State={State} IsPlaying={IsPlaying} Time={Time}ms BytesProduced={BytesProduced} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration} (Stalled={Stalled} StateMismatch={StateMismatch} UnexpectedState={UnexpectedState})",
+                    Track.Path, state, isPlaying, _mediaPlayer.Time, bytesProduced,
+                    target.TotalBytesRead, target.TotalBytesWritten, target.AvailableBytes,
+                    target.Capacity, target.Generation, stalled, stateMismatch, unexpectedState);
             }
 
             _watchdogLastBytesProduced = bytesProduced;
@@ -267,7 +269,24 @@ namespace Flower.Manager
         // Drains everything currently buffered in this decoder's target
         // ring into newTarget, then switches future output to newTarget -
         // see RetargetableRingWriter.
-        public void PromoteTarget(GaplessRingBuffer newTarget) => _writer.PromoteTarget(newTarget);
+        public void PromoteTarget(GaplessRingBuffer newTarget)
+        {
+            var oldTarget = _writer.Target;
+            var stagedBytes = oldTarget.AvailableBytes;
+            _logger?.LogInformation(
+                "Promoting decoder output for {Path}: StagedBytes={StagedBytes} StagingRead={StagingRead} StagingWritten={StagingWritten} StagingCapacity={StagingCapacity} StagingGeneration={StagingGeneration} DestinationAvailable={DestinationAvailable}/{DestinationCapacity} DestinationGeneration={DestinationGeneration}",
+                Track.Path, stagedBytes, oldTarget.TotalBytesRead,
+                oldTarget.TotalBytesWritten, oldTarget.Capacity, oldTarget.Generation,
+                newTarget.AvailableBytes, newTarget.Capacity, newTarget.Generation);
+
+            _writer.PromoteTarget(newTarget);
+
+            _logger?.LogInformation(
+                "Decoder output promotion completed for {Path}: MovedBytes={MovedBytes} DestinationRead={DestinationRead} DestinationWritten={DestinationWritten} DestinationAvailable={DestinationAvailable}/{DestinationCapacity} DestinationGeneration={DestinationGeneration}",
+                Track.Path, stagedBytes, newTarget.TotalBytesRead,
+                newTarget.TotalBytesWritten, newTarget.AvailableBytes,
+                newTarget.Capacity, newTarget.Generation);
+        }
 
         // Marks this decoder retired - its in-flight/late callbacks become
         // no-ops - then stops the underlying MediaPlayer. Used when
@@ -379,7 +398,21 @@ namespace Flower.Manager
             // Retire() landing in the middle of that has to get out.
             _writer.Write(_scratch.AsSpan(0, byteCount), _isRetired);
 
-            Interlocked.Add(ref _bytesProduced, byteCount);
+            var bytesProduced = Interlocked.Add(ref _bytesProduced, byteCount);
+            if (_logger != null && bytesProduced >= Volatile.Read(ref _nextProgressLogBytes))
+            {
+                var interval = BytesForSeconds(10);
+                while (_nextProgressLogBytes <= bytesProduced)
+                    _nextProgressLogBytes += interval;
+
+                var target = _writer.Target;
+                _logger.LogDebug(
+                    "Decode progress: Path={Path} MediaTimeMs={MediaTimeMs} BytesProduced={BytesProduced} DecodedMs={DecodedMs} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration}",
+                    Track.Path, _mediaPlayer.Time, bytesProduced,
+                    bytesProduced / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame) * 1000,
+                    target.TotalBytesRead, target.TotalBytesWritten, target.AvailableBytes,
+                    target.Capacity, target.Generation);
+            }
         }
 
         private void OnPause(IntPtr data, long pts)
@@ -397,7 +430,12 @@ namespace Flower.Manager
             if (Volatile.Read(ref _retired) == 1)
                 return;
 
-            _logger?.LogTrace("OnFlush for {Path} - resetting target ring", Track.Path);
+            var target = _writer.Target;
+            _logger?.LogInformation(
+                "Decode flush for {Path}: Pts={Pts} SeekRequested={SeekRequested} BytesProduced={BytesProduced} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration}; resetting target ring",
+                Track.Path, pts, Volatile.Read(ref _seekRequested), BytesProduced,
+                target.TotalBytesRead, target.TotalBytesWritten, target.AvailableBytes,
+                target.Capacity, target.Generation);
 
             if (Interlocked.Exchange(ref _seekRequested, 0) == 1)
                 Interlocked.Exchange(ref _seekAwaitingFirstSample, 1);
@@ -412,7 +450,13 @@ namespace Flower.Manager
             if (Volatile.Read(ref _retired) == 1)
                 return;
 
-            _logger?.LogTrace("OnDrain for {Path}", Track.Path);
+            var target = _writer.Target;
+            var decodedMs = BytesProduced / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame) * 1000;
+            _logger?.LogInformation(
+                "Decode drain for {Path}: MediaTimeMs={MediaTimeMs} TaggedDurationMs={TaggedDurationMs} DecodedMs={DecodedMs} BytesProduced={BytesProduced} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration}",
+                Track.Path, _mediaPlayer.Time, Track.Duration.TotalMilliseconds,
+                decodedMs, BytesProduced, target.TotalBytesRead, target.TotalBytesWritten,
+                target.AvailableBytes, target.Capacity, target.Generation);
             Drained?.Invoke();
         }
 

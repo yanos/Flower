@@ -15,13 +15,16 @@ public class GaplessCoordinatorTests
     private sealed class Harness
     {
         public GaplessCoordinator Coordinator { get; }
-        public GaplessRingBuffer SharedRing { get; } = new(1024);
+        public GaplessRingBuffer SharedRing { get; }
+        public RecordingLogger<GaplessCoordinator>? Logger { get; }
 
         private readonly Dictionary<Track, List<FakeTrackDecoder>> _decoders = [];
         private readonly HashSet<Track> _failToPrepare = [];
 
-        public Harness()
+        public Harness(bool captureLogs = false, int sharedRingCapacity = 1024)
         {
+            SharedRing = new GaplessRingBuffer(sharedRingCapacity);
+            Logger = captureLogs ? new RecordingLogger<GaplessCoordinator>() : null;
             Coordinator = new GaplessCoordinator(SharedRing, (track, ring) =>
             {
                 var fake = new FakeTrackDecoder(track) { PrepareResult = !_failToPrepare.Contains(track) };
@@ -29,7 +32,7 @@ public class GaplessCoordinatorTests
                     _decoders[track] = list = [];
                 list.Add(fake);
                 return fake;
-            });
+            }, Logger);
         }
 
         public void FailToPrepare(Track track) => _failToPrepare.Add(track);
@@ -64,6 +67,39 @@ public class GaplessCoordinatorTests
         h.Coordinator.Play(a);
 
         WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "Play should start decoding immediately");
+    }
+
+    [Fact]
+    public void Diagnostic_snapshot_warns_when_rendering_consumes_no_pcm_between_snapshots()
+    {
+        var h = new Harness(captureLogs: true);
+        var a = T("A");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+
+        h.Coordinator.LogDiagnosticSnapshot(renderStarted: true);
+        h.Coordinator.LogDiagnosticSnapshot(renderStarted: true);
+
+        Assert.Equal(1, h.Logger!.CountAt(
+            Microsoft.Extensions.Logging.LogLevel.Warning,
+            "made no PCM consumption progress"));
+    }
+
+    [Fact]
+    public void Completion_log_warns_when_unplayed_pcm_has_no_armed_successor()
+    {
+        var h = new Harness(captureLogs: true, sharedRingCapacity: 48_000);
+        var a = T("A");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+        h.LatestDecoderFor(a).BytesProduced = 3 * 60 * (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
+        h.SharedRing.TryWrite(new byte[24_000]);
+
+        h.LatestDecoderFor(a).RaiseDrained();
+
+        Assert.Equal(1, h.Logger!.CountAt(
+            Microsoft.Extensions.Logging.LogLevel.Warning,
+            "no armed successor"));
     }
 
     [Fact]

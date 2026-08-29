@@ -1,5 +1,9 @@
 using System;
+using System.Diagnostics;
+using System.Threading;
 using System.Timers;
+
+using Timer = System.Timers.Timer;
 
 using Microsoft.Extensions.Logging;
 
@@ -29,6 +33,7 @@ namespace Flower.Manager
         private readonly IPlatformAudioSession? _platformAudioSession;
         private readonly Timer _positionTimer;
         private readonly ILogger<GaplessAudioManager> _logger;
+        private long _lastDiagnosticTimestamp = Stopwatch.GetTimestamp();
 
         public event EventHandler? Paused;
         public event EventHandler? Stopped;
@@ -113,7 +118,10 @@ namespace Flower.Manager
             _positionTimer.Elapsed += (_, _) =>
             {
                 if (IsPlaying)
+                {
                     PositionChanged?.Invoke(this, EventArgs.Empty);
+                    LogDiagnosticSnapshotIfDue();
+                }
             };
             _positionTimer.Start();
         }
@@ -153,7 +161,9 @@ namespace Flower.Manager
 
         public void Play(Track track)
         {
-            _logger.LogDebug("Play({Path})", track.Path);
+            _logger.LogInformation(
+                "Playback requested: {Title} ({Path}), tagged duration {DurationMs}ms",
+                track.Title, track.Path, track.Duration.TotalMilliseconds);
             _coordinator.Play(track);
             _platformAudioSession?.ActivateForPlayback();
             _sink.Resume();
@@ -188,6 +198,19 @@ namespace Flower.Manager
         }
 
         public void ApplyEqualizer(Equalizer? equalizer) => _sink.ApplyEqualizer(equalizer);
+
+        private void LogDiagnosticSnapshotIfDue()
+        {
+            var now = Stopwatch.GetTimestamp();
+            var previous = Volatile.Read(ref _lastDiagnosticTimestamp);
+            if (Stopwatch.GetElapsedTime(previous, now) < TimeSpan.FromSeconds(10))
+                return;
+
+            if (Interlocked.CompareExchange(ref _lastDiagnosticTimestamp, now, previous) != previous)
+                return;
+
+            _coordinator.LogDiagnosticSnapshot(renderStarted: _sink.IsPlaying);
+        }
 
         public void Dispose()
         {

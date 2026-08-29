@@ -2,7 +2,10 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Timers;
+
+using Timer = System.Timers.Timer;
 
 using Microsoft.Extensions.Logging;
 
@@ -50,7 +53,26 @@ namespace Flower.Manager
         // running state changes - a healthy render loop ticks silently.
         private readonly Timer _watchdog;
         private long _watchdogLastUnderrunCount;
+        private long _watchdogLastShortReadCount;
         private bool _watchdogLastStarted;
+        private long _watchdogLastRealBytesRendered;
+        private int _watchdogNoProgressTicks;
+        private int _watchdogTickCount;
+
+        // Written by the real-time callback and only read/reset by the
+        // watchdog. Keep diagnostics here to counters and a sampled hash;
+        // formatting or logging from the audio thread itself could cause the
+        // very underruns these fields exist to diagnose.
+        private long _callbackCount;
+        private long _requestedBytes;
+        private long _realBytesRendered;
+        private long _silenceBytesRendered;
+        private long _shortReadCount;
+        private long _lastPcmFingerprint;
+        private long _lastCallbackFingerprint;
+        private int _lastCallbackReadBytes;
+        private int _consecutiveIdenticalCallbacks;
+        private int _maxIdenticalCallbackRun;
 
         public event EventHandler? Playing;
         public event EventHandler? Paused;
@@ -103,12 +125,31 @@ namespace Flower.Manager
 
             var underrunCount = ring.UnderrunCount;
             var started = _started;
+            var realBytesRendered = Interlocked.Read(ref _realBytesRendered);
+            var shortReadCount = Interlocked.Read(ref _shortReadCount);
+            var newShortReads = shortReadCount - Interlocked.Read(ref _watchdogLastShortReadCount);
+            Interlocked.Exchange(ref _watchdogLastShortReadCount, shortReadCount);
+            var maxIdenticalRun = Interlocked.Exchange(ref _maxIdenticalCallbackRun, 0);
+
+            if (started && realBytesRendered == _watchdogLastRealBytesRendered)
+                _watchdogNoProgressTicks++;
+            else
+                _watchdogNoProgressTicks = 0;
 
             if (underrunCount != _watchdogLastUnderrunCount)
             {
                 _logger.LogWarning(
                     "Render watchdog: underrun(s) detected - Started={Started} RingAvailable={Available}/{Capacity} Underruns={Underruns} (+{NewUnderruns})",
                     started, ring.AvailableBytes, ring.Capacity, underrunCount, underrunCount - _watchdogLastUnderrunCount);
+            }
+            else if (newShortReads > 0)
+            {
+                _logger.LogWarning(
+                    "Render watchdog: partial buffer starvation detected - ShortReads={ShortReads} (+{NewShortReads}) RealBytes={RealBytes} SilenceBytes={SilenceBytes} RingAvailable={Available}/{Capacity} RingRead={RingRead} RingWritten={RingWritten} RingGeneration={RingGeneration}",
+                    shortReadCount, newShortReads, realBytesRendered,
+                    Interlocked.Read(ref _silenceBytesRendered), ring.AvailableBytes,
+                    ring.Capacity, ring.TotalBytesRead, ring.TotalBytesWritten,
+                    ring.Generation);
             }
             else if (started != _watchdogLastStarted)
             {
@@ -117,8 +158,41 @@ namespace Flower.Manager
                     started, ring.AvailableBytes, ring.Capacity, underrunCount);
             }
 
+            if (_watchdogNoProgressTicks == 2)
+            {
+                _logger.LogWarning(
+                    "Render watchdog: device is started but consumed no real PCM for 2s - Callbacks={Callbacks} RequestedBytes={RequestedBytes} RealBytes={RealBytes} SilenceBytes={SilenceBytes} RingAvailable={Available}/{Capacity} RingRead={RingRead} RingWritten={RingWritten} RingGeneration={RingGeneration}",
+                    Interlocked.Read(ref _callbackCount), Interlocked.Read(ref _requestedBytes),
+                    realBytesRendered, Interlocked.Read(ref _silenceBytesRendered),
+                    ring.AvailableBytes, ring.Capacity, ring.TotalBytesRead,
+                    ring.TotalBytesWritten, ring.Generation);
+            }
+
+            if (maxIdenticalRun >= 50)
+            {
+                _logger.LogWarning(
+                    "Render watchdog: {RepeatedCallbacks} consecutive audio callbacks carried identical PCM; possible static or repeated buffer - LastReadBytes={LastReadBytes} PcmFingerprint={PcmFingerprint} RingAvailable={Available}/{Capacity} RingGeneration={RingGeneration}",
+                    maxIdenticalRun, Volatile.Read(ref _lastCallbackReadBytes),
+                    Interlocked.Read(ref _lastPcmFingerprint), ring.AvailableBytes,
+                    ring.Capacity, ring.Generation);
+            }
+
+            _watchdogTickCount++;
+            if (_watchdogTickCount % 10 == 0 && started)
+            {
+                _logger.LogDebug(
+                    "Render snapshot: Started={Started} Callbacks={Callbacks} RequestedBytes={RequestedBytes} RealBytes={RealBytes} SilenceBytes={SilenceBytes} ShortReads={ShortReads} Underruns={Underruns} RingRead={RingRead} RingWritten={RingWritten} RingAvailable={Available}/{Capacity} RingGeneration={RingGeneration} PcmFingerprint={PcmFingerprint}",
+                    started, Interlocked.Read(ref _callbackCount),
+                    Interlocked.Read(ref _requestedBytes), realBytesRendered,
+                    Interlocked.Read(ref _silenceBytesRendered), shortReadCount,
+                    underrunCount, ring.TotalBytesRead, ring.TotalBytesWritten,
+                    ring.AvailableBytes, ring.Capacity, ring.Generation,
+                    Interlocked.Read(ref _lastPcmFingerprint));
+            }
+
             _watchdogLastUnderrunCount = underrunCount;
             _watchdogLastStarted = started;
+            _watchdogLastRealBytesRendered = realBytesRendered;
         }
 
         public bool IsPlaying => _started;
@@ -236,12 +310,60 @@ namespace Flower.Manager
             if (read < byteCount)
                 dest[read..].Clear();
 
+            Interlocked.Increment(ref sink._callbackCount);
+            Interlocked.Add(ref sink._requestedBytes, byteCount);
+            Interlocked.Add(ref sink._realBytesRendered, read);
+            if (read < byteCount)
+            {
+                Interlocked.Add(ref sink._silenceBytesRendered, byteCount - read);
+                Interlocked.Increment(ref sink._shortReadCount);
+            }
+
+            if (read > 0)
+            {
+                var fingerprint = Fingerprint(dest[..read]);
+                var previousFingerprint = Interlocked.Exchange(ref sink._lastCallbackFingerprint, fingerprint);
+                var previousRead = Interlocked.Exchange(ref sink._lastCallbackReadBytes, read);
+                Interlocked.Exchange(ref sink._lastPcmFingerprint, fingerprint);
+
+                if (previousFingerprint == fingerprint && previousRead == read)
+                {
+                    var repeated = Interlocked.Increment(ref sink._consecutiveIdenticalCallbacks);
+                    if (repeated > Volatile.Read(ref sink._maxIdenticalCallbackRun))
+                        Volatile.Write(ref sink._maxIdenticalCallbackRun, repeated);
+                }
+                else
+                {
+                    Interlocked.Exchange(ref sink._consecutiveIdenticalCallbacks, 0);
+                }
+            }
+
             // null = true bypass - skip the processing call entirely rather
             // than running an all-zero-dB filter. Only the bytes actually
             // filled with real audio are processed, never the silence-padded
             // tail from a short read above.
             if (sink._equalizer is { } equalizer)
                 equalizer.ProcessInPlace(dest[..read]);
+        }
+
+        // Samples one byte per 64 rather than walking every PCM byte on the
+        // real-time callback. It is not a content hash; it is a cheap signal
+        // for detecting the exact same device buffer being replayed over and
+        // over, which is one reported failure shape.
+        private static long Fingerprint(ReadOnlySpan<byte> data)
+        {
+            const ulong offset = 14695981039346656037;
+            const ulong prime = 1099511628211;
+            var hash = offset;
+            for (var i = 0; i < data.Length; i += 64)
+            {
+                hash ^= data[i];
+                hash *= prime;
+            }
+
+            hash ^= (uint)data.Length;
+            hash *= prime;
+            return unchecked((long)hash);
         }
 
         public void Resume()

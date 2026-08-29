@@ -115,9 +115,14 @@ namespace Flower.Manager
 
         private int _generation;
 
-        // Diagnostic-only, temporary: null in every unit test (the
-        // (GaplessRingBuffer, factory) constructor never passes one), so
-        // every call below goes through _logger?. to stay a no-op there.
+        // Compared by LogDiagnosticSnapshot to detect a render path that says
+        // it is running while consuming no new PCM across two snapshots.
+        private string? _diagnosticLastPath;
+        private int _diagnosticLastRingGeneration = -1;
+        private long _diagnosticLastBytesRead = -1;
+
+        // Null in callers that deliberately do not request diagnostics, so
+        // every call below remains a no-op there.
         private readonly ILogger<GaplessCoordinator>? _logger;
 
         // Fired once per track, when its decode is exhausted (or it faulted
@@ -180,6 +185,56 @@ namespace Flower.Manager
             {
                 lock (_gate)
                     return _current == null ? 0 : Math.Max(0, _sharedRing.TotalBytesRead - _currentTrackReadSplit);
+            }
+        }
+
+        // Called every ten seconds while the render sink is running. Debug
+        // snapshots give a healthy baseline around an incident; warnings are
+        // reserved for impossible/no-progress states so they remain visible
+        // at the default log level without producing a line every second.
+        public void LogDiagnosticSnapshot(bool renderStarted)
+        {
+            lock (_gate)
+            {
+                var sharedGeneration = _sharedRing.Generation;
+                var sharedRead = _sharedRing.TotalBytesRead;
+                var sharedWritten = _sharedRing.TotalBytesWritten;
+                var currentPath = _current?.Track.Path;
+                var currentDecoded = _current?.BytesProduced ?? 0;
+                var played = _current == null ? 0 : Math.Max(0, sharedRead - _currentTrackReadSplit);
+                var staging = _stagingRing;
+
+                var sameStream = currentPath != null
+                    && currentPath == _diagnosticLastPath
+                    && sharedGeneration == _diagnosticLastRingGeneration;
+                if (renderStarted && sameStream && sharedRead == _diagnosticLastBytesRead)
+                {
+                    _logger?.LogWarning(
+                        "Playback made no PCM consumption progress for 10s: Path={Path} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} RingGeneration={RingGeneration}",
+                        currentPath, played, currentDecoded, sharedRead, sharedWritten,
+                        _sharedRing.AvailableBytes, _sharedRing.Capacity, sharedGeneration);
+                }
+                else if (renderStarted && currentPath == null)
+                {
+                    _logger?.LogWarning(
+                        "Render sink is running with no current decoder: SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} RingGeneration={RingGeneration}",
+                        sharedRead, sharedWritten, _sharedRing.AvailableBytes,
+                        _sharedRing.Capacity, sharedGeneration);
+                }
+
+                _logger?.LogDebug(
+                    "Playback snapshot: RenderStarted={RenderStarted} Current={CurrentPath} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} SharedUnderruns={SharedUnderruns} RingGeneration={RingGeneration} Armed={ArmedPath} ArmedDecodedBytes={ArmedDecodedBytes} StagingRead={StagingRead} StagingWritten={StagingWritten} StagingAvailable={StagingAvailable}/{StagingCapacity} StagingGeneration={StagingGeneration} ArmedAlreadyDrained={ArmedAlreadyDrained}",
+                    renderStarted, currentPath, played, currentDecoded, sharedRead,
+                    sharedWritten, _sharedRing.AvailableBytes, _sharedRing.Capacity,
+                    _sharedRing.UnderrunCount, sharedGeneration, _armedTrack?.Path,
+                    _armed?.BytesProduced ?? 0, staging?.TotalBytesRead ?? 0,
+                    staging?.TotalBytesWritten ?? 0, staging?.AvailableBytes ?? 0,
+                    staging?.Capacity ?? 0, staging?.Generation ?? -1,
+                    _armedAlreadyDrained);
+
+                _diagnosticLastPath = currentPath;
+                _diagnosticLastRingGeneration = sharedGeneration;
+                _diagnosticLastBytesRead = sharedRead;
             }
         }
 
@@ -481,6 +536,36 @@ namespace Flower.Manager
 
                 finishedTrack = decoder.Track;
 
+                var playedBytes = Math.Max(0, _sharedRing.TotalBytesRead - _currentTrackReadSplit);
+                var bufferedBytes = _sharedRing.AvailableBytes;
+                var expectedBytes = BytesForDuration(finishedTrack.Duration);
+                var playedMs = BytesToMilliseconds(playedBytes);
+                var decodedMs = BytesToMilliseconds(decoder.BytesProduced);
+                var bufferedMs = BytesToMilliseconds(bufferedBytes);
+
+                _logger?.LogInformation(
+                    "Current decoder completed: Path={Path} Faulted={Faulted} TaggedDurationMs={TaggedDurationMs} PlayedMs={PlayedMs} DecodedMs={DecodedMs} SharedBufferedMs={BufferedMs} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} RingGeneration={RingGeneration} Armed={ArmedPath} ArmedDecodedBytes={ArmedDecodedBytes} ArmedAlreadyDrained={ArmedAlreadyDrained}",
+                    finishedTrack.Path, faulted, finishedTrack.Duration.TotalMilliseconds,
+                    playedMs, decodedMs, bufferedMs, _sharedRing.TotalBytesRead,
+                    _sharedRing.TotalBytesWritten, bufferedBytes, _sharedRing.Capacity,
+                    _sharedRing.Generation, _armedTrack?.Path, _armed?.BytesProduced ?? 0,
+                    _armedAlreadyDrained);
+
+                if (!faulted && expectedBytes > 0 && decoder.BytesProduced + BytesForDuration(TimeSpan.FromSeconds(2)) < expectedBytes)
+                {
+                    _logger?.LogWarning(
+                        "Decoder ended materially before the tagged duration: Path={Path} TaggedDurationMs={TaggedDurationMs} DecodedMs={DecodedMs} MissingMs={MissingMs} Media may be truncated or LibVLC may have ended early",
+                        finishedTrack.Path, finishedTrack.Duration.TotalMilliseconds,
+                        decodedMs, finishedTrack.Duration.TotalMilliseconds - decodedMs);
+                }
+
+                if (_armed == null && bufferedBytes > BytesForDuration(TimeSpan.FromMilliseconds(100)))
+                {
+                    _logger?.LogWarning(
+                        "Decoder completed with no armed successor while {BufferedMs}ms of PCM remains buffered; a stop or hard Play now can cut off the track tail: Path={Path} BufferedBytes={BufferedBytes}",
+                        bufferedMs, finishedTrack.Path, bufferedBytes);
+                }
+
                 if (_armed != null && _stagingRing != null)
                 {
                     promoted = _armed;
@@ -586,6 +671,12 @@ namespace Flower.Manager
             _stagingRing = null;
             _armedAlreadyDrained = false;
         }
+
+        private static long BytesForDuration(TimeSpan duration) =>
+            (long)(duration.TotalSeconds * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+
+        private static double BytesToMilliseconds(long bytes) =>
+            bytes / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame) * 1000;
 
         public void Dispose()
         {
