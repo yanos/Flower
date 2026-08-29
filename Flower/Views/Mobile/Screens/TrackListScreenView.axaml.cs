@@ -59,6 +59,54 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
     public static readonly StyledProperty<bool> IsPlaylistModeProperty =
         AvaloniaProperty.Register<TrackListScreenView, bool>(nameof(IsPlaylistMode));
 
+    // Wide enough to put an album's art beside its track list instead of
+    // stacked above it - a phone in landscape, or a tablet either way up. 600
+    // clears the widest phone in portrait (~430) with room to spare and sits
+    // under the narrowest phone in landscape (~667), so the split is exactly
+    // "turned sideways or bigger". Driven off this control's own measured
+    // width below rather than a screen/orientation API: the layout only cares
+    // how much room it actually got, which is also what makes it testable and
+    // what makes a resized desktop window behave sensibly for free.
+    private const double WideAlbumLayoutMinWidth = 600;
+
+    public static readonly StyledProperty<bool> IsWideAlbumLayoutProperty =
+        AvaloniaProperty.Register<TrackListScreenView, bool>(nameof(IsWideAlbumLayout));
+
+    public bool IsWideAlbumLayout
+    {
+        get => GetValue(IsWideAlbumLayoutProperty);
+        private set => SetValue(IsWideAlbumLayoutProperty, value);
+    }
+
+    // Must match the Margin on the pinned art in the XAML, doubled - the art
+    // is square and sized off the height left over once its own margin is
+    // taken out, so the two numbers have to agree or it overflows the screen
+    // by exactly the difference.
+    private const double PinnedArtInset = 32;
+
+    // ...and how much of the width the art is allowed to take. A landscape
+    // phone is height-bound, so the cap never binds there and the art simply
+    // fills the screen top to bottom, which is the point. It exists for the
+    // shape where height is the *larger* dimension - a tablet held upright,
+    // or a tall desktop window - where filling the height would leave the
+    // songs a column an inch wide.
+    private const double PinnedArtMaxWidthFraction = 0.4;
+
+    public static readonly StyledProperty<double> PinnedArtSizeProperty =
+        AvaloniaProperty.Register<TrackListScreenView, double>(nameof(PinnedArtSize));
+
+    /// <summary>
+    /// The side of the album art pinned beside the track list in the wide
+    /// layout. Computed here rather than left to the layout system because
+    /// nothing in a Grid will size a square off the height it was given: the
+    /// art sits in an Auto column, which measures with unconstrained width.
+    /// </summary>
+    public double PinnedArtSize
+    {
+        get => GetValue(PinnedArtSizeProperty);
+        private set => SetValue(PinnedArtSizeProperty, value);
+    }
+
     public IReadOnlyList<TrackRowViewModel> DisplayRows
     {
         get => GetValue(DisplayRowsProperty);
@@ -81,6 +129,19 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
     {
         get => GetValue(IsPlaylistModeProperty);
         private set => SetValue(IsPlaylistModeProperty, value);
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == BoundsProperty)
+        {
+            IsWideAlbumLayout = Bounds.Width >= WideAlbumLayoutMinWidth;
+            PinnedArtSize = Math.Max(0, Math.Min(
+                Bounds.Height - PinnedArtInset,
+                Bounds.Width * PinnedArtMaxWidthFraction));
+        }
     }
 
     private MobileMainViewModel? _observedVm;
