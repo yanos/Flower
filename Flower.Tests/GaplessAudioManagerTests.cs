@@ -21,12 +21,13 @@ public class GaplessAudioManagerTests
     private static Track T(string title, TimeSpan duration) =>
         new() { Title = title, Path = $"/music/{title}.mp3", Duration = duration };
 
-    private static (GaplessAudioManager Manager, GaplessCoordinator Coordinator, FakeAudioSink Sink) Make()
+    private static (GaplessAudioManager Manager, GaplessCoordinator Coordinator, FakeAudioSink Sink) Make(
+        IPlatformAudioSession? platformAudioSession = null)
     {
         var ring = new GaplessRingBuffer(4096);
         var coordinator = new GaplessCoordinator(ring, (track, r) => new FakeTrackDecoder(track));
         var sink = new FakeAudioSink();
-        var manager = new GaplessAudioManager(ring, coordinator, sink, NullLogger<GaplessAudioManager>.Instance);
+        var manager = new GaplessAudioManager(ring, coordinator, sink, NullLogger<GaplessAudioManager>.Instance, platformAudioSession);
         return (manager, coordinator, sink);
     }
 
@@ -78,6 +79,21 @@ public class GaplessAudioManagerTests
 
         manager.Stop();
         Assert.False(sink.IsPlaying);
+    }
+
+    [Fact]
+    public void Playback_acquires_and_releases_the_platform_audio_session()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, _) = Make(platformAudioSession);
+
+        manager.Resume();
+        manager.Pause();
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        manager.Stop();
+
+        Assert.Equal(2, platformAudioSession.ActivationCount);
+        Assert.Equal(2, platformAudioSession.DeactivationCount);
     }
 
     [Fact]
@@ -256,5 +272,14 @@ public class GaplessAudioManagerTests
 
         manager.ApplyEqualizer(null);
         Assert.Null(sink.AppliedEqualizer);
+    }
+
+    private sealed class RecordingPlatformAudioSession : IPlatformAudioSession
+    {
+        public int ActivationCount { get; private set; }
+        public int DeactivationCount { get; private set; }
+
+        public void ActivateForPlayback() => ActivationCount++;
+        public void DeactivateAfterPlayback() => DeactivationCount++;
     }
 }

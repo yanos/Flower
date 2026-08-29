@@ -5,8 +5,6 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.iOS;
 
-using AVFoundation;
-
 using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Foundation;
@@ -18,6 +16,7 @@ using Microsoft.Extensions.Logging;
 using UIKit;
 
 using Flower.Logging;
+using Flower.Manager;
 using Flower.Services;
 
 namespace Flower.iOS;
@@ -68,24 +67,11 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // at construction.
         PlatformNowPlaying.Current = new AppleNowPlaying();
 
-        // Info.plist already declares UIBackgroundModes=audio, but that alone
-        // isn't enough - without an active session in the Playback category,
-        // iOS doesn't consider this app entitled to keep running once the
-        // screen locks or it backgrounds, and can throttle/suspend its
-        // threads shortly after (not just LibVLC's own audio output).
-        // Confirmed on a real device: the current track kept playing while
-        // locked, but PlaylistControlViewModel's EndReached handler (which
-        // runs the auto-advance-to-next-track logic) never got a chance to
-        // run once the track actually finished, so playback just stopped
-        // instead of continuing - Playback is the category iOS uses to
-        // decide an app's audio (and, in practice, its ability to react to
-        // that audio) shouldn't be cut off just because it's not visible.
-        var audioSession = AVAudioSession.SharedInstance();
-        // GetConstant() is typed nullable because it's a generic enum->native-constant
-        // lookup, but AVAudioSessionCategory.Playback is a well-known SDK constant that
-        // always resolves.
-        audioSession.SetCategory(AVAudioSessionCategory.Playback.GetConstant()!, out _);
-        audioSession.SetActive(true, out _);
+        // Do not activate this at launch: a non-mixing Playback session would
+        // interrupt Music/Podcasts merely by opening Flower. GaplessAudioManager
+        // activates it immediately before Flower starts rendering and releases
+        // it on pause/stop, preserving background playback only while needed.
+        PlatformAudioSession.Current = new AppleAudioSession();
 
         // Notification-based rather than overriding UIApplicationDelegate's
         // WillEnterForeground directly - the classic override isn't available

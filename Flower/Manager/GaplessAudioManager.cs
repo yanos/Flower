@@ -26,6 +26,7 @@ namespace Flower.Manager
         private readonly GaplessRingBuffer _sharedRing;
         private readonly GaplessCoordinator _coordinator;
         private readonly IAudioSink _sink;
+        private readonly IPlatformAudioSession? _platformAudioSession;
         private readonly Timer _positionTimer;
         private readonly ILogger<GaplessAudioManager> _logger;
 
@@ -71,10 +72,12 @@ namespace Flower.Manager
             GaplessRingBuffer sharedRing,
             GaplessCoordinator coordinator,
             IAudioSink sink,
-            ILogger<GaplessAudioManager> logger)
+            ILogger<GaplessAudioManager> logger,
+            IPlatformAudioSession? platformAudioSession = null)
         {
             _sink = sink;
             _logger = logger;
+            _platformAudioSession = platformAudioSession ?? PlatformAudioSession.Current;
 
             _sharedRing = sharedRing;
             _coordinator = coordinator;
@@ -152,6 +155,7 @@ namespace Flower.Manager
         {
             _logger.LogDebug("Play({Path})", track.Path);
             _coordinator.Play(track);
+            _platformAudioSession?.ActivateForPlayback();
             _sink.Resume();
         }
 
@@ -159,19 +163,28 @@ namespace Flower.Manager
 
         public void Resume()
         {
+            _logger.LogInformation("Playback resumed at {ElapsedMs}ms", Time);
+            _platformAudioSession?.ActivateForPlayback();
             _sink.Resume();
         }
 
         public void Pause()
         {
-            _logger.LogTrace("Pause() - IsPlaying was {IsPlaying}", IsPlaying);
+            _logger.LogInformation("Playback paused at {ElapsedMs}ms; IsPlaying={IsPlaying}", Time, IsPlaying);
+            var wasPlaying = _sink.IsPlaying;
             _sink.Pause();
+            if (wasPlaying)
+                _platformAudioSession?.DeactivateAfterPlayback();
         }
 
         public void Stop()
         {
+            _logger.LogInformation("Playback stopped at {ElapsedMs}ms; IsPlaying={IsPlaying}", Time, IsPlaying);
+            var wasPlaying = _sink.IsPlaying;
             _coordinator.Stop();
             _sink.Stop();
+            if (wasPlaying)
+                _platformAudioSession?.DeactivateAfterPlayback();
         }
 
         public void ApplyEqualizer(Equalizer? equalizer) => _sink.ApplyEqualizer(equalizer);
