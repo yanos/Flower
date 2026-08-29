@@ -102,6 +102,109 @@ still win over both.
 
 ---
 
+## Running it in Docker
+
+The repository ships a `Dockerfile` and a `docker-compose.yml`. Nothing has to
+be installed on the host first — no .NET runtime, no SQLite, no ffmpeg. The
+server does not decode audio either (that is the client's job), so LibVLC is not
+involved on this side at all.
+
+Point the music path in `docker-compose.yml` at your library, then:
+
+```bash
+mkdir -p data && sudo chown 1654:1654 data
+docker compose up -d
+docker compose logs flower
+```
+
+The log carries the first pairing code, exactly as it does when the server is
+run directly. Spend it as described above.
+
+Two directories matter:
+
+| In the container | What it is |
+|---|---|
+| `/data` | Everything the server owns: `flower.db`, the device key, the trusted-device list, the logs, `flower-server.json`. Back this up — lose it and every paired device unpairs. |
+| `/music` | Your library, mounted read-only. The server scans and streams; it never writes here. |
+
+`1654` is the non-root user the .NET base image runs as, and `/data` has to be
+writable by it. If your music sits somewhere that user cannot read, uncomment
+`user:` in the compose file and give it a uid that can.
+
+### Host networking is not optional
+
+`docker-compose.yml` uses `network_mode: host` instead of mapping ports, and
+that is the one line in it not to change casually. The server announces itself
+over mDNS, which is multicast, and Docker's default bridge network drops
+multicast. On a bridge the server starts, serves the browser UI, answers
+OpenSubsonic and streams music to anything given its address — and never appears
+in the sidebar of any Flower client on the network. There is no error to find;
+the row simply is not there.
+
+If you genuinely want a bridge — a server only ever reached through a reverse
+proxy or a tailnet, where nothing is supposed to discover it on a LAN — the
+compose file carries the settings for it, commented out: map `4533`/`4534`, set
+`Flower__AdvertiseOnLan=false` so it stops trying, and set
+`Flower__AdvertisedHost` if you remapped the port, so pairing invites name the
+address a device should actually dial.
+
+Host networking is a Linux feature. On Docker Desktop for macOS or Windows it
+does not do what it says, and a container there will not be discoverable however
+it is configured. Run the server directly on those.
+
+### Settings, and updating
+
+Anything in `appsettings.json` can be set as an environment variable, a double
+underscore per level — `Flower__HttpsPort=0` to turn the TLS listener off.
+Settings that are yours rather than the deployment's are better left in
+`data/flower-server.json`, which survives every rebuild; the compose file's
+`environment:` block still wins over it.
+
+Updating is `docker compose pull && docker compose up -d` against a published
+image, or `docker compose up -d --build` while you are building it yourself.
+`/data` is untouched either way, so the server comes back with the same identity
+and the same paired devices.
+
+### Published images
+
+Every pushed semantic-version tag (`v1.2.3`) publishes a multi-architecture
+image to GitHub Container Registry for `linux/amd64` and `linux/arm64`:
+
+```text
+ghcr.io/yanos/flower-server:1.2.3
+```
+
+Stable releases also update their `major.minor`, `major` (except major zero),
+and `latest` tags. Pre-release tags such as `v1.2.3-beta.1` publish only their
+full version, so they never replace `latest`. For a deployed server, pin the
+compose `image:` to a full version before running `docker compose pull && docker
+compose up -d`; use `latest` only when automatic stable-release updates are
+intentional.
+
+### Building the image
+
+`docker build .` is enough. Two things it does are worth knowing:
+
+- **The version comes from the git tags.** `.git` is deliberately left in the
+  build context so MinVer can read it; without it every image would claim
+  `0.1.0-alpha.0` and not mention that it was guessing. Building from a shallow
+  clone or an exported tarball, pass `--build-arg VERSION=1.2.3`.
+- **The browser UI is built in.** That costs a `wasm-tools` workload install in
+  the build stage — several minutes the first time, none of it in the finished
+  image. `--build-arg INCLUDE_WEB_UI=false` skips it, and the server then still
+  serves its API and its OpenSubsonic surface but shows a placeholder where the
+  browser settings page would be.
+
+Multi-architecture images are cheap to build, because the published payload is
+architecture-neutral and only the runtime base image differs — the SDK stage
+runs natively even when the target is arm64, rather than under emulation:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t flower-server .
+```
+
+---
+
 ## HTTPS, without setting anything up
 
 The server serves **two ports**: `4533` in the clear, and `4534` over TLS. Both
@@ -695,9 +798,10 @@ running the server, `http://localhost:4533` remains the simplest option of all.
   `REMOTE-TRANSPORT-PLAN.md`.
 - **Automatic port mapping** (UPnP / NAT-PMP). See the note at the end of the
   port-forwarding section.
-- **Docker packaging.** Planned. Note that mDNS announcement (`AdvertiseOnLan`)
-  needs host networking to work from a container, since it is link-local
-  multicast — a tailnet deployment turns that off anyway.
+- **A `.deb`, and an APT repository behind it.** A self-contained publish plus a
+  systemd unit would package cleanly, but a `.deb` on its own only installs; the
+  `apt upgrade` half needs a signed repository hosted somewhere, which is the
+  part with ongoing upkeep. Docker covers the same ground today.
 
 ---
 
@@ -749,7 +853,9 @@ username would be.
 subnets and does not reach into a tailnet, so a client only ever *discovers* a
 server it shares a network with. Pair at home once; after that the client
 remembers how to reach it. If you are at home and it is still missing, check
-`AdvertiseOnLan`.
+`AdvertiseOnLan` — and, if the server runs in Docker, that the container is on
+host networking. A bridged container cannot send link-local multicast, so it
+advertises into nothing and everything else about it keeps working.
 
 **A client paired at home cannot reach the server while away.** Check that both
 ends are on the tailnet (`tailscale status`), and that the server's tailnet

@@ -1,0 +1,33 @@
+# Build output, everywhere. Without this the context is ~8 GB instead of ~200 MB.
+**/bin/
+**/obj/
+
+# Note what is NOT here: .git. MinVer derives the version from the tags during
+# `dotnet publish`, so excluding the history would make every image claim
+# 0.1.0-alpha.0 - and do it silently. At ~40 MB it is the cheapest way to have
+# `docker build .` produce a correctly versioned image with no extra flags.
+# The Dockerfile's VERSION arg covers the shallow-clone case where it can't.
+
+# Heads the server image has no use for. The publish only ever walks
+# Flower.Server -> Flower.Core, plus Flower.Web -> Flower -> Flower.Core when
+# the browser UI is included.
+Flower.Desktop/
+Flower.Android/
+Flower.iOS/
+Flower.Tests/
+Flower.Server.Tests/
+
+# Vendored miniaudio sources and their compiled .so/.framework outputs, for the
+# mobile heads' audio sink. Nothing the server links against.
+native/
+
+docs/
+.github/
+.idea/
+.vscode/
+.claude/
+*.DotSettings.user
+.DS_Store
+Dockerfile
+.dockerignore
+docker-compose.yml

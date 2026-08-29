@@ -1,0 +1,69 @@
+# Flower.Server, the way it is meant to run on a Linux box.
+#
+#   mkdir -p data && sudo chown 1654:1654 data
+#   docker compose up -d
+#
+# Then read the pairing code out of the log:
+#
+#   docker compose logs flower
+#
+# See docs/SELF-HOSTING.md for what to do with it, and for HTTPS, Tailscale and
+# Cloudflare Tunnel in front of this.
+
+services:
+  flower:
+    build: .
+    # Once a release image is published, swap the line above for this one and
+    # update with `docker compose pull && docker compose up -d`.
+    # image: ghcr.io/yanos/flower-server:latest
+    container_name: flower
+    restart: unless-stopped
+
+    # Host networking, not a ports: mapping - this is the one setting that is
+    # not a preference. The server announces itself over mDNS (multicast to
+    # 224.0.0.251, via Makaretu), and Docker's default bridge network drops
+    # multicast. On a bridge the server comes up, serves OpenSubsonic, answers
+    # every request correctly, and simply never appears in the sidebar of any
+    # Flower client on the LAN - a failure with no error anywhere to explain it.
+    #
+    # Host networking is a Linux-only feature; on Docker Desktop for macOS or
+    # Windows it does nothing useful. Those are not the deployment target here.
+    # If you do need bridge networking anyway - a remote-only server behind a
+    # reverse proxy, where nothing is meant to discover it on a LAN - then say
+    # so explicitly rather than leaving it broken:
+    #
+    #   network_mode: bridge
+    #   ports:
+    #     - "4533:4533"
+    #     - "4534:4534"
+    #   environment:
+    #     - Flower__AdvertiseOnLan=false
+    #     - Flower__AdvertisedHost=flower.example.com   # if the port is remapped
+    network_mode: host
+
+    volumes:
+      # Everything the server owns and must keep across an image rebuild:
+      # flower.db, the device key, the trusted-device list, the logs, and
+      # flower-server.json. Lose this and every paired device unpairs.
+      - ./data:/data
+      # Your music. Read-only: the server scans and streams, it never writes
+      # here. Point it at wherever the library actually lives.
+      - /srv/music:/music:ro
+
+    # The uid the .NET base image ships and the Dockerfile chowns /data to.
+    # If the music lives under a home directory that isn't world-readable,
+    # override this with the uid:gid that can read it instead - the app
+    # directory in the image is readable by anyone.
+    #   user: "1000:1000"
+
+    environment:
+      # The name this server shows up as in a client's sidebar. Defaults to the
+      # container's hostname, which under network_mode: host is the machine's -
+      # set it anyway, so it doesn't change under you.
+      - Flower__Alias=Flower
+
+      # Anything else in Flower.Server/appsettings.json can be set the same
+      # way, double underscore for each level (Flower__HttpsPort=0 to turn the
+      # TLS listener off). Settings that belong to the operator rather than the
+      # deployment are better placed in data/flower-server.json, which this
+      # file's environment still outranks - see Program.cs on the layering.
