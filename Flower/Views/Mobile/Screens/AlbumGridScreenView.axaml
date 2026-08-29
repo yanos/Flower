@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
-             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Views.Mobile.Screens.AlbumGridScreenView"
              x:DataType="vm:MobileMainViewModel"
@@ -14,7 +13,8 @@
        plain-text picker's own SelectAlbumOrArtistCommand. -->
   <ScrollViewer controls:RubberBandScroll.IsEnabled="True">
     <ItemsControl ItemsSource="{Binding AlbumGridRows}"
-                  Margin="12">
+                  Margin="12,12,0,12"
+                  controls:AlbumGridColumnSizing.IsEnabled="True">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
           <VirtualizingStackPanel Orientation="Vertical" />
@@ -22,39 +22,45 @@
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:AlbumGridRow">
-          <!-- The outside margin and ColumnSpacing intentionally match: each
-               square tile reaches its column edge, so the grid has the same
-               visual gutter at the screen edge and between its two albums.
-               The gap *below* a tile is deliberately much larger than the 6
-               between its art and its caption, so a title reads as belonging
-               to the album above it rather than the one below. -->
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-            <Button Grid.Column="0" Classes="pickerRow" Padding="0"
-                    Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
-                    CommandParameter="{Binding First.Name}">
-              <StackPanel Spacing="6" Margin="0,0,0,24" HorizontalAlignment="Stretch"
-                          Classes.dimmed="{Binding First.IsUnavailable}">
-                <controls:SquareAlbumArtView AlbumArt="{Binding First.AlbumArt}" />
-                <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding First.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{Binding First.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-              </StackPanel>
-            </Button>
-            <Button Grid.Column="1" Classes="pickerRow" Padding="0"
-                    IsVisible="{Binding Second, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                    Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
-                    CommandParameter="{Binding Second.Name}">
-              <StackPanel Spacing="6" Margin="0,0,0,24" HorizontalAlignment="Stretch"
-                          Classes.dimmed="{Binding Second.IsUnavailable}">
-                <controls:SquareAlbumArtView AlbumArt="{Binding Second.AlbumArt}" />
-                <StackPanel Spacing="4">
-                  <TextBlock Text="{Binding Second.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{Binding Second.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-              </StackPanel>
-            </Button>
-          </Grid>
+          <!-- One UniformGrid per row, sized by that row's own Columns: the
+               grid fits as many ~150px tiles across as the width allows, so a
+               phone turned into landscape shows five where portrait shows two
+               (see AlbumGridRow.ColumnsFor, fed by AlbumGridColumnSizing on
+               the ItemsControl above). UniformGrid has no ColumnSpacing of its
+               own, so the 12px gutter is each tile's right margin and the
+               ItemsControl leaves its own right edge to the last tile's - that
+               is what keeps the gap identical at both screen edges and between
+               columns. The gap *below* a tile is deliberately much larger than
+               the 6 between its art and its caption, so a title reads as
+               belonging to the album above it rather than the one below. -->
+          <ItemsControl ItemsSource="{Binding Tiles}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Columns="{Binding Columns}" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:AlbumTileViewModel">
+                <Button Classes="pickerRow" Padding="0" Margin="0,0,12,24"
+                        Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
+                        CommandParameter="{Binding Name}">
+                  <StackPanel Spacing="6" HorizontalAlignment="Stretch"
+                              Classes.dimmed="{Binding IsUnavailable}">
+                    <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" />
+                    <!-- Explicit LineHeights, not the font default: Inter has no CJK
+                         glyphs, so a Japanese title falls back to a system face about
+                         1.45x taller, and a row pairing one with a Latin title puts the
+                         two captions at different heights. Pinning both lines makes every
+                         caption 37px whatever script it is in. -->
+                    <StackPanel>
+                      <TextBlock Text="{Binding Name}" FontSize="13" LineHeight="20" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Artist}" FontSize="11" LineHeight="17" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </StackPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>

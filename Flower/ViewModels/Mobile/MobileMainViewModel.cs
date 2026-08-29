@@ -46,8 +46,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<SidebarItem> PlaylistPickerItems { get; } = new();
 
-    // Rows of two tiles rather than a flat tile list - see AlbumGridRow for why
-    // (virtualization).
+    // Rows of tiles rather than a flat tile list - see AlbumGridRow for why
+    // (virtualization), and AlbumGridColumns below for how wide a row is.
     public ObservableCollection<AlbumGridRow> RecentlyAddedAlbumRows { get; } = new();
     public ObservableCollection<AlbumGridRow> AlbumGridRows { get; } = new();
 
@@ -55,6 +55,39 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // rebuilt by RebuildArtistAlbumGrid whenever _selectedArtistName changes or the
     // library updates while it's set.
     public ObservableCollection<AlbumGridRow> ArtistAlbumGridRows { get; } = new();
+
+    // How many tiles the three grids above put on a row, pushed in from the
+    // views by AlbumGridColumnSizing as their measured width changes - a phone
+    // rotated into landscape fits five where portrait fits two. Re-chunks
+    // whatever is already built rather than waiting for the next library
+    // update, so the grid reflows as the device turns.
+    private int _albumGridColumns = 2;
+
+    public int AlbumGridColumns
+    {
+        get => _albumGridColumns;
+        set
+        {
+            if (_albumGridColumns == value)
+                return;
+
+            _albumGridColumns = value;
+            Rechunk(RecentlyAddedAlbumRows);
+            Rechunk(AlbumGridRows);
+            Rechunk(ArtistAlbumGridRows);
+        }
+    }
+
+    private void Rechunk(ObservableCollection<AlbumGridRow> rows)
+    {
+        if (rows.Count == 0)
+            return;
+
+        var tiles = AlbumTilesIn(rows).ToList();
+        rows.Clear();
+        foreach (var row in AlbumGridRow.Chunk(tiles, _albumGridColumns))
+            rows.Add(row);
+    }
 
     // Search tab results - see RebuildSearchResultsAsync. Albums matching by
     // Album name, Artists matching by Artists (the same raw per-track field
@@ -1128,22 +1161,15 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             TrackAvailability.Apply([header], fingerprint, reachable);
     }
 
-    private static IEnumerable<AlbumTileViewModel> AlbumTilesIn(IEnumerable<AlbumGridRow> rows)
-    {
-        foreach (var row in rows)
-        {
-            yield return row.First;
-            if (row.Second is { } second)
-                yield return second;
-        }
-    }
+    private static IEnumerable<AlbumTileViewModel> AlbumTilesIn(IEnumerable<AlbumGridRow> rows) =>
+        rows.SelectMany(row => row.Tiles);
 
     private void RebuildRecentlyAddedAlbums()
     {
         RecentlyAddedAlbumRows.Clear();
         var tiles = RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks);
         TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
-        foreach (var row in AlbumGridRow.Chunk(tiles))
+        foreach (var row in AlbumGridRow.Chunk(tiles, AlbumGridColumns))
             RecentlyAddedAlbumRows.Add(row);
 
         RaiseEmptyStateChanged();
@@ -1154,7 +1180,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         AlbumGridRows.Clear();
         var tiles = AlbumGridBuilder.Build(Main.Library.Tracks);
         TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
-        foreach (var row in AlbumGridRow.Chunk(tiles))
+        foreach (var row in AlbumGridRow.Chunk(tiles, AlbumGridColumns))
             AlbumGridRows.Add(row);
 
         RaiseEmptyStateChanged();
@@ -1173,7 +1199,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             var tracks = Main.Library.Tracks.Where(t => t.Artists == _selectedArtistName);
             var tiles = AlbumGridBuilder.Build(tracks);
             TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
-            foreach (var row in AlbumGridRow.Chunk(tiles))
+            foreach (var row in AlbumGridRow.Chunk(tiles, AlbumGridColumns))
                 ArtistAlbumGridRows.Add(row);
         }
 
