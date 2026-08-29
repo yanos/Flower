@@ -131,6 +131,38 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         private set => SetValue(IsPlaylistModeProperty, value);
     }
 
+    public static readonly StyledProperty<bool> ShowsRowArtistProperty =
+        AvaloniaProperty.Register<TrackListScreenView, bool>(nameof(ShowsRowArtist), defaultValue: true);
+
+    /// <summary>
+    /// Whether a track row should print its artist under the title - false
+    /// when the whole list shares one artist (see ITrackRowHost). Derived
+    /// from DisplayRows below rather than from the live ViewModel, so a
+    /// frozen one-back screen answers for the rows it is actually showing.
+    /// </summary>
+    public bool ShowsRowArtist
+    {
+        get => GetValue(ShowsRowArtistProperty);
+        private set => SetValue(ShowsRowArtistProperty, value);
+    }
+
+    // One row is not a repetition, so there is nothing to strip: a
+    // single-track playlist would otherwise lose its only mention of the
+    // artist. Two identical lines is where it starts reading as noise.
+    private static bool RowArtistIsWorthShowing(IReadOnlyList<TrackRowViewModel> rows)
+    {
+        if (rows.Count < 2)
+            return true;
+
+        var first = rows[0].Track.Artists;
+        for (int i = 1; i < rows.Count; i++)
+        {
+            if (!string.Equals(rows[i].Track.Artists, first, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -141,6 +173,10 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
             PinnedArtSize = Math.Max(0, Math.Min(
                 Bounds.Height - PinnedArtInset,
                 Bounds.Width * PinnedArtMaxWidthFraction));
+        }
+        else if (change.Property == DisplayRowsProperty)
+        {
+            ShowsRowArtist = RowArtistIsWorthShowing(DisplayRows);
         }
     }
 

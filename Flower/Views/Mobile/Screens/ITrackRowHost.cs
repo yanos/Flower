@@ -10,4 +10,11 @@ public interface ITrackRowHost
 {
     bool IsAlbumMode { get; }
     bool IsPlaylistMode { get; }
+
+    // False when every row on screen carries the same artist, so the rows
+    // stop repeating one name down the whole list - an album's own tracks,
+    // or a single-artist playlist. The host answers rather than the row: a
+    // row only knows its own track, and "the same for this whole view" is a
+    // property of the list it is in.
+    bool ShowsRowArtist { get; }
 }

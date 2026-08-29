@@ -57,6 +57,24 @@
     <Style Selector="ContentControl.albumText.beside TextBlock">
       <Setter Property="TextAlignment" Value="Left" />
     </Style>
+
+    <!-- A row with no artist line under the title is a single line of text,
+         but it kept the height of two: the trailing "..." button is a 20px
+         icon in 6px of padding, 32 tall on its own, which is what the row
+         measured to either way. So the tightening has to take that button
+         with it, or hiding the artist reclaims nothing.
+
+         The button's own padding is trimmed in the template itself (a local
+         value there would beat any setter here anyway), so all this has left
+         to do is close the gap above and below.
+
+         Here rather than in MobileMainView.axaml's own trackRow styles
+         because "dense" is set from ITrackRowHost.ShowsRowArtist, which is
+         this screen's question to answer - and being the nearer StyleHost,
+         these win over that file's Padding for the rows it applies to. -->
+    <Style Selector="Button.trackRow.dense">
+      <Setter Property="Padding" Value="16,3" />
+    </Style>
   </UserControl.Styles>
 
   <!-- Track list: Songs (flat), or the drilled-into album/artist/playlist.

@@ -26,6 +26,7 @@
     <Button Classes="trackRow"
             Classes.playing="{Binding IsCurrentlyPlaying}"
             Classes.placeholder="{Binding IsUnavailable}"
+            Classes.dense="{Binding !$parent[views:ITrackRowHost].ShowsRowArtist}"
             Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).PlayTrackCommand}"
             CommandParameter="{Binding}">
       <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
@@ -72,7 +73,13 @@
           <TextBlock Text="{Binding Track.Title}"
                      FontSize="16"
                      TextTrimming="CharacterEllipsis" />
+          <!-- Dropped when every row in this view carries the same artist -
+               an album's tracks, or a single-artist playlist - where it was
+               the same name repeated down the entire screen. Answered by the
+               hosting screen, not the row: only the host knows the whole
+               list (see ITrackRowHost.ShowsRowArtist). -->
           <TextBlock Text="{Binding Track.Artists}"
+                     IsVisible="{Binding $parent[views:ITrackRowHost].ShowsRowArtist}"
                      FontSize="13"
                      Opacity="0.65"
                      TextTrimming="CharacterEllipsis" />
@@ -97,7 +104,7 @@
                   CommandParameter="{Binding Track}"
                   Background="Transparent"
                   BorderThickness="0"
-                  Padding="6"
+                  Padding="4"
                   Margin="4,0,0,0"
                   VerticalAlignment="Center">
             <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
@@ -118,7 +125,7 @@
                   CommandParameter="{Binding}"
                   Background="Transparent"
                   BorderThickness="0"
-                  Padding="6"
+                  Padding="4"
                   Margin="4,0,0,0"
                   VerticalAlignment="Center">
             <Panel>

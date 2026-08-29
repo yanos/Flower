@@ -15,6 +15,11 @@ public partial class SearchResultsScreenView : UserControl, ITrackRowHost
     public bool IsAlbumMode => false;
     public bool IsPlaylistMode => false;
 
+    // Search results are a cross-section of the library rather than one
+    // album's worth of tracks, so the artist is what tells two same-titled
+    // hits apart - always worth a line here.
+    public bool ShowsRowArtist => true;
+
     public SearchResultsScreenView()
     {
         InitializeComponent();
