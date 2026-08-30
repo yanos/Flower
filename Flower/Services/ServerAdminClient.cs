@@ -32,6 +32,12 @@ public sealed record AdminLogEntryDto(DateTimeOffset Timestamp, string Level, st
 // who does not know that will misread a stale snapshot as a live tail.
 public sealed record AdminDeviceLogDto(
     string Fingerprint, string Alias, DateTimeOffset ReceivedAt, List<AdminLogEntryDto> Entries);
+
+// The server's own log as a delta plus the cursor to resume from - see
+// InMemoryLogStore.SnapshotAfter, and the Logs tab's polling loop
+// (SettingsViewModel.SetLogTabActive), which is the only caller that passes a
+// cursor other than "everything".
+public sealed record AdminLogSliceDto(long LastSequence, List<AdminLogEntryDto> Entries);
 public sealed record SubsonicCredentialDto(
     string Username, string Label, DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt, string? Password);
 
@@ -96,8 +102,8 @@ public sealed class ServerAdminClient(
     public Task<AdminLibraryStatusDto> RescanAsync(CancellationToken ct = default) =>
         SendAsync<AdminLibraryStatusDto>(HttpMethod.Post, "/api/admin/library/rescan", null, ct);
 
-    public Task<List<AdminLogEntryDto>> GetLogAsync(int limit, CancellationToken ct = default) =>
-        SendAsync<List<AdminLogEntryDto>>(HttpMethod.Get, $"/api/admin/logs?limit={limit}", null, ct);
+    public Task<AdminLogSliceDto> GetLogAsync(int limit, long after, CancellationToken ct = default) =>
+        SendAsync<AdminLogSliceDto>(HttpMethod.Get, $"/api/admin/logs?limit={limit}&after={after}", null, ct);
 
     // A paired device's own log, as last pushed to the server - the counterpart
     // to GetLogAsync above, which is the server's own. Throws

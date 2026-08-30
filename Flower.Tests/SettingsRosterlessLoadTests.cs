@@ -68,7 +68,7 @@ public class SettingsRosterlessLoadTests
         public Task RevokeSubsonicCredentialAsync(SubsonicCredentialRow credential, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
-        public Task<IReadOnlyList<InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default) =>
+        public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
         public Task<IReadOnlyList<InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>

@@ -155,7 +155,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     public Task RevokeSubsonicCredentialAsync(SubsonicCredentialRow credential, CancellationToken ct = default) =>
         throw new NotSupportedException("Only a Flower server issues Subsonic credentials.");
 
-    public Task<IReadOnlyList<Logging.InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default) =>
+    public Task<Logging.LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>
         throw new NotSupportedException("The app has its own Log window.");
 
     public Task<IReadOnlyList<Logging.InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>

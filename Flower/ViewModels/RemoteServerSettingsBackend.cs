@@ -165,8 +165,11 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         }
     }
 
-    public async Task<IReadOnlyList<InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default) =>
-        ToEntries(await client.GetLogAsync(limit, ct));
+    public async Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default)
+    {
+        var slice = await client.GetLogAsync(limit, afterSequence, ct);
+        return new LogSlice(slice.LastSequence, ToEntries(slice.Entries));
+    }
 
     // Straight back into the shape both the app's own log buffer and the Logs
     // tab's viewer already speak, so a server's log filters, renders and reads

@@ -15,7 +15,7 @@
        drifting copy of it. -->
   <Grid RowDefinitions="*,Auto,Auto" Margin="16">
 
-    <TabControl Grid.Row="0">
+    <TabControl Grid.Row="0" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
 
       <TabItem Header="General">
         <!-- Scrolls like every other tab here: a server's General tab carries the
@@ -488,7 +488,7 @@
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="Logs" IsVisible="{Binding Capabilities.Log}">
+      <TabItem Header="Logs" x:Name="LogsTab" IsVisible="{Binding Capabilities.Log}">
         <!-- Whose log: this server's own, or the last snapshot one of its
              paired devices pushed (see AppSettings.ShareLogsWithPairedServer,
              and ISettingsBackend.LoadDeviceLogAsync). The whole point is that
@@ -507,9 +507,11 @@
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
-            <!-- A fetched tail rather than a live tail: a server pushes nothing
-                 to this page, and a device's snapshot only changes when it next
-                 syncs, so refreshing is something the reader asks for. -->
+            <!-- Polled while this tab is on screen rather than pushed: the
+                 server's log arrives as a delta every couple of seconds (see
+                 SettingsViewModel.SetLogTabActive), and a device's snapshot
+                 only changes when it next syncs. Refresh stays for re-reading
+                 one from scratch. -->
             <Button Grid.Row="1" Content="Refresh" Margin="0,8,8,0"
                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                     Command="{Binding RefreshLogCommand}"/>

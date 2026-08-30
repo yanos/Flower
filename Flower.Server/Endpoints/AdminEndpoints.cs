@@ -29,6 +29,14 @@ public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, st
 public sealed record DeviceLogResponse(
     string Fingerprint, string Alias, DateTimeOffset ReceivedAt, IReadOnlyList<LogEntryResponse> Entries);
 
+// The server's own log, read as a delta: the entries after whatever sequence
+// the caller last saw, plus the sequence to hand back next time. A reader
+// watching the tail asks every couple of seconds, and re-sending the whole
+// buffer each time to append two lines to it is the thing this avoids - see
+// InMemoryLogStore.SnapshotAfter for why LastSequence is the store's own
+// high-water mark rather than the last entry returned.
+public sealed record LogSliceResponse(long LastSequence, IReadOnlyList<LogEntryResponse> Entries);
+
 // The admin API: issuing pairing codes, listing and revoking devices, minting the
 // per-client credentials third-party Subsonic clients need, and - for the browser
 // settings page - reading and writing this server's own configuration, triggering
@@ -442,15 +450,18 @@ public static class AdminEndpoints
         // window reads (AppLogging.Initialize wires the sink in Program.cs), so a
         // headless box can be diagnosed from a browser instead of by SSHing in to
         // tail a file.
-        authenticated.MapGet("/logs", (int? limit) =>
+        // after is the caller's cursor: omit it (or pass BeforeFirstSequence) for
+        // the whole buffer, hand back the LastSequence of the previous response
+        // to get only what has been logged since.
+        authenticated.MapGet("/logs", (int? limit, long? after) =>
         {
-            var entries = InMemoryLogStore.Instance.Snapshot();
-            var take = Math.Clamp(limit ?? 500, 1, entries.Count == 0 ? 1 : entries.Count);
-            var lines = entries
-                .Skip(Math.Max(0, entries.Count - take))
+            var slice = InMemoryLogStore.Instance.SnapshotAfter(after ?? InMemoryLogStore.BeforeFirstSequence);
+            var take = Math.Max(1, limit ?? 500);
+            var lines = slice.Entries
+                .Skip(Math.Max(0, slice.Entries.Count - take))
                 .Select(e => new LogEntryResponse(e.Timestamp, e.Level, e.SourceContext, e.Message, e.Exception))
                 .ToList();
-            return Results.Json(lines, jsonOptions);
+            return Results.Json(new LogSliceResponse(slice.LastSequence, lines), jsonOptions);
         });
     }
 

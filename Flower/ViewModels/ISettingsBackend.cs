@@ -174,7 +174,14 @@ public interface ISettingsBackend
     // the Logs tab is a real log viewer now (see LogViewerViewModel), and its
     // minimum-level filter needs each entry's level, not a string that happens
     // to start with one.
-    Task<IReadOnlyList<InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default);
+    //
+    // afterSequence is a cursor into the log's own numbering, so the tab can
+    // follow a live log by asking every couple of seconds for nothing but what
+    // has been logged since - InMemoryLogStore.BeforeFirstSequence for the
+    // first read, then the LastSequence of the slice before. The returned
+    // LastSequence is the log's high-water mark, not the last entry returned:
+    // anything in between fell out of the ring and is not coming back.
+    Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default);
 
     // One paired device's own log, as last pushed to the server at the end of a
     // sync (see AppSettings.ShareLogsWithPairedServer on the pushing side). The

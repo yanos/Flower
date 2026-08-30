@@ -59,8 +59,8 @@ public class SettingsITunesGatingTests
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-        public Task<IReadOnlyList<InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<InMemoryLogEntry>>([]);
+        public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>
+            Task.FromResult(new LogSlice(InMemoryLogStore.BeforeFirstSequence, []));
 
         public Task<IReadOnlyList<InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<InMemoryLogEntry>?>([]);

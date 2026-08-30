@@ -48,6 +48,14 @@ public partial class SettingsPanel : UserControl
         viewModel.DeviceListChanged += OnDeviceListChanged;
         RefreshDevicesTab();
 
+        // The Logs tab follows a live log while it is the tab on screen (see
+        // SettingsViewModel.SetLogTabActive). Unloaded matters as much as the
+        // selection does: closing the window or hiding the browser's full-page
+        // overlay leaves the tab "selected" forever otherwise, and with it a
+        // timer polling a server nobody is watching.
+        SyncLogTabActive();
+        Unloaded += (_, _) => _viewModel.SetLogTabActive(false);
+
         if (_mainViewModel != null)
         {
             // Pairing/unpairing happens inside ServerPickerView, not through
@@ -68,6 +76,11 @@ public partial class SettingsPanel : UserControl
     }
 
     private void OnDeviceListChanged(object? sender, EventArgs e) => RefreshDevicesTab();
+
+    private void Tabs_SelectionChanged(object? sender, SelectionChangedEventArgs e) => SyncLogTabActive();
+
+    private void SyncLogTabActive() =>
+        _viewModel?.SetLogTabActive(ReferenceEquals(Tabs.SelectedItem, LogsTab));
 
     // Which half of the Devices tab this backend gets: a device configuring
     // itself picks the one server it syncs with, and a server being configured

@@ -50,8 +50,22 @@ public class SettingsLogTabTests
         public string? GatedFingerprint { get; set; }
         public TaskCompletionSource Gate { get; } = new();
 
-        public Task<IReadOnlyList<InMemoryLogEntry>> LoadLogAsync(int limit, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<InMemoryLogEntry>>(ServerLog);
+        // Set to have the next server-log read fail, the way a dropped request
+        // on a two-second poll does.
+        public bool ServerLogFails { get; set; }
+
+        // Sequenced by position, which is all InMemoryLogStore's own numbering
+        // amounts to for a log that is only ever appended to: everything past
+        // afterSequence, and the index of the last line as the cursor to come
+        // back with.
+        public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default)
+        {
+            if (ServerLogFails)
+                throw new InvalidOperationException("the server went away");
+
+            var entries = ServerLog.Skip((int)(afterSequence + 1)).ToList();
+            return Task.FromResult(new LogSlice(ServerLog.Count - 1, entries));
+        }
 
         public async Task<IReadOnlyList<InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default)
         {
@@ -265,5 +279,96 @@ public class SettingsLogTabTests
         Assert.Contains("a line loaded before the pane existed", editor.Text);
 
         window.Close();
+    }
+
+    // Everything below is the tab following a live log rather than waiting to be
+    // asked. SettingsPanel ticks FollowLogAsync on a timer while the Logs tab is
+    // the one on screen; these call the tick directly, since waiting out real
+    // two-second intervals would be testing DispatcherTimer instead.
+
+    // AvaloniaFact for the Dispatcher alone: the viewer coalesces appended
+    // entries on a background dispatch (see LogViewerViewModel.Append), so
+    // without one to run there is nothing to coalesce them onto.
+    [AvaloniaFact]
+    public async Task A_poll_appends_only_what_has_been_logged_since()
+    {
+        _backend.ServerLog = Lines("first");
+        var panel = await MakeAsync();
+
+        _backend.ServerLog.AddRange(Lines("second"));
+        await panel.FollowLogAsync();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(2, panel.LogViewer.DisplayLines.Count);
+        Assert.Contains("first", panel.LogViewer.DisplayLines[0]);
+        Assert.Contains("second", panel.LogViewer.DisplayLines[1]);
+    }
+
+    // The reader may be scrolled somewhere in the middle of a long log. A tick
+    // that finds nothing must not repaint the document, which is what would drag
+    // them back to the bottom - see LogViewer's LinesReset handler.
+    [Fact]
+    public async Task A_poll_that_finds_nothing_leaves_the_document_alone()
+    {
+        _backend.ServerLog = Lines("first");
+        var panel = await MakeAsync();
+
+        var resets = 0;
+        panel.LogViewer.LinesReset += (_, _) => resets++;
+        await panel.FollowLogAsync();
+
+        Assert.Equal(0, resets);
+        Assert.Single(panel.LogViewer.DisplayLines);
+    }
+
+    // The first line to arrive after "(the server has logged nothing yet)" has
+    // to replace that sentence, not land underneath it.
+    [Fact]
+    public async Task The_first_line_after_an_empty_log_replaces_the_placeholder()
+    {
+        var panel = await MakeAsync();
+        Assert.Contains("logged nothing yet", Assert.Single(panel.LogViewer.DisplayLines));
+
+        _backend.ServerLog = Lines("the first thing that happened");
+        await panel.FollowLogAsync();
+
+        Assert.Contains("the first thing that happened", Assert.Single(panel.LogViewer.DisplayLines));
+    }
+
+    // A poll is a background read the reader never asked for, so a failed one is
+    // silent: on a two-second timer it is far more likely to be one dropped
+    // request than anything worth replacing a readable log with.
+    [Fact]
+    public async Task A_failed_poll_leaves_the_log_on_screen()
+    {
+        _backend.ServerLog = Lines("still worth reading");
+        var panel = await MakeAsync();
+
+        _backend.ServerLogFails = true;
+        await panel.FollowLogAsync();
+
+        Assert.Contains("still worth reading", Assert.Single(panel.LogViewer.DisplayLines));
+    }
+
+    // A device's log is not a delta - it is a merged history re-read whole - so
+    // an unchanged one must not be repainted for the same reason as above.
+    [Fact]
+    public async Task Polling_a_device_repaints_only_when_its_snapshot_grew()
+    {
+        _backend.DeviceLogs["fp-1"] = Lines("pushed once");
+        var panel = await MakeAsync(Device("fp-1", "A Phone"));
+        await SelectAsync("fp-1");
+
+        var resets = 0;
+        panel.LogViewer.LinesReset += (_, _) => resets++;
+
+        await panel.FollowLogAsync();
+        Assert.Equal(0, resets);
+
+        _backend.DeviceLogs["fp-1"].AddRange(Lines("pushed again"));
+        await panel.FollowLogAsync();
+
+        Assert.Equal(1, resets);
+        Assert.Equal(2, panel.LogViewer.DisplayLines.Count);
     }
 }

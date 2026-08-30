@@ -5,6 +5,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Avalonia.Threading;
+
 using CommunityToolkit.Mvvm.Input;
 
 using Flower.Logging;
@@ -546,40 +548,170 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // the server still applies this as a hard ceiling to the response.
     private const int LogLimit = 100_000;
 
-    [RelayCommand]
-    private async Task RefreshLogAsync()
-    {
-        var source = SelectedLogSource;
-        var requestId = ++_logRequestId;
+    // How often the tab re-asks while it is the one on screen. A log is read to
+    // watch something happen - starting a rescan, pairing a phone, chasing an
+    // error that is being reproduced right now - and a pane that only moves when
+    // the reader remembers to press Refresh is the wrong shape for that. Two
+    // seconds is under the threshold where a line feels late, and the server's
+    // own log is answered from memory as a delta (see LoadLogAsync's
+    // afterSequence), so a tick that finds nothing costs one small 200.
+    private static readonly TimeSpan LogPollInterval = TimeSpan.FromSeconds(2);
 
-        if (source == null)
+    // Only ticks while the Logs tab is actually showing - see SetLogTabActive.
+    // Created lazily rather than in the constructor because a DispatcherTimer
+    // needs a Dispatcher, and most of the things that construct this ViewModel
+    // (the local backend, the tests) never open a Logs tab at all.
+    private DispatcherTimer? _logPollTimer;
+
+    // Guards a slow tick against the next one landing on top of it.
+    private bool _logPollInFlight;
+
+    // Cursor into the server's own log numbering: what the viewer has already
+    // been shown. Reset by a full read, advanced by every tick.
+    private long _logSequence = InMemoryLogStore.BeforeFirstSequence;
+
+    // How many entries the device snapshot on screen had. A device's log is not
+    // sequenced - it is a merged file history the device re-pushes at the end of
+    // each sync - so "has it changed" is answered by its size, and a change
+    // re-renders the whole thing rather than appending to it.
+    private int _deviceLogCount;
+
+    // False while the pane is showing a placeholder rather than log lines, so a
+    // tick that finally finds something replaces the sentence instead of
+    // appending its first line underneath it.
+    private bool _logHasContent;
+
+    // Called by SettingsPanel as the Logs tab comes and goes (including the
+    // panel itself being unloaded). Polling a server every two seconds for a
+    // pane nobody is looking at would be pure waste, and on a browser tab
+    // administering a remote server it would also be the only traffic left once
+    // the reader moved on.
+    public void SetLogTabActive(bool active)
+    {
+        if (!Capabilities.Log)
+            return;
+
+        if (!active)
         {
-            LogViewer.ShowPlaceholder("(nothing selected)");
+            _logPollTimer?.Stop();
             return;
         }
 
-        LogViewer.ShowPlaceholder("(loading...)");
+        if (_logPollTimer == null)
+        {
+            _logPollTimer = new DispatcherTimer { Interval = LogPollInterval };
+            _logPollTimer.Tick += OnLogPollTick;
+        }
+
+        _logPollTimer.Start();
+    }
+
+    private async void OnLogPollTick(object? sender, EventArgs e)
+    {
+        if (_logPollInFlight)
+            return;
+
+        _logPollInFlight = true;
+        try
+        {
+            await FollowLogAsync();
+        }
+        finally
+        {
+            _logPollInFlight = false;
+        }
+    }
+
+    // One poll: whatever has been logged since the last look, appended to what
+    // is already on screen. Public because it is also the whole of what the
+    // timer does, and a test that had to wait out real two-second ticks to
+    // observe it would be testing DispatcherTimer rather than this.
+    public Task FollowLogAsync() => ReadLogAsync(fromScratch: false);
+
+    [RelayCommand]
+    private Task RefreshLogAsync() => ReadLogAsync(fromScratch: true);
+
+    // fromScratch is the difference between the reader asking (a new selection,
+    // the Refresh button) and the poll asking: the first says "(loading...)",
+    // starts the cursor over and repaints the pane whatever comes back, while
+    // the second is silent about everything - including failures, which on a
+    // two-second timer are far more likely to be one dropped request than
+    // anything the reader needs a sentence about.
+    private async Task ReadLogAsync(bool fromScratch)
+    {
+        var source = SelectedLogSource;
+
+        if (fromScratch)
+        {
+            _logSequence = InMemoryLogStore.BeforeFirstSequence;
+            _deviceLogCount = 0;
+            _logHasContent = false;
+            _logRequestId++;
+        }
+
+        var requestId = _logRequestId;
+
+        if (source == null)
+        {
+            if (fromScratch)
+                ShowLogPlaceholder("(nothing selected)");
+            return;
+        }
+
+        if (fromScratch)
+            ShowLogPlaceholder("(loading...)");
 
         // Deliberately not RunAsync: that owns the panel's busy flag and its
         // one error line, both of which belong to saving and to the roster.
         // Reading a log is a browse, and a failed one has its own pane to say
         // so in rather than a banner over the whole screen.
-        IReadOnlyList<InMemoryLogEntry>? entries;
         try
         {
-            entries = source.Fingerprint == null
-                ? await _backend.LoadLogAsync(LogLimit)
-                : await _backend.LoadDeviceLogAsync(source.Fingerprint, LogLimit);
+            if (source.Fingerprint == null)
+                await ReadServerLogAsync(requestId);
+            else
+                await ReadDeviceLogAsync(source, requestId);
         }
         catch (Exception ex)
         {
-            if (requestId == _logRequestId)
-                LogViewer.ShowPlaceholder($"(could not read this log: {ex.Message})");
+            if (fromScratch && requestId == _logRequestId)
+                ShowLogPlaceholder($"(could not read this log: {ex.Message})");
+        }
+    }
+
+    private async Task ReadServerLogAsync(int requestId)
+    {
+        var slice = await _backend.LoadLogAsync(LogLimit, _logSequence);
+        if (requestId != _logRequestId)
+            return; // The selection moved on while this was in flight.
+
+        _logSequence = slice.LastSequence;
+
+        if (slice.Entries.Count == 0)
+        {
+            if (!_logHasContent)
+                ShowLogPlaceholder("(the server has logged nothing yet)");
             return;
         }
 
+        if (_logHasContent)
+        {
+            // The viewer coalesces a burst of these into one batch itself, so
+            // handing it a slice a line at a time costs nothing extra.
+            foreach (var entry in slice.Entries)
+                LogViewer.Append(entry);
+            return;
+        }
+
+        _logHasContent = true;
+        LogViewer.ShowLog(slice.Entries);
+    }
+
+    private async Task ReadDeviceLogAsync(LogSourceRow source, int requestId)
+    {
+        var entries = await _backend.LoadDeviceLogAsync(source.Fingerprint!, LogLimit);
         if (requestId != _logRequestId)
-            return; // The selection moved on while this was in flight.
+            return;
 
         if (entries == null)
         {
@@ -587,20 +719,33 @@ public sealed partial class SettingsViewModel : ViewModelBase
             // arrived from this device yet, which is a different thing from
             // this device having been quiet, and only the first is worth
             // waiting on.
-            LogViewer.ShowPlaceholder(
-                $"(no log snapshot received from \"{source.Name}\" yet - it sends one at the end of each sync, if log sharing is on there)");
+            if (!_logHasContent)
+                ShowLogPlaceholder(
+                    $"(no log snapshot received from \"{source.Name}\" yet - it sends one at the end of each sync, if log sharing is on there)");
             return;
         }
 
         if (entries.Count == 0)
         {
-            LogViewer.ShowPlaceholder(source.Fingerprint == null
-                ? "(the server has logged nothing yet)"
-                : $"(\"{source.Name}\" pushed a log with nothing in it)");
+            if (!_logHasContent)
+                ShowLogPlaceholder($"(\"{source.Name}\" pushed a log with nothing in it)");
             return;
         }
 
+        // Unchanged since the last look: repainting would be invisible except
+        // for throwing away the reader's scroll position and selection.
+        if (_logHasContent && entries.Count == _deviceLogCount)
+            return;
+
+        _deviceLogCount = entries.Count;
+        _logHasContent = true;
         LogViewer.ShowLog(entries);
+    }
+
+    private void ShowLogPlaceholder(string message)
+    {
+        _logHasContent = false;
+        LogViewer.ShowPlaceholder(message);
     }
 
     public async Task RefreshDevicesAsync(CancellationToken ct = default)

@@ -343,7 +343,17 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
             // The server logs its data directory and its startup scan before any
             // test can run, so there is always something here.
-            Assert.NotEmpty(await ReadAsync<List<LogEntryResponse>>(context));
+            var slice = await ReadAsync<LogSliceResponse>(context);
+            Assert.NotEmpty(slice.Entries);
+
+            // Asking again from the cursor the first read handed back is what
+            // the Logs tab does every couple of seconds - a quiet server answers
+            // it with nothing rather than with the whole buffer again.
+            var followUp = await SignedAsync(
+                admin, "GET", "/api/admin/logs", query: $"limit=50&after={slice.LastSequence}");
+
+            Assert.Equal(StatusCodes.Status200OK, followUp.Response.StatusCode);
+            Assert.Empty((await ReadAsync<LogSliceResponse>(followUp)).Entries);
         }
         finally
         {

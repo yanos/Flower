@@ -53,7 +53,7 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(List<AdminDeviceDto>), TypeInfoPropertyName = "AdminDeviceList")]
     [JsonSerializable(typeof(AdminPairingCodeDto))]
     [JsonSerializable(typeof(AdminLibraryStatusDto))]
-    [JsonSerializable(typeof(List<AdminLogEntryDto>), TypeInfoPropertyName = "AdminLogEntryList")]
+    [JsonSerializable(typeof(AdminLogSliceDto))]
     [JsonSerializable(typeof(AdminDeviceLogDto))]
     [JsonSerializable(typeof(SubsonicCredentialDto))]
     [JsonSerializable(typeof(List<SubsonicCredentialDto>), TypeInfoPropertyName = "SubsonicCredentialList")]
