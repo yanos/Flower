@@ -1123,7 +1123,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             libraryDownloadService, peerPairingService, peerTrackResolver, trustedPeerStore, deviceIdentity, signingKey,
             Library);
 
-        _deviceSidebar = new DeviceSidebarSection(_sidebarItems, this, deviceNicknameStore, reachability);
+        _deviceSidebar = new DeviceSidebarSection(_sidebarItems, this, deviceNicknameStore, reachability, networkDiscovery);
 
         // The coordinator owns the state; these re-raise it on this ViewModel,
         // which is what every binding actually watches.
@@ -1579,11 +1579,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // ── IPeerSyncHost ─────────────────────────────────────────────────────
 
-    // The sidebar's own view of who is out there, rather than
-    // NetworkDiscoveryService.KnownDevices - see IPeerSyncHost.ListedPeers.
+    // The sidebar's own view of *who* is out there, rather than
+    // NetworkDiscoveryService.KnownDevices - see IPeerSyncHost.ListedPeers for
+    // why the set is a sidebar question.
+    //
+    // *Where* each of them is dialled is not a sidebar question, and is
+    // resolved here rather than read off the row (see IPeerEndpointResolver).
+    // A row holds the endpoint that was current when it was last touched by
+    // discovery, which can be minutes old by the time a sync or a log push
+    // reads it; this is read at the moment of use, so walking back onto the
+    // home WiFi moves the very next request onto the LAN address without
+    // waiting for the row to be updated by something else.
     IReadOnlyList<DiscoveredDevice> IPeerSyncHost.ListedPeers =>
         _sidebarItems.Where(i => i.Kind == SidebarItemKind.Device && i.Device != null)
-            .Select(i => i.Device!)
+            .Select(i => NetworkDiscovery?.EndpointFor(i.Device!.Fingerprint) ?? i.Device!)
             .ToList();
 
     void IDeviceSidebarHost.DeviceRowsChanged()

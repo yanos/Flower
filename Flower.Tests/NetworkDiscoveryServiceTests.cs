@@ -602,16 +602,48 @@ public class NetworkDiscoveryServiceTests : IDisposable
     }
 
     [Fact]
-    public void FindByFingerprint_resolves_a_known_peer_by_its_stable_fingerprint()
+    public void EndpointFor_resolves_a_known_peer_by_its_stable_fingerprint()
     {
         var endpoint = Routable(40);
         _handler.RespondWith(endpoint.Port, """{"alias":"Server","fingerprint":"server-fp"}""");
         _backend.RaiseInstanceFound(InstanceName("Server"), endpoint);
-        WaitUntil(() => _service.FindByFingerprint("server-fp") != null, "the peer should resolve once its /info completes");
+        WaitUntil(() => _service.EndpointFor("server-fp") != null, "the peer should resolve once its /info completes");
 
-        var found = _service.FindByFingerprint("server-fp");
+        var found = _service.EndpointFor("server-fp");
 
         Assert.Equal(NetworkDiscoveryService.HttpOrigin(endpoint), found!.BaseUri);
-        Assert.Null(_service.FindByFingerprint("no-such-fingerprint"));
+        Assert.Null(_service.EndpointFor("no-such-fingerprint"));
+        Assert.Null(_service.EndpointFor(""));
+    }
+
+    // The whole point of routing every caller through EndpointFor: asked about
+    // a peer known at several addresses it must give the same ranked answer
+    // KnownDevices gives, not whichever sighting happens to be enumerated
+    // first. It used to be a plain FirstOrDefault, so a server on both the LAN
+    // and a public address answered differently depending on the door taken.
+    [Fact]
+    public void EndpointFor_agrees_with_KnownDevices_when_a_peer_is_known_at_several_addresses()
+    {
+        var lan = Routable(41);
+        _handler.RespondWith(lan.Port, """{"alias":"Server","fingerprint":"multi-fp"}""");
+        _backend.RaiseInstanceFound(InstanceName("Server"), lan);
+        WaitUntil(() => _service.EndpointFor("multi-fp") != null, "the peer should resolve once its /info completes");
+
+        // A second address for the same server, remembered rather than seen -
+        // exactly the shape PairedServerReachability registers from /info.
+        var alternate = Routable(42);
+        _handler.RespondWith(alternate.Port, """{"alias":"Server","fingerprint":"multi-fp"}""");
+        var remembered = _service.AddRememberedAsync(NetworkDiscoveryService.HttpOrigin(alternate).ToString())
+            .GetAwaiter().GetResult();
+
+        // Guards the test itself: if the second address never registered there
+        // would be only one candidate and the assertion below would hold
+        // vacuously.
+        Assert.NotNull(remembered);
+        Assert.Equal("multi-fp", remembered!.Fingerprint);
+
+        var ranked = _service.KnownDevices.Single(d => d.Fingerprint == "multi-fp");
+
+        Assert.Equal(ranked.BaseUri, _service.EndpointFor("multi-fp")!.BaseUri);
     }
 }

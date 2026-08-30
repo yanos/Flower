@@ -170,12 +170,25 @@ public class PairedServerReachability : IDisposable
     // than relying on the next unrelated DeviceDiscovered/DeviceLost to notice.
     public void Recompute()
     {
-        // KnownDevices already picks the best entry per peer - answering first,
-        // then by route rank, so a live sighting wins over the LAN address,
-        // which wins over the tailnet. See NetworkDiscoveryService.ReachRank.
-        var device = _networkDiscovery.KnownDevices
-            .FirstOrDefault(d => SyncRolePolicy.MayRequestFrom(_appSettings.PairedServerFingerprint, d.Fingerprint)
-                                 && d.IsResponding);
+        // One question, asked in the one place that answers it (see
+        // IPeerEndpointResolver): which address do we dial this peer at.
+        // EndpointFor ranks answering first, then by route, so a live sighting
+        // wins over the LAN address, which wins over the tailnet - see
+        // NetworkDiscoveryService.ReachRank.
+        //
+        // Resolving the paired fingerprint is itself the role check that used
+        // to be a SyncRolePolicy.MayRequestFrom filter over every known peer: a
+        // Client may only ever dial the one Server it paired with, so there is
+        // exactly one fingerprint to ask about, and an unpaired client has none.
+        var paired = _appSettings.PairedServerFingerprint;
+        var device = string.IsNullOrEmpty(paired) ? null : _networkDiscovery.EndpointFor(paired);
+
+        // Only an endpoint that is actually answering counts as reachable.
+        // EndpointFor still returns the best known address when nothing
+        // answers, which is the right thing for a caller about to retry - but
+        // not something to report as reachable.
+        if (device is { IsResponding: false })
+            device = null;
         var reachable = device != null;
         var route = RouteOf(device);
         if (device == PairedServerDevice && reachable == IsReachable && route == Route)

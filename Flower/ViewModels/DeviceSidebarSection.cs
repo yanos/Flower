@@ -59,17 +59,40 @@ public sealed class DeviceSidebarSection
     private readonly DeviceNicknameStore? _nicknames;
     private readonly PairedServerReachability? _reachability;
 
+    // Asked, never second-guessed: this section decides which rows exist and
+    // what they are called, and nothing else in the app is allowed to decide
+    // which address a peer is dialled at (see IPeerEndpointResolver). Null in
+    // tests that drive the row state machine without a discovery stack, in
+    // which case a row keeps whatever sighting it was handed - the same
+    // behaviour this whole class used to have unconditionally.
+    private readonly IPeerEndpointResolver? _endpoints;
+
     public DeviceSidebarSection(
         ObservableCollection<SidebarItem> items,
         IDeviceSidebarHost host,
         DeviceNicknameStore? nicknames,
-        PairedServerReachability? reachability)
+        PairedServerReachability? reachability,
+        IPeerEndpointResolver? endpoints = null)
     {
         _items        = items;
         _host         = host;
         _nicknames    = nicknames;
         _reachability = reachability;
+        _endpoints    = endpoints;
     }
+
+    // The address to show and dial for a peer this section has just been told
+    // about. A sighting arriving here is news that the peer exists, not a
+    // decision about where to reach it: this row used to take whichever
+    // sighting reported most recently, so a server known at both its LAN and
+    // its public address left the sidebar - and everything reading endpoints
+    // off it, including sync and the log push - pinned to whichever announced
+    // last. The sighting is still the fallback, for a peer discovery has no
+    // fingerprint for yet and so cannot rank.
+    private DiscoveredDevice Endpoint(DiscoveredDevice sighting) =>
+        string.IsNullOrEmpty(sighting.Fingerprint)
+            ? sighting
+            : _endpoints?.EndpointFor(sighting.Fingerprint) ?? sighting;
 
     public void AddOrUpdate(DiscoveredDevice device)
     {
@@ -88,7 +111,7 @@ public sealed class DeviceSidebarSection
 
         if (existing != null)
         {
-            existing.Device = device;
+            existing.Device = Endpoint(device);
             // A device row can be re-created (RemoveDuplicates) or updated
             // while a sync with it is already in flight - carry the current
             // state forward rather than defaulting back to false, since the
@@ -108,7 +131,7 @@ public sealed class DeviceSidebarSection
             return;
         }
 
-        var added = new SidebarItem(SidebarItemKind.Device, ResolveDisplayName(device), MaterialIconKind.Server, device: device)
+        var added = new SidebarItem(SidebarItemKind.Device, ResolveDisplayName(device), MaterialIconKind.Server, device: Endpoint(device))
         {
             IsSyncing = device.Fingerprint == _host.PairedServerFingerprint && _host.IsSyncing,
             IsPairedServer = device.Fingerprint == _host.PairedServerFingerprint,

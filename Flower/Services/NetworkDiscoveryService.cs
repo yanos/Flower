@@ -149,7 +149,7 @@ public class DiscoveredDevice
 // it is the one advertising (Flower.Server/Services/MdnsAdvertiser.cs). This
 // used to be symmetric, back when every app hosted its own listener - see
 // SYNC-PLAN.md's "Peer-to-peer, built and removed".
-public class NetworkDiscoveryService : IDisposable
+public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
 {
     private const string ServiceType = SyncProtocol.ServiceType;
 
@@ -729,12 +729,25 @@ public class NetworkDiscoveryService : IDisposable
         }
     }
 
-    // Resolves a peer by its stable Fingerprint (not the mDNS instance name keying
-    // _knownDevices above) - used wherever a placeholder Track's OriginDeviceFingerprint
-    // needs turning into an actual reachable endpoint, e.g. LibraryDownloadService's
-    // audio download and AlbumArtLoader's synced-art fetch.
-    public DiscoveredDevice? FindByFingerprint(string fingerprint) =>
-        _knownDevices.Values.FirstOrDefault(d => d.Fingerprint == fingerprint);
+    // Resolves a peer by its stable Fingerprint (not the mDNS instance name
+    // keying _knownDevices above) to the one address to dial it at - see
+    // IPeerEndpointResolver, and PickBest below for how the choice is made.
+    //
+    // This used to be a plain FirstOrDefault over _knownDevices, which handed
+    // back whichever sighting the dictionary happened to enumerate first: for a
+    // server known at both its LAN and its public address, that was a coin
+    // toss, and a losing toss routed a stream out to the internet and back to a
+    // machine on the same switch. It ranks now, exactly as KnownDevices does,
+    // because they are the same question asked about one peer and about all of
+    // them.
+    public DiscoveredDevice? EndpointFor(string fingerprint)
+    {
+        if (string.IsNullOrEmpty(fingerprint))
+            return null;
+
+        var candidates = _knownDevices.Values.Where(d => d.Fingerprint == fingerprint).ToList();
+        return candidates.Count == 0 ? null : PickBest(candidates);
+    }
 
     // Every server currently known on the LAN, regardless of trust or
     // pairing - what MainViewModel.AvailableServers offers. Snapshot, not a
@@ -764,22 +777,29 @@ public class NetworkDiscoveryService : IDisposable
     public IReadOnlyCollection<DiscoveredDevice> KnownDevices =>
         _knownDevices.Values
             .GroupBy(d => string.IsNullOrEmpty(d.Fingerprint) ? $"instance:{d.InstanceName}" : $"fingerprint:{d.Fingerprint}")
-            .Select(g => g
-                .OrderByDescending(d => d.IsResponding)
-                .ThenBy(ReachRank)
-                // Same peer, same network, two schemes: prefer TLS. ReachRank
-                // deliberately asks only which network an address is on, so
-                // without this the https and http origins of one server tie and
-                // whichever the server happened to list first wins.
-                //
-                // Below IsResponding on purpose. A server whose certificate this
-                // device cannot validate - a real one that expired, a self-signed
-                // one from a key this device never paired with - fails the probe
-                // rather than answering it, so it is the plain origin that gets
-                // used, not nothing. See PeerHttpClient.
-                .ThenByDescending(d => d.BaseUri.Scheme == Uri.UriSchemeHttps)
-                .First())
+            .Select(PickBest)
             .ToList();
+
+    // Which of several sightings of one peer is the address to dial. The single
+    // ranking in the app - EndpointFor asks it about one peer, KnownDevices
+    // asks it about every peer, and nothing else anywhere ranks addresses (see
+    // IPeerEndpointResolver).
+    private static DiscoveredDevice PickBest(IEnumerable<DiscoveredDevice> candidates) =>
+        candidates
+            .OrderByDescending(d => d.IsResponding)
+            .ThenBy(ReachRank)
+            // Same peer, same network, two schemes: prefer TLS. ReachRank
+            // deliberately asks only which network an address is on, so
+            // without this the https and http origins of one server tie and
+            // whichever the server happened to list first wins.
+            //
+            // Below IsResponding on purpose. A server whose certificate this
+            // device cannot validate - a real one that expired, a self-signed
+            // one from a key this device never paired with - fails the probe
+            // rather than answering it, so it is the plain origin that gets
+            // used, not nothing. See PeerHttpClient.
+            .ThenByDescending(d => d.BaseUri.Scheme == Uri.UriSchemeHttps)
+            .First();
 
     // How good a route to a peer this entry is, lowest first. Only meaningful
     // between entries for the same peer.
