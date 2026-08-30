@@ -19,6 +19,12 @@ public sealed class FakeTrackDecoder : ITrackDecoder
     public volatile bool StartDecodingCalled;
     public volatile bool RetireCalled;
     public GaplessRingBuffer? PromotedTo { get; private set; }
+
+    // What PromoteTarget hands back, so a test can drive
+    // GaplessCoordinator's seam reporting (a clean handover vs. one that
+    // underran) without needing a real decode to produce one.
+    public PromotionSplice PromotionSplice { get; set; } =
+        new(StagedBytes: 0, BytesMoved: 1, MillisecondsToFirstByte: 0, DestinationUnderrunsAtFirstByte: 0, TotalMilliseconds: 0);
     public float? LastSeekPosition { get; private set; }
 
     public event Action? Drained;
@@ -30,7 +36,11 @@ public sealed class FakeTrackDecoder : ITrackDecoder
     public Task<bool> PrepareAsync(CancellationToken cancellationToken = default) => Task.FromResult(PrepareResult);
     public void StartDecoding() => StartDecodingCalled = true;
     public void Seek(float position) => LastSeekPosition = position;
-    public void PromoteTarget(GaplessRingBuffer newTarget) => PromotedTo = newTarget;
+    public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget)
+    {
+        PromotedTo = newTarget;
+        return PromotionSplice;
+    }
     public void Retire() => RetireCalled = true;
     public void Dispose()
     {

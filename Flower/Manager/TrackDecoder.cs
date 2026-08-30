@@ -269,7 +269,7 @@ namespace Flower.Manager
         // Drains everything currently buffered in this decoder's target
         // ring into newTarget, then switches future output to newTarget -
         // see RetargetableRingWriter.
-        public void PromoteTarget(GaplessRingBuffer newTarget)
+        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget)
         {
             var oldTarget = _writer.Target;
             var stagedBytes = oldTarget.AvailableBytes;
@@ -279,13 +279,20 @@ namespace Flower.Manager
                 oldTarget.TotalBytesWritten, oldTarget.Capacity, oldTarget.Generation,
                 newTarget.AvailableBytes, newTarget.Capacity, newTarget.Generation);
 
-            _writer.PromoteTarget(newTarget);
+            var splice = _writer.PromoteTarget(newTarget);
 
+            // MovedBytes comes from the splice rather than the stagedBytes
+            // snapshot above: that snapshot is taken before the gate is
+            // taken, so the armed decoder can add to the staging ring in
+            // between and the two legitimately differ.
             _logger?.LogInformation(
-                "Decoder output promotion completed for {Path}: MovedBytes={MovedBytes} DestinationRead={DestinationRead} DestinationWritten={DestinationWritten} DestinationAvailable={DestinationAvailable}/{DestinationCapacity} DestinationGeneration={DestinationGeneration}",
-                Track.Path, stagedBytes, newTarget.TotalBytesRead,
-                newTarget.TotalBytesWritten, newTarget.AvailableBytes,
-                newTarget.Capacity, newTarget.Generation);
+                "Decoder output promotion completed for {Path}: MovedBytes={MovedBytes} SnapshotStagedBytes={SnapshotStagedBytes} MsToFirstByte={MsToFirstByte} TotalMs={TotalMs} DestinationRead={DestinationRead} DestinationWritten={DestinationWritten} DestinationAvailable={DestinationAvailable}/{DestinationCapacity} DestinationGeneration={DestinationGeneration}",
+                Track.Path, splice.BytesMoved, stagedBytes,
+                splice.MillisecondsToFirstByte, splice.TotalMilliseconds,
+                newTarget.TotalBytesRead, newTarget.TotalBytesWritten,
+                newTarget.AvailableBytes, newTarget.Capacity, newTarget.Generation);
+
+            return splice;
         }
 
         // Marks this decoder retired - its in-flight/late callbacks become

@@ -148,4 +148,67 @@ public class RetargetableRingWriterTests
         // arrived after it.)
         Assert.Equal(32, DrainAll(staging).Length);
     }
+
+    [Fact]
+    public void PromoteTarget_reports_what_it_moved()
+    {
+        var staging = new GaplessRingBuffer(64);
+        var shared = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(staging);
+
+        writer.Write(Ramp(40));
+
+        PromotionSplice splice = default;
+        AssertCompletes(() => splice = writer.PromoteTarget(shared), "promotion should not block");
+
+        Assert.True(splice.MovedAnything);
+        Assert.Equal(40, splice.BytesMoved);
+        Assert.Equal(40, splice.StagedBytes);
+        Assert.True(splice.MillisecondsToFirstByte >= 0, "a splice that moved bytes has a first byte to time");
+        Assert.True(splice.TotalMilliseconds >= splice.MillisecondsToFirstByte);
+    }
+
+    [Fact]
+    public void PromoteTarget_counts_only_the_destination_underruns_up_to_the_first_byte()
+    {
+        var staging = new GaplessRingBuffer(64);
+        var shared = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(staging);
+
+        writer.Write(Ramp(40));
+
+        // Three reads against an empty shared ring - the render callback
+        // asking for PCM that isn't there yet. This is exactly the state a
+        // gap is made of, and the splice has to attribute it.
+        var scratch = new byte[8];
+        for (var i = 0; i < 3; i++)
+            shared.Read(scratch);
+
+        var splice = writer.PromoteTarget(shared);
+
+        Assert.Equal(3, splice.DestinationUnderrunsAtFirstByte);
+
+        // Underruns after the first byte landed are the new track playing,
+        // not the seam, so they must not move the reported figure.
+        DrainAll(shared);
+        for (var i = 0; i < 5; i++)
+            shared.Read(scratch);
+
+        Assert.Equal(3, splice.DestinationUnderrunsAtFirstByte);
+    }
+
+    [Fact]
+    public void PromoteTarget_with_nothing_staged_reports_no_first_byte()
+    {
+        var staging = new GaplessRingBuffer(64);
+        var shared = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(staging);
+
+        var splice = writer.PromoteTarget(shared);
+
+        Assert.False(splice.MovedAnything);
+        Assert.Equal(0, splice.BytesMoved);
+        Assert.Equal(-1, splice.MillisecondsToFirstByte);
+        Assert.Equal(-1, splice.DestinationUnderrunsAtFirstByte);
+    }
 }

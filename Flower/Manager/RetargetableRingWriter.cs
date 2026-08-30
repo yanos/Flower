@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 
 namespace Flower.Manager
@@ -99,19 +100,54 @@ namespace Flower.Manager
         // Drains everything currently buffered in the old target into
         // newTarget, then switches future writes to it. Atomic with respect
         // to Write above, so no bytes land in a target that's mid-retarget.
-        public void PromoteTarget(GaplessRingBuffer newTarget)
+        //
+        // Returns a measurement of the seam rather than nothing, because this
+        // method spans the only moment in the pipeline where "gapless" can
+        // actually fail: between the old track's last byte being consumed and
+        // this method putting the new track's first byte in front of the
+        // render callback. See PromotionSplice.
+        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget)
         {
             lock (_gate)
             {
+                var startedAt = Stopwatch.GetTimestamp();
+                var stagedBytes = _target.AvailableBytes;
+
+                long movedBytes = 0;
+                var millisecondsToFirstByte = -1.0;
+                var underrunsAtFirstByte = -1L;
+
                 Span<byte> chunk = stackalloc byte[4096];
                 int read;
                 while ((read = _target.Read(chunk)) > 0)
+                {
                     newTarget.Write(chunk[..read]);
+                    movedBytes += read;
+
+                    // Sampled after the first chunk lands and never again:
+                    // everything past this point is the new track playing
+                    // normally, paced by backpressure over as much as
+                    // DefaultStagingCapacityBytes of backlog. Underruns out
+                    // there are not the handover's fault and folding them in
+                    // would make this number useless.
+                    if (millisecondsToFirstByte < 0)
+                    {
+                        millisecondsToFirstByte = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+                        underrunsAtFirstByte = newTarget.UnderrunCount;
+                    }
+                }
 
                 _target = newTarget;
 
                 // Wakes a Write parked because the old target was full.
                 Monitor.PulseAll(_gate);
+
+                return new PromotionSplice(
+                    stagedBytes,
+                    movedBytes,
+                    millisecondsToFirstByte,
+                    underrunsAtFirstByte,
+                    Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
             }
         }
 

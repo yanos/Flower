@@ -526,6 +526,12 @@ namespace Flower.Manager
             ITrackDecoder? promoted;
             var promotedAlreadyDrained = false;
 
+            // Baseline for the seam verdict below, taken at the moment the old
+            // decoder completed - the start of the window in which a gapless
+            // handover can go audibly wrong.
+            long underrunsAtCompletion = 0;
+            long bufferedAtPromotion = 0;
+
             lock (_gate)
             {
                 if (!ReferenceEquals(_current, decoder))
@@ -538,6 +544,8 @@ namespace Flower.Manager
 
                 var playedBytes = Math.Max(0, _sharedRing.TotalBytesRead - _currentTrackReadSplit);
                 var bufferedBytes = _sharedRing.AvailableBytes;
+                underrunsAtCompletion = _sharedRing.UnderrunCount;
+                bufferedAtPromotion = bufferedBytes;
                 var expectedBytes = BytesForDuration(finishedTrack.Duration);
                 var playedMs = BytesToMilliseconds(playedBytes);
                 var decodedMs = BytesToMilliseconds(decoder.BytesProduced);
@@ -639,7 +647,8 @@ namespace Flower.Manager
 
             if (promoted != null)
             {
-                promoted.PromoteTarget(_sharedRing);
+                var splice = promoted.PromoteTarget(_sharedRing);
+                ReportHandoverSeam(finishedTrack, promoted.Track, splice, underrunsAtCompletion, bufferedAtPromotion);
 
                 // The just-promoted decoder already reached Drained while
                 // it was still armed (see _armedAlreadyDrained's remarks) -
@@ -658,6 +667,63 @@ namespace Flower.Manager
                     HandleDrainedOrFaulted(promoted, faulted: false);
                 }
             }
+        }
+
+        // The verdict on one handover: did the shared ring run dry between the
+        // old track's last byte and the new track's first?
+        //
+        // This is the only thing in the pipeline that answers whether gapless
+        // actually worked, as opposed to whether the state machine took the
+        // right path. Everything else here reports structure - which decoder
+        // was promoted, how many bytes moved, what the ring indices were - and
+        // all of it can look perfect while the listener hears a gap.
+        //
+        // The window is bounded by PromotionSplice (see it for why it stops at
+        // the first byte rather than spanning all of PromoteTarget). Underruns
+        // inside it are counted on the shared ring, which only the render
+        // callback drains, so a non-zero delta means the callback asked for
+        // PCM across the seam and got none - an audible gap.
+        //
+        // Not called under _gate: PromoteTarget runs outside it, and this
+        // reads only the values it was handed plus the ring's own atomics.
+        private void ReportHandoverSeam(
+            Track finished,
+            Track promoted,
+            PromotionSplice splice,
+            long underrunsAtCompletion,
+            long bufferedAtPromotion)
+        {
+            if (!splice.MovedAnything)
+            {
+                // No first byte to time, so there is no seam measurement to
+                // report - and the reason is worse than a gap: the armed
+                // decoder staged nothing, so the promoted track starts from
+                // an empty ring and plays only as fast as it can decode.
+                _logger?.LogWarning(
+                    "Handover moved no staged audio: {Finished} -> {Promoted} StagedBytes={StagedBytes} BufferedAtPromotion={BufferedBytes} TotalMs={TotalMs} The armed decoder produced nothing to hand over",
+                    finished.Path, promoted.Path, splice.StagedBytes,
+                    bufferedAtPromotion, splice.TotalMilliseconds);
+                return;
+            }
+
+            var underruns = Math.Max(0, splice.DestinationUnderrunsAtFirstByte - underrunsAtCompletion);
+            var bufferedMs = BytesToMilliseconds(bufferedAtPromotion);
+
+            if (underruns > 0)
+            {
+                _logger?.LogWarning(
+                    "Handover was not gapless: {Finished} -> {Promoted} Underruns={Underruns} MsToFirstByte={MsToFirstByte} BufferedAtPromotionMs={BufferedMs} StagedBytes={StagedBytes} MovedBytes={MovedBytes} The shared ring ran dry before the promoted track's first PCM landed",
+                    finished.Path, promoted.Path, underruns,
+                    splice.MillisecondsToFirstByte, bufferedMs,
+                    splice.StagedBytes, splice.BytesMoved);
+                return;
+            }
+
+            _logger?.LogDebug(
+                "Handover was gapless: {Finished} -> {Promoted} MsToFirstByte={MsToFirstByte} BufferedAtPromotionMs={BufferedMs} StagedBytes={StagedBytes} MovedBytes={MovedBytes} TotalMs={TotalMs}",
+                finished.Path, promoted.Path, splice.MillisecondsToFirstByte,
+                bufferedMs, splice.StagedBytes, splice.BytesMoved,
+                splice.TotalMilliseconds);
         }
 
         // Must be called under _gate.

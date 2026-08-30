@@ -32,7 +32,10 @@ namespace Flower.Manager
         Task<bool> PrepareAsync(CancellationToken cancellationToken = default);
         void StartDecoding();
         void Seek(float position);
-        void PromoteTarget(GaplessRingBuffer newTarget);
+        // Returns a measurement of the handover seam - see
+        // PromotionSplice, and GaplessCoordinator.HandleDrainedOrFaulted
+        // for what is done with it.
+        PromotionSplice PromoteTarget(GaplessRingBuffer newTarget);
         void Retire();
     }
 }
