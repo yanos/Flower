@@ -142,6 +142,23 @@ namespace Flower.Persistence
         public LogEventLevel LogMinimumLevel    { get; set; } = LogEventLevel.Verbose;
         public bool          LogWordWrapEnabled { get; set; } = false;
 
+        // Where the settings screen was left, so coming back to it comes back
+        // to the same place instead of to General every time - see
+        // SettingsViewModel.RememberedTab. Two of them rather than one: a
+        // device's own settings and a server's are different screens with
+        // different tabs, and a single shared key would land somebody on
+        // "Network" in a screen that has no network to configure. Empty until
+        // they have been somewhere other than the first tab.
+        public string SettingsTab       { get; set; } = "";
+        public string ServerSettingsTab { get; set; } = "";
+
+        // Whose log that server's Logs tab was showing: the fingerprint of a
+        // device on its roster, or empty for the server's own log. A remembered
+        // device that is not on the roster of whatever server is being looked
+        // at now (it was forgotten, or this is a different server) falls back
+        // to the server's own.
+        public string ServerSettingsLogSource { get; set; } = "";
+
         // The floor for what reaches the log at all, as opposed to LogMinimumLevel
         // above, which only filters what an already-written entry shows as. Debug
         // by default: the per-tick lines (discovery polls every 5s, LibVLC

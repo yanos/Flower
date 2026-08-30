@@ -36,11 +36,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // merely restoring the persisted state.
     private bool _loaded;
 
-    // appSettings/appSettingsStore are only the Logs tab's viewer preferences
-    // (font size, minimum level, word wrap) and where to persist them - shared
-    // with the app's own Log window, so the two read the way the same person
-    // set them up. Defaulted because most callers have no Logs tab at all: the
-    // local backend switches it off, and the tests construct this bare.
+    // appSettings/appSettingsStore are the Logs tab's viewer preferences (font
+    // size, minimum level, word wrap) - shared with the app's own Log window,
+    // so the two read the way the same person set them up - and where this
+    // screen remembers which tab and which log it was left on. Defaulted
+    // because not every caller has either: the tests construct this bare, and
+    // a bare AppSettings with no store behind it remembers within the session
+    // and forgets on exit, which is the right nothing-configured behaviour.
     public SettingsViewModel(
         ISettingsBackend backend,
         AppSettings? appSettings = null,
@@ -50,7 +52,52 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _logger = logger;
         _backend = backend;
         Capabilities = backend.Capabilities;
-        LogViewer = new LogViewerViewModel(appSettings ?? new AppSettings(), appSettingsStore);
+        _appSettings = appSettings ?? new AppSettings();
+        _appSettingsStore = appSettingsStore;
+        LogViewer = new LogViewerViewModel(_appSettings, appSettingsStore);
+    }
+
+    private readonly AppSettings _appSettings;
+
+    // Null on a screen whose remembered place is not worth persisting - the
+    // tests, which have no store to write to and must not touch the
+    // developer's real settings.json.
+    private readonly AppSettingsStore? _appSettingsStore;
+
+    // Which of the two remembered tabs is this screen's: a device configuring
+    // itself and a server being configured are different screens with
+    // different tabs, so they cannot share one. PairedServerPicker is the flag
+    // that only the local backend sets - it is the "this device pairs *to*
+    // something" screen.
+    private bool IsOwnSettings => Capabilities.PairedServerPicker;
+
+    // The tab the reader was last on, by the name SettingsPanel gives its
+    // TabItems - that name is the contract between the two. Empty means they
+    // have never been anywhere but the first tab, and an unknown or currently
+    // invisible name is ignored by the panel rather than corrected here.
+    public string RememberedTab
+    {
+        get => IsOwnSettings ? _appSettings.SettingsTab : _appSettings.ServerSettingsTab;
+        set
+        {
+            if (RememberedTab == value)
+                return;
+
+            if (IsOwnSettings)
+                _appSettings.SettingsTab = value;
+            else
+                _appSettings.ServerSettingsTab = value;
+            PersistPlace();
+        }
+    }
+
+    // Deliberately not the panel's busy flag or its error line: where somebody
+    // left a screen is not worth a spinner, and failing to write it is not
+    // worth a sentence over the settings they came here to change.
+    private void PersistPlace()
+    {
+        if (_appSettingsStore != null)
+            _ = _appSettingsStore.SaveAsync(_appSettings);
     }
 
     // The Logs tab's viewer, the same one the app's Log window uses - see
@@ -533,7 +580,30 @@ public sealed partial class SettingsViewModel : ViewModelBase
         {
             if (!SetProperty(ref _selectedLogSource, value))
                 return;
+
+            // Only a real row is remembered. The list is cleared and rebuilt on
+            // every roster load, and a bound ListBox pushes null back through
+            // here while that happens - remembering that would wipe the reader's
+            // choice a moment before RefreshDevicesAsync restores it.
+            if (value != null)
+                RememberedLogSource = value.Fingerprint ?? "";
+
             _ = RefreshLogAsync();
+        }
+    }
+
+    // The fingerprint of the log source last looked at, or "" for the server's
+    // own log - see AppSettings.ServerSettingsLogSource. Only meaningful on a
+    // server's screen; the app's own settings have no Logs tab.
+    private string RememberedLogSource
+    {
+        get => _appSettings.ServerSettingsLogSource;
+        set
+        {
+            if (_appSettings.ServerSettingsLogSource == value)
+                return;
+            _appSettings.ServerSettingsLogSource = value;
+            PersistPlace();
         }
     }
 
@@ -758,14 +828,30 @@ public sealed partial class SettingsViewModel : ViewModelBase
         foreach (var device in await _backend.LoadDeniedDevicesAsync(ct))
             DeniedDevices.Add(device);
 
-        // Keep the Logs tab's list in step with the roster it names. The
-        // selection goes back to the server itself rather than following
-        // whichever device happens to now sit where the old one did.
-        LogSources.Clear();
-        LogSources.Add(new LogSourceRow("This server", null));
-        foreach (var device in Devices)
-            LogSources.Add(new LogSourceRow(device.Alias, device.Fingerprint));
-        SelectedLogSource = LogSources[0];
+        // Keep the Logs tab's list in step with the roster it names - but only
+        // when that roster has actually changed. This runs on every load,
+        // including the catch-up one a panel does when it comes back on screen,
+        // and clearing the list to rebuild it identically would drop the
+        // selection through null on the way: a refetched log and a lost place
+        // in it, to end up exactly where it already was.
+        var sources = new List<LogSourceRow> { new("This server", null) };
+        sources.AddRange(Devices.Select(device => new LogSourceRow(device.Alias, device.Fingerprint)));
+        if (!LogSources.SequenceEqual(sources))
+        {
+            LogSources.Clear();
+            foreach (var source in sources)
+                LogSources.Add(source);
+        }
+
+        // Whatever was being read stays being read; only a screen that has not
+        // chosen yet falls back to what the last one remembered. Matched by
+        // fingerprint, never by position, so a forgotten device cannot hand its
+        // place to whoever now sits where it was - and a remembered device that
+        // is gone (or belongs to a different server) lands on the server's own
+        // log instead. LogSourceRow is a record, so re-selecting the row that
+        // is already selected is a no-op rather than a reload.
+        var wanted = SelectedLogSource != null ? SelectedLogSource.Fingerprint ?? "" : RememberedLogSource;
+        SelectedLogSource = LogSources.FirstOrDefault(s => (s.Fingerprint ?? "") == wanted) ?? LogSources[0];
 
         OnPropertyChanged(nameof(HasDevices));
         OnPropertyChanged(nameof(ShowsDeniedDevices));

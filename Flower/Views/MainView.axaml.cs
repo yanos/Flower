@@ -1344,11 +1344,16 @@ public partial class MainView : UserControl
     // ── Device detail: the selected server's own settings ──────────────────────
 
     // Hosts (or clears) the settings panel for whichever server row is selected.
-    // The panel is rebuilt rather than re-pointed whenever MainViewModel hands
-    // over a different SettingsViewModel: SettingsPanel takes its ViewModel in
-    // its constructor and wires up event handlers from it, and one panel per
-    // server is cheap - this pane is only ever showing one at a time.
+    // One panel per ViewModel, kept for as long as the ViewModel is - which is
+    // now for the life of the session (see MainViewModel._serverSettings). A
+    // panel takes its ViewModel in its constructor and subscribes to it there,
+    // so rebuilding one over a ViewModel that already had one would leave the
+    // old panel subscribed to it forever; keeping them paired is both the
+    // cheaper and the correct thing, and it is what carries the pane's scroll
+    // positions and the log document itself across a trip to another sidebar
+    // row.
     private SettingsViewModel? _hostedServerSettings;
+    private readonly Dictionary<SettingsViewModel, SettingsPanel> _serverSettingsPanels = new();
 
     private void UpdateServerSettingsPane()
     {
@@ -1370,13 +1375,18 @@ public partial class MainView : UserControl
         else
         {
             settings.PropertyChanged += OnServerSettingsPropertyChanged;
-            // No MainViewModel: that argument is what adds this device's own
-            // server picker to the Devices tab, and this panel is administering
-            // the server, not this device (see SettingsPanel.RefreshDevicesTab).
-            var panel = new SettingsPanel(settings);
-            // Inline, so no Cancel/OK pair and nothing to close - see
-            // SettingsPanel.UseInlineChrome.
-            panel.UseInlineChrome();
+            if (!_serverSettingsPanels.TryGetValue(settings, out var panel))
+            {
+                // No MainViewModel: that argument is what adds this device's own
+                // server picker to the Devices tab, and this panel is administering
+                // the server, not this device (see SettingsPanel.RefreshDevicesTab).
+                panel = new SettingsPanel(settings);
+                // Inline, so no Cancel/OK pair and nothing to close - see
+                // SettingsPanel.UseInlineChrome.
+                panel.UseInlineChrome();
+                _serverSettingsPanels[settings] = panel;
+            }
+
             ServerSettingsHost.Content = panel;
         }
 

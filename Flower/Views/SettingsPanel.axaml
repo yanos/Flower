@@ -17,7 +17,7 @@
 
     <TabControl Grid.Row="0" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
 
-      <TabItem Header="General">
+      <TabItem Header="General" x:Name="GeneralTab">
         <!-- Scrolls like every other tab here: a server's General tab carries the
              address list as well, which is as tall as the server has origins. -->
         <ScrollViewer>
@@ -148,7 +148,7 @@
            paired to a Server: a Client's library is meant to be synced in from
            that server, not locally curated, so importing its own folders or
            rebuilding its own database doesn't make sense here. -->
-      <TabItem Header="Library">
+      <TabItem Header="Library" x:Name="LibraryTab">
         <ScrollViewer>
           <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
                 Margin="0,12,0,0"
@@ -262,7 +262,7 @@
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="{Binding DevicesTabHeader}">
+      <TabItem Header="{Binding DevicesTabHeader}" x:Name="DevicesTab">
         <Panel Margin="0,12,0,0">
 
           <!-- A Client picks which one Server it bulk-syncs with; there is no
@@ -403,7 +403,7 @@
 
       <!-- Server-only: how this server is reached and who is allowed to reach it.
            See FlowerServerOptions for what each of these actually does. -->
-      <TabItem Header="Network" IsVisible="{Binding Capabilities.ServerNetwork}">
+      <TabItem Header="Network" x:Name="NetworkTab" IsVisible="{Binding Capabilities.ServerNetwork}">
         <ScrollViewer>
           <StackPanel Margin="0,12,0,0" Spacing="0">
             <CheckBox Content="Announce this server on the local network"

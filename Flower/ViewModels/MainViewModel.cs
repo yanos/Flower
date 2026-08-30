@@ -858,6 +858,22 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // moves BaseUri under a fingerprint that never changes).
     private (string Fingerprint, Uri BaseUri)? _selectedServerSettingsFor;
 
+    // Every server settings screen built this session, kept rather than
+    // rebuilt. Selecting a playlist and coming back used to throw the whole
+    // thing away and reassemble it from nothing - a fresh load, a fresh roster,
+    // the Logs tab back on the server's own log at the top - when the only
+    // thing that had actually happened was the reader looking at something else
+    // for a moment. Keeping it means the tab, the log being read, its scroll
+    // position and any half-finished edit are simply still there, because they
+    // were never taken apart.
+    //
+    // Keyed by fingerprint, with the address it was built against alongside: a
+    // server reached at a new one (a LAN-to-tailnet handover) does need a new
+    // screen, since that address is baked into the admin client behind it.
+    // Bounded by how many servers the sidebar has ever shown, which under this
+    // app's deployment model is one and change.
+    private readonly Dictionary<string, (Uri BaseUri, SettingsViewModel Settings)> _serverSettings = new();
+
     // Rebuilds SelectedServerSettings for whatever server row is selected now.
     // Called both when the selection moves and whenever the pair-button state
     // changes, since pairing with the selected server - or its approval landing
@@ -877,10 +893,27 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             return;
         }
 
+        SelectedServerSettings = ServerSettingsFor(device);
+    }
+
+    private SettingsViewModel ServerSettingsFor(DiscoveredDevice device)
+    {
+        if (_serverSettings.TryGetValue(device.Fingerprint, out var kept))
+        {
+            if (kept.BaseUri == device.BaseUri)
+                return kept.Settings;
+
+            // Reached somewhere else now, so the screen that was talking to the
+            // old address is no longer talking to anything.
+            _serverSettings.Remove(device.Fingerprint);
+        }
+
         _adminHttp ??= new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        SelectedServerSettings = new SettingsViewModel(
+        var settings = new SettingsViewModel(
             new RemoteServerSettingsBackend(CreateServerAdminClient(_adminHttp, device)),
             _appSettings, _appSettingsStore);
+        _serverSettings[device.Fingerprint] = (device.BaseUri, settings);
+        return settings;
     }
 
     // What the user typed into that box. Cleared on a successful pair and

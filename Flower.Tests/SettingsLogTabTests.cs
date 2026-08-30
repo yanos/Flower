@@ -12,6 +12,7 @@ using Avalonia.VisualTree;
 using AvaloniaEdit;
 
 using Flower.Logging;
+using Flower.Persistence;
 using Flower.ViewModels;
 using Flower.Views;
 
@@ -35,7 +36,9 @@ public class SettingsLogTabTests
     // ISettingsBackend belongs to tabs these tests never touch.
     private sealed class FakeBackend : ISettingsBackend
     {
-        public SettingsCapabilities Capabilities { get; } = new() { Log = true, TrustedDevices = true };
+        // Settable so one test can pose as the app's own settings screen, which
+        // is the other half of the remembered-tab pair.
+        public SettingsCapabilities Capabilities { get; set; } = new() { Log = true, TrustedDevices = true };
 
         public List<TrustedPeerRow> Devices { get; } = [];
         public List<InMemoryLogEntry> ServerLog { get; set; } = [];
@@ -98,9 +101,11 @@ public class SettingsLogTabTests
 
     private readonly FakeBackend _backend = new();
 
-    // No AppSettings/AppSettingsStore: the viewer's preferences are not what
-    // these test, and a real store here would write to the developer's own
-    // settings.json.
+    // Settings but no store: where the screen was left is read and written
+    // through this, and the tests that care assert against it directly - a real
+    // store here would write to the developer's own settings.json.
+    private readonly AppSettings _appSettings = new();
+
     private SettingsViewModel _panel = null!;
 
     private static TrustedPeerRow Device(string fingerprint, string alias) =>
@@ -112,7 +117,7 @@ public class SettingsLogTabTests
     private async Task<SettingsViewModel> MakeAsync(params TrustedPeerRow[] devices)
     {
         _backend.Devices.AddRange(devices);
-        _panel = new SettingsViewModel(_backend);
+        _panel = new SettingsViewModel(_backend, _appSettings);
         // Loading the roster is also what fills the Logs tab's list and lands
         // the selection on the server.
         await _panel.RefreshDevicesAsync();
@@ -370,5 +375,135 @@ public class SettingsLogTabTests
 
         Assert.Equal(1, resets);
         Assert.Equal(2, panel.LogViewer.DisplayLines.Count);
+    }
+
+    // Reopening the settings screen has to come back to what was being read,
+    // not to the top of the list: the reader closed it because they were done
+    // for the moment, not because they were finished with that device.
+
+    [Fact]
+    public async Task The_log_comes_back_to_the_device_that_was_being_read()
+    {
+        _backend.DeviceLogs["fp-2"] = Lines("from the second phone");
+        var panel = await MakeAsync(Device("fp-1", "One"), Device("fp-2", "Two"));
+        await SelectAsync("fp-2");
+
+        // A second screen over the same settings - the same thing reopening the
+        // panel does, since it is built fresh each time.
+        var reopened = new SettingsViewModel(_backend, _appSettings);
+        await reopened.RefreshDevicesAsync();
+
+        Assert.Equal("fp-2", reopened.SelectedLogSource?.Fingerprint);
+    }
+
+    // Remembered by fingerprint rather than by position, so the row that now
+    // sits where a forgotten device used to does not inherit its place.
+    [Fact]
+    public async Task A_remembered_device_that_is_gone_falls_back_to_the_server()
+    {
+        var panel = await MakeAsync(Device("fp-1", "One"), Device("fp-2", "Two"));
+        await SelectAsync("fp-2");
+
+        _backend.Devices.RemoveAll(d => d.Fingerprint == "fp-2");
+        var reopened = new SettingsViewModel(_backend, _appSettings);
+        await reopened.RefreshDevicesAsync();
+
+        Assert.Null(reopened.SelectedLogSource?.Fingerprint);
+    }
+
+    // The list is cleared and rebuilt on every roster load, and a bound ListBox
+    // pushes null through the selection while that happens. Remembering that
+    // null would throw away the choice a moment before it is restored.
+    [Fact]
+    public async Task Clearing_the_selection_does_not_forget_the_remembered_one()
+    {
+        var panel = await MakeAsync(Device("fp-1", "One"));
+        await SelectAsync("fp-1");
+
+        panel.SelectedLogSource = null;
+        await panel.RefreshDevicesAsync();
+
+        Assert.Equal("fp-1", panel.SelectedLogSource?.Fingerprint);
+    }
+
+    // The screen is kept rather than rebuilt now (MainViewModel._serverSettings),
+    // so its catch-up load runs against a roster that is usually identical. It
+    // must leave the log where it is - repainting the document would drag a
+    // reader who was scrolled up somewhere back to the bottom for nothing.
+    [Fact]
+    public async Task Coming_back_to_an_unchanged_roster_does_not_reload_the_log()
+    {
+        _backend.DeviceLogs["fp-1"] = Lines("still being read");
+        var panel = await MakeAsync(Device("fp-1", "One"));
+        await SelectAsync("fp-1");
+
+        var resets = 0;
+        panel.LogViewer.LinesReset += (_, _) => resets++;
+        await panel.RefreshDevicesAsync();
+
+        Assert.Equal(0, resets);
+        Assert.Equal("fp-1", panel.SelectedLogSource?.Fingerprint);
+    }
+
+    // A server's screen and the app's own are different screens with different
+    // tabs - one key for both would land somebody on "Logs" in a screen that
+    // has no Logs tab.
+    [Fact]
+    public void A_servers_tab_and_this_devices_tab_are_remembered_separately()
+    {
+        var server = new SettingsViewModel(_backend, _appSettings);
+        server.RememberedTab = "LogsTab";
+
+        var own = new SettingsViewModel(
+            new FakeBackend { Capabilities = new SettingsCapabilities { PairedServerPicker = true } },
+            _appSettings);
+
+        Assert.Equal("", own.RememberedTab);
+        own.RememberedTab = "LibraryTab";
+        Assert.Equal("LogsTab", server.RememberedTab);
+    }
+
+    // The panel end of it: the remembered name has to survive the trip through
+    // the real XAML, whose TabItems are what those names name.
+    [AvaloniaFact]
+    public void The_panel_opens_on_the_tab_it_was_left_on()
+    {
+        _appSettings.ServerSettingsTab = "NetworkTab";
+        var settings = new SettingsViewModel(
+            new FakeBackend { Capabilities = new SettingsCapabilities { Log = true, ServerNetwork = true } },
+            _appSettings);
+
+        var panel = new SettingsPanel(settings);
+        var window = new Window { Content = panel, Width = 900, Height = 700 };
+        window.Show();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+
+        var tabs = panel.GetVisualDescendants().OfType<TabControl>().First();
+        Assert.Equal("NetworkTab", (tabs.SelectedItem as TabItem)?.Name);
+
+        window.Close();
+    }
+
+    // A tab this screen does not have is ignored rather than corrected: the same
+    // person administers a server from a browser and their own app on the
+    // desktop, and neither should be able to strand the other.
+    [AvaloniaFact]
+    public void A_remembered_tab_the_screen_does_not_have_is_ignored()
+    {
+        _appSettings.ServerSettingsTab = "NetworkTab";
+        var settings = new SettingsViewModel(
+            new FakeBackend { Capabilities = new SettingsCapabilities() }, _appSettings);
+
+        var panel = new SettingsPanel(settings);
+        var window = new Window { Content = panel, Width = 900, Height = 700 };
+        window.Show();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+
+        var tabs = panel.GetVisualDescendants().OfType<TabControl>().First();
+        Assert.Equal("GeneralTab", (tabs.SelectedItem as TabItem)?.Name);
+
+        window.Close();
     }
 }

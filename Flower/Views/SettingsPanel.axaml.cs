@@ -48,12 +48,20 @@ public partial class SettingsPanel : UserControl
         viewModel.DeviceListChanged += OnDeviceListChanged;
         RefreshDevicesTab();
 
+        // Back to the tab this screen was left on. Before anything else that
+        // reacts to the selection, so the log poller and the rest see the tab
+        // the reader is actually going to be looking at rather than General
+        // for a moment first.
+        RestoreRememberedTab();
+
         // The Logs tab follows a live log while it is the tab on screen (see
-        // SettingsViewModel.SetLogTabActive). Unloaded matters as much as the
-        // selection does: closing the window or hiding the browser's full-page
-        // overlay leaves the tab "selected" forever otherwise, and with it a
-        // timer polling a server nobody is watching.
-        SyncLogTabActive();
+        // SettingsViewModel.SetLogTabActive). Coming and going matters as much
+        // as the tab selection does: this panel outlives being looked at - the
+        // server pane keeps it paired with its ViewModel rather than rebuilding
+        // both (MainView._serverSettingsPanels) - so it stops polling a server
+        // nobody is watching when it leaves the screen and picks it up again
+        // when it comes back.
+        Loaded += OnPanelLoaded;
         Unloaded += (_, _) => _viewModel.SetLogTabActive(false);
 
         if (_mainViewModel != null)
@@ -69,6 +77,22 @@ public partial class SettingsPanel : UserControl
         _ = viewModel.LoadAsync();
     }
 
+    // Whether this panel has been on screen before. The first Loaded follows
+    // the load Initialize has already started; every one after it is the panel
+    // coming back, which is where it has to catch up on whatever happened while
+    // it was away - a device paired from a phone, a folder added from the
+    // server's own browser UI.
+    private bool _hasBeenShown;
+
+    private void OnPanelLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (_hasBeenShown)
+            _ = _viewModel.LoadAsync();
+        _hasBeenShown = true;
+
+        SyncLogTabActive();
+    }
+
     private void OnMainViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.PairedServerFingerprint))
@@ -77,7 +101,32 @@ public partial class SettingsPanel : UserControl
 
     private void OnDeviceListChanged(object? sender, EventArgs e) => RefreshDevicesTab();
 
-    private void Tabs_SelectionChanged(object? sender, SelectionChangedEventArgs e) => SyncLogTabActive();
+    // Fires once during XAML load, before Initialize, with no ViewModel to tell
+    // - hence the null checks rather than an assumption that this only runs
+    // after wiring.
+    private void Tabs_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_viewModel == null)
+            return;
+
+        if (Tabs.SelectedItem is TabItem { Name: { } name })
+            _viewModel.RememberedTab = name;
+
+        SyncLogTabActive();
+    }
+
+    // A remembered name that no longer names a visible tab is ignored, not
+    // corrected: the same person administers a server from a browser and their
+    // own app from the desktop, capabilities differ between the two, and
+    // "Network" is not somewhere the local screen can land.
+    private void RestoreRememberedTab()
+    {
+        var remembered = Tabs.Items
+            .OfType<TabItem>()
+            .FirstOrDefault(tab => tab.IsVisible && tab.Name == _viewModel.RememberedTab);
+        if (remembered != null)
+            Tabs.SelectedItem = remembered;
+    }
 
     private void SyncLogTabActive() =>
         _viewModel?.SetLogTabActive(ReferenceEquals(Tabs.SelectedItem, LogsTab));

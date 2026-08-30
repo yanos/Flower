@@ -498,6 +498,48 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         Assert.Null(vm.SelectedServerSettings);
     }
 
+    // ...but only from the pane. The screen itself is kept and handed back on
+    // the way in, so a trip to another row and back is not a rebuild: the tab
+    // that was open, the log being read and its scroll position are all simply
+    // still there, never having been taken apart. See MainViewModel's
+    // _serverSettings.
+    [AvaloniaFact]
+    public void Returning_to_a_server_row_comes_back_to_the_same_settings_screen()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
+        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+        var first = vm.SelectedServerSettings;
+        Assert.NotNull(first);
+
+        vm.SelectedSidebarItem = vm.SidebarItems.First(i => i.Kind == SidebarItemKind.Songs);
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+
+        Assert.Same(first, vm.SelectedServerSettings);
+    }
+
+    // The one thing that is not the same screen: the same server reached
+    // somewhere else. That address is baked into the admin client behind the
+    // screen, so a LAN-to-tailnet handover has to rebuild it rather than keep
+    // one talking to an address that no longer answers.
+    [AvaloniaFact]
+    public void A_server_reached_at_a_new_address_gets_a_new_settings_screen()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
+        vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+        var first = vm.SelectedServerSettings;
+
+        var moved = DeviceAt("desk", "100.64.0.7", "fp-desk", "Desktop");
+        moved.DeviceType = "server";
+        moved.WeAreAdmin = true;
+        vm.AddOrUpdateDeviceSidebarItem(moved);
+        vm.SelectedSidebarItem = SingleDeviceRow(vm);
+
+        Assert.NotNull(vm.SelectedServerSettings);
+        Assert.NotSame(first, vm.SelectedServerSettings);
+    }
+
     private static AppSettings PairedWith(string fingerprint, bool trustConfirmed) => new()
     {
         PairedServerFingerprint    = fingerprint,
