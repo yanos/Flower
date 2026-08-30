@@ -118,7 +118,7 @@ public static class MainViewModelHarness
     {
         public StubLibrarySyncService(Library library, DeviceIdentity identity, DeviceSigningKey key,
             AppSettings appSettings)
-            : base(library, identity, key, appSettings, InMemoryLogStore.Instance,
+            : base(library, identity, key, appSettings, TestLogArchive.InTempDirectory(),
                    NullLogger<LibrarySyncService>.Instance,
                    NullLogger<RemoteLibraryImporter>.Instance) { }
 
@@ -211,7 +211,7 @@ public static class MainViewModelHarness
             library, deviceIdentity, signingKey, appSettings, syncStateStore, deviceNicknameStore,
             NullLogger<PlaylistSyncService>.Instance);
         var librarySyncService = (LibrarySyncService?)stubLibrarySync ?? new LibrarySyncService(
-            library, deviceIdentity, signingKey, appSettings, InMemoryLogStore.Instance,
+            library, deviceIdentity, signingKey, appSettings, TestLogArchive.InTempDirectory(),
             NullLogger<LibrarySyncService>.Instance, NullLogger<RemoteLibraryImporter>.Instance);
         var libraryDownloadService = new LibraryDownloadService(
             library, deviceIdentity, signingKey, appSettings,

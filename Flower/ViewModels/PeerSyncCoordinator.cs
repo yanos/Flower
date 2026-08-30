@@ -100,15 +100,13 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _signingKey             = signingKey;
         _library                = library;
 
-        // Any new log line at all (playing a track, a setting changed, an
-        // error, routine peer-polling chatter, ...) marks that there is
-        // something new for a paired Server to pick up - the timer below
-        // periodically checks that flag and, if it is set, pushes this
-        // device's log snapshot, entirely independent of ScheduleContentSync's
-        // debounce. Only the log snapshot: the catalog and playlists do not
-        // move because a line was logged, and pulling them on this tick's
-        // cadence is what put a client permanently over the server's bulk
-        // rate limit - see PushPendingLogs.
+        // A plain periodic tick that offers the paired Server whatever this
+        // device has logged since the last successful push, entirely
+        // independent of ScheduleContentSync's debounce. Only the log lines:
+        // the catalog and playlists do not move because a line was logged, and
+        // pulling them on this tick's cadence is what put a client permanently
+        // over the server's bulk rate limit - see PushPendingLogsAsync.
+        //
         // A debounce cannot work here: NetworkDiscoveryService's own routine
         // ~5s polling chatter (and, previously, this sync path's own
         // completion logging) fires at essentially the same cadence as
@@ -119,12 +117,22 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // ScheduleContentSync. A periodic tick fires on a fixed wall-clock
         // schedule no matter how much log activity happens in between, which
         // is what actually delivers "new lines within roughly 5s" reliably.
-        // InMemoryLogStore.Instance is a process-wide singleton, so this is the
-        // one subscription here that genuinely outlives this object if it is
-        // never taken back - see Dispose and SubscriptionBag.
-        _subscriptions.Add<EventHandler<InMemoryLogEntry>>((_, _) => _hasUnpushedLogActivity = true,
-            h => InMemoryLogStore.Instance.EntryAdded += h, h => InMemoryLogStore.Instance.EntryAdded -= h);
-
+        //
+        // This used to be armed by an InMemoryLogStore.EntryAdded subscription
+        // setting a "something was logged" flag, which the tick then required.
+        // That flag was a proxy for "the server is missing something", and a
+        // bad one in both directions. Discovery deliberately drops its own
+        // repeating chatter to Trace once it settles (see HandleUnreachable,
+        // and "info updated" firing only when something changed), so an idle
+        // device emits nothing at Debug+, never re-arms, and stops pushing
+        // outright - which is why a phone delivered exactly one snapshot per
+        // launch while a desktop playing music (whose decode watchdog logs a
+        // Warning about once a second) pushed every five seconds forever. In
+        // the other direction the flag was consumed before the attempt, so
+        // activity accumulated while no peer was listed was dropped rather
+        // than deferred. LibrarySyncService now owns the real answer as a
+        // per-peer high-water mark over the buffer, so this tick can simply
+        // ask every time and cost nothing when there is nothing to send.
         _logPushTimer = new DispatcherTimer { Interval = ContentSyncCooldown };
         _logPushTimer.Tick += (_, _) => LogPushTick();
         _logPushTimer.Start();
@@ -184,7 +192,6 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // ── Content sync debounce ─────────────────────────────────────────────
 
     private CancellationTokenSource? _contentSyncCts;
-    private bool _hasUnpushedLogActivity;
 
     // "A few seconds" per the user request - long enough that a burst of rapid
     // local edits (e.g. reordering a playlist track-by-track, or a rescan
@@ -300,31 +307,15 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // PumpUntil on why that is avoided throughout this suite.
     internal void LogPushTick()
     {
-        if (!_hasUnpushedLogActivity || _activeSyncCount != 0 || _logPushInFlight)
+        if (_activeSyncCount != 0 || _logPushInFlight || _librarySyncService == null)
             return;
-        PushPendingLogs();
-    }
 
-    // The tick's whole job: ship whatever has been logged since the last push
-    // to the paired server, and nothing else.
-    private void PushPendingLogs()
-    {
-        var devices = PendingSyncDevices();
-        if (devices.Count == 0 || _librarySyncService == null)
-        {
-            // Nobody to push to. Clear the flag anyway - holding it would only
-            // mean firing a burst at whichever server pairs next, for lines it
-            // will receive in that push's full snapshot regardless.
-            _hasUnpushedLogActivity = false;
-            return;
-        }
-
-        // Consume the activity this attempt is about before it starts. Any
-        // genuine log line written while the request is in flight re-arms the
-        // flag through EntryAdded and must survive for the next tick.
-        _hasUnpushedLogActivity = false;
+        // Runs whether or not there is anywhere to push to: draining the memory
+        // ring onto disk is the half that must not depend on a server being
+        // listed, since lines logged while nothing was reachable are exactly
+        // the ones someone will later go looking for.
         _logPushInFlight = true;
-        _ = PushPendingLogsAsync(devices);
+        _ = PushPendingLogsAsync(PendingSyncDevices());
     }
 
     private async Task PushPendingLogsAsync(List<DiscoveredDevice> devices)
@@ -332,6 +323,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         var allSucceeded = true;
         try
         {
+            await _librarySyncService!.ArchiveOwnLogsAsync();
             foreach (var device in devices)
                 allSucceeded &= await _librarySyncService!.PushLogsOnlyAsync(device);
         }
@@ -345,12 +337,12 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         }
         finally
         {
-            // A failed snapshot stays pending. The next timer tick retries it,
-            // including after a remembered remote address becomes reachable
-            // again. Do not clear here: EntryAdded may also have re-armed the
-            // flag for activity that arrived while this POST was in flight.
+            // A failed push stays pending on its own: LibrarySyncService only
+            // advances a peer's watermark on a 2xx, so the next timer tick
+            // re-offers the same lines - including after a remembered remote
+            // address becomes reachable again.
             if (!allSucceeded)
-                _hasUnpushedLogActivity = true;
+                _logger.LogTrace("Log push did not fully succeed; the next tick will retry the same lines");
             _logPushInFlight = false;
         }
     }

@@ -47,8 +47,13 @@ public sealed class ClientLogStore
     // string argument is the fingerprint whose history just changed.
     public event EventHandler<string>? SnapshotUpdated;
 
-    public void SetSnapshot(string fingerprint, string alias, IReadOnlyList<LogEntryDto> entries, DateTimeOffset receivedAt)
+    // Returns everything retained for the device afterwards, so a caller that
+    // has just written also has the merged history without a second pass over
+    // the files - which is what lets DeviceLogArchive write and then decide
+    // what to send in one disk read per tick.
+    public ClientLogSnapshot SetSnapshot(string fingerprint, string alias, IReadOnlyList<LogEntryDto> entries, DateTimeOffset receivedAt)
     {
+        ClientLogSnapshot merged;
         lock (_lock)
         {
             var directory = FindDeviceDirectory(fingerprint) ?? CreateDeviceDirectory(alias, fingerprint);
@@ -56,9 +61,11 @@ public sealed class ClientLogStore
             var known = history.Select(EventId).ToHashSet(StringComparer.Ordinal);
             var cutoff = receivedAt.Subtract(Retention);
 
-            foreach (var group in entries
-                         .Where(entry => entry.Timestamp >= cutoff && known.Add(EventId(entry)))
-                         .GroupBy(entry => LogFileName(entry.Timestamp)))
+            var accepted = entries
+                .Where(entry => entry.Timestamp >= cutoff && known.Add(EventId(entry)))
+                .ToList();
+
+            foreach (var group in accepted.GroupBy(entry => LogFileName(entry.Timestamp)))
             {
                 AppendEntries(Path.Combine(directory, group.Key), group);
             }
@@ -67,9 +74,12 @@ public sealed class ClientLogStore
                 Path.Combine(directory, MetadataFileName),
                 new ClientLogMetadata(fingerprint, alias, receivedAt),
                 ClientLogFileJsonContext.Default.ClientLogMetadata);
+
+            merged = new ClientLogSnapshot(fingerprint, alias, receivedAt, Ordered(history.Concat(accepted)));
         }
 
         SnapshotUpdated?.Invoke(this, fingerprint);
+        return merged;
     }
 
     public ClientLogSnapshot? Get(string fingerprint)
@@ -156,11 +166,18 @@ public sealed class ClientLogStore
                 RewriteEntries(path, retained);
         }
 
-        return entries.Values
+        return Ordered(entries.Values);
+    }
+
+    // The one ordering of a device's history, and the one both ends of the
+    // watermark handshake rely on: a client asks for everything after the
+    // (Timestamp, EventId) pair the server reports as its newest, so client and
+    // server have to agree on which entry that is down to the tie-break.
+    public static List<LogEntryDto> Ordered(IEnumerable<LogEntryDto> entries) =>
+        entries
             .OrderBy(entry => entry.Timestamp)
             .ThenBy(EventId, StringComparer.Ordinal)
             .ToList();
-    }
 
     private void PruneAll(DateTimeOffset now)
     {
@@ -254,7 +271,10 @@ public sealed class ClientLogStore
         }
     }
 
-    private static string EventId(LogEntryDto entry)
+    // Stable identity of one log line, independent of which device computed
+    // it: the receiving server dedups overlapping pushes with it, and the
+    // sending client uses it as the watermark's tie-break.
+    public static string EventId(LogEntryDto entry)
     {
         var identity = new StringBuilder()
             .Append(entry.Timestamp.UtcTicks.ToString(CultureInfo.InvariantCulture)).Append('|')

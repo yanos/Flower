@@ -71,4 +71,39 @@ public class InMemoryLogStoreTests
         var lastMatching = snapshot[^1];
         Assert.Equal($"{marker}-2099", lastMatching.Message);
     }
+
+    // The delta read behind incremental log push (see LibrarySyncLogPushTests):
+    // hand back the sequence you were given last time, get only what has been
+    // logged since.
+    [Fact]
+    public void SnapshotAfter_returns_only_entries_logged_since_the_given_sequence()
+    {
+        var before = InMemoryLogStore.Instance.LastSequence;
+        var marker = Guid.NewGuid().ToString("N");
+        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.Now, "Information", "Test", marker, null));
+
+        var first = InMemoryLogStore.Instance.SnapshotAfter(before);
+        Assert.Contains(first.Entries, e => e.Message == marker);
+
+        var second = InMemoryLogStore.Instance.SnapshotAfter(first.LastSequence);
+        Assert.DoesNotContain(second.Entries, e => e.Message == marker);
+    }
+
+    // A caller that falls far enough behind for the ring to evict what it was
+    // waiting for must still be moved forward, not pinned to a sequence that
+    // will never be served again.
+    [Fact]
+    public void SnapshotAfter_advances_past_entries_the_ring_has_evicted()
+    {
+        var before = InMemoryLogStore.Instance.LastSequence;
+        var marker = Guid.NewGuid().ToString("N");
+        for (var i = 0; i < 2100; i++)
+            InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.Now, "Debug", "Test", $"{marker}-{i}", null));
+
+        var slice = InMemoryLogStore.Instance.SnapshotAfter(before);
+
+        Assert.True(slice.Entries.Count <= 2000);
+        Assert.DoesNotContain(slice.Entries, e => e.Message == $"{marker}-0");
+        Assert.True(slice.LastSequence >= before + 2100);
+    }
 }

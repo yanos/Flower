@@ -163,6 +163,11 @@ public static class SyncEndpoints
             (HttpContext context, PlayReportService plays) => ReportPlays(context, plays, logger));
         sync.MapPost("/log/report",
             (HttpContext context, ClientLogStore logs) => ReportLog(context, logs, logger));
+        // What this server already holds for the caller, so a client that has
+        // just started up knows where to resume from instead of re-offering
+        // its whole retained week. Only needed once per session - every
+        // /log/report answers with the same shape.
+        sync.MapGet("/log/watermark", GetLogWatermark);
 
         // The same album art /rest/getCoverArt serves, behind this group's gate
         // instead of the Subsonic one. A browser tab holds a session token and
@@ -279,14 +284,35 @@ public static class SyncEndpoints
         if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
             return Results.StatusCode(StatusCodes.Status401Unauthorized);
 
-        logs.SetSnapshot(fingerprint, report.Alias, report.Entries, DateTimeOffset.UtcNow);
+        var stored = logs.SetSnapshot(fingerprint, report.Alias, report.Entries, DateTimeOffset.UtcNow);
 
         logger.LogInformation(
             "Stored {LineCount} log line(s) from {Alias} ({Fingerprint})",
             report.Entries.Count, report.Alias, fingerprint);
 
-        return Results.NoContent();
+        // The answer to "what have you got?", so the caller's next push starts
+        // exactly here. Reported from what is retained rather than from what
+        // arrived: a line older than the retention window was accepted and
+        // dropped, and telling the client otherwise would have it wait forever
+        // for a gap that will never be filled.
+        return Results.Json(WatermarkOf(stored.Entries), JsonOptions);
     }
+
+    private static IResult GetLogWatermark(HttpContext context, ClientLogStore logs)
+    {
+        if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+
+        return Results.Json(WatermarkOf(logs.Get(fingerprint)?.Entries ?? []), JsonOptions);
+    }
+
+    // Entries arrive from ClientLogStore already in its own (Timestamp,
+    // EventId) order, which is the order the client resumes from - so the
+    // newest is simply the last.
+    private static LogWatermarkDto WatermarkOf(IReadOnlyList<LogEntryDto> entries) =>
+        entries.Count == 0
+            ? new LogWatermarkDto(null, null)
+            : DeviceLogArchive.Watermark(entries[^1]);
 
     private static async Task<IResult> ReportPlays(
         HttpContext context, PlayReportService plays, ILogger logger)

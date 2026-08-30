@@ -37,6 +37,7 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(PlaylistSyncManifestDto))]
     [JsonSerializable(typeof(LibrarySyncManifestDto))]
     [JsonSerializable(typeof(LogReportDto))]
+    [JsonSerializable(typeof(LogWatermarkDto))]
     [JsonSerializable(typeof(StreamTicketDto))]
 
     // The server's /api/admin surface (see ServerAdminClient). Registered here

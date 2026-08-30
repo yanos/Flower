@@ -491,31 +491,32 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         Assert.Empty(parts.StubPlaylistSync!.SyncedWith);
     }
 
-    // An idle app goes quiet after a successful snapshot rather than sending
-    // the same in-memory buffer on every timer tick.
+    // Every tick offers, unconditionally. Deciding there is nothing to send is
+    // LibrarySyncService's job now, because only it knows how far each peer has
+    // actually been brought (see LibrarySyncLogPushTests) - the coordinator used
+    // to guess with a "something was logged" flag, and an idle device that had
+    // gone quiet at Debug+ never re-armed it and stopped pushing for good.
     [AvaloniaFact]
-    public void A_tick_with_nothing_newly_logged_pushes_nothing()
+    public void Every_tick_offers_the_logs_even_with_nothing_newly_logged()
     {
         var parts = StubbedPairedClient(out _);
-        LogSomething();
 
         parts.Main.Sync.LogPushTick();
-        PumpUntil(() => parts.StubLibrarySync!.PushedLogsTo.Count > 0);
+        PumpUntil(() => parts.StubLibrarySync!.PushedLogsTo.Count == 1);
         parts.Main.Sync.LogPushTick();
-        Wait(200);
+        PumpUntil(() => parts.StubLibrarySync!.PushedLogsTo.Count == 2);
 
-        Assert.Single(parts.StubLibrarySync!.PushedLogsTo);
+        Assert.Equal(2, parts.StubLibrarySync!.PushedLogsTo.Count);
     }
 
-    // Losing connectivity must leave the snapshot pending. Previously the
-    // finally block cleared the flag whether or not the POST worked, so
-    // returning home did nothing until an unrelated line happened to arm it.
+    // A failed push must not wedge the tick - _logPushInFlight has to come back
+    // down whatever the result, or one dropped connection ends log delivery for
+    // the rest of the session.
     [AvaloniaFact]
     public void A_failed_log_push_is_retried_on_the_next_tick()
     {
         var parts = StubbedPairedClient(out _);
         parts.StubLibrarySync!.LogPushResults.Enqueue(false);
-        parts.StubLibrarySync.LogPushResults.Enqueue(true);
         LogSomething();
 
         parts.Main.Sync.LogPushTick();
@@ -523,9 +524,6 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
 
         parts.Main.Sync.LogPushTick();
         PumpUntil(() => parts.StubLibrarySync.PushedLogsTo.Count == 2);
-
-        parts.Main.Sync.LogPushTick();
-        Wait(200);
 
         Assert.Equal(2, parts.StubLibrarySync.PushedLogsTo.Count);
     }

@@ -382,15 +382,57 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
             var report = new LogReportDto(device.Fingerprint, "Kitchen iPad", DateTimeOffset.UtcNow,
                 [new LogEntryDto(DateTimeOffset.UtcNow, "Warning", "Flower.Something", "it went wrong", null)]);
 
-            var (status, _, _) = await SendAsync(
+            var (status, body, _) = await SendAsync(
                 device, "POST", "/api/flower/v1/log/report", "10.0.2.8",
                 body: JsonSerializer.Serialize(report));
 
-            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(HttpStatusCode.OK, status);
+            // The reply is the watermark the pushing device resumes from - see
+            // LogWatermarkDto.
+            var ack = JsonSerializer.Deserialize<LogWatermarkDto>(body);
+            Assert.Equal(report.Entries[0].Timestamp, ack!.LastEntryTimestamp);
+            Assert.Equal(ClientLogStore.EventId(report.Entries[0]), ack.LastEventId);
             var stored = logs.Get(device.Fingerprint);
             Assert.NotNull(stored);
             Assert.Equal("Kitchen iPad", stored!.Alias);
             Assert.Equal("it went wrong", Assert.Single(stored.Entries).Message);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // What a client asks before its first push of a session: it has no reliable
+    // memory of what it already delivered, so it is told rather than guessing -
+    // and an unknown device is told "nothing", meaning send the lot.
+    [Fact]
+    public async Task GET_log_watermark_reports_the_newest_line_the_server_holds()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var (emptyStatus, emptyBody, _) = await SendAsync(
+                device, "GET", "/api/flower/v1/log/watermark", "10.0.2.11");
+
+            Assert.Equal(HttpStatusCode.OK, emptyStatus);
+            Assert.Null(JsonSerializer.Deserialize<LogWatermarkDto>(emptyBody)!.LastEntryTimestamp);
+
+            var newest = new LogEntryDto(DateTimeOffset.UtcNow, "Warning", "Flower.Something", "second", null);
+            var report = new LogReportDto(device.Fingerprint, "Kitchen iPad", DateTimeOffset.UtcNow,
+                [new LogEntryDto(DateTimeOffset.UtcNow.AddMinutes(-5), "Information", null, "first", null), newest]);
+            await SendAsync(device, "POST", "/api/flower/v1/log/report", "10.0.2.11",
+                body: JsonSerializer.Serialize(report));
+
+            var (status, body, _) = await SendAsync(
+                device, "GET", "/api/flower/v1/log/watermark", "10.0.2.11");
+
+            Assert.Equal(HttpStatusCode.OK, status);
+            var watermark = JsonSerializer.Deserialize<LogWatermarkDto>(body);
+            Assert.Equal(newest.Timestamp, watermark!.LastEntryTimestamp);
+            Assert.Equal(ClientLogStore.EventId(newest), watermark.LastEventId);
         }
         finally
         {
@@ -418,7 +460,7 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
                 device, "POST", "/api/flower/v1/log/report", "10.0.2.9",
                 body: JsonSerializer.Serialize(report));
 
-            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(HttpStatusCode.OK, status);
             Assert.Null(logs.Get("somebody-elses-fingerprint"));
             Assert.Equal("planted", Assert.Single(logs.Get(device.Fingerprint)!.Entries).Message);
         }

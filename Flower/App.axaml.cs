@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Avalonia;
@@ -183,6 +184,13 @@ public partial class App : Application
             .AddSingleton<TrustedPeerStore>()
             .AddSingleton<PlaylistSyncStateStore>()
             .AddSingleton(InMemoryLogStore.Instance)
+            // A week of this device's own logs on disk, so what gets pushed to
+            // the paired server is not limited to what one process's memory
+            // ring happened to survive with. Deliberately the same store, and
+            // the same on-disk layout, the server keeps received logs in - see
+            // DeviceLogArchive.
+            .AddSingleton(_ => new ClientLogStore(Path.Combine(AppDataDirectory.Path, "logs", "devices")))
+            .AddSingleton<DeviceLogArchive>()
 
             // Loaded-from-disk state. AppSettings and the cached library are
             // values a store produces, not services, so they need a factory -

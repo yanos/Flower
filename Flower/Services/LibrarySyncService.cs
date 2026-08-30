@@ -73,7 +73,7 @@ public class LibrarySyncService
     private readonly DeviceIdentity _deviceIdentity;
     private readonly IPeerCredentials _credentials;
     private readonly AppSettings _appSettings;
-    private readonly InMemoryLogStore _logStore;
+    private readonly DeviceLogArchive _logArchive;
     private readonly ILogger _logger;
 
     // The importer's own, injected rather than reused: it is a separate class
@@ -86,7 +86,7 @@ public class LibrarySyncService
     // same meaning here.
     public event EventHandler<PeerTrustRejectedEventArgs>? PeerTrustRejected;
 
-    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, InMemoryLogStore logStore, ILogger<LibrarySyncService> logger, ILogger<RemoteLibraryImporter> importerLogger)
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, DeviceLogArchive logArchive, ILogger<LibrarySyncService> logger, ILogger<RemoteLibraryImporter> importerLogger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
@@ -95,7 +95,7 @@ public class LibrarySyncService
         // already hands this service.
         _credentials = new SignedDeviceCredentials(deviceIdentity, signingKey);
         _appSettings = appSettings;
-        _logStore = logStore;
+        _logArchive = logArchive;
         _logger = logger;
         _importerLogger = importerLogger;
     }
@@ -226,17 +226,61 @@ public class LibrarySyncService
         return PushLogSnapshotAsync(device);
     }
 
+    // Where each peer's copy of this device's log ends, as that peer reported
+    // it: the (Timestamp, EventId) of the newest line it holds. A push sends
+    // everything the archive has after that point, so a server that has been
+    // down for a day gets the day it missed rather than the 2000-line memory
+    // ring that is all a client used to be able to offer.
+    //
+    // Cached per peer, in memory. The first push of a session asks the server
+    // outright (GET /log/watermark) rather than assuming, which is the whole
+    // point of asking: a restarted client has no idea what landed, and a
+    // restored-from-backup server may hold less than it did.
+    private const string LogReportPath = "/api/flower/v1/log/report";
+    private const string LogWatermarkPath = "/api/flower/v1/log/watermark";
+
+    private readonly ConcurrentDictionary<string, LogWatermarkDto> _logWatermarks = new();
+
+    // Peers whose last log push failed, so a server that is simply down logs
+    // one warning instead of one every five seconds - the same first-miss-loud,
+    // repeats-quiet shape NetworkDiscoveryService.HandleUnreachable uses, and
+    // for the same reason: these lines land in the very archive being pushed,
+    // so a chatty failure path floods out the content it exists to deliver.
+    private readonly ConcurrentDictionary<string, int> _logPushFailures = new();
+
+    // Move everything newly logged out of the memory ring and onto disk, where
+    // it survives the restart and the week. Runs on its own tick rather than as
+    // a step of a push, because the lines most worth keeping are the ones
+    // logged while no server was reachable to push to.
+    public Task ArchiveOwnLogsAsync() =>
+        Task.Run(() => _logArchive.Ingest(_deviceIdentity.Fingerprint, _deviceIdentity.Alias));
+
     private async Task<bool> PushLogSnapshotAsync(DiscoveredDevice device)
     {
+        IReadOnlyList<LogEntryDto> entries;
         try
         {
-            var entries = _logStore.Snapshot().Select(LogEntryDto.FromEntry).ToList();
-            var report = new LogReportDto(_deviceIdentity.Fingerprint, _deviceIdentity.Alias, DateTimeOffset.UtcNow, entries);
+            if (!_logWatermarks.TryGetValue(device.Fingerprint, out var watermark))
+            {
+                watermark = await FetchLogWatermarkAsync(device);
+                _logWatermarks[device.Fingerprint] = watermark;
+            }
+
+            entries = _logArchive.EntriesAfter(watermark);
+
+            // Nothing this peer is missing. Reported as success: "delivered
+            // everything there is" is exactly the state the caller's retry
+            // logic should treat as settled.
+            if (entries.Count == 0)
+            {
+                ClearLogPushFailures(device);
+                return true;
+            }
+
+            var report = new LogReportDto(_deviceIdentity.Fingerprint, _deviceIdentity.Alias, DateTimeOffset.UtcNow, entries.ToList());
             var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, FlowerJsonContext.Default.LogReportDto));
 
-            const string path = "/api/flower/v1/log/report";
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(path));
+            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(LogReportPath));
             await request.AddPeerCredentialsAsync(_credentials, bodyBytes);
             request.Headers.ConnectionClose = true;
             using var content = new ByteArrayContent(bodyBytes);
@@ -245,15 +289,77 @@ public class LibrarySyncService
 
             using var response = await Http.SendAsync(request);
             response.EnsureSuccessStatusCode();
+
+            // Only now, and only on a 2xx. The server's own answer is preferred
+            // over what was sent, because the two can legitimately differ: it
+            // drops anything already past its retention window, and saying so
+            // stops the client waiting for a gap that will never be filled.
+            // Falling back to what was sent keeps an older server - or an empty
+            // body - from resetting the mark and replaying the week.
+            _logWatermarks[device.Fingerprint] =
+                await ReadWatermarkAsync(response) ?? DeviceLogArchive.WatermarkOf(entries);
+
+            ClearLogPushFailures(device);
             return true;
         }
         catch (Exception ex)
         {
             // Not fatal to the library sync itself - the library merge above
-            // already succeeded and saved; the log snapshot just converges
-            // next cycle.
-            _logger.LogDebug(ex, "Could not push log snapshot to {Alias} - not fatal to this sync", device.Alias);
+            // already succeeded and saved; the mark is left where it was, so
+            // these lines go out again on the next cycle. Nothing is lost
+            // either way: the archive holds a week regardless of whether any of
+            // it has been delivered.
+            //
+            // The first failure is a Warning rather than the Debug this used to
+            // be at every level: the only route this line has off the device is
+            // the push that just failed, so it has to be loud enough to survive
+            // in the archive until the server comes back and reads it - and it
+            // has to name the address actually dialled, which is the one thing
+            // that distinguishes "the server is down" from "we are pushing at
+            // the wrong endpoint".
+            var failures = _logPushFailures.AddOrUpdate(device.Fingerprint, 1, (_, count) => count + 1);
+            if (failures == 1)
+                _logger.LogWarning(ex, "Could not push log lines to {Alias} at {Endpoint} - not fatal to this sync, will retry",
+                    device.Alias, device.Url(LogReportPath));
+            else
+                _logger.LogDebug(ex, "Log push to {Alias} still failing ({Failures} consecutive)", device.Alias, failures);
             return false;
+        }
+    }
+
+    private void ClearLogPushFailures(DiscoveredDevice device)
+    {
+        if (_logPushFailures.TryRemove(device.Fingerprint, out var failures))
+            _logger.LogInformation("Log push to {Alias} recovered after {Failures} failed attempt(s)", device.Alias, failures);
+    }
+
+    private async Task<LogWatermarkDto> FetchLogWatermarkAsync(DiscoveredDevice device)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, device.Url(LogWatermarkPath));
+        await request.AddPeerCredentialsAsync(_credentials, []);
+        request.Headers.ConnectionClose = true;
+
+        using var response = await Http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        // An empty or unreadable answer is read as "nothing stored", which
+        // costs one oversized first push that the server's event hashes
+        // deduplicate - the safe direction to be wrong in.
+        return await ReadWatermarkAsync(response) ?? new LogWatermarkDto(null, null);
+    }
+
+    private static async Task<LogWatermarkDto?> ReadWatermarkAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var json = await response.Content.ReadAsStringAsync();
+            return string.IsNullOrWhiteSpace(json)
+                ? null
+                : JsonSerializer.Deserialize(json, FlowerJsonContext.Default.LogWatermarkDto);
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 }

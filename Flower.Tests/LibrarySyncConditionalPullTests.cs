@@ -55,7 +55,7 @@ public class LibrarySyncConditionalPullTests : IDisposable
             new DeviceIdentity { Fingerprint = key.Fingerprint, Alias = "Client" },
             key,
             new AppSettings(),
-            InMemoryLogStore.Instance,
+            TestLogArchive.InTempDirectory(),
             NullLogger<LibrarySyncService>.Instance,
             NullLogger<RemoteLibraryImporter>.Instance);
 
