@@ -381,6 +381,8 @@ public class LibraryTests
             OriginDeviceFingerprint = "peer-1",
             AlbumArtists = "Various Artists", IsCompilation = true,
             Genre = "Soul", Year = "2003", TrackNumber = 4,
+            Bitrate = 320, SampleRate = 44100, Channels = 2, BitsPerSample = 16,
+            Codec = "MPEG Version 1 Audio, Layer 3",
         };
 
         library.MergeSyncedTracks("peer-1", new List<Track> { incoming });
@@ -392,6 +394,15 @@ public class LibraryTests
         Assert.Equal("Soul", merged.Genre);
         Assert.Equal("2003", merged.Year);
         Assert.Equal(4u, merged.TrackNumber);
+        // The same short-circuit hid the technical fields, and this is the path
+        // that heals an already-synced library rather than a fresh pull: every
+        // one of its placeholders matches by SyncKey, so a re-pull that did not
+        // refresh here would leave the Technical tab empty forever.
+        Assert.Equal(320, merged.Bitrate);
+        Assert.Equal(44100, merged.SampleRate);
+        Assert.Equal(2, merged.Channels);
+        Assert.Equal(16, merged.BitsPerSample);
+        Assert.Equal("MPEG Version 1 Audio, Layer 3", merged.Codec);
     }
 
     // A real local file's tags belong to the importer that read them off that
@@ -505,6 +516,110 @@ public class LibraryTests
         Assert.Same(rescanned, only);
         Assert.Equal("peer-1", only.OriginDeviceFingerprint);
         Assert.Equal(16, only.RemotePlayCounts["peer-1"]);
+    }
+
+    // The same fallback, for the case it is mostly there for: the user renames
+    // or moves a file inside a library folder. Nothing about the track changed
+    // except where it sits, so a rescan that treated it as a new file would
+    // reset its Id, DateAdded, play counts and stars - making a rename
+    // indistinguishable from deleting the track and adding a different one.
+    // A server's own library goes through this same method (see
+    // Flower.Server's LibraryImportService.RescanAsync), so this is also what
+    // stops a rename on the server invalidating the OriginTrackId every paired
+    // client is holding.
+    [Fact]
+    public void UpdateTracks_carries_a_renamed_local_files_history_forward()
+    {
+        var before = new Track
+        {
+            Title = "Fabienk", Artists = "Angine de Poitrine", Album = "Vol.II", Duration = TimeSpan.FromSeconds(391),
+            Path = "/music/01 fabienk.mp3",
+            DateAdded = new DateTime(2019, 4, 2),
+            PlayCount = 12,
+            Starred = true,
+        };
+        var library = new Library(new List<Track> { before });
+
+        var renamed = new Track
+        {
+            Title = "Fabienk", Artists = "Angine de Poitrine", Album = "Vol.II", Duration = TimeSpan.FromSeconds(391),
+            Path = "/music/Angine de Poitrine/Vol.II/01 Fabienk.mp3",
+        };
+        library.UpdateTracks(new List<Track> { renamed });
+
+        var only = Assert.Single(library.Tracks);
+        Assert.Same(renamed, only);
+        Assert.Equal(before.Id, only.Id);
+        Assert.Equal(new DateTime(2019, 4, 2), only.DateAdded);
+        Assert.Equal(12, only.PlayCount);
+        Assert.True(only.Starred);
+    }
+
+    // The point of keeping the Id: everything else addresses a track by it.
+    [Fact]
+    public void UpdateTracks_keeps_a_renamed_file_in_the_playlists_holding_it()
+    {
+        var before = new Track { Title = "Fabienk", Album = "Vol.II", Path = "/music/old.mp3" };
+        var library = new Library(new List<Track> { before });
+        library.AddPlaylist(new Playlist("Mix", new List<Track> { before }));
+
+        var renamed = new Track { Title = "Fabienk", Album = "Vol.II", Path = "/music/new.mp3" };
+        library.UpdateTracks(new List<Track> { renamed });
+
+        var track = Assert.Single(Assert.Single(library.Playlists).Tracks);
+        Assert.Same(renamed, track);
+    }
+
+    // The guard on that fallback. Copying an album into a second folder and
+    // leaving the original in place produces a fresh track whose SyncKey
+    // matches one the scan also still finds at its own path - and handing it
+    // that track's Id would put two Tracks with one Id in the library, which
+    // breaks every by-Id lookup there is (playlist membership, the play queue,
+    // Track Info). Only a track the scan did *not* rediscover is claimable,
+    // and only once.
+    [Fact]
+    public void UpdateTracks_does_not_give_a_copy_the_identity_of_the_original_it_sits_beside()
+    {
+        var original = new Track
+        {
+            Title = "Fabienk", Album = "Vol.II", Duration = TimeSpan.FromSeconds(391),
+            Path = "/music/original.mp3", PlayCount = 12,
+        };
+        var library = new Library(new List<Track> { original });
+
+        var rescannedOriginal = new Track
+        {
+            Title = "Fabienk", Album = "Vol.II", Duration = TimeSpan.FromSeconds(391), Path = "/music/original.mp3",
+        };
+        var copy = new Track
+        {
+            Title = "Fabienk", Album = "Vol.II", Duration = TimeSpan.FromSeconds(391), Path = "/music/copy.mp3",
+        };
+        library.UpdateTracks(new List<Track> { rescannedOriginal, copy });
+
+        Assert.Equal(2, library.Tracks.Count);
+        Assert.Equal(original.Id, rescannedOriginal.Id);
+        Assert.NotEqual(original.Id, copy.Id);
+        Assert.Equal(12, rescannedOriginal.PlayCount);
+        Assert.Equal(0, copy.PlayCount);
+    }
+
+    // The other guard. An untitled track's SyncKey collapses to its duration
+    // alone, so every untagged file of the same length in the library shares
+    // it - matching on that would hand a genuinely new file the history of
+    // some unrelated one that happens to run as long. No title, no match.
+    [Fact]
+    public void UpdateTracks_does_not_match_an_untitled_file_by_key()
+    {
+        var untitled = new Track { Path = "/music/track01.wav", Duration = TimeSpan.FromSeconds(180), PlayCount = 9 };
+        var library = new Library(new List<Track> { untitled });
+
+        var unrelated = new Track { Path = "/music/track02.wav", Duration = TimeSpan.FromSeconds(180) };
+        library.UpdateTracks(new List<Track> { unrelated });
+
+        var only = Assert.Single(library.Tracks);
+        Assert.NotEqual(untitled.Id, only.Id);
+        Assert.Equal(0, only.PlayCount);
     }
 
     // The bug this rule was rewritten for, end to end.

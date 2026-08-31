@@ -249,24 +249,55 @@ namespace Flower.Models
                     .GroupBy(t => t.Path!, StringComparer.OrdinalIgnoreCase)
                     .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-                // Fallback for a synced track whose exact Path string no longer
+                // Every path this scan turned up. Needed twice: to decide which
+                // previously-known tracks are actually missing (just below),
+                // and to decide which of them survive the scan at all (see
+                // carriedForwardSyncTracks further down).
+                var freshPaths = new HashSet<string>(
+                    tracks.Where(t => t.Path != null).Select(t => t.Path!),
+                    StringComparer.OrdinalIgnoreCase);
+
+                // Fallback for a track whose exact Path string no longer
                 // matches anything in this fresh scan - keyed by SyncKey
                 // (Title/Artist/Album/Duration), which stays stable even when
-                // Path doesn't. Confirmed on a real device: iOS can reassign
-                // the sandboxed app's Data container UUID across a reinstall,
-                // which shifts every absolute path under it (including
-                // Documents, where downloaded files and library.json both
-                // live) - the exact-Path match above then fails for a
-                // downloaded file whose content and filename are otherwise
-                // completely unchanged, and without this fallback the stale
-                // old-container Track survives untouched below (see
-                // carriedForwardSyncTracks) alongside the freshly-rescanned
-                // one for the same physical file, showing up as a duplicate.
-                // Restricted to OriginDeviceFingerprint-carrying tracks - a
-                // plain local track's Path has no comparable reason to drift
-                // out from under it between scans.
-                var previousSyncedByKey = Tracks
-                    .Where(t => t.OriginDeviceFingerprint != null)
+                // Path doesn't. Two things move a file out from under its path:
+                //
+                //   - The user renaming or moving it inside a library folder.
+                //     Without this the file comes back as a brand-new Track on
+                //     the next scan: fresh Id, DateAdded reset to now, play
+                //     counts at 0, unstarred, and dropped out of every playlist
+                //     holding it - a rename made indistinguishable from a
+                //     delete-plus-add. That is what this fallback is mainly for,
+                //     and it applies to a server's own library just as much as a
+                //     client's (Flower.Server's rescan runs through here too).
+                //   - iOS reassigning the sandboxed app's Data container UUID
+                //     across a reinstall, which shifts every absolute path under
+                //     it (including Documents, where downloaded files and the
+                //     database both live). Confirmed on a real device: the
+                //     exact-Path match above then fails for a downloaded file
+                //     whose content and filename are otherwise completely
+                //     unchanged, and without this the stale old-container Track
+                //     survives untouched below (see carriedForwardSyncTracks)
+                //     alongside the freshly-rescanned one for the same physical
+                //     file, showing up as a duplicate.
+                //
+                // Only tracks the scan did *not* rediscover at their own path
+                // are eligible, and each is claimed at most once (removed on
+                // use). Both guards exist to stop this handing one track's
+                // identity to a second, still-present file that merely tags the
+                // same: copying an album to a new folder while leaving the
+                // original in place would otherwise give the copy the original's
+                // Id, and two Tracks sharing an Id breaks every by-Id lookup
+                // there is - playlist membership, the play queue, Track Info.
+                //
+                // Untitled tracks are excluded outright, because their SyncKey
+                // recognizes nothing: with no title, no artist and no album, the
+                // key collapses to the duration alone, and every untagged file
+                // of the same length in the library shares it. A file with
+                // nothing to be identified by is treated as new.
+                var previousMissingByKey = Tracks
+                    .Where(t => !string.IsNullOrWhiteSpace(t.Title))
+                    .Where(t => t.Path == null || !freshPaths.Contains(t.Path))
                     .GroupBy(t => t.SyncKey)
                     .ToDictionary(g => g.Key, g => g.First());
 
@@ -274,8 +305,8 @@ namespace Flower.Models
                 {
                     if (track.Path != null && previousByPath.TryGetValue(track.Path, out var previous))
                         CarryForwardMutableState(previous, track);
-                    else if (previousSyncedByKey.TryGetValue(track.SyncKey, out var previousSynced))
-                        CarryForwardMutableState(previousSynced, track);
+                    else if (previousMissingByKey.Remove(track.SyncKey, out var previousMoved))
+                        CarryForwardMutableState(previousMoved, track);
                 }
 
                 // For everything the scan is responsible for, the scan's result
@@ -299,7 +330,8 @@ namespace Flower.Models
                 // Both are excluded again if the fresh scan *did* turn up the
                 // same path (iOS's Documents-folder scan legitimately
                 // re-discovering a file this device downloaded earlier) or the
-                // same SyncKey (the container-UUID-drift case above) - either
+                // same SyncKey (the rename/move and container-UUID-drift cases
+                // above) - either
                 // way that fresh-scanned instance already carried this one's
                 // DateAdded/PlayCount/origin metadata forward above, and keeping
                 // both would duplicate the track.
@@ -327,9 +359,6 @@ namespace Flower.Models
                 // UnpairServer now prunes them at the moment of unpairing (see
                 // RemoveTracksFromOrigin); this is what heals a library that
                 // was already in that state before it did.
-                var freshPaths = new HashSet<string>(
-                    tracks.Where(t => t.Path != null).Select(t => t.Path!),
-                    StringComparer.OrdinalIgnoreCase);
                 var freshSyncKeys = new HashSet<string>(tracks.Select(t => t.SyncKey));
                 var carriedForwardSyncTracks = Tracks.Where(t =>
                     (t.Path == null || t.IsLocallyDownloaded)
@@ -414,6 +443,7 @@ namespace Flower.Models
                     track.OriginDeviceFingerprint = null;
                     track.OriginTrackId = null;
                     track.OriginFileExtension = null;
+                    track.OriginRelativePath = null;
                     track.OriginAlbumArtHash = null;
                     kept.Add(track);
                 }
@@ -499,6 +529,7 @@ namespace Flower.Models
             track.OriginDeviceFingerprint = previous.OriginDeviceFingerprint;
             track.OriginTrackId           = previous.OriginTrackId;
             track.OriginFileExtension     = previous.OriginFileExtension;
+            track.OriginRelativePath      = previous.OriginRelativePath;
             track.OriginAlbumArtHash      = previous.OriginAlbumArtHash;
             // Carried forward even though a rescan finding the file means it was
             // under a scanned folder after all: the flag also answers "is
@@ -579,6 +610,7 @@ namespace Flower.Models
                         existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
                         existing.OriginTrackId = remote.OriginTrackId;
                         existing.OriginFileExtension = remote.OriginFileExtension;
+                        existing.OriginRelativePath = remote.OriginRelativePath;
                         existing.OriginAlbumArtHash = remote.OriginAlbumArtHash;
                         existing.DateAdded = remote.DateAdded;
                         MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
@@ -647,6 +679,11 @@ namespace Flower.Models
             existing.Genre = remote.Genre;
             existing.Year = remote.Year;
             existing.TrackNumber = remote.TrackNumber;
+            existing.Bitrate = remote.Bitrate;
+            existing.SampleRate = remote.SampleRate;
+            existing.Channels = remote.Channels;
+            existing.BitsPerSample = remote.BitsPerSample;
+            existing.Codec = remote.Codec;
         }
 
         // Per-key max, not overwrite - see Track.RemotePlayCounts' own doc
