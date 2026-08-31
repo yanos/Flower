@@ -6,8 +6,8 @@ namespace Flower.Manager
     // Single-producer/single-consumer byte ring buffer carrying canonical PCM
     // (S16/48kHz/stereo throughout the gapless pipeline - see
     // GaplessCoordinator). Read() is lock-free and never blocks, so it's safe
-    // to call from a real-time audio render callback (Flower.Apple's
-    // AVAudioSourceNode). Write()/TryWrite() may be called from a LibVLC
+    // to call from a real-time audio render callback (MiniaudioSink's
+    // ma_device data callback). Write()/TryWrite() may be called from a LibVLC
     // decode callback thread, which is not real-time, so blocking there under
     // backpressure is fine.
     //

@@ -76,7 +76,8 @@ yet, and their absence is not a problem to fix. See `docs/agents/domain.md`.
 ## Build & Run
 
 ```bash
-dotnet build Flower.Desktop/Flower.Desktop.csproj
+dotnet build Flower.Desktop/Flower.Desktop.csproj                               # Windows/Linux head
+dotnet build Flower.MacOS/Flower.MacOS.csproj                                   # macOS head, needs `sudo dotnet workload install macos`
 dotnet test Flower.Tests/Flower.Tests.csproj --filter Category!=RequiresLibVLC   # fast, day-to-day
 dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs a local VLC install
 dotnet run --project Flower.Server                                              # server + its browser UI
@@ -125,7 +126,8 @@ Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is drive
 | Project | Purpose |
 |---|---|
 | `Flower/` | Shared library: all UI, ViewModels, Models, business logic |
-| `Flower.Desktop/` | macOS/Windows/Linux entry point |
+| `Flower.Desktop/` | Windows/Linux entry point (still runs on macOS, without Apple frameworks) |
+| `Flower.MacOS/` | macOS entry point — `net10.0-macos`, so AVKit/AppKit are reachable (needs the `macos` workload) |
 | `Flower.Android/` | Android entry point |
 | `Flower.iOS/` | iOS entry point |
 | `Flower.Tests/` | xUnit tests for the shared library |

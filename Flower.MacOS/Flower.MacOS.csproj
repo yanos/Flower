@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- The whole point of this head. Flower.Desktop is plain net10.0 -
+         Avalonia's desktop backend targets it - which puts every Apple
+         framework out of reach from the process that runs Flower on macOS.
+         net10.0-macos is a superset for package resolution, so Avalonia.Desktop
+         and the rest resolve their net10.0 assets unchanged, and AVKit/AppKit
+         become reachable on top. See docs/AIRPLAY-BLUETOOTH-PLAN.md Phase 2. -->
+    <TargetFramework>net10.0-macos</TargetFramework>
+    <!-- AVRoutePickerView is macOS 10.15; 12.0 is the floor Flower already
+         needs elsewhere and keeps the analyzer from demanding version guards
+         around ordinary modern API. -->
+    <SupportedOSPlatformVersion>12.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <StartupObject>Flower.MacOS.Program</StartupObject>
+    <ApplicationTitle>Flower</ApplicationTitle>
+    <ApplicationId>com.yanos.flower</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+
+    <!-- The managed HTTP stack rather than NSUrlSessionHandler, for the same
+         reason Flower.iOS sets it: NSUrlSessionHandler does not support
+         ServerCertificateCustomValidationCallback and throws
+         PlatformNotSupportedException when one is set, and that callback is
+         how PeerHttpClient accepts a self-hosted server's certificate at all. -->
+    <UseNativeHttpHandler>false</UseNativeHttpHandler>
+
+    <!-- IL2104: trim-analysis warnings from third-party dependencies that
+         aren't annotated for trimming themselves - same set, and same
+         non-fix, as Flower.iOS. -->
+    <NoWarn>$(NoWarn);IL2104</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
+    <PackageReference Include="VideoLAN.LibVLC.Mac" Version="3.1.3.1" />
+    <PackageReference Include="LibVLCSharp.Avalonia" Version="3.10.0" />
+    <PackageReference Include="Miniaudio-CS" Version="1.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flower\Flower.csproj" />
+  </ItemGroup>
+</Project>

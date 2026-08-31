@@ -5,6 +5,7 @@
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:conv="clr-namespace:Flower.Converters"
+             xmlns:controls="clr-namespace:Flower.UserControls"
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.NowPlayingView"
              x:DataType="vm:MobileMainViewModel"
@@ -40,6 +41,16 @@
               Padding="10">
         <materialIcons:MaterialIcon Kind="ChevronDown" Width="26" Height="26" />
       </Button>
+
+      <!-- Apple's own AirPlay/Bluetooth route button, hosted natively - and
+           nothing at all on platforms that have no such control (see
+           RoutePickerControl). Sized here because a NativeControlHost has no
+           intrinsic size of its own to measure. -->
+      <controls:RoutePickerControl Grid.Column="1"
+                                   Width="30" Height="30"
+                                   Margin="0,0,10,0"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center" />
     </Grid>
 
     <!-- Album art + track info -->

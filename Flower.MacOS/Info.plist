@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Flower</string>
+	<key>CFBundleDisplayName</key>
+	<string>Flower</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.yanos.flower</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- No CFBundleIconFile: there is no .icns in the repo, and the Dock tile
+	     is set at runtime from Flower/Assets/flower-icon.png instead - see
+	     Flower.Platform.MacDockIcon. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_flowersync._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Flower uses your local network to find other Flower devices for syncing.</string>
+</dict>
+</plist>

@@ -7,16 +7,23 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 
-namespace Flower.Desktop;
+namespace Flower.Platform;
 
 // Avalonia's Window.Icon (see MainWindow.axaml) drives the window's own
 // titlebar/proxy icon, but does not reliably reach the Dock tile for a
-// process launched unbundled (no .icns/Info.plist app bundle exists for this
-// project - see CROSS-PLATFORM-PLAN.md) - `dotnet run`/Rider both launch the
-// raw executable this way, so without this the Dock falls back to some
-// generic icon. Setting NSApplication.applicationIconImage directly is the
-// one thing that reliably works regardless of bundling.
-internal static class MacDockIcon
+// process launched unbundled - `dotnet run`/Rider both launch the raw
+// executable this way, so without this the Dock falls back to some generic
+// icon. Setting NSApplication.applicationIconImage directly is the one thing
+// that reliably works regardless of bundling, which is why it is still done
+// from Flower.MacOS - a head that *does* produce a bundle with an .icns.
+//
+// Raw objc_msgSend rather than AppKit bindings, and in the shared library
+// rather than in a head, because Flower.Desktop is plain net10.0 and has no
+// AppKit to bind against - see docs/AIRPLAY-BLUETOOTH-PLAN.md for the wider
+// version of that constraint. Guarded by OperatingSystem.IsMacOS(), so the
+// Windows/Linux/mobile heads that also compile this file never reach the
+// P/Invokes.
+public static class MacDockIcon
 {
     private const string ObjCLibrary = "/usr/lib/libobjc.A.dylib";
 
