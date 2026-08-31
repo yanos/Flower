@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices.JavaScript;
 using System.Timers;
 
@@ -165,6 +166,18 @@ namespace Flower.Manager
 
         // No in-browser EQ in v1 - see class remarks.
         public void ApplyEqualizer(Equalizer? equalizer)
+        {
+        }
+
+        // A page cannot choose the machine's output device the way a native
+        // app can - the browser routes <audio> wherever the OS and the user's
+        // own browser-level output setting say. Reporting no devices is what
+        // keeps the picker hidden in Flower.Web.
+        public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => [];
+
+        public string? OutputDeviceId => null;
+
+        public void SetOutputDevice(string? deviceId)
         {
         }
 

@@ -230,6 +230,7 @@ public static class MainViewModelHarness
             new ITunesImportCoordinator(library, busy, NullLogger<ITunesImportCoordinator>.Instance),
             new AnimationClock(),
             new VolumeControlViewModel(audio),
+            new OutputDeviceControlViewModel(audio),
             currentlyPlaying,
             new EqualizerViewModel(audio, appSettings, appSettingsStore),
             new SidebarRenameService(deviceNicknameStore, NullLogger<SidebarRenameService>.Instance),

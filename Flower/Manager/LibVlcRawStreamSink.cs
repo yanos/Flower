@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -74,6 +75,26 @@ namespace Flower.Manager
         public void ApplyEqualizer(Equalizer? equalizer)
         {
         }
+
+        // Output routing was never wired up here: this sink was already
+        // superseded by MiniaudioSink before the picker existed, and adding
+        // LibVLC's AudioOutputDeviceEnum/Set plumbing to a class kept only as
+        // a one-release fallback would be work aimed at deletion. Reporting no
+        // devices leaves the picker hidden if this sink is ever put back in.
+        public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => [];
+
+        public string? OutputDeviceId => null;
+
+        public void SetOutputDevice(string? deviceId)
+        {
+        }
+
+        // Never raised, for the same reason: LibVLC's aout hides which device
+        // it landed on, so there is nothing here that could notice one going
+        // away. Declared only to satisfy IAudioSink.
+#pragma warning disable CS0067
+        public event EventHandler? OutputDeviceLost;
+#pragma warning restore CS0067
 
         public void Start(GaplessRingBuffer ringBuffer)
         {

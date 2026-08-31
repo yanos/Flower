@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,6 +27,13 @@ public sealed class FakeAudioSink : IAudioSink
     public event EventHandler? Playing;
     public event EventHandler? Paused;
     public event EventHandler? Stopped;
+    public event EventHandler? OutputDeviceLost;
+
+    // Stands in for a backend telling the sink its endpoint vanished. Raised
+    // synchronously here: MiniaudioSink marshals onto the UI thread because a
+    // real notification arrives on a backend thread, and a test calling this
+    // is already on the thread it wants.
+    public void RaiseOutputDeviceLost() => OutputDeviceLost?.Invoke(this, EventArgs.Empty);
 
     public bool IsPlaying { get; private set; }
     public int Volume { get; set; } = 100;
@@ -52,6 +61,22 @@ public sealed class FakeAudioSink : IAudioSink
     public void Start(GaplessRingBuffer ringBuffer) => _ring = ringBuffer;
 
     public void ApplyEqualizer(Equalizer? equalizer) => AppliedEqualizer = equalizer;
+
+    // Output routing, faked at the same level of detail as the rest of this
+    // class: whatever OutputDevices is set to is what enumeration returns, and
+    // SetOutputDevice just records the pick (falling back to the default for
+    // an id that isn't in the list, exactly as MiniaudioSink does when a
+    // device has vanished).
+    public IReadOnlyList<AudioOutputDevice> OutputDevices { get; set; } = [];
+
+    public string? OutputDeviceId { get; private set; }
+
+    public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => OutputDevices;
+
+    public void SetOutputDevice(string? deviceId)
+    {
+        OutputDeviceId = deviceId is null || OutputDevices.Any(d => d.Id == deviceId) ? deviceId : null;
+    }
 
     public void Resume()
     {

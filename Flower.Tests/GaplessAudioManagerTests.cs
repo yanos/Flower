@@ -274,12 +274,116 @@ public class GaplessAudioManagerTests
         Assert.Null(sink.AppliedEqualizer);
     }
 
+    // docs/AIRPLAY-BLUETOOTH-PLAN.md Phase 2: iOS reports a vanished output
+    // (AirPods out, Bluetooth speaker off, headphones unplugged) through the
+    // platform session, every other platform reports the same thing through
+    // the sink, and the response - pause rather than carry on out loud - is
+    // shared logic that lives here, not on either of them.
+    [Fact]
+    public void A_vanished_output_device_pauses_playback()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, sink) = Make(platformAudioSession);
+        var paused = 0;
+        manager.Paused += (_, _) => paused++;
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        platformAudioSession.LoseOutputDevice();
+
+        Assert.False(sink.IsPlaying);
+        Assert.Equal(1, paused);
+
+        // Routed through Pause() rather than straight at the sink, so the
+        // audio session is released exactly as a tapped pause button would.
+        Assert.Equal(1, platformAudioSession.DeactivationCount);
+    }
+
+    [Fact]
+    public void A_vanished_output_device_is_ignored_when_nothing_is_playing()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, _) = Make(platformAudioSession);
+        var paused = 0;
+        manager.Paused += (_, _) => paused++;
+
+        platformAudioSession.LoseOutputDevice();
+
+        Assert.Equal(0, paused);
+        Assert.Equal(0, platformAudioSession.DeactivationCount);
+    }
+
+    // The platform session is a process-wide singleton set once at startup, so
+    // it outlives every manager built against it.
+    [Fact]
+    public void A_disposed_manager_stops_listening_for_output_device_loss()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, _) = Make(platformAudioSession);
+        var paused = 0;
+        manager.Paused += (_, _) => paused++;
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        manager.Dispose();
+        platformAudioSession.LoseOutputDevice();
+
+        Assert.Equal(0, paused);
+        Assert.Equal(0, platformAudioSession.DeactivationCount);
+    }
+
+    // The desktop half of the same policy. There is no IPlatformAudioSession
+    // on macOS/Windows/Linux at all; MiniaudioSink notices its own device
+    // disappearing and reports it here instead, and lands on exactly the same
+    // handler.
+    [Fact]
+    public void A_sink_reported_device_loss_pauses_playback_too()
+    {
+        var (manager, _, sink) = Make();
+        var paused = 0;
+        manager.Paused += (_, _) => paused++;
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        sink.RaiseOutputDeviceLost();
+
+        Assert.False(sink.IsPlaying);
+        Assert.Equal(1, paused);
+    }
+
+    [Fact]
+    public void A_sink_reported_device_loss_is_ignored_when_nothing_is_playing()
+    {
+        var (manager, _, sink) = Make();
+        var paused = 0;
+        manager.Paused += (_, _) => paused++;
+
+        sink.RaiseOutputDeviceLost();
+
+        Assert.Equal(0, paused);
+    }
+
+    [Fact]
+    public void A_disposed_manager_stops_listening_to_the_sink_for_device_loss()
+    {
+        var (manager, _, sink) = Make();
+        var paused = 0;
+        manager.Paused += (_, _) => paused++;
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        manager.Dispose();
+        sink.RaiseOutputDeviceLost();
+
+        Assert.Equal(0, paused);
+    }
+
     private sealed class RecordingPlatformAudioSession : IPlatformAudioSession
     {
         public int ActivationCount { get; private set; }
         public int DeactivationCount { get; private set; }
 
+        public event EventHandler? OutputDeviceLost;
+
         public void ActivateForPlayback() => ActivationCount++;
         public void DeactivateAfterPlayback() => DeactivationCount++;
+
+        public void LoseOutputDevice() => OutputDeviceLost?.Invoke(this, EventArgs.Empty);
     }
 }

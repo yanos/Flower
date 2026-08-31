@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             xmlns:vm="using:Flower.ViewModels"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="Flower.UserControls.OutputDeviceControl"
+             x:DataType="vm:OutputDeviceControlViewModel"
+             IsVisible="{Binding IsAvailable}">
+
+  <!-- Speaker button that drops the device list upward - it lives in the
+       status bar at the very bottom of the window, so Placement="Top". -->
+  <Button x:Name="PickerButton"
+          Background="Transparent"
+          BorderThickness="0"
+          Padding="4,2"
+          VerticalAlignment="Center"
+          ToolTip.Tip="Audio output">
+    <materialIcons:MaterialIcon Kind="SpeakerMultiple"
+                                Width="14" Height="14"
+                                Opacity="0.65"/>
+    <Button.Flyout>
+      <Flyout Placement="Top" Opening="FlyoutOpening">
+        <ItemsControl ItemsSource="{Binding Devices}" MinWidth="200" MaxWidth="320">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:OutputDeviceItemViewModel">
+              <!-- A Button per row rather than a ListBox: selection here is
+                   an action (reopen the device), not a persisted list
+                   selection, and the tick is driven by IAudioManager's own
+                   answer rather than by which row was last clicked. -->
+              <Button Click="DeviceClicked"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      Padding="6,4"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Left">
+                <Grid ColumnDefinitions="18,*">
+                  <materialIcons:MaterialIcon Grid.Column="0"
+                                              Kind="Check"
+                                              Width="12" Height="12"
+                                              VerticalAlignment="Center"
+                                              IsVisible="{Binding IsSelected}"/>
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding Name}"
+                             VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis"/>
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Flyout>
+    </Button.Flyout>
+  </Button>
+
+</UserControl>

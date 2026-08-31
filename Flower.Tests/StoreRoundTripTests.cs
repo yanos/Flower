@@ -142,6 +142,9 @@ public class StoreRoundTripTests : IDisposable
         public void Pause() { }
         public void Stop() { }
         public void ApplyEqualizer(Flower.Manager.Equalizer? equalizer) { }
+        public System.Collections.Generic.IReadOnlyList<Flower.Manager.AudioOutputDevice> GetOutputDevices() => [];
+        public string? OutputDeviceId => null;
+        public void SetOutputDevice(string? deviceId) { }
         public void RaiseEndReached() => EndReached?.Invoke(this, EventArgs.Empty);
 #pragma warning disable CS0067
         public event EventHandler? Paused;

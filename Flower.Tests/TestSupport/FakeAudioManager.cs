@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 using Flower.Manager;
 using Flower.Models;
@@ -29,6 +31,20 @@ public sealed class FakeAudioManager : IAudioManager
     public void Pause() { }
     public void Stop() { }
     public void ApplyEqualizer(Equalizer? equalizer) => LastAppliedEqualizer = equalizer;
+
+    // Mirrors FakeAudioSink's fake routing: OutputDevices is what enumeration
+    // reports, and an id that isn't in it falls back to the system default the
+    // way MiniaudioSink does for a device that vanished.
+    public IReadOnlyList<AudioOutputDevice> OutputDevices { get; set; } = [];
+
+    public string? OutputDeviceId { get; private set; }
+
+    public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => OutputDevices;
+
+    public void SetOutputDevice(string? deviceId)
+    {
+        OutputDeviceId = deviceId is null || OutputDevices.Any(d => d.Id == deviceId) ? deviceId : null;
+    }
 
     public event EventHandler? Paused;
     public event EventHandler? Stopped;

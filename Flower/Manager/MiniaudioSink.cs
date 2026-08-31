@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Timers;
+
+using Avalonia.Threading;
 
 using Timer = System.Timers.Timer;
 
@@ -37,6 +41,44 @@ namespace Flower.Manager
         private ma_device* _device;
         private volatile bool _started;
         private bool _disposed;
+
+        // The output device the user explicitly picked (an opaque base64
+        // ma_device_id - see EncodeDeviceId), or null while Flower just
+        // follows whatever the OS calls the default. Kept as the encoded
+        // string rather than a decoded ma_device_id because it is only ever
+        // needed to reopen the device, and a string needs no native
+        // allocation to stay alive between reopens.
+        private string? _outputDeviceId;
+
+        // The device Flower is actually rendering to right now, as an encoded
+        // id - which is _outputDeviceId when the user picked one, and the id
+        // of whatever was flagged default at open time when they did not.
+        // Kept so a reroute can be told apart from a disappearance: on a
+        // reroute miniaudio has already moved us somewhere new, and the only
+        // way to know whether that was a device vanishing or the user changing
+        // their OS default is whether this one is still in the device list.
+        //
+        // Read out of a fresh enumeration rather than out of ma_device's own
+        // playback.id: this class already refuses to trust the binding's
+        // ma_device layout (see OpenDevice's padding comment), and
+        // context_get_devices is the one shape MiniaudioBindingLayoutTests
+        // actually pins.
+        private string? _activeDeviceId;
+
+        // Non-zero while Flower is itself stopping or tearing down the device,
+        // so the ma_device_notification_type_stopped miniaudio raises from
+        // inside device_stop/device_uninit is recognised as our own doing
+        // rather than the output dying. Only ever changed under _gate, and
+        // always read from the notification callback - which, for an
+        // intentional stop, is invoked synchronously on the very thread
+        // holding the lock.
+        private volatile int _intentionalStopDepth;
+
+        // Master volume tracked here rather than read back out of ma_device:
+        // device_init resets a fresh device's master volume to 1.0, so
+        // reopening for SetOutputDevice would otherwise slam the user back to
+        // full volume every time they changed output.
+        private volatile float _masterVolume = 1f;
 
         // The data callback is [UnmanagedCallersOnly] - it can't close over
         // instance state, so this instance's GCHandle is stashed in
@@ -77,6 +119,7 @@ namespace Flower.Manager
         public event EventHandler? Playing;
         public event EventHandler? Paused;
         public event EventHandler? Stopped;
+        public event EventHandler? OutputDeviceLost;
 
         // NativeLibrary's default probing for a bare DllImport("miniaudio")
         // string tries flat names ("libminiaudio.dylib", "miniaudio.dylib",
@@ -199,19 +242,15 @@ namespace Flower.Manager
 
         public int Volume
         {
-            get
-            {
-                if (_device == null)
-                    return 0;
-
-                float volume;
-                ma.device_get_master_volume(_device, &volume);
-                return (int)Math.Round(volume * 100);
-            }
+            get => (int)Math.Round(_masterVolume * 100);
             set
             {
-                if (_device != null)
-                    ma.device_set_master_volume(_device, value / 100f);
+                lock (_gate)
+                {
+                    _masterVolume = Math.Clamp(value, 0, 100) / 100f;
+                    if (_device != null)
+                        ma.device_set_master_volume(_device, _masterVolume);
+                }
             }
         }
 
@@ -223,23 +262,6 @@ namespace Flower.Manager
             {
                 _ringBuffer = ringBuffer;
                 _selfHandle = GCHandle.Alloc(this);
-
-                var config = ma.device_config_init(ma_device_type.ma_device_type_playback);
-                config.playback.format = ma_format.ma_format_s16;
-                config.playback.channels = GaplessFormat.Channels;
-                config.sampleRate = GaplessFormat.SampleRate;
-                config.dataCallback = &DataCallback;
-                config.pUserData = (void*)GCHandle.ToIntPtr(_selfHandle);
-
-                // miniaudio's default (low-latency) profile picks a very
-                // small period size, tuned for tight native C callbacks.
-                // This callback runs on a managed .NET thread (a GCHandle
-                // lookup, a bounds-checked Span copy, all under the CLR),
-                // which can occasionally take just long enough to miss that
-                // tiny window - heard as crackling. Conservative trades a
-                // little extra latency for a much bigger per-period safety
-                // margin.
-                config.performanceProfile = ma_performance_profile.ma_performance_profile_conservative;
 
                 // ma_context's actual native size depends on which backends
                 // (CoreAudio/WASAPI/ALSA/...) this specific prebuilt
@@ -262,25 +284,8 @@ namespace Flower.Manager
                     return;
                 }
 
-                // ma_device has the same cross-platform-union problem as
-                // ma_context (see above) but miniaudio doesn't expose an
-                // ma_device_sizeof() equivalent to ask for its real size, so
-                // sizeof(ma_device) here is the C# binding's guess, not a
-                // guarantee. Padding the allocation well past that guess is
-                // cheap insurance against ma_device_init writing past the
-                // end of an under-sized block and corrupting whatever heap
-                // allocation happens to sit right after it - which is
-                // exactly what a real run of this code did on first boot,
-                // surfaced by macOS's malloc as a delayed, unrelated-looking
-                // "Incorrect checksum for freed object" crash.
-                const int deviceAllocationPadding = 4096;
-                _device = (ma_device*)NativeMemory.Alloc((nuint)sizeof(ma_device) + deviceAllocationPadding);
-                var result = ma.device_init(_context, &config, _device);
-                if (result != ma_result.MA_SUCCESS)
+                if (!OpenDevice())
                 {
-                    _logger.LogError("miniaudio device_init failed: {Result}", result);
-                    NativeMemory.Free(_device);
-                    _device = null;
                     ma.context_uninit(_context);
                     NativeMemory.Free(_context);
                     _context = null;
@@ -290,6 +295,283 @@ namespace Flower.Manager
                 _logger.LogInformation("miniaudio playback device initialized");
             }
         }
+
+        // Opens the playback device that _outputDeviceId currently names (or
+        // the OS default when it is null), leaving _device valid but stopped
+        // on success and null on failure. Split out of Start because
+        // SetOutputDevice has to do exactly the same thing again: miniaudio
+        // has no "move this device to that endpoint" call, so changing output
+        // means uninit-ing the ma_device and initialising a new one against
+        // the chosen ma_device_id. The caller holds _gate and has already
+        // initialised _context.
+        private bool OpenDevice()
+        {
+            var config = ma.device_config_init(ma_device_type.ma_device_type_playback);
+            config.playback.format = ma_format.ma_format_s16;
+            config.playback.channels = GaplessFormat.Channels;
+            config.sampleRate = GaplessFormat.SampleRate;
+            config.dataCallback = &DataCallback;
+            config.notificationCallback = &NotificationCallback;
+            config.pUserData = (void*)GCHandle.ToIntPtr(_selfHandle);
+
+            // miniaudio's default (low-latency) profile picks a very small
+            // period size, tuned for tight native C callbacks. This callback
+            // runs on a managed .NET thread (a GCHandle lookup, a
+            // bounds-checked Span copy, all under the CLR), which can
+            // occasionally take just long enough to miss that tiny window -
+            // heard as crackling. Conservative trades a little extra latency
+            // for a much bigger per-period safety margin.
+            config.performanceProfile = ma_performance_profile.ma_performance_profile_conservative;
+
+            // Only read by device_init, so a stack local is enough - nothing
+            // holds on to pDeviceID afterwards. Leaving it null is what asks
+            // miniaudio for the OS default device.
+            ma_device_id deviceId;
+            if (_outputDeviceId is { } encoded)
+            {
+                if (TryDecodeDeviceId(encoded, &deviceId))
+                {
+                    config.playback.pDeviceID = &deviceId;
+                }
+                else
+                {
+                    _logger.LogWarning("Unusable output device id, falling back to the system default");
+                    _outputDeviceId = null;
+                }
+            }
+
+            // ma_device has the same cross-platform-union problem as
+            // ma_context (see above) but miniaudio doesn't expose an
+            // ma_device_sizeof() equivalent to ask for its real size, so
+            // sizeof(ma_device) here is the C# binding's guess, not a
+            // guarantee. Padding the allocation well past that guess is
+            // cheap insurance against ma_device_init writing past the
+            // end of an under-sized block and corrupting whatever heap
+            // allocation happens to sit right after it - which is
+            // exactly what a real run of this code did on first boot,
+            // surfaced by macOS's malloc as a delayed, unrelated-looking
+            // "Incorrect checksum for freed object" crash.
+            const int deviceAllocationPadding = 4096;
+            var device = (ma_device*)NativeMemory.Alloc((nuint)sizeof(ma_device) + deviceAllocationPadding);
+            var result = ma.device_init(_context, &config, device);
+            if (result != ma_result.MA_SUCCESS)
+            {
+                _logger.LogError("miniaudio device_init failed: {Result}", result);
+                NativeMemory.Free(device);
+                return false;
+            }
+
+            _device = device;
+            ma.device_set_master_volume(_device, _masterVolume);
+            _activeDeviceId = ResolveActiveDeviceId(_outputDeviceId, GetOutputDevices());
+            return true;
+        }
+
+        // What OpenDevice just ended up on: the explicit pick if there was
+        // one, otherwise whichever device the OS currently calls default -
+        // which is exactly the one miniaudio opens for a null pDeviceID.
+        // Null when the list came back empty, in which case nothing can be
+        // concluded from a later reroute either.
+        private static string? ResolveActiveDeviceId(string? requested, IReadOnlyList<AudioOutputDevice> devices)
+        {
+            if (requested != null)
+                return requested;
+
+            foreach (var device in devices)
+            {
+                if (device.IsSystemDefault)
+                    return device.Id;
+            }
+
+            return null;
+        }
+
+        // Tears down whatever device is open, if any. device_uninit stops a
+        // running device on its way out, so _started stops being true here
+        // without a Stopped event - a device swap is not a pause, and the UI
+        // must not see one.
+        private void CloseDevice()
+        {
+            if (_device == null)
+                return;
+
+            _intentionalStopDepth++;
+            try
+            {
+                ma.device_uninit(_device);
+            }
+            finally
+            {
+                _intentionalStopDepth--;
+            }
+
+            NativeMemory.Free(_device);
+            _device = null;
+            _started = false;
+            _activeDeviceId = null;
+        }
+
+        // device_stop makes miniaudio raise ma_device_notification_type_stopped,
+        // synchronously and on this thread. Everything Flower stops on purpose
+        // goes through here so NotificationCallback can tell that apart from
+        // the output disappearing underneath us, which arrives as the same
+        // notification. The caller holds _gate.
+        private void StopDeviceIntentionally()
+        {
+            _intentionalStopDepth++;
+            try
+            {
+                ma.device_stop(_device);
+            }
+            finally
+            {
+                _intentionalStopDepth--;
+            }
+        }
+
+        // miniaudio's own out-of-band channel for "something happened to this
+        // device that you did not ask for". Two of the six types matter:
+        //
+        //  - stopped, when Flower did not do the stopping: the endpoint went
+        //    away outright, which is what pulling a USB interface or an
+        //    explicitly-picked Bluetooth speaker switching off looks like.
+        //  - rerouted, when the backend has already moved us to a different
+        //    endpoint. Ambiguous on its own - it is equally what happens when
+        //    headphones are unplugged and when the user changes their default
+        //    output in Sound settings - so HandleReroute has to look before it
+        //    decides.
+        //
+        // Runs on whatever thread the backend chose, and for an intentional
+        // stop on the very thread already holding _gate, so it must not take
+        // the lock or do anything slow. Both handlers are therefore queued.
+        [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void NotificationCallback(ma_device_notification* notification)
+        {
+            if (notification == null || notification->pDevice == null)
+                return;
+
+            var handle = GCHandle.FromIntPtr((IntPtr)notification->pDevice->pUserData);
+            if (handle.Target is not MiniaudioSink sink)
+                return;
+
+            switch (notification->type)
+            {
+                case ma_device_notification_type.ma_device_notification_type_stopped
+                    when sink._intentionalStopDepth == 0:
+                    ThreadPool.UnsafeQueueUserWorkItem(_ => sink.HandleUnexpectedStop(), null);
+                    break;
+
+                case ma_device_notification_type.ma_device_notification_type_rerouted:
+                    ThreadPool.UnsafeQueueUserWorkItem(_ => sink.HandleReroute(), null);
+                    break;
+            }
+        }
+
+        // The device stopped without being asked to. There is nothing
+        // ambiguous about this one: whatever Flower was rendering to is gone.
+        private void HandleUnexpectedStop()
+        {
+            bool reopened;
+            lock (_gate)
+            {
+                if (_disposed || _device == null || !_started)
+                    return;
+
+                _logger.LogInformation("Output device stopped unexpectedly; reopening against the system default");
+
+                // Reopen before saying anything, so that by the time the pause
+                // lands there is a working device for the user to resume onto.
+                // An explicit pick that no longer enumerates is dropped rather
+                // than retried - the picker should show "System default" again,
+                // because that is where the sound would now come from.
+                if (_outputDeviceId != null && !EnumeratedIds().Contains(_outputDeviceId))
+                    _outputDeviceId = null;
+
+                CloseDevice();
+                reopened = OpenDevice();
+
+                // CloseDevice cleared this on its way through. Restoring it is
+                // what lets GaplessAudioManager's pause below run its normal
+                // course - Pause() checks IsPlaying first, and the UI still
+                // believes playback is running, because as far as it knows it
+                // is.
+                _started = true;
+
+                if (!reopened)
+                {
+                    // Nothing opened at all, so there is nothing to pause onto
+                    // and no later Resume can succeed. Same contract as
+                    // SetOutputDevice's failed-reopen path: tell the UI it has
+                    // stopped outright.
+                    _started = false;
+                    Stopped?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+            }
+
+            RaiseOutputDeviceLost();
+        }
+
+        // The backend moved us to a different endpoint on its own. Whether
+        // that deserves a pause depends entirely on why: if the device we were
+        // on is still in the list, the user changed their default output and
+        // wants the music to follow them there; if it is gone, it was taken
+        // away and carrying on means playing out loud through whatever the OS
+        // fell back to.
+        private void HandleReroute()
+        {
+            var devices = GetOutputDevices();
+
+            lock (_gate)
+            {
+                if (_disposed || _device == null)
+                    return;
+
+                var previous = _activeDeviceId;
+                _activeDeviceId = ResolveActiveDeviceId(_outputDeviceId, devices);
+
+                // No idea what we were on, or enumeration failed outright.
+                // Staying quiet is the conservative choice: a spurious pause is
+                // worse than a missed one, because the user did not ask for it
+                // and cannot see why it happened.
+                if (previous == null || devices.Count == 0)
+                {
+                    _logger.LogInformation("Output rerouted, but the previous device is unknown; leaving playback alone");
+                    return;
+                }
+
+                foreach (var device in devices)
+                {
+                    if (device.Id != previous)
+                        continue;
+
+                    _logger.LogInformation("Output rerouted while the previous device is still present; treating it as a deliberate change");
+                    return;
+                }
+
+                if (!_started)
+                    return;
+
+                _logger.LogInformation("Output rerouted because the previous device disappeared");
+            }
+
+            RaiseOutputDeviceLost();
+        }
+
+        private List<string> EnumeratedIds()
+        {
+            var ids = new List<string>();
+            foreach (var device in GetOutputDevices())
+                ids.Add(device.Id);
+
+            return ids;
+        }
+
+        // Onto the UI thread, because the handler on the other end updates
+        // ViewModel state - see IAudioSink.OutputDeviceLost. Both callers reach
+        // here off a thread pool item, never from the audio callback.
+        private void RaiseOutputDeviceLost() =>
+            Dispatcher.UIThread.Post(() => OutputDeviceLost?.Invoke(this, EventArgs.Empty));
 
         [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
         private static void DataCallback(ma_device* pDevice, void* pOutput, void* pInput, uint frameCount)
@@ -392,7 +674,7 @@ namespace Flower.Manager
                 if (_device == null || !_started)
                     return;
 
-                ma.device_stop(_device);
+                StopDeviceIntentionally();
                 _started = false;
                 Paused?.Invoke(this, EventArgs.Empty);
             }
@@ -405,10 +687,129 @@ namespace Flower.Manager
                 if (_device == null || !_started)
                     return;
 
-                ma.device_stop(_device);
+                StopDeviceIntentionally();
                 _started = false;
                 Stopped?.Invoke(this, EventArgs.Empty);
             }
+        }
+
+        public IReadOnlyList<AudioOutputDevice> GetOutputDevices()
+        {
+            lock (_gate)
+            {
+                if (_disposed || _context == null)
+                    return [];
+
+                // The infos land in memory the context owns and reuses on the
+                // next enumeration, so everything wanted out of them is copied
+                // into managed objects before the lock is released.
+                ma_device_info* infos;
+                uint count;
+                var result = ma.context_get_devices(_context, &infos, &count, null, null);
+                if (result != ma_result.MA_SUCCESS)
+                {
+                    _logger.LogWarning("miniaudio context_get_devices failed: {Result}", result);
+                    return [];
+                }
+
+                var devices = new List<AudioOutputDevice>((int)count);
+                for (uint i = 0; i < count; i++)
+                {
+                    var info = &infos[i];
+                    devices.Add(new AudioOutputDevice(EncodeDeviceId(&info->id), ReadName(info), info->isDefault != 0));
+                }
+
+                return devices;
+            }
+        }
+
+        public string? OutputDeviceId
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _outputDeviceId;
+                }
+            }
+        }
+
+        public void SetOutputDevice(string? deviceId)
+        {
+            lock (_gate)
+            {
+                if (_disposed || _context == null || deviceId == _outputDeviceId)
+                    return;
+
+                var wasStarted = _started;
+                CloseDevice();
+                _outputDeviceId = deviceId;
+
+                // A device enumerated a moment ago can be gone by now -
+                // unplugging the headphones with the picker open is the
+                // obvious way. Silence would be the worst outcome, so fall
+                // back to the OS default rather than leaving no device open.
+                if (!OpenDevice() && _outputDeviceId != null)
+                {
+                    _logger.LogWarning("Could not open the requested output device; falling back to the system default");
+                    _outputDeviceId = null;
+                    OpenDevice();
+                }
+
+                if (!wasStarted)
+                    return;
+
+                if (_device == null)
+                {
+                    // Nothing opened at all. The UI still believes playback is
+                    // running, so this is the one path that does owe it an
+                    // event.
+                    Stopped?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                var startResult = ma.device_start(_device);
+                if (startResult == ma_result.MA_SUCCESS)
+                {
+                    _started = true;
+                }
+                else
+                {
+                    _logger.LogWarning("miniaudio device_start failed after an output change: {Result}", startResult);
+                    Stopped?.Invoke(this, EventArgs.Empty);
+                }
+            }
+        }
+
+        // ma_device_id is a fixed-size 256-byte union whose meaningful member
+        // depends on the backend (a CoreAudio UID string, a WASAPI wide
+        // string, an AAudio int...). Nothing above this class has any business
+        // knowing which, so the whole blob is base64'd and handed up as an
+        // opaque token that only TryDecodeDeviceId ever reads back.
+        private static string EncodeDeviceId(ma_device_id* id) =>
+            Convert.ToBase64String(new ReadOnlySpan<byte>(id, sizeof(ma_device_id)));
+
+        private static bool TryDecodeDeviceId(string encoded, ma_device_id* id)
+        {
+            var destination = new Span<byte>(id, sizeof(ma_device_id));
+            return Convert.TryFromBase64String(encoded, destination, out var written)
+                   && written == destination.Length;
+        }
+
+        // ma_device_info.name is an inline char[256], not a pointer, and
+        // taking its address through the binding's generated fixed-buffer
+        // wrapper (&info->name) does not give the field's address - so the
+        // offset is asked for explicitly and applied to the struct base.
+        private static readonly int NameOffset = (int)Marshal.OffsetOf<ma_device_info>(nameof(ma_device_info.name));
+
+        private static string ReadName(ma_device_info* info)
+        {
+            // MA_MAX_DEVICE_NAME_LENGTH + 1, matching miniaudio.h.
+            const int capacity = 256;
+
+            var name = new ReadOnlySpan<byte>((byte*)info + NameOffset, capacity);
+            var end = name.IndexOf((byte)0);
+            return Encoding.UTF8.GetString(end < 0 ? name : name[..end]);
         }
 
         public void Dispose()
@@ -421,12 +822,7 @@ namespace Flower.Manager
 
                 _watchdog.Dispose();
 
-                if (_device != null)
-                {
-                    ma.device_uninit(_device);
-                    NativeMemory.Free(_device);
-                    _device = null;
-                }
+                CloseDevice();
 
                 if (_context != null)
                 {

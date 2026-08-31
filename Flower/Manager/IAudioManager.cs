@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 using Flower.Models;
 
@@ -39,6 +40,15 @@ namespace Flower.Manager
         // rebuilds and swaps the whole processor; there is no partial-update
         // path.
         void ApplyEqualizer(Equalizer? equalizer);
+
+        // Output routing, forwarded straight to the underlying IAudioSink -
+        // see IAudioSink.GetOutputDevices/OutputDeviceId/SetOutputDevice for
+        // what the Ids mean and what a swap costs. Managers with no device
+        // concept (WebAudioManager, whose <audio> element follows the
+        // browser's own routing) report no devices and ignore the setter.
+        IReadOnlyList<AudioOutputDevice> GetOutputDevices();
+        string? OutputDeviceId { get; }
+        void SetOutputDevice(string? deviceId);
 
         public event EventHandler? Paused;
         public event EventHandler? Stopped;

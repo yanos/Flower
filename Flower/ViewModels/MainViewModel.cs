@@ -322,6 +322,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // is consulted once, here, and everything below flows down the visual tree.
     public PlaylistControlViewModel PlaybackControls => _playlistControlViewModel;
     public VolumeControlViewModel Volume { get; }
+    public OutputDeviceControlViewModel OutputDevice { get; }
     public CurrentlyPlayingControlViewModel NowPlaying { get; }
 
     // The two non-modal windows MainView opens on command (Log, Equalizer) and
@@ -1056,6 +1057,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         ITunesImportCoordinator iTunesImport,
         AnimationClock animationClock,
         VolumeControlViewModel volume,
+        OutputDeviceControlViewModel outputDevice,
         CurrentlyPlayingControlViewModel nowPlaying,
         EqualizerViewModel equalizer,
         SidebarRenameService rename,
@@ -1091,6 +1093,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         Library                = library;
         _playlistControlViewModel = playlistControlViewModel;
         Volume                 = volume;
+        OutputDevice           = outputDevice;
         NowPlaying             = nowPlaying;
         Log                    = log;
         Equalizer              = equalizer;

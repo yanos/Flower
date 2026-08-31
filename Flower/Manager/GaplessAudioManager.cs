@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Timers;
@@ -16,9 +17,10 @@ namespace Flower.Manager
     // The one IAudioManager implementation used on every platform: decode
     // (via GaplessCoordinator/TrackDecoder) and render (via the injected
     // IAudioSink) are fully decoupled, so gapless playback itself needs
-    // nothing platform-specific - only the sink differs (MiniaudioSink by
-    // default; Flower.Apple's AppleAudioEngineSink on macOS/iOS for real
-    // AirPlay/Bluetooth routing).
+    // nothing platform-specific - and today no platform even differs: the
+    // sink is MiniaudioSink everywhere, since Apple output routing turned out
+    // to be a session concern rather than a sink one (see
+    // docs/AIRPLAY-BLUETOOTH-PLAN.md Phase 2).
     public sealed class GaplessAudioManager : IAudioManager, IDisposable
     {
         // ~2s of canonical PCM - just enough headroom between the decoder
@@ -103,6 +105,20 @@ namespace Flower.Manager
                 _logger.LogWarning("Playback failed for {Path} - decode error, skipping", track.Path);
                 TrackFailed?.Invoke(this, new TrackFailedEventArgs(track));
             };
+
+            // Unsubscribed in Dispose: the platform session is a process-wide
+            // singleton set once at startup, so it outlives every manager built
+            // against it - a test that builds and drops one must not leave it
+            // still pausing a disposed sink.
+            if (_platformAudioSession != null)
+                _platformAudioSession.OutputDeviceLost += OnOutputDeviceLost;
+
+            // The same fact from the other direction, and deliberately the
+            // same handler: on iOS only the AVAudioSession can see a route
+            // vanish, and everywhere else only the sink's own backend can. The
+            // two never both fire, and what to do about it is one decision, so
+            // it is written once.
+            _sink.OutputDeviceLost += OnOutputDeviceLost;
 
             _sink.Playing += (_, e) => Playing?.Invoke(this, e);
             _sink.Paused += (_, e) => Paused?.Invoke(this, e);
@@ -199,6 +215,16 @@ namespace Flower.Manager
 
         public void ApplyEqualizer(Equalizer? equalizer) => _sink.ApplyEqualizer(equalizer);
 
+        public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => _sink.GetOutputDevices();
+
+        public string? OutputDeviceId => _sink.OutputDeviceId;
+
+        public void SetOutputDevice(string? deviceId)
+        {
+            _logger.LogInformation("Output device changed to {DeviceId}", deviceId ?? "the system default");
+            _sink.SetOutputDevice(deviceId);
+        }
+
         private void LogDiagnosticSnapshotIfDue()
         {
             var now = Stopwatch.GetTimestamp();
@@ -212,8 +238,32 @@ namespace Flower.Manager
             _coordinator.LogDiagnosticSnapshot(renderStarted: _sink.IsPlaying);
         }
 
+        // The user's headphones/Bluetooth output disappeared. Pausing is what
+        // every music app on the platform does; the alternative is Flower
+        // carrying on at full volume through the handset speaker, or the
+        // laptop's, in a quiet room. Routed through Pause() rather than
+        // straight at the sink so the audio session is released too, exactly
+        // as a tapped pause button would.
+        //
+        // Reached from either reporter - IPlatformAudioSession on iOS,
+        // IAudioSink everywhere else - because the decision is the same one
+        // whichever of them noticed. Both arrive on the UI thread by contract.
+        private void OnOutputDeviceLost(object? sender, EventArgs e)
+        {
+            if (!IsPlaying)
+                return;
+
+            _logger.LogInformation("Output device disappeared; pausing playback");
+            Pause();
+        }
+
         public void Dispose()
         {
+            if (_platformAudioSession != null)
+                _platformAudioSession.OutputDeviceLost -= OnOutputDeviceLost;
+
+            _sink.OutputDeviceLost -= OnOutputDeviceLost;
+
             _positionTimer.Dispose();
             _coordinator.Dispose();
             _sink.Dispose();
