@@ -71,7 +71,20 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // interrupt Music/Podcasts merely by opening Flower. GaplessAudioManager
         // activates it immediately before Flower starts rendering and releases
         // it on pause/stop, preserving background playback only while needed.
-        PlatformAudioSession.Current = new AppleAudioSession();
+        //
+        // A factory, unlike the three above, because AppleAudioSession takes an
+        // injected ILogger<T> and there is no container here yet to resolve one
+        // from; App.axaml.cs invokes this the moment there is. Nothing reads
+        // the session before then - GaplessAudioManager, its only consumer, is
+        // itself built by that container.
+        PlatformAudioSession.Factory = loggerFactory =>
+            new AppleAudioSession(loggerFactory.CreateLogger<AppleAudioSession>());
+
+        // Apple's AirPlay/Bluetooth route button, hosted by
+        // Flower.UserControls.RoutePickerControl wherever the mobile UI asks
+        // for one. Same before-Avalonia-starts timing as the three above,
+        // since RoutePickerControl reads Current once in its constructor.
+        PlatformRoutePicker.Current = new AppleRoutePicker();
 
         // Notification-based rather than overriding UIApplicationDelegate's
         // WillEnterForeground directly - the classic override isn't available

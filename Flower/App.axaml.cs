@@ -83,6 +83,14 @@ public partial class App : Application
         var loggerFactory = LoggerFactory.Create(builder => builder.AddSerilog());
         AppLogging.UseLoggerFactory(loggerFactory);
 
+        // The one platform seam that arrives as a factory rather than a ready
+        // instance, because its implementation wants an injected ILogger<T> and
+        // the entry point that registers it (Flower.iOS's AppDelegate) runs
+        // before any of this. Here is the first moment it can be given one, and
+        // still well before GaplessAudioManager - the only thing that reads it -
+        // is constructed further down.
+        PlatformAudioSession.Materialize(loggerFactory);
+
         var services = new ServiceCollection()
             .AddLogging(builder => builder.AddSerilog())
             .AddSingleton(loggerFactory);
@@ -268,6 +276,7 @@ public partial class App : Application
             .AddSingleton<PlaylistControlViewModel>()
             .AddSingleton<MainViewModel>()
             .AddSingleton<VolumeControlViewModel>()
+            .AddSingleton<OutputDeviceControlViewModel>()
             .AddSingleton<CurrentlyPlayingControlViewModel>()
             .AddSingleton<MobileMainViewModel>()
             .AddSingleton<LogViewModel>()

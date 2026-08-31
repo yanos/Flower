@@ -8,7 +8,6 @@ using Foundation;
 
 using Microsoft.Extensions.Logging;
 
-using Flower.Logging;
 using Flower.Manager;
 
 namespace Flower.iOS;
@@ -33,17 +32,23 @@ namespace Flower.iOS;
 // docs/AIRPLAY-BLUETOOTH-PLAN.md Phase 2 for why that is worth stating.
 public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
 {
-    // AppLogging rather than an injected ILogger<T>: this is constructed by
-    // AppDelegate before Avalonia - and therefore the DI container - exists.
-    private static readonly ILogger Logger = AppLogging.CreateLogger("Flower.iOS.AudioSession");
-
+    private readonly ILogger<AppleAudioSession> _logger;
     private readonly AVAudioSession _session = AVAudioSession.SharedInstance();
     private readonly NSObject _routeChangeObserver;
 
     public event EventHandler? OutputDeviceLost;
 
-    public AppleAudioSession()
+    // Injected, not fetched from AppLogging: this is an ordinary instance class
+    // with a constructor, and AppLogging is the hatch for the cases that have
+    // nowhere to inject into - static classes (VlcNativeSetup) and
+    // UnmanagedCallersOnly callbacks (BonjourMdnsBackend). AppDelegate can't
+    // supply a logger itself, since it runs before the container exists, so it
+    // registers a PlatformAudioSession.Factory and the composition root calls
+    // it once logging is up.
+    public AppleAudioSession(ILogger<AppleAudioSession> logger)
     {
+        _logger = logger;
+
         // Registered for the app's whole life, not just while the session is
         // active: a route change that arrives a moment after playback stopped
         // is still worth knowing about, and re-registering around activation
@@ -58,19 +63,19 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
                                   AVAudioSessionRouteSharingPolicy.LongFormAudio, categoryOptions,
                                   out var categoryError))
         {
-            Logger.LogWarning("Could not configure the iOS playback audio session: {Error}", categoryError);
+            _logger.LogWarning("Could not configure the iOS playback audio session: {Error}", categoryError);
             return;
         }
 
         if (!_session.SetActive(true, out var activationError))
-            Logger.LogWarning("Could not activate the iOS playback audio session: {Error}", activationError);
+            _logger.LogWarning("Could not activate the iOS playback audio session: {Error}", activationError);
     }
 
     public void DeactivateAfterPlayback()
     {
         // Tell a player Flower interrupted (e.g. Music) that it may resume.
         if (!_session.SetActive(false, AVAudioSessionSetActiveOptions.NotifyOthersOnDeactivation, out var deactivationError))
-            Logger.LogWarning("Could not deactivate the iOS playback audio session: {Error}", deactivationError);
+            _logger.LogWarning("Could not deactivate the iOS playback audio session: {Error}", deactivationError);
     }
 
     // Route changes arrive for plenty of reasons that are none of Flower's
@@ -87,7 +92,7 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
     // handed over.
     private void OnRouteChange(object? sender, AVAudioSessionRouteChangeEventArgs e)
     {
-        Logger.LogInformation("iOS audio route changed: {Reason}", e.Reason);
+        _logger.LogInformation("iOS audio route changed: {Reason}", e.Reason);
 
         if (e.Reason != AVAudioSessionRouteChangeReason.OldDeviceUnavailable)
             return;

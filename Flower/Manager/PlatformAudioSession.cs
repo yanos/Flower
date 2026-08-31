@@ -1,5 +1,7 @@
 using System;
 
+using Microsoft.Extensions.Logging;
+
 namespace Flower.Manager;
 
 // iOS needs the AVAudioSession category and activation to be timed around real
@@ -37,5 +39,20 @@ public interface IPlatformAudioSession
 // composition root, following PlatformAudioManager and PlatformNowPlaying.
 public static class PlatformAudioSession
 {
+    // A factory rather than a ready-made instance, unlike its three sibling
+    // seams. The entry point runs before Avalonia, so it has no container to
+    // resolve an ILogger<T> from - but nothing needs a session that early
+    // either, so the shared composition root calls Materialize below once
+    // logging is up and hands the implementation what it needs. The siblings
+    // stay instances because they genuinely are needed before then
+    // (PlatformRoutePicker is read by a Control, outside DI entirely).
+    public static Func<ILoggerFactory, IPlatformAudioSession>? Factory { get; set; }
+
     public static IPlatformAudioSession? Current { get; set; }
+
+    // Called by App.axaml.cs immediately after UseLoggerFactory. Idempotent,
+    // and leaves an explicitly-assigned Current alone so a test can substitute
+    // one without racing startup.
+    public static void Materialize(ILoggerFactory loggerFactory) =>
+        Current ??= Factory?.Invoke(loggerFactory);
 }

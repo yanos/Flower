@@ -125,27 +125,85 @@ namespace Flower.Logging
         // directly instead once AddLogging is wired up (see App.axaml.cs), and
         // will get the same underlying factory either way.
         //
-        // Falls back to a no-op logger if called before UseLoggerFactory rather
-        // than throwing: some of these classes (Library, PlaylistControlViewModel,
-        // PlaylistStore/AppSettingsStore) have a static logger field, evaluated
-        // the first time the class is touched - in the real app that's always
-        // after Initialize()/UseLoggerFactory() (the first lines of
-        // App.OnFrameworkInitializationCompleted), but unit tests construct
-        // these classes directly without ever running app startup, so silently
-        // discarding log output there is the right behavior rather than
-        // crashing every test that touches a logged class.
+        // Never throws when called before UseLoggerFactory, and - the part that
+        // matters - never *pins* itself to a no-op logger either. Many of these
+        // call sites are static logger fields, evaluated the first time their
+        // class is touched, and not all of them are touched after startup:
+        // anything a platform entry point constructs (Flower.iOS's AppDelegate
+        // sets up PlatformMdns/PlatformAudioSession in CustomizeAppBuilder)
+        // runs *before* App.OnFrameworkInitializationCompleted, which is where
+        // Initialize()/UseLoggerFactory() live. Handing those a plain
+        // NullLogger.Instance silently disabled that class's logging for the
+        // rest of the process - a whole file's worth of diagnostics that looked
+        // present in the source and never reached the log.
+        //
+        // So the returned logger resolves the factory on use and caches it once
+        // it appears. Unit tests, which construct logged classes without ever
+        // running app startup, still get a no-op - the factory just never
+        // arrives - which is the right behaviour there rather than crashing.
         public static ILogger CreateLogger<T>() => CreateLogger(typeof(T).FullName ?? typeof(T).Name);
 
-        public static ILogger CreateLogger(string categoryName) =>
-            _factory?.CreateLogger(categoryName) ?? NullLogger.Instance;
+        public static ILogger CreateLogger(string categoryName) => new DeferredLogger(categoryName);
 
         // For classes constructed at the composition root (App.axaml.cs) before
         // the DI container exists, but whose constructor still wants a proper
         // ILogger<T> - the same generic type the container would inject
         // automatically for a class it constructs itself (see MainViewModel) -
         // rather than the untyped ILogger CreateLogger<T>() above.
-        public static ILogger<T> CreateTypedLogger<T>() =>
-            _factory != null ? new Logger<T>(_factory) : NullLogger<T>.Instance;
+        public static ILogger<T> CreateTypedLogger<T>() => new DeferredLogger<T>();
+
+        // Resolves _factory lazily instead of at construction, so a logger
+        // handed out before UseLoggerFactory starts working the moment it runs
+        // - see CreateLogger's remarks for the bug this exists to prevent.
+        // Caching the resolved logger keeps the hot path (IsEnabled on a Trace
+        // line) to a field read; the race to fill it is benign, since every
+        // racer computes the same value from the same factory.
+        private class DeferredLogger : ILogger
+        {
+            private readonly string _categoryName;
+            private ILogger? _resolved;
+
+            public DeferredLogger(string categoryName) => _categoryName = categoryName;
+
+            protected ILogger Inner
+            {
+                get
+                {
+                    if (_resolved != null)
+                        return _resolved;
+
+                    var factory = _factory;
+                    if (factory == null)
+                        return NullLogger.Instance;
+
+                    return _resolved = factory.CreateLogger(_categoryName);
+                }
+            }
+
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => Inner.BeginScope(state);
+
+            public bool IsEnabled(LogLevel logLevel) => Inner.IsEnabled(logLevel);
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                Inner.Log(logLevel, eventId, state, exception, formatter);
+        }
+
+        // The ILogger<T> flavour of the same deferral. Category name matches
+        // what the DI container's own Logger<T> would produce, so a class that
+        // later moves from CreateTypedLogger to constructor injection keeps
+        // logging under the same name.
+        private sealed class DeferredLogger<T> : DeferredLogger, ILogger<T>
+        {
+            public DeferredLogger()
+                : base(typeof(T).FullName ?? typeof(T).Name)
+            {
+            }
+        }
 
         // Flushes buffered log entries to disk - call on shutdown (see
         // MainWindow's Closing handler) so the last few lines of a session
