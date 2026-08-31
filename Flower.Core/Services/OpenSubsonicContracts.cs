@@ -138,7 +138,42 @@ public sealed record Child(
     // tagged "Various Artists" both arrive as the same display string, and a
     // receiving head that later downloads the file would disagree with its own
     // rescan of it. See Track.IsCompilation.
-    bool IsCompilation = false);
+    bool IsCompilation = false,
+    // The rest of what the Technical tab of Track Info shows. BitRate above was
+    // the only one of these the manifest carried, and even it was dropped on
+    // arrival (see LibrarySyncMapper.ToPlaceholderTrack), so a library made
+    // entirely of synced placeholders showed an all-"—" Technical tab while the
+    // serving side had every value from its own TagLib scan.
+    //
+    // SamplingRate, ChannelCount and BitDepth are real OpenSubsonic fields, so a
+    // third-party client browsing a Flower host gets them too. Codec is not in
+    // the spec - it is TagLib's own codec description ("MPEG Version 1 Audio,
+    // Layer 3 VBR"), which ContentType/Suffix cannot reconstruct: both .m4a alac
+    // and .m4a aac are audio/mp4. Flower-specific, same as PlayCounts above.
+    int? SamplingRate = null,
+    int? ChannelCount = null,
+    int? BitDepth = null,
+    string? Codec = null,
+    // The file's path relative to the library folder it was found under -
+    // "Angine de Poitrine/Vol.II/01 Fabienk.mp3", never the absolute path and
+    // never the root itself. This is the spec's own Child.path in everything but
+    // name; it is sent as "relativePath" rather than "path" because "path" on a
+    // Flower Track means the absolute local one, and one field meaning both
+    // things is the kind of confusion the rest of this file exists to avoid.
+    //
+    // This is the one thing SYNC-PLAN.md's Path-can't-cross-the-wire rule does
+    // not cover. The rule protects the serving machine's layout - where its
+    // music lives, and therefore who the user is and how their disks are
+    // arranged. The part under the root is not layout, it is the library's own
+    // organization, and the receiving side already knows every tag it was built
+    // from.
+    //
+    // What needs it is the download: a saved file used to be named after the
+    // receiver's own Track.Id ("904740018a1d4b22bdb45d9a9b84c7fb.mp3" in a flat
+    // folder), which is unrecognisable to anything but Flower. With this, a
+    // download reproduces the origin's own tree under the download folder. See
+    // Track.OriginRelativePath and LibraryDownloadService.
+    string? RelativePath = null);
 
 public sealed record SearchResult3(
     List<ArtistID3>? Artist,

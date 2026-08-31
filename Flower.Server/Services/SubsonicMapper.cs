@@ -35,7 +35,12 @@ public static class SubsonicMapper
     // counts, which is what they did before and what a third-party Subsonic
     // client expects; a Flower client pulls its catalog through the bulk route,
     // not through those.
-    public static Child ToChild(Track track, string? selfFingerprint = null)
+    // libraryRoots is the server's configured LibraryPaths
+    // (FlowerServerOptions.LibraryPaths, re-read per request the same way the
+    // rescan re-reads it) - what RelativePath below is relative *to*. Optional
+    // only so a test can map a track without a folder configuration; every
+    // caller in the server passes it.
+    public static Child ToChild(Track track, string? selfFingerprint = null, IReadOnlyList<string>? libraryRoots = null)
     {
         var albumArtist = track.EffectiveAlbumArtist;
         var suffix = SuffixOf(track);
@@ -88,8 +93,55 @@ public static class SubsonicMapper
             // above, now also sent as a value - see Child.DisplayAlbumArtist for
             // what a receiving head could not reconstruct without it.
             DisplayAlbumArtist: albumArtist,
-            IsCompilation: track.IsCompilation);
+            IsCompilation: track.IsCompilation,
+            // See Child.SamplingRate - null rather than 0 for anything the
+            // scan did not produce, so the receiver keeps its own "unset"
+            // instead of storing a confident zero.
+            SamplingRate: track.SampleRate > 0 ? track.SampleRate : null,
+            ChannelCount: track.Channels > 0 ? track.Channels : null,
+            BitDepth: track.BitsPerSample > 0 ? track.BitsPerSample : null,
+            Codec: track.Codec,
+            RelativePath: RelativePathOf(track, libraryRoots));
     }
+
+    // The part of the file's path below whichever configured library folder it
+    // was found under, with the separator normalized to '/' so a Windows server
+    // and a Unix client agree on what the tree looks like. See
+    // Child.RelativePath for why only this part travels.
+    //
+    // Longest matching root wins, for the nested case (/music and
+    // /music/lossless both configured): the shorter one would prepend
+    // "lossless/" to a file the deeper root already accounts for. A path under
+    // no configured root at all - a file scanned before a folder was removed,
+    // or one adopted from Music.app - keeps its bare file name, which is still
+    // better than the receiver's own track id and still says nothing about
+    // where the file sits.
+    public static string? RelativePathOf(Track track, IReadOnlyList<string>? libraryRoots)
+    {
+        if (track.Path is not { } path)
+            return null;
+
+        var best = "";
+        foreach (var root in libraryRoots ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(root))
+                continue;
+
+            var normalized = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (normalized.Length <= best.Length)
+                continue;
+            if (path.StartsWith(normalized + Path.DirectorySeparatorChar, PathComparison))
+                best = normalized;
+        }
+
+        var relative = best.Length > 0 ? path[(best.Length + 1)..] : Path.GetFileName(path);
+        return relative.Replace(Path.DirectorySeparatorChar, '/');
+    }
+
+    // Case-insensitive off Linux, matching how Importer's own seen-files set
+    // and Library.UpdateTracks' path dictionary already compare paths.
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
     private static long SizeOf(Track track)
     {

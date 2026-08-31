@@ -30,6 +30,79 @@ public class LibrarySyncMapperTests
         Assert.Equal("some-id", track.OriginTrackId);
     }
 
+    // The Technical tab of Track Info reads these five, and a library made
+    // entirely of synced placeholders had none of them: the manifest carried
+    // BitRate alone, and the mapper did not read even that. See Child's own
+    // comment on SamplingRate.
+    [Fact]
+    public void ToPlaceholderTrack_carries_the_technical_fields_the_origin_scanned()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
+            Size: null, ContentType: null, Suffix: "flac", Duration: 259, BitRate: 990, CoverArt: null,
+            SamplingRate: 44100, ChannelCount: 2, BitDepth: 24, Codec: "Flac");
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Equal(990, track.Bitrate);
+        Assert.Equal(44100, track.SampleRate);
+        Assert.Equal(2, track.Channels);
+        Assert.Equal(24, track.BitsPerSample);
+        Assert.Equal("Flac", track.Codec);
+    }
+
+    // A third-party OpenSubsonic server sends no Codec at all, and may send
+    // none of the numbers either. Those must land as the same "unset" an
+    // unscanned file has, not as a confident zero the Technical tab would
+    // render as "0 kHz".
+    [Fact]
+    public void ToPlaceholderTrack_leaves_absent_technical_fields_unset()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Equal(0, track.Bitrate);
+        Assert.Equal(0, track.SampleRate);
+        Assert.Equal(0, track.Channels);
+        Assert.Equal(0, track.BitsPerSample);
+        Assert.Null(track.Codec);
+    }
+
+    // What the download names the saved file after, so a downloaded library is
+    // browsable outside Flower - see Child.RelativePath and
+    // LibraryDownloadService.ResolveDestination.
+    [Fact]
+    public void ToPlaceholderTrack_keeps_the_origins_relative_path_for_the_download_to_name_the_file_after()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Fabienk", Album: "Vol.II", Artist: "Angine de Poitrine",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: null, Genre: null,
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null,
+            RelativePath: "Angine de Poitrine/Vol.II/01 Fabienk.mp3");
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Equal("Angine de Poitrine/Vol.II/01 Fabienk.mp3", track.OriginRelativePath);
+    }
+
+    // A third-party OpenSubsonic server sends no such field, and the download
+    // falls back to the track id plus Suffix, exactly as it always did.
+    [Fact]
+    public void ToPlaceholderTrack_leaves_the_relative_path_unset_when_the_server_sends_none()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Fabienk", Album: "Vol.II", Artist: "Angine de Poitrine",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: null, Genre: null,
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);
+
+        Assert.Null(LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1").OriginRelativePath);
+    }
+
     // The peer's id is stored verbatim rather than re-derived, so it keeps
     // working across a tag edit on the serving side and works at all against a
     // standalone Flower.Server, whose ids are database row ids that no amount

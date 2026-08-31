@@ -166,5 +166,16 @@ namespace Flower.Persistence.Sql
         public const string V2 = """
             ALTER TABLE tracks ADD COLUMN is_locally_downloaded INTEGER NOT NULL DEFAULT 0;
             """;
+
+        // See Track.OriginRelativePath. A step for the same reason V2 is one:
+        // on a client the whole library is synced rows, and deleting the
+        // database to pick up a folded-in column would take the play counts,
+        // starred flags and playlists with it. The column starts null on every
+        // existing row and refills on the next sync, which is a merge, not a
+        // rescan - MergeSyncedTracks writes it whether the track is still a
+        // placeholder or already downloaded.
+        public const string V3 = """
+            ALTER TABLE tracks ADD COLUMN origin_relative_path TEXT;
+            """;
     }
 }

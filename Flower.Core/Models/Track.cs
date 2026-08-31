@@ -157,6 +157,17 @@ namespace Flower.Models
         // then. Same lifetime/meaning as OriginDeviceFingerprint.
         public string? OriginFileExtension { get; set; }
 
+        // The origin peer's path for this file, relative to whichever library
+        // folder it sits under and separated by '/' - see Child.RelativePath,
+        // which is where it comes from and why only that part of the path
+        // travels. What a download names the file it saves, so a downloaded
+        // track lands at "<downloads>/Angine de Poitrine/Vol.II/01 Fabienk.mp3"
+        // rather than under this device's own opaque track id. Null when the
+        // origin is a third-party server that sends no such field, which is what
+        // OriginFileExtension above still covers. Same lifetime/meaning as
+        // OriginDeviceFingerprint.
+        public string? OriginRelativePath { get; set; }
+
         // SHA256 hash (hex) of the origin peer's album art bytes at last sync -
         // see LibraryOpenSubsonicMapper's CoverArt field and AlbumArtLoader's
         // remote-fetch path. Used as the local disk cache key for synced art, so

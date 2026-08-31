@@ -199,7 +199,12 @@ public static class LibraryOpenSubsonicMapper
         // The same album artist ArtistId above is derived from, now also sent as
         // a value - see Child.DisplayAlbumArtist.
         DisplayAlbumArtist: track.EffectiveAlbumArtist,
-        IsCompilation: track.IsCompilation);
+        IsCompilation: track.IsCompilation,
+        // See Child.SamplingRate.
+        SamplingRate: track.SampleRate > 0 ? track.SampleRate : null,
+        ChannelCount: track.Channels > 0 ? track.Channels : null,
+        BitDepth: track.BitsPerSample > 0 ? track.BitsPerSample : null,
+        Codec: track.Codec);
 
     private static int? ParseYear(string? year) => int.TryParse(year, out var y) ? y : null;
 }

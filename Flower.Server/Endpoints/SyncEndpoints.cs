@@ -1,8 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using Microsoft.Extensions.Options;
+
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Server.Configuration;
 using Flower.Server.Services;
 using Flower.Services;
 
@@ -190,7 +193,8 @@ public static class SyncEndpoints
     // was built from, and several peers missing the cache at once still only
     // build it once.
     private static IResult GetLibrary(
-        HttpContext context, Library library, DeviceSigningKey signingKey, LibraryManifestCache cache)
+        HttpContext context, Library library, DeviceSigningKey signingKey, LibraryManifestCache cache,
+        IOptionsMonitor<FlowerServerOptions> options)
     {
         var token = library.ChangeToken;
         context.Response.Headers.ETag = token;
@@ -211,7 +215,7 @@ public static class SyncEndpoints
                 // than its own - see Track.RemotePlayCounts, and
                 // SubsonicMapper.ToChild for why the /rest browse endpoints
                 // deliberately do not pass one.
-                .Select(track => SubsonicMapper.ToChild(track, signingKey.Fingerprint))
+                .Select(track => SubsonicMapper.ToChild(track, signingKey.Fingerprint, options.CurrentValue.LibraryPaths))
                 .ToList();
             return JsonSerializer.Serialize(new LibrarySyncManifestDto(signingKey.Fingerprint, songs), JsonOptions);
         });

@@ -219,7 +219,7 @@ public static class SubsonicEndpoints
         return SubsonicResults.Ok(artist: artist);
     }
 
-    private static IResult GetAlbum(string? id, Library library)
+    private static IResult GetAlbum(string? id, Library library, IOptionsMonitor<FlowerServerOptions> options)
     {
         if (string.IsNullOrEmpty(id))
             return SubsonicResults.Failed(10, "Required parameter 'id' missing.");
@@ -235,7 +235,7 @@ public static class SubsonicEndpoints
             summary.ArtistId ?? "",
             id, summary.SongCount, (long)summary.TotalDuration.TotalSeconds,
             summary.Year, summary.Genre,
-            album.Tracks.Select(t => SubsonicMapper.ToChild(t)).ToList());
+            album.Tracks.Select(t => SubsonicMapper.ToChild(t, libraryRoots: options.CurrentValue.LibraryPaths)).ToList());
 
         return SubsonicResults.Ok(album: dto);
     }
@@ -266,7 +266,7 @@ public static class SubsonicEndpoints
         return SubsonicResults.Ok(albumList2: new AlbumList2(page));
     }
 
-    private static IResult GetSong(string? id, Library library)
+    private static IResult GetSong(string? id, Library library, IOptionsMonitor<FlowerServerOptions> options)
     {
         if (string.IsNullOrEmpty(id))
             return SubsonicResults.Failed(10, "Required parameter 'id' missing.");
@@ -275,11 +275,12 @@ public static class SubsonicEndpoints
         if (track is null)
             return SubsonicResults.Failed(70, "Song not found.");
 
-        return SubsonicResults.Ok(song: SubsonicMapper.ToChild(track));
+        return SubsonicResults.Ok(song: SubsonicMapper.ToChild(track, libraryRoots: options.CurrentValue.LibraryPaths));
     }
 
     private static IResult Search3(
         Library library,
+        IOptionsMonitor<FlowerServerOptions> options,
         string query = "", int artistCount = 20, int albumCount = 20, int songCount = 20)
     {
         // One filter, in one place. This was two disagreeing passes under EF
@@ -295,7 +296,7 @@ public static class SubsonicEndpoints
         var songs = snapshot.Tracks
             .Where(t => Matches(t.Title, query))
             .Take(songCount)
-            .Select(t => SubsonicMapper.ToChild(t))
+            .Select(t => SubsonicMapper.ToChild(t, libraryRoots: options.CurrentValue.LibraryPaths))
             .ToList();
 
         var albums = snapshot.Albums
@@ -341,7 +342,7 @@ public static class SubsonicEndpoints
         null,
         playlist.IsPublic);
 
-    private static IResult GetPlaylist(string? id, Library library)
+    private static IResult GetPlaylist(string? id, Library library, IOptionsMonitor<FlowerServerOptions> options)
     {
         if (string.IsNullOrEmpty(id))
             return SubsonicResults.Failed(10, "Required parameter 'id' missing.");
@@ -349,7 +350,7 @@ public static class SubsonicEndpoints
         if (library.FindPlaylist(id) is not { } playlist)
             return SubsonicResults.Failed(70, "Playlist not found.");
 
-        var entries = playlist.Tracks.Select(t => SubsonicMapper.ToChild(t)).ToList();
+        var entries = playlist.Tracks.Select(t => SubsonicMapper.ToChild(t, libraryRoots: options.CurrentValue.LibraryPaths)).ToList();
         var summary = ToDto(playlist);
 
         var dto = new PlaylistWithSongsDto(
@@ -359,7 +360,7 @@ public static class SubsonicEndpoints
         return SubsonicResults.Ok(playlist: dto);
     }
 
-    private static IResult CreatePlaylist(HttpRequest request, Library library)
+    private static IResult CreatePlaylist(HttpRequest request, Library library, IOptionsMonitor<FlowerServerOptions> options)
     {
         var name = request.Query["name"].ToString();
         if (string.IsNullOrEmpty(name))
@@ -369,7 +370,7 @@ public static class SubsonicEndpoints
         // the client's sidebar - see Library's IPlaylistStore.
         var created = new Playlist(name, library.ResolveTracks(request.Query["songId"]));
         library.AddPlaylist(created);
-        return GetPlaylist(created.Id.ToKey(), library);
+        return GetPlaylist(created.Id.ToKey(), library, options);
     }
 
     private static IResult UpdatePlaylist(HttpRequest request, Library library)

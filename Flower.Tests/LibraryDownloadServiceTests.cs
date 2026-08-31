@@ -144,6 +144,127 @@ public class LibraryDownloadServiceTests : IDisposable
         Assert.Same(track, Assert.Single(library.Tracks));
     }
 
+    // A downloaded file lands outside every configured library folder, so no
+    // folder scan will ever visit it - if the download itself does not read the
+    // audio properties off the bytes it just wrote, nothing ever will, and Track
+    // Info's Technical tab stays on whatever the origin happened to send.
+    //
+    // The success test above deliberately serves bytes TagLib cannot parse, so
+    // between the two: an unreadable file still downloads, a readable one also
+    // gets described.
+    [Fact]
+    public async Task DownloadAsync_reads_the_audio_properties_off_the_file_it_wrote()
+    {
+        var audioBytes = SyntheticWav.Build(TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
+        using var server = new FakePeerHttpServer(async ctx =>
+        {
+            ctx.Response.ContentType = "audio/x-wav";
+            ctx.Response.ContentLength64 = audioBytes.Length;
+            await ctx.Response.OutputStream.WriteAsync(audioBytes);
+            ctx.Response.OutputStream.Close();
+        });
+        var track = Placeholder(extension: "wav");
+        var service = MakeService(track, out _);
+
+        var result = await service.DownloadAsync(track, PeerAt(server.Port));
+
+        Assert.Equal(TrackDownloadResult.Downloaded, result);
+        Assert.Equal(48000, track.SampleRate);
+        Assert.Equal(2, track.Channels);
+        Assert.Equal(16, track.BitsPerSample);
+        Assert.NotNull(track.Codec);
+        // Not re-read on purpose - it is part of Track.SyncKey, and the value
+        // the origin sent is the one every subsequent merge matches against.
+        Assert.Equal(TimeSpan.FromSeconds(259), track.Duration);
+    }
+
+    private FakePeerHttpServer ServingAudio(byte[] audioBytes) => new(async ctx =>
+    {
+        ctx.Response.ContentType = "audio/x-wav";
+        ctx.Response.ContentLength64 = audioBytes.Length;
+        await ctx.Response.OutputStream.WriteAsync(audioBytes);
+        ctx.Response.OutputStream.Close();
+    });
+
+    // The saved file used to be named after this device's own Track.Id, flat in
+    // one folder - see ResolveDestination. What the origin calls the file is far
+    // more use, and it is the one thing a downloaded library needs to be
+    // readable outside Flower.
+    [Fact]
+    public async Task DownloadAsync_mirrors_the_origin_relative_path_under_the_download_folder()
+    {
+        using var server = ServingAudio(SyntheticWav.Build(TimeSpan.FromSeconds(1), SyntheticWav.Marker(1)));
+        var track = Placeholder(extension: "wav");
+        track.OriginRelativePath = "Angine de Poitrine/Vol.II/01 Fabienk.wav";
+        var service = MakeService(track, out _);
+
+        var result = await service.DownloadAsync(track, PeerAt(server.Port));
+
+        Assert.Equal(TrackDownloadResult.Downloaded, result);
+        Assert.Equal(
+            Path.Combine(_downloadFolder, "Angine de Poitrine", "Vol.II", "01 Fabienk.wav"),
+            track.Path);
+        Assert.True(File.Exists(track.Path));
+    }
+
+    // A third-party OpenSubsonic server sends no relative path at all, and that
+    // has to keep working - it is what every download did before this existed.
+    [Fact]
+    public async Task DownloadAsync_falls_back_to_the_track_id_when_the_origin_sent_no_relative_path()
+    {
+        using var server = ServingAudio(SyntheticWav.Build(TimeSpan.FromSeconds(1), SyntheticWav.Marker(1)));
+        var track = Placeholder(extension: "wav");
+        var service = MakeService(track, out _);
+
+        var result = await service.DownloadAsync(track, PeerAt(server.Port));
+
+        Assert.Equal(TrackDownloadResult.Downloaded, result);
+        Assert.Equal(Path.Combine(_downloadFolder, $"{track.Id:N}.wav"), track.Path);
+    }
+
+    // The relative path is untrusted input from a peer, and it is being turned
+    // into a filesystem path. A traversing one must not be able to write
+    // anywhere but under the download folder - not by rejecting the download,
+    // just by not honouring the escape.
+    [Fact]
+    public async Task DownloadAsync_refuses_to_let_a_relative_path_escape_the_download_folder()
+    {
+        using var server = ServingAudio(SyntheticWav.Build(TimeSpan.FromSeconds(1), SyntheticWav.Marker(1)));
+        var track = Placeholder(extension: "wav");
+        track.OriginRelativePath = "../../../../../../etc/flower-owned.wav";
+        var service = MakeService(track, out _);
+
+        var result = await service.DownloadAsync(track, PeerAt(server.Port));
+
+        Assert.Equal(TrackDownloadResult.Downloaded, result);
+        Assert.Equal(Path.Combine(_downloadFolder, "etc", "flower-owned.wav"), track.Path);
+    }
+
+    // Two tracks landing on one path would leave one of them playing the
+    // other's audio. Distinct files on the origin, so this takes two origins or
+    // a sanitize collision - rare enough to be worth being loud about in a test
+    // rather than discovering in a library.
+    [Fact]
+    public async Task DownloadAsync_does_not_overwrite_another_tracks_file_on_a_relative_path_collision()
+    {
+        using var server = ServingAudio(SyntheticWav.Build(TimeSpan.FromSeconds(1), SyntheticWav.Marker(1)));
+        var taken = Path.Combine(_downloadFolder, "Artist", "Album", "01 Song.wav");
+        var occupant = Placeholder(path: taken);
+        var track = Placeholder(extension: "wav");
+        track.OriginRelativePath = "Artist/Album/01 Song.wav";
+
+        var library = new Library([occupant, track], NullLogger<Library>.Instance, new TrackRepository(FlowerDb.OpenDefault()));
+        var service = new LibraryDownloadService(
+            library, new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" }, MakeSigningKey(),
+            new AppSettings(), NullLogger<LibraryDownloadService>.Instance);
+
+        var result = await service.DownloadAsync(track, PeerAt(server.Port));
+
+        Assert.Equal(TrackDownloadResult.Downloaded, result);
+        Assert.Equal(Path.Combine(_downloadFolder, $"{track.Id:N}.wav"), track.Path);
+        Assert.Equal(taken, occupant.Path);
+    }
+
     [Fact]
     public async Task DownloadAsync_returns_Failed_when_the_peer_is_unreachable()
     {

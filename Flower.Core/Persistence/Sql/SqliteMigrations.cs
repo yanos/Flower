@@ -33,6 +33,7 @@ namespace Flower.Persistence.Sql
         [
             Schema.V1,
             Schema.V2,
+            Schema.V3,
         ];
 
         public static int LatestVersion => Scripts.Count;

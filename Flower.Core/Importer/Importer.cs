@@ -88,10 +88,7 @@ namespace Flower.Importer
                     var tagFile = TagLib.File.Create(file);
                     var tag = tagFile.Tag;
                     var props = tagFile.Properties;
-
-                    var codec = props?.Codecs != null
-                        ? string.Join(", ", props.Codecs.Where(c => c != null).Select(c => c.Description).Where(d => !string.IsNullOrEmpty(d)))
-                        : null;
+                    var technical = AudioTechnicalProperties.From(props);
 
                     tracks.Add(new Track
                     {
@@ -130,11 +127,11 @@ namespace Flower.Importer
 
                         // Audio technical
                         Duration       = props?.Duration ?? TimeSpan.Zero,
-                        Bitrate        = props?.AudioBitrate ?? 0,
-                        SampleRate     = props?.AudioSampleRate ?? 0,
-                        Channels       = props?.AudioChannels ?? 0,
-                        BitsPerSample  = props?.BitsPerSample ?? 0,
-                        Codec          = codec,
+                        Bitrate        = technical.Bitrate,
+                        SampleRate     = technical.SampleRate,
+                        Channels       = technical.Channels,
+                        BitsPerSample  = technical.BitsPerSample,
+                        Codec          = technical.Codec,
 
                         Path = file
                     });

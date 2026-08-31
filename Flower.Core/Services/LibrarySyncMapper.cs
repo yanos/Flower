@@ -57,6 +57,12 @@ public static class LibrarySyncMapper
         // Track.OriginTrackId for what re-deriving it instead used to break.
         OriginTrackId = song.Id,
         OriginFileExtension = song.Suffix,
+        // The origin's own path below its library folder, which is what the
+        // download names the saved file after - see Child.RelativePath. Null
+        // from a third-party server, which sends no such field; the download
+        // then falls back to the track id plus Suffix above, exactly as every
+        // download did before this existed.
+        OriginRelativePath = song.RelativePath,
         OriginAlbumArtHash = song.CoverArt,
         RemotePlayCounts = (song.PlayCounts ?? new Dictionary<string, int>())
             .Where(kv => kv.Key != ownFingerprint)
@@ -70,5 +76,17 @@ public static class LibrarySyncMapper
         // played - both simply mean "not in History", which is what an unset
         // LastPlayedAt already means.
         LastPlayedAt = song.LastPlayed,
+        // What Track Info's Technical tab reads. A placeholder has no file to
+        // scan, so these can only ever be what the origin's own scan found;
+        // without them a library made entirely of synced placeholders showed an
+        // all-"-" Technical tab. BitRate crossed the wire all along and was
+        // simply not read here - the other three are new (see Child).
+        Bitrate = song.BitRate ?? 0,
+        SampleRate = song.SamplingRate ?? 0,
+        Channels = song.ChannelCount ?? 0,
+        BitsPerSample = song.BitDepth ?? 0,
+        // Null from a third-party server, which has no such field; the Technical
+        // tab falls back to showing nothing for it, same as an unscanned file.
+        Codec = song.Codec,
     };
 }
