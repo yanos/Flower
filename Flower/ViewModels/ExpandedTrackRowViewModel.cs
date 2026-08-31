@@ -9,7 +9,7 @@ namespace Flower.ViewModels;
 // at a time (see MainViewModel.ExpandedAlbumName), so selection only needs to
 // be tracked within whichever one AlbumGridRowViewModel currently owns these -
 // see AlbumGridRowViewModel.SelectTrack.
-public sealed class ExpandedTrackRowViewModel : ViewModelBase
+public sealed class ExpandedTrackRowViewModel : DownloadIndicatorViewModel
 {
     public required Track Track { get; init; }
 

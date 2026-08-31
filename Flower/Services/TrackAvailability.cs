@@ -54,6 +54,19 @@ public static class TrackAvailability
         return any;
     }
 
+    // Whether anything in this album is still worth fetching - drives the
+    // album-level download icons (a grid tile, an expanded album's header).
+    public static bool AnyDownloadable(IEnumerable<Track> tracks, string? pairedServerFingerprint, bool pairedServerReachable)
+    {
+        foreach (var track in tracks)
+        {
+            if (IsAvailable(track, pairedServerFingerprint, pairedServerReachable))
+                return true;
+        }
+
+        return false;
+    }
+
     // Re-marks an existing row list in place when the paired server comes or
     // goes. Takes a list rather than a sequence because the album-art flag is a
     // property of a *run* of adjacent rows (see TrackListBuilder.PlanRows),
@@ -91,7 +104,16 @@ public static class TrackAvailability
     public static void Apply(IEnumerable<AlbumTileViewModel> tiles, string? pairedServerFingerprint, bool pairedServerReachable)
     {
         foreach (var tile in tiles)
+        {
             tile.IsUnavailable = IsAlbumUnavailable(tile.Tracks, pairedServerFingerprint, pairedServerReachable);
+            // The tile's own download icon: shown as soon as *any* of the
+            // album's tracks can be fetched, since that is exactly what
+            // clicking it would then do (see AlbumTileControl / MainView's
+            // "Download Album" menu item, which uses the same rule). Not the
+            // negation of IsUnavailable above - a fully downloaded album is
+            // perfectly available and has nothing left to fetch.
+            tile.IsDownloadable = AnyDownloadable(tile.Tracks, pairedServerFingerprint, pairedServerReachable);
+        }
     }
 }
 
@@ -102,4 +124,10 @@ public static class TrackAvailability
 public readonly record struct TrackAvailabilityContext(string? PairedServerFingerprint, bool PairedServerReachable)
 {
     public bool IsPlayable(Track track) => TrackAvailability.IsPlayable(track, PairedServerFingerprint, PairedServerReachable);
+
+    // "Is there a copy of this to fetch right now" - the same question
+    // TrackRowViewModel.IsDownloadable answers for a row, asked of a bare
+    // Track by the desktop right-click menus, which act on tracks (an album
+    // tile's, a selection's) rather than on rows.
+    public bool IsDownloadable(Track track) => TrackAvailability.IsAvailable(track, PairedServerFingerprint, PairedServerReachable);
 }

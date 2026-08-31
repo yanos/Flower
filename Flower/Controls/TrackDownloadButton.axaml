@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:vm="clr-namespace:Flower.ViewModels"
+             x:Class="Flower.Controls.TrackDownloadButton"
+             x:DataType="vm:DownloadIndicatorViewModel"
+             x:CompileBindings="True"
+             IsVisible="{Binding IsDownloadable}"
+             VerticalAlignment="Center">
+
+  <!-- The download control, right-aligned at the end of whatever it sits in:
+       a track-list row's title cell (TrackRowControl.BuildCellContent), an
+       expanded album's song row, or an album tile under its name (both in
+       AlbumGridRowControl/AlbumTileControl). Its own
+       UserControl rather than more code-built cell content because of the
+       spinner: SpinAngle is bound onto a RotateTransform, which is not part of
+       the visual tree and so has no DataContext of its own to bind against
+       from code-behind - declaring it in XAML is what gives it one. It also
+       keeps this identical to mobile's own download button (see
+       TrackRowTemplate.axaml), which is the same three mutually exclusive icon
+       states over the same three properties.
+
+       Only shown when there is actually something to fetch (IsDownloadable -
+       a placeholder the paired server can serve right now, or an album with
+       at least one such track), so a fully local library shows no icon well
+       at all. -->
+  <Button x:Name="DownloadButton"
+          Background="Transparent"
+          BorderThickness="0"
+          Padding="0"
+          Width="16" Height="16"
+          VerticalAlignment="Center">
+    <Panel>
+      <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="13" Height="13" Opacity="0.7"
+                                  IsVisible="{Binding IsDownloadIdle}"
+                                  ToolTip.Tip="Download"/>
+      <!-- Rotation driven by the row's own SpinAngle, not a View-side
+           animation - see TrackRowViewModel.IsDownloading's doc comment for
+           why (this list virtualizes and pools its rows exactly like mobile's
+           does). -->
+      <materialIcons:MaterialIcon Kind="Sync" Width="13" Height="13" Opacity="0.7"
+                                  IsVisible="{Binding IsDownloading}"
+                                  RenderTransformOrigin="0.5,0.5">
+        <materialIcons:MaterialIcon.RenderTransform>
+          <RotateTransform Angle="{Binding SpinAngle}"/>
+        </materialIcons:MaterialIcon.RenderTransform>
+      </materialIcons:MaterialIcon>
+      <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="13" Height="13" Opacity="0.7"
+                                  IsVisible="{Binding IsDownloadUnavailable}"
+                                  ToolTip.Tip="Download failed - try again later"/>
+    </Panel>
+  </Button>
+</UserControl>

@@ -34,7 +34,7 @@ public readonly record struct AlbumTileKey(string Name, string? Artist);
 // MostRecentlyAdded is the max DateAdded among an album's tracks.
 // RepresentativeTrack is whichever of the album's tracks was added most
 // recently - its embedded art is what the tile shows.
-public sealed class AlbumTileViewModel : ViewModelBase
+public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
 {
     public required string Name { get; init; }
     public string? Artist { get; init; }

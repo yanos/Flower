@@ -45,6 +45,11 @@ public partial class TrackRowControl : UserControl
         };
     }
 
+    // The row's own download icon was clicked - forwarded up through
+    // MusicListPanel to MusicListView, whose consumer (MainView) is the one
+    // holding the ViewModel that can actually start a download.
+    public event EventHandler<TrackRowViewModel>? DownloadRequested;
+
     private void OnColumnsChanged(object? sender, EventArgs e) => BuildCells();
 
     private void BuildCells()
@@ -106,6 +111,11 @@ public partial class TrackRowControl : UserControl
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition(14, GridUnitType.Pixel));
             grid.ColumnDefinitions.Add(new ColumnDefinition(1,  GridUnitType.Star));
+            // Auto, not a fixed well: the download button only exists for a
+            // placeholder the paired server can serve right now (see
+            // TrackDownloadButton), so a library with nothing to download -
+            // every library with no server paired - costs no width at all.
+            grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
 
             var indicator = new TextBlock
             {
@@ -121,8 +131,20 @@ public partial class TrackRowControl : UserControl
             text.Bind(TextBlock.TextProperty, new Binding("Track.Title"));
             Grid.SetColumn(text, 1);
 
+            // Pinned to the far right of the Title cell rather than sitting
+            // against the end of the title itself, so the icons line up down
+            // the column instead of stepping in and out with each song's name.
+            var download = new TrackDownloadButton { Margin = new Thickness(4, 0, 0, 0) };
+            download.DownloadRequested += (_, clicked) =>
+            {
+                if (clicked is TrackRowViewModel row)
+                    DownloadRequested?.Invoke(this, row);
+            };
+            Grid.SetColumn(download, 2);
+
             grid.Children.Add(indicator);
             grid.Children.Add(text);
+            grid.Children.Add(download);
             return grid;
         }
 

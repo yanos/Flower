@@ -50,6 +50,9 @@ public class MusicListPanel : Panel
     private double ContentWidth =>
         TrackRowViewModel.ArtColumnWidth + _columnManager.VisibleColumns.Sum(c => c.Width);
 
+    // A row's own download icon was clicked - see TrackDownloadButton.
+    public event EventHandler<TrackRowViewModel>? RowDownloadRequested;
+
     public void SetItems(IReadOnlyList<TrackRowViewModel> items)
     {
         _items = items;
@@ -91,6 +94,10 @@ public class MusicListPanel : Panel
         {
             int slot = Children.Count;
             var ctrl = new TrackRowControl(_columnManager);
+            // Wired once per pooled control, not per row: the control outlives
+            // any one row (see the pool above), and forwards whichever row it
+            // currently holds.
+            ctrl.DownloadRequested += (_, row) => RowDownloadRequested?.Invoke(this, row);
             ctrl.DataContext = _items[indices[slot]];
             _activeIndex.Add(indices[slot]);
             Children.Add(ctrl);

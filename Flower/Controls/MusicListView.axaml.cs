@@ -45,6 +45,7 @@ public partial class MusicListView : UserControl
 
     // ── Events ────────────────────────────────────────────────────────────────
     public event EventHandler<TrackRowViewModel>? RowActivated;     // double-tap / Enter
+    public event EventHandler<TrackRowViewModel>? RowDownloadRequested; // the row's own download icon
     public event EventHandler<TrackRowViewModel>? RowContextMenu;    // right-click on row
     public event EventHandler?                    HeaderContextMenu; // right-click on header
 
@@ -66,6 +67,11 @@ public partial class MusicListView : UserControl
     private Guid? _anchorId; // Shift+click range-select anchor
 
     public IReadOnlyList<FlowerTrack> SelectedTracks => _selectedRows.Select(r => r.Track).ToList();
+
+    // The rows behind SelectedTracks, for a caller that needs the per-row state
+    // and not just the tracks (the right-click Download item, whose progress
+    // shows on the rows themselves).
+    public IReadOnlyList<TrackRowViewModel> SelectedRows => _selectedRows.ToList();
 
     private TrackRowViewModel? _selectedRow;
     public TrackRowViewModel? SelectedRow
@@ -291,6 +297,7 @@ public partial class MusicListView : UserControl
         };
 
         // Handle pointer / keyboard on the panel
+        _panel.RowDownloadRequested += (_, row) => RowDownloadRequested?.Invoke(this, row);
         _panel.PointerPressed     += Panel_PointerPressed;
         _panel.PointerMoved       += Panel_PointerMoved;
         _panel.PointerReleased    += Panel_PointerReleased;

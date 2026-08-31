@@ -39,7 +39,10 @@ public sealed class AlbumGridRowViewModel : ViewModelBase
         {
             _availability = value;
             foreach (var row in _trackRows)
-                row.IsUnavailable = !value.IsPlayable(row.Track);
+            {
+                row.IsUnavailable  = !value.IsPlayable(row.Track);
+                row.IsDownloadable = value.IsDownloadable(row.Track);
+            }
         }
     }
 
@@ -50,6 +53,12 @@ public sealed class AlbumGridRowViewModel : ViewModelBase
         set
         {
             _expandedTracks = value;
+            // The outgoing rows are dropped here, so anything still animating
+            // on one of them (a download spinner) has to be unsubscribed from
+            // the shared AnimationClock - same reason TrackRowMerge disposes
+            // the rows a rebuild discards.
+            foreach (var row in _trackRows)
+                row.Dispose();
             // Fresh ExpandedTrackRowViewModel instances each time, not just a
             // re-wrap of the same rows - a set here always means the expanded
             // album (or its track list) changed, so any previous selection is
@@ -60,6 +69,7 @@ public sealed class AlbumGridRowViewModel : ViewModelBase
                     Track = t,
                     IsCurrentlyPlaying = _currentlyPlayingTrackId is { } id && t.Id == id,
                     IsUnavailable = !_availability.IsPlayable(t),
+                    IsDownloadable = _availability.IsDownloadable(t),
                 })
                 .ToList();
             OnPropertyChanged();

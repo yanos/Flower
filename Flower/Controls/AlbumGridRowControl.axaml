@@ -103,7 +103,7 @@
                          the title, just wired through AlbumGridRowViewModel.
                          CurrentlyPlayingTrackId instead (see ExpandedTrackRow
                          ViewModel.IsCurrentlyPlaying's own comment). -->
-                    <Grid ColumnDefinitions="14,*,Auto" Margin="8,6"
+                    <Grid ColumnDefinitions="14,*,Auto,Auto" Margin="8,6"
                           Classes.dimmedTrack="{Binding IsUnavailable}">
                       <TextBlock Grid.Column="0" Text="▶" FontSize="8"
                                  VerticalAlignment="Center" HorizontalAlignment="Center"
@@ -111,6 +111,13 @@
                       <TextBlock Grid.Column="1" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
                       <TextBlock Grid.Column="2" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
                                  FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
+                      <!-- Last column, so the icons line up down the far edge
+                           of the row rather than stepping in and out behind
+                           each song's own duration. Auto, so a row with
+                           nothing to fetch (IsDownloadable false - the common
+                           case) costs no width at all. -->
+                      <controls:TrackDownloadButton Grid.Column="3" Margin="8,0,0,0"
+                                                    DownloadRequested="TrackRow_DownloadRequested"/>
                     </Grid>
                   </Panel>
                 </Border>
@@ -161,7 +168,7 @@
                          the title, just wired through AlbumGridRowViewModel.
                          CurrentlyPlayingTrackId instead (see ExpandedTrackRow
                          ViewModel.IsCurrentlyPlaying's own comment). -->
-                    <Grid ColumnDefinitions="14,*,Auto" Margin="8,6"
+                    <Grid ColumnDefinitions="14,*,Auto,Auto" Margin="8,6"
                           Classes.dimmedTrack="{Binding IsUnavailable}">
                       <TextBlock Grid.Column="0" Text="▶" FontSize="8"
                                  VerticalAlignment="Center" HorizontalAlignment="Center"
@@ -169,6 +176,13 @@
                       <TextBlock Grid.Column="1" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
                       <TextBlock Grid.Column="2" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
                                  FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
+                      <!-- Last column, so the icons line up down the far edge
+                           of the row rather than stepping in and out behind
+                           each song's own duration. Auto, so a row with
+                           nothing to fetch (IsDownloadable false - the common
+                           case) costs no width at all. -->
+                      <controls:TrackDownloadButton Grid.Column="3" Margin="8,0,0,0"
+                                                    DownloadRequested="TrackRow_DownloadRequested"/>
                     </Grid>
                   </Panel>
                 </Border>

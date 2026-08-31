@@ -45,7 +45,17 @@
                 Classes.dimmed="{Binding IsUnavailable}"
                 Spacing="6" Width="180" Margin="8,8,8,16">
       <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="180" Height="180"/>
-      <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
+      <!-- The album's own download icon sits at the far right of its name,
+           and fetches every not-yet-downloaded track in the album at once
+           (see AlbumTileControl.axaml.cs) - the same thing the tile's
+           "Download Album" context-menu item does. Auto column, hidden
+           unless there is something to fetch, so an ordinary local album's
+           name still gets the tile's full width. -->
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
+        <controls:TrackDownloadButton Grid.Column="1" Margin="4,0,0,0"
+                                      DownloadRequested="Download_Requested"/>
+      </Grid>
       <TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis"/>
     </StackPanel>
     <!-- Caret pointing down at ExpansionCard below (AlbumGridRowControl) -

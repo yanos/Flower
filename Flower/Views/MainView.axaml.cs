@@ -35,6 +35,9 @@ public partial class MainView : UserControl
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
     private MenuItem    _addToPlaylistItem = new();
+    // Hidden unless the right-clicked selection actually has something to
+    // fetch - see UpdateDownloadItem.
+    private MenuItem    _downloadItem = new();
     private readonly ContextMenu _sidebarItemMenu = new();
     private SidebarItem? _dropTargetPlaylistItem;
 
@@ -66,6 +69,7 @@ public partial class MainView : UserControl
         // Wire MusicListView events
         MusicList.RowActivated    += OnRowActivated;
         MusicList.RowContextMenu  += OnRowContextMenu;
+        MusicList.RowDownloadRequested += OnRowDownloadRequested;
         MusicList.HeaderContextMenu += OnHeaderContextMenu;
         MusicList.SortRequested   += OnSortRequested;
         MusicList.RowReordered    += OnRowReordered;
@@ -104,10 +108,10 @@ public partial class MainView : UserControl
             grid.PointerMoved += AlbumGrid_PointerMoved;
             grid.PointerReleased += AlbumGrid_PointerReleased;
             grid.PointerCaptureLost += AlbumGrid_PointerCaptureLost;
-            // AlbumTileControl itself has no pointer handling of its own (see its
-            // own doc comment) - right-click bubbles up from whichever tile the
-            // pointer landed on the same way the four handlers above do, resolved
-            // the same way via HitTestTile.
+            // AlbumTileControl handles no pointer gesture of its own except its
+            // download button (see its own doc comment) - right-click bubbles
+            // up from whichever tile the pointer landed on the same way the
+            // four handlers above do, resolved the same way via HitTestTile.
             grid.ContextRequested += AlbumGrid_ContextRequested;
         }
 
@@ -406,12 +410,13 @@ public partial class MainView : UserControl
     }
 
     // Right-click on an album tile's art/name/artist (anywhere in
-    // AlbumTileControl, which has no pointer handling of its own - see its own
-    // doc comment) - resolved via the same HitTestTile AlbumGrid_PointerPressed
-    // uses. Preserves the existing multi-selection if the right-clicked tile is
-    // already part of it, otherwise collapses to just this tile - same rule
-    // Panel_ContextRequested/TrackRow_ContextRequested already use for the
-    // track list, so a right-click can act on a whole multi-selection of albums.
+    // AlbumTileControl, which handles no pointer gesture of its own except its
+    // download button - see its own doc comment) - resolved via the same
+    // HitTestTile AlbumGrid_PointerPressed uses. Preserves the existing
+    // multi-selection if the right-clicked tile is already part of it,
+    // otherwise collapses to just this tile - same rule the track list's own
+    // Panel_ContextRequested/TrackRow_ContextRequested already use, so a
+    // right-click can act on a whole multi-selection of albums.
     private void AlbumGrid_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         if (sender is not AlbumGridView grid || _viewModel is not { } vm)
@@ -562,6 +567,15 @@ public partial class MainView : UserControl
     private void OnRowActivated(object? sender, TrackRowViewModel row)
         => _viewModel?.PlayTrack(row.Track, _viewModel.Rows.IndexOf(row));
 
+    // The download icon beside a song's title (see TrackDownloadButton) -
+    // acts on that one row only, whatever the current selection is, same as
+    // clicking any other per-row affordance.
+    private void OnRowDownloadRequested(object? sender, TrackRowViewModel row)
+    {
+        if (_viewModel is { } vm)
+            _ = vm.Downloads.DownloadRowAsync(row);
+    }
+
     private void OnRowContextMenu(object? sender, TrackRowViewModel row)
     {
         // MusicList's Panel_ContextRequested already guarantees the selection is
@@ -569,6 +583,7 @@ public partial class MainView : UserControl
         // row (it wasn't) before this fires, so SelectedTracks is always the
         // right set to act on here.
         PopulateAddToPlaylistMenu(MusicList.SelectedTracks);
+        UpdateDownloadItem(_downloadItem, MusicList.SelectedTracks);
         _trackMenu.Open(MusicList);
     }
 
@@ -887,10 +902,14 @@ public partial class MainView : UserControl
 
         _addToPlaylistItem = new MenuItem { Header = "Add To Playlist" };
 
+        _downloadItem = new MenuItem { Header = "Download" };
+        _downloadItem.Click += (_, _) => StartDownload(MusicList.SelectedTracks);
+
         _trackMenu = new ContextMenu();
         _trackMenu.Items.Add(getInfoItem);
         _trackMenu.Items.Add(_addToPlaylistItem);
         _trackMenu.Items.Add(locateFileItem);
+        _trackMenu.Items.Add(_downloadItem);
     }
 
     private void PopulateAddToPlaylistMenu(IReadOnlyList<Track> tracks)
@@ -941,11 +960,43 @@ public partial class MainView : UserControl
         var addToPlaylistItem = new MenuItem { Header = "Add To Playlist" };
         PopulateAddToPlaylistMenu(addToPlaylistItem, tracks);
 
+        // Acts on the whole album selection, same as Get Info/Add To Playlist
+        // above - "Download Album" when that is one album's worth of songs.
+        var downloadItem = new MenuItem();
+        UpdateDownloadItem(downloadItem, tracks, "Download Album");
+        downloadItem.Click += (_, _) => StartDownload(tracks);
+
         var menu = new ContextMenu();
         menu.Items.Add(playItem);
         menu.Items.Add(getInfoItem);
         menu.Items.Add(addToPlaylistItem);
+        menu.Items.Add(downloadItem);
         return menu;
+    }
+
+    // Shows the item only when the target set actually contains something
+    // this device can fetch right now - a library with no paired server, or a
+    // selection that is already fully downloaded, gets no dead menu entry at
+    // all rather than a disabled one. The count is in the header because these
+    // menus act on a whole multi-selection, not just the row clicked.
+    private void UpdateDownloadItem(MenuItem item, IReadOnlyList<Track> tracks, string singular = "Download")
+    {
+        if (_viewModel is not { } vm)
+            return;
+
+        var count = tracks.Count(vm.Availability.IsDownloadable);
+        item.IsVisible = count > 0;
+        item.Header = count > 1 ? $"Download {count} Songs" : singular;
+        // A batch already in flight owns the per-row spinners the next one
+        // would fight over - see TrackDownloadRunner.DownloadAllAsync, which
+        // refuses a second overlapping run anyway.
+        item.IsEnabled = !vm.Downloads.IsBulkDownloading;
+    }
+
+    private void StartDownload(IReadOnlyList<Track> tracks)
+    {
+        if (_viewModel is { } vm)
+            _ = vm.Downloads.DownloadAllAsync(tracks.Where(vm.Availability.IsDownloadable).ToList());
     }
 
     private static void SetCheckIcon(MenuItem item, bool visible)

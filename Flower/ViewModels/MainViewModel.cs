@@ -1040,6 +1040,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         Library   = new Library(new List<Track>());
         Browser   = new LibraryBrowserViewModel(Library, this, AppLogging.CreateTypedLogger<LibraryBrowserViewModel>());
         Playlists = new PlaylistManagementViewModel(Library, _sidebarItems, this);
+        Downloads = CreateDownloadRunner();
     }
 #pragma warning restore CS8618
 
@@ -1124,6 +1125,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             h => Browser.PropertyChanged += h, h => Browser.PropertyChanged -= h);
 
         Playlists = new PlaylistManagementViewModel(library, _sidebarItems, this);
+        Downloads = CreateDownloadRunner();
         _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>(
             (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e),
             h => Playlists.DeleteConfirmationRequested += h, h => Playlists.DeleteConfirmationRequested -= h);
@@ -1643,7 +1645,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Task<TrackDownloadResult> DownloadTrackAsync(Track track) => Sync.DownloadTrackAsync(track);
 
+    // The UI-side driver for the above: per-row spinner state and batch
+    // throttling, shared by desktop's track-list download icon and right-click
+    // Download items and by mobile's own download button (see
+    // TrackDownloadRunner, and MobileMainViewModel, which forwards to this
+    // rather than keeping a second copy). Rows are resolved through Rows by
+    // SyncKey on demand - see DownloadAllAsync for why not by instance.
+    public TrackDownloadRunner Downloads { get; private set; }
+
     public Task DeleteDownloadedFileAsync(Track track) => Sync.DeleteDownloadedFileAsync(track);
+
+    private TrackDownloadRunner CreateDownloadRunner() =>
+        new(DownloadTrackAsync,
+            syncKey => Rows.FirstOrDefault(r => r.Track.SyncKey == syncKey),
+            BeginBusyScope);
 
 
     // internal for MainViewModelSyncTriggerTests, which drive the discovery

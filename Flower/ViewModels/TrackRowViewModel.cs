@@ -7,7 +7,7 @@ using Flower.Services;
 
 namespace Flower.ViewModels;
 
-public class TrackRowViewModel : ViewModelBase, IDisposable
+public class TrackRowViewModel : DownloadIndicatorViewModel
 {
     public const double RowHeight      = 28.0;
     public const double ArtColumnWidth = 80.0;
@@ -72,7 +72,7 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(DurationDisplay));
             OnPropertyChanged(nameof(IsPlaceholder));
             OnPropertyChanged(nameof(IsUnavailable));
-            OnPropertyChanged(nameof(IsDownloadable));
+            RefreshDownloadable();
 
             // The whole point of reuse is that the already-decoded bitmap
             // survives instead of being discarded and re-fetched. It only
@@ -99,6 +99,10 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
 
         IsCurrentlyPlaying = plan.IsCurrentlyPlaying;
         IsAvailable        = plan.IsAvailable;
+        // Belt and braces for the case IsAvailable's own setter can't cover: a
+        // row whose availability didn't change but whose Track did (a rescan
+        // handing it a downloaded file where a placeholder used to be).
+        RefreshDownloadable();
         IsAlbumGroupUnavailable = plan.IsAlbumGroupUnavailable;
     }
 
@@ -168,7 +172,7 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
             _isAvailable = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsUnavailable));
-            OnPropertyChanged(nameof(IsDownloadable));
+            RefreshDownloadable();
         }
     }
 
@@ -178,6 +182,16 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
     // that IsAvailable can be played or downloaded right now and should look
     // like any other row.
     public bool IsUnavailable => IsPlaceholder && !IsAvailable;
+
+    // A row is worth showing a download icon on when it is a placeholder the
+    // paired server can serve right now - see DownloadIndicatorViewModel.
+    // IsDownloadable, which every other kind of indicator has its own answer
+    // for, hence pushed rather than computed there.
+    // Reads _track directly rather than through IsPlaceholder: an object
+    // initializer can run the IsAvailable setter (which calls this) before
+    // Track has been assigned, and this is not the place to depend on the
+    // order of FromPlan's initializer.
+    private void RefreshDownloadable() => IsDownloadable = _track is { Path: null } && IsAvailable;
 
     // The greyed-out state of the album art cell, which spans the whole album
     // run this row may only be one line of (see IsFirstInAlbumGroup /
@@ -199,108 +213,6 @@ public class TrackRowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // Gates the row's own download button (see TrackRowTemplate) - hidden
-    // entirely rather than shown-then-failing when there's nobody to
-    // actually download this specific track from right now. Separate from
-    // IsDownloadUnavailable below, which reflects an attempt that was
-    // already made and failed (a different, rarer case - the peer was
-    // reachable at tap time but the transfer itself didn't succeed) rather
-    // than "there was never anyone to try".
-    public bool IsDownloadable => IsPlaceholder && IsAvailable;
-
-    // Transient UI state for an in-flight/failed download attempt on this row -
-    // set directly by MobileMainViewModel's download command, not derived from
-    // Track. See the comment above for why a stale value here is harmless: any
-    // instance holding it gets discarded once the download actually succeeds.
-    //
-    // Drives SpinAngle below directly (rather than a separate View-side
-    // attached-property/animation helper) so the download spinner's rotation
-    // is owned entirely by this row's own ViewModel lifetime, not the View's -
-    // confirmed on a real device this matters: TrackListBox virtualizes/
-    // recycles row containers as items scroll in and out, and a batch
-    // download (DownloadAllVisibleCommand) can easily have several rows
-    // downloading at once while only a couple are actually realized on
-    // screen. A View-side timer tied to a Control's own lifetime got
-    // started/stopped by container recycling independent of whether the
-    // underlying download was still genuinely in progress - observed as the
-    // spinner working for the first couple of rows in a batch, then never
-    // appearing again. A plain bindable double on the row itself has no such
-    // problem: Avalonia's ordinary data binding re-attaches correctly
-    // whenever a recycled container's DataContext changes, same as every
-    // other property on this class already relies on.
-    private bool _isDownloading;
-    public bool IsDownloading
-    {
-        get => _isDownloading;
-        set
-        {
-            if (_isDownloading == value)
-                return;
-            _isDownloading = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsDownloadIdle));
-            if (value)
-                StartSpin();
-            else
-                StopSpin();
-        }
-    }
-
-    // Supplied by whoever built this row (LibraryBrowserViewModel threads the
-    // container's instance down through TrackRowMerge). Null only for a row
-    // built by a static builder with no container behind it - mobile's search
-    // results, the previewer, a test - which falls back to the shared default.
-    private AnimationClock? _clock;
-    public AnimationClock? Clock
-    {
-        get => _clock;
-        init => _clock = value;
-    }
-
-    private IDisposable? _spin;
-    private double _spinAngle;
-    public double SpinAngle
-    {
-        get => _spinAngle;
-        private set { _spinAngle = value; OnPropertyChanged(); }
-    }
-
-    private void StartSpin()
-    {
-        _spin?.Dispose();
-        // ~1 revolution/second, derived from elapsed time rather than
-        // accumulated per tick, so several rows downloading at once stay in
-        // phase and a dropped frame doesn't leave one lagging behind forever.
-        _spin = (_clock ?? AnimationClock.Current).Subscribe(
-            elapsed => SpinAngle = elapsed.TotalSeconds * 360 % 360);
-    }
-
-    private void StopSpin()
-    {
-        _spin?.Dispose();
-        _spin = null;
-        SpinAngle = 0;
-    }
-
-    // A row that does not survive a rebuild (see TrackRowMerge) is dropped, and
-    // StopSpin above only ever ran from the IsDownloading setter - so a
-    // discarded row left its animation subscription registered forever, with
-    // the callback keeping this view-model alive and keeping the shared clock
-    // awake. Rows that *are* reused must not be disposed: their spinner is
-    // still on screen and still downloading.
-    public void Dispose() => StopSpin();
-
-    private bool _isDownloadUnavailable;
-    public bool IsDownloadUnavailable
-    {
-        get => _isDownloadUnavailable;
-        set { _isDownloadUnavailable = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsDownloadIdle)); }
-    }
-
-    // Neither in flight nor just-failed - the default "tap to download" icon
-    // state. A plain computed property (not stored) kept in sync via the two
-    // setters above rather than a converter, since it depends on both.
-    public bool IsDownloadIdle => !_isDownloading && !_isDownloadUnavailable;
 
     public string DurationDisplay
     {

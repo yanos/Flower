@@ -139,6 +139,27 @@ public class AlbumGroupAvailabilityTests
         Assert.True(Assert.Single(tiles).IsUnavailable);
     }
 
+    // The tile's download icon asks the opposite question to its dimming: not
+    // "can any of this be played" but "is any of it still worth fetching".
+    [Fact]
+    public void Album_tiles_offer_a_download_while_any_track_is_still_a_placeholder()
+    {
+        var tiles = AlbumGridBuilder.Build([
+            Placeholder("One", "Mixed"),
+            Downloaded("Two", "Mixed"),
+            Downloaded("Three", "Local"),
+        ]);
+
+        TrackAvailability.Apply(tiles, Server, pairedServerReachable: true);
+
+        Assert.True(Tile(tiles, "Mixed").IsDownloadable);
+        Assert.False(Tile(tiles, "Local").IsDownloadable);
+
+        // Nothing to download from a server that isn't there.
+        TrackAvailability.Apply(tiles, Server, pairedServerReachable: false);
+        Assert.All(tiles, tile => Assert.False(tile.IsDownloadable));
+    }
+
     private static AlbumTileViewModel Tile(IEnumerable<AlbumTileViewModel> tiles, string name) =>
         tiles.Single(t => t.Name == name);
 }

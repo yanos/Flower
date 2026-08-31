@@ -155,6 +155,16 @@ public partial class AlbumGridRowControl : UserControl
         e.Handled = true;
     }
 
+    // The song row's own download icon (see TrackDownloadButton). Downloads
+    // just that one song - the whole-album action is the tile's own icon
+    // above these rows (AlbumTileControl), and the multi-select one is the
+    // Download item in the context menu below.
+    private void TrackRow_DownloadRequested(object? sender, DownloadIndicatorViewModel indicator)
+    {
+        if (indicator is ExpandedTrackRowViewModel row && this.FindDataContext<MainViewModel>() is { } vm)
+            _ = vm.Downloads.DownloadRowAsync(row);
+    }
+
     // Mirrors MusicListView.OnKeyDown/MoveSelection - Down/Up step the
     // "current" row by one across the flat top-to-bottom-then-next-column
     // order (see AlbumGridRowViewModel.MoveSelection), Shift extends the
@@ -226,10 +236,23 @@ public partial class AlbumGridRowControl : UserControl
         var locateFileItem = new MenuItem { Header = "Locate File" };
         locateFileItem.Click += (_, _) => FileLocator.Reveal(clickedTrack.Path);
 
+        // Same rule as the main track list's own Download item (see
+        // MainView.UpdateDownloadItem): shown only when the selection has
+        // something the paired server can actually serve right now.
+        var downloadable = selectedTracks.Where(vm.Availability.IsDownloadable).ToList();
+        var downloadItem = new MenuItem
+        {
+            Header    = downloadable.Count > 1 ? $"Download {downloadable.Count} Songs" : "Download",
+            IsVisible = downloadable.Count > 0,
+            IsEnabled = !vm.Downloads.IsBulkDownloading,
+        };
+        downloadItem.Click += (_, _) => _ = vm.Downloads.DownloadAllAsync(downloadable);
+
         var menu = new ContextMenu();
         menu.Items.Add(getInfoItem);
         menu.Items.Add(addToPlaylistItem);
         menu.Items.Add(locateFileItem);
+        menu.Items.Add(downloadItem);
         return menu;
     }
 

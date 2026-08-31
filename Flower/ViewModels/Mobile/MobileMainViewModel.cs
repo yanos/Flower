@@ -440,24 +440,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
     // True while DownloadAllVisibleCommand is working through a batch - drives
     // the top bar's download-all icon swapping to a spinner and disabling
-    // itself against a second overlapping run (see MobileMainView.axaml).
-    private bool _isBulkDownloading;
-    public bool IsBulkDownloading
-    {
-        get => _isBulkDownloading;
-        private set { if (_isBulkDownloading != value) { _isBulkDownloading = value; OnPropertyChanged(); } }
-    }
-
-    // A download over the local LAN can finish in well under a UI frame, in
-    // which case IsDownloading would flip true then straight back to false
-    // before anything ever actually painted it - observed in practice as the
-    // spinner "sometimes not even appearing". Holding it visible for at
-    // least this long guarantees it's actually seen, at the cost of a barely
-    // perceptible artificial delay on an already-fast download.
-    private static readonly TimeSpan MinDownloadSpinnerDuration = TimeSpan.FromMilliseconds(400);
-
-    // How many of DownloadAllVisibleCommand's downloads run at once.
-    private const int MaxConcurrentDownloads = 3;
+    // itself against a second overlapping run (see MobileMainView.axaml). The
+    // state itself lives on the shared runner (see Main.Downloads); this is
+    // the bindable face of it here, kept in step by the subscription in this
+    // ViewModel's constructor.
+    public bool IsBulkDownloading => Main.Downloads.IsBulkDownloading;
 
     // Re-anchors Next/Previous/auto-advance to whatever's actually on screen
     // right now, mirroring desktop's MainViewModel.SyncPlayQueueToCurrentView -
@@ -471,23 +458,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         Main.SetPlayQueue(IsShowingSearchResults
             ? SearchSongResults.Select(r => r.Track)
             : Main.Rows.Select(r => r.Track));
-
-    // Shared by DownloadTrackCommand (one row) and DownloadAllVisibleCommand
-    // (every not-yet-downloaded row in view) - same per-row idle/in-flight/
-    // unavailable state either way, so a row started via the bulk action looks
-    // identical to one started by tapping its own download icon directly.
-    private async Task DownloadRowAsync(TrackRowViewModel row)
-    {
-        row.IsDownloadUnavailable = false;
-        row.IsDownloading = true;
-        var started = DateTime.UtcNow;
-        var result = await Main.DownloadTrackAsync(row.Track);
-        var remaining = MinDownloadSpinnerDuration - (DateTime.UtcNow - started);
-        if (remaining > TimeSpan.Zero)
-            await Task.Delay(remaining);
-        row.IsDownloading = false;
-        row.IsDownloadUnavailable = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
-    }
 
     // Non-null only while drilled into a specific playlist's track list, which is the
     // one place mobile allows reordering (Songs/Albums/Artists have no persisted order).
@@ -800,6 +770,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 SettleCodePairing();
         },
             h => Main.PropertyChanged += h, h => Main.PropertyChanged -= h);
+        // The bulk-download flag lives on the shared runner now (see
+        // IsBulkDownloading below), so the top bar's spinner watches it there.
+        _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
+        {
+            if (e.PropertyName == nameof(TrackDownloadRunner.IsBulkDownloading))
+                OnPropertyChanged(nameof(IsBulkDownloading));
+        },
+            h => Main.Downloads.PropertyChanged += h, h => Main.Downloads.PropertyChanged -= h);
         // SearchSongResults is a separate TrackRowViewModel list from
         // Main.Rows (see RebuildSearchResultsAsync's own doc comment), so it
         // needs its own live-update subscription to stay correct after the
@@ -958,9 +936,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         OpenAppSettingsCommand = new RelayCommand(() => PlatformPermissions.Current?.OpenAppSettings());
         DownloadTrackCommand = new RelayCommand<TrackRowViewModel>(async row =>
         {
-            if (row == null || row.IsDownloading)
-                return;
-            await DownloadRowAsync(row);
+            if (row != null)
+                await Main.Downloads.DownloadRowAsync(row);
         });
         // Opens the confirm sheet (ConfirmDeleteFileCommand/CancelDeleteFileCommand
         // below actually do the deleting) rather than deleting immediately -
@@ -983,64 +960,12 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // only ever invoked while viewing one album's or one playlist's tracks
         // (see IsShowingAlbumTrackList/IsShowingPlaylistTracks in
         // MobileMainView.axaml), so that's the scope this ends up covering;
-        // Main.Rows is whatever MainViewModel already narrowed it to. Reuses
-        // DownloadRowAsync so each row's own download icon still shows its
-        // individual progress exactly like a manual single-track download.
-        // Up to MaxConcurrentDownloads run at once (not all at once, and not
-        // strictly one at a time) - a middle ground between "fast" and
-        // "gentle on the peer being downloaded from".
+        // Main.Rows is whatever MainViewModel already narrowed it to. The
+        // batching itself (throttle, per-row icon state, re-resolving rows a
+        // completed download replaced) is the shared runner's - see
+        // TrackDownloadRunner.DownloadAllAsync.
         DownloadAllVisibleCommand = new RelayCommand(async () =>
-        {
-            if (IsBulkDownloading)
-                return;
-            IsBulkDownloading = true;
-            try
-            {
-                // Captures SyncKeys, not TrackRowViewModel instances - a
-                // download completing mid-batch fires Library.TracksUpdated,
-                // which (via MainViewModel's own debounced ScheduleFilter)
-                // eventually replaces Main.Rows wholesale with a fresh set of
-                // TrackRowViewModel objects. Holding onto row objects from a
-                // snapshot taken before that swap meant later iterations kept
-                // mutating IsDownloading on orphaned rows nothing on screen
-                // was bound to anymore - confirmed on a real device as the
-                // spinner working for the first couple of songs in a batch,
-                // then never appearing again. SyncKey (not the row/Track
-                // object itself) is what survives the swap intact, so each
-                // task re-resolves against whatever Main.Rows currently is
-                // right before it actually starts downloading (after
-                // acquiring a throttle slot, not when the task was created) -
-                // safe to do without locking despite running "concurrently"
-                // here, since every one of these tasks' own code (everything
-                // except the actual HTTP I/O in flight) still only ever runs
-                // on the UI thread, the same as the rest of this ViewModel.
-                var syncKeysToDownload = Main.Rows
-                    .Where(r => r.Track.Path == null)
-                    .Select(r => r.Track.SyncKey)
-                    .ToList();
-                using var throttle = new SemaphoreSlim(MaxConcurrentDownloads);
-                var tasks = syncKeysToDownload.Select(async syncKey =>
-                {
-                    await throttle.WaitAsync();
-                    try
-                    {
-                        var row = Main.Rows.FirstOrDefault(r => r.Track.SyncKey == syncKey);
-                        if (row == null || row.Track.Path != null || row.IsDownloading)
-                            return;
-                        await DownloadRowAsync(row);
-                    }
-                    finally
-                    {
-                        throttle.Release();
-                    }
-                });
-                await Task.WhenAll(tasks);
-            }
-            finally
-            {
-                IsBulkDownloading = false;
-            }
-        });
+            await Main.Downloads.DownloadAllAsync(Main.Rows.Select(r => r.Track).ToList()));
 
         // Confirm-before-pairing (see ConfirmPairServerMessage) rather than
         // pairing immediately - matches desktop's ServerPickerView dialog.
