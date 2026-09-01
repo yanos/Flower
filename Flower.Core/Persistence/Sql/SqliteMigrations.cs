@@ -29,12 +29,15 @@ namespace Flower.Persistence.Sql
     {
         // Index + 1 is the schema version a script brings the database to, so
         // order is significant and entries are only ever appended.
-        private static readonly IReadOnlyList<string> Scripts =
+        private sealed record Migration(string Sql, Func<SqliteConnection, bool>? IsAlreadyApplied = null);
+
+        private static readonly IReadOnlyList<Migration> Scripts =
         [
-            Schema.V1,
-            Schema.V2,
-            Schema.V3,
-            Schema.V4,
+            new Migration(Schema.V1),
+            new Migration(Schema.V2),
+            new Migration(Schema.V3),
+            new Migration(Schema.V4),
+            new Migration(Schema.V5, connection => HasColumn(connection, "tracks", "encoder_profile")),
         ];
 
         public static int LatestVersion => Scripts.Count;
@@ -58,8 +61,12 @@ namespace Flower.Persistence.Sql
                 using (var script = connection.CreateCommand())
                 {
                     script.Transaction = transaction;
-                    script.CommandText = Scripts[version];
-                    script.ExecuteNonQuery();
+                    var migration = Scripts[version];
+                    if (!migration.IsAlreadyApplied?.Invoke(connection) ?? true)
+                    {
+                        script.CommandText = migration.Sql;
+                        script.ExecuteNonQuery();
+                    }
                 }
 
                 using (var bump = connection.CreateCommand())
@@ -82,6 +89,22 @@ namespace Flower.Persistence.Sql
             using var command = connection.CreateCommand();
             command.CommandText = "PRAGMA user_version;";
             return Convert.ToInt32(command.ExecuteScalar());
+        }
+
+        private static bool HasColumn(SqliteConnection connection, string table, string column)
+        {
+            using var command = connection.CreateCommand();
+            // Table names are fixed at the migration call site; SQLite only
+            // permits bindings for values, not identifiers.
+            command.CommandText = $"PRAGMA table_info({table});";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
     }
 }

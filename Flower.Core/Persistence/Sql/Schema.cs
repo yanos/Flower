@@ -194,6 +194,15 @@ namespace Flower.Persistence.Sql
             ALTER TABLE tracks ADD COLUMN resume_position_ticks      INTEGER;
             ALTER TABLE tracks ADD COLUMN ignore_when_shuffling      INTEGER NOT NULL DEFAULT 0;
             ALTER TABLE tracks ADD COLUMN volume_adjustment          INTEGER NOT NULL DEFAULT 0;
+            """;
+
+        // EncoderProfile was initially appended to V4 while that migration was
+        // being developed. Databases already stamped as version 4 therefore
+        // never received it: migrations are deliberately never re-run. Keep
+        // V4 exactly as it was first released and append this corrective step
+        // instead, preserving every existing library's play counts, stars and
+        // playlists.
+        public const string V5 = """
             ALTER TABLE tracks ADD COLUMN encoder_profile            TEXT;
             """;
     }

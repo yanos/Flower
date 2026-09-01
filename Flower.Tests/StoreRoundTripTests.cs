@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using Flower.Controls;
 using Flower.Tests.TestSupport;
@@ -1433,5 +1434,31 @@ public class StoreRoundTripTests : IDisposable
         // of them starts with CREATE TABLE and would throw.
         using (var connection = new FlowerDb(path).Open())
             Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
+    }
+
+    [Fact]
+    public void A_version_four_database_without_encoder_profile_is_upgraded_without_losing_its_version()
+    {
+        var path = Path.Combine(PlatformDataDirectory.Current!, "pre-encoder-profile.db");
+
+        // Reproduce the short-lived version-4 schema: the database was marked
+        // current before EncoderProfile was added to the in-progress V4
+        // script. A new migration, rather than editing V4 again, is the only
+        // way to repair that already-stamped database.
+        using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            connection.Open();
+            using var setup = connection.CreateCommand();
+            setup.CommandText = Schema.V1 + Schema.V2 + Schema.V3 + Schema.V4 + "PRAGMA user_version = 4;";
+            setup.ExecuteNonQuery();
+        }
+
+        var db = new FlowerDb(path);
+        using var migrated = db.Open();
+        using var columns = migrated.CreateCommand();
+        columns.CommandText = "SELECT name FROM pragma_table_info('tracks') WHERE name = 'encoder_profile';";
+
+        Assert.Equal("encoder_profile", columns.ExecuteScalar());
+        Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(migrated));
     }
 }
