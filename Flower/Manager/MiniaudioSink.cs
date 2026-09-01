@@ -275,7 +275,23 @@ namespace Flower.Manager
                 // ma_context is, so the allocation is always correctly sized
                 // regardless of the C# struct's guess.
                 _context = (ma_context*)NativeMemory.Alloc(ma.context_sizeof());
-                var contextResult = ma.context_init(null, 0, null, _context);
+                // On iOS miniaudio otherwise owns AVAudioSession as a side
+                // effect of opening its context. Its default configuration is
+                // PlayAndRecord + DefaultToSpeaker, which can select the
+                // handset speaker before Flower has a chance to configure its
+                // music session for an AirPods/AirPlay route. It also activates
+                // that session at app startup, even though no track is playing.
+                //
+                // AppleAudioSession is deliberately the one owner there: it
+                // selects Playback + AllowBluetoothA2DP immediately before
+                // rendering and releases the session on pause/stop. Asking
+                // miniaudio to leave the shared session alone avoids the two
+                // layers silently overwriting each other's category, options,
+                // activation state, and ultimately route.
+                var contextConfig = ma.context_config_init();
+                ConfigureContextForPlatform(ref contextConfig, OperatingSystem.IsIOS());
+
+                var contextResult = ma.context_init(null, 0, &contextConfig, _context);
                 if (contextResult != ma_result.MA_SUCCESS)
                 {
                     _logger.LogError("miniaudio context_init failed: {Result}", contextResult);
@@ -294,6 +310,19 @@ namespace Flower.Manager
 
                 _logger.LogInformation("miniaudio playback device initialized");
             }
+        }
+
+        // Kept separate from Start so the iOS session-ownership contract can
+        // be regression-tested without loading an audio device or requiring
+        // AirPods on the test machine.
+        internal static void ConfigureContextForPlatform(ref ma_context_config contextConfig, bool isIos)
+        {
+            if (!isIos)
+                return;
+
+            contextConfig.coreaudio.sessionCategory = ma_ios_session_category.ma_ios_session_category_none;
+            contextConfig.coreaudio.noAudioSessionActivate = 1;
+            contextConfig.coreaudio.noAudioSessionDeactivate = 1;
         }
 
         // Opens the playback device that _outputDeviceId currently names (or
