@@ -173,7 +173,38 @@ public sealed record Child(
     // folder), which is unrecognisable to anything but Flower. With this, a
     // download reproduces the origin's own tree under the download folder. See
     // Track.OriginRelativePath and LibraryDownloadService.
-    string? RelativePath = null);
+    string? RelativePath = null,
+    // The "sort as" tag overrides (ID3 TSOT/TSOP/TSOA/TSOC - see Track.TitleSort).
+    // Flower-specific: OpenSubsonic has sortName on an artist, but nothing on a
+    // song. They are real tags, so a receiving head that downloads the file
+    // rescans them anyway - what these are for is the placeholder in between,
+    // which would otherwise file "The Beatles" under T on one device and B on
+    // the other for the same library.
+    string? SortTitle = null,
+    string? SortArtist = null,
+    string? SortAlbum = null,
+    string? SortComposer = null,
+    // Flower's per-track playback options (see Track's "Per-track playback
+    // options" section). Unlike the sort tags above these are not in the file
+    // at all, so sync is the only way they ever reach another device: without
+    // them, marking a two-hour set "remember my position" on the desktop means
+    // nothing on the phone that actually gets carried around.
+    //
+    // ResumePosition travels with them on purpose. It is the state the option
+    // exists to produce, and a resume position that stayed on one device would
+    // make the pair worse than useless - the phone would restart the podcast
+    // the desktop was halfway through. Merged by "most recently played device
+    // wins" rather than by max, since going back is a legitimate thing to do -
+    // see Library.MergeSyncedTracks.
+    bool RememberPlaybackPosition = false,
+    int? ResumePositionSeconds = null,
+    bool IgnoreWhenShuffling = false,
+    int VolumeAdjustment = 0,
+    // The encoder's own record of how the file was made - see
+    // Track.EncoderProfile. Flower-specific; nothing in the spec covers it, and
+    // like the other technical fields above it is the only way a device that
+    // has the catalog but not the file can show it at all.
+    string? EncoderProfile = null);
 
 public sealed record SearchResult3(
     List<ArtistID3>? Artist,

@@ -383,6 +383,8 @@ public class LibraryTests
             Genre = "Soul", Year = "2003", TrackNumber = 4,
             Bitrate = 320, SampleRate = 44100, Channels = 2, BitsPerSample = 16,
             Codec = "MPEG Version 1 Audio, Layer 3",
+            EncoderProfile = "LAME 3.100, VBR (V0)",
+            ArtistsSort = "Beatles, The",
         };
 
         library.MergeSyncedTracks("peer-1", new List<Track> { incoming });
@@ -403,6 +405,77 @@ public class LibraryTests
         Assert.Equal(2, merged.Channels);
         Assert.Equal(16, merged.BitsPerSample);
         Assert.Equal("MPEG Version 1 Audio, Layer 3", merged.Codec);
+        Assert.Equal("LAME 3.100, VBR (V0)", merged.EncoderProfile);
+        // The sort tags too: a placeholder has no file to read them off, so
+        // without this it would file under its display text while the origin
+        // filed it somewhere else.
+        Assert.Equal("Beatles, The", merged.ArtistsSort);
+    }
+
+    // The per-track playback options are not tags, so nothing on this device
+    // can re-derive them: sync is the only way they ever arrive. They apply to
+    // a real local file too, which is the point - the phone usually has the
+    // podcast the desktop was halfway through.
+    [Fact]
+    public void MergeSyncedTracks_takes_the_playback_options_of_whichever_device_played_it_last()
+    {
+        var mine = new Track
+        {
+            Title = "Long Set", Artists = "DJ", Album = "Mixes",
+            Duration = TimeSpan.FromSeconds(100), Path = "/music/set.mp3",
+            RememberPlaybackPosition = true,
+            ResumePosition = TimeSpan.FromMinutes(5),
+            LastPlayedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+        var library = new Library(new List<Track> { mine });
+        var incoming = new Track
+        {
+            Title = "Long Set", Artists = "DJ", Album = "Mixes",
+            Duration = TimeSpan.FromSeconds(100), Path = null,
+            OriginDeviceFingerprint = "peer-1",
+            RememberPlaybackPosition = true,
+            ResumePosition = TimeSpan.FromMinutes(40),
+            IgnoreWhenShuffling = true,
+            VolumeAdjustment = -15,
+            LastPlayedAt = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { incoming });
+
+        var merged = library.Tracks.Single();
+        Assert.Equal(TimeSpan.FromMinutes(40), merged.ResumePosition);
+        Assert.True(merged.IgnoreWhenShuffling);
+        Assert.Equal(-15, merged.VolumeAdjustment);
+    }
+
+    // The other direction, and the reason the rule is "last played" rather than
+    // "the origin always wins": listening on this device after the origin did
+    // must not be undone by the next pull.
+    [Fact]
+    public void MergeSyncedTracks_keeps_a_resume_position_this_device_set_more_recently()
+    {
+        var mine = new Track
+        {
+            Title = "Long Set", Artists = "DJ", Album = "Mixes",
+            Duration = TimeSpan.FromSeconds(100), Path = "/music/set.mp3",
+            RememberPlaybackPosition = true,
+            ResumePosition = TimeSpan.FromMinutes(50),
+            LastPlayedAt = new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+        var library = new Library(new List<Track> { mine });
+        var incoming = new Track
+        {
+            Title = "Long Set", Artists = "DJ", Album = "Mixes",
+            Duration = TimeSpan.FromSeconds(100), Path = null,
+            OriginDeviceFingerprint = "peer-1",
+            RememberPlaybackPosition = true,
+            ResumePosition = TimeSpan.FromMinutes(40),
+            LastPlayedAt = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { incoming });
+
+        Assert.Equal(TimeSpan.FromMinutes(50), library.Tracks.Single().ResumePosition);
     }
 
     // A real local file's tags belong to the importer that read them off that

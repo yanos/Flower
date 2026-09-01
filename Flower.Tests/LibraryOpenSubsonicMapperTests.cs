@@ -164,6 +164,37 @@ public class LibraryOpenSubsonicMapperTests
         Assert.Equal(370, album!.Song![0].Duration);
     }
 
+    // The serving half of what LibrarySyncMapperTests reads back. Both sides of
+    // the wire have to agree or the fields simply never arrive - which is what
+    // happened to the technical fields for a whole release.
+    [Fact]
+    public void ToChild_sends_the_sort_tags_the_playback_options_and_the_encoder_profile()
+    {
+        var track = new Track
+        {
+            Title = "Come Together", Artists = "The Beatles", Album = "Abbey Road",
+            Duration = TimeSpan.FromSeconds(259), Path = "/music/come together.mp3",
+            TitleSort = "Come Together", ArtistsSort = "Beatles, The",
+            AlbumSort = "Abbey Road", ComposersSort = "Lennon, John",
+            RememberPlaybackPosition = true, ResumePosition = TimeSpan.FromSeconds(754),
+            IgnoreWhenShuffling = true, VolumeAdjustment = -20,
+            EncoderProfile = "LAME 3.100, VBR (V0)",
+        };
+
+        var albumId = SubsonicIdentity.AlbumId("The Beatles", "Abbey Road");
+        var song = LibraryOpenSubsonicMapper.FindAlbum(Snapshot(track), albumId, "self-1")!.Song!.Single();
+
+        Assert.Equal("Beatles, The", song.SortArtist);
+        Assert.Equal("Come Together", song.SortTitle);
+        Assert.Equal("Abbey Road", song.SortAlbum);
+        Assert.Equal("Lennon, John", song.SortComposer);
+        Assert.True(song.RememberPlaybackPosition);
+        Assert.Equal(754, song.ResumePositionSeconds);
+        Assert.True(song.IgnoreWhenShuffling);
+        Assert.Equal(-20, song.VolumeAdjustment);
+        Assert.Equal("LAME 3.100, VBR (V0)", song.EncoderProfile);
+    }
+
     [Fact]
     public void ToChild_Suffix_is_the_local_file_extension_without_a_leading_dot()
     {

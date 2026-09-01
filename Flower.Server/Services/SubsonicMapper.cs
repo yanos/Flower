@@ -101,7 +101,21 @@ public static class SubsonicMapper
             ChannelCount: track.Channels > 0 ? track.Channels : null,
             BitDepth: track.BitsPerSample > 0 ? track.BitsPerSample : null,
             Codec: track.Codec,
-            RelativePath: RelativePathOf(track, libraryRoots));
+            RelativePath: RelativePathOf(track, libraryRoots),
+            // See Child.SortTitle/RememberPlaybackPosition - the same two
+            // groups the app's own LibraryOpenSubsonicMapper.ToChild sends, and
+            // deliberately the same expressions: a client pulling its catalog
+            // from this server must not get a thinner track than one pulling it
+            // from a desktop head.
+            SortTitle: track.TitleSort,
+            SortArtist: track.ArtistsSort,
+            SortAlbum: track.AlbumSort,
+            SortComposer: track.ComposersSort,
+            RememberPlaybackPosition: track.RememberPlaybackPosition,
+            ResumePositionSeconds: track.ResumePosition is { } resume ? (int)resume.TotalSeconds : null,
+            IgnoreWhenShuffling: track.IgnoreWhenShuffling,
+            VolumeAdjustment: track.VolumeAdjustment,
+            EncoderProfile: track.EncoderProfile);
     }
 
     // The part of the file's path below whichever configured library folder it

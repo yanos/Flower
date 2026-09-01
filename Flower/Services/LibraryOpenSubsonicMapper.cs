@@ -204,7 +204,22 @@ public static class LibraryOpenSubsonicMapper
         SamplingRate: track.SampleRate > 0 ? track.SampleRate : null,
         ChannelCount: track.Channels > 0 ? track.Channels : null,
         BitDepth: track.BitsPerSample > 0 ? track.BitsPerSample : null,
-        Codec: track.Codec);
+        Codec: track.Codec,
+        RelativePath: null,
+        // See Child.SortTitle - the file's own "sort as" tags, so a placeholder
+        // files under the same letter on the receiving device as the real file
+        // does here.
+        SortTitle: track.TitleSort,
+        SortArtist: track.ArtistsSort,
+        SortAlbum: track.AlbumSort,
+        SortComposer: track.ComposersSort,
+        // See Child.RememberPlaybackPosition - Flower's own per-track options,
+        // which exist nowhere in the file and so reach another device only here.
+        RememberPlaybackPosition: track.RememberPlaybackPosition,
+        ResumePositionSeconds: track.ResumePosition is { } resume ? (int)resume.TotalSeconds : null,
+        IgnoreWhenShuffling: track.IgnoreWhenShuffling,
+        VolumeAdjustment: track.VolumeAdjustment,
+        EncoderProfile: track.EncoderProfile);
 
     private static int? ParseYear(string? year) => int.TryParse(year, out var y) ? y : null;
 }

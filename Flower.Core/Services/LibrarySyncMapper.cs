@@ -88,5 +88,21 @@ public static class LibrarySyncMapper
         // Null from a third-party server, which has no such field; the Technical
         // tab falls back to showing nothing for it, same as an unscanned file.
         Codec = song.Codec,
+        // The origin's "sort as" tags. A placeholder has no file to read them
+        // off, so without these it would sort under its display text while the
+        // origin sorted it somewhere else entirely - see Child.SortTitle.
+        TitleSort = song.SortTitle,
+        ArtistsSort = song.SortArtist,
+        AlbumSort = song.SortAlbum,
+        ComposersSort = song.SortComposer,
+        // Flower's own per-track options - see Child.RememberPlaybackPosition.
+        // All four default to "off"/zero from a third-party server, which is
+        // also what a track nobody has configured looks like.
+        RememberPlaybackPosition = song.RememberPlaybackPosition,
+        ResumePosition = song.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+        IgnoreWhenShuffling = song.IgnoreWhenShuffling,
+        VolumeAdjustment = song.VolumeAdjustment,
+        // See Child.EncoderProfile - a placeholder has no file to parse it out of.
+        EncoderProfile = song.EncoderProfile,
     };
 }

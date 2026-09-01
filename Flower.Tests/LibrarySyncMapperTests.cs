@@ -281,4 +281,61 @@ public class LibrarySyncMapperTests
         Assert.False(track.IsCompilation);
         Assert.Equal("Beatles", track.EffectiveAlbumArtist);
     }
+
+    // The sort tags and the four playback options. The tags are in the file, so
+    // a device that downloads it rescans them anyway - the placeholder in
+    // between is what would otherwise file "The Beatles" under T on one device
+    // and B on the other. The options are in no file at all, so this is the
+    // only road they have.
+    [Fact]
+    public void ToPlaceholderTrack_carries_the_sort_tags_and_the_playback_options()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "The Beatles",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null,
+            SortTitle: "Come Together", SortArtist: "Beatles, The",
+            SortAlbum: "Abbey Road", SortComposer: "Lennon, John",
+            RememberPlaybackPosition: true, ResumePositionSeconds: 754,
+            IgnoreWhenShuffling: true, VolumeAdjustment: -20,
+            EncoderProfile: "LAME 3.100, VBR (V0)");
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Equal("Come Together", track.TitleSort);
+        Assert.Equal("Beatles, The", track.ArtistsSort);
+        Assert.Equal("Abbey Road", track.AlbumSort);
+        Assert.Equal("Lennon, John", track.ComposersSort);
+        Assert.True(track.RememberPlaybackPosition);
+        Assert.Equal(TimeSpan.FromSeconds(754), track.ResumePosition);
+        Assert.True(track.IgnoreWhenShuffling);
+        Assert.Equal(-20, track.VolumeAdjustment);
+        Assert.Equal("LAME 3.100, VBR (V0)", track.EncoderProfile);
+        // And "sorts as itself" survives as itself - a blank override would put
+        // the track above everything (see Track.SortAs).
+        Assert.Equal("Beatles, The", track.ArtistsSortValue);
+    }
+
+    // A third-party server sends none of them; that must read as "not
+    // configured", which is exactly the default of each.
+    [Fact]
+    public void ToPlaceholderTrack_leaves_the_options_at_their_defaults_when_the_server_sends_none()
+    {
+        var song = new Child(
+            Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "The Beatles",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Null(track.TitleSort);
+        Assert.Null(track.ArtistsSort);
+        Assert.False(track.RememberPlaybackPosition);
+        Assert.Null(track.ResumePosition);
+        Assert.False(track.IgnoreWhenShuffling);
+        Assert.Equal(0, track.VolumeAdjustment);
+        Assert.Null(track.EncoderProfile);
+        // Falls back to the display value, so it still sorts under "The".
+        Assert.Equal("The Beatles", track.ArtistsSortValue);
+    }
 }

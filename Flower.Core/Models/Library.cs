@@ -621,6 +621,7 @@ namespace Flower.Models
                         existing.DateAdded = remote.DateAdded;
                         MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
                         RefreshPlaceholderMetadata(existing, remote);
+                        MergePlaybackOptions(existing, remote);
                         continue; // Already known locally, real file or placeholder - only
                                   // the bookkeeping above needed updating, not a whole new Track.
                     }
@@ -690,6 +691,42 @@ namespace Flower.Models
             existing.Channels = remote.Channels;
             existing.BitsPerSample = remote.BitsPerSample;
             existing.Codec = remote.Codec;
+            existing.EncoderProfile = remote.EncoderProfile;
+            existing.TitleSort = remote.TitleSort;
+            existing.ArtistsSort = remote.ArtistsSort;
+            existing.AlbumSort = remote.AlbumSort;
+            existing.ComposersSort = remote.ComposersSort;
+        }
+
+        // The per-track playback options (see Track's section of that name),
+        // which unlike everything above apply to a real local file just as much
+        // as to a placeholder - the point of syncing them is that a podcast
+        // half-listened-to on the desktop resumes in the right place on the
+        // phone, and the phone usually has the file.
+        //
+        // "Whoever played it last wins", not per-field max or "origin always
+        // wins": a resume position is not a counter, and going *backwards* in a
+        // file is a normal thing to do, so max is meaningless here. The device
+        // that played the track most recently is the one whose idea of where it
+        // got to is worth having, and the three settings ride along with it so
+        // one sitting's worth of state stays internally consistent.
+        //
+        // A tie, or neither side ever having played it, goes to the origin. Its
+        // library is what the pairing exists to mirror (see the notes on
+        // DateAdded above), and this is a one-directional pull: the client has
+        // no way to push its own answer back, so preferring the local one would
+        // just mean the two never converge. What that costs is real and worth
+        // naming - turning an option on for a never-played track on the phone
+        // is undone by the next sync.
+        private static void MergePlaybackOptions(Track existing, Track remote)
+        {
+            if (existing.LastPlayedAt is { } mine && (remote.LastPlayedAt is not { } theirs || mine > theirs))
+                return;
+
+            existing.RememberPlaybackPosition = remote.RememberPlaybackPosition;
+            existing.ResumePosition = remote.ResumePosition;
+            existing.IgnoreWhenShuffling = remote.IgnoreWhenShuffling;
+            existing.VolumeAdjustment = remote.VolumeAdjustment;
         }
 
         // Per-key max, not overwrite - see Track.RemotePlayCounts' own doc
@@ -819,6 +856,45 @@ namespace Flower.Models
                 BumpChangeToken();
                 return current;
             }
+        }
+
+        // Persists an in-place mutation to a track that nothing on screen
+        // displays - the three playback options on Track Info's Options tab.
+        //
+        // One upsert, like NotifyTrackChanged, but deliberately without its
+        // TracksUpdated: that means a full track-list rebuild plus a peer
+        // library sync, which is a lot to pay per drag of a volume slider for a
+        // value no list has a column for. No index invalidation either - none
+        // of the three is part of what Snapshot or _byPath key on.
+        public void PersistTrackOptions(Track track)
+        {
+            Persist(() => _store!.Upsert(track));
+        }
+
+        // Where a track was left off, for the tracks that ask to be resumed
+        // rather than restarted (see Track.RememberPlaybackPosition). Null
+        // clears it, which is what finishing a track does.
+        //
+        // Same resolve-under-lock pattern as RecordPlayed above and for the
+        // same reason - but deliberately NOT raising TracksUpdated: this fires
+        // on every pause and every track change, and TracksUpdated means a full
+        // track-list rebuild plus a peer library sync. Nothing displays a resume
+        // position, so there is nothing for a view to redraw. It is not indexed
+        // either, so no snapshot has to be thrown away.
+        public Track RecordResumePosition(Track track, TimeSpan? position)
+        {
+            Track current;
+            lock (_lock)
+            {
+                current = ResolveCurrent(track);
+                if (current.ResumePosition == position)
+                    return current;
+
+                current.ResumePosition = position;
+            }
+
+            Persist(() => _store!.Upsert(current));
+            return current;
         }
 
         // Whichever Track a Subsonic-style id names, or null. The id
