@@ -40,3 +40,30 @@ public sealed record PlayEventDto(
 // but the tail of one track and the head of the next are not, and because a
 // failed send has to be able to carry its backlog along with the next one.
 public sealed record PlayReportDto(List<PlayEventDto> Plays);
+
+// POST /api/flower/v1/play-counts - the same journey for a head that *does*
+// hold a durable counter: a paired desktop or phone playing a track it got
+// from its server.
+//
+// Totals, not events, which is the whole difference from the tab above. A
+// device with durable storage can state "I have played this eleven times", and
+// under Track.RemotePlayCounts' per-key max-merge that statement is idempotent:
+// re-sending it after a failed push, or after a restart, converges instead of
+// double-counting, so there is no event id to allocate and nothing for the
+// server to remember having applied.
+//
+// It also keeps the play attributed to the device that made it. A tab's plays
+// have to land in the server's own count because a tab is nobody; a paired
+// device is somebody, and its count travels under its own fingerprint - the
+// same shape it would have arrived in back when both ends served catalogs to
+// each other.
+//
+// TrackId is the server's id for the track (Track.OriginTrackId), for the same
+// reason PlayEventDto's is: the client's own Guid means nothing there.
+public sealed record TrackPlayCountDto(string TrackId, int Count);
+
+// The fingerprint the counts belong to is deliberately absent: the server
+// files them under the one the request signature proved, because a body is
+// attacker-controlled on a route every paired device can call, and believing
+// it would let one device write another's tally.
+public sealed record PlayCountReportDto(List<TrackPlayCountDto> Counts);

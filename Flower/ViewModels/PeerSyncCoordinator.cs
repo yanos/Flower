@@ -325,7 +325,17 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         {
             await _librarySyncService!.ArchiveOwnLogsAsync();
             foreach (var device in devices)
+            {
+                // On this tick rather than only on a catalog sync, because a
+                // play does not move the catalog: TrackStatsChanged
+                // deliberately does not schedule one (see Library's own
+                // comment), so counts pushed only from SyncWithAsync would sit
+                // here until something else happened to change the library.
+                // Costs nothing when nothing was played - the push sends no
+                // request at all when it has no new total to state.
+                allSucceeded &= await _librarySyncService!.PushPlayCountsAsync(device);
                 allSucceeded &= await _librarySyncService!.PushLogsOnlyAsync(device);
+            }
         }
         catch (Exception ex)
         {

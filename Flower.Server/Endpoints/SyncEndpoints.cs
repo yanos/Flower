@@ -28,6 +28,7 @@ namespace Flower.Server.Endpoints;
 //   GET  /playlists       - this server's playlists, for the merge
 //   POST /playlists/apply - the merged result the client resolved
 //   POST /plays           - what a browser tab played, to count here
+//   POST /play-counts     - what a paired device has played, as its own total
 //   POST /log/report      - the caller's own recent log lines, for the owner
 //                           to read back through the admin API
 //
@@ -164,6 +165,8 @@ public static class SyncEndpoints
             (HttpContext context, Library library) => ApplyPlaylists(context, library, logger));
         sync.MapPost("/plays",
             (HttpContext context, PlayReportService plays) => ReportPlays(context, plays, logger));
+        sync.MapPost("/play-counts",
+            (HttpContext context, Library library) => ReportPlayCounts(context, library, logger));
         sync.MapPost("/log/report",
             (HttpContext context, ClientLogStore logs) => ReportLog(context, logs, logger));
         // What this server already holds for the caller, so a client that has
@@ -332,6 +335,42 @@ public static class SyncEndpoints
         logger.LogInformation(
             "Applied {AppliedCount} of {ReportedCount} play event(s) reported by {Fingerprint}",
             applied, report.Plays.Count, context.Items[AuthenticatedFingerprintKey]);
+
+        return Results.NoContent();
+    }
+
+    // The durable-device half of the route above - see PlayCountReportDto for
+    // why one reports events and the other totals, and Library's
+    // MergeReportedPlayCounts for what happens to them here.
+    //
+    // Filed under the fingerprint the signature proved, exactly as ReportLog
+    // does and for the same reason: on a route every paired device can call,
+    // the body cannot be allowed to name whose count this is.
+    private static async Task<IResult> ReportPlayCounts(
+        HttpContext context, Library library, ILogger logger)
+    {
+        using var reader = new StreamReader(context.Request.Body);
+        var report = JsonSerializer.Deserialize<PlayCountReportDto>(
+            await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+        if (report == null)
+            return Results.BadRequest();
+
+        if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+
+        // Last one wins for a body that names the same track twice, which is
+        // not something a well-behaved client sends and not worth a 400: the
+        // merge takes the max anyway, so the only reachable outcome is the
+        // higher of the two.
+        var counts = new Dictionary<string, int>();
+        foreach (var entry in report.Counts)
+            counts[entry.TrackId] = entry.Count;
+
+        var applied = library.MergeReportedPlayCounts(fingerprint, counts);
+
+        logger.LogInformation(
+            "Applied {AppliedCount} of {ReportedCount} play count(s) reported by {Fingerprint}",
+            applied, report.Counts.Count, fingerprint);
 
         return Results.NoContent();
     }

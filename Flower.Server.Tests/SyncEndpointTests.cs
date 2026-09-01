@@ -368,6 +368,168 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         }
     }
 
+    // The reason POST /play-counts exists at all: the server never pulls from
+    // a client, so a track played on the owner's own desktop - paired to their
+    // server, admin or not - was a play the server could never hear about. It
+    // stayed on the desktop and was invisible to every other listener.
+    [Fact]
+    public async Task A_paired_devices_play_count_reaches_the_server_under_that_devices_fingerprint()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        var ownCountBefore = track.PlayCount;
+        var totalBefore = track.TotalPlayCount;
+
+        try
+        {
+            var report = new PlayCountReportDto([new TrackPlayCountDto(track.Id.ToKey(), 7)]);
+
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/play-counts", "10.0.3.1",
+                body: JsonSerializer.Serialize(report));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(7, track.RemotePlayCounts[device.Fingerprint]);
+            Assert.Equal(totalBefore + 7, track.TotalPlayCount);
+
+            // Attributed, not absorbed: the server's own tally is untouched, so
+            // the same report arriving again cannot inflate it - which is what
+            // lets the client re-state its total instead of sending increments
+            // with ids to deduplicate. See PlayCountReportDto.
+            Assert.Equal(ownCountBefore, track.PlayCount);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(device.Fingerprint);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // And having reached the server, it has to leave it again - otherwise the
+    // count is stored where only that one device can see it, which is where it
+    // already was.
+    [Fact]
+    public async Task A_reported_play_count_is_served_back_in_the_catalog()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Love Song");
+
+        try
+        {
+            await SendAsync(
+                device, "POST", "/api/flower/v1/play-counts", "10.0.3.2",
+                body: JsonSerializer.Serialize(
+                    new PlayCountReportDto([new TrackPlayCountDto(track.Id.ToKey(), 4)])));
+
+            var (_, body, _) = await SendAsync(device, "GET", "/api/flower/v1/library", "10.0.3.2");
+            var manifest = JsonSerializer.Deserialize<LibrarySyncManifestDto>(body)!;
+            var song = manifest.Songs.Single(s => s.Id == track.Id.ToKey());
+
+            Assert.Equal(4, song.PlayCounts![device.Fingerprint]);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(device.Fingerprint);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // What makes re-sending safe, and what the client relies on instead of a
+    // durable record of what it has already pushed: a total only ever grows,
+    // so applying an older one changes nothing. See Track.RemotePlayCounts.
+    [Fact]
+    public async Task A_reported_play_count_lower_than_the_one_already_stored_is_ignored()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Alpha Song");
+
+        try
+        {
+            var id = track.Id.ToKey();
+            await SendAsync(device, "POST", "/api/flower/v1/play-counts", "10.0.3.3",
+                body: JsonSerializer.Serialize(new PlayCountReportDto([new TrackPlayCountDto(id, 9)])));
+            await SendAsync(device, "POST", "/api/flower/v1/play-counts", "10.0.3.3",
+                body: JsonSerializer.Serialize(new PlayCountReportDto([new TrackPlayCountDto(id, 2)])));
+
+            Assert.Equal(9, track.RemotePlayCounts[device.Fingerprint]);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(device.Fingerprint);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // Two devices listening to the same shared library, which is the whole
+    // deployment model - neither one overwrites the other, and the track's
+    // total is what everybody has played of it.
+    [Fact]
+    public async Task Two_devices_reporting_the_same_track_are_counted_separately()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var phone = await TrustedDeviceAsync(trustedPeers);
+        using var laptop = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Beta Song");
+        var totalBefore = track.TotalPlayCount;
+
+        try
+        {
+            var id = track.Id.ToKey();
+            await SendAsync(phone, "POST", "/api/flower/v1/play-counts", "10.0.3.4",
+                body: JsonSerializer.Serialize(new PlayCountReportDto([new TrackPlayCountDto(id, 3)])));
+            await SendAsync(laptop, "POST", "/api/flower/v1/play-counts", "10.0.3.5",
+                body: JsonSerializer.Serialize(new PlayCountReportDto([new TrackPlayCountDto(id, 5)])));
+
+            Assert.Equal(3, track.RemotePlayCounts[phone.Fingerprint]);
+            Assert.Equal(5, track.RemotePlayCounts[laptop.Fingerprint]);
+            Assert.Equal(totalBefore + 8, track.TotalPlayCount);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(phone.Fingerprint);
+            track.RemotePlayCounts.Remove(laptop.Fingerprint);
+            await trustedPeers.RevokeAsync(phone.Fingerprint);
+            await trustedPeers.RevokeAsync(laptop.Fingerprint);
+        }
+    }
+
+    // A client whose catalog is stale, or one pointed at a different server -
+    // the same tolerance the event route has, and for the same reason.
+    [Fact]
+    public async Task A_reported_count_for_a_track_this_server_does_not_have_is_ignored()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+
+        try
+        {
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/play-counts", "10.0.3.6",
+                body: JsonSerializer.Serialize(new PlayCountReportDto(
+                [
+                    new TrackPlayCountDto(Guid.NewGuid().ToKey(), 12),
+                    new TrackPlayCountDto(track.Id.ToKey(), 6),
+                ])));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(6, track.RemotePlayCounts[device.Fingerprint]);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(device.Fingerprint);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // The whole point of the feature: the owner of the server can read why a
     // listener's phone is misbehaving without asking them to find a log file.
     [Fact]

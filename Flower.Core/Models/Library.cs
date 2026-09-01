@@ -937,6 +937,71 @@ namespace Flower.Models
             return true;
         }
 
+        // What another device has played of the tracks this one serves, stated
+        // as that device's own running total rather than as the increments -
+        // see PlayCountReportDto, and Track.RemotePlayCounts for the merge
+        // rule this is the receiving half of.
+        //
+        // The complement of RecordPlay above, and deliberately not the same
+        // method. A browser tab has no durable counter, so its plays can only
+        // be reported as events and can only be counted here, in this server's
+        // own PlayCount. A paired desktop or phone does have one, so its plays
+        // stay attributed to it: filed under its fingerprint, merged per-key by
+        // max, and therefore safe to re-apply on every sync without any of the
+        // event-id bookkeeping the tab path needs.
+        //
+        // deviceFingerprint is the one the caller's signature proved, never one
+        // a request body claimed - a device may only ever report its own count.
+        //
+        // Returns how many tracks actually moved, so a caller can log a real
+        // number: an id this server does not have, and a count that is not
+        // higher than what is already recorded, are both fine and both count
+        // for nothing.
+        public int MergeReportedPlayCounts(string deviceFingerprint, IReadOnlyDictionary<string, int> countsByTrackId)
+        {
+            if (string.IsNullOrEmpty(deviceFingerprint))
+                return 0;
+
+            var changed = new List<Track>();
+            lock (_lock)
+            {
+                foreach (var (id, count) in countsByTrackId)
+                {
+                    if (count <= 0 || Find(id) is not { } track)
+                        continue;
+
+                    // Max, not assignment - the same rule MergeRemotePlayCounts
+                    // applies to a pulled catalog. A report that arrives out of
+                    // order, or twice, must not walk a count backwards.
+                    if (track.RemotePlayCounts.GetValueOrDefault(deviceFingerprint) >= count)
+                        continue;
+
+                    track.RemotePlayCounts[deviceFingerprint] = count;
+                    changed.Add(track);
+                }
+
+                if (changed.Count > 0)
+                {
+                    // So the next GET /library is not answered 304 with a
+                    // catalog that no longer matches what is stored here - the
+                    // counts are part of what that manifest serves (see
+                    // SubsonicMapper.ToChild's PlayCounts).
+                    BumpChangeToken();
+                }
+            }
+
+            // Upsert rather than UpdateStats: the remote counts live in their
+            // own child table, and UpdateStats deliberately writes only the
+            // three columns on tracks itself.
+            foreach (var track in changed)
+                Persist(() => _store!.Upsert(track));
+
+            foreach (var track in changed)
+                TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(track, TrackStatsChange.Finished));
+
+            return changed.Count;
+        }
+
         // Stars or unstars every track behind one Subsonic id - a song, or every
         // track on an album or by an album artist - and hands back the tracks
         // it touched so the caller can persist them and report a count.

@@ -195,10 +195,84 @@ public class LibrarySyncService
         // snapshot travels over plaintext HTTP and carries exception text and
         // absolute file paths, so it ships off by default (see the setting's
         // own comment in AppSettingsStore).
+        // Likewise piggybacked, and deliberately ahead of the logs: this is
+        // the one thing a client learns that its server cannot learn any other
+        // way. The server serves the catalog and every count in it, but it
+        // never pulls, so a track played here is a play it would otherwise
+        // never hear about - see PlayCountReportDto.
+        await PushPlayCountsAsync(device);
+
         if (_appSettings.ShareLogsWithPairedServer)
             await PushLogSnapshotAsync(device);
 
         return new LibrarySyncResult(true, fetchedCount, addedCount);
+    }
+
+    // What this device has played of the server's tracks, as its own running
+    // totals - the client half of POST /play-counts.
+    //
+    // Not gated on a setting the way the log push is. A log snapshot carries
+    // exception text and absolute paths off the device, which is a disclosure
+    // to opt into; a play count is the shared library working as intended, and
+    // it is already the same number the pairing showed the user they were
+    // joining.
+    //
+    // Nothing here distinguishes a downloaded track from a placeholder, or a
+    // file this device imported itself that the server happens to also have.
+    // If it carries the server's own id for the track (see
+    // Track.OriginTrackId, which MergeSyncedTracks stamps on a local match
+    // too), a play of it is a play of that song in that shared library, and
+    // the server files it under this device's fingerprint rather than adding
+    // it to its own - so counting it in both places is not double counting.
+    //
+    // Virtual for the same reason the two methods above are: it is the seam a
+    // coordinator test drives without standing up a server.
+    public virtual async Task<bool> PushPlayCountsAsync(DiscoveredDevice device)
+    {
+        if (string.IsNullOrEmpty(device.Fingerprint))
+            return true;
+
+        try
+        {
+            var sent = _sentPlayCounts.GetOrAdd(device.Fingerprint, _ => new ConcurrentDictionary<string, int>());
+            var counts = UnreportedPlayCounts(_library.Tracks, sent);
+
+            if (counts.Count == 0)
+                return true;
+
+            var bodyBytes = JsonSerializer.SerializeToUtf8Bytes(
+                new PlayCountReportDto(counts), PlayReportJsonContext.Default.PlayCountReportDto);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(PlayCountReportPath));
+            await request.AddPeerCredentialsAsync(_credentials, bodyBytes);
+            request.Headers.ConnectionClose = true;
+            using var content = new ByteArrayContent(bodyBytes);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            request.Content = content;
+
+            using var response = await Http.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            // Only on a 2xx. A failed push leaves the marks where they were, so
+            // the same totals go out again with the next tick rather than being
+            // silently dropped - and because they are totals, the retry needs
+            // no backlog of its own to carry.
+            var acknowledged = _sentPlayCounts[device.Fingerprint];
+            foreach (var entry in counts)
+                acknowledged[entry.TrackId] = entry.Count;
+
+            _logger.LogDebug("Reported {Count} play count(s) to {Alias}", counts.Count, device.Alias);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Debug, not Warning: this runs on the same five-second tick the
+            // log push does, against a server that is very often simply not
+            // there, and the counts are not lost - they are still in the
+            // library, and still the truth to be stated next time.
+            _logger.LogDebug(ex, "Could not report play counts to {Alias} ({Fingerprint})", device.Alias, device.Fingerprint);
+            return false;
+        }
     }
 
     // The log half of a sync on its own, without the catalog pull above.
@@ -236,6 +310,52 @@ public class LibrarySyncService
     // outright (GET /log/watermark) rather than assuming, which is the whole
     // point of asking: a restarted client has no idea what landed, and a
     // restored-from-backup server may hold less than it did.
+    // Which of this device's own tallies a peer has not been told yet.
+    //
+    // Static and pure so the selection rule is testable without a server: what
+    // counts as this device's own play, and what is already known there, is
+    // the whole of the decision - the rest of the push is transport.
+    internal static List<TrackPlayCountDto> UnreportedPlayCounts(
+        IEnumerable<Track> tracks, IReadOnlyDictionary<string, int> alreadySent)
+    {
+        var counts = new List<TrackPlayCountDto>();
+        foreach (var track in tracks)
+        {
+            // No id the server knows this track by - a file of this device's
+            // own that the server does not have. Not its play to count.
+            if (track.OriginTrackId is not { Length: > 0 } originTrackId)
+                continue;
+
+            // The same sum SubsonicMapper/LibraryOpenSubsonicMapper send as
+            // this device's own tally - a play imported from iTunes is still a
+            // play this device is the record of.
+            var total = track.PlayCount + track.ImportedPlayCount;
+            if (total <= 0)
+                continue;
+
+            // Only what this peer has not already been told. The far side
+            // takes the max, so re-sending is harmless - but a library with
+            // thousands of played tracks would otherwise re-send all of them
+            // on every five-second tick, which is exactly the steady
+            // background traffic the log push was already reshaped once to
+            // avoid.
+            if (alreadySent.GetValueOrDefault(originTrackId) >= total)
+                continue;
+
+            counts.Add(new TrackPlayCountDto(originTrackId, total));
+        }
+
+        return counts;
+    }
+
+    // Per-peer, in-memory, and per-track: the highest total this device has
+    // successfully told that peer. Not persisted, for the same reason
+    // _lastSeenTokens is not - a restart re-sends, the far side takes the max,
+    // and nothing is wrong for having said the same true thing twice.
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, int>> _sentPlayCounts = new();
+
+    private const string PlayCountReportPath = "/api/flower/v1/play-counts";
+
     private const string LogReportPath = "/api/flower/v1/log/report";
     private const string LogWatermarkPath = "/api/flower/v1/log/watermark";
 

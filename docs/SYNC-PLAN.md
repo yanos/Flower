@@ -788,6 +788,59 @@ Last Played carried back in the manifest.
 so it is a server-side flag with no browser story to build yet. When a liked-songs
 view lands, starring travels this same road.
 
+### A paired device that listens — done
+
+The tab's counterpart, and a gap that survived it: a play on a paired *desktop
+or phone* also stayed where it happened. `IPlayReporter` is registered in the
+browser branch alone, and nothing else ever reported anything — `/rest/scrobble`
+exists on the server and `OpenSubsonicClient.ScrobbleAsync` exists on the client,
+but no caller ever joined them. So the owner's own desktop, listening to its own
+server's library all evening, left the server's counts at zero and every other
+listener seeing zero with it. The sync is one-directional by design (a Client
+pulls from its Server, a Server never pulls — see `SyncRolePolicy`), so there was
+no return leg at all for something the client learns.
+
+**Totals, not events — the opposite call from the tab, for the reason the tab's
+own section names.** A tab reports increments because it holds no durable counter
+to state a total from. A desktop or a phone does, so it states one:
+`POST /api/flower/v1/play-counts` carries `(OriginTrackId, count)` pairs, and the
+server merges each into `Track.RemotePlayCounts` under the fingerprint the
+request *signature* proved. That is the same G-Counter two desktops used to
+exchange through each other's manifests back when both ends served one, and it
+brings its properties along: per-key max means re-sending after a failed push, or
+after a restart, converges rather than double-counting, so there is no event id
+to allocate and nothing for the server to remember having applied.
+
+**And it keeps the play attributed.** A tab's plays land in the server's own
+`PlayCount` because a tab is nobody. A paired device is somebody, so its count
+stays under its own name — which is also what makes the count safe to keep
+locally *and* report: the client's own tally and the server's are different
+entries in the same map, and `Track.TotalPlayCount` sums them without either one
+absorbing the other.
+
+**What gets reported** is anything carrying an `OriginTrackId` with a non-zero
+`PlayCount + ImportedPlayCount` — the same sum the manifest already sends as this
+device's own tally. Deliberately no distinction between a placeholder, a
+downloaded file, and a local file of this device's own that the server also has:
+`MergeSyncedTracks` stamps the server's id onto a local match too, and a play of
+that song is a play of that song in that shared library.
+
+**It rides the log-push tick, not the catalog sync.** A play does not move the
+catalog — `TrackStatsChanged` deliberately does not schedule a sync (that was
+ARCHITECTURE-REVIEW Tier 1.1) — so counts pushed only from `SyncWithAsync` would
+sit on the device until something else happened to change the library. The push
+sends no request at all when it has nothing new to state, so joining the
+five-second tick costs nothing when nobody is listening. What it does need is a
+per-peer memory of the highest total already acknowledged, or a library with
+thousands of played tracks re-states all of them every tick. In memory only, like
+`_lastSeenTokens`: a restart re-sends, the far side takes the max, and nothing is
+wrong for having said the same true thing twice.
+
+**Not gated on a setting**, unlike the log push beside it. A log snapshot carries
+exception text and absolute paths off the device and so ships off by default; a
+play count is the shared library working as intended, and it is the same number
+the pairing screen already showed the user they were joining.
+
 ### Tailscale, and the proxy the guide creates — done
 
 The remote-access path is written up for a user in `docs/SELF-HOSTING.md`
