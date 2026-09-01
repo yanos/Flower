@@ -248,11 +248,18 @@ public partial class AlbumGridRowControl : UserControl
         };
         downloadItem.Click += (_, _) => _ = vm.Downloads.DownloadAllAsync(downloadable);
 
+        var deleteLocalFileItem = new MenuItem { Header = "Delete Local File" };
+        LocalFileDeletionDialog.UpdateMenuItem(deleteLocalFileItem, selectedTracks);
+        deleteLocalFileItem.Click += async (_, _) =>
+            await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, selectedTracks);
+
         var menu = new ContextMenu();
         menu.Items.Add(getInfoItem);
         menu.Items.Add(addToPlaylistItem);
         menu.Items.Add(locateFileItem);
         menu.Items.Add(downloadItem);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(deleteLocalFileItem);
         return menu;
     }
 

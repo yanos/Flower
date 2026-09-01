@@ -38,6 +38,7 @@ public partial class MainView : UserControl
     // Hidden unless the right-clicked selection actually has something to
     // fetch - see UpdateDownloadItem.
     private MenuItem    _downloadItem = new();
+    private MenuItem    _deleteLocalFileItem = new();
     private readonly ContextMenu _sidebarItemMenu = new();
     private SidebarItem? _dropTargetPlaylistItem;
 
@@ -584,6 +585,7 @@ public partial class MainView : UserControl
         // right set to act on here.
         PopulateAddToPlaylistMenu(MusicList.SelectedTracks);
         UpdateDownloadItem(_downloadItem, MusicList.SelectedTracks);
+        LocalFileDeletionDialog.UpdateMenuItem(_deleteLocalFileItem, MusicList.SelectedTracks);
         _trackMenu.Open(MusicList);
     }
 
@@ -905,11 +907,20 @@ public partial class MainView : UserControl
         _downloadItem = new MenuItem { Header = "Download" };
         _downloadItem.Click += (_, _) => StartDownload(MusicList.SelectedTracks);
 
+        _deleteLocalFileItem = new MenuItem { Header = "Delete Local File" };
+        _deleteLocalFileItem.Click += async (_, _) =>
+        {
+            if (_viewModel is { } vm)
+                await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, MusicList.SelectedTracks);
+        };
+
         _trackMenu = new ContextMenu();
         _trackMenu.Items.Add(getInfoItem);
         _trackMenu.Items.Add(_addToPlaylistItem);
         _trackMenu.Items.Add(locateFileItem);
         _trackMenu.Items.Add(_downloadItem);
+        _trackMenu.Items.Add(new Separator());
+        _trackMenu.Items.Add(_deleteLocalFileItem);
     }
 
     private void PopulateAddToPlaylistMenu(IReadOnlyList<Track> tracks)
@@ -971,6 +982,15 @@ public partial class MainView : UserControl
         menu.Items.Add(getInfoItem);
         menu.Items.Add(addToPlaylistItem);
         menu.Items.Add(downloadItem);
+        var deleteLocalFileItem = new MenuItem { Header = "Delete Local File" };
+        LocalFileDeletionDialog.UpdateMenuItem(deleteLocalFileItem, tracks);
+        deleteLocalFileItem.Click += async (_, _) =>
+        {
+            if (_viewModel is { } vm)
+                await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);
+        };
+        menu.Items.Add(new Separator());
+        menu.Items.Add(deleteLocalFileItem);
         return menu;
     }
 
