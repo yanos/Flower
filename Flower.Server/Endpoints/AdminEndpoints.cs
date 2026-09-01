@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.Extensions.Options;
 
 using Flower.Importer;
+using Flower.Models;
 using Flower.Logging;
 using Flower.Persistence;
 using Flower.Server.Configuration;
@@ -19,6 +20,7 @@ public sealed record PairingCodeResponse(string Code, DateTimeOffset ExpiresAt, 
 public sealed record TrustedDeviceResponse(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin);
 public sealed record SubsonicCredentialResponse(
     string Username, string Label, DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt, string? Password);
+public sealed record CoverArtWriteResponse(int Written, int Total);
 public sealed record LibraryStatusResponse(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
 public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
 
@@ -422,6 +424,62 @@ public static class AdminEndpoints
                 jsonOptions);
         });
 
+        // Album art, written into the server's own files.
+        //
+        // This is the admin surface's one *content* write, and it is here rather
+        // than on /rest because it is an owner's act, not a listener's: the
+        // Subsonic protocol has no route for replacing cover art, and inventing
+        // one there would put a whole-file rewrite behind the same credential a
+        // third-party player uses to browse. TrustedPeer.IsAdmin is the right
+        // gate for it.
+        //
+        // Addressed by the same id GET /rest/getCoverArt reads at - an album id
+        // or a song id - and it writes into exactly the files that read would
+        // have consulted (SubsonicEndpoints.CoverArtCandidates). That symmetry
+        // is the whole point: art is addressed per album on the way out (see
+        // SubsonicMapper's CoverArt field), so writing it into one track of an
+        // album would leave the album still serving whichever other file the
+        // read path happened to reach first, and look to the caller like the
+        // change had been silently dropped.
+        authenticated.MapPut("/cover-art", async (HttpContext context, Library library, string? id) =>
+        {
+            if (string.IsNullOrEmpty(id))
+                return Results.BadRequest(new { error = "An album or song id is required." });
+
+            var contentType = context.Request.ContentType?.Split(';')[0].Trim();
+
+            using var buffer = new MemoryStream();
+            await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
+            var bytes = buffer.ToArray();
+            if (bytes.Length == 0)
+                return Results.BadRequest(new { error = "An image body is required." });
+
+            // Sniffed rather than trusted, and the request is refused when the
+            // two disagree with each other about nothing recognisable: the MIME
+            // type ends up inside the tag, where every later reader believes it,
+            // so an "image/jpeg" header over a zip file would poison the file
+            // rather than fail here.
+            var sniffed = LocalAlbumArtReader.MimeTypeForBytes(bytes);
+            if (sniffed == null)
+                return Results.BadRequest(new { error = "That body is not an image Flower can read." });
+
+            var mimeType = sniffed;
+            if (contentType != null && !string.Equals(contentType, sniffed, StringComparison.OrdinalIgnoreCase))
+                logger.LogDebug("Cover art for {Id} arrived as {Declared} but is really {Actual}; using the latter.",
+                    id, contentType, sniffed);
+
+            return WriteCoverArt(id, library, logger, jsonOptions, path => AlbumArtWriter.TryWrite(path, bytes, mimeType, logger));
+        });
+
+        // Removing art is a write like any other, and it is deliberately not a
+        // PUT with an empty body: "replace this with nothing" and "there is
+        // nothing here to send" are too easy to confuse when a request is
+        // truncated in flight.
+        authenticated.MapDelete("/cover-art", (Library library, string? id) =>
+            string.IsNullOrEmpty(id)
+                ? Results.BadRequest(new { error = "An album or song id is required." })
+                : WriteCoverArt(id, library, logger, jsonOptions, path => AlbumArtWriter.TryRemove(path, logger)));
+
         // One paired device's rolling seven-day log, assembled from the
         // snapshots pushed at the end of its syncs (see SyncEndpoints'
         // /log/report and ClientLogStore). The whole
@@ -463,6 +521,34 @@ public static class AdminEndpoints
                 .ToList();
             return Results.Json(new LogSliceResponse(slice.LastSequence, lines), jsonOptions);
         });
+    }
+
+    // Applies one art write to every file behind an id, and reports how many it
+    // landed on. A partial success is still a 200 with a smaller count rather
+    // than an error: the files that took the new picture really do have it, and
+    // telling the caller "failed" would invite it to retry a write that has
+    // already half happened.
+    private static IResult WriteCoverArt(
+        string id, Library library, ILogger logger, JsonSerializerOptions jsonOptions, Func<string, bool> write)
+    {
+        var candidates = SubsonicEndpoints.CoverArtCandidates(id, library);
+        if (candidates.Count == 0)
+            return Results.NotFound(new { error = "No track on this server has that id." });
+
+        var written = 0;
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Path is { Length: > 0 } path && write(path))
+                written++;
+        }
+
+        if (written == 0)
+            return Results.Json(new { error = "The artwork could not be written to any of those files." },
+                jsonOptions, statusCode: StatusCodes.Status500InternalServerError);
+
+        logger.LogInformation("Album art for {Id} rewritten on {Written} of {Total} files.",
+            id, written, candidates.Count);
+        return Results.Json(new CoverArtWriteResponse(written, candidates.Count), jsonOptions);
     }
 
     internal const string AdminFingerprintKey = "Flower.AdminFingerprint";

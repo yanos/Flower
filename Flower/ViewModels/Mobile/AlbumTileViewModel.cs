@@ -95,11 +95,18 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
     // through a common base would add more indirection than it would save.
     private Bitmap? _albumArt;
     private int _artState; // 0=idle, 1=loading, 2=done
+    private int _artCacheGeneration;
 
     public Bitmap? AlbumArt
     {
         get
         {
+            // Same artwork-replaced-on-disk re-read as TrackRowViewModel's own
+            // getter - see its comment for why this polls a generation counter
+            // instead of subscribing to the loader.
+            if (Volatile.Read(ref _artState) == 2 && Volatile.Read(ref _artCacheGeneration) != AlbumArtLoader.CacheGeneration)
+                Interlocked.Exchange(ref _artState, 0);
+
             if (Interlocked.CompareExchange(ref _artState, 1, 0) == 0)
                 _ = LoadArtAsync();
             return _albumArt;
@@ -109,7 +116,9 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
 
     private async Task LoadArtAsync()
     {
+        var cacheGeneration = AlbumArtLoader.CacheGeneration;
         var bmp = await AlbumArtLoader.Current.LoadAsync(RepresentativeTrack);
+        Volatile.Write(ref _artCacheGeneration, cacheGeneration);
         Interlocked.Exchange(ref _artState, 2);
         AlbumArt = bmp;
     }

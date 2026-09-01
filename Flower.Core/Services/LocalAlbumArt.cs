@@ -47,6 +47,65 @@ public static class LocalAlbumArtReader
         [".tif"] = "image/tiff",
     };
 
+    // What an image file with this extension should be tagged/served as, or
+    // null for an extension nothing here can decode. Exposed so the write side
+    // (Track Info's Artwork tab, embedding a picked file into a track's tag)
+    // accepts exactly the set the read side above already understands, rather
+    // than keeping its own second list of image extensions.
+    public static string? MimeTypeForExtension(string? extension) =>
+        extension != null && ImageMimeTypes.TryGetValue(extension, out var mime) ? mime : null;
+
+    // The extensions a file picker should offer, for the same reason.
+    public static IReadOnlyCollection<string> ImageExtensions => ImageMimeTypes.Keys;
+
+    // The file extension to give a copy of art carrying this MIME type - the
+    // reverse of the table above, for the one caller that has bytes plus a type
+    // and needs a filename to put them in (dragging the artwork out of Track
+    // Info onto the desktop). ".jpg" for anything unrecognised: a wrong-but-
+    // plausible extension on a dragged-out copy is a far smaller problem than
+    // an extensionless file the OS cannot open at all.
+    public static string ExtensionForMimeType(string? mimeType)
+    {
+        foreach (var (extension, mime) in ImageMimeTypes)
+        {
+            if (string.Equals(mime, mimeType, StringComparison.OrdinalIgnoreCase))
+                return extension;
+        }
+
+        return ".jpg";
+    }
+
+    // What these bytes actually are, by magic number. The tag-reading path
+    // above never needs this - an embedded picture states its own MIME type,
+    // and a cover file states it in its extension - but art fetched from a
+    // peer and kept in the content-addressed disk cache is bytes and nothing
+    // else (see AlbumArtLoader.TryGetArt), so this is the only way to name it.
+    // Null when the bytes match nothing here, which callers treat as "no type
+    // to report" rather than guessing.
+    public static string? MimeTypeForBytes(byte[]? bytes)
+    {
+        if (bytes is null || bytes.Length < 12)
+            return null;
+
+        if (bytes[0] == 0xFF && bytes[1] == 0xD8)
+            return "image/jpeg";
+        if (bytes[0] == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G')
+            return "image/png";
+        if (bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F')
+            return "image/gif";
+        if (bytes[0] == 'B' && bytes[1] == 'M')
+            return "image/bmp";
+        if (bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F' &&
+            bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P')
+            return "image/webp";
+        // Both endiannesses of a TIFF header ("II*\0" and "MM\0*").
+        if ((bytes[0] == 'I' && bytes[1] == 'I' && bytes[2] == 0x2A && bytes[3] == 0x00) ||
+            (bytes[0] == 'M' && bytes[1] == 'M' && bytes[2] == 0x00 && bytes[3] == 0x2A))
+            return "image/tiff";
+
+        return null;
+    }
+
     // logger is optional because two of the three callers are static classes
     // with a logger of their own to hand and the third (a Minimal-API handler)
     // has none; a null one just means the best-effort failures below stay

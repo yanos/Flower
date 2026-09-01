@@ -41,6 +41,11 @@ public sealed record AdminLogSliceDto(long LastSequence, List<AdminLogEntryDto> 
 public sealed record SubsonicCredentialDto(
     string Username, string Label, DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt, string? Password);
 
+// How many of the files behind an art id the server managed to rewrite, out of
+// how many it found. Written can be smaller than Total without the call having
+// failed - see AdminEndpoints.WriteCoverArt on why a partial success is a 200.
+public sealed record CoverArtWriteDto(int Written, int Total);
+
 // Raised for any non-success response, so callers can surface the server's own
 // message instead of a bare status code - "A device cannot revoke itself." is
 // worth showing verbatim.
@@ -124,6 +129,29 @@ public sealed class ServerAdminClient(
     public Task RevokeSubsonicCredentialAsync(string username, CancellationToken ct = default) =>
         SendAsync(HttpMethod.Delete, $"/api/admin/subsonic-credentials/{Uri.EscapeDataString(username)}", null, ct);
 
+    // Replaces the album art behind an id - the same id GET /rest/getCoverArt
+    // reads at - by embedding the picture in the server's own files. The one
+    // call here that sends something other than JSON, and the reason SendAsync
+    // below takes a prepared payload: the signature covers a hash of the exact
+    // bytes on the wire, so image bytes have to travel as themselves rather than
+    // be re-encoded into a JSON string on the way.
+    public async Task<CoverArtWriteDto> SetCoverArtAsync(
+        string id, byte[] bytes, string mimeType, CancellationToken ct = default)
+    {
+        var response = await SendAsync(
+            HttpMethod.Put, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}", bytes, mimeType, ct);
+        return await response.Content.ReadFromJsonAsync<CoverArtWriteDto>(Json, ct)
+               ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
+    }
+
+    public async Task<CoverArtWriteDto> RemoveCoverArtAsync(string id, CancellationToken ct = default)
+    {
+        var response = await SendAsync(
+            HttpMethod.Delete, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}", [], null, ct);
+        return await response.Content.ReadFromJsonAsync<CoverArtWriteDto>(Json, ct)
+               ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
+    }
+
     private async Task<T> SendAsync<T>(HttpMethod method, string pathAndQuery, object? body, CancellationToken ct)
     {
         var response = await SendAsync(method, pathAndQuery, body, ct);
@@ -131,16 +159,24 @@ public sealed class ServerAdminClient(
                ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
     }
 
-    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string pathAndQuery, object? body, CancellationToken ct)
+    private Task<HttpResponseMessage> SendAsync(HttpMethod method, string pathAndQuery, object? body, CancellationToken ct)
     {
         // Serialized up front rather than left to HttpContent: the signature
         // covers a hash of the exact bytes sent, so the authorizer has to see
         // them before the request goes out.
         var payload = body == null ? [] : JsonSerializer.SerializeToUtf8Bytes(body, Json);
+        return SendAsync(method, pathAndQuery, payload, body == null ? null : "application/json", ct);
+    }
 
+    // contentType null means "send no body at all", which is not the same as an
+    // empty one: the admin gate only buffers and hashes a body when there is a
+    // Content-Length to read.
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method, string pathAndQuery, byte[] payload, string? contentType, CancellationToken ct)
+    {
         var request = new HttpRequestMessage(method, new Uri(BaseAddress, pathAndQuery));
-        if (body != null)
-            request.Content = new ByteArrayContent(payload) { Headers = { ContentType = new("application/json") } };
+        if (contentType != null)
+            request.Content = new ByteArrayContent(payload) { Headers = { ContentType = new(contentType) } };
 
         await authorize(request, payload);
 

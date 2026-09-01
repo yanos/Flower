@@ -518,18 +518,7 @@ public static class SubsonicEndpoints
         if (string.IsNullOrEmpty(id))
             return Results.NotFound();
 
-        IReadOnlyList<Track> candidates;
-        if (id.StartsWith("al-", StringComparison.Ordinal))
-        {
-            candidates = library.Snapshot.AlbumTracks(id);
-        }
-        else
-        {
-            var track = library.Find(id);
-            candidates = track is null ? [] : [track];
-        }
-
-        foreach (var candidate in candidates)
+        foreach (var candidate in CoverArtCandidates(id, library))
         {
             // Shared with the client - see LocalAlbumArtReader, which this used
             // to be a private copy of.
@@ -539,6 +528,19 @@ public static class SubsonicEndpoints
         }
 
         return Results.NotFound();
+    }
+
+    // Which files an art request for this id is about: every track on an album
+    // for an album id, or the one track for a song id. Shared with the admin
+    // cover-art route (AdminEndpoints), which writes into exactly the files this
+    // would have read from - so "the art you can see at this id" and "the art
+    // you can replace at this id" cannot come apart.
+    internal static IReadOnlyList<Track> CoverArtCandidates(string id, Library library)
+    {
+        if (id.StartsWith("al-", StringComparison.Ordinal))
+            return library.Snapshot.AlbumTracks(id);
+
+        return library.Find(id) is { } track ? [track] : [];
     }
 
 }

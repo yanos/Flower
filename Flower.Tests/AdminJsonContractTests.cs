@@ -45,9 +45,13 @@ public class AdminJsonContractTests
 
     // The DTOs, and only those: the rest of what these signatures mention is
     // cancellation tokens and the odd bool/string/int that travels in the query
-    // string, none of which is ever serialized.
+    // string, none of which is ever serialized. byte[] is the one non-primitive
+    // exception - SetCoverArtAsync sends an image as the body itself, which is
+    // the whole reason it takes bytes rather than a DTO wrapping them, so
+    // there is no metadata for it to need.
     private static bool IsSerialized(Type? type) =>
-        type != null && type != typeof(CancellationToken) && !type.IsPrimitive && type != typeof(string);
+        type != null && type != typeof(CancellationToken) && !type.IsPrimitive
+        && type != typeof(string) && type != typeof(byte[]);
 
     [Theory]
     [MemberData(nameof(WireTypes))]

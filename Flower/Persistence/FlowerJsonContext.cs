@@ -57,6 +57,7 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(AdminDeviceLogDto))]
     [JsonSerializable(typeof(SubsonicCredentialDto))]
     [JsonSerializable(typeof(List<SubsonicCredentialDto>), TypeInfoPropertyName = "SubsonicCredentialList")]
+    [JsonSerializable(typeof(CoverArtWriteDto))]
     internal partial class FlowerJsonContext : JsonSerializerContext
     {
     }

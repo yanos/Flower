@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Avalonia.Media.Imaging;
@@ -266,6 +267,111 @@ public class AlbumArtLoader
     // LocalAlbumArtReader.ForFile directly rather than sniff.
     public static byte[]? TryGetLocalArtBytes(Track track) =>
         LocalAlbumArtReader.ForFile(track.Path, StaticLogger)?.Bytes;
+
+    // The undecoded, un-downscaled art for either kind of track - what Track
+    // Info's Artwork tab reports the real dimensions of and opens at full size,
+    // as opposed to the MaxArtPixels bitmap LoadAsync hands back for display. A
+    // placeholder track's answer is whatever LoadRemoteAsync already wrote into
+    // the content-addressed disk cache, so this never issues a fetch of its
+    // own: no cached copy means no bytes, which is the same "nothing to show"
+    // the caller handles anyway. That path also has no MIME type to report -
+    // the cache is keyed by content hash and stores bytes alone - hence the
+    // empty string rather than a guess sniffed back out of the bytes.
+    public static LocalAlbumArt? TryGetArt(Track track)
+    {
+        if (IsLocalFile(track))
+            return LocalAlbumArtReader.ForFile(track.Path, StaticLogger);
+
+        if (track.OriginAlbumArtHash is not { Length: > 0 } hash)
+            return null;
+
+        var cachePath = Path.Combine(CacheDirectory, $"{hash}.art");
+        try
+        {
+            if (!File.Exists(cachePath))
+                return null;
+
+            // Sniffed, because the cache stores bytes and nothing else - see
+            // this method's own note above. Empty, not a guess, when the magic
+            // number matches nothing known.
+            var bytes = File.ReadAllBytes(cachePath);
+            return new LocalAlbumArt(bytes, LocalAlbumArtReader.MimeTypeForBytes(bytes) ?? "");
+        }
+        catch (Exception ex)
+        {
+            StaticLogger.LogDebug(ex, "Could not read cached remote art at {Path}", cachePath);
+            return null;
+        }
+    }
+
+    // Bumped by Invalidate below. Views that have already published a
+    // bitmap poll this rather than subscribe to an event: a rewritten cover
+    // leaves the Track instance untouched, so nothing in the row-merge path
+    // (TrackRowViewModel.ArtSourceMatches) can notice, and a library-sized list
+    // of rows attaching handlers to a static event is a worse trade than an int
+    // compare on the paint path. Deliberately not per-album - an invalidation
+    // is rare (a user replacing artwork), and the cost of the over-broad answer
+    // is one re-read of a file that is almost certainly still in the OS cache.
+    public static int CacheGeneration => Volatile.Read(ref _cacheGeneration);
+    private static int _cacheGeneration;
+
+    // Drops a track's album whose art was just rewritten (Track Info's Artwork
+    // tab) out of the caches, so the next LoadAsync fetches it again instead of
+    // handing back the bitmap decoded from the old bytes. Keyed the same way
+    // LoadLocalAsync/LoadRemoteAsync key it, hence the shared LocalCacheKey
+    // rather than a second copy of that rule.
+    //
+    // The remote half is not symmetric with the local one, and has to do more.
+    // A local file is re-read on the next miss and is current by definition,
+    // but synced art is content-addressed on disk by OriginAlbumArtHash - and
+    // against Flower.Server that "hash" is the album id (SubsonicMapper's
+    // CoverArt field), which does not change when the art behind it does. So
+    // the cache file has to be deleted outright; leaving it would mean the next
+    // load finds the old picture under the same key and never asks the server.
+    //
+    // The evicted Bitmap is deliberately not disposed: rows and tiles currently
+    // on screen may still be painting it, exactly as in Retain's own eviction.
+    public static void Invalidate(Track track)
+    {
+        Interlocked.Increment(ref _cacheGeneration);
+
+        Forget(LocalCacheKey(track));
+
+        if (track.OriginAlbumArtHash is { Length: > 0 } hash)
+        {
+            Forget($"remote:{hash}");
+            var cachePath = Path.Combine(CacheDirectory, $"{hash}.art");
+            try
+            {
+                File.Delete(cachePath);
+            }
+            catch (Exception ex)
+            {
+                // The picture is already changed at the origin; a stale cache
+                // file only means this device keeps painting the old one until
+                // something else clears it, which is not worth failing a write
+                // that has already happened.
+                StaticLogger.LogDebug(ex, "Could not remove the cached remote art at {Path} after replacing it", cachePath);
+            }
+        }
+    }
+
+    private static void Forget(string key)
+    {
+        Cache.TryRemove(key, out _);
+
+        lock (StrongCacheLock)
+        {
+            for (var node = StrongCache.First; node != null; node = node.Next)
+            {
+                if (node.Value.Key == key)
+                {
+                    StrongCache.Remove(node);
+                    break;
+                }
+            }
+        }
+    }
 
     // Fetches a placeholder track's album art from its origin peer, content-
     // addressed on disk by OriginAlbumArtHash so a restart (or the peer going
