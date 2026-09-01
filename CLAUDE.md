@@ -61,6 +61,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `PERFORMANCE-TRACKING-PLAN.md` — CI benchmark regression tracking + runtime timing.
 - `STREAMING-SERVICES-PLAN.md` — feasibility of streaming Spotify/Apple Music/YouTube Music.
 - `ALBUM-GRID-PLAN.md` — design record for the Albums/Recently Added art-tile grid.
+- `SMART-PLAYLIST-PLAN.md` — rule-based self-updating playlists (iTunes-style smart playlists).
 
 ## Agent skills
 

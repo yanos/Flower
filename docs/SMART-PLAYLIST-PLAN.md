@@ -1,0 +1,290 @@
+# Smart Playlist Plan
+
+Rule-based, self-updating playlists — the iTunes "Smart Playlist" feature.
+A playlist defined by a query ("genre is Jazz, added in the last 30 days,
+limit 25 by least recently played") that re-evaluates itself instead of
+holding a hand-picked list.
+
+**Phase 1 (the engine) is built and tested; phases 2-5 are not started.**
+The rest is the design, and the reasoning behind the parts that were not
+obvious.
+
+Out of scope: seed-based "radio"/auto-DJ. That reading of "intelligent
+playlist" shares nothing with this one but the `Track` model — see
+"Adjacent, deliberately separate" at the end.
+
+## The core decision: rules are the state, tracks are a cache
+
+The obvious shape is `SmartPlaylist : Playlist` with a computed `Tracks`.
+Don't. `Playlist` is load-bearing for three consumers that all assume a
+stored list:
+
+- the UI and playback, which read `Tracks`;
+- `PlaylistSyncPlanner`, which decides "did this side change?" purely from
+  `UpdatedAt` against a per-peer baseline;
+- the Subsonic surface (`SubsonicEndpoints`), where a smart playlist has no
+  representation at all — the protocol only has playlists with members.
+
+Instead, `Playlist` gains one nullable property:
+
+```csharp
+public SmartPlaylistRules? Rules { get; set; }   // null => an ordinary playlist
+```
+
+`_tracks` stays exactly what it is: the materialized result. Every existing
+reader keeps working untouched — sidebar, playback, `PlaylistRepository`,
+the Subsonic endpoints, the track shipping half of sync. Only the write
+path is new.
+
+**Materialization must not `Touch()`.** There is already precedent for a
+mutation that deliberately isn't one: `Playlist.RebindTracks` swaps entries
+for the instances a rescan replaced without bumping `UpdatedAt`, because
+sync reads only that field and a rebind is not an edit. Re-evaluating a
+smart playlist is the same category — the songs changed because the library
+changed, not because a user did anything. So re-evaluation goes through a
+sibling of `RebindTracks`, and `UpdatedAt` keeps meaning "someone edited the
+rules or the name".
+
+The payoff is that a smart playlist becomes structurally incapable of a
+content conflict.
+
+## Rule model
+
+Lives in `Flower.Core` so the server shares it rather than growing a twin.
+
+```csharp
+// Flower.Core/Models/SmartPlaylistRules.cs
+public sealed record SmartPlaylistRules(
+    MatchMode Mode,                            // All | Any
+    IReadOnlyList<SmartCondition> Conditions,
+    SmartLimit? Limit,
+    bool LiveUpdating);
+
+public sealed record SmartCondition(SmartField Field, SmartOperator Op, SmartValue Value);
+
+public sealed record SmartLimit(int Amount, LimitUnit Unit, LimitSelector SelectedBy);
+```
+
+Nesting (a condition that is itself a group) is worth designing the record
+for and not worth building the editor for on day one — flat All/Any covers
+the overwhelming majority of real smart playlists.
+
+**One field registry is the single source of truth**: `SmartField` (enum) →
+display name, value type, and a `Func<Track, object?>` accessor. Everything
+— the editor's field dropdown, which operators are offered, the evaluator,
+JSON round-tripping — reads that one table. This is the same discipline
+`Schema.cs`'s `album_artist` comment records: one expression, written once,
+rather than a C# copy and a SQL copy that drift.
+
+Fields for the first cut, grouped by value type:
+
+| Type | Fields |
+|---|---|
+| Text | Title, Artists, AlbumArtist, Album, Genre, Composer, Grouping, Comment, Publisher |
+| Number | Year, BeatsPerMinute, PlayCount, TrackNumber, DiscNumber, Bitrate, SampleRate |
+| Duration | Duration |
+| Date | DateAdded, LastPlayedAt, StarredAt |
+| Bool | Starred, IsCompilation, IsLocallyDownloaded, IgnoreWhenShuffling |
+| Playlist | is / is not in playlist X |
+
+Text comparison goes through `SearchText`, the same accent- and
+case-insensitive path the search box uses (`TrackListBuilder.Filter`) — two
+different answers to "does this track match 'Bjork'?" in one app is a bug
+waiting to be filed.
+
+### Relative dates must stay relative
+
+"Added in the last 30 days" stored as an absolute instant rots silently: it
+keeps matching the same window forever, and nobody notices until the
+playlist is a year stale. Store the offset (`30`, `Days`, `Within`) and
+resolve it against an injected clock at evaluation time. The injected clock
+is also what makes the date rules testable without sleeping.
+
+### Evaluate in memory, do not build a SQL translator
+
+`Library` is fully resident. A 16k-track library × a dozen playlists × a
+compiled predicate is microseconds, and the deployment model (CLAUDE.md,
+"How It Gets Used") is one owner and single-digit listeners. A rules→SQL
+translator would be a second implementation of every operator, with its own
+NULL and collation semantics, for no measurable gain. `SmartPlaylistEvaluator`
+takes `IReadOnlyList<Track>` and returns `List<Track>`, and that is all.
+
+## Membership rules, ordering, and cycles
+
+A membership rule lets one smart playlist refer to another:
+
+- "Fresh Rock" = genre is Rock **and** is not in "Already Heard"
+- "Already Heard" = play count > 0
+
+So Already Heard has to be evaluated before Fresh Rock. Generalized: build
+the dependency graph and evaluate in topological order, leaves first.
+
+The failure case is a cycle — A = "is not in B", B = "is not in A". There is
+no valid order and no correct answer; evaluating it either loops or produces
+whichever result depended on which one happened to run first, and flips on
+the next recompute. Self-reference (A = "is not in A") is the one-node
+version.
+
+**Reject it at edit time, not evaluation time.** When the editor populates
+the playlist dropdown for a membership rule, exclude every playlist that
+already depends — directly or transitively — on the playlist being edited.
+The bad state is then unrepresentable, and the evaluator never needs a cycle
+path at all. The evaluator should still fail loudly rather than loop if it
+ever sees one, as a guard against a hand-edited database or a rules blob
+arriving from a peer.
+
+A membership rule naming a playlist this device does not have resolves to
+empty rather than failing the whole rule — matching how `playlist_tracks`
+already tolerates track ids that no longer resolve.
+
+## Recomputation
+
+Triggers:
+
+- `Library.TracksUpdated` (rescan),
+- sync merge (`LibrarySyncService`, `PlaylistSyncService`),
+- play-count / starred / rating changes — a "Top 25 Most Played" that does
+  not react to a play is broken,
+- a rule edit, obviously.
+
+One debounced pass recomputes every smart playlist in topological order,
+rather than each playlist reacting independently — cheap, and it makes the
+ordering requirement above a property of a single function instead of an
+emergent one.
+
+`LiveUpdating = false` means "evaluate once when saved, then freeze", the
+same as iTunes.
+
+Recomputation cannot disturb playback: `MainPlaylist` is a separate
+`Playlist` and both its constructor and `ReplaceAll` take defensive copies,
+so the queue built from a smart playlist is already detached from it.
+
+## Persistence
+
+Schema **V6**, appended as its own step — never by editing a released
+migration. (The V5 step being added right now exists precisely because a
+column was folded into an already-stamped V4 and never reached the databases
+that had been stamped.)
+
+```sql
+ALTER TABLE playlists ADD COLUMN rules TEXT;   -- JSON, NULL for ordinary playlists
+```
+
+`playlist_tracks` keeps holding the materialized rows for smart playlists
+too. That is what lets every reader stay unchanged, and it is what the
+server serves without needing to evaluate anything per request.
+
+JSON, not a normalized `smart_conditions` table: the rules blob is only ever
+read and written whole, never queried across, and it has to travel over the
+sync wire as a unit anyway. A `SmartPlaylistRulesJsonContext` (source-
+generated, matching `PlaylistSyncJsonContext`) keeps it AOT-safe.
+
+## Sync
+
+`PlaylistSyncPlaylistDto` gains a nullable `Rules`. Each device evaluates
+against its own library — which is the desired behaviour, not a compromise:
+on a phone holding a subset, "Recently Added" should mean recently added
+*there*.
+
+Merging two smart playlists is replacing the query with the more recent one.
+No track-level diff, no conflict window: the existing `UpdatedAt`-vs-
+baseline comparison in `PlaylistSyncPlanner` already expresses it, and since
+materialization does not bump `UpdatedAt`, the only thing that can differ is
+a real rule edit. `PlaylistSyncDecisionKind.Conflict` should therefore never
+be reachable for a playlist that is smart on both sides — worth asserting in
+a test.
+
+Two edges, both cheap:
+
+- **Smart on one side, manual on the other** (same `Id` — someone converted
+  it). Newest `UpdatedAt` wins outright, including the change of kind. A
+  manual playlist that wins brings its track list with it.
+- **A membership rule referencing a playlist the peer lacks** — resolves to
+  empty, per above.
+
+## Server / Subsonic surface
+
+Third-party clients see an ordinary playlist, because that is the only thing
+OpenSubsonic can describe: `getPlaylists`/`getPlaylist` read the
+materialized `playlist_tracks` rows and need no changes at all.
+
+`updatePlaylist` against a smart playlist must be rejected rather than
+silently accepted — an accepted edit would be erased by the next
+recomputation, which is worse than an error. `createPlaylist` can only ever
+make ordinary playlists; there is no wire vocabulary for rules, and adding
+one to a published protocol needs a better reason than this
+(CLAUDE.md, "No Users Yet" — third-party client compatibility is the one
+place backward compatibility still binds).
+
+Flower's own browser UI (`Flower.Web`) can have the real editor later; it is
+not part of the first cut.
+
+## UI
+
+A rule editor in the shape Track Info just took (an editor with typed
+fields, commit 2a77501): a rows-of-conditions list, each row Field /
+Operator / Value with the value control chosen by the field's type, an
+All/Any header, a limit row, and a live-updating checkbox.
+
+Sidebar and list behaviour is the part that is easy to forget:
+`MainViewModel` must refuse drag-drop onto a smart playlist, refuse reorder
+within one, and hide "Remove from playlist" — every one of those edits would
+be silently undone by the next recompute. A distinct sidebar icon so the
+difference is visible before the user tries.
+
+"Convert to ordinary playlist" (freeze the current contents, drop the rules)
+is a one-liner and worth having; the reverse is not offered.
+
+## Phases
+
+1. **Engine.** ✅ Done. `Flower.Core/Models/SmartPlaylistRules.cs` (rules,
+   fields, operators, values, limits), `Flower.Core/Services/`
+   `SmartPlaylistFields.cs` (the registry), `SmartPlaylistEvaluator.cs`
+   (matching, limits, `Validate`, `EvaluateAll`) and `SmartPlaylistGraph.cs`
+   (dependency order, cycle refusal, the editor's candidate list). 60 tests
+   across `SmartPlaylistFieldsTests`, `SmartPlaylistEvaluatorTests` and
+   `SmartPlaylistGraphTests` - pure, no VLC, ~40ms.
+
+   One design point only the tests found: a condition's value shape has to
+   be checked *before* the missing-value shortcut. "Year is <the text
+   1979>" was reporting a clean miss on every track with no year tag, so an
+   unevaluable rule looked exactly like one that did not match, and
+   `Validate` - which runs conditions against a blank track - saw nothing
+   wrong with it. `EnsureValueFits` now runs first, before anything reads
+   the track.
+2. **Persistence.** Schema V6, `PlaylistRepository` read/write,
+   `Playlist.Rules`, the non-`Touch()`ing materialization path, store
+   round-trip tests alongside the existing ones in `StoreRoundTripTests`.
+3. **Recomputation wiring.** Debounced pass hung off `Library.TracksUpdated`
+   and the play-count/star paths.
+4. **UI.** Editor window, sidebar icon, disabled mutations.
+5. **Sync + server.** DTO field, planner assertions, `updatePlaylist`
+   rejection.
+
+Phases 1–3 are shippable without 4 (rules created in tests only), but there
+is no reason to stop there.
+
+## Testing
+
+- Evaluator: one test per operator per value type, and the empty-library and
+  no-conditions edges.
+- Relative dates against a fixed fake clock, including the "same rules, a
+  month later, different result" case that absolute storage would fail.
+- Cycle rejection: the editor's candidate list excludes a transitive
+  dependent; the evaluator throws rather than loops on a hand-built cycle.
+- Materialization does not bump `UpdatedAt` (the sync-visibility invariant).
+- `PlaylistSyncPlanner` never returns `Conflict` for smart-on-both-sides.
+- Store round-trip: rules survive save/load, and a V5 database migrates to
+  V6 without losing playlists.
+
+Tests touching the stores must pin `PlatformDataDirectory.Current` to a
+scratch directory, as the existing store tests do.
+
+## Adjacent, deliberately separate
+
+Seed-based "radio" — the other thing "intelligent playlist" can mean — is a
+different feature: build a similarity score from what the library already
+knows (genre, year, BPM, initial key, artist co-occurrence across playlists,
+play history), seed it from a track, and **append to the queue** rather than
+create a playlist. It shares no code with the rule engine, and entangling
+them would give both a worse design. If it happens, it gets its own doc.
