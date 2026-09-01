@@ -133,6 +133,7 @@ public class StoreRoundTripTests : IDisposable
     {
         public bool IsPlaying { get; set; }
         public int Volume { get; set; }
+        public int VolumeOffset { get; set; }
         public float Position { get; set; }
         public long Time { get; set; }
         public long Length { get; set; }
@@ -1246,13 +1247,16 @@ public class StoreRoundTripTests : IDisposable
         {
             Title = "T", Subtitle = "S", Artists = "A", AlbumArtists = "AA", IsCompilation = true,
             Album = "Al", AlbumSort = "AlS", Year = "1999",
+            TitleSort = "TS", ArtistsSort = "AS", ComposersSort = "CS",
+            RememberPlaybackPosition = true, ResumePosition = TimeSpan.FromSeconds(90.5),
+            IgnoreWhenShuffling = true, VolumeAdjustment = -35,
             TrackNumber = 3, TrackCount = 12, DiscNumber = 2, DiscCount = 2,
             Composers = "C", Conductor = "Cond", RemixedBy = "R",
             Genre = "G", BeatsPerMinute = 128, InitialKey = "Am", Grouping = "Gr",
             Publisher = "P", ISRC = "ISRC1",
             Comment = "Cm", Description = "D", Copyright = "Co", Lyrics = "L",
             Duration = TimeSpan.FromSeconds(123.456), Bitrate = 320, SampleRate = 44100,
-            Channels = 2, BitsPerSample = 16, Codec = "flac",
+            Channels = 2, BitsPerSample = 16, Codec = "flac", EncoderProfile = "LAME 3.100, VBR (V0)",
             Path = "/music/a.flac",
             OriginDeviceFingerprint = "fp", OriginTrackId = "otid",
             OriginFileExtension = "flac", OriginAlbumArtHash = "hash",
@@ -1274,6 +1278,14 @@ public class StoreRoundTripTests : IDisposable
         Assert.True(reloaded.IsCompilation);
         Assert.Equal("Al", reloaded.Album);
         Assert.Equal("AlS", reloaded.AlbumSort);
+        Assert.Equal("TS", reloaded.TitleSort);
+        Assert.Equal("AS", reloaded.ArtistsSort);
+        Assert.Equal("CS", reloaded.ComposersSort);
+        Assert.True(reloaded.RememberPlaybackPosition);
+        Assert.Equal(TimeSpan.FromSeconds(90.5), reloaded.ResumePosition);
+        Assert.True(reloaded.IgnoreWhenShuffling);
+        Assert.Equal(-35, reloaded.VolumeAdjustment);
+        Assert.Equal("LAME 3.100, VBR (V0)", reloaded.EncoderProfile);
         Assert.Equal("1999", reloaded.Year);
         Assert.Equal(3u, reloaded.TrackNumber);
         Assert.Equal(12u, reloaded.TrackCount);

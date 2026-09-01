@@ -312,4 +312,67 @@ public class ImporterTests : IDisposable
 
         Assert.False(track.IsCompilation);
     }
+
+    // The half of CompilationFlag that Track Info's Options tab uses. Read and
+    // write live together precisely so this round trip holds - a write that
+    // covered a different set of tag formats than the read would show up as a
+    // tick that saves and then vanishes on the next rescan.
+    [Fact]
+    public void The_compilation_flag_survives_a_write_and_a_rescan()
+    {
+        var path = Audio(_root, "written.wav", f => f.Tag.Album = "Album");
+
+        using (var file = TagLib.File.Create(path))
+        {
+            Assert.True(Flower.Importer.CompilationFlag.Write(file, true));
+            file.Save();
+        }
+
+        Assert.True(Assert.Single(NewImporter().Import([_root])).IsCompilation);
+
+        using (var file = TagLib.File.Create(path))
+        {
+            Flower.Importer.CompilationFlag.Write(file, false);
+            file.Save();
+        }
+
+        Assert.False(Assert.Single(NewImporter().Import([_root])).IsCompilation);
+    }
+
+    // The other three sort tags, alongside AlbumSort which the importer already
+    // read - they are what TrackListBuilder actually sorts on, so an unread one
+    // is an override that silently does nothing.
+    [Fact]
+    public void Import_reads_the_sort_tags()
+    {
+        Audio(_root, "sorted.wav", f =>
+        {
+            f.Tag.Title = "The Sound";
+            f.Tag.TitleSort = "Sound, The";
+            f.Tag.Performers = ["The Beatles"];
+            f.Tag.PerformersSort = ["Beatles, The"];
+            f.Tag.Composers = ["Ludwig van Beethoven"];
+            f.Tag.ComposersSort = ["Beethoven, Ludwig van"];
+        });
+
+        var track = Assert.Single(NewImporter().Import([_root]));
+
+        Assert.Equal("Sound, The", track.TitleSort);
+        Assert.Equal("Beatles, The", track.ArtistsSort);
+        Assert.Equal("Beethoven, Ludwig van", track.ComposersSort);
+    }
+
+    // An absent sort tag has to stay null rather than becoming "" - see
+    // Track.SortAs, where an empty override would sort the track above
+    // everything else instead of under its own name.
+    [Fact]
+    public void An_absent_sort_tag_stays_null_rather_than_empty()
+    {
+        Audio(_root, "unsorted.wav", f => f.Tag.Performers = ["Björk"]);
+
+        var track = Assert.Single(NewImporter().Import([_root]));
+
+        Assert.Null(track.ArtistsSort);
+        Assert.Null(track.ComposersSort);
+    }
 }

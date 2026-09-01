@@ -27,7 +27,10 @@ namespace Flower.Persistence.Sql
             origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_hash,
             play_count, imported_play_count, last_played_at, date_added,
             album_artist, artist_id, album_id, starred, starred_at,
-            is_locally_downloaded, origin_relative_path
+            is_locally_downloaded, origin_relative_path,
+            title_sort, artists_sort, composers_sort,
+            remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
+            encoder_profile
             """;
 
         public List<Track> LoadAll()
@@ -267,7 +270,10 @@ namespace Flower.Persistence.Sql
                 origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_hash,
                 play_count, imported_play_count, last_played_at, date_added,
                 album_artist, artist_id, album_id, starred, starred_at,
-                is_locally_downloaded, origin_relative_path
+                is_locally_downloaded, origin_relative_path,
+                title_sort, artists_sort, composers_sort,
+                remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
+                encoder_profile
             ) VALUES (
                 $id, $path, $title, $subtitle, $artists, $album_artists, $is_compilation,
                 $album, $album_sort, $year, $track_number, $track_count, $disc_number, $disc_count,
@@ -278,7 +284,10 @@ namespace Flower.Persistence.Sql
                 $origin_device_fingerprint, $origin_track_id, $origin_file_extension, $origin_album_art_hash,
                 $play_count, $imported_play_count, $last_played_at, $date_added,
                 $album_artist, $artist_id, $album_id, $starred, $starred_at,
-                $is_locally_downloaded, $origin_relative_path
+                $is_locally_downloaded, $origin_relative_path,
+                $title_sort, $artists_sort, $composers_sort,
+                $remember_playback_position, $resume_position_ticks, $ignore_when_shuffling, $volume_adjustment,
+                $encoder_profile
             )
             ON CONFLICT (id) DO UPDATE SET
                 path = excluded.path,
@@ -327,7 +336,15 @@ namespace Flower.Persistence.Sql
                 starred = excluded.starred,
                 starred_at = excluded.starred_at,
                 is_locally_downloaded = excluded.is_locally_downloaded,
-                origin_relative_path = excluded.origin_relative_path;
+                origin_relative_path = excluded.origin_relative_path,
+                title_sort = excluded.title_sort,
+                artists_sort = excluded.artists_sort,
+                composers_sort = excluded.composers_sort,
+                remember_playback_position = excluded.remember_playback_position,
+                resume_position_ticks = excluded.resume_position_ticks,
+                ignore_when_shuffling = excluded.ignore_when_shuffling,
+                volume_adjustment = excluded.volume_adjustment,
+                encoder_profile = excluded.encoder_profile;
             """;
 
         private static readonly string[] UpsertParameterNames =
@@ -342,6 +359,9 @@ namespace Flower.Persistence.Sql
             "$play_count", "$imported_play_count", "$last_played_at", "$date_added",
             "$album_artist", "$artist_id", "$album_id", "$starred", "$starred_at",
             "$is_locally_downloaded", "$origin_relative_path",
+            "$title_sort", "$artists_sort", "$composers_sort",
+            "$remember_playback_position", "$resume_position_ticks", "$ignore_when_shuffling", "$volume_adjustment",
+            "$encoder_profile",
         ];
 
         // Parameters are added once and then only have their Value reassigned
@@ -391,6 +411,7 @@ namespace Flower.Persistence.Sql
             p["$channels"].Value = track.Channels;
             p["$bits_per_sample"].Value = track.BitsPerSample;
             p["$codec"].Value = Nullable(track.Codec);
+            p["$encoder_profile"].Value = Nullable(track.EncoderProfile);
             p["$origin_device_fingerprint"].Value = Nullable(track.OriginDeviceFingerprint);
             p["$origin_track_id"].Value = Nullable(track.OriginTrackId);
             p["$origin_file_extension"].Value = Nullable(track.OriginFileExtension);
@@ -411,6 +432,13 @@ namespace Flower.Persistence.Sql
             p["$starred_at"].Value = (object?)track.StarredAt?.UtcTicks ?? DBNull.Value;
             p["$is_locally_downloaded"].Value = track.IsLocallyDownloaded ? 1 : 0;
             p["$origin_relative_path"].Value = Nullable(track.OriginRelativePath);
+            p["$title_sort"].Value = Nullable(track.TitleSort);
+            p["$artists_sort"].Value = Nullable(track.ArtistsSort);
+            p["$composers_sort"].Value = Nullable(track.ComposersSort);
+            p["$remember_playback_position"].Value = track.RememberPlaybackPosition ? 1 : 0;
+            p["$resume_position_ticks"].Value = (object?)track.ResumePosition?.Ticks ?? DBNull.Value;
+            p["$ignore_when_shuffling"].Value = track.IgnoreWhenShuffling ? 1 : 0;
+            p["$volume_adjustment"].Value = track.VolumeAdjustment;
         }
 
         private static object Nullable(string? value) => (object?)value ?? DBNull.Value;
@@ -467,6 +495,14 @@ namespace Flower.Persistence.Sql
             StarredAt = reader.IsDBNull(45) ? null : new DateTimeOffset(reader.GetInt64(45), TimeSpan.Zero),
             IsLocallyDownloaded = reader.GetInt64(46) != 0,
             OriginRelativePath = Text(reader, 47),
+            TitleSort = Text(reader, 48),
+            ArtistsSort = Text(reader, 49),
+            ComposersSort = Text(reader, 50),
+            RememberPlaybackPosition = reader.GetInt64(51) != 0,
+            ResumePosition = reader.IsDBNull(52) ? null : TimeSpan.FromTicks(reader.GetInt64(52)),
+            IgnoreWhenShuffling = reader.GetInt64(53) != 0,
+            VolumeAdjustment = (int)reader.GetInt64(54),
+            EncoderProfile = Text(reader, 55),
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>

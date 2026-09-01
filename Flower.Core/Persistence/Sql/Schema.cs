@@ -177,5 +177,24 @@ namespace Flower.Persistence.Sql
         public const string V3 = """
             ALTER TABLE tracks ADD COLUMN origin_relative_path TEXT;
             """;
+
+        // Track Info's Options tab, in two halves that happen to arrive
+        // together. title_sort/artists_sort/composers_sort complete the set
+        // album_sort was already half of - all four are tags, re-read by every
+        // rescan, so an existing row's null refills by itself. The remaining
+        // four are Flower's own per-track playback state, carried across
+        // rescans by Library.CarryForwardMutableState and defaulting to "behave
+        // exactly as before" - which is what makes adding them to live rows
+        // safe without a backfill.
+        public const string V4 = """
+            ALTER TABLE tracks ADD COLUMN title_sort                 TEXT;
+            ALTER TABLE tracks ADD COLUMN artists_sort               TEXT;
+            ALTER TABLE tracks ADD COLUMN composers_sort             TEXT;
+            ALTER TABLE tracks ADD COLUMN remember_playback_position INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE tracks ADD COLUMN resume_position_ticks      INTEGER;
+            ALTER TABLE tracks ADD COLUMN ignore_when_shuffling      INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE tracks ADD COLUMN volume_adjustment          INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE tracks ADD COLUMN encoder_profile            TEXT;
+            """;
     }
 }

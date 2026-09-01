@@ -45,6 +45,7 @@ public class RescanCarryForwardGuardTests
         nameof(Track.Title), nameof(Track.Subtitle), nameof(Track.Artists),
         nameof(Track.AlbumArtists), nameof(Track.IsCompilation),
         nameof(Track.Album), nameof(Track.AlbumSort), nameof(Track.Year),
+        nameof(Track.TitleSort), nameof(Track.ArtistsSort), nameof(Track.ComposersSort),
         nameof(Track.TrackNumber), nameof(Track.TrackCount),
         nameof(Track.DiscNumber), nameof(Track.DiscCount),
         nameof(Track.Composers), nameof(Track.Conductor), nameof(Track.RemixedBy),
@@ -54,6 +55,7 @@ public class RescanCarryForwardGuardTests
         nameof(Track.Lyrics),
         nameof(Track.Duration), nameof(Track.Bitrate), nameof(Track.SampleRate),
         nameof(Track.Channels), nameof(Track.BitsPerSample), nameof(Track.Codec),
+        nameof(Track.EncoderProfile),
     };
 
     public static IEnumerable<object[]> PersistedProperties() =>

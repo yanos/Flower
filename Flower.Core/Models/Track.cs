@@ -60,6 +60,36 @@ namespace Flower.Models
         private string? _artists;
         public string? AlbumArtists { get; set; }
 
+        // "Sort as" overrides - the ID3v2 TSOT/TSOP/TSOC sort frames (and their
+        // MP4/Xiph equivalents), which TagLib surfaces as Tag.TitleSort/
+        // PerformersSort/ComposersSort. AlbumSort, the fourth of the set, was
+        // already read below; these three complete it.
+        //
+        // Real tags, not app state: they live in the file, a rescan re-reads
+        // them, and other players honour them. What they are for is a sort
+        // order the displayed text cannot produce on its own - "Beatles, The"
+        // for a band displayed as "The Beatles", "Bowie, David" for "David
+        // Bowie". See SortAs below and TrackListBuilder, which is what actually
+        // consults them; a sort override nothing sorts by would just be a
+        // field.
+        public string? TitleSort { get; set; }
+        public string? ArtistsSort { get; set; }
+        public string? ComposersSort { get; set; }
+
+        // The text a given field should sort under: its override when one is
+        // set, otherwise the field itself. Here rather than at each call site
+        // so "blank means fall back" is decided once - a sort tag left as an
+        // empty string (which is what clearing the box in Track Info's Options
+        // tab produces before NullIfEmpty runs, and what some taggers write)
+        // must not sort the track to the very top.
+        public static string? SortAs(string? sortValue, string? displayValue) =>
+            string.IsNullOrWhiteSpace(sortValue) ? displayValue : sortValue;
+
+        [JsonIgnore] public string? TitleSortValue => SortAs(TitleSort, Title);
+        [JsonIgnore] public string? ArtistsSortValue => SortAs(ArtistsSort, Artists);
+        [JsonIgnore] public string? AlbumSortValue => SortAs(AlbumSort, Album);
+        [JsonIgnore] public string? ComposersSortValue => SortAs(ComposersSort, Composers);
+
         // The tag's own "part of a compilation" flag (ID3 TCMP / MP4 cpil) - the
         // conventional signal tagging software uses for a various-artists album,
         // independent of whether AlbumArtists was also filled in. See
@@ -122,6 +152,19 @@ namespace Flower.Models
         public int Channels { get; set; }
         public int BitsPerSample { get; set; }
         public string? Codec { get; set; }
+
+        // How the encoder was told to encode, as the encoder itself recorded it
+        // - "LAME 3.100, VBR (V0)", "LAME 3.100, CBR 320 kbps". Read at import
+        // from the MP3 Xing/Info + LAME header (see Importer/EncodingProfile);
+        // null for every other format, none of which records an equivalent, and
+        // for an MP3 written by an encoder that left no LAME extension.
+        //
+        // Stored rather than parsed on demand in the one window that shows it,
+        // for the reason every other technical field is: a field that only
+        // exists while a file is under the cursor cannot be a column, cannot be
+        // sorted, and cannot be told to a device that has the catalog but not
+        // the file.
+        public string? EncoderProfile { get; set; }
 
         // File
         public string? Path { get; set; }
@@ -201,6 +244,48 @@ namespace Flower.Models
         // no matter what is on disk. This field answers the question directly
         // rather than through a proxy that something else is free to redefine.
         public bool IsLocallyDownloaded { get; set; }
+
+        // ── Per-track playback options ─────────────────────────────────────
+        //
+        // Flower's own state, not tags: none of the three has a standard tag
+        // frame (iTunes keeps its equivalents in its library database too), and
+        // a rescan must not reset them - see Library.CarryForwardMutableState.
+
+        // Resume where this track left off instead of starting it from the
+        // beginning - the podcast/audiobook/DJ-set case, where a two-hour file
+        // is listened to over several sittings. Off by default: for an ordinary
+        // song, restarting from the middle is a bug, not a feature.
+        public bool RememberPlaybackPosition { get; set; }
+
+        // Where it left off, kept only while RememberPlaybackPosition is on.
+        // Written when playback of this track stops for any reason other than
+        // reaching the end (pause, stop, skipping away) and cleared when it does
+        // reach the end, so finishing a podcast starts the next listen at the
+        // top rather than at the last second - see
+        // PlaylistControlViewModel.RememberPositionOf.
+        [JsonConverter(typeof(TimeSpanTicksConverter))]
+        public TimeSpan? ResumePosition { get; set; }
+
+        // Never pick this track when shuffling. It still plays when it is
+        // reached in order, and Next/Previous still walk onto it - this is about
+        // what a random pick is allowed to land on, which is where an interlude,
+        // a spoken intro or a 40-minute live set is unwelcome. See
+        // PlaylistControlViewModel.GetNextEntry.
+        public bool IgnoreWhenShuffling { get; set; }
+
+        // Percentage points added to the output volume while this track plays,
+        // -100..+100, iTunes's "Volume Adjustment" - for the one track on an
+        // album that was mastered far quieter or louder than the rest. Zero
+        // means "leave the volume alone", which is why this is a plain int
+        // rather than a nullable: there is no difference between "no
+        // adjustment" and "an adjustment of nothing".
+        //
+        // Applied as an offset on top of the user's own volume setting rather
+        // than by replacing it, and taken back off when the track stops - see
+        // IAudioManager.VolumeOffset. The slider keeps showing the user's
+        // setting throughout: this changes how loud the track is, not what the
+        // volume is set to.
+        public int VolumeAdjustment { get; set; }
 
         // Stats. PlayCount is Flower's own count, incremented on natural
         // end-of-track (see PlaylistControlViewModel); ImportedPlayCount comes

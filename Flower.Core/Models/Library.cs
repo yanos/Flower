@@ -536,6 +536,12 @@ namespace Flower.Models
             // deleting this file reversible" for the mobile download UI, and that
             // stays true of a downloaded file the scan happens to see.
             track.IsLocallyDownloaded     = previous.IsLocallyDownloaded;
+            // Track Info's Options tab - Flower's own per-track playback state,
+            // set by hand and unknowable to a scan of the file.
+            track.RememberPlaybackPosition = previous.RememberPlaybackPosition;
+            track.ResumePosition           = previous.ResumePosition;
+            track.IgnoreWhenShuffling      = previous.IgnoreWhenShuffling;
+            track.VolumeAdjustment         = previous.VolumeAdjustment;
             MergeRemotePlayCounts(track, previous.RemotePlayCounts);
         }
 

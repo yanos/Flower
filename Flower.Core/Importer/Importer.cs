@@ -94,10 +94,12 @@ namespace Flower.Importer
                     {
                         // Core identity
                         Title         = tag.Title,
+                        TitleSort     = tag.TitleSort,
                         Subtitle      = tag.Subtitle,
                         Artists       = string.Join(", ", tag.Performers),
+                        ArtistsSort   = JoinOrNull(tag.PerformersSort),
                         AlbumArtists  = string.Join(", ", tag.AlbumArtists),
-                        IsCompilation = ReadIsCompilation(tagFile),
+                        IsCompilation = CompilationFlag.Read(tagFile),
                         Album         = tag.Album,
                         AlbumSort     = tag.AlbumSort,
                         Year          = tag.Year > 0 ? tag.Year.ToString() : null,
@@ -108,6 +110,7 @@ namespace Flower.Importer
 
                         // People
                         Composers     = string.Join(", ", tag.Composers),
+                        ComposersSort = JoinOrNull(tag.ComposersSort),
                         Conductor     = tag.Conductor,
                         RemixedBy     = tag.RemixedBy,
 
@@ -132,6 +135,11 @@ namespace Flower.Importer
                         Channels       = technical.Channels,
                         BitsPerSample  = technical.BitsPerSample,
                         Codec          = technical.Codec,
+                        // A second, small read of the file's head (the first
+                        // MPEG frame - see EncodingProfile), because this is
+                        // not in the tag and TagLib's Properties describe the
+                        // decoded stream, not how it was produced.
+                        EncoderProfile = EncodingProfile.Describe(file),
 
                         Path = file
                     });
@@ -148,20 +156,20 @@ namespace Flower.Importer
             }
         }
 
-        // The "part of a compilation" flag (ID3 TCMP, MP4 cpil, Xiph COMPILATION)
-        // lives on each concrete tag format's own type, not the generic TagLib.Tag
-        // the rest of this importer reads through - so unlike every other field
-        // above, this can't be read off the plain tag.* API and needs its own
-        // per-format lookup. Covers every format Importer actually scans (mp3 via
-        // Id3v2, m4a/alac via Apple/Mpeg4, flac via Xiph); wav has no equivalent
-        // tag type in TagLib# and is left false. See Track.IsCompilation/
-        // EffectiveAlbumArtist for why this matters: it is the one reliable,
-        // non-heuristic signal that a various-artists album should be grouped as
-        // a single tile instead of fragmenting by each track's own Artists.
-        private static bool ReadIsCompilation(TagLib.File tagFile) =>
-            tagFile.GetTag(TagLib.TagTypes.Id3v2, false) is TagLib.Id3v2.Tag id3v2 && id3v2.IsCompilation
-            || tagFile.GetTag(TagLib.TagTypes.Apple, false) is TagLib.Mpeg4.AppleTag apple && apple.IsCompilation
-            || tagFile.GetTag(TagLib.TagTypes.Xiph, false) is TagLib.Ogg.XiphComment xiph && xiph.IsCompilation;
+        // The multi-valued sort tags (TSOP/TSOC) joined the same way Performers
+        // and Composers themselves are, except that an absent one has to stay
+        // null rather than become "": these are overrides, and an empty-string
+        // override is indistinguishable from a real one that sorts everything
+        // to the top (see Track.SortAs). Artists/Composers above can afford
+        // string.Join because they are the displayed value, not an override.
+        private static string? JoinOrNull(string[]? values)
+        {
+            if (values == null || values.Length == 0)
+                return null;
+
+            var joined = string.Join(", ", values);
+            return string.IsNullOrWhiteSpace(joined) ? null : joined;
+        }
 
         // Reads the media folder Apple Music is configured to use, straight from its
         // preferences plist. Public so it can also be used to auto-populate the
