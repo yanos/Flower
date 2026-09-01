@@ -111,7 +111,11 @@ namespace Flower.Manager
             // against it - a test that builds and drops one must not leave it
             // still pausing a disposed sink.
             if (_platformAudioSession != null)
+            {
                 _platformAudioSession.OutputDeviceLost += OnOutputDeviceLost;
+                _platformAudioSession.PlaybackInterrupted += OnPlaybackInterrupted;
+                _platformAudioSession.PlaybackInterruptionEnded += OnPlaybackInterruptionEnded;
+            }
 
             // The same fact from the other direction, and deliberately the
             // same handler: on iOS only the AVAudioSession can see a route
@@ -282,10 +286,50 @@ namespace Flower.Manager
             Pause();
         }
 
+        // Unlike a lost output device, an interruption is expected to end, and
+        // whether Flower was playing when it began is the whole question at
+        // that point: a call arriving while the app sits paused must not leave
+        // it playing when the call ends.
+        private bool _wasPlayingWhenInterrupted;
+
+        private void OnPlaybackInterrupted(object? sender, EventArgs e)
+        {
+            _wasPlayingWhenInterrupted = IsPlaying;
+            if (!IsPlaying)
+                return;
+
+            _logger.LogInformation("Audio interrupted; pausing playback");
+            Pause();
+        }
+
+        private void OnPlaybackInterruptionEnded(object? sender, PlaybackInterruptionEndedEventArgs e)
+        {
+            var wasPlaying = _wasPlayingWhenInterrupted;
+            _wasPlayingWhenInterrupted = false;
+
+            if (!wasPlaying || !e.ShouldResume)
+            {
+                _logger.LogInformation(
+                    "Audio interruption ended; staying paused (was playing: {WasPlaying}, may resume: {ShouldResume})",
+                    wasPlaying, e.ShouldResume);
+                return;
+            }
+
+            // Resume rather than Play: the coordinator still holds the track and
+            // its position, and this is the same road the play button takes -
+            // including re-activating the session the OS took away.
+            _logger.LogInformation("Audio interruption ended; resuming playback");
+            Resume();
+        }
+
         public void Dispose()
         {
             if (_platformAudioSession != null)
+            {
                 _platformAudioSession.OutputDeviceLost -= OnOutputDeviceLost;
+                _platformAudioSession.PlaybackInterrupted -= OnPlaybackInterrupted;
+                _platformAudioSession.PlaybackInterruptionEnded -= OnPlaybackInterruptionEnded;
+            }
 
             _sink.OutputDeviceLost -= OnOutputDeviceLost;
 

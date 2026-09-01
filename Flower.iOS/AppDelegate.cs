@@ -67,10 +67,13 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // at construction.
         PlatformNowPlaying.Current = new AppleNowPlaying();
 
-        // Do not activate this at launch: a non-mixing Playback session would
-        // interrupt Music/Podcasts merely by opening Flower. GaplessAudioManager
-        // activates it immediately before Flower starts rendering and releases
-        // it on pause/stop, preserving background playback only while needed.
+        // Configured at launch but not activated: a non-mixing Playback session
+        // would interrupt Music/Podcasts merely by opening Flower, and only
+        // activation does that - the category has to be in place much earlier,
+        // before the CoreAudio output unit exists (see AppleAudioSession's
+        // constructor). GaplessAudioManager activates immediately before Flower
+        // starts rendering and releases on pause/stop, preserving background
+        // playback only while needed.
         //
         // A factory, unlike the three above, because AppleAudioSession takes an
         // injected ILogger<T> and there is no container here yet to resolve one

@@ -14,6 +14,27 @@ public interface IPlatformAudioSession
     void ActivateForPlayback();
     void DeactivateAfterPlayback();
 
+    // Something else took the audio hardware away mid-track - a phone call,
+    // Siri, an alarm, another app that plays with a non-mixing session. The
+    // sound has already stopped by the time this arrives; what is left to do is
+    // make the app agree that it stopped, so the transport controls and the
+    // Lock Screen card do not go on claiming a track is playing in silence.
+    //
+    // iOS-only for the same reason as OutputDeviceLost is: it is the platform
+    // that hands the audio session to one app at a time, so it is the only one
+    // with a concept to report.
+    event EventHandler? PlaybackInterrupted;
+
+    // The interruption is over. ShouldResume carries the OS's own answer to
+    // "may this app start again by itself" - false when the user is expected to
+    // press play (they took a call and hung up in a way that ended with another
+    // app in charge, say), and honouring it rather than always resuming is what
+    // keeps a paused Flower from bursting into song in someone's pocket.
+    //
+    // Raised even when ShouldResume is false, so a listener that armed itself
+    // on PlaybackInterrupted has one place to disarm.
+    event EventHandler<PlaybackInterruptionEndedEventArgs>? PlaybackInterruptionEnded;
+
     // The output the user was listening on has gone away - AirPods out of the
     // ears, a Bluetooth speaker switched off, headphones unplugged. Every
     // platform that has this concept expects the same response, which is the
@@ -33,6 +54,11 @@ public interface IPlatformAudioSession
     // of the handler, and the platform's own notification arrives on whatever
     // thread the OS chose, so marshalling is the implementation's job.
     event EventHandler? OutputDeviceLost;
+}
+
+public sealed class PlaybackInterruptionEndedEventArgs(bool shouldResume) : EventArgs
+{
+    public bool ShouldResume { get; } = shouldResume;
 }
 
 // Registered by the platform entry point before Avalonia constructs the shared

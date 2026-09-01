@@ -86,9 +86,15 @@ public partial class App : Application
         // The one platform seam that arrives as a factory rather than a ready
         // instance, because its implementation wants an injected ILogger<T> and
         // the entry point that registers it (Flower.iOS's AppDelegate) runs
-        // before any of this. Here is the first moment it can be given one, and
-        // still well before GaplessAudioManager - the only thing that reads it -
-        // is constructed further down.
+        // before any of this. Here is the first moment it can be given one.
+        //
+        // It has to stay ahead of GaplessAudioManager below, and not only
+        // because that is what reads Current: constructing the session is what
+        // puts iOS's audio category in place, and the manager's constructor
+        // starts the sink, which is where the CoreAudio output unit is created.
+        // An output unit built before the category is Playback keeps behaving
+        // like the SoloAmbient default - silent through the phone's own speaker,
+        // dead as soon as the screen locks.
         PlatformAudioSession.Materialize(loggerFactory);
 
         var services = new ServiceCollection()

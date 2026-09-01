@@ -374,16 +374,104 @@ public class GaplessAudioManagerTests
         Assert.Equal(0, paused);
     }
 
+    // A phone call, Siri, an alarm: iOS has already silenced the app by the
+    // time it says so, and the state has to follow or the transport controls
+    // and the Lock Screen card go on claiming a track is playing in silence.
+    [Fact]
+    public void An_interruption_pauses_playback()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, _) = Make(platformAudioSession);
+        var paused = 0;
+        manager.Paused += (_, _) => paused++;
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        platformAudioSession.Interrupt();
+
+        Assert.Equal(1, paused);
+        Assert.False(manager.IsPlaying);
+    }
+
+    [Fact]
+    public void Playback_resumes_when_the_interruption_ends_and_the_system_allows_it()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, _) = Make(platformAudioSession);
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        platformAudioSession.Interrupt();
+        platformAudioSession.EndInterruption(shouldResume: true);
+
+        Assert.True(manager.IsPlaying);
+        // The OS took the session away with the interruption, so coming back
+        // has to ask for it again rather than assume it is still held.
+        Assert.Equal(2, platformAudioSession.ActivationCount);
+    }
+
+    // The flag is the OS's own answer to "may this app start again by itself",
+    // and honouring it is what keeps a Flower that was interrupted into silence
+    // from bursting into song in someone's pocket.
+    [Fact]
+    public void Playback_stays_paused_when_the_system_does_not_offer_to_resume()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, _) = Make(platformAudioSession);
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        platformAudioSession.Interrupt();
+        platformAudioSession.EndInterruption(shouldResume: false);
+
+        Assert.False(manager.IsPlaying);
+    }
+
+    // A call arriving while Flower sits paused must not leave it playing when
+    // the call ends - ShouldResume means "you may", not "you were".
+    [Fact]
+    public void An_interruption_while_paused_does_not_start_playback_when_it_ends()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, _) = Make(platformAudioSession);
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        manager.Pause();
+        platformAudioSession.Interrupt();
+        platformAudioSession.EndInterruption(shouldResume: true);
+
+        Assert.False(manager.IsPlaying);
+    }
+
+    [Fact]
+    public void A_disposed_manager_stops_listening_for_interruptions()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, _) = Make(platformAudioSession);
+        var paused = 0;
+        manager.Paused += (_, _) => paused++;
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        manager.Dispose();
+        platformAudioSession.Interrupt();
+
+        Assert.Equal(0, paused);
+    }
+
     private sealed class RecordingPlatformAudioSession : IPlatformAudioSession
     {
         public int ActivationCount { get; private set; }
         public int DeactivationCount { get; private set; }
 
         public event EventHandler? OutputDeviceLost;
+        public event EventHandler? PlaybackInterrupted;
+        public event EventHandler<PlaybackInterruptionEndedEventArgs>? PlaybackInterruptionEnded;
 
         public void ActivateForPlayback() => ActivationCount++;
         public void DeactivateAfterPlayback() => DeactivationCount++;
 
         public void LoseOutputDevice() => OutputDeviceLost?.Invoke(this, EventArgs.Empty);
+
+        public void Interrupt() => PlaybackInterrupted?.Invoke(this, EventArgs.Empty);
+
+        public void EndInterruption(bool shouldResume) =>
+            PlaybackInterruptionEnded?.Invoke(this, new PlaybackInterruptionEndedEventArgs(shouldResume));
     }
 }

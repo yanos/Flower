@@ -35,8 +35,15 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
     private readonly ILogger<AppleAudioSession> _logger;
     private readonly AVAudioSession _session = AVAudioSession.SharedInstance();
     private readonly NSObject _routeChangeObserver;
+    private readonly NSObject _interruptionObserver;
+
+    // Set between an interruption beginning and ending. Read only by
+    // DeactivateAfterPlayback, to keep it from arguing with the OS - see there.
+    private bool _interrupted;
 
     public event EventHandler? OutputDeviceLost;
+    public event EventHandler? PlaybackInterrupted;
+    public event EventHandler<PlaybackInterruptionEndedEventArgs>? PlaybackInterruptionEnded;
 
     // Injected, not fetched from AppLogging: this is an ordinary instance class
     // with a constructor, and AppLogging is the hatch for the cases that have
@@ -49,33 +56,159 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
     {
         _logger = logger;
 
+        // The category is set here, at startup, and not left to the first
+        // ActivateForPlayback below. It has to be in place before the CoreAudio
+        // output unit is created, which happens well before anything is played:
+        // GaplessAudioManager starts its sink from its own constructor, and
+        // MiniaudioSink builds the ma_device there. A unit created while the
+        // session still holds iOS's process default - SoloAmbient - behaves the
+        // way that category says even once Playback is set underneath it: muted
+        // by the ringer switch (so audio reaches AirPods but never the built-in
+        // speaker) and stopped when the screen locks, background mode in
+        // Info.plist or not.
+        //
+        // Doing this at launch does not interrupt whatever else is playing.
+        // Only *activating* a non-mixing session does that, and activation
+        // still waits for real playback - which is the whole point of the split
+        // between this and ActivateForPlayback.
+        ConfigureCategory();
+        LogSessionState("configured at startup");
+
         // Registered for the app's whole life, not just while the session is
         // active: a route change that arrives a moment after playback stopped
         // is still worth knowing about, and re-registering around activation
         // would be one more thing to get wrong.
         _routeChangeObserver = AVAudioSession.Notifications.ObserveRouteChange(OnRouteChange);
+
+        // Same lifetime, and for a stronger reason: the *end* of an
+        // interruption is the notification that matters most, and it arrives
+        // when Flower is - by definition - not the app holding the session.
+        _interruptionObserver = AVAudioSession.Notifications.ObserveInterruption(OnInterruption);
     }
 
     public void ActivateForPlayback()
     {
-        var categoryOptions = AVAudioSessionCategoryOptions.AllowBluetoothA2DP;
-        if (!_session.SetCategory(AVAudioSessionCategory.Playback, AVAudioSessionMode.Default,
-                                  AVAudioSessionRouteSharingPolicy.LongFormAudio, categoryOptions,
-                                  out var categoryError))
-        {
-            _logger.LogWarning("Could not configure the iOS playback audio session: {Error}", categoryError);
-            return;
-        }
+        // Set again rather than assumed to still hold: the category is
+        // process-wide state, and an interruption or another app in the same
+        // process space can leave it somewhere else. Re-setting an unchanged
+        // category is a no-op.
+        //
+        // Activation goes ahead even when that failed. A session in the wrong
+        // category still plays; a session that is never made active does not,
+        // so a category problem must not be allowed to turn into silence.
+        ConfigureCategory();
 
         if (!_session.SetActive(true, out var activationError))
             _logger.LogWarning("Could not activate the iOS playback audio session: {Error}", activationError);
+
+        LogSessionState("activated for playback");
+    }
+
+    // Playback, with the long-form route sharing policy AVRoutePickerView needs
+    // to offer AirPlay 2 receivers, and A2DP so Bluetooth output is stereo
+    // music rather than the mono headset path.
+    //
+    // Written as a ladder rather than one call because the two things this asks
+    // for are not equally important. The route sharing policy buys AirPlay 2
+    // receivers in the picker; iOS accepts it only alongside an exact
+    // combination of category, mode and options, and rejects the whole call if
+    // anything about that combination displeases it. Playback itself is what
+    // makes Flower a music app at all - audible with the ringer switch down,
+    // alive with the screen locked. Losing the first is a missing feature;
+    // losing the second is the app not working, so it must not be possible for
+    // one refused call to cost both.
+    private bool ConfigureCategory()
+    {
+        if (_session.SetCategory(AVAudioSessionCategory.Playback, AVAudioSessionMode.Default,
+                                 AVAudioSessionRouteSharingPolicy.LongFormAudio,
+                                 AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
+                                 out var longFormError))
+        {
+            return true;
+        }
+
+        _logger.LogWarning(
+            "Could not configure the iOS audio session for long-form audio: {Error}. Falling back to plain playback - the route picker may only offer legacy AirPlay devices.",
+            longFormError);
+
+        if (_session.SetCategory(AVAudioSession.CategoryPlayback,
+                                 AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
+                                 out var playbackError))
+        {
+            return true;
+        }
+
+        _logger.LogWarning("Could not configure the iOS audio session for playback with A2DP: {Error}", playbackError);
+
+        // Last rung: the bare category, no options at all. If even this fails
+        // the session is whatever iOS made it, which is SoloAmbient - silent
+        // through the speaker with the ringer switch down, and stopped by the
+        // screen locking.
+        if (_session.SetCategory(AVAudioSession.CategoryPlayback, out var bareError))
+            return true;
+
+        _logger.LogError("Could not put the iOS audio session into the playback category at all: {Error}", bareError);
+        return false;
+    }
+
+    // What the session actually is, as opposed to what was asked for. Logged
+    // rather than inspected in a debugger because the answer is only true on a
+    // real device: the simulator's session is not the one that mutes the
+    // speaker or ends playback at the lock screen.
+    private void LogSessionState(string when)
+    {
+        var outputs = _session.CurrentRoute?.Outputs;
+        var route = outputs is { Length: > 0 }
+            ? string.Join(", ", Array.ConvertAll(outputs, o => $"{o.PortType} ({o.PortName})"))
+            : "nothing";
+
+        _logger.LogInformation(
+            "iOS audio session {When}: category={Category} mode={Mode} policy={Policy} options={Options} route={Route} otherAudioPlaying={OtherAudio}",
+            when, _session.Category, _session.Mode, _session.RouteSharingPolicy, _session.CategoryOptions,
+            route, _session.OtherAudioPlaying);
     }
 
     public void DeactivateAfterPlayback()
     {
+        // An interruption has already taken the session away, and the pause it
+        // caused comes straight back here. Handing it back a second time is at
+        // best a no-op and at worst an error the OS is right to refuse, so the
+        // only thing it would reliably produce is a warning in the log for
+        // every phone call. The app that interrupted Flower does not need
+        // telling it may resume - it is the one playing.
+        if (_interrupted)
+            return;
+
         // Tell a player Flower interrupted (e.g. Music) that it may resume.
         if (!_session.SetActive(false, AVAudioSessionSetActiveOptions.NotifyOthersOnDeactivation, out var deactivationError))
             _logger.LogWarning("Could not deactivate the iOS playback audio session: {Error}", deactivationError);
+    }
+
+    // A call, Siri, an alarm, or another app claiming the session. iOS has
+    // already silenced Flower by the time this arrives; both halves are
+    // reported so the app's own state can follow, and so playback can pick up
+    // again afterwards when the OS says that is welcome.
+    //
+    // ShouldResume is the OS's answer, not a guess: it is absent when the user
+    // ended up somewhere that expects them to press play themselves. Whether
+    // Flower was even playing when the call came in is a separate question, and
+    // one this class deliberately does not track - GaplessAudioManager knows it
+    // first-hand, so it is the one that decides.
+    private void OnInterruption(object? sender, AVAudioSessionInterruptionEventArgs e)
+    {
+        _logger.LogInformation("iOS audio interrupted: {Type} (options {Options})", e.InterruptionType, e.Option);
+
+        if (e.InterruptionType == AVAudioSessionInterruptionType.Began)
+        {
+            _interrupted = true;
+            DispatchQueue.MainQueue.DispatchAsync(() => PlaybackInterrupted?.Invoke(this, EventArgs.Empty));
+            return;
+        }
+
+        _interrupted = false;
+        var shouldResume = e.Option.HasFlag(AVAudioSessionInterruptionOptions.ShouldResume);
+        DispatchQueue.MainQueue.DispatchAsync(
+            () => PlaybackInterruptionEnded?.Invoke(this, new PlaybackInterruptionEndedEventArgs(shouldResume)));
     }
 
     // Route changes arrive for plenty of reasons that are none of Flower's
@@ -103,5 +236,9 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
         DispatchQueue.MainQueue.DispatchAsync(() => OutputDeviceLost?.Invoke(this, EventArgs.Empty));
     }
 
-    public void Dispose() => _routeChangeObserver.Dispose();
+    public void Dispose()
+    {
+        _routeChangeObserver.Dispose();
+        _interruptionObserver.Dispose();
+    }
 }
