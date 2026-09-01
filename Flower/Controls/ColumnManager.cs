@@ -158,5 +158,22 @@ public class ColumnManager
         new("PlayCount",   "Plays",    55,  40, true, 7),
         new("DateAdded",   "Added",   100,  70, true, 8),
         new("LastPlayed",  "Last Played", 100, 70, true, 9),
+
+        // Hidden by default, and that is the only thing separating them from
+        // the ten above: a column nobody asked for should not push Title off
+        // the right edge on first launch, but every field Track Info shows
+        // should be *available* here (right-click the header) rather than
+        // visible only one track at a time.
+        new("Composer",         "Composer",         140, 60, false, 10),
+        new("Encoding",         "Encoding",         160, 60, false, 11),
+        new("SortTitle",        "Sort Title",       140, 60, false, 12),
+        new("SortArtist",       "Sort Artist",      140, 60, false, 13),
+        new("SortAlbum",        "Sort Album",       140, 60, false, 14),
+        new("SortComposer",     "Sort Composer",    140, 60, false, 15),
+        new("Compilation",      "Compilation",       90, 50, false, 16),
+        new("RememberPosition", "Remembers",         80, 50, false, 17),
+        new("ResumePosition",   "Resume At",         80, 50, false, 18),
+        new("SkipInShuffle",    "Skip in Shuffle",   90, 50, false, 19),
+        new("VolumeAdjustment", "Volume",            70, 50, false, 20),
     ];
 }

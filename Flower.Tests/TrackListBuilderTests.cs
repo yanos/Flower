@@ -354,4 +354,50 @@ public class TrackListBuilderTests
 
         Assert.Equal(["!!!", "\"A Song\"", "b"], titles);
     }
+
+    // ── "Sort as" overrides (Track Info's Options tab) ──────────────────────
+    //
+    // The whole point of the sort tags: the list still *shows* "The Beatles"
+    // and files it under B.
+
+    [Fact]
+    public void Sorting_by_artist_uses_the_sort_tag_where_one_is_set()
+    {
+        var beatles = T("Something", artist: "The Beatles", album: "Abbey Road");
+        beatles.ArtistsSort = "Beatles, The";
+        var cash = T("Hurt", artist: "Johnny Cash", album: "American IV");
+        var abba = T("SOS", artist: "ABBA", album: "Ring Ring");
+
+        var rows = TrackListBuilder.Plan([beatles, cash, abba], null, "Artist", true);
+
+        // ABBA, Beatles (via its override), Johnny - not ABBA, Johnny, The.
+        Assert.Equal(["SOS", "Something", "Hurt"], rows.Select(r => r.Track.Title));
+    }
+
+    [Fact]
+    public void Sorting_by_title_uses_the_sort_tag_where_one_is_set()
+    {
+        var a = T("The Wall", album: "A");
+        a.TitleSort = "Wall, The";
+        var b = T("Umbrella", album: "B");
+
+        var rows = TrackListBuilder.Plan([a, b], null, "Title", true);
+
+        Assert.Equal(["Umbrella", "The Wall"], rows.Select(r => r.Track.Title));
+    }
+
+    // An override left as an empty string - which is what a cleared box and
+    // some third-party taggers both produce - must not sort the track above
+    // everything else. See Track.SortAs.
+    [Fact]
+    public void A_blank_sort_tag_falls_back_to_the_displayed_value()
+    {
+        var a = T("Apple", album: "A");
+        var z = T("Zebra", album: "Z");
+        z.TitleSort = "   ";
+
+        var rows = TrackListBuilder.Plan([z, a], null, "Title", true);
+
+        Assert.Equal(["Apple", "Zebra"], rows.Select(r => r.Track.Title));
+    }
 }

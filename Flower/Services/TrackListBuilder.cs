@@ -63,6 +63,13 @@ public static class TrackListBuilder
             SearchText.Contains(t.Genre,   text));
     }
 
+    // Sorts on each field's "sort as" value rather than the field itself - the
+    // tag's own sort override when it has one, the displayed text otherwise
+    // (see Track.SortAs, and Track Info's Options tab, where the overrides are
+    // edited). This is the whole reason those tags exist: "The Beatles" filed
+    // under B, "David Bowie" under Bowie. Only the sort key changes - every
+    // list still *displays* Title/Artists/Album.
+    //
     // Descending inverts the *primary* key only, via Order(..., asc); the
     // ThenBy chains after it always stay ascending. It used to be
     // `asc ? ordered : ordered.Reverse()`, and Enumerable.Reverse reverses ties
@@ -72,10 +79,10 @@ public static class TrackListBuilder
         col switch
         {
             "PlaylistOrder" => tracks,
-            "TrackNumber" => Order(tracks, t => SortKey(t.Album), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
-            "Title"       => Order(tracks, t => SortKey(t.Title), asc),
+            "TrackNumber" => Order(tracks, t => SortKey(t.AlbumSortValue), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
+            "Title"       => Order(tracks, t => SortKey(t.TitleSortValue), asc),
             "Artist"      => SortByArtist(tracks, asc, sortArtistAlbumsByYear),
-            "Album"       => Order(tracks, t => SortKey(t.Album), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
+            "Album"       => Order(tracks, t => SortKey(t.AlbumSortValue), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
             "Year"        => Order(tracks, t => SortKey(t.Year), asc),
             "Genre"       => Order(tracks, t => SortKey(t.Genre), asc),
             "DateAdded"   => Order(tracks, t => t.DateAdded, asc),
@@ -85,7 +92,23 @@ public static class TrackListBuilder
             // Track.TotalPlayCount/TrackRowViewModel.PlayCountDisplay), not just
             // Flower's own count.
             "PlayCount"   => Order(tracks, t => t.TotalPlayCount, asc),
-            _             => Order(tracks, t => SortKey(t.Album), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
+            // The off-by-default columns (see ColumnManager.BuildDefaults) -
+            // sortable like any other, since a column that cannot be sorted on
+            // is half a column. The four "sort as" ones sort on the override
+            // itself rather than on SortAs: the point of showing that column is
+            // to see which tracks carry an override and group the ones that do.
+            "Composer"         => Order(tracks, t => SortKey(t.Composers), asc),
+            "Encoding"         => Order(tracks, t => SortKey(t.EncoderProfile), asc),
+            "SortTitle"        => Order(tracks, t => SortKey(t.TitleSort), asc),
+            "SortArtist"       => Order(tracks, t => SortKey(t.ArtistsSort), asc),
+            "SortAlbum"        => Order(tracks, t => SortKey(t.AlbumSort), asc),
+            "SortComposer"     => Order(tracks, t => SortKey(t.ComposersSort), asc),
+            "Compilation"      => Order(tracks, t => t.IsCompilation, asc),
+            "RememberPosition" => Order(tracks, t => t.RememberPlaybackPosition, asc),
+            "ResumePosition"   => Order(tracks, t => t.ResumePosition ?? TimeSpan.Zero, asc),
+            "SkipInShuffle"    => Order(tracks, t => t.IgnoreWhenShuffling, asc),
+            "VolumeAdjustment" => Order(tracks, t => t.VolumeAdjustment, asc),
+            _             => Order(tracks, t => SortKey(t.AlbumSortValue), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
         };
 
     private static IOrderedEnumerable<Track> Order<TKey>(IEnumerable<Track> tracks, Func<Track, TKey> keySelector, bool ascending) =>
@@ -97,8 +120,8 @@ public static class TrackListBuilder
     // within an album, and only the artist name flips on a descending sort.
     private static IOrderedEnumerable<Track> SortByArtist(IEnumerable<Track> tracks, bool asc, bool sortAlbumsByYear) =>
         sortAlbumsByYear
-            ? Order(tracks, t => SortKey(t.Artists), asc).ThenBy(t => SortKey(t.Year)).ThenBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber)
-            : Order(tracks, t => SortKey(t.Artists), asc).ThenBy(t => SortKey(t.Album)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber);
+            ? Order(tracks, t => SortKey(t.ArtistsSortValue), asc).ThenBy(t => SortKey(t.Year)).ThenBy(t => SortKey(t.AlbumSortValue)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber)
+            : Order(tracks, t => SortKey(t.ArtistsSortValue), asc).ThenBy(t => SortKey(t.AlbumSortValue)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber);
 
     // Strips everything but letters/digits before comparing, so punctuation,
     // symbols, and spacing differences (leading quotes/brackets, "&" vs

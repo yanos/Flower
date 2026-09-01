@@ -160,6 +160,17 @@ public partial class TrackRowControl : UserControl
             "PlayCount"   => nameof(TrackRowViewModel.PlayCountDisplay),
             "DateAdded"   => nameof(TrackRowViewModel.DateAddedDisplay),
             "LastPlayed"  => nameof(TrackRowViewModel.LastPlayedDisplay),
+            "Composer"    => "Track.Composers",
+            "Encoding"    => "Track.EncoderProfile",
+            "SortTitle"   => "Track.TitleSort",
+            "SortArtist"  => "Track.ArtistsSort",
+            "SortAlbum"   => "Track.AlbumSort",
+            "SortComposer" => "Track.ComposersSort",
+            "Compilation"      => nameof(TrackRowViewModel.CompilationDisplay),
+            "RememberPosition" => nameof(TrackRowViewModel.RememberPositionDisplay),
+            "ResumePosition"   => nameof(TrackRowViewModel.ResumePositionDisplay),
+            "SkipInShuffle"    => nameof(TrackRowViewModel.SkipInShuffleDisplay),
+            "VolumeAdjustment" => nameof(TrackRowViewModel.VolumeAdjustmentDisplay),
             _             => ".",
         }));
         return tb;

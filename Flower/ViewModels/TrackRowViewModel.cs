@@ -129,6 +129,22 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
 
     public string LastPlayedDisplay => Track.LastPlayedAt is { } lastPlayed ? lastPlayed.LocalDateTime.ToString("MMM d, yyyy") : "";
 
+    // The off-by-default columns (see ColumnManager.BuildDefaults). Every one
+    // of them reads blank rather than "No"/"0" for the ordinary case: these are
+    // exception markers, and a column of two hundred "No"s says nothing while
+    // hiding the two rows that do say something.
+    public string CompilationDisplay      => Track.IsCompilation ? "Yes" : "";
+    public string RememberPositionDisplay => Track.RememberPlaybackPosition ? "Yes" : "";
+    public string SkipInShuffleDisplay    => Track.IgnoreWhenShuffling ? "Yes" : "";
+
+    public string ResumePositionDisplay =>
+        Track.ResumePosition is { } resume && resume > TimeSpan.Zero
+            ? (resume.TotalHours >= 1 ? resume.ToString(@"h\:mm\:ss") : resume.ToString(@"m\:ss"))
+            : "";
+
+    public string VolumeAdjustmentDisplay =>
+        Track.VolumeAdjustment == 0 ? "" : $"{Track.VolumeAdjustment:+#;-#}%";
+
     // Track is not INotifyPropertyChanged and these two read straight off it,
     // so a play-count/LastPlayedAt bump has to be pushed in from outside. Rows
     // used to be rebuilt wholesale on every play, which is what made that
@@ -266,6 +282,9 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     // publishing the old album's cover and parking _artState at "done" where
     // nothing would ever reload it.
     private int     _artGeneration;
+    // The AlbumArtLoader.CacheGeneration the currently published bitmap was
+    // loaded under - see the getter below.
+    private int     _artCacheGeneration;
 
     // Loads regardless of IsFirstInAlbumGroup - desktop's MusicListView only
     // ever shows this for the group leader (IsVisible="{Binding
@@ -277,6 +296,20 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     {
         get
         {
+            // Artwork replaced on disk (Track Info's Artwork tab) invalidates
+            // the loader's cache, but cannot reach a bitmap already published
+            // here: the Track instance is unchanged, so ArtSourceMatches above
+            // has nothing to notice. Comparing the loader's generation on read
+            // catches it for whatever is actually on screen. Back to idle
+            // rather than nulling the bitmap - the old cover keeps painting
+            // until the new one arrives (no flicker), and setting a property
+            // from inside its own getter is not a re-entrancy worth inviting.
+            if (Volatile.Read(ref _artState) == 2 && Volatile.Read(ref _artCacheGeneration) != AlbumArtLoader.CacheGeneration)
+            {
+                Interlocked.Increment(ref _artGeneration);
+                Interlocked.Exchange(ref _artState, 0);
+            }
+
             if (Interlocked.CompareExchange(ref _artState, 1, 0) == 0)
                 _ = LoadArtAsync();
             return _albumArt;
@@ -297,9 +330,14 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     private async Task LoadArtAsync()
     {
         var generation = Volatile.Read(ref _artGeneration);
+        // Read before the load, not after: an invalidation that lands while
+        // this one is in flight must leave the published bitmap looking stale,
+        // not be silently stamped onto it.
+        var cacheGeneration = AlbumArtLoader.CacheGeneration;
         var bmp = await AlbumArtLoader.Current.LoadAsync(Track);
         if (Volatile.Read(ref _artGeneration) != generation)
             return;
+        Volatile.Write(ref _artCacheGeneration, cacheGeneration);
         Interlocked.Exchange(ref _artState, 2);
         AlbumArt = bmp;
     }
