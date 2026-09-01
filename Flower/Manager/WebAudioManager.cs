@@ -101,10 +101,29 @@ namespace Flower.Manager
             set
             {
                 _volume = Math.Clamp(value, 0, 100);
-                Interop.SetVolume(_volume / 100.0);
+                ApplyVolume();
                 VolumeChanged?.Invoke(this, EventArgs.Empty);
             }
         }
+
+        // See IAudioManager.VolumeOffset - _volume above stays the user's own
+        // setting, the <audio> element gets the sum.
+        private int _volumeOffset;
+
+        public int VolumeOffset
+        {
+            get => _volumeOffset;
+            set
+            {
+                if (_volumeOffset == value)
+                    return;
+
+                _volumeOffset = value;
+                ApplyVolume();
+            }
+        }
+
+        private void ApplyVolume() => Interop.SetVolume(Math.Clamp(_volume + _volumeOffset, 0, 100) / 100.0);
 
         public float Position
         {

@@ -652,6 +652,18 @@ public partial class App : Application
             mainView = singleView;
         }
 
+        // Where a half-listened track got to has to survive the app going away,
+        // not just a pause - see PlaylistControlViewModel.SavePlaybackState.
+        // Two hooks because the platforms end differently and neither raises
+        // the other's event: a desktop window closes, and a phone app is
+        // deactivated (Avalonia raises Deactivated for backgrounding, which is
+        // as close to "about to be killed" as iOS/Android ever get).
+        var playbackControls = provider.GetRequiredService<PlaylistControlViewModel>();
+        if (mainView is Window mainWindowForShutdown)
+            mainWindowForShutdown.Closing += (_, _) => playbackControls.SavePlaybackState();
+        if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
+            activatable.Deactivated += (_, _) => playbackControls.SavePlaybackState();
+
         // Constructed eagerly (nothing else references it) so its
         // subscriptions to PlaylistControlViewModel/IAudioManager start
         // immediately rather than lazily on first use - see

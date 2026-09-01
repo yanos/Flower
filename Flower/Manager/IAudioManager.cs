@@ -18,6 +18,19 @@ namespace Flower.Manager
         //bool CanResume { get; }
 
         int Volume { get; set; }
+
+        // Percentage points added to Volume on the way to the output, for a
+        // track whose own VolumeAdjustment says it should play louder or
+        // quieter than everything around it (see Track.VolumeAdjustment). The
+        // sum, clamped to 0..100, is what the sink is driven with.
+        //
+        // A separate knob rather than "set Volume and put it back afterwards"
+        // because Volume is the user's setting and the slider shows it: an
+        // offset must move the sound without moving the slider, and must not
+        // fight a drag that happens mid-track (the drag sets Volume, the offset
+        // still applies on top of the new value). Changing it raises no
+        // VolumeChanged for the same reason - nothing user-visible changed.
+        int VolumeOffset { get; set; }
         float Position { get; set; }
         long Time { get; }
         long Length { get; }

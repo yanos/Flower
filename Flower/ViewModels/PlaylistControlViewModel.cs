@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -44,6 +45,26 @@ namespace Flower.ViewModels
         private bool _isShuffleEnabled;
         private readonly Random _random = new();
         private readonly Library _library;
+
+        // ── Per-track playback options (see Track's own section of the same
+        //    name, and Track Info's Options tab where they are set) ──────────
+        //
+        // Which track _lastKnownTimeMs belongs to - deliberately not
+        // CurrentlyPlayingTrack. Starting a new track can make the old one
+        // raise Stopped *after* CurrentlyPlayingTrack has already moved on, and
+        // saving the outgoing track's elapsed time onto the incoming one would
+        // resume every track at the position of the one before it. Null means
+        // "nothing to remember", which is both the normal case (the option is
+        // off) and the state between tracks.
+        private Track? _positionTrack;
+        private long _lastKnownTimeMs;
+
+        // Where to seek once the incoming track actually starts. Applied on the
+        // Playing event rather than straight after Play(): at that moment the
+        // decoder has not reported a length yet, and a seek expressed as a
+        // fraction of an unknown length is a seek to nowhere.
+        private TimeSpan? _pendingSeek;
+
         private readonly AppSettings _appSettings;
         private readonly AppSettingsStore _appSettingsStore;
 
@@ -124,19 +145,37 @@ namespace Flower.ViewModels
 
             _subscriptions.Add<EventHandler>((s, e) =>
             {
+                ApplyPendingSeek();
                 OnPropertyChanged(nameof(IsPlaying));
             },
                 h => _audioManager.Playing += h, h => _audioManager.Playing -= h);
 
+            // The only source of "how far into this track are we" this class
+            // has: Time is a live counter on the audio manager and is gone the
+            // moment playback stops, so it has to be latched while it is still
+            // being reported.
             _subscriptions.Add<EventHandler>((s, e) =>
             {
+                if (_positionTrack != null)
+                    _lastKnownTimeMs = _audioManager.Time;
+            },
+                h => _audioManager.PositionChanged += h, h => _audioManager.PositionChanged -= h);
+
+            _subscriptions.Add<EventHandler>((s, e) =>
+            {
+                LeavePlayingTrack();
                 OnPropertyChanged(nameof(IsPlaying));
                 CurrentlyPlayingTrack = null;
             },
                 h => _audioManager.Stopped += h, h => _audioManager.Stopped -= h);
 
+            // Remembered but not forgotten: a pause is the most likely moment
+            // for a long file to be put down for the day, and unlike Stopped
+            // this leaves _positionTrack in place so resuming carries straight
+            // on and a later stop still has something to save.
             _subscriptions.Add<EventHandler>((s, e) =>
             {
+                SaveResumePosition();
                 OnPropertyChanged(nameof(IsPlaying));
             },
                 h => _audioManager.Paused += h, h => _audioManager.Paused -= h);
@@ -170,6 +209,14 @@ namespace Flower.ViewModels
                     // TracksUpdated means a full UI rebuild plus a peer library
                     // sync - twice per song. See ARCHITECTURE-REVIEW Tier 1.1.
                     _library.IncrementPlayCount(finishedTrack);
+
+                    // Reaching the end is the one way of leaving a track that
+                    // must NOT be remembered: a podcast listened to the whole
+                    // way through should start at the top next time, not at its
+                    // final second. Cleared before the advance below, so the
+                    // outgoing track is dealt with while it is still the one
+                    // _positionTrack names.
+                    ForgetResumePosition(finishedTrack);
 
                     var next = GetUpcomingEntry(finishedTrack, ResolveQueueIndex(finishedTrack));
                     if (next.Track != null)
@@ -314,12 +361,28 @@ namespace Flower.ViewModels
                 // duplicates in the queue, excluding by value would refuse to
                 // shuffle into the other copy, and a queue of nothing but
                 // copies of one track would spin here forever.
-                int index;
+                //
+                // Picked from a candidate list rather than by re-rolling until
+                // something acceptable comes up, because Track.IgnoreWhenShuffling
+                // can exclude almost the whole queue and rejection sampling
+                // against a 1-in-500 hit rate is a loop with no bound worth
+                // trusting on the UI thread.
+                var candidates = ShuffleCandidates(tracks, currentIndex);
+                if (candidates.Count > 0)
+                {
+                    var index = candidates[_random.Next(candidates.Count)];
+                    return (tracks[index], index);
+                }
+
+                // Every other slot is marked "ignore when shuffling" - which
+                // makes the marks meaningless here, since the alternative is
+                // refusing to advance at all. Fall back to an unrestricted pick.
+                int any;
                 do
                 {
-                    index = _random.Next(tracks.Count);
-                } while (index == currentIndex);
-                return (tracks[index], index);
+                    any = _random.Next(tracks.Count);
+                } while (any == currentIndex);
+                return (tracks[any], any);
             }
 
             // Off the end, or playing something that isn't in this queue at
@@ -410,9 +473,24 @@ namespace Flower.ViewModels
         private void Start(Track track)
         {
             _logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, track.Path);
+
+            // Everything owed to the track being left behind, before anything
+            // about the new one is set - see _positionTrack on why the order
+            // matters.
+            LeavePlayingTrack();
+
             SelectedTrack = track;
             CurrentlyPlayingTrack = track;
+
+            // Both worked out before Play, not after: Play can raise Playing
+            // synchronously on some heads, and ApplyPendingSeek reads _pendingSeek
+            // from that handler.
+            _pendingSeek = ResumeTargetFor(track);
+            _positionTrack = track.RememberPlaybackPosition ? track : null;
+            _lastKnownTimeMs = 0;
+
             _audioManager.Play(track);
+            ApplyVolumeAdjustment(track);
 
             // Arms decode-ahead for whichever track should follow this one,
             // so the gapless pipeline can splice it in with no gap.
@@ -460,6 +538,14 @@ namespace Flower.ViewModels
         // pausing for one.
         private void ArmUpcoming(Track? upcoming)
         {
+            // Decode-ahead starts a track at its beginning and splices it in
+            // with no gap, which is the one thing a track that resumes part-way
+            // through must not do. Arming nothing means the advance goes through
+            // the ordinary Play path on EndReached instead - a small gap, and
+            // the right position.
+            if (upcoming != null && ResumeTargetFor(upcoming) != null)
+                upcoming = null;
+
             var pending = ResolveForPlaybackAsync(upcoming);
             if (pending.IsCompleted)
             {
@@ -545,6 +631,131 @@ namespace Flower.ViewModels
                 }
             }
         }
+
+        // ── Per-track playback options ─────────────────────────────────────
+        //
+        // Three options that live on the Track and only mean anything at the
+        // moment it starts or stops playing: resume where it left off, stay out
+        // of shuffle's way, and play at its own volume. See Track's section of
+        // the same name for what each one is for; this is where they take
+        // effect.
+
+        // Which slots shuffle is allowed to land on: everything except the
+        // current one and anything marked IgnoreWhenShuffling.
+        private static List<int> ShuffleCandidates(IReadOnlyList<Track> tracks, int currentIndex)
+        {
+            var candidates = new List<int>(tracks.Count);
+            for (var i = 0; i < tracks.Count; i++)
+            {
+                if (i != currentIndex && !tracks[i].IgnoreWhenShuffling)
+                    candidates.Add(i);
+            }
+
+            return candidates;
+        }
+
+        // Where this track should start, or null for "at the beginning" - which
+        // covers the option being off, nothing recorded yet, and the two edge
+        // cases worth naming: a position in the first few seconds is not worth
+        // restoring, and one within a few seconds of the end would restart the
+        // track only to have it end immediately.
+        private static readonly TimeSpan ResumeThreshold = TimeSpan.FromSeconds(5);
+
+        private static TimeSpan? ResumeTargetFor(Track track)
+        {
+            if (!track.RememberPlaybackPosition || track.ResumePosition is not { } position)
+                return null;
+
+            if (position < ResumeThreshold)
+                return null;
+
+            if (track.Duration > TimeSpan.Zero && position > track.Duration - ResumeThreshold)
+                return null;
+
+            return position;
+        }
+
+        private void ApplyPendingSeek()
+        {
+            if (_pendingSeek is not { } target)
+                return;
+
+            _pendingSeek = null;
+
+            // Length is what the decoder actually reports for the file being
+            // played; Duration is what the tag said when it was scanned. They
+            // normally agree, and where they don't the decoder is the one that
+            // Position is a fraction of.
+            var lengthMs = _audioManager.Length > 0
+                ? _audioManager.Length
+                : (long)(_positionTrack?.Duration.TotalMilliseconds ?? 0);
+
+            if (lengthMs <= 0)
+                return;
+
+            _audioManager.Position = (float)Math.Clamp(target.TotalMilliseconds / lengthMs, 0d, 1d);
+            _logger.LogDebug("Resuming at {Position}", target);
+        }
+
+        // Called whenever playback of the current track ends for any reason -
+        // a new track starting, a stop, the queue emptying. Saves where it got
+        // to and hands the volume back.
+        private void LeavePlayingTrack()
+        {
+            SaveResumePosition();
+            _positionTrack = null;
+            RestoreVolume();
+        }
+
+        // The app is going away (quit on desktop, backgrounded on a phone) while
+        // something may still be playing. Every other way of leaving a track
+        // goes through a pause/stop/track-change event, and quitting goes
+        // through none of them - so without this, listening to a podcast and
+        // then quitting is precisely the case that loses the position, which is
+        // the case the option exists for. Synchronous: Library writes the one
+        // row on the spot, and there is no later to defer to.
+        //
+        // Wired in App.axaml.cs - the desktop window's Closing, and the
+        // activatable lifetime's Deactivated on mobile.
+        public void SavePlaybackState() => SaveResumePosition();
+
+        private void SaveResumePosition()
+        {
+            if (_positionTrack is not { } track || _lastKnownTimeMs <= 0)
+                return;
+
+            _library.RecordResumePosition(track, TimeSpan.FromMilliseconds(_lastKnownTimeMs));
+        }
+
+        private void ForgetResumePosition(Track track)
+        {
+            _positionTrack = null;
+            _lastKnownTimeMs = 0;
+
+            // Unconditionally, not only when the option is on: turning the
+            // option off should not leave a stale position behind to be honoured
+            // if it is ever turned back on.
+            if (track.ResumePosition != null)
+                _library.RecordResumePosition(track, null);
+        }
+
+        // The track's own adjustment, handed to the audio manager as an offset
+        // on top of whatever the user's volume currently is (see
+        // IAudioManager.VolumeOffset). Nothing here touches Volume itself, so
+        // the slider does not move, and a drag mid-track sets the volume this
+        // offset then applies against rather than being fought over.
+        private void ApplyVolumeAdjustment(Track track)
+        {
+            _audioManager.VolumeOffset = track.VolumeAdjustment;
+            if (track.VolumeAdjustment != 0)
+            {
+                _logger.LogDebug(
+                    "Per-track volume adjustment {Adjustment:+#;-#;0} for {Title}",
+                    track.VolumeAdjustment, track.Title);
+            }
+        }
+
+        private void RestoreVolume() => _audioManager.VolumeOffset = 0;
 
         public void Next()
         {

@@ -16,6 +16,12 @@ public sealed class FakeAudioManager : IAudioManager
 {
     public bool IsPlaying { get; set; }
     public int Volume { get; set; }
+    public int VolumeOffset { get; set; }
+
+    // What the real managers would actually drive the sink with - the two
+    // knobs summed and clamped, so a test can assert on the sound rather than
+    // on the arithmetic.
+    public int EffectiveVolume => Math.Clamp(Volume + VolumeOffset, 0, 100);
     public float Position { get; set; }
     public long Time { get; set; }
     public long Length { get; set; }

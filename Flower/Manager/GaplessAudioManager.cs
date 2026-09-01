@@ -123,6 +123,7 @@ namespace Flower.Manager
             _sink.Playing += (_, e) => Playing?.Invoke(this, e);
             _sink.Paused += (_, e) => Paused?.Invoke(this, e);
             _sink.Stopped += (_, e) => Stopped?.Invoke(this, e);
+            _userVolume = _sink.Volume;
             _sink.Start(_sharedRing);
 
             // VlcAudioManager's single MediaPlayer used to raise
@@ -144,15 +145,39 @@ namespace Flower.Manager
 
         public bool IsPlaying => _sink.IsPlaying;
 
+        // The user's own volume, kept here rather than read back off the sink:
+        // the sink carries Volume + VolumeOffset, so once a track with its own
+        // adjustment is playing the sink no longer knows what the user asked
+        // for. Seeded from the sink so the slider starts where the backend
+        // actually is.
+        private int _userVolume;
+        private int _volumeOffset;
+
         public int Volume
         {
-            get => _sink.Volume;
+            get => _userVolume;
             set
             {
-                _sink.Volume = value;
+                _userVolume = Math.Clamp(value, 0, 100);
+                ApplyVolume();
                 VolumeChanged?.Invoke(this, EventArgs.Empty);
             }
         }
+
+        public int VolumeOffset
+        {
+            get => _volumeOffset;
+            set
+            {
+                if (_volumeOffset == value)
+                    return;
+
+                _volumeOffset = value;
+                ApplyVolume();
+            }
+        }
+
+        private void ApplyVolume() => _sink.Volume = Math.Clamp(_userVolume + _volumeOffset, 0, 100);
 
         public float Position
         {
