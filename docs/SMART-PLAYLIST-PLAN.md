@@ -5,8 +5,8 @@ A playlist defined by a query ("genre is Jazz, added in the last 30 days,
 limit 25 by least recently played") that re-evaluates itself instead of
 holding a hand-picked list.
 
-**Phases 1 (the engine) and 2 (persistence) are built and tested; phases 3-5
-are not started.**
+**Phases 1 (the engine), 2 (persistence) and 3 (recomputation) are built and
+tested; phases 4 (UI) and 5 (sync + server) are not started.**
 The rest is the design, and the reasoning behind the parts that were not
 obvious.
 
@@ -140,13 +140,36 @@ already tolerates track ids that no longer resolve.
 
 ## Recomputation
 
-Triggers:
+Triggers. Note that `Library.TracksUpdated` alone is *not* enough — the
+fields the flagship playlists are built on deliberately do not raise it:
 
-- `Library.TracksUpdated` (rescan),
-- sync merge (`LibrarySyncService`, `PlaylistSyncService`),
-- play-count / starred / rating changes — a "Top 25 Most Played" that does
-  not react to a play is broken,
-- a rule edit, obviously.
+- `Library.TracksUpdated` — rescan, download, track added or removed. Covers
+  the descriptive fields plus `DateAdded`.
+- `Library.TrackStatsChanged` — play count, `LastPlayedAt`, skip count. These
+  were split out of `TracksUpdated` precisely because it means a full
+  track-list rebuild plus a peer sync, twice per track change
+  (`ARCHITECTURE-REVIEW.md` Tier 1.1). But "Recently Played" / "Most Played" /
+  "Never Played" live entirely on this event; hang recomputation off
+  `TracksUpdated` only and they never update until a rescan.
+- `Library.TrackStarsChanged` — a star, from the Track Info window or a
+  Subsonic `/star`. Both go through `Library.SetStarred`, which reached neither
+  event above; this event was added for exactly that. Deliberately not folded
+  into `TrackStatsChanged`, which at least one subscriber reads as "a play
+  happened" and forwards as a scrobble (`IPlayReporter`).
+- `Library.PlaylistsChanged` — a `PlaylistRef` rule makes another playlist's
+  contents an input, so a playlist change is a track-set change for its
+  dependents.
+- a rule edit, obviously — the editor calling `Schedule` directly.
+
+Two paths that looked like they needed their own trigger turned out not to:
+`MergeReportedTrackState` (an admin client pushing play counts and stars *in*)
+already raises `TrackStatsChanged` per changed track, and `MergeSyncedTracks`
+(a catalog pull) already raises `TracksUpdated`. Smart-playlist inputs arriving
+from off-machine are covered by the same two events as this device's own
+listening.
+
+Debouncing is not polish: `TrackStatsChanged` fires twice per track change,
+and a sync merge touches thousands of tracks in a loop.
 
 One debounced pass recomputes every smart playlist in topological order,
 rather than each playlist reacting independently — cheap, and it makes the
@@ -155,6 +178,33 @@ emergent one.
 
 `LiveUpdating = false` means "evaluate once when saved, then freeze", the
 same as iTunes.
+
+### Both ends bake from the same recipe
+
+**Settled:** a recompute is never a sync-visible change, including one
+triggered by an incoming sync merge. Devices exchange rules, never computed
+track lists.
+
+The rules are small and already sync, because editing them is a real user
+action. The inputs — play counts, stars, dates — already sync too. So both
+ends reach the same answer from the same starting point without shipping the
+answer itself, and a device that briefly disagrees converges on its next pass
+because it is re-reading the truth rather than reconciling a stale copy.
+
+Shipping the computed list instead would have each side recompute after a
+merge, see a changed playlist, and push a near-identical list back — an echo
+between two sides that agree, with a real disagreement window wherever
+"in the last 7 days" straddles a clock difference.
+
+This is already the behaviour rather than work to do: `Playlist.Materialize`
+does not `Touch()`, and `PlaylistSyncPlanner` decides what to send from
+`UpdatedAt` alone, so a recompute leaves no fingerprint for it to find. The
+decision is to keep relying on that, and to treat any future need to
+`Touch()` on materialization as breaking this property.
+
+The cost is a `PlaylistRef` rule whose referenced playlist is stale on one
+side: the two can show different contents until the next pass. That is a
+better failure than two devices contending for ownership of a list.
 
 Recomputation cannot disturb playback: `MainPlaylist` is a separate
 `Playlist` and both its constructor and `ReplaceAll` take defensive copies,
@@ -270,8 +320,30 @@ is a one-liner and worth having; the reverse is not offered.
    its last materialized contents beats failing the whole playlist load, which
    is the same tolerance `playlist_tracks` already applies to a track id that
    no longer resolves.
-3. **Recomputation wiring.** Debounced pass hung off `Library.TracksUpdated`
-   and the play-count/star paths.
+3. **Recomputation wiring.** ✅ Done.
+   `Flower.Core/Services/SmartPlaylistRefresher.cs`: one debounced pass over
+   every live-updating smart playlist, in `SmartPlaylistGraph` order, installed
+   through `Playlist.Materialize`. `Start` subscribes to the five triggers
+   above and runs an opening pass; `Refresh` is the pass itself; `RefreshOne`
+   is what the editor will call on save, so a `LiveUpdating = false` playlist
+   is still filled in once at the moment it is defined. Registered and started
+   in both hosts — `App.axaml.cs` right after `ResetPlaylists`, `Program.cs`
+   after the server's first rescan. 15 tests in
+   `Flower.Tests/SmartPlaylistRefresherTests.cs`.
+
+   Three things the writing settled. **A recomputation writes through a new
+   `Library.SavePlaylists` rather than `PlaylistsChanged`** — not only because
+   a recompute is not a sync-visible change, but because the refresher
+   subscribes to that event (a membership rule makes one playlist another's
+   input), so announcing its own write would feed straight back into itself.
+   **`Library.TrackStarsChanged` is a new event**, for the reason in the
+   trigger list above. And **`EvaluateAll` now seeds a `Random` per playlist
+   from its id** instead of sharing one for the pass: a
+   `LimitSelector.Random` playlist is re-evaluated on every play, since play
+   counts are an input, and with an ambient `Random` it would draw a different
+   25 songs each time — reshuffling itself under a listener partway through it.
+   Seeded from the id, the same candidate set always yields the same pick, so
+   the contents only move when the library does.
 4. **UI.** Editor window, sidebar icon, disabled mutations.
 5. **Sync + server.** DTO field, planner assertions, `updatePlaylist`
    rejection.

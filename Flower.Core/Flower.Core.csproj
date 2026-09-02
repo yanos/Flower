@@ -6,6 +6,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Same arrangement as Flower.csproj: a handful of tuning constants are
+         internal rather than const so a test can shorten them (see
+         SmartPlaylistRefresher.Cooldown). -->
+    <InternalsVisibleTo Include="Flower.Tests" />
+    <InternalsVisibleTo Include="Flower.Server.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Makaretu.Dns.Multicast.New" Version="0.38.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
     <!-- Microsoft.Data.Sqlite 10.0.10 pulls SQLitePCLRaw 2.1.11, whose bundled

@@ -185,6 +185,24 @@ namespace Flower.Models
         // stale" and must fire for exactly those.
         public event EventHandler? PlaylistsChanged;
 
+        // Stars moved on one or more tracks - see SetStarred, the only path
+        // that can do it, whether the star came from the Track Info window or
+        // a Subsonic /star call.
+        //
+        // Deliberately not folded into TrackStatsChanged, tempting as that is:
+        // at least one subscriber reads that event as "a play happened" and
+        // forwards it as a scrobble (see IPlayReporter and App.axaml.cs), so a
+        // star raised there would be reported to the origin server as a listen.
+        // Starred and StarredAt are smart-playlist inputs, and SetStarred
+        // reaches neither of the two events above, so without this a starred
+        // track would not enter a "Starred in the last week" playlist until
+        // something unrelated triggered a pass.
+        //
+        // One event per call, not per track: starring a whole album or artist
+        // is a single user action, and every subscriber so far only needs to
+        // know that stars moved at all.
+        public event EventHandler? TrackStarsChanged;
+
         // Convenience overload for the many call sites (mostly tests) that don't
         // care about log output - production code always goes through the other
         // constructor instead (see App.axaml.cs), which gets a real, properly
@@ -1136,6 +1154,8 @@ namespace Flower.Models
             // they pass through unchanged.
             var stored = target == StarTarget.Song ? matches[0].Id.ToKey() : value;
             Persist(() => _store!.SetStarred(target, stored, starred, starredAt));
+
+            TrackStarsChanged?.Invoke(this, EventArgs.Empty);
             return matches.Count;
         }
 
@@ -1291,22 +1311,37 @@ namespace Flower.Models
         // tens of playlists.
         private void RaisePlaylistsChanged()
         {
-            if (_playlistStore is not null)
-            {
-                try
-                {
-                    _playlistStore.Save(Playlists);
-                }
-                catch (Exception ex)
-                {
-                    // Same rule as Persist: the in-memory set is already
-                    // changed and is what every reader sees, and a failed
-                    // write is not a reason to take a rename down with it.
-                    _logger.LogError(ex, "Could not persist playlists; the in-memory set is ahead of the database");
-                }
-            }
-
+            SavePlaylists();
             PlaylistsChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        // The write half of the above, on its own, for the one caller that has
+        // to persist without announcing: SmartPlaylistRefresher, after a
+        // recomputation replaced a smart playlist's materialized rows.
+        //
+        // A recomputation is deliberately not a playlist *change* - it does not
+        // bump UpdatedAt (see Playlist.Materialize) and must not be visible to
+        // sync. Routing it through PlaylistsChanged would also feed straight
+        // back into the refresher, which subscribes to that event because a
+        // membership rule makes one playlist's contents another's input; the
+        // pass would settle on the second lap, but only by re-evaluating the
+        // whole set to discover it had nothing to do.
+        public void SavePlaylists()
+        {
+            if (_playlistStore is null)
+                return;
+
+            try
+            {
+                _playlistStore.Save(Playlists);
+            }
+            catch (Exception ex)
+            {
+                // Same rule as Persist: the in-memory set is already
+                // changed and is what every reader sees, and a failed
+                // write is not a reason to take a rename down with it.
+                _logger.LogError(ex, "Could not persist playlists; the in-memory set is ahead of the database");
+            }
         }
 
         // Replaces the playlist set as loaded from storage - no write back, and

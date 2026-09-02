@@ -241,6 +241,11 @@ public partial class App : Application
             })
             .AddSingleton(sp => new MainPlaylist(sp.GetRequiredService<Library>().Tracks))
 
+            // Keeps smart playlists in step with the library they are a query
+            // over - see SmartPlaylistRefresher, started below once the stored
+            // playlists have been loaded into Library.
+            .AddSingleton<SmartPlaylistRefresher>()
+
             // The platform hook wins when a head has installed one (Android's
             // MediaStore importer); otherwise the shared filesystem scanner.
             // The browser branch below replaces this outright - there are no
@@ -563,6 +568,14 @@ public partial class App : Application
         // equivalent separately. Library.RaisePlaylistsChanged is now the
         // single place a playlist set reaches disk, for both hosts.
         library.ResetPlaylists(playlistStore.Load(library.Tracks));
+
+        // Immediately after, and not later with the other startup services: a
+        // smart playlist's stored contents are as old as the last session, so
+        // the sooner the opening pass runs the less chance the user sees a
+        // stale "Recently Added". Start subscribes to the library events that
+        // trigger later passes, so the background rescan below is covered by
+        // having done this before it, not after.
+        provider.GetRequiredService<SmartPlaylistRefresher>().Start();
 
         // Resolving IAudioManager is what actually opens LibVLC/miniaudio (see
         // AddAudio), so it happens here rather than lazily under the first

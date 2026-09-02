@@ -56,19 +56,37 @@ public static class SmartPlaylistEvaluator
         var results = new Dictionary<Guid, List<Track>>(smart.Count);
         var memberIds = new Dictionary<Guid, IReadOnlySet<Guid>>(smart.Count);
 
-        var context = new SmartPlaylistContext(
-            now,
-            id => memberIds.TryGetValue(id, out var members) ? members : ordinaryMembership?.Invoke(id),
-            random);
+        IReadOnlySet<Guid>? Membership(Guid id) =>
+            memberIds.TryGetValue(id, out var members) ? members : ordinaryMembership?.Invoke(id);
 
         foreach (var id in SmartPlaylistGraph.EvaluationOrder(smart))
         {
+            // A context per playlist rather than one for the pass, purely so
+            // each gets its own deterministic Random. A LimitSelector.Random
+            // playlist is re-evaluated on every recompute - which is every
+            // play, since play counts are an input - and with a shared or
+            // ambient Random it would draw a different 25 songs each time,
+            // reshuffling itself under a listener who is partway through it.
+            // Seeded from the playlist id, the same candidate set always yields
+            // the same pick, so the contents only move when the library does.
+            // An explicit Random still wins, for tests that want a fixed draw.
+            var context = new SmartPlaylistContext(now, Membership, random ?? SeededFor(id));
+
             var tracks = Evaluate(smart[id], library, context);
             results[id] = tracks;
             memberIds[id] = tracks.Select(t => t.Id).ToHashSet();
         }
 
         return results;
+    }
+
+    // Guid.GetHashCode would do, but spelling the seed out keeps it stable by
+    // construction rather than by an implementation detail of Guid.
+    private static Random SeededFor(Guid id)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        id.TryWriteBytes(bytes);
+        return new Random(BitConverter.ToInt32(bytes) ^ BitConverter.ToInt32(bytes[4..]));
     }
 
     public static bool Matches(Track track, SmartPlaylistRules rules, SmartPlaylistContext context)

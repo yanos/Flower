@@ -202,6 +202,12 @@ builder.Services.AddSingleton(services => new Library(
     services.GetRequiredService<PlaylistRepository>()));
 
 builder.Services.AddScoped<LibraryImportService>();
+// Keeps smart playlists in step with the catalog. Registered on the server as
+// well as in the app, and not only for symmetry: a listener's play reported in
+// over /api/flower/v1/plays and an admin's star over Subsonic are both
+// smart-playlist inputs, and the server's own materialized playlist_tracks
+// rows are what every OpenSubsonic client reads.
+builder.Services.AddSingleton<SmartPlaylistRefresher>();
 builder.Services.AddSingleton<PairingCodeService>();
 builder.Services.AddSingleton<StreamTicketService>();
 // Owns "a rescan is running", so the admin API can start one without two
@@ -487,6 +493,11 @@ using (var scope = app.Services.CreateScope())
     importService.LoadStored();
     await importService.RescanAsync();
 }
+
+// After the first rescan, so the opening pass runs against the real catalog
+// rather than recomputing every smart playlist twice at startup - the rescan
+// raises TracksUpdated, which this subscribes to.
+app.Services.GetRequiredService<SmartPlaylistRefresher>().Start();
 
 app.MapSubsonicEndpoints();
 app.MapAdminEndpoints();
