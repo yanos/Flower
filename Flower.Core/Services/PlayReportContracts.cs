@@ -41,9 +41,15 @@ public sealed record PlayEventDto(
 // failed send has to be able to carry its backlog along with the next one.
 public sealed record PlayReportDto(List<PlayEventDto> Plays);
 
-// POST /api/flower/v1/play-counts - the same journey for a head that *does*
-// hold a durable counter: a paired desktop or phone playing a track it got
-// from its server.
+// POST /api/flower/v1/track-state - the same journey for a head that *does*
+// hold durable storage: a paired desktop or phone playing, starring and
+// configuring a track it got from its server.
+//
+// Everything here is one entry of Library.CarryForwardMutableState's list -
+// THE list of what a rescan must not reset, which is the same thing as "what
+// this device knows about the track that reading the file cannot tell you".
+// A local device keeps all of it; a device listening to a shared library kept
+// all of it too, and then kept it to itself. That is what this closes.
 //
 // Totals, not events, which is the whole difference from the tab above. A
 // device with durable storage can state "I have played this eleven times", and
@@ -58,12 +64,30 @@ public sealed record PlayReportDto(List<PlayEventDto> Plays);
 // same shape it would have arrived in back when both ends served catalogs to
 // each other.
 //
+// The count is the only field with that property, and it is why the rest of
+// this record is admin-only (see SyncEndpoints.ReportTrackState). A count is
+// filed under the reporter's own name and adds to a total; LastPlayedAt,
+// Starred and the playback options are single-valued fields on the shared
+// library's copy of the track, so writing one is speaking for the library
+// rather than for yourself. A housemate's phone may say "I played this twice".
+// Only an owner's device may say "this library's copy of this track is
+// starred".
+//
 // TrackId is the server's id for the track (Track.OriginTrackId), for the same
 // reason PlayEventDto's is: the client's own Guid means nothing there.
-public sealed record TrackPlayCountDto(string TrackId, int Count);
+public sealed record TrackStateDto(
+    string TrackId,
+    int Count,
+    DateTimeOffset? LastPlayedAt = null,
+    bool Starred = false,
+    DateTimeOffset? StarredAt = null,
+    bool RememberPlaybackPosition = false,
+    double? ResumePositionSeconds = null,
+    bool IgnoreWhenShuffling = false,
+    int VolumeAdjustment = 0);
 
-// The fingerprint the counts belong to is deliberately absent: the server
-// files them under the one the request signature proved, because a body is
+// The fingerprint the report belongs to is deliberately absent: the server
+// files it under the one the request signature proved, because a body is
 // attacker-controlled on a route every paired device can call, and believing
 // it would let one device write another's tally.
-public sealed record PlayCountReportDto(List<TrackPlayCountDto> Counts);
+public sealed record TrackStateReportDto(List<TrackStateDto> Tracks);

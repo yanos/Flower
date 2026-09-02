@@ -197,10 +197,16 @@ public class LibrarySyncService
         // own comment in AppSettingsStore).
         // Likewise piggybacked, and deliberately ahead of the logs: this is
         // the one thing a client learns that its server cannot learn any other
-        // way. The server serves the catalog and every count in it, but it
-        // never pulls, so a track played here is a play it would otherwise
-        // never hear about - see PlayCountReportDto.
-        await PushPlayCountsAsync(device);
+        // way. The server serves the catalog and everything in it, but it never
+        // pulls, so a track played, starred or configured here is a change it
+        // would otherwise never hear about - see TrackStateDto.
+        //
+        // After the merge, not before, and the ordering is load-bearing: the
+        // seed below is what makes the push able to tell "the user changed
+        // this" from "this device simply has a value", so a push that ran
+        // first would have nothing to compare against.
+        SeedKnownServerState(device.Fingerprint, placeholders);
+        await PushTrackStateAsync(device);
 
         if (_appSettings.ShareLogsWithPairedServer)
             await PushLogSnapshotAsync(device);
@@ -208,14 +214,14 @@ public class LibrarySyncService
         return new LibrarySyncResult(true, fetchedCount, addedCount);
     }
 
-    // What this device has played of the server's tracks, as its own running
-    // totals - the client half of POST /play-counts.
+    // What this device knows about the server's tracks that the server does
+    // not - the client half of POST /track-state.
     //
     // Not gated on a setting the way the log push is. A log snapshot carries
     // exception text and absolute paths off the device, which is a disclosure
-    // to opt into; a play count is the shared library working as intended, and
-    // it is already the same number the pairing showed the user they were
-    // joining.
+    // to opt into; a play count or a star is the shared library working as
+    // intended, and it is already the same number the pairing showed the user
+    // they were joining.
     //
     // Nothing here distinguishes a downloaded track from a placeholder, or a
     // file this device imported itself that the server happens to also have.
@@ -227,23 +233,31 @@ public class LibrarySyncService
     //
     // Virtual for the same reason the two methods above are: it is the seam a
     // coordinator test drives without standing up a server.
-    public virtual async Task<bool> PushPlayCountsAsync(DiscoveredDevice device)
+    public virtual async Task<bool> PushTrackStateAsync(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
             return true;
 
         try
         {
-            var sent = _sentPlayCounts.GetOrAdd(device.Fingerprint, _ => new ConcurrentDictionary<string, int>());
-            var counts = UnreportedPlayCounts(_library.Tracks, sent);
+            var sentCounts = _sentCounts.GetOrAdd(device.Fingerprint, _ => new ConcurrentDictionary<string, int>());
+            var known = _knownServerState.GetOrAdd(device.Fingerprint, _ => new ConcurrentDictionary<string, TrackStateSnapshot>());
 
-            if (counts.Count == 0)
+            // Only for a server that made this device an admin. The server
+            // enforces this too and is the side that has to (see
+            // SyncEndpoints.ReportTrackState) - this is the same claim read
+            // from the /info answer, kept here so a phone that is only a
+            // listener does not spend a request stating what will be dropped.
+            var reportOwnerState = device.WeAreAdmin;
+            var report = UnreportedTrackState(_library.Tracks, sentCounts, known, reportOwnerState);
+
+            if (report.Count == 0)
                 return true;
 
             var bodyBytes = JsonSerializer.SerializeToUtf8Bytes(
-                new PlayCountReportDto(counts), PlayReportJsonContext.Default.PlayCountReportDto);
+                new TrackStateReportDto(report), PlayReportJsonContext.Default.TrackStateReportDto);
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(PlayCountReportPath));
+            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(TrackStateReportPath));
             await request.AddPeerCredentialsAsync(_credentials, bodyBytes);
             request.Headers.ConnectionClose = true;
             using var content = new ByteArrayContent(bodyBytes);
@@ -254,23 +268,26 @@ public class LibrarySyncService
             response.EnsureSuccessStatusCode();
 
             // Only on a 2xx. A failed push leaves the marks where they were, so
-            // the same totals go out again with the next tick rather than being
-            // silently dropped - and because they are totals, the retry needs
-            // no backlog of its own to carry.
-            var acknowledged = _sentPlayCounts[device.Fingerprint];
-            foreach (var entry in counts)
-                acknowledged[entry.TrackId] = entry.Count;
+            // the same values go out again with the next tick rather than being
+            // silently dropped - and because they are values rather than
+            // changes, the retry needs no backlog of its own to carry.
+            foreach (var entry in report)
+            {
+                sentCounts[entry.TrackId] = entry.Count;
+                if (reportOwnerState)
+                    known[entry.TrackId] = TrackStateSnapshot.Of(entry);
+            }
 
-            _logger.LogDebug("Reported {Count} play count(s) to {Alias}", counts.Count, device.Alias);
+            _logger.LogDebug("Reported {Count} track state(s) to {Alias}", report.Count, device.Alias);
             return true;
         }
         catch (Exception ex)
         {
             // Debug, not Warning: this runs on the same five-second tick the
             // log push does, against a server that is very often simply not
-            // there, and the counts are not lost - they are still in the
-            // library, and still the truth to be stated next time.
-            _logger.LogDebug(ex, "Could not report play counts to {Alias} ({Fingerprint})", device.Alias, device.Fingerprint);
+            // there, and nothing is lost - it is all still in the library, and
+            // still the truth to be stated next time.
+            _logger.LogDebug(ex, "Could not report track state to {Alias} ({Fingerprint})", device.Alias, device.Fingerprint);
             return false;
         }
     }
@@ -300,6 +317,134 @@ public class LibrarySyncService
         return PushLogSnapshotAsync(device);
     }
 
+    // The owner-state fields of one track, as one comparable value: what this
+    // device would tell a server, and what a server last told this device, in
+    // the same shape so that "has this changed" is `!=` rather than six
+    // hand-written comparisons that drift apart.
+    //
+    // StarredAt is deliberately not in it. It is derived from Starred - set on
+    // starring, nulled on unstarring - so including it would make two devices
+    // that agree on the star look like they disagree, forever, over the second
+    // it was clicked at.
+    internal sealed record TrackStateSnapshot(
+        DateTimeOffset? LastPlayedAt,
+        bool Starred,
+        bool RememberPlaybackPosition,
+        TimeSpan? ResumePosition,
+        bool IgnoreWhenShuffling,
+        int VolumeAdjustment)
+    {
+        public static TrackStateSnapshot Of(Track track) => new(
+            track.LastPlayedAt, track.Starred, track.RememberPlaybackPosition,
+            track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment);
+
+        public static TrackStateSnapshot Of(TrackStateDto entry) => new(
+            entry.LastPlayedAt, entry.Starred, entry.RememberPlaybackPosition,
+            entry.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+            entry.IgnoreWhenShuffling, entry.VolumeAdjustment);
+    }
+
+    // What this device would say about the server's tracks that the server has
+    // not already been told.
+    //
+    // Static and pure so the selection rule is testable without a server: what
+    // counts as this device's own, and what is already known there, is the
+    // whole of the decision - the rest of the push is transport.
+    //
+    // The two halves answer "already known there?" differently, because the
+    // two halves converge differently.
+    //
+    // A count is a G-Counter: it only grows and the far side takes the max, so
+    // the baseline is simply the highest this device has successfully sent,
+    // and re-sending is harmless. It needs no seed - a restart re-states every
+    // total once and nothing is wrong for having said the same true thing
+    // twice.
+    //
+    // The owner state has no such property. Starred in particular is a toggle
+    // the server applies as stated (see Library.ApplyReportedOwnerState),
+    // which is only safe because of the baseline used here: what the *server*
+    // last said, seeded from the catalog pull. Compare against that and this
+    // device speaks up exactly when its answer differs from the server's -
+    // which for an unchanged track is never, so a restart re-states nothing
+    // and cannot walk back a star some other client set in the meantime. A
+    // track with no seed at all is a track this session has not pulled yet,
+    // and it is left alone for the same reason: with nothing to compare
+    // against there is no way to tell a local change from a local value.
+    internal static List<TrackStateDto> UnreportedTrackState(
+        IEnumerable<Track> tracks,
+        IReadOnlyDictionary<string, int> sentCounts,
+        IReadOnlyDictionary<string, TrackStateSnapshot> knownServerState,
+        bool includeOwnerState)
+    {
+        var report = new List<TrackStateDto>();
+        foreach (var track in tracks)
+        {
+            // No id the server knows this track by - a file of this device's
+            // own that the server does not have. Not its play to count, and
+            // not its copy to star.
+            if (track.OriginTrackId is not { Length: > 0 } originTrackId)
+                continue;
+
+            // The same sum SubsonicMapper/LibraryOpenSubsonicMapper send as
+            // this device's own tally - a play imported from iTunes is still a
+            // play this device is the record of.
+            var total = track.PlayCount + track.ImportedPlayCount;
+            var countIsNews = total > 0 && sentCounts.GetValueOrDefault(originTrackId) < total;
+
+            var local = TrackStateSnapshot.Of(track);
+            var stateIsNews = includeOwnerState
+                && knownServerState.TryGetValue(originTrackId, out var known)
+                && known != local;
+
+            if (!countIsNews && !stateIsNews)
+                continue;
+
+            // The count rides along on a state-only report and vice versa,
+            // rather than being conditionally omitted. Both are values, so
+            // restating one costs the far side a comparison that finds nothing
+            // - and a report that carried only the half that moved would need
+            // a way to say "no opinion" about the other, which for a bool is a
+            // third state this wire format would then have to grow.
+            report.Add(includeOwnerState
+                ? new TrackStateDto(
+                    originTrackId, total,
+                    track.LastPlayedAt, track.Starred, track.StarredAt,
+                    track.RememberPlaybackPosition, track.ResumePosition?.TotalSeconds,
+                    track.IgnoreWhenShuffling, track.VolumeAdjustment)
+                : new TrackStateDto(originTrackId, total));
+        }
+
+        return report;
+    }
+
+    // What the server itself last said about each of its tracks, recorded from
+    // the catalog this device just pulled. Not applied to the local tracks -
+    // MergeSyncedTracks decides what a pull is allowed to overwrite, and this
+    // deliberately does not widen it - only remembered, so the push above can
+    // tell a local change from a local value.
+    private void SeedKnownServerState(string peerFingerprint, IReadOnlyList<Track> served)
+    {
+        var known = _knownServerState.GetOrAdd(peerFingerprint, _ => new ConcurrentDictionary<string, TrackStateSnapshot>());
+        foreach (var track in served)
+        {
+            if (track.OriginTrackId is { Length: > 0 } originTrackId)
+                known[originTrackId] = TrackStateSnapshot.Of(track);
+        }
+    }
+
+    // Per-peer, in-memory, and per-track: the highest total this device has
+    // successfully told that peer, and the last thing that peer said about the
+    // rest. Not persisted, for the same reason _lastSeenTokens is not - a
+    // restart re-pulls, which re-seeds the second of these, and the first
+    // re-sends into a max-merge.
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, int>> _sentCounts = new();
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, TrackStateSnapshot>> _knownServerState = new();
+
+    private const string TrackStateReportPath = "/api/flower/v1/track-state";
+
+    private const string LogReportPath = "/api/flower/v1/log/report";
+    private const string LogWatermarkPath = "/api/flower/v1/log/watermark";
+
     // Where each peer's copy of this device's log ends, as that peer reported
     // it: the (Timestamp, EventId) of the newest line it holds. A push sends
     // everything the archive has after that point, so a server that has been
@@ -310,55 +455,6 @@ public class LibrarySyncService
     // outright (GET /log/watermark) rather than assuming, which is the whole
     // point of asking: a restarted client has no idea what landed, and a
     // restored-from-backup server may hold less than it did.
-    // Which of this device's own tallies a peer has not been told yet.
-    //
-    // Static and pure so the selection rule is testable without a server: what
-    // counts as this device's own play, and what is already known there, is
-    // the whole of the decision - the rest of the push is transport.
-    internal static List<TrackPlayCountDto> UnreportedPlayCounts(
-        IEnumerable<Track> tracks, IReadOnlyDictionary<string, int> alreadySent)
-    {
-        var counts = new List<TrackPlayCountDto>();
-        foreach (var track in tracks)
-        {
-            // No id the server knows this track by - a file of this device's
-            // own that the server does not have. Not its play to count.
-            if (track.OriginTrackId is not { Length: > 0 } originTrackId)
-                continue;
-
-            // The same sum SubsonicMapper/LibraryOpenSubsonicMapper send as
-            // this device's own tally - a play imported from iTunes is still a
-            // play this device is the record of.
-            var total = track.PlayCount + track.ImportedPlayCount;
-            if (total <= 0)
-                continue;
-
-            // Only what this peer has not already been told. The far side
-            // takes the max, so re-sending is harmless - but a library with
-            // thousands of played tracks would otherwise re-send all of them
-            // on every five-second tick, which is exactly the steady
-            // background traffic the log push was already reshaped once to
-            // avoid.
-            if (alreadySent.GetValueOrDefault(originTrackId) >= total)
-                continue;
-
-            counts.Add(new TrackPlayCountDto(originTrackId, total));
-        }
-
-        return counts;
-    }
-
-    // Per-peer, in-memory, and per-track: the highest total this device has
-    // successfully told that peer. Not persisted, for the same reason
-    // _lastSeenTokens is not - a restart re-sends, the far side takes the max,
-    // and nothing is wrong for having said the same true thing twice.
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, int>> _sentPlayCounts = new();
-
-    private const string PlayCountReportPath = "/api/flower/v1/play-counts";
-
-    private const string LogReportPath = "/api/flower/v1/log/report";
-    private const string LogWatermarkPath = "/api/flower/v1/log/watermark";
-
     private readonly ConcurrentDictionary<string, LogWatermarkDto> _logWatermarks = new();
 
     // Peers whose last log push failed, so a server that is simply down logs

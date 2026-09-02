@@ -1,8 +1,6 @@
 long term:
- improve cli
  album mode
  artist / playlist icon instead of album art
- liked song tab
  localisation
  export playlist with actual songs
  on each startup, choose an flower emoji and make that the app icon. show it in the about box and in the ios splash screen. different flower species in  dark mode
@@ -17,14 +15,12 @@ external services
  lyric service
  
 short term
- plan cleanup
  intelligent playlist like favorite songs, recently played, etc.
  pulling down the view in mobile should reveal a filter field
  push library sync events instead of polling
  a way to only see downloaded music
  back / forward arrows
  recent icon without the plus sign
- track last played for each song
  option to toggle each log category (level, category, timestamp) 
  SubSonic vs our own endpoints
  Event bus?
@@ -32,17 +28,12 @@ short term
  add an issue link in about box
  write a readme
  folder in playlist
- landscape mode on mobile needs polishing
  download spinner still not centred on mobile
  
 build:
  dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
  script to make the provisioning profile.
- 
-i also got tons of these, despite the server being up:  Connection refused ([fd42:801e:5334:4bc5:c92:ebba:2e6:7551]:4534) -> Connection refused
-  12:27:03.258 [DBG] Flower.Services.NetworkDiscoveryService: Could not resolve /info for remembered:https://192.168.50.172:4534 at
-  https://192.168.50.172:4534/: The SSL connection could not be established, see inner exception. -> The remote certificate was rejected by the provided
-  RemoteCertificateValidationCallback.
+
   
 details:
  queue song:
@@ -50,9 +41,33 @@ details:
   lock screen widget should stay with the queue song
   
  mobile:
-  album art top align on mobile
   do an investigation as to why there's almost always a problem with a stale build on ios when launching through Rider. We made a script to build and launch on my device because of that, but it would be much simplier if i could just use rider.
   ios editing not native 
   only a single note icon on ios
+  
+  
+  The short version: right now the client refuses to listen to the server about stars and last-played, because listening would sometimes eat your own change before it got out the door.
+
+----
+Picture the desktop and the server, and the two things that happen on their own timers:
+
+- The pull (catalog sync): "give me your whole library."
+- The push (every five seconds): "here's what I know that you don't."
+
+Now you star a song on the desktop. For a moment the desktop's answer is starred: true and the server's is still false. If the pull ran right then and took the server's answer for every track, it would set your star back to false — and then the push, comparing local against the baseline, sees nothing to report. Your star is gone, and nothing anywhere records that it ever existed. The pull would have raced the push and won.
+
+So today the pull just doesn't touch those fields on a track it already knows. Nothing is ever lost, because the client's answer is never overwritten. The cost is the mirror image: the client also never learns anything about those fields. Star something on the server's web UI and your desktop won't hear about it.
+
+With one admin device that's invisible. The desktop is the only thing that ever changes a star, information flows desktop → server, and both ends agree.
+
+With two it stops converging. Star a song on the laptop; the server gets it; the desktop pulls and ignores it. Both machines are internally consistent and permanently disagree. Same for history — the server knows everything, but each machine only shows its own.
+
+Why the fix isn't a one-liner. The client can't decide with two values; it needs three. It already keeps _knownServerState — "what the server told me last time" — so a pull could ask:
+
+- Did the server's answer change since it last told me? → that's news, take it.
+- Did mine drift from what the server told me? → that's my unpushed edit, keep it and push.
+- Both changed? → someone has to lose, and I'd have to pick a rule.
+
+That's a three-way merge, the same shape as git's: common ancestor, mine, theirs. Doable, but it means the baseline has to be trustworthy every time (including the moment between a pull landing and a push being acknowledged), the push and pull have to be ordered against each other, and each of those branches wants a test. Not something to bolt onto the end of this change — which is why I stopped where the behaviour is strictly "never loses data", named the gap, and left it as its own piece.
   
  

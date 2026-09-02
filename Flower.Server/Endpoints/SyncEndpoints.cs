@@ -28,7 +28,8 @@ namespace Flower.Server.Endpoints;
 //   GET  /playlists       - this server's playlists, for the merge
 //   POST /playlists/apply - the merged result the client resolved
 //   POST /plays           - what a browser tab played, to count here
-//   POST /play-counts     - what a paired device has played, as its own total
+//   POST /track-state     - what a paired device has played, starred and
+//                           configured, as its own current values
 //   POST /log/report      - the caller's own recent log lines, for the owner
 //                           to read back through the admin API
 //
@@ -165,8 +166,9 @@ public static class SyncEndpoints
             (HttpContext context, Library library) => ApplyPlaylists(context, library, logger));
         sync.MapPost("/plays",
             (HttpContext context, PlayReportService plays) => ReportPlays(context, plays, logger));
-        sync.MapPost("/play-counts",
-            (HttpContext context, Library library) => ReportPlayCounts(context, library, logger));
+        sync.MapPost("/track-state",
+            (HttpContext context, Library library, TrustedPeerStore trustedPeers) =>
+                ReportTrackState(context, library, trustedPeers, logger));
         sync.MapPost("/log/report",
             (HttpContext context, ClientLogStore logs) => ReportLog(context, logs, logger));
         // What this server already holds for the caller, so a client that has
@@ -346,11 +348,27 @@ public static class SyncEndpoints
     // Filed under the fingerprint the signature proved, exactly as ReportLog
     // does and for the same reason: on a route every paired device can call,
     // the body cannot be allowed to name whose count this is.
-    private static async Task<IResult> ReportPlayCounts(
-        HttpContext context, Library library, ILogger logger)
+    // What a paired device has played, starred and configured of this server's
+    // tracks. See TrackStateDto for why it is stated as values rather than as
+    // events, and Library.MergeReportedTrackState for what each field is
+    // allowed to do when it lands.
+    //
+    // The fingerprint comes from context.Items, never from the body: this is a
+    // route every paired device may call, so the body is attacker-controlled,
+    // and a device that could name its own reporter could write another
+    // device's tally. Same rule ReportLog next door follows.
+    //
+    // Adminness is read here rather than enforced by the group filter, because
+    // unlike /api/admin this route is not an admin route - it is a route with
+    // an admin *part*. A housemate's phone reporting its own plays is the
+    // system working; the same phone restarring the owner's library is not. So
+    // the answer is 204 either way and the flag rides into the merge, which
+    // drops what the caller may not write rather than refusing the request.
+    private static async Task<IResult> ReportTrackState(
+        HttpContext context, Library library, TrustedPeerStore trustedPeers, ILogger logger)
     {
         using var reader = new StreamReader(context.Request.Body);
-        var report = JsonSerializer.Deserialize<PlayCountReportDto>(
+        var report = JsonSerializer.Deserialize<TrackStateReportDto>(
             await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
         if (report == null)
             return Results.BadRequest();
@@ -358,19 +376,12 @@ public static class SyncEndpoints
         if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
             return Results.StatusCode(StatusCodes.Status401Unauthorized);
 
-        // Last one wins for a body that names the same track twice, which is
-        // not something a well-behaved client sends and not worth a 400: the
-        // merge takes the max anyway, so the only reachable outcome is the
-        // higher of the two.
-        var counts = new Dictionary<string, int>();
-        foreach (var entry in report.Counts)
-            counts[entry.TrackId] = entry.Count;
-
-        var applied = library.MergeReportedPlayCounts(fingerprint, counts);
+        var callerIsAdmin = trustedPeers.IsAdmin(fingerprint);
+        var applied = library.MergeReportedTrackState(fingerprint, report.Tracks, callerIsAdmin);
 
         logger.LogInformation(
-            "Applied {AppliedCount} of {ReportedCount} play count(s) reported by {Fingerprint}",
-            applied, report.Counts.Count, fingerprint);
+            "Applied {AppliedCount} of {ReportedCount} track state report(s) from {Fingerprint} (admin: {IsAdmin})",
+            applied, report.Tracks.Count, fingerprint, callerIsAdmin);
 
         return Results.NoContent();
     }

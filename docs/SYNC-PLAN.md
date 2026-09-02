@@ -788,7 +788,7 @@ Last Played carried back in the manifest.
 so it is a server-side flag with no browser story to build yet. When a liked-songs
 view lands, starring travels this same road.
 
-### A paired device that listens — done
+### A paired device that listens, stars and configures — done
 
 The tab's counterpart, and a gap that survived it: a play on a paired *desktop
 or phone* also stayed where it happened. `IPlayReporter` is registered in the
@@ -803,7 +803,7 @@ no return leg at all for something the client learns.
 **Totals, not events — the opposite call from the tab, for the reason the tab's
 own section names.** A tab reports increments because it holds no durable counter
 to state a total from. A desktop or a phone does, so it states one:
-`POST /api/flower/v1/play-counts` carries `(OriginTrackId, count)` pairs, and the
+`POST /api/flower/v1/track-state` carries `(OriginTrackId, count)` pairs, and the
 server merges each into `Track.RemotePlayCounts` under the fingerprint the
 request *signature* proved. That is the same G-Counter two desktops used to
 exchange through each other's manifests back when both ends served one, and it
@@ -840,6 +840,63 @@ wrong for having said the same true thing twice.
 exception text and absolute paths off the device and so ships off by default; a
 play count is the shared library working as intended, and it is the same number
 the pairing screen already showed the user they were joining.
+
+**The count was the easy half.** `Library.CarryForwardMutableState` is THE list
+of what a rescan must not reset — which is the same list as "what this device
+knows about the track that reading the file cannot tell you" — and the count is
+one line of it. `LastPlayedAt`, `Starred`/`StarredAt` and the four Track Info
+playback options are the rest, and all four had exactly the same problem: they
+moved on the client and died there. Starring was worse than invisible, in fact —
+`Child.Starred` has crossed the wire from this server since the day it was
+written, and `LibrarySyncMapper.ToPlaceholderTrack` simply never read it, so a
+star was unknown in *both* directions.
+
+**Why the rest of it is admin-only.** A count is additive and attributed: it is
+filed under the reporter's own fingerprint and adds to a total, so a housemate's
+phone saying "I played this twice" is a fact about the phone and cannot damage
+anyone else's answer. The other fields are single-valued on the library's own
+copy of the track, so writing one is not adding a fact, it is *replacing the
+library's answer* — an owner's act. So the split is per-field rather than
+per-route: `POST /track-state` stays open to any paired device, reads adminness
+from `TrustedPeerStore` and hands it to the merge, and a non-admin's report still
+lands — its count does — while the rest is dropped rather than refused. A 403
+would have been wrong, because the count in the same body is legitimate.
+
+**Three fields, three merge rules**, because one blanket last-writer-wins fits
+none of them:
+
+- `LastPlayedAt` moves **forward only**. It is a high-water mark of "when was
+  this last put on, anywhere"; a device reporting an older session is not news.
+- The playback options **ride with it**, exactly as `MergePlaybackOptions` has
+  them ride in the pulling direction. A resume position is not a counter and
+  going backwards in a file is normal, so the device that played the track most
+  recently is the one whose idea of where it got to is worth having, and the
+  three settings stay internally consistent with it.
+- `Starred` is **taken as stated**. Unstarring nulls `StarredAt`, so there is no
+  timestamp surviving the operation to order by, and a value that moves *down* is
+  not something max can carry.
+
+That last one is only safe because of what changed on the client, which is the
+part worth recording. **A count's baseline is what this device successfully
+sent; owner state's baseline is what the server last said.** Every catalog pull
+seeds `_knownServerState` from the served manifest — recorded, deliberately not
+applied, since `MergeSyncedTracks` decides what a pull may overwrite and this
+does not widen it — and the push then reports a field only when the local answer
+*differs from the server's own*. Which for an unchanged track is never. So a
+restart re-states nothing, and cannot walk back a star some other client set in
+the meantime; and a track with no seed at all (nothing pulled yet this session)
+is left alone, because with nothing to compare against there is no way to tell a
+local change from a local value. `StarredAt` is outside the comparison for the
+same reason it is outside the wire: two devices agreeing on the star must not be
+made to disagree forever over the second it was clicked at.
+
+**Still one-directional for these fields on the way back down.** The pull now
+carries `Starred` onto a newly-created placeholder, but `MergeSyncedTracks`
+still leaves an already-known track's `LastPlayedAt` and `Starred` alone —
+overwriting them would race the push it just seeded. With one admin device that
+converges fine; with two, each keeps its own history and the server holds the
+newest of what it was told. Closing it properly means the pull consulting the
+same baseline the push does, and it is the obvious next piece of this.
 
 ### Tailscale, and the proxy the guide creates — done
 

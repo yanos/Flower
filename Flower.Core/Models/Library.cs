@@ -6,6 +6,10 @@ using System.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
+// The wire shape a paired device reports its own copy's state in - see
+// MergeReportedTrackState, the receiving half of it.
+using Flower.Services;
+
 namespace Flower.Models
 {
     // Which half of a play a stats change was. Flower deliberately triggers
@@ -937,15 +941,15 @@ namespace Flower.Models
             return true;
         }
 
-        // What another device has played of the tracks this one serves, stated
-        // as that device's own running total rather than as the increments -
-        // see PlayCountReportDto, and Track.RemotePlayCounts for the merge
-        // rule this is the receiving half of.
+        // What another device knows about the tracks this one serves, stated
+        // as that device's own current values rather than as the changes that
+        // got there - see TrackStateDto, and Track.RemotePlayCounts for the
+        // merge rule the count half is the receiving end of.
         //
         // The complement of RecordPlay above, and deliberately not the same
-        // method. A browser tab has no durable counter, so its plays can only
+        // method. A browser tab has no durable storage, so its plays can only
         // be reported as events and can only be counted here, in this server's
-        // own PlayCount. A paired desktop or phone does have one, so its plays
+        // own PlayCount. A paired desktop or phone does have it, so its plays
         // stay attributed to it: filed under its fingerprint, merged per-key by
         // max, and therefore safe to re-apply on every sync without any of the
         // event-id bookkeeping the tab path needs.
@@ -953,11 +957,40 @@ namespace Flower.Models
         // deviceFingerprint is the one the caller's signature proved, never one
         // a request body claimed - a device may only ever report its own count.
         //
+        // callerIsAdmin splits the report in two, and the split is the whole
+        // reason this method has an authorization argument at all. The count is
+        // additive and attributed, so any paired device may state its own.
+        // Everything else is a single-valued field on this library's copy of
+        // the track: applying it is not adding a fact, it is replacing the
+        // library's answer, which is an owner's act. A non-admin's report still
+        // lands - its count does - it just cannot restar or re-time the track
+        // for everybody else.
+        //
+        // The three admin fields each get the rule that suits what they are,
+        // rather than one blanket last-writer-wins:
+        //
+        //  - LastPlayedAt moves forward only. It is a high-water mark of "when
+        //    was this last put on, anywhere", and a device reporting a session
+        //    older than one the server already knows about is not news.
+        //  - The playback options ride with it, exactly as MergePlaybackOptions
+        //    has them ride in the pulling direction: a resume position is not a
+        //    counter, going backwards in a file is normal, and the device that
+        //    played the track most recently is the one whose idea of where it
+        //    got to is worth having.
+        //  - Starred is taken as stated. It is a toggle with no timestamp that
+        //    survives being switched off (unstarring nulls StarredAt), so there
+        //    is no ordering to compare and max is meaningless. What keeps this
+        //    from being a clobber is on the client: it reports state only for
+        //    tracks whose value differs from what this server last told it
+        //    (see LibrarySyncService.UnreportedTrackState), so a star only
+        //    crosses the wire when an admin actually moved it.
+        //
         // Returns how many tracks actually moved, so a caller can log a real
-        // number: an id this server does not have, and a count that is not
-        // higher than what is already recorded, are both fine and both count
-        // for nothing.
-        public int MergeReportedPlayCounts(string deviceFingerprint, IReadOnlyDictionary<string, int> countsByTrackId)
+        // number: an id this server does not have, and a report that says
+        // nothing this server did not already know, are both fine and both
+        // count for nothing.
+        public int MergeReportedTrackState(
+            string deviceFingerprint, IReadOnlyList<TrackStateDto> reported, bool callerIsAdmin)
         {
             if (string.IsNullOrEmpty(deviceFingerprint))
                 return 0;
@@ -965,34 +998,44 @@ namespace Flower.Models
             var changed = new List<Track>();
             lock (_lock)
             {
-                foreach (var (id, count) in countsByTrackId)
+                foreach (var entry in reported)
                 {
-                    if (count <= 0 || Find(id) is not { } track)
+                    if (Find(entry.TrackId) is not { } track)
                         continue;
+
+                    var moved = false;
 
                     // Max, not assignment - the same rule MergeRemotePlayCounts
                     // applies to a pulled catalog. A report that arrives out of
                     // order, or twice, must not walk a count backwards.
-                    if (track.RemotePlayCounts.GetValueOrDefault(deviceFingerprint) >= count)
-                        continue;
+                    if (entry.Count > 0 &&
+                        track.RemotePlayCounts.GetValueOrDefault(deviceFingerprint) < entry.Count)
+                    {
+                        track.RemotePlayCounts[deviceFingerprint] = entry.Count;
+                        moved = true;
+                    }
 
-                    track.RemotePlayCounts[deviceFingerprint] = count;
-                    changed.Add(track);
+                    if (callerIsAdmin)
+                        moved |= ApplyReportedOwnerState(track, entry);
+
+                    if (moved)
+                        changed.Add(track);
                 }
 
                 if (changed.Count > 0)
                 {
                     // So the next GET /library is not answered 304 with a
-                    // catalog that no longer matches what is stored here - the
-                    // counts are part of what that manifest serves (see
-                    // SubsonicMapper.ToChild's PlayCounts).
+                    // catalog that no longer matches what is stored here - all
+                    // of this is part of what that manifest serves (see
+                    // SubsonicMapper.ToChild).
                     BumpChangeToken();
                 }
             }
 
             // Upsert rather than UpdateStats: the remote counts live in their
             // own child table, and UpdateStats deliberately writes only the
-            // three columns on tracks itself.
+            // three columns on tracks itself - none of which is Starred or an
+            // option either.
             foreach (var track in changed)
                 Persist(() => _store!.Upsert(track));
 
@@ -1000,6 +1043,48 @@ namespace Flower.Models
                 TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(track, TrackStatsChange.Finished));
 
             return changed.Count;
+        }
+
+        // The admin half of the report above, split out so the rule for each
+        // field sits next to the field rather than inside a loop that is
+        // already doing counts. Returns whether anything actually changed.
+        private static bool ApplyReportedOwnerState(Track track, TrackStateDto entry)
+        {
+            var moved = false;
+
+            if (track.Starred != entry.Starred)
+            {
+                track.Starred = entry.Starred;
+                track.StarredAt = entry.StarredAt;
+                moved = true;
+            }
+
+            // Nothing to say about listening: a report from before this server's
+            // own last-played, or from a device that has never played the track,
+            // leaves both the timestamp and the options that ride with it alone.
+            if (entry.LastPlayedAt is not { } reportedAt)
+                return moved;
+            if (track.LastPlayedAt is { } knownAt && knownAt >= reportedAt)
+                return moved;
+
+            track.LastPlayedAt = reportedAt;
+
+            var resume = entry.ResumePositionSeconds is { } seconds
+                ? TimeSpan.FromSeconds(seconds)
+                : (TimeSpan?)null;
+
+            if (track.RememberPlaybackPosition != entry.RememberPlaybackPosition ||
+                track.ResumePosition != resume ||
+                track.IgnoreWhenShuffling != entry.IgnoreWhenShuffling ||
+                track.VolumeAdjustment != entry.VolumeAdjustment)
+            {
+                track.RememberPlaybackPosition = entry.RememberPlaybackPosition;
+                track.ResumePosition = resume;
+                track.IgnoreWhenShuffling = entry.IgnoreWhenShuffling;
+                track.VolumeAdjustment = entry.VolumeAdjustment;
+            }
+
+            return true;
         }
 
         // Stars or unstars every track behind one Subsonic id - a song, or every

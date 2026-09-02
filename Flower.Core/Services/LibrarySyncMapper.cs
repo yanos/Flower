@@ -76,6 +76,13 @@ public static class LibrarySyncMapper
         // played - both simply mean "not in History", which is what an unset
         // LastPlayedAt already means.
         LastPlayedAt = song.LastPlayed,
+        // Part of the real OpenSubsonic spec, unlike the two above, and served
+        // by this project's own server all along (SubsonicMapper.ToChild) - it
+        // was simply never read here, so a star set on the server or from any
+        // third-party client was invisible to every Flower client. There is no
+        // StarredAt on the wire: `starred` is a bare flag in Child, and the
+        // timestamp is local bookkeeping for ordering a liked-songs view.
+        Starred = song.Starred,
         // What Track Info's Technical tab reads. A placeholder has no file to
         // scan, so these can only ever be what the origin's own scan found;
         // without them a library made entirely of synced placeholders showed an

@@ -12,7 +12,7 @@ namespace Flower.Services;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(PlayReportDto))]
-[JsonSerializable(typeof(PlayCountReportDto))]
+[JsonSerializable(typeof(TrackStateReportDto))]
 public partial class PlayReportJsonContext : JsonSerializerContext
 {
 }

@@ -71,6 +71,16 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         return device;
     }
 
+    // The owner's own machine, as opposed to the listener's iPad above - the
+    // distinction POST /track-state draws between reporting your own plays and
+    // speaking for the library.
+    private static async Task<DeviceSigningKey> AdminDeviceAsync(TrustedPeerStore trustedPeers)
+    {
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Owner's Desktop", device.PublicKeyBase64, isAdmin: true);
+        return device;
+    }
+
     [Fact]
     public async Task GET_library_returns_the_whole_catalog_in_one_response()
     {
@@ -368,7 +378,7 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         }
     }
 
-    // The reason POST /play-counts exists at all: the server never pulls from
+    // The reason POST /track-state exists at all: the server never pulls from
     // a client, so a track played on the owner's own desktop - paired to their
     // server, admin or not - was a play the server could never hear about. It
     // stayed on the desktop and was invisible to every other listener.
@@ -384,10 +394,10 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
 
         try
         {
-            var report = new PlayCountReportDto([new TrackPlayCountDto(track.Id.ToKey(), 7)]);
+            var report = new TrackStateReportDto([new TrackStateDto(track.Id.ToKey(), 7)]);
 
             var (status, _, _) = await SendAsync(
-                device, "POST", "/api/flower/v1/play-counts", "10.0.3.1",
+                device, "POST", "/api/flower/v1/track-state", "10.0.3.1",
                 body: JsonSerializer.Serialize(report));
 
             Assert.Equal(HttpStatusCode.NoContent, status);
@@ -397,7 +407,7 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
             // Attributed, not absorbed: the server's own tally is untouched, so
             // the same report arriving again cannot inflate it - which is what
             // lets the client re-state its total instead of sending increments
-            // with ids to deduplicate. See PlayCountReportDto.
+            // with ids to deduplicate. See TrackStateReportDto.
             Assert.Equal(ownCountBefore, track.PlayCount);
         }
         finally
@@ -421,9 +431,9 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         try
         {
             await SendAsync(
-                device, "POST", "/api/flower/v1/play-counts", "10.0.3.2",
+                device, "POST", "/api/flower/v1/track-state", "10.0.3.2",
                 body: JsonSerializer.Serialize(
-                    new PlayCountReportDto([new TrackPlayCountDto(track.Id.ToKey(), 4)])));
+                    new TrackStateReportDto([new TrackStateDto(track.Id.ToKey(), 4)])));
 
             var (_, body, _) = await SendAsync(device, "GET", "/api/flower/v1/library", "10.0.3.2");
             var manifest = JsonSerializer.Deserialize<LibrarySyncManifestDto>(body)!;
@@ -452,10 +462,10 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         try
         {
             var id = track.Id.ToKey();
-            await SendAsync(device, "POST", "/api/flower/v1/play-counts", "10.0.3.3",
-                body: JsonSerializer.Serialize(new PlayCountReportDto([new TrackPlayCountDto(id, 9)])));
-            await SendAsync(device, "POST", "/api/flower/v1/play-counts", "10.0.3.3",
-                body: JsonSerializer.Serialize(new PlayCountReportDto([new TrackPlayCountDto(id, 2)])));
+            await SendAsync(device, "POST", "/api/flower/v1/track-state", "10.0.3.3",
+                body: JsonSerializer.Serialize(new TrackStateReportDto([new TrackStateDto(id, 9)])));
+            await SendAsync(device, "POST", "/api/flower/v1/track-state", "10.0.3.3",
+                body: JsonSerializer.Serialize(new TrackStateReportDto([new TrackStateDto(id, 2)])));
 
             Assert.Equal(9, track.RemotePlayCounts[device.Fingerprint]);
         }
@@ -482,10 +492,10 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         try
         {
             var id = track.Id.ToKey();
-            await SendAsync(phone, "POST", "/api/flower/v1/play-counts", "10.0.3.4",
-                body: JsonSerializer.Serialize(new PlayCountReportDto([new TrackPlayCountDto(id, 3)])));
-            await SendAsync(laptop, "POST", "/api/flower/v1/play-counts", "10.0.3.5",
-                body: JsonSerializer.Serialize(new PlayCountReportDto([new TrackPlayCountDto(id, 5)])));
+            await SendAsync(phone, "POST", "/api/flower/v1/track-state", "10.0.3.4",
+                body: JsonSerializer.Serialize(new TrackStateReportDto([new TrackStateDto(id, 3)])));
+            await SendAsync(laptop, "POST", "/api/flower/v1/track-state", "10.0.3.5",
+                body: JsonSerializer.Serialize(new TrackStateReportDto([new TrackStateDto(id, 5)])));
 
             Assert.Equal(3, track.RemotePlayCounts[phone.Fingerprint]);
             Assert.Equal(5, track.RemotePlayCounts[laptop.Fingerprint]);
@@ -513,11 +523,11 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         try
         {
             var (status, _, _) = await SendAsync(
-                device, "POST", "/api/flower/v1/play-counts", "10.0.3.6",
-                body: JsonSerializer.Serialize(new PlayCountReportDto(
+                device, "POST", "/api/flower/v1/track-state", "10.0.3.6",
+                body: JsonSerializer.Serialize(new TrackStateReportDto(
                 [
-                    new TrackPlayCountDto(Guid.NewGuid().ToKey(), 12),
-                    new TrackPlayCountDto(track.Id.ToKey(), 6),
+                    new TrackStateDto(Guid.NewGuid().ToKey(), 12),
+                    new TrackStateDto(track.Id.ToKey(), 6),
                 ])));
 
             Assert.Equal(HttpStatusCode.NoContent, status);
@@ -526,6 +536,168 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         finally
         {
             track.RemotePlayCounts.Remove(device.Fingerprint);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The other half of "all of it syncs back", and the half a play count
+    // cannot stand in for: a star, a last-played and the per-track playback
+    // options are single-valued fields on the library's own copy, so they land
+    // on the track itself rather than under the reporter's fingerprint.
+    [Fact]
+    public async Task An_admins_star_and_last_played_reach_the_server_itself()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await AdminDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        var playedAt = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/track-state", "10.0.4.1",
+                body: JsonSerializer.Serialize(new TrackStateReportDto(
+                [
+                    new TrackStateDto(
+                        track.Id.ToKey(), Count: 2,
+                        LastPlayedAt: playedAt, Starred: true, StarredAt: playedAt,
+                        RememberPlaybackPosition: true, ResumePositionSeconds: 91.5,
+                        IgnoreWhenShuffling: true, VolumeAdjustment: -3),
+                ])));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.True(track.Starred);
+            Assert.Equal(playedAt, track.LastPlayedAt);
+            Assert.True(track.RememberPlaybackPosition);
+            Assert.Equal(TimeSpan.FromSeconds(91.5), track.ResumePosition);
+            Assert.True(track.IgnoreWhenShuffling);
+            Assert.Equal(-3, track.VolumeAdjustment);
+
+            // Still attributed, not absorbed - the admin half changes nothing
+            // about how the count travels.
+            Assert.Equal(2, track.RemotePlayCounts[device.Fingerprint]);
+        }
+        finally
+        {
+            track.Starred = false;
+            track.StarredAt = null;
+            track.LastPlayedAt = null;
+            track.RememberPlaybackPosition = false;
+            track.ResumePosition = null;
+            track.IgnoreWhenShuffling = false;
+            track.VolumeAdjustment = 0;
+            track.RemotePlayCounts.Remove(device.Fingerprint);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // A housemate's phone is a full peer of this route and its plays are
+    // welcome. What it may not do is restar, re-time or reconfigure the
+    // owner's copy of the track for everyone else - and it finds out by being
+    // ignored rather than refused, because the count in the same body is
+    // perfectly legitimate.
+    [Fact]
+    public async Task A_non_admins_star_is_dropped_while_its_play_count_still_lands()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+
+        try
+        {
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/track-state", "10.0.4.2",
+                body: JsonSerializer.Serialize(new TrackStateReportDto(
+                [
+                    new TrackStateDto(
+                        track.Id.ToKey(), Count: 5,
+                        LastPlayedAt: DateTimeOffset.UtcNow, Starred: true,
+                        VolumeAdjustment: -10),
+                ])));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(5, track.RemotePlayCounts[device.Fingerprint]);
+            Assert.False(track.Starred);
+            Assert.Null(track.LastPlayedAt);
+            Assert.Equal(0, track.VolumeAdjustment);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(device.Fingerprint);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // LastPlayedAt is a high-water mark of "when was this last put on,
+    // anywhere", so a device reporting an older session is not news - and the
+    // playback options ride with it, exactly as they do in the pulling
+    // direction (see Library.MergePlaybackOptions).
+    [Fact]
+    public async Task An_older_session_does_not_walk_back_last_played_or_the_options_riding_with_it()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await AdminDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        var newer = DateTimeOffset.UtcNow;
+        track.LastPlayedAt = newer;
+        track.ResumePosition = TimeSpan.FromSeconds(120);
+
+        try
+        {
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/track-state", "10.0.4.3",
+                body: JsonSerializer.Serialize(new TrackStateReportDto(
+                [
+                    new TrackStateDto(
+                        track.Id.ToKey(), Count: 0,
+                        LastPlayedAt: newer.AddHours(-2), ResumePositionSeconds: 4),
+                ])));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(newer, track.LastPlayedAt);
+            Assert.Equal(TimeSpan.FromSeconds(120), track.ResumePosition);
+        }
+        finally
+        {
+            track.LastPlayedAt = null;
+            track.ResumePosition = null;
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // Unstarring has no timestamp to order by - Library.SetStarred nulls
+    // StarredAt when it clears the flag - so the star is taken as stated
+    // rather than compared. What keeps that from being a clobber is on the
+    // client, which only speaks up when its answer differs from the one this
+    // server last served it.
+    [Fact]
+    public async Task An_admin_can_unstar_a_track_the_server_holds_as_starred()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await AdminDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        track.Starred = true;
+        track.StarredAt = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/track-state", "10.0.4.4",
+                body: JsonSerializer.Serialize(new TrackStateReportDto(
+                    [new TrackStateDto(track.Id.ToKey(), Count: 0, Starred: false)])));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.False(track.Starred);
+            Assert.Null(track.StarredAt);
+        }
+        finally
+        {
+            track.Starred = false;
+            track.StarredAt = null;
             await trustedPeers.RevokeAsync(device.Fingerprint);
         }
     }
