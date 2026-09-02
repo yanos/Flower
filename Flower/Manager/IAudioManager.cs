@@ -35,7 +35,13 @@ namespace Flower.Manager
         long Time { get; }
         long Length { get; }
 
-        void Play(Track track);
+        // immediate distinguishes a user gesture (Next/Previous/activating a
+        // row) from the queue advancing on its own. A gapless implementation
+        // uses it to decide what happens to the audio the outgoing track
+        // still has buffered but unplayed: a manual skip cuts it off (with a
+        // fade, so the cut is inaudible), an auto-advance lets it finish
+        // first. See GaplessCoordinator.Play.
+        void Play(Track track, bool immediate = true);
 
         // Tells the manager what should play after the current track, so a
         // gapless implementation can decode it ahead of time. Called by
@@ -43,6 +49,11 @@ namespace Flower.Manager
         // ToggleRepeat()/ToggleShuffle() change what "next" would resolve
         // to. null means nothing should follow (e.g. end of playlist).
         void SetUpcoming(Track? next);
+
+        // Hands the render path its latency/declick tuning - see
+        // AudioTimingSettings. Applied at startup from AppSettings, the same
+        // way the equalizer is.
+        void ApplyAudioTiming(AudioTimingSettings timing);
 
         void Resume();
         void Pause();

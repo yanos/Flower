@@ -266,6 +266,14 @@ namespace Flower.Manager
             _mediaPlayer.SetPause(false);
         }
 
+        // Moves whatever fits into newTarget right now, without blocking and
+        // without switching the write target - see
+        // RetargetableRingWriter.PrimeTarget. Deliberately unlogged: it runs
+        // in the seam's critical path and usually moves nothing, so
+        // PromoteTarget's own logging below covers the handover.
+        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget) =>
+            _writer.PrimeTarget(newTarget);
+
         // Drains everything currently buffered in this decoder's target
         // ring into newTarget, then switches future output to newTarget -
         // see RetargetableRingWriter.

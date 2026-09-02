@@ -180,6 +180,13 @@ namespace Flower.Persistence
         // bypass) - eagerly re-applied at startup in App.axaml.cs, not only
         // when the window is opened.
         public EqualizerSettings? EqualizerSettings { get; set; }
+
+        // Render-path latency/declick tuning - see AudioTimingSettings. Not
+        // null-by-default like EqualizerSettings above: there is no "the user
+        // has never touched this" state to distinguish, only defaults that can
+        // be overridden by hand-editing settings.json. Applied at startup in
+        // App.axaml.cs the same way the equalizer is.
+        public AudioTimingSettings AudioTiming { get; set; } = new();
     }
 
     public class ColumnState

@@ -55,9 +55,17 @@ public class PlaylistAutoAdvanceTests : IDisposable
         var playlist = new MainPlaylist(tracks);
         var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
         var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
-        return new PlaylistControlViewModel(
+        var vm = new PlaylistControlViewModel(
             audio, playlist, library, new AppSettings(), appSettingsStore,
             NullLogger<PlaylistControlViewModel>.Instance);
+
+        // The play-count/resume-position writes are deliberately handed off
+        // the LibVLC decode callback thread (see
+        // PlaylistControlViewModel.OffPlaybackThread); run them inline so a
+        // test asserting straight after RaiseEndReached() isn't racing the
+        // pool - and so no stray pool item outlives the test.
+        vm.OffPlaybackThread = work => work();
+        return vm;
     }
 
     // EndReached's handler is async void, awaiting a real (if isolated)

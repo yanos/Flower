@@ -154,6 +154,149 @@ public class GaplessRingBufferTests
         Assert.Equal(4, read);
     }
 
+    // The bug behind the "a fragment plays in a loop" symptom. Reset() only
+    // bumps the generation; each side rebases its own index on its next call.
+    // Read() used to rebase its own index to 0 and then compare it against
+    // the writer's still-*pre-flush* _writeIndex, concluding that a whole
+    // ring of audio was available and handing back the pre-flush contents -
+    // wrapping around and replaying them for as long as it took the decoder
+    // to produce its first post-flush byte, which on a track change is the
+    // whole media-open latency.
+    //
+    // Reader-first is the case that matters and the case a test has to go out
+    // of its way to construct: the render callback pulls every few
+    // milliseconds, so in the app it is almost always the first of the two to
+    // notice a flush.
+    [Fact]
+    public void A_read_before_the_writer_has_rebased_after_a_reset_returns_nothing()
+    {
+        var ring = new GaplessRingBuffer(16);
+        ring.TryWrite([1, 2, 3, 4, 5, 6, 7, 8]);
+
+        // Drain some of it, so the reader's index is non-zero and the ring's
+        // backing array holds real pre-flush bytes at offset 0.
+        Assert.Equal(4, ring.Read(new byte[4]));
+
+        ring.Reset();
+
+        var dest = new byte[8];
+        Assert.Equal(0, ring.Read(dest));
+        Assert.Equal(new byte[8], dest);
+        Assert.Equal(0, ring.AvailableBytes);
+    }
+
+    [Fact]
+    public void A_read_after_a_reset_never_returns_pre_reset_bytes()
+    {
+        var ring = new GaplessRingBuffer(16);
+        ring.TryWrite([1, 2, 3, 4, 5, 6, 7, 8]);
+        ring.Read(new byte[4]);
+
+        ring.Reset();
+        Assert.Equal(0, ring.Read(new byte[16]));
+
+        ring.TryWrite([9, 9]);
+
+        var dest = new byte[16];
+        var read = ring.Read(dest);
+        Assert.Equal(2, read);
+        Assert.Equal(new byte[] { 9, 9 }, dest[..2]);
+    }
+
+    // Reset() is called from a third thread (GaplessCoordinator's Play/Seek,
+    // TrackDecoder's flush) while both sides are running, so the guard has to
+    // hold under a real race, not just in the ordered cases above. The
+    // contract asserted here is the one the render callback depends on: every
+    // byte it is handed was written after the most recent flush it observed,
+    // and within one epoch the stream is a gap-free, repeat-free prefix of
+    // what was written.
+    [Fact]
+    public async Task Bytes_read_after_a_racing_reset_are_always_from_the_current_epoch()
+    {
+        var ring = new GaplessRingBuffer(256);
+        using var done = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // Each epoch writes a strictly increasing ramp from 0, so a reader
+        // that sees a value it has already passed within one epoch is looking
+        // at replayed pre-flush data.
+        var producer = Task.Run(() =>
+        {
+            var chunk = new byte[97];
+            while (!done.IsCancellationRequested)
+            {
+                var generation = ring.Generation;
+                for (var i = 0; i < chunk.Length; i++)
+                    chunk[i] = (byte)i;
+
+                ring.TryWrite(chunk);
+                if (ring.Generation != generation)
+                    continue;
+            }
+        });
+
+        var flusher = Task.Run(() =>
+        {
+            while (!done.IsCancellationRequested)
+            {
+                Thread.Sleep(1);
+                ring.Reset();
+            }
+        });
+
+        var buffer = new byte[63];
+        var reads = 0;
+        while (!done.IsCancellationRequested)
+        {
+            var generation = ring.Generation;
+            var read = ring.Read(buffer);
+            if (read == 0)
+                continue;
+
+            reads++;
+
+            // Nothing in the ring is ever written by anyone but the producer
+            // above, and it only ever writes values below chunk.Length, so a
+            // byte outside that range is uninitialised or torn memory.
+            for (var i = 0; i < read; i++)
+                Assert.InRange(buffer[i], (byte)0, (byte)96);
+
+            if (ring.Generation == generation)
+            {
+                // Same epoch throughout: the bytes must be a contiguous run
+                // of the producer's ramp, never a wrapped replay of it.
+                for (var i = 1; i < read; i++)
+                {
+                    if (buffer[i] != 0)
+                        Assert.Equal(buffer[i - 1] + 1, buffer[i]);
+                }
+            }
+        }
+
+        await Task.WhenAll(producer, flusher);
+        Assert.True(reads > 0, "the reader never got any data, so nothing was actually exercised");
+    }
+
+    // Read() runs on the real-time render thread, where taking a lock at the
+    // gapless seam - which is exactly when a waiter exists on the ring, since
+    // RetargetableRingWriter.PromoteTarget writes through the blocking
+    // Write() - was an audible click. A blocked writer therefore polls rather
+    // than waiting to be signalled, and this asserts the reader isn't
+    // signalling anything: a reader-driven drain still unblocks it.
+    [Fact]
+    public async Task A_blocked_write_completes_once_the_reader_drains_without_being_signalled()
+    {
+        var ring = new GaplessRingBuffer(8);
+        ring.TryWrite([1, 2, 3, 4, 5, 6, 7, 8]);
+
+        var writer = Task.Run(() => ring.Write([9, 9, 9, 9]), TestContext.Current.CancellationToken);
+        Assert.False(writer.Wait(TimeSpan.FromMilliseconds(100)), "the write should be parked on a full ring");
+
+        Assert.Equal(8, ring.Read(new byte[8]));
+
+        await writer.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(4, ring.AvailableBytes);
+    }
+
     [Fact]
     public async Task Concurrent_producer_and_consumer_never_lose_or_corrupt_bytes()
     {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -33,10 +34,33 @@ namespace Flower.Manager
     // PCM, on its own real-time thread.
     public sealed unsafe class MiniaudioSink : IAudioSink
     {
+        // How long the prime latch will wait for PrebufferMs of audio before
+        // giving up and rendering whatever there is. Not a setting: it is not
+        // a quality knob but a safety net for a decoder that is never going to
+        // deliver (an unreachable stream, a file that failed to open), where
+        // the right answer is to stop holding the output hostage.
+        private const int PrimeDeadlineMs = 1500;
+
         private readonly ILogger<MiniaudioSink> _logger;
         private readonly object _gate = new();
         private GaplessRingBuffer? _ringBuffer;
-        private volatile Equalizer? _equalizer;
+
+        // Everything between the ring and the sound card - float widening, EQ,
+        // gain ramping, declick envelope, dithered requantisation. Owned here
+        // and driven from DataCallback; see OutputStage for why none of that
+        // can be left to miniaudio.
+        private readonly OutputStage _outputStage = new(GaplessFormat.SampleRate);
+
+        // Prime latch: after a flush the ring is empty and the decoder is
+        // still opening the file, so the callback would render a trickle of
+        // starved fragments interleaved with silence for the whole media-open
+        // latency. While unprimed it renders silence instead - not counted as
+        // an underrun, because nothing is wrong - until either the ring holds
+        // PrebufferMs of audio or the deadline passes. Callback-owned except
+        // _primeDeadline, which is only read there.
+        private bool _primed;
+        private int _primeGeneration = -1;
+        private long _primeDeadlineTimestamp;
         private ma_context* _context;
         private ma_device* _device;
         private volatile bool _started;
@@ -74,11 +98,11 @@ namespace Flower.Manager
         // holding the lock.
         private volatile int _intentionalStopDepth;
 
-        // Master volume tracked here rather than read back out of ma_device:
-        // device_init resets a fresh device's master volume to 1.0, so
-        // reopening for SetOutputDevice would otherwise slam the user back to
-        // full volume every time they changed output.
-        private volatile float _masterVolume = 1f;
+        // The user's 0-100 volume, kept here rather than read back out of
+        // ma_device: it is applied by OutputStage now, not by miniaudio, whose
+        // own master volume is pinned at 1.0 (its volume path is a truncating,
+        // undithered integer multiply - see OutputStage).
+        private volatile int _volumePercent = 100;
 
         // The data callback is [UnmanagedCallersOnly] - it can't close over
         // instance state, so this instance's GCHandle is stashed in
@@ -242,19 +266,24 @@ namespace Flower.Manager
 
         public int Volume
         {
-            get => (int)Math.Round(_masterVolume * 100);
+            get => _volumePercent;
+
+            // No lock and no device call: this is a single volatile store the
+            // render callback picks up on its next pass and ramps toward over
+            // GainRampMs. Taking _gate here used to put the UI thread behind
+            // whatever else held it, for a value nothing but the callback
+            // reads.
             set
             {
-                lock (_gate)
-                {
-                    _masterVolume = Math.Clamp(value, 0, 100) / 100f;
-                    if (_device != null)
-                        ma.device_set_master_volume(_device, _masterVolume);
-                }
+                var percent = Math.Clamp(value, 0, 100);
+                _volumePercent = percent;
+                _outputStage.TargetGain = OutputStage.GainForVolumePercent(percent);
             }
         }
 
-        public void ApplyEqualizer(Equalizer? equalizer) => _equalizer = equalizer;
+        public void ApplyEqualizer(Equalizer? equalizer) => _outputStage.Equalizer = equalizer;
+
+        public void ApplyTiming(AudioTimingSettings timing) => _outputStage.Timing = timing;
 
         public void Start(GaplessRingBuffer ringBuffer)
         {
@@ -391,7 +420,13 @@ namespace Flower.Manager
             }
 
             _device = device;
-            ma.device_set_master_volume(_device, _masterVolume);
+
+            // Pinned at unity, deliberately: miniaudio applies its master
+            // volume after the data callback as
+            // `(ma_int16)(sample * factor)` - a truncating, unrounded,
+            // undithered integer multiply. OutputStage does the gain in float
+            // before requantising, so this path must never be used.
+            ma.device_set_master_volume(_device, 1f);
             _activeDeviceId = ResolveActiveDeviceId(_outputDeviceId, GetOutputDevices());
             return true;
         }
@@ -602,22 +637,67 @@ namespace Flower.Manager
         private void RaiseOutputDeviceLost() =>
             Dispatcher.UIThread.Post(() => OutputDeviceLost?.Invoke(this, EventArgs.Empty));
 
+        // Wrapped whole in a try/catch, unlike anything else in this class:
+        // this is an [UnmanagedCallersOnly] boundary, and an exception that
+        // reaches it does not unwind into a handler - it takes the process
+        // down. Silence is the only safe answer, and it is logged nowhere,
+        // because logging from the real-time thread is its own way of causing
+        // the glitches this exists to avoid; the watchdog's counters are what
+        // surface a callback that has stopped producing.
         [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
         private static void DataCallback(ma_device* pDevice, void* pOutput, void* pInput, uint frameCount)
         {
-            var handle = GCHandle.FromIntPtr((IntPtr)pDevice->pUserData);
-            if (handle.Target is not MiniaudioSink sink || sink._ringBuffer is not { } ring)
-                return;
-
             var byteCount = checked((int)frameCount * GaplessFormat.BytesPerFrame);
             var dest = new Span<byte>(pOutput, byteCount);
+
+            try
+            {
+                Render(pDevice, dest, byteCount);
+            }
+            catch
+            {
+                dest.Clear();
+            }
+        }
+
+        private static void Render(ma_device* pDevice, Span<byte> dest, int byteCount)
+        {
+            var handle = GCHandle.FromIntPtr((IntPtr)pDevice->pUserData);
+            if (handle.Target is not MiniaudioSink sink || sink._ringBuffer is not { } ring)
+            {
+                dest.Clear();
+                return;
+            }
+
+            var generation = ring.Generation;
+
+            // Prime latch - see _primed. A flush (a fresh start, a seek, a
+            // manual skip) empties the ring while the decoder is still opening
+            // the file, and rendering during that window produces a starved
+            // trickle rather than audio. Silence instead, until there is
+            // enough buffered to play through it.
+            if (generation != sink._primeGeneration)
+            {
+                sink._primeGeneration = generation;
+                sink._primed = false;
+                sink._primeDeadlineTimestamp = Stopwatch.GetTimestamp()
+                    + (long)(Stopwatch.Frequency * (PrimeDeadlineMs / 1000.0));
+            }
+
+            if (!sink._primed)
+            {
+                var required = sink._outputStage.Timing.PrebufferMs * (long)GaplessFormat.SampleRate
+                    * GaplessFormat.BytesPerFrame / 1000;
+                sink._primed = ring.AvailableBytes >= required
+                    || Stopwatch.GetTimestamp() >= sink._primeDeadlineTimestamp;
+            }
 
             // Read() never blocks - a short/zero read just means the ring is
             // temporarily empty (decode running behind), not end-of-stream.
             // This callback runs on miniaudio's real-time thread, so the
             // remainder of the requested frames is silence-padded rather
             // than waited for.
-            var read = ring.Read(dest);
+            var read = sink._primed ? ring.Read(dest) : 0;
             if (read < byteCount)
                 dest[read..].Clear();
 
@@ -627,7 +707,8 @@ namespace Flower.Manager
             if (read < byteCount)
             {
                 Interlocked.Add(ref sink._silenceBytesRendered, byteCount - read);
-                Interlocked.Increment(ref sink._shortReadCount);
+                if (sink._primed)
+                    Interlocked.Increment(ref sink._shortReadCount);
             }
 
             if (read > 0)
@@ -649,12 +730,20 @@ namespace Flower.Manager
                 }
             }
 
-            // null = true bypass - skip the processing call entirely rather
-            // than running an all-zero-dB filter. Only the bytes actually
-            // filled with real audio are processed, never the silence-padded
-            // tail from a short read above.
-            if (sink._equalizer is { } equalizer)
-                equalizer.ProcessInPlace(dest[..read]);
+            // Skipped entirely while the prime latch is holding: the buffer is
+            // already pure silence, and running the output stage over it would
+            // spend the declick fade-in on that silence, so the first real
+            // audio after a flush would arrive at full gain - the click the
+            // fade exists to remove. Not calling Process leaves the stage's
+            // last-seen generation untouched, so the first primed callback is
+            // the one that arms the fade-in, which is where it belongs.
+            if (!sink._primed)
+                return;
+
+            // The whole buffer, silence padding included - the EQ's delay
+            // lines and the gain ramp both have to keep advancing across a
+            // gap, or they resume from pre-gap state on the other side of it.
+            sink._outputStage.Process(dest, generation);
         }
 
         // Samples one byte per 64 rather than walking every PCM byte on the
@@ -684,6 +773,12 @@ namespace Flower.Manager
                 if (_device == null || _started)
                     return;
 
+                // Armed before the device starts, so the very first callback
+                // already renders through the fade-in envelope rather than
+                // jumping straight in at whatever amplitude the stream
+                // happens to begin on.
+                _outputStage.BeginFadeIn();
+
                 var result = ma.device_start(_device);
                 if (result != ma_result.MA_SUCCESS)
                 {
@@ -703,6 +798,11 @@ namespace Flower.Manager
                 if (_device == null || !_started)
                     return;
 
+                // ma_device_stop cuts the waveform wherever it happens to be,
+                // which is a click. Give the callback TransportFadeMs to walk
+                // it down to silence first - bounded, because the callback
+                // may never run again and a pause must not hang the caller.
+                _outputStage.FadeOutAndWait();
                 StopDeviceIntentionally();
                 _started = false;
                 Paused?.Invoke(this, EventArgs.Empty);
@@ -716,6 +816,8 @@ namespace Flower.Manager
                 if (_device == null || !_started)
                     return;
 
+                // Faded, for the same reason as Pause above.
+                _outputStage.FadeOutAndWait();
                 StopDeviceIntentionally();
                 _started = false;
                 Stopped?.Invoke(this, EventArgs.Empty);

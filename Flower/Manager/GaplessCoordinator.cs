@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -99,6 +100,13 @@ namespace Flower.Manager
         // settles.
         private long _currentTrackReadSplit;
 
+        // Lock-free mirrors of _current?.Track and _currentTrackReadSplit, for
+        // the UI's position poll - see CurrentTrack/CurrentTrackBytesProduced.
+        // Only ever written by the same code that writes the fields they
+        // mirror, always under _gate, via PublishCurrent().
+        private volatile Track? _publishedCurrentTrack;
+        private long _publishedReadSplit;
+
         private ITrackDecoder? _armed;
         private Track? _armedTrack;
         private GaplessRingBuffer? _stagingRing;
@@ -170,21 +178,26 @@ namespace Flower.Manager
             _logger = logger;
         }
 
-        public Track? CurrentTrack
-        {
-            get
-            {
-                lock (_gate)
-                    return _current?.Track;
-            }
-        }
+        // Both of these are read every 250ms by the position timer, on the UI
+        // thread, and both used to take _gate - which is also held across
+        // LogDiagnosticSnapshot's formatting and across the whole locked
+        // section of HandleDrainedOrFaulted. So the scrubber stalled at every
+        // track transition, waiting on a lock it had no business needing.
+        //
+        // Published instead into volatile/interlocked fields that the same
+        // locked sections write, so a reader gets the last consistent value
+        // without blocking. A momentarily stale value here is invisible: it is
+        // one 250ms tick of a scrub bar.
+        public Track? CurrentTrack => _publishedCurrentTrack;
 
         public long CurrentTrackBytesProduced
         {
             get
             {
-                lock (_gate)
-                    return _current == null ? 0 : Math.Max(0, _sharedRing.TotalBytesRead - _currentTrackReadSplit);
+                if (_publishedCurrentTrack == null)
+                    return 0;
+
+                return Math.Max(0, _sharedRing.TotalBytesRead - Interlocked.Read(ref _publishedReadSplit));
             }
         }
 
@@ -194,55 +207,112 @@ namespace Flower.Manager
         // at the default log level without producing a line every second.
         public void LogDiagnosticSnapshot(bool renderStarted)
         {
+            // Everything is read under the lock and formatted outside it. The
+            // Debug line below is long and interpolated by the logging
+            // pipeline; holding _gate across it put the render path's own
+            // handover behind message formatting once every ten seconds.
+            string? currentPath;
+            long played;
+            long currentDecoded;
+            int sharedGeneration;
+            long sharedRead;
+            long sharedWritten;
+            long sharedAvailable;
+            long sharedUnderruns;
+            string? armedPath;
+            long armedDecoded;
+            long stagingRead;
+            long stagingWritten;
+            long stagingAvailable;
+            int stagingCapacity;
+            int stagingGeneration;
+            bool armedAlreadyDrained;
+            bool noProgress;
+            bool runningWithNoDecoder;
+
             lock (_gate)
             {
-                var sharedGeneration = _sharedRing.Generation;
-                var sharedRead = _sharedRing.TotalBytesRead;
-                var sharedWritten = _sharedRing.TotalBytesWritten;
-                var currentPath = _current?.Track.Path;
-                var currentDecoded = _current?.BytesProduced ?? 0;
-                var played = _current == null ? 0 : Math.Max(0, sharedRead - _currentTrackReadSplit);
+                sharedGeneration = _sharedRing.Generation;
+                sharedRead = _sharedRing.TotalBytesRead;
+                sharedWritten = _sharedRing.TotalBytesWritten;
+                sharedAvailable = _sharedRing.AvailableBytes;
+                sharedUnderruns = _sharedRing.UnderrunCount;
+                currentPath = _current?.Track.Path;
+                currentDecoded = _current?.BytesProduced ?? 0;
+                played = _current == null ? 0 : Math.Max(0, sharedRead - _currentTrackReadSplit);
+                armedPath = _armedTrack?.Path;
+                armedDecoded = _armed?.BytesProduced ?? 0;
+                armedAlreadyDrained = _armedAlreadyDrained;
+
                 var staging = _stagingRing;
+                stagingRead = staging?.TotalBytesRead ?? 0;
+                stagingWritten = staging?.TotalBytesWritten ?? 0;
+                stagingAvailable = staging?.AvailableBytes ?? 0;
+                stagingCapacity = staging?.Capacity ?? 0;
+                stagingGeneration = staging?.Generation ?? -1;
 
                 var sameStream = currentPath != null
                     && currentPath == _diagnosticLastPath
                     && sharedGeneration == _diagnosticLastRingGeneration;
-                if (renderStarted && sameStream && sharedRead == _diagnosticLastBytesRead)
-                {
-                    _logger?.LogWarning(
-                        "Playback made no PCM consumption progress for 10s: Path={Path} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} RingGeneration={RingGeneration}",
-                        currentPath, played, currentDecoded, sharedRead, sharedWritten,
-                        _sharedRing.AvailableBytes, _sharedRing.Capacity, sharedGeneration);
-                }
-                else if (renderStarted && currentPath == null)
-                {
-                    _logger?.LogWarning(
-                        "Render sink is running with no current decoder: SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} RingGeneration={RingGeneration}",
-                        sharedRead, sharedWritten, _sharedRing.AvailableBytes,
-                        _sharedRing.Capacity, sharedGeneration);
-                }
-
-                _logger?.LogDebug(
-                    "Playback snapshot: RenderStarted={RenderStarted} Current={CurrentPath} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} SharedUnderruns={SharedUnderruns} RingGeneration={RingGeneration} Armed={ArmedPath} ArmedDecodedBytes={ArmedDecodedBytes} StagingRead={StagingRead} StagingWritten={StagingWritten} StagingAvailable={StagingAvailable}/{StagingCapacity} StagingGeneration={StagingGeneration} ArmedAlreadyDrained={ArmedAlreadyDrained}",
-                    renderStarted, currentPath, played, currentDecoded, sharedRead,
-                    sharedWritten, _sharedRing.AvailableBytes, _sharedRing.Capacity,
-                    _sharedRing.UnderrunCount, sharedGeneration, _armedTrack?.Path,
-                    _armed?.BytesProduced ?? 0, staging?.TotalBytesRead ?? 0,
-                    staging?.TotalBytesWritten ?? 0, staging?.AvailableBytes ?? 0,
-                    staging?.Capacity ?? 0, staging?.Generation ?? -1,
-                    _armedAlreadyDrained);
+                noProgress = renderStarted && sameStream && sharedRead == _diagnosticLastBytesRead;
+                runningWithNoDecoder = renderStarted && currentPath == null;
 
                 _diagnosticLastPath = currentPath;
                 _diagnosticLastRingGeneration = sharedGeneration;
                 _diagnosticLastBytesRead = sharedRead;
             }
+
+            if (noProgress)
+            {
+                _logger?.LogWarning(
+                    "Playback made no PCM consumption progress for 10s: Path={Path} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} RingGeneration={RingGeneration}",
+                    currentPath, played, currentDecoded, sharedRead, sharedWritten,
+                    sharedAvailable, _sharedRing.Capacity, sharedGeneration);
+            }
+            else if (runningWithNoDecoder)
+            {
+                _logger?.LogWarning(
+                    "Render sink is running with no current decoder: SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} RingGeneration={RingGeneration}",
+                    sharedRead, sharedWritten, sharedAvailable,
+                    _sharedRing.Capacity, sharedGeneration);
+            }
+
+            _logger?.LogDebug(
+                "Playback snapshot: RenderStarted={RenderStarted} Current={CurrentPath} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} SharedUnderruns={SharedUnderruns} RingGeneration={RingGeneration} Armed={ArmedPath} ArmedDecodedBytes={ArmedDecodedBytes} StagingRead={StagingRead} StagingWritten={StagingWritten} StagingAvailable={StagingAvailable}/{StagingCapacity} StagingGeneration={StagingGeneration} ArmedAlreadyDrained={ArmedAlreadyDrained}",
+                renderStarted, currentPath, played, currentDecoded, sharedRead,
+                sharedWritten, sharedAvailable, _sharedRing.Capacity,
+                sharedUnderruns, sharedGeneration, armedPath,
+                armedDecoded, stagingRead, stagingWritten, stagingAvailable,
+                stagingCapacity, stagingGeneration, armedAlreadyDrained);
         }
 
         // Starts track fresh unless it's already the one that just became
         // current via a natural gapless handover (see class remarks) - in
         // that case this is a no-op, since restarting it would reintroduce
         // exactly the gap gapless is meant to remove.
-        public void Play(Track track)
+        //
+        // immediate says whether the caller is a user gesture or the queue
+        // advancing on its own, and it decides the fate of whatever the
+        // outgoing track still has buffered in the shared ring. EndReached
+        // fires when a track's *decode* is exhausted, which is up to a full
+        // ring (RingCapacityBytes, ~2s) before its last sample has actually
+        // been heard, so a Reset() at that moment cuts the end off every
+        // track that wasn't handed over gaplessly - the last one in a queue,
+        // one with a saved resume position (deliberately never armed), or any
+        // advance where shuffle/repeat changed the answer mid-track. That is
+        // the "songs stop before they should" symptom.
+        //
+        // - immediate: false (auto-advance) - if the outgoing decoder has
+        //   already finished and its tail is still in the ring, keep it: the
+        //   new decoder appends after it exactly the way a promoted decoder
+        //   does, and the split is the ring's current write position rather
+        //   than 0, so the tail plays out and the new track's elapsed time
+        //   still starts at zero. No waiting anywhere - the ring itself is the
+        //   queue.
+        // - immediate: true (Next/Previous/double-click) - flush at once. The
+        //   sink fades across the resulting discontinuity, so the cut is
+        //   inaudible rather than a click.
+        public void Play(Track track, bool immediate = true)
         {
             lock (_gate)
             {
@@ -252,7 +322,25 @@ namespace Flower.Manager
                     return;
                 }
 
-                _logger?.LogInformation("Play({Path}): hard-flush from {PreviousPath}", track.Path, _currentPath);
+                // Only safe while nothing is still decoding into the ring: a
+                // live decoder would interleave its output with the new one's.
+                // A retired decoder's writes are dropped, but retirement is
+                // asynchronous, so "current is already null" (it drained) is
+                // the only condition worth taking this path for - and it is
+                // exactly the case that loses tails today.
+                var bufferedTail = _sharedRing.AvailableBytes;
+                var preserveTail = !immediate && _current == null && bufferedTail > 0;
+
+                if (preserveTail)
+                {
+                    _logger?.LogInformation(
+                        "Play({Path}): appending after {BufferedMs}ms of {PreviousPath} still buffered",
+                        track.Path, BytesToMilliseconds(bufferedTail), _currentPath);
+                }
+                else
+                {
+                    _logger?.LogInformation("Play({Path}): hard-flush from {PreviousPath}", track.Path, _currentPath);
+                }
 
                 unchecked
                 {
@@ -262,7 +350,8 @@ namespace Flower.Manager
                 ClearArmedSlot(retireDecoder: true);
 
                 _current?.Retire();
-                _sharedRing.Reset();
+                if (!preserveTail)
+                    _sharedRing.Reset();
 
                 // Hard reset always lands "current" back on core 0
                 // deterministically, matching a fresh Play() discarding
@@ -275,7 +364,12 @@ namespace Flower.Manager
                 decoder.SeekSettled += landedBytes => HandleSeekSettled(decoder, landedBytes);
                 _current = decoder;
                 _currentPath = track.Path;
-                _currentTrackReadSplit = 0;
+
+                // Same reasoning as the promotion branch of
+                // HandleDrainedOrFaulted: the new track's audio begins at the
+                // ring's current write cursor, not at zero.
+                _currentTrackReadSplit = preserveTail ? _sharedRing.TotalBytesWritten : 0;
+                PublishCurrent();
 
                 decoder.StartDecoding();
             }
@@ -294,6 +388,7 @@ namespace Flower.Manager
                 _current?.Retire();
                 _current = null;
                 _currentPath = null;
+                PublishCurrent();
                 _sharedRing.Reset();
             }
         }
@@ -339,15 +434,22 @@ namespace Flower.Manager
             {
                 if (_current != null)
                 {
-                    // The seek's flush/reset of the shared ring happens
-                    // asynchronously - on the real decoder, sometime after
-                    // _current.Seek(position) below, once LibVLC's own seek
-                    // machinery gets around to it - so TotalBytesRead can't
-                    // be read as "the fresh post-seek value" synchronously
-                    // here. Instead, pre-negate the split by the seek
-                    // target: once the flush lands and TotalBytesRead
-                    // starts counting from 0 again in the new ring
-                    // generation, CurrentTrackBytesProduced's subtraction
+                    // Flushed here, synchronously, rather than left to
+                    // LibVLC's own asynchronous OnFlush -> ResetTarget: until
+                    // that arrives the ring still holds up to a full
+                    // RingCapacityBytes of pre-seek audio, and the render
+                    // callback happily plays all of it before the new
+                    // position is heard. The later OnFlush reset is then a
+                    // harmless second generation bump.
+                    _sharedRing.Reset();
+
+                    // The split can't be read back off the ring
+                    // synchronously either - TotalBytesRead is 0 for the new
+                    // generation, but the decoder hasn't landed anywhere yet.
+                    // Instead, pre-negate the split by the seek
+                    // target: once TotalBytesRead starts counting from 0
+                    // again in the new ring generation,
+                    // CurrentTrackBytesProduced's subtraction
                     // (0 - -targetBytes) already reads as targetBytes
                     // immediately, then grows from there as playback
                     // resumes, without waiting on the decoder to report
@@ -365,6 +467,7 @@ namespace Flower.Manager
                     var targetSeconds = _current.Track.Duration.TotalSeconds * position;
                     var targetBytes = (long)(targetSeconds * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
                     _currentTrackReadSplit = -targetBytes;
+                    PublishCurrent();
                 }
 
                 _current?.Seek(position);
@@ -399,6 +502,7 @@ namespace Flower.Manager
                 }
 
                 _currentTrackReadSplit = -landedBytes;
+                PublishCurrent();
                 _logger?.LogTrace(
                     "Seek settled on {Path} at {LandedBytes} bytes - split re-anchored to {Split}",
                     _currentPath, landedBytes, _currentTrackReadSplit);
@@ -612,6 +716,7 @@ namespace Flower.Manager
                     promoted.SeekSettled += landedBytes => HandleSeekSettled(promoted, landedBytes);
 
                     ClearArmedSlot(retireDecoder: false);
+                    PublishCurrent();
                     _logger?.LogInformation("{Finished} drained - promoting armed {Next}", finishedTrack.Path, promoted.Track.Path);
                 }
                 else
@@ -619,9 +724,26 @@ namespace Flower.Manager
                     promoted = null;
                     _current = null;
                     _currentPath = null;
+                    PublishCurrent();
                     _logger?.LogInformation("{Finished} drained - nothing armed, stopping", finishedTrack.Path);
                 }
             }
+
+            // Before the events, not after: EndReached's subscriber
+            // (PlaylistControlViewModel) runs right here on the LibVLC decode
+            // callback thread and does real work - a play-count UPDATE under
+            // Library's lock, a resume-position write, a walk of the queue -
+            // and until it returns, nothing has put a single byte of the
+            // promoted track in front of the render callback. The only thing
+            // covering that window is whatever is left of the finishing
+            // track's tail in the shared ring, and ReportHandoverSeam then
+            // blames the splice for the underrun. Priming first closes the
+            // seam whenever the ring has room; when it doesn't, the ring is
+            // full of tail and the subscribers have all of it to run in.
+            // Cheap and non-blocking either way - see
+            // RetargetableRingWriter.PrimeTarget for why the full drain can't
+            // simply move up here instead.
+            var primeSplice = promoted?.PrimeTarget(_sharedRing);
 
             if (faulted)
                 TrackFailed?.Invoke(finishedTrack);
@@ -648,7 +770,20 @@ namespace Flower.Manager
             if (promoted != null)
             {
                 var splice = promoted.PromoteTarget(_sharedRing);
-                ReportHandoverSeam(finishedTrack, promoted.Track, splice, underrunsAtCompletion, bufferedAtPromotion);
+
+                // One handover, measured across both halves: the staged total
+                // and elapsed time add up, and the first byte belongs to
+                // whichever half actually moved it - the prime when it had
+                // room, the drain otherwise.
+                var prime = primeSplice ?? default;
+                var seam = new PromotionSplice(
+                    prime.MovedAnything ? prime.StagedBytes : splice.StagedBytes,
+                    prime.BytesMoved + splice.BytesMoved,
+                    prime.MovedAnything ? prime.MillisecondsToFirstByte : splice.MillisecondsToFirstByte,
+                    prime.MovedAnything ? prime.DestinationUnderrunsAtFirstByte : splice.DestinationUnderrunsAtFirstByte,
+                    prime.TotalMilliseconds + splice.TotalMilliseconds);
+
+                ReportHandoverSeam(finishedTrack, promoted.Track, seam, underrunsAtCompletion, bufferedAtPromotion);
 
                 // The just-promoted decoder already reached Drained while
                 // it was still armed (see _armedAlreadyDrained's remarks) -
@@ -726,6 +861,15 @@ namespace Flower.Manager
                 splice.TotalMilliseconds);
         }
 
+        // Mirrors the two fields the UI's position poll reads, so it never has
+        // to take _gate for them. Must be called under _gate, after every
+        // change to _current or _currentTrackReadSplit.
+        private void PublishCurrent()
+        {
+            _publishedCurrentTrack = _current?.Track;
+            Interlocked.Exchange(ref _publishedReadSplit, _currentTrackReadSplit);
+        }
+
         // Must be called under _gate.
         private void ClearArmedSlot(bool retireDecoder)
         {
@@ -751,6 +895,7 @@ namespace Flower.Manager
                 ClearArmedSlot(retireDecoder: true);
                 _current?.Retire();
                 _current = null;
+                PublishCurrent();
             }
 
             _secondCore?.Dispose();

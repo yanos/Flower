@@ -62,6 +62,10 @@ public sealed class FakeAudioSink : IAudioSink
 
     public void ApplyEqualizer(Equalizer? equalizer) => AppliedEqualizer = equalizer;
 
+    public AudioTimingSettings? AppliedTiming { get; private set; }
+
+    public void ApplyTiming(AudioTimingSettings timing) => AppliedTiming = timing;
+
     // Output routing, faked at the same level of detail as the rest of this
     // class: whatever OutputDevices is set to is what enumeration returns, and
     // SetOutputDevice just records the pick (falling back to the default for

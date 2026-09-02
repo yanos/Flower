@@ -53,6 +53,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `MOBILE-PLAN.md` — getting iOS/Android from scaffolding to runnable.
 - `AIRPLAY-BLUETOOTH-PLAN.md` — Bluetooth device picker + AirPlay output routing.
 - `AUDIOPHILE-PLAN.md` — EQ, gapless playback, DSD/APE, hi-res passthrough.
+- `AUDIO-QUALITY-PLAN.md` — render-path defect audit (clicks, looped fragments, truncated tails) and the PCM-level test suite that should prove them fixed.
 - `MEDIA-KEYS-PLAN.md` — hardware media keys + OS now-playing integration.
 - `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack.
 - `VERSIONING-PLAN.md` — git-tag-driven versioning via MinVer.

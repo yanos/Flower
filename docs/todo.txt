@@ -49,6 +49,30 @@ details:
   The short version: right now the client refuses to listen to the server about stars and last-played, because listening would sometimes eat your own change before it got out the door.
 
 ----
+The volume slider will feel different. It was raw linear amplitude (50% = −6 dB); it's now a cubic taper (50% ≈ −18 dB). That's the fix for "101 steps you can't hear apart", but it's a real change — one line in OutputStage.GainForVolumePercent if you want it gentler.
+----
+Lock-free synchronisation — correct in shape, but (A) is a bug in the
+    protocol and (B) is a lock that reaches the RT thread anyway.
+
+----
+GC pauses / ArrayPool — the RT callback already allocates nothing;
+    TrackDecoder.OnPlay's _scratch (:396-399) is grow-only and reused. The
+    useful artifact here is a regression test asserting zero allocation.
+
+----
+Float internally: worth doing inside the render callback only. The ring
+    should stay S16 — LibVLC 3.0's amem hardcodes S16N and never honours a
+    requested fourcc (GaplessFormat.cs:9-18), so a float ring would store an
+    exact widening of S16 at twice the memory for zero benefit.
+
+----
+long ring indices are read with Volatile.Read, which is not atomic on
+   32-bit runtimes — Flower.Android still ships an armeabi-v7a
+
+----
+why is star a special case?
+Library.TrackStarsChanged is a new event. SetStarred — both the Track Info window and Subsonic /star go through it — reached neither existing event, so a star would not have entered a starred-based playlist until something unrelated triggered a pass. It can't be folded into TrackStatsChanged: App.axaml.cs:740 forwards that to IPlayReporter, so a star raised there would be reported to the origin server as a listen. Checking the other two paths the doc had flagged went the other way — MergeReportedTrackState already raises TrackStatsChanged and MergeSyncedTracks already raises TracksUpdated, so both were covered.
+----
 Picture the desktop and the server, and the two things that happen on their own timers:
 
 - The pull (catalog sync): "give me your whole library."

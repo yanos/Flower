@@ -138,12 +138,13 @@ public class StoreRoundTripTests : IDisposable
         public float Position { get; set; }
         public long Time { get; set; }
         public long Length { get; set; }
-        public void Play(Track track) { }
+        public void Play(Track track, bool immediate = true) { }
         public void SetUpcoming(Track? next) { }
         public void Resume() { }
         public void Pause() { }
         public void Stop() { }
         public void ApplyEqualizer(Flower.Manager.Equalizer? equalizer) { }
+        public void ApplyAudioTiming(Flower.Manager.AudioTimingSettings timing) { }
         public System.Collections.Generic.IReadOnlyList<Flower.Manager.AudioOutputDevice> GetOutputDevices() => [];
         public string? OutputDeviceId => null;
         public void SetOutputDevice(string? deviceId) { }
@@ -178,6 +179,11 @@ public class StoreRoundTripTests : IDisposable
         var vm = new PlaylistControlViewModel(
             audio, emptyPlaylist, library, new AppSettings(),
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance), NullLogger<PlaylistControlViewModel>.Instance);
+
+        // The play-count write is deliberately handed off the LibVLC decode
+        // callback thread (see PlaylistControlViewModel.OffPlaybackThread);
+        // run it inline so the assertion below isn't racing the pool.
+        vm.OffPlaybackThread = work => work();
 
         vm.Play(oldTrack);
 

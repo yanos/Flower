@@ -587,6 +587,11 @@ public partial class App : Application
         if (audioManager is GaplessAudioManager gapless && appSettings.EqualizerSettings is { Enabled: true } eqSettings)
             gapless.ApplyEqualizer(Manager.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
 
+        // Same idea for the render path's own tuning - prebuffer depth, fade
+        // and ramp lengths. Clamped on the way in, since settings.json is
+        // meant to be hand-edited here (there is no UI for these).
+        audioManager.ApplyAudioTiming(appSettings.AudioTiming);
+
         // AlbumArtLoader is reached from `init`-only ViewModels built by static
         // builders (TrackListBuilder, AlbumGridBuilder), which have no
         // container and no constructor to inject through - so its dependencies

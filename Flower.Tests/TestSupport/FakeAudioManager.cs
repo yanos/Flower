@@ -27,16 +27,28 @@ public sealed class FakeAudioManager : IAudioManager
     public long Length { get; set; }
 
     public Track? LastPlayed { get; private set; }
+
+    // Whether the last Play was a user gesture or the queue advancing - see
+    // IAudioManager.Play.
+    public bool LastPlayWasImmediate { get; private set; } = true;
     public Track? LastUpcoming { get; private set; }
 
     public Equalizer? LastAppliedEqualizer { get; private set; }
 
-    public void Play(Track track) => LastPlayed = track;
+    public void Play(Track track, bool immediate = true)
+    {
+        LastPlayed = track;
+        LastPlayWasImmediate = immediate;
+    }
     public void SetUpcoming(Track? next) => LastUpcoming = next;
     public void Resume() { }
     public void Pause() { }
     public void Stop() { }
     public void ApplyEqualizer(Equalizer? equalizer) => LastAppliedEqualizer = equalizer;
+
+    public AudioTimingSettings? LastAppliedTiming { get; private set; }
+
+    public void ApplyAudioTiming(AudioTimingSettings timing) => LastAppliedTiming = timing;
 
     // Mirrors FakeAudioSink's fake routing: OutputDevices is what enumeration
     // reports, and an id that isn't in it falls back to the system default the

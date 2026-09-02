@@ -32,6 +32,11 @@ namespace Flower.Manager
         Task<bool> PrepareAsync(CancellationToken cancellationToken = default);
         void StartDecoding();
         void Seek(float position);
+        // Moves whatever staged audio fits into newTarget right now without
+        // blocking, leaving the write target alone - the first half of a
+        // handover, run before EndReached's subscribers get the decode
+        // thread. See RetargetableRingWriter.PrimeTarget.
+        PromotionSplice PrimeTarget(GaplessRingBuffer newTarget);
         // Returns a measurement of the handover seam - see
         // PromotionSplice, and GaplessCoordinator.HandleDrainedOrFaulted
         // for what is done with it.

@@ -97,6 +97,73 @@ namespace Flower.Manager
             }
         }
 
+        // Moves as much of the staged backlog into newTarget as fits right
+        // now, without blocking and without switching the write target -
+        // PromoteTarget below picks up exactly where this left off, so the
+        // two together are one ordered drain.
+        //
+        // Exists so a handover can put the promoted track's first bytes in
+        // front of the render callback *before* GaplessCoordinator raises
+        // EndReached and its subscribers start doing work on the decode
+        // thread. In the healthy case the shared ring is still nearly full of
+        // the finishing track's tail, so this moves nothing and costs a few
+        // microseconds; in the case that actually matters - the ring close to
+        // dry at the seam - it fills it in one go. Splitting it out this way
+        // rather than simply moving PromoteTarget above the event keeps the
+        // event prompt: PromoteTarget's blocking drain is paced by real-time
+        // playback over as much as a minute of backlog, and the now-playing
+        // UI cannot wait that long.
+        //
+        // Only ever writes what it has already confirmed will fit: newTarget's
+        // free space can only grow underneath us (the reader only ever
+        // consumes), so a free-space snapshot is a safe lower bound and the
+        // TryWrite below never comes up short and drops bytes.
+        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget)
+        {
+            lock (_gate)
+            {
+                var startedAt = Stopwatch.GetTimestamp();
+                var stagedBytes = _target.AvailableBytes;
+
+                long movedBytes = 0;
+                var millisecondsToFirstByte = -1.0;
+                var underrunsAtFirstByte = -1L;
+
+                Span<byte> chunk = stackalloc byte[4096];
+                while (true)
+                {
+                    var free = newTarget.Capacity - newTarget.AvailableBytes;
+                    if (free <= 0)
+                        break;
+
+                    var read = _target.Read(chunk[..(int)Math.Min(chunk.Length, free)]);
+                    if (read <= 0)
+                        break;
+
+                    var written = newTarget.TryWrite(chunk[..read]);
+                    movedBytes += written;
+
+                    if (movedBytes > 0 && millisecondsToFirstByte < 0)
+                    {
+                        millisecondsToFirstByte = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+                        underrunsAtFirstByte = newTarget.UnderrunCount;
+                    }
+
+                    // Short only if a Reset() raced us, in which case those
+                    // bytes belong to a stream nobody wants anymore.
+                    if (written < read)
+                        break;
+                }
+
+                return new PromotionSplice(
+                    stagedBytes,
+                    movedBytes,
+                    millisecondsToFirstByte,
+                    underrunsAtFirstByte,
+                    Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+            }
+        }
+
         // Drains everything currently buffered in the old target into
         // newTarget, then switches future writes to it. Atomic with respect
         // to Write above, so no bytes land in a target that's mid-retarget.

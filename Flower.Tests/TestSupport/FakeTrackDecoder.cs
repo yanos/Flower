@@ -25,6 +25,11 @@ public sealed class FakeTrackDecoder : ITrackDecoder
     // underran) without needing a real decode to produce one.
     public PromotionSplice PromotionSplice { get; set; } =
         new(StagedBytes: 0, BytesMoved: 1, MillisecondsToFirstByte: 0, DestinationUnderrunsAtFirstByte: 0, TotalMilliseconds: 0);
+
+    public GaplessRingBuffer? PrimedTo { get; private set; }
+
+    public PromotionSplice PrimeSplice { get; set; } =
+        new(StagedBytes: 0, BytesMoved: 0, MillisecondsToFirstByte: -1, DestinationUnderrunsAtFirstByte: -1, TotalMilliseconds: 0);
     public float? LastSeekPosition { get; private set; }
 
     public event Action? Drained;
@@ -36,6 +41,15 @@ public sealed class FakeTrackDecoder : ITrackDecoder
     public Task<bool> PrepareAsync(CancellationToken cancellationToken = default) => Task.FromResult(PrepareResult);
     public void StartDecoding() => StartDecodingCalled = true;
     public void Seek(float position) => LastSeekPosition = position;
+    // Moves nothing by default: the real one only moves anything when the
+    // destination has room, and every coordinator test drives the seam
+    // through PromotionSplice below instead.
+    public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget)
+    {
+        PrimedTo = newTarget;
+        return PrimeSplice;
+    }
+
     public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget)
     {
         PromotedTo = newTarget;

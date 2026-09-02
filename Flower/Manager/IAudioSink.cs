@@ -53,6 +53,12 @@ namespace Flower.Manager
         // the real-time callback thread to observe without locking.
         void ApplyEqualizer(Equalizer? equalizer);
 
+        // Swaps in new prebuffer/fade/ramp timings - see AudioTimingSettings.
+        // Same contract as ApplyEqualizer: safe from any thread, published
+        // atomically, picked up by the render callback on its next pass, so a
+        // change takes effect without restarting playback.
+        void ApplyTiming(AudioTimingSettings timing);
+
         void Resume();
         void Pause();
         void Stop();

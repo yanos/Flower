@@ -56,6 +56,13 @@ public class BrowserPlayReportingTests : PinnedDataDirectory
             NullLogger<PlaylistControlViewModel>.Instance,
             new ImmediateStreamUrls());
 
+        // The play-count/resume-position writes are deliberately handed off
+        // the LibVLC decode callback thread (see
+        // PlaylistControlViewModel.OffPlaybackThread); run them inline so a
+        // test asserting straight after RaiseEndReached() isn't racing the
+        // pool - and so no stray pool item outlives the test.
+        playback.OffPlaybackThread = work => work();
+
         return (playback, audio, reporter, placeholder);
     }
 

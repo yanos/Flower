@@ -144,7 +144,9 @@ namespace Flower.Manager
 
         public long Length => (long)(Interop.GetDuration() * 1000);
 
-        public void Play(Track track)
+        // immediate is ignored: the <audio> element has no buffered tail of
+        // its own to preserve - see IAudioManager.Play.
+        public void Play(Track track, bool immediate = true)
         {
             _endReachedFired = false;
             Interop.SetSrc(track.Path ?? string.Empty);
@@ -185,6 +187,12 @@ namespace Flower.Manager
 
         // No in-browser EQ in v1 - see class remarks.
         public void ApplyEqualizer(Equalizer? equalizer)
+        {
+        }
+
+        // Nothing here renders PCM itself - the <audio> element owns the
+        // buffering and the output stage - so there is no timing to apply.
+        public void ApplyAudioTiming(AudioTimingSettings timing)
         {
         }
 

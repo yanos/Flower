@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 
@@ -211,6 +212,221 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         Assert.True(
             bFrames > stagingCapacity / GaplessFormat.BytesPerFrame * 2,
             $"only {bFrames} frames of B came through - about the size of the staged backlog, so the promoted decoder stopped producing after the handover");
+
+        coordinator.Dispose();
+        sink.Dispose();
+    }
+
+    // The known-perfect-PCM comparison SyntheticWav's own header comment has
+    // always described ("what TrackDecoder produces should be byte-identical
+    // to what's written here") and nothing actually did. Everything else in
+    // this file checks that the right *marker* came out; this checks that
+    // every sample did.
+    //
+    // The fixture is written at GaplessFormat's own rate and channel count, so
+    // LibVLC has nothing to resample or channel-mix and the decode is a pure
+    // container unwrap - which is exactly why any difference here is a defect
+    // in the pipeline rather than a property of the codec.
+    [Fact]
+    public void A_decoded_track_is_bit_identical_to_the_file_it_came_from()
+    {
+        var duration = TimeSpan.FromSeconds(1);
+        var expected = SyntheticWav.Build(duration, SyntheticWav.Ramp());
+        var track = MakeTrack(SyntheticWav.CreateFile(_tempDir, "exact.wav", duration, SyntheticWav.Ramp()), duration);
+
+        var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var sink = new FakeAudioSink();
+        sink.Start(sharedRing);
+        sink.Resume();
+
+        var drained = new ManualResetEventSlim(false);
+        coordinator.EndReached += _ => drained.Set();
+
+        coordinator.Play(track);
+
+        Assert.True(drained.Wait(TimeSpan.FromSeconds(15)), "the track never finished decoding");
+
+        // Everything decoded has to make it through the ring before the pump
+        // is stopped, or the comparison is against a truncated capture.
+        Assert.True(
+            SpinWait.SpinUntil(() => sink.CapturedCount >= expected.Length - 44, TimeSpan.FromSeconds(15)),
+            $"only {sink.CapturedCount} of {expected.Length - 44} bytes were rendered");
+        sink.Pause();
+
+        // The WAV's data chunk starts at byte 44 - see SyntheticWav.
+        Pcm.AssertBitExact(expected.AsSpan(44), sink.Captured);
+
+        coordinator.Dispose();
+        sink.Dispose();
+    }
+
+    // Natural_handover_... above only proves B eventually appears and never
+    // reverts, which a 200ms hole in the middle of A satisfies perfectly well.
+    // This is the actual gapless claim: B's first frame lands at exactly the
+    // frame A's last one occupied, with no silence and no overlap.
+    [Fact]
+    public void A_handover_puts_Bs_first_frame_exactly_where_As_last_one_ended()
+    {
+        var durationA = TimeSpan.FromSeconds(1);
+        var durationB = TimeSpan.FromSeconds(1);
+        const byte markerA = 55;
+        const byte markerB = 66;
+        var trackA = MakeTrack(SyntheticWav.CreateFile(_tempDir, "exact-a.wav", durationA, SyntheticWav.Marker(markerA)), durationA);
+        var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "exact-b.wav", durationB, SyntheticWav.Marker(markerB)), durationB);
+
+        var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var sink = new FakeAudioSink();
+        sink.Start(sharedRing);
+        sink.Resume();
+
+        coordinator.Play(trackA);
+        coordinator.SetUpcoming(trackB);
+
+        var targetBytes = (long)((durationA.TotalSeconds + 0.3) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        Assert.True(SpinWait.SpinUntil(() => sink.CapturedCount >= targetBytes, TimeSpan.FromSeconds(15)));
+        sink.Pause();
+
+        var captured = sink.Captured;
+        var samples = Pcm.AsSamples(captured);
+        var frames = samples.Length / (int)GaplessFormat.Channels;
+
+        var aFrames = 0;
+        int? firstBFrame = null;
+        for (var i = 0; i < frames; i++)
+        {
+            var sample = samples[i * (int)GaplessFormat.Channels];
+            if (sample == markerA)
+            {
+                aFrames++;
+                Assert.Null(firstBFrame);
+            }
+            else if (sample == markerB)
+            {
+                firstBFrame ??= i;
+            }
+            else
+            {
+                Assert.Fail($"frame {i} is neither track's marker but {sample} - a gap or corruption at the splice");
+            }
+        }
+
+        Assert.NotNull(firstBFrame);
+
+        // The whole of A, and B starting on the very next frame. Exact: a
+        // handover that dropped or duplicated even one frame fails here.
+        var expectedAFrames = (int)(durationA.TotalSeconds * GaplessFormat.SampleRate);
+        Assert.Equal(expectedAFrames, aFrames);
+        Assert.Equal(expectedAFrames, firstBFrame);
+
+        coordinator.Dispose();
+        sink.Dispose();
+    }
+
+    // Marker fixtures make a splice legible but hide a discontinuity *inside*
+    // either track. Ramps do not: every frame is its own index, so a dropped
+    // or duplicated block anywhere shows up as a step.
+    [Fact]
+    public void A_handover_between_ramp_fixtures_has_no_step_discontinuity()
+    {
+        var duration = TimeSpan.FromSeconds(1);
+        var trackA = MakeTrack(SyntheticWav.CreateFile(_tempDir, "ramp-a.wav", duration, SyntheticWav.Ramp()), duration);
+        var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "ramp-b.wav", duration, SyntheticWav.Ramp()), duration);
+
+        var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var sink = new FakeAudioSink();
+        sink.Start(sharedRing);
+        sink.Resume();
+
+        coordinator.Play(trackA);
+        coordinator.SetUpcoming(trackB);
+
+        var targetBytes = (long)((duration.TotalSeconds + 0.3) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        Assert.True(SpinWait.SpinUntil(() => sink.CapturedCount >= targetBytes, TimeSpan.FromSeconds(15)));
+        sink.Pause();
+
+        var captured = sink.Captured;
+
+        // Every frame of a ramp fixture is exactly one more than the frame
+        // before it, per channel - in Int16 arithmetic, so the ramp crossing
+        // 32767 into -32768 is still a step of +1 and not a discontinuity.
+        // The only legitimate exception in the whole capture is the single
+        // frame where B restarts its own ramp at zero, which is one step per
+        // channel.
+        var samples = Pcm.AsSamples(captured);
+        var channels = (int)GaplessFormat.Channels;
+        var discontinuities = new List<string>();
+        for (var i = channels; i < samples.Length; i++)
+        {
+            var step = unchecked((short)(samples[i] - samples[i - channels]));
+            if (step != 1)
+                discontinuities.Add($"sample {i} (frame {i / channels}): {samples[i - channels]} -> {samples[i]}");
+        }
+
+        Assert.True(
+            discontinuities.Count == channels,
+            $"expected exactly one discontinuity (the splice), one per channel, but found {discontinuities.Count}: "
+            + string.Join("; ", discontinuities));
+    }
+
+    // Seek used to leave up to a full shared ring of pre-seek audio in front
+    // of the render callback, because the flush waited on LibVLC's own
+    // asynchronous OnFlush. RenderStarvationTests covers the mechanism without
+    // LibVLC; this proves the real decoder's flush and the coordinator's
+    // synchronous one agree.
+    [Fact]
+    public void A_seek_lands_near_the_requested_offset_with_no_pre_seek_audio_after_it()
+    {
+        var duration = TimeSpan.FromSeconds(4);
+        var track = MakeTrack(SyntheticWav.CreateFile(_tempDir, "seek.wav", duration, SyntheticWav.Ramp()), duration);
+
+        var sharedRing = new GaplessRingBuffer(2 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var sink = new FakeAudioSink();
+        sink.Start(sharedRing);
+        sink.Resume();
+
+        coordinator.Play(track);
+
+        // Let a good chunk of the head play, so there is real pre-seek audio
+        // to leak if the flush is late.
+        Assert.True(
+            SpinWait.SpinUntil(
+                () => sink.CapturedCount > (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame / 2,
+                TimeSpan.FromSeconds(15)),
+            "the head of the track never played");
+
+        var capturedAtSeek = sink.CapturedCount;
+        coordinator.Seek(0.5f);
+
+        // Half of four seconds is frame 96000, which the ramp renders as
+        // 96000 - 65536 = 30464. The head of the track never reaches that
+        // value, so its appearance is proof the seek actually landed.
+        Assert.True(
+            SpinWait.SpinUntil(
+                () => Math.Abs(coordinator.CurrentTrackBytesProduced) > 0
+                    && sink.CapturedCount > capturedAtSeek + (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame / 4,
+                TimeSpan.FromSeconds(15)),
+            "nothing played after the seek");
+        sink.Pause();
+
+        // Everything captured after Seek() returned, minus the one chunk the
+        // pump may already have had in hand.
+        var after = Pcm.AsSamples(sink.Captured.AsSpan((int)capturedAtSeek));
+        var lowValueFrames = 0;
+        for (var frame = 0; frame < after.Length / (int)GaplessFormat.Channels; frame++)
+        {
+            // The pre-seek head is frames 0..~30000, i.e. small positive
+            // values; the post-seek region is a long way from there.
+            if (after[frame * (int)GaplessFormat.Channels] is > 0 and < 24000)
+                lowValueFrames++;
+        }
+
+        Assert.True(
+            lowValueFrames < (int)GaplessFormat.SampleRate / 10,
+            $"{lowValueFrames} frames of pre-seek audio played after the seek");
 
         coordinator.Dispose();
         sink.Dispose();

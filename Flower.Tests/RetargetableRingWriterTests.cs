@@ -140,13 +140,15 @@ public class RetargetableRingWriterTests
 
         Assert.True(parked.Wait(TimeSpan.FromSeconds(5)), "the parked write kept waiting through a flush");
 
-        // Only what had already gone in before the flush: the flush freed
-        // the room the remaining 32 bytes were waiting for, and they must
-        // not take it. (GaplessRingBuffer.Reset only bumps its generation -
-        // reader and writer rebase lazily - so the bytes written before the
-        // flush are still readable here; what matters is that no more
-        // arrived after it.)
-        Assert.Equal(32, DrainAll(staging).Length);
+        // Nothing at all survives the flush: Reset() discards what was
+        // buffered, and the remaining 32 bytes of the parked chunk must not
+        // take the room it freed. Asserted by writing a fresh, shorter chunk
+        // afterwards and reading back exactly that - a leaked pre-flush
+        // remainder would show up as extra bytes in front of it.
+        Assert.Empty(DrainAll(staging));
+
+        writer.Write(Ramp(16));
+        Assert.Equal(Ramp(16), DrainAll(staging));
     }
 
     [Fact]

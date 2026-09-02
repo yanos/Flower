@@ -161,12 +161,16 @@ namespace Flower.ViewModels
             },
                 h => _audioManager.PositionChanged += h, h => _audioManager.PositionChanged -= h);
 
-            _subscriptions.Add<EventHandler>((s, e) =>
+            // Posted, not run inline: a stop is usually a UI gesture, but not
+            // always - MiniaudioSink raises it from HandleUnexpectedStop when
+            // the output device dies, on a backend thread - and everything
+            // here mutates observable state the view is bound to.
+            _subscriptions.Add<EventHandler>((s, e) => Dispatcher.UIThread.Post(() =>
             {
                 LeavePlayingTrack();
                 OnPropertyChanged(nameof(IsPlaying));
                 CurrentlyPlayingTrack = null;
-            },
+            }),
                 h => _audioManager.Stopped += h, h => _audioManager.Stopped -= h);
 
             // Remembered but not forgotten: a pause is the most likely moment
@@ -180,10 +184,16 @@ namespace Flower.ViewModels
             },
                 h => _audioManager.Paused += h, h => _audioManager.Paused -= h);
 
-            // Synchronous: the play-count write is one indexed UPDATE issued
-            // by Library itself (see its ITrackStore). This used to be async
-            // void over an await on LibraryStore.SaveAsync, on a LibVLC
-            // callback thread.
+            // This handler runs on the LibVLC decode callback thread, at the
+            // exact moment the gapless seam is open: the finished track's
+            // decode is exhausted and only what is left in the shared ring is
+            // still covering the render callback. Anything slow here is heard.
+            // So the queue decision - the only part the advance depends on -
+            // stays inline, and the bookkeeping (a play-count UPDATE that
+            // takes Library's lock, which a background rescan can be holding
+            // for a while, plus a possible resume-position write) is handed to
+            // the pool. See GaplessCoordinator.HandleDrainedOrFaulted, which
+            // primes the ring before raising this for the same reason.
             _subscriptions.Add<EventHandler>((s, e) =>
             {
                 if (CurrentlyPlayingTrack != null)
@@ -203,27 +213,55 @@ namespace Flower.ViewModels
                     // rescan runs on a threadpool thread - see Library._lock) can't land
                     // between "resolve" and "increment" and silently discard it the way a
                     // plain find-then-increment here already proved it could.
-                    // IncrementPlayCount raises Library.TrackStatsChanged and
-                    // persists the new count itself. Deliberately *not* NotifyTrackChanged: the track
-                    // list hasn't changed, only one track's counter, and
-                    // TracksUpdated means a full UI rebuild plus a peer library
-                    // sync - twice per song. See ARCHITECTURE-REVIEW Tier 1.1.
-                    _library.IncrementPlayCount(finishedTrack);
-
                     // Reaching the end is the one way of leaving a track that
                     // must NOT be remembered: a podcast listened to the whole
                     // way through should start at the top next time, not at its
-                    // final second. Cleared before the advance below, so the
-                    // outgoing track is dealt with while it is still the one
-                    // _positionTrack names.
-                    ForgetResumePosition(finishedTrack);
+                    // final second. The in-memory half is cleared here, before
+                    // the advance below, so the outgoing track is dealt with
+                    // while it is still the one _positionTrack names; the
+                    // store write goes with the rest of the bookkeeping.
+                    var hadResumePosition = finishedTrack.ResumePosition != null;
+                    _positionTrack = null;
+                    _lastKnownTimeMs = 0;
 
                     var next = GetUpcomingEntry(finishedTrack, ResolveQueueIndex(finishedTrack));
                     if (next.Track != null)
                     {
                         _logger.LogDebug("Auto-advancing to {Title} (repeat={Repeat}, shuffle={Shuffle})", next.Track.Title, IsRepeatEnabled, IsShuffleEnabled);
-                        Dispatcher.UIThread.Post(() => Play(next.Track, next.Index));
+
+                        // immediate: false - the queue advancing, not the
+                        // user skipping, so whatever the finished track still
+                        // has buffered gets played out rather than cut off.
+                        Dispatcher.UIThread.Post(() => Play(next.Track, next.Index, immediate: false));
                     }
+
+                    // IncrementPlayCount raises Library.TrackStatsChanged and
+                    // persists the new count itself. Deliberately *not* NotifyTrackChanged: the track
+                    // list hasn't changed, only one track's counter, and
+                    // TracksUpdated means a full UI rebuild plus a peer library
+                    // sync - twice per song. See ARCHITECTURE-REVIEW Tier 1.1.
+                    // Caught rather than propagated: this is bookkeeping
+                    // running on a pool thread with nobody to hand an
+                    // exception to, where an unobserved one takes the process
+                    // down.
+                    OffPlaybackThread(() =>
+                    {
+                        try
+                        {
+                            _library.IncrementPlayCount(finishedTrack);
+
+                            // Unconditionally once there is one, not only when
+                            // the option is on: turning the option off should
+                            // not leave a stale position behind to be honoured
+                            // if it is ever turned back on.
+                            if (hadResumePosition)
+                                _library.RecordResumePosition(finishedTrack, null);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Post-playback bookkeeping failed for {Path}", finishedTrack.Path);
+                        }
+                    });
                 }
             },
                 h => _audioManager.EndReached += h, h => _audioManager.EndReached -= h);
@@ -244,10 +282,16 @@ namespace Flower.ViewModels
                 // this one.
                 var next = GetNextEntry(e.Track, ResolveQueueIndex(e.Track));
                 if (next.Track != null && next.Track != e.Track)
-                    Dispatcher.UIThread.Post(() => Play(next.Track, next.Index));
+                    Dispatcher.UIThread.Post(() => Play(next.Track, next.Index, immediate: false));
             },
                 h => _audioManager.TrackFailed += h, h => _audioManager.TrackFailed -= h);
         }
+
+        // How work that must not run on the LibVLC decode callback thread gets
+        // off it - see the EndReached handler above for why. Settable so a
+        // test can run it inline and assert straight after raising the event
+        // instead of racing a threadpool item; nothing in the app changes it.
+        public Action<Action> OffPlaybackThread { get; set; } = work => Task.Run(work);
 
         // Every event this class attaches to in its constructor, paired with
         // its teardown - see SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md
@@ -425,7 +469,11 @@ namespace Flower.ViewModels
         // or -1 for "work it out". It is validated rather than trusted: callers
         // hand over an index into the list they were displaying, which is only
         // the queue because they re-anchored it immediately beforehand.
-        public void Play(Track track, int queueIndex)
+        // immediate says whether this start came from a user gesture or from
+        // the queue advancing on its own - see IAudioManager.Play. Every
+        // public caller is a gesture, so it defaults that way and only the
+        // auto-advance handlers pass false.
+        public void Play(Track track, int queueIndex, bool immediate = true)
         {
             // Worked out against the track as queued - the placeholder - since
             // that is what the queue holds. ResolveForPlayback's copy keeps
@@ -449,7 +497,7 @@ namespace Flower.ViewModels
             var pending = ResolveForPlaybackAsync(track);
             if (!pending.IsCompleted)
             {
-                StartWhenResolved(pending, generation);
+                StartWhenResolved(pending, generation, immediate);
                 return;
             }
 
@@ -465,12 +513,12 @@ namespace Flower.ViewModels
                 return;
             }
 
-            Start(playable);
+            Start(playable, immediate);
         }
 
         // Everything after the track is known to be playable. Split out only so
         // the deferred path below can rejoin here rather than restating it.
-        private void Start(Track track)
+        private void Start(Track track, bool immediate)
         {
             _logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, track.Path);
 
@@ -489,7 +537,7 @@ namespace Flower.ViewModels
             _positionTrack = track.RememberPlaybackPosition ? track : null;
             _lastKnownTimeMs = 0;
 
-            _audioManager.Play(track);
+            _audioManager.Play(track, immediate);
             ApplyVolumeAdjustment(track);
 
             // Arms decode-ahead for whichever track should follow this one,
@@ -514,7 +562,7 @@ namespace Flower.ViewModels
         // resolve safe: pressing Next twice while the first URL is still in
         // flight must not have the first track suddenly take over once it
         // arrives - only the most recent request may still start something.
-        private void StartWhenResolved(Task<Track?> pending, int generation)
+        private void StartWhenResolved(Task<Track?> pending, int generation, bool immediate)
         {
             _ = pending.ContinueWith(resolved => Dispatcher.UIThread.Post(() =>
             {
@@ -525,7 +573,7 @@ namespace Flower.ViewModels
                 }
 
                 if (resolved.IsCompletedSuccessfully && resolved.Result is { } playable)
-                    Start(playable);
+                    Start(playable, immediate);
                 else
                     LogUnplayable(null, resolved);
             }));
@@ -725,18 +773,6 @@ namespace Flower.ViewModels
                 return;
 
             _library.RecordResumePosition(track, TimeSpan.FromMilliseconds(_lastKnownTimeMs));
-        }
-
-        private void ForgetResumePosition(Track track)
-        {
-            _positionTrack = null;
-            _lastKnownTimeMs = 0;
-
-            // Unconditionally, not only when the option is on: turning the
-            // option off should not leave a stale position behind to be honoured
-            // if it is ever turned back on.
-            if (track.ResumePosition != null)
-                _library.RecordResumePosition(track, null);
         }
 
         // The track's own adjustment, handed to the audio manager as an offset

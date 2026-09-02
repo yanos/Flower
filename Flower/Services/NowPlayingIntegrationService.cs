@@ -1,5 +1,7 @@
 using System;
 
+using Avalonia.Threading;
+
 using Microsoft.Extensions.Logging;
 
 using Flower.Manager;
@@ -59,21 +61,28 @@ namespace Flower.Services
 
         public void Dispose() => _subscriptions.Dispose();
 
+        // Onto the UI thread: a hardware media key or an OS transport control
+        // arrives on whichever thread the platform's remote-command centre
+        // uses, and everything below it touches observable ViewModel state the
+        // view is bound to. It was being called straight off that thread.
         private void OnCommandReceived(object? sender, NowPlayingCommand command)
         {
             _logger.LogDebug("Now Playing command received: {Command}", command);
-            switch (command)
+            Dispatcher.UIThread.Post(() =>
             {
-                case NowPlayingCommand.PlayPause:
-                    _playlistControl.PlayOrPause();
-                    break;
-                case NowPlayingCommand.Next:
-                    _playlistControl.Next();
-                    break;
-                case NowPlayingCommand.Previous:
-                    _playlistControl.Previous();
-                    break;
-            }
+                switch (command)
+                {
+                    case NowPlayingCommand.PlayPause:
+                        _playlistControl.PlayOrPause();
+                        break;
+                    case NowPlayingCommand.Next:
+                        _playlistControl.Next();
+                        break;
+                    case NowPlayingCommand.Previous:
+                        _playlistControl.Previous();
+                        break;
+                }
+            });
         }
 
         private void PushMetadata()

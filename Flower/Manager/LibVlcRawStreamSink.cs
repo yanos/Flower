@@ -76,6 +76,12 @@ namespace Flower.Manager
         {
         }
 
+        // No EQ and no output stage here either - LibVLC's own aout owns the
+        // render path in this fallback sink, so there is nothing to tune.
+        public void ApplyTiming(AudioTimingSettings timing)
+        {
+        }
+
         // Output routing was never wired up here: this sink was already
         // superseded by MiniaudioSink before the picker existed, and adding
         // LibVLC's AudioOutputDeviceEnum/Set plumbing to a class kept only as

@@ -105,13 +105,21 @@ public class SmartPlaylistManagementTests
         var (playlists, library, host) = NewSubject();
         var playlist = Smart(library, "Smart");
         playlist.ReplaceAll([T("A"), T("B")]);
-        var before = playlist.UpdatedAt;
+
+        // Subscribed rather than comparing UpdatedAt against a snapshot: both
+        // mutations write DateTimeOffset.UtcNow, and under a loaded parallel
+        // run the two calls can land in the same tick, which made a strict
+        // `>` fail intermittently. Changed is raised by Touch() itself, so it
+        // answers the same question - did this bump UpdatedAt - without
+        // depending on the clock advancing between two adjacent statements.
+        var touched = 0;
+        playlist.Changed += (_, _) => touched++;
 
         await playlists.ConvertToOrdinary(playlist);
 
         Assert.False(playlist.IsSmart);
         Assert.Equal(["A", "B"], playlist.Tracks.Select(t => t.Title));
-        Assert.True(playlist.UpdatedAt > before);
+        Assert.True(touched > 0, "converting to ordinary should bump UpdatedAt");
         Assert.Equal(1, host.SyncsScheduled);
     }
 

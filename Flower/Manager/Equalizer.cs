@@ -1,16 +1,24 @@
 using System;
-using System.Runtime.InteropServices;
 
 namespace Flower.Manager
 {
-    // Real-time-safe 10-band graphic EQ applied in MiniaudioSink.DataCallback.
-    // Pure C# RBJ-cookbook peaking/bell biquads, float-domain, operating
-    // directly on the S16/48kHz/stereo interleaved PCM GaplessFormat fixes
-    // throughout the pipeline (see GaplessRingBuffer). A fresh Equalizer is
-    // built (BuildFrom) on every settings change and atomically swapped into
-    // MiniaudioSink's volatile field - both coefficients and filter delay-line
-    // state reset together, which is the accepted minor-transient-click
-    // tradeoff for a simple live-apply graphic EQ (see AUDIOPHILE-PLAN.md).
+    // Real-time-safe 10-band graphic EQ, run from OutputStage inside
+    // MiniaudioSink's render callback. Pure C# RBJ-cookbook peaking/bell
+    // biquads over interleaved stereo float.
+    //
+    // Float in, float out, and no clipping of its own: it sits in the middle
+    // of OutputStage's float path, which requantises to S16 exactly once at
+    // the very end, with dither and a soft clip. It used to read and write the
+    // S16 buffer directly, rounding and hard-clamping every sample - so a
+    // positive band gain clipped outright, with no headroom and no way for a
+    // later stage to pull it back.
+    //
+    // A fresh Equalizer is still built (BuildFrom) on every settings change
+    // and swapped in atomically, but the swap is no longer heard: OutputStage
+    // crossfades from the outgoing filter's output to the incoming one's
+    // across a single callback, rather than dropping in new coefficients on a
+    // zeroed delay line. That was previously an accepted click (see
+    // AUDIOPHILE-PLAN.md).
     public sealed class Equalizer
     {
         public const int BandCount = 10;
@@ -48,18 +56,22 @@ namespace Flower.Manager
             return new Equalizer(coefficients, Math.Clamp(settings.PreampDb, -MaxGainDb, MaxGainDb));
         }
 
-        // Processes interleaved S16 stereo PCM in place. Called only from
-        // MiniaudioSink.DataCallback (the real-time thread) - no locking, no
-        // allocation, operates directly on the native output Span.
-        public void ProcessInPlace(Span<byte> interleavedS16Stereo)
+        // Processes interleaved stereo float PCM in place. Called only from
+        // OutputStage on the real-time thread - no locking, no allocation,
+        // operates directly on the caller's scratch span.
+        //
+        // The delay lines carry across calls, so callers must feed it every
+        // sample they render, silence-padded underruns included: skipping a
+        // silent region leaves the filter resuming from pre-gap state on the
+        // other side of it, a second discontinuity on top of the gap.
+        public void ProcessInPlace(Span<float> interleavedStereo)
         {
-            var samples = MemoryMarshal.Cast<byte, short>(interleavedS16Stereo);
-            var frameCount = samples.Length / 2;
+            var frameCount = interleavedStereo.Length / 2;
 
             for (var frame = 0; frame < frameCount; frame++)
             {
-                var l = samples[frame * 2] * _preampLinear;
-                var r = samples[frame * 2 + 1] * _preampLinear;
+                var l = interleavedStereo[frame * 2] * _preampLinear;
+                var r = interleavedStereo[frame * 2 + 1] * _preampLinear;
 
                 for (var band = 0; band < BandCount; band++)
                 {
@@ -67,8 +79,8 @@ namespace Flower.Manager
                     r = _coefficients[band].Process(r, ref _right[band]);
                 }
 
-                samples[frame * 2] = (short)Math.Clamp(MathF.Round(l), -32768f, 32767f);
-                samples[frame * 2 + 1] = (short)Math.Clamp(MathF.Round(r), -32768f, 32767f);
+                interleavedStereo[frame * 2] = l;
+                interleavedStereo[frame * 2 + 1] = r;
             }
         }
     }

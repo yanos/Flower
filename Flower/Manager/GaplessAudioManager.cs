@@ -204,12 +204,12 @@ namespace Flower.Manager
 
         public long Length => (long)(_coordinator.CurrentTrack?.Duration.TotalMilliseconds ?? 0);
 
-        public void Play(Track track)
+        public void Play(Track track, bool immediate = true)
         {
             _logger.LogInformation(
-                "Playback requested: {Title} ({Path}), tagged duration {DurationMs}ms",
-                track.Title, track.Path, track.Duration.TotalMilliseconds);
-            _coordinator.Play(track);
+                "Playback requested: {Title} ({Path}), tagged duration {DurationMs}ms, immediate={Immediate}",
+                track.Title, track.Path, track.Duration.TotalMilliseconds, immediate);
+            _coordinator.Play(track, immediate);
             _platformAudioSession?.ActivateForPlayback();
             _sink.Resume();
         }
@@ -235,14 +235,19 @@ namespace Flower.Manager
         public void Stop()
         {
             _logger.LogInformation("Playback stopped at {ElapsedMs}ms; IsPlaying={IsPlaying}", Time, IsPlaying);
+            // Sink first: its stop fades the output down over
+            // TransportFadeMs, and the coordinator's Reset() would leave it
+            // nothing but silence to fade.
             var wasPlaying = _sink.IsPlaying;
-            _coordinator.Stop();
             _sink.Stop();
+            _coordinator.Stop();
             if (wasPlaying)
                 _platformAudioSession?.DeactivateAfterPlayback();
         }
 
         public void ApplyEqualizer(Equalizer? equalizer) => _sink.ApplyEqualizer(equalizer);
+
+        public void ApplyAudioTiming(AudioTimingSettings timing) => _sink.ApplyTiming(timing);
 
         public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => _sink.GetOutputDevices();
 

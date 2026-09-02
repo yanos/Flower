@@ -10,6 +10,9 @@ using Flower.Persistence;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 
+using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
+
 using Xunit;
 
 namespace Flower.Tests;
@@ -48,13 +51,21 @@ public class TrackPlaybackOptionsTests : IDisposable
     private static PlaylistControlViewModel MakeViewModel(List<Track> tracks, out FakeAudioManager audio, bool shuffle = false)
     {
         audio = new FakeAudioManager();
-        return new PlaylistControlViewModel(
+        var vm = new PlaylistControlViewModel(
             audio,
             new MainPlaylist(tracks),
             new Library(tracks),
             new AppSettings { IsShuffleEnabled = shuffle },
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance),
             NullLogger<PlaylistControlViewModel>.Instance);
+
+        // The play-count/resume-position writes are deliberately handed off
+        // the LibVLC decode callback thread (see
+        // PlaylistControlViewModel.OffPlaybackThread); run them inline so a
+        // test asserting straight after RaiseEndReached() isn't racing the
+        // pool - and so no stray pool item outlives the test.
+        vm.OffPlaybackThread = work => work();
+        return vm;
     }
 
     // ── Skip when shuffling ────────────────────────────────────────────────
@@ -238,7 +249,10 @@ public class TrackPlaybackOptionsTests : IDisposable
     // EffectiveVolume - what the sink is actually driven with - plus Volume
     // staying exactly where the user left it.
 
-    [Fact]
+    // [AvaloniaFact] rather than [Fact]: the Stopped handler is posted to the
+    // dispatcher (see PlaylistControlViewModel), so this needs a real one to
+    // pump.
+    [AvaloniaFact]
     public void A_tracks_volume_adjustment_is_applied_on_start_and_taken_off_at_the_end()
     {
         var quiet = T("Quiet");
@@ -252,6 +266,10 @@ public class TrackPlaybackOptionsTests : IDisposable
         Assert.Equal(60, audio.Volume);
 
         audio.RaiseStopped();
+        // Stopped is marshalled onto the dispatcher now - it can arrive from
+        // the sink's backend thread when the output device dies - so the
+        // handler has to be pumped before asserting on what it did.
+        Dispatcher.UIThread.RunJobs();
         Assert.Equal(60, audio.EffectiveVolume);
         Assert.Equal(60, audio.Volume);
     }
