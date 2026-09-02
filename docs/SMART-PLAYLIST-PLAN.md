@@ -5,8 +5,8 @@ A playlist defined by a query ("genre is Jazz, added in the last 30 days,
 limit 25 by least recently played") that re-evaluates itself instead of
 holding a hand-picked list.
 
-**Phases 1 (the engine), 2 (persistence) and 3 (recomputation) are built and
-tested; phases 4 (UI) and 5 (sync + server) are not started.**
+**Phases 1 (the engine), 2 (persistence), 3 (recomputation) and 4 (UI) are
+built and tested; phase 5 (sync + server) is not started.**
 The rest is the design, and the reasoning behind the parts that were not
 obvious.
 
@@ -276,11 +276,17 @@ fields, commit 2a77501): a rows-of-conditions list, each row Field /
 Operator / Value with the value control chosen by the field's type, an
 All/Any header, a limit row, and a live-updating checkbox.
 
-Sidebar and list behaviour is the part that is easy to forget:
-`MainViewModel` must refuse drag-drop onto a smart playlist, refuse reorder
-within one, and hide "Remove from playlist" — every one of those edits would
-be silently undone by the next recompute. A distinct sidebar icon so the
-difference is visible before the user tries.
+Sidebar and list behaviour is the part that is easy to forget: drag-drop onto
+a smart playlist, reorder within one, and removing a track from one would all
+be silently undone by the next recompute. The refusals live in
+`PlaylistManagementViewModel.AddTracks`/`ReorderTrack`, not in the view, because
+the sidebar drop, the Add To Playlist menu and the mobile view all arrive
+there — the UI hiding the affordance is then a courtesy rather than the only
+thing standing between a user and a confusing no-op. (There is no "Remove from
+playlist" command in the app at all yet, so there was nothing to hide; when one
+is added it belongs behind the same guard.) A distinct sidebar icon
+(`PlaylistStar`, via `SidebarItem.IconFor`) so the difference is visible before
+the user tries.
 
 "Convert to ordinary playlist" (freeze the current contents, drop the rules)
 is a one-liner and worth having; the reverse is not offered.
@@ -344,12 +350,40 @@ is a one-liner and worth having; the reverse is not offered.
    25 songs each time — reshuffling itself under a listener partway through it.
    Seeded from the id, the same candidate set always yields the same pick, so
    the contents only move when the library does.
-4. **UI.** Editor window, sidebar icon, disabled mutations.
+4. **UI.** ✅ Done. `SmartPlaylistEditorViewModel` +
+   `SmartConditionRowViewModel` (rows, the All/Any header, the limit line, live
+   updating, save/cancel), `Views/SmartPlaylistEditorWindow.axaml(.cs)` as a
+   modal dialog over them, `SmartPlaylistLabels` in `Flower.Core` naming the
+   operators and units, `SidebarItem.IconFor`, the two refusals in
+   `PlaylistManagementViewModel`, and `CreateSmart`/`ConvertToOrdinary`.
+   Reachable from the sidebar's context menu (Edit Rules… / Convert to Ordinary
+   Playlist on a smart row, New Smart Playlist… on the header or empty space)
+   and the Playlist app menu. 36 tests across
+   `SmartPlaylistEditorViewModelTests` and `SmartPlaylistManagementTests`.
+
+   Four things the writing settled. **The editor knows nothing about windows**,
+   including that cancelling a playlist created solely to be edited deletes it
+   again — which is what let all of it be tested without `Avalonia.Headless`.
+   **A new smart playlist starts ordinary** and becomes smart only when the
+   editor saves rules onto it, so the editor is an editor over an existing
+   playlist rather than a two-mode create-or-edit thing. **Save calls
+   `RefreshOne` as well as `Schedule`**, because a `LiveUpdating = false`
+   playlist is left out of the recurring pass entirely and would otherwise sit
+   empty forever. And **`MainViewModel` subscribes to
+   `SmartPlaylistRefresher.Refreshed`** — a recompute deliberately does not
+   raise `PlaylistsChanged`, so that event is the only signal that the list
+   currently on screen is out of date.
+
+   One thing the compiler settled: the option lists a `ComboBox` binds
+   (`Fields`, `Operators`, the unit and selector tables) are exposed as instance
+   properties, because a compiled binding resolves its path against
+   `x:DataType`'s instance members and cannot reach a static one.
 5. **Sync + server.** DTO field, planner assertions, `updatePlaylist`
    rejection.
 
-Phases 1–3 are shippable without 4 (rules created in tests only), but there
-is no reason to stop there.
+Phase 5 is what is left: rules do not yet cross the wire, so a smart playlist
+syncs as whatever tracks it currently holds and arrives at the peer as an
+ordinary one.
 
 ## Testing
 

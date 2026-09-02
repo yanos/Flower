@@ -6,8 +6,6 @@ using System.Threading.Tasks;
 
 using Flower.Models;
 
-using Material.Icons;
-
 namespace Flower.ViewModels;
 
 // Raised by DeletePlaylistAsync before it actually deletes anything - the view
@@ -103,7 +101,7 @@ public sealed class PlaylistManagementViewModel
         {
             if (editingIds.Contains(pl.Id))
                 continue;
-            _items.Insert(insertAt++, new SidebarItem(SidebarItemKind.Playlist, pl.Name, MaterialIconKind.PlaylistPlay, pl));
+            _items.Insert(insertAt++, new SidebarItem(SidebarItemKind.Playlist, pl.Name, SidebarItem.IconFor(pl), pl));
         }
 
         if (selectedPlaylistId != null)
@@ -124,7 +122,7 @@ public sealed class PlaylistManagementViewModel
         if (_items.All(i => i.Kind != SidebarItemKind.Playlist))
             _items.Add(new SidebarItem(SidebarItemKind.Header, "Playlists"));
 
-        var sidebarItem = new SidebarItem(SidebarItemKind.Playlist, playlist.Name, MaterialIconKind.PlaylistPlay, playlist)
+        var sidebarItem = new SidebarItem(SidebarItemKind.Playlist, playlist.Name, SidebarItem.IconFor(playlist), playlist)
         {
             IsEditing = true
         };
@@ -176,6 +174,16 @@ public sealed class PlaylistManagementViewModel
 
     public Task AddTracks(IEnumerable<Track> tracks, Playlist playlist)
     {
+        // A smart playlist's members are the result of its rules, so an added
+        // track would be silently dropped by the next recompute. Refused here
+        // rather than at each call site (the sidebar drop, the Add To Playlist
+        // menu, the mobile view) so none of them can forget - the UI also hides
+        // the affordance, and this is what makes that a presentation detail
+        // rather than the only thing standing between a user and a confusing
+        // no-op. See docs/SMART-PLAYLIST-PLAN.md, "UI".
+        if (playlist.IsSmart)
+            return Task.CompletedTask;
+
         foreach (var track in tracks)
             playlist.AppendTrack(track);
         if (_host.SelectedSidebarItem?.Playlist == playlist)
@@ -187,6 +195,11 @@ public sealed class PlaylistManagementViewModel
 
     public Task ReorderTrack(Playlist playlist, Track dragged, Track? insertBefore)
     {
+        // Same reasoning as AddTracks: the order of a smart playlist is the
+        // order its rules produced, and a drag would last until the next pass.
+        if (playlist.IsSmart)
+            return Task.CompletedTask;
+
         // Was an open-coded Remove()+Insert() on playlist.Tracks, which bumped
         // neither UpdatedAt nor Changed - so a reorder was invisible to both
         // sync and the save. See Playlist.Tracks.
@@ -195,6 +208,38 @@ public sealed class PlaylistManagementViewModel
 
         if (_host.SelectedSidebarItem?.Playlist == playlist)
             _host.PlaylistContentChanged();
+
+        _host.ScheduleContentSync();
+        return Task.CompletedTask;
+    }
+
+    // A smart playlist starts life ordinary, empty and unnamed-by-the-user, and
+    // becomes smart the moment the editor saves rules onto it. That ordering is
+    // what lets the editor be an ordinary editor over an existing playlist
+    // rather than a two-mode thing that sometimes creates and sometimes edits -
+    // and SmartPlaylistEditorViewModel.Cancel is what removes it again if the
+    // user changes their mind.
+    public Playlist CreateSmart()
+    {
+        var playlist = new Playlist("New Smart Playlist", new List<Track>());
+        _library.AddPlaylist(playlist);
+        RefreshSidebarItems();
+
+        _host.SelectedSidebarItem = _items.FirstOrDefault(i => i.Playlist == playlist);
+        return playlist;
+    }
+
+    // Freeze what the rules currently produced and forget them - the playlist
+    // keeps exactly the songs it is showing and becomes hand-editable. A real
+    // user edit, so unlike a recompute it bumps UpdatedAt and syncs. The
+    // reverse is not offered: there is nothing to turn a hand-picked list into.
+    public Task ConvertToOrdinary(Playlist playlist)
+    {
+        if (!playlist.IsSmart)
+            return Task.CompletedTask;
+
+        playlist.Rules = null;
+        RefreshSidebarItems();
 
         _host.ScheduleContentSync();
         return Task.CompletedTask;

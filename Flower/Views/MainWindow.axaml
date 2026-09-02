@@ -50,6 +50,7 @@
         <NativeMenuItem.Menu>
           <NativeMenu>
             <NativeMenuItem Header="New Playlist" Command="{Binding NewPlaylistCommand}"/>
+            <NativeMenuItem Header="New Smart Playlist…" Command="{Binding NewSmartPlaylistCommand}"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Rename Playlist" Command="{Binding RenamePlaylistCommand}"/>
             <NativeMenuItem Header="Delete Playlist" Command="{Binding DeletePlaylistCommand}"/>

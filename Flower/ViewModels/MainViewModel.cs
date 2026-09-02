@@ -68,6 +68,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public ICommand? OpenLogWindowCommand        { get; private set; }
     public ICommand? OpenEqualizerWindowCommand  { get; private set; }
     public ICommand? NewPlaylistCommand          { get; private set; }
+    public ICommand? NewSmartPlaylistCommand     { get; private set; }
     public ICommand? RenamePlaylistCommand       { get; private set; }
     public ICommand? DeletePlaylistCommand       { get; private set; }
     public ICommand? ToggleAlbumExpandedCommand  { get; private set; }
@@ -97,6 +98,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public event EventHandler? EqualizerWindowRequested;
     public event EventHandler<Track>? NavigateToTrackRequested;
     public event EventHandler<PlaylistConflictEventArgs>? PlaylistConflictRequested;
+
+    // The view is asked to put the rule editor on screen; nothing here knows
+    // what a window is. IsNew tells it that cancelling should also undo the
+    // playlist that was created to hold the rules - see
+    // SmartPlaylistEditorViewModel.Cancel.
+    public event EventHandler<SmartPlaylistEditorEventArgs>? SmartPlaylistEditorRequested;
 
     // Forwards PairedServerReachability.Changed - see the constructor's own
     // subscription to it. Lets MobileMainViewModel (SearchSongResults, a row
@@ -1089,9 +1096,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // though for a different reason on the other side: a test that only
         // wants a MainViewModel should not have to stand up the log buffer and
         // the settings store to get one.
-        LogViewModel? log = null)
+        LogViewModel? log = null,
+        // Trailing + defaulted for the same reason as log above: nothing in a
+        // MainViewModel test needs smart playlists recomputing, and the rule
+        // editor is the only thing that asks for this.
+        SmartPlaylistRefresher? smartPlaylists = null)
     {
         Library                = library;
+        SmartPlaylists         = smartPlaylists;
         _playlistControlViewModel = playlistControlViewModel;
         Volume                 = volume;
         OutputDevice           = outputDevice;
@@ -1130,6 +1142,25 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e),
             h => Playlists.DeleteConfirmationRequested += h, h => Playlists.DeleteConfirmationRequested -= h);
 
+        // A recompute changes a playlist's contents without going through
+        // PlaylistsChanged (deliberately - see Library.SavePlaylists), so this
+        // is the only signal that the list on screen is now out of date. Only
+        // the playlist actually being shown matters; the rest will be right
+        // whenever they are next selected. Marshalled because a pass runs on
+        // whichever thread its debounce timer completed on.
+        if (smartPlaylists != null)
+        {
+            _subscriptions.Add<EventHandler<SmartPlaylistsRefreshedEventArgs>>(
+                (_, e) =>
+                {
+                    if (_selectedSidebarItem?.Playlist is not { } shown || !e.Changed.Contains(shown))
+                        return;
+
+                    Dispatcher.UIThread.Post(ScheduleFilter);
+                },
+                h => smartPlaylists.Refreshed += h, h => smartPlaylists.Refreshed -= h);
+        }
+
         OpenAppDataLocationCommand  = new RelayCommand(OpenAppDataLocation);
         RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
         SortByColumnCommand         = new RelayCommand<string>(Browser.SortByColumn);
@@ -1138,6 +1169,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OpenLogWindowCommand        = new RelayCommand(() => LogWindowRequested?.Invoke(this, EventArgs.Empty));
         OpenEqualizerWindowCommand  = new RelayCommand(() => EqualizerWindowRequested?.Invoke(this, EventArgs.Empty));
         NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));
+        NewSmartPlaylistCommand     = new RelayCommand(NewSmartPlaylist);
         PlayOrPauseCommand          = new RelayCommand(PlayOrPauseFromCurrentView);
         NextTrackCommand            = new RelayCommand(_playlistControlViewModel.Next);
         PreviousTrackCommand        = new RelayCommand(_playlistControlViewModel.Previous);
@@ -1508,7 +1540,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Playlists"));
             foreach (var pl in Library.Playlists)
-                _sidebarItems.Add(new SidebarItem(SidebarItemKind.Playlist, pl.Name, MaterialIconKind.PlaylistPlay, pl));
+                _sidebarItems.Add(new SidebarItem(SidebarItemKind.Playlist, pl.Name, SidebarItem.IconFor(pl), pl));
         }
 
         // The paired server's row is pinned in place for the whole session
@@ -1687,6 +1719,35 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore) =>
         Playlists.ReorderTrack(playlist, dragged, insertBefore);
+
+    // ── Smart playlists ───────────────────────────────────────────────────
+
+    // Null on Flower.Web/WASM and in tests that did not ask for one - see the
+    // constructor. Everything below no-ops without it rather than offering a
+    // rule editor that cannot recompute what it saves.
+    public SmartPlaylistRefresher? SmartPlaylists { get; }
+
+    // Creates an ordinary, empty playlist and opens the editor on it. It only
+    // becomes smart when the editor saves rules onto it, and cancelling removes
+    // it again - see PlaylistManagementViewModel.CreateSmart.
+    public void NewSmartPlaylist()
+    {
+        if (SmartPlaylists is null)
+            return;
+
+        var playlist = Playlists.CreateSmart();
+        SmartPlaylistEditorRequested?.Invoke(this, new SmartPlaylistEditorEventArgs(playlist, IsNew: true));
+    }
+
+    public void EditSmartPlaylist(Playlist playlist)
+    {
+        if (SmartPlaylists is null)
+            return;
+
+        SmartPlaylistEditorRequested?.Invoke(this, new SmartPlaylistEditorEventArgs(playlist, IsNew: false));
+    }
+
+    public Task ConvertPlaylistToOrdinary(Playlist playlist) => Playlists.ConvertToOrdinary(playlist);
 
     // ── IPlaylistManagementHost ───────────────────────────────────────────
 

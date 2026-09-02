@@ -1,0 +1,138 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Flower.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="820" d:DesignHeight="480"
+        x:Class="Flower.Views.SmartPlaylistEditorWindow"
+        x:DataType="vm:SmartPlaylistEditorViewModel"
+        Title="Smart Playlist"
+        Width="860" MinWidth="720"
+        Height="460" MinHeight="360"
+        WindowStartupLocation="CenterOwner">
+
+  <DockPanel Margin="16">
+
+    <!-- Name + "Match all/any of the following rules", the sentence the rows
+         below finish. -->
+    <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+      <Grid ColumnDefinitions="Auto,*">
+        <TextBlock Grid.Column="0" Text="Name" VerticalAlignment="Center" Margin="0,0,10,0" Opacity="0.75"/>
+        <TextBox Grid.Column="1" Text="{Binding Name, Mode=TwoWay}"/>
+      </Grid>
+
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="Match" VerticalAlignment="Center" Opacity="0.75"/>
+        <ComboBox ItemsSource="{Binding MatchModes}"
+                  SelectedItem="{Binding MatchMode, Mode=TwoWay}"
+                  MinWidth="80"/>
+        <TextBlock Text="of the following rules:" VerticalAlignment="Center" Opacity="0.75"/>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Footer: the limit line, live updating, and the two buttons. Docked
+         before the rows so the rows take the leftover height and scroll. -->
+    <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,12,0,0">
+
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <CheckBox Content="Limit to" IsChecked="{Binding LimitEnabled, Mode=TwoWay}" VerticalAlignment="Center"/>
+        <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding LimitEnabled}">
+          <NumericUpDown Value="{Binding LimitAmount, Mode=TwoWay}"
+                         Minimum="1" Maximum="100000" Increment="1"
+                         FormatString="0" Width="110" VerticalAlignment="Center"/>
+          <ComboBox ItemsSource="{Binding LimitUnits}"
+                    SelectedItem="{Binding LimitUnit, Mode=TwoWay}"
+                    MinWidth="100" VerticalAlignment="Center"/>
+          <TextBlock Text="selected by" VerticalAlignment="Center" Opacity="0.75"/>
+          <ComboBox ItemsSource="{Binding LimitSelectors}"
+                    SelectedItem="{Binding LimitSelector, Mode=TwoWay}"
+                    MinWidth="180" VerticalAlignment="Center"/>
+        </StackPanel>
+      </StackPanel>
+
+      <CheckBox Content="Live updating" IsChecked="{Binding LiveUpdating, Mode=TwoWay}"
+                ToolTip.Tip="Keep re-evaluating these rules as the library changes. Off means fill the playlist in once, now, and then leave it alone."/>
+
+      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}"
+                 Foreground="#D45B5B" TextWrapping="Wrap"/>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="Cancel" Click="Cancel_Click" MinWidth="90"/>
+        <Button Content="OK" Click="Ok_Click" MinWidth="90" IsDefault="True"/>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- One row per condition. Every value control lives in the same cell and
+         only the ones matching the current field/operator pairing are visible -
+         see SmartConditionRowViewModel's Show* properties. -->
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl ItemsSource="{Binding Conditions}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:SmartConditionRowViewModel">
+            <Grid ColumnDefinitions="170,190,*,Auto" Margin="0,0,0,6">
+
+              <ComboBox Grid.Column="0" Margin="0,0,6,0" HorizontalAlignment="Stretch"
+                        ItemsSource="{Binding Fields}"
+                        SelectedItem="{Binding Field, Mode=TwoWay}"/>
+
+              <ComboBox Grid.Column="1" Margin="0,0,6,0" HorizontalAlignment="Stretch"
+                        ItemsSource="{Binding Operators}"
+                        SelectedItem="{Binding Operator, Mode=TwoWay}"/>
+
+              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                <TextBox Text="{Binding ValueText, Mode=TwoWay}"
+                         ToolTip.Tip="{Binding ValueHint}"
+                         IsVisible="{Binding ShowValueBox}"
+                         MinWidth="160" VerticalAlignment="Center"/>
+
+                <DatePicker SelectedDate="{Binding DateValue, Mode=TwoWay}"
+                            IsVisible="{Binding ShowDateBox}"
+                            VerticalAlignment="Center"/>
+
+                <TextBlock Text="and" IsVisible="{Binding ShowRangeSeparator}"
+                           VerticalAlignment="Center" Opacity="0.75"/>
+
+                <TextBox Text="{Binding SecondValueText, Mode=TwoWay}"
+                         ToolTip.Tip="{Binding ValueHint}"
+                         IsVisible="{Binding ShowSecondValueBox}"
+                         MinWidth="160" VerticalAlignment="Center"/>
+
+                <DatePicker SelectedDate="{Binding SecondDateValue, Mode=TwoWay}"
+                            IsVisible="{Binding ShowSecondDateBox}"
+                            VerticalAlignment="Center"/>
+
+                <NumericUpDown Value="{Binding RelativeAmount, Mode=TwoWay}"
+                               Minimum="1" Maximum="100000" Increment="1"
+                               FormatString="0" Width="110"
+                               IsVisible="{Binding ShowRelative}"
+                               VerticalAlignment="Center"/>
+
+                <ComboBox ItemsSource="{Binding RelativeUnits}"
+                          SelectedItem="{Binding SelectedRelativeUnit, Mode=TwoWay}"
+                          IsVisible="{Binding ShowRelative}"
+                          MinWidth="110" VerticalAlignment="Center"/>
+
+                <ComboBox ItemsSource="{Binding BoolValues}"
+                          SelectedItem="{Binding BoolValue, Mode=TwoWay}"
+                          IsVisible="{Binding ShowBoolBox}"
+                          MinWidth="90" VerticalAlignment="Center"/>
+
+                <ComboBox ItemsSource="{Binding Playlists}"
+                          SelectedItem="{Binding Playlist, Mode=TwoWay}"
+                          IsVisible="{Binding ShowPlaylistBox}"
+                          MinWidth="200" VerticalAlignment="Center"/>
+              </StackPanel>
+
+              <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                <Button Content="−" Click="RemoveRow_Click" Width="30"
+                        ToolTip.Tip="Remove this rule"/>
+                <Button Content="+" Click="AddRow_Click" Width="30"
+                        ToolTip.Tip="Add a rule below this one"/>
+              </StackPanel>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

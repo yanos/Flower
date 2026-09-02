@@ -123,6 +123,14 @@ public class SidebarItem : ViewModelBase
     public bool ShowReachableIcon   => IsPairedServer && IsReachable;
     public bool ShowUnreachableIcon => IsPairedServer && !IsReachable;
 
+    // The one place a playlist row's glyph is decided, so the three sites that
+    // build one (MainViewModel's initial sidebar, PlaylistManagementViewModel's
+    // refresh and its create) cannot disagree about it. A smart playlist gets a
+    // visibly different icon because the difference is not otherwise apparent
+    // until the user tries to drag a track onto it and nothing happens.
+    public static MaterialIconKind IconFor(Playlist playlist) =>
+        playlist.IsSmart ? MaterialIconKind.PlaylistStar : MaterialIconKind.PlaylistPlay;
+
     public SidebarItem(SidebarItemKind kind, string name, MaterialIconKind icon = MaterialIconKind.MusicNote,
         Playlist? playlist = null, DiscoveredDevice? device = null)
     {

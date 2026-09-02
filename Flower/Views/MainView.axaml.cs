@@ -137,6 +137,7 @@ public partial class MainView : UserControl
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
+            _viewModel.SmartPlaylistEditorRequested -= OnSmartPlaylistEditorRequested;
             StopSpinner();
         }
 
@@ -154,6 +155,7 @@ public partial class MainView : UserControl
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
+            _viewModel.SmartPlaylistEditorRequested += OnSmartPlaylistEditorRequested;
             BuildColumnMenu();
             if (_viewModel.IsBusy)
                 StartSpinner();
@@ -441,7 +443,11 @@ public partial class MainView : UserControl
         if (_viewModel == null)
             return;
 
-        MusicList.AllowReorder = _viewModel.SelectedSidebarItem?.Kind == SidebarItemKind.Playlist;
+        // Not on a smart playlist: its order is whatever its rules produced,
+        // so a drag would be undone by the next recompute - see
+        // PlaylistManagementViewModel.ReorderTrack, which refuses it anyway.
+        MusicList.AllowReorder = _viewModel.SelectedSidebarItem is
+            { Kind: SidebarItemKind.Playlist, Playlist: { IsSmart: false } };
 
         var newKey = _viewModel.CurrentViewKey;
 
@@ -603,10 +609,10 @@ public partial class MainView : UserControl
     {
         if (e.Source is not Visual visual)
             return;
-        if (visual.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not SidebarItem item)
-            return;
         if (_viewModel is not MainViewModel vm)
             return;
+
+        var item = visual.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext as SidebarItem;
 
         _sidebarItemMenu.Items.Clear();
 
@@ -622,6 +628,21 @@ public partial class MainView : UserControl
             var deleteItem = new MenuItem { Header = "Delete Playlist" };
             deleteItem.Click += async (_, _) => await vm.DeletePlaylistAsync(playlist);
             _sidebarItemMenu.Items.Add(deleteItem);
+
+            // Only on a smart playlist, and only when there is a refresher to
+            // recompute what the editor saves - see MainViewModel.SmartPlaylists.
+            if (playlist.IsSmart && vm.SmartPlaylists != null)
+            {
+                _sidebarItemMenu.Items.Add(new Separator());
+
+                var editRulesItem = new MenuItem { Header = "Edit Rules…" };
+                editRulesItem.Click += (_, _) => vm.EditSmartPlaylist(playlist);
+                _sidebarItemMenu.Items.Add(editRulesItem);
+
+                var convertItem = new MenuItem { Header = "Convert to Ordinary Playlist" };
+                convertItem.Click += async (_, _) => await vm.ConvertPlaylistToOrdinary(playlist);
+                _sidebarItemMenu.Items.Add(convertItem);
+            }
         }
         // A rename can only persist against a resolved fingerprint (see
         // DeviceNicknameStore, keyed by fingerprint rather than the mDNS
@@ -633,9 +654,23 @@ public partial class MainView : UserControl
             renameItem.Click += (_, _) => BeginRename(item);
             _sidebarItemMenu.Items.Add(renameItem);
         }
+        // The "Playlists" header, the empty space below the rows, or any row
+        // with no menu of its own. New Smart Playlist… needs a home reachable
+        // on every platform, and the app menu is not one: MainWindow's
+        // NativeMenu is macOS-only (see its own comment), so on Windows and
+        // Linux this is the only way to reach it.
         else
         {
-            return;
+            var newPlaylistItem = new MenuItem { Header = "New Playlist" };
+            newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTrack(null);
+            _sidebarItemMenu.Items.Add(newPlaylistItem);
+
+            if (vm.SmartPlaylists != null)
+            {
+                var newSmartItem = new MenuItem { Header = "New Smart Playlist…" };
+                newSmartItem.Click += (_, _) => vm.NewSmartPlaylist();
+                _sidebarItemMenu.Items.Add(newSmartItem);
+            }
         }
 
         _sidebarItemMenu.Open(SidebarList);
@@ -784,7 +819,15 @@ public partial class MainView : UserControl
         if ((SidebarList.InputHitTest(sidebarPos) as Visual)
             ?.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is
             SidebarItem { Kind: SidebarItemKind.Playlist } item)
-            return new SidebarDropTarget(item, false);
+        {
+            // A smart playlist holds what its rules say and nothing else, so
+            // this is a refusal, not a miss: neither the row's highlight nor
+            // the create-a-new-playlist band below should light up while the
+            // pointer is over it.
+            return item.Playlist is { IsSmart: true }
+                ? new SidebarDropTarget(null, false)
+                : new SidebarDropTarget(item, false);
+        }
 
         if (GetPlaylistsDropBand() is { } band && sidebarPos.Y >= band.Top && sidebarPos.Y < band.Bottom)
             return new SidebarDropTarget(null, true);
@@ -940,10 +983,15 @@ public partial class MainView : UserControl
         newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTracks(tracks);
         addToPlaylistItem.Items.Add(newPlaylistItem);
 
-        if (vm.Library.Playlists.Count > 0)
+        // Smart playlists are left out rather than listed and disabled: adding
+        // to one is not a thing that can be done later or under some condition,
+        // it is not a thing at all (PlaylistManagementViewModel.AddTracks
+        // refuses it), and a greyed row invites the user to wonder why.
+        var targets = vm.Library.Playlists.Where(p => !p.IsSmart).ToList();
+        if (targets.Count > 0)
         {
             addToPlaylistItem.Items.Add(new Separator());
-            foreach (var playlist in vm.Library.Playlists)
+            foreach (var playlist in targets)
             {
                 var target = playlist; // capture
                 var item = new MenuItem { Header = target.Name };
@@ -1193,6 +1241,27 @@ public partial class MainView : UserControl
             return;
         var logWindow = new LogWindow(logViewModel);
         logWindow.Show();
+    }
+
+    // Modal, unlike the EQ and log windows below: the playlist is not yet what
+    // the rules say until OK is pressed, so leaving it open beside a sidebar
+    // showing the old contents would be showing two answers at once.
+    private async void OnSmartPlaylistEditorRequested(object? sender, SmartPlaylistEditorEventArgs e)
+    {
+        if (_viewModel is not MainViewModel vm || vm.SmartPlaylists is not { } refresher)
+            return;
+
+        var editor = new SmartPlaylistEditorWindow(
+            new SmartPlaylistEditorViewModel(e.Playlist, vm.Library, refresher, e.IsNew));
+
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            await editor.ShowDialog(owner);
+        else
+            editor.Show();
+
+        // Both outcomes move the sidebar: a save can rename the playlist and
+        // change its icon, and a cancel on a new one deletes the row outright.
+        vm.Playlists.RefreshSidebarItems();
     }
 
     // Non-modal, same reasoning as OpenLogWindow - the EQ should stay open
