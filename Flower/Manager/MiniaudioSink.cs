@@ -49,7 +49,7 @@ namespace Flower.Manager
         // gain ramping, declick envelope, dithered requantisation. Owned here
         // and driven from DataCallback; see OutputStage for why none of that
         // can be left to miniaudio.
-        private readonly OutputStage _outputStage = new(GaplessFormat.SampleRate);
+        private OutputStage _outputStage = new(GaplessFormat.DefaultSampleRate);
 
         // Prime latch: after a flush the ring is empty and the decoder is
         // still opening the file, so the callback would render a trickle of
@@ -65,6 +65,12 @@ namespace Flower.Manager
         private ma_device* _device;
         private volatile bool _started;
         private bool _disposed;
+
+        // The first opened device establishes the canonical PCM rate for the
+        // lifetime of this sink. An output-device change may need miniaudio to
+        // resample, but changing the rate while current and armed decoders
+        // exist would corrupt timing and playback speed.
+        private bool _hasNegotiatedFormat;
 
         // The output device the user explicitly picked (an opaque base64
         // ma_device_id - see EncodeDeviceId), or null while Flower just
@@ -367,7 +373,12 @@ namespace Flower.Manager
             var config = ma.device_config_init(ma_device_type.ma_device_type_playback);
             config.playback.format = ma_format.ma_format_s16;
             config.playback.channels = GaplessFormat.Channels;
-            config.sampleRate = GaplessFormat.SampleRate;
+            // During the first open, zero asks miniaudio for the endpoint's
+            // native rate. The decoder is configured from that result before
+            // playback begins, leaving LibVLC as the only sample-rate
+            // converter in the chain. Keep that rate on later device changes:
+            // existing current and armed decoders cannot safely change format.
+            config.sampleRate = _hasNegotiatedFormat ? GaplessFormat.SampleRate : 0;
             config.dataCallback = &DataCallback;
             config.notificationCallback = &NotificationCallback;
             config.pUserData = (void*)GCHandle.ToIntPtr(_selfHandle);
@@ -420,6 +431,27 @@ namespace Flower.Manager
             }
 
             _device = device;
+
+            if (!_hasNegotiatedFormat)
+            {
+                var nativeSampleRate = device->sampleRate;
+                if (nativeSampleRate == 0)
+                {
+                    _logger.LogWarning("miniaudio did not report a device sample rate; retaining {SampleRate}Hz", GaplessFormat.SampleRate);
+                }
+                else
+                {
+                    GaplessFormat.ConfigureSampleRate(nativeSampleRate);
+                    // OpenDevice only runs while the output callback is
+                    // stopped, so replacing the stage cannot race it. EQ and
+                    // timing are applied immediately after IAudioManager
+                    // construction.
+                    _outputStage = new OutputStage(nativeSampleRate);
+                    _logger.LogInformation("Using the output device's native {SampleRate}Hz PCM rate", nativeSampleRate);
+                }
+
+                _hasNegotiatedFormat = true;
+            }
 
             // Pinned at unity, deliberately: miniaudio applies its master
             // volume after the data callback as

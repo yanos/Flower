@@ -1,3 +1,5 @@
+using System.Threading;
+
 namespace Flower.Manager
 {
     // The one canonical PCM format every track is decoded to before it ever
@@ -19,7 +21,21 @@ namespace Flower.Manager
     public static class GaplessFormat
     {
         public const string LibVlcFourCc = "S16N";
-        public const uint SampleRate = 48000;
+        // The fallback also keeps test fixtures and headless sinks
+        // deterministic. MiniaudioSink replaces the process's session rate
+        // with the opened output device's native rate before any decoder is
+        // constructed, avoiding its otherwise unavoidable second resample.
+        public const uint DefaultSampleRate = 48000;
+        private static uint _sampleRate = DefaultSampleRate;
+
+        public static uint SampleRate => Volatile.Read(ref _sampleRate);
+
+        internal static void ConfigureSampleRate(uint sampleRate)
+        {
+            if (sampleRate != 0)
+                Volatile.Write(ref _sampleRate, sampleRate);
+        }
+
         public const uint Channels = 2;
         public const int BytesPerSample = 2;
         public const int BytesPerFrame = BytesPerSample * (int)Channels;

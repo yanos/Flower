@@ -152,18 +152,15 @@ track's first byte can reach the ring. Only the 2 s ring covers that, and
 opening the file, so every fresh start underruns for the media-open latency —
 and today plays looped stale audio through it, per (A).
 
-### I. Two sample-rate conversions, the second with a linear interpolator
+### I. Two sample-rate conversions, the second with a linear interpolator — addressed
 
-`GaplessFormat` pins the pipeline to 48 kHz because LibVLC 3.0's `amem` hardcodes
-S16N and the format must not change at a track boundary. So a 44.1 kHz source is
-upsampled to 48 kHz by LibVLC — and then, if the endpoint runs at 44.1 kHz (most
-do), **downsampled back by miniaudio using its default
-`ma_resample_algorithm_linear`, a 4th-order-LPF linear interpolator**
-(`miniaudio.h:42050`, `12180-12184`). `MiniaudioSink.OpenDevice` never overrides
-it. That is a real, permanent fidelity loss on nearly every track, independent of
-the click symptoms.
-
-**Deliberately not fixed in this round** — see "Out of scope" below.
+The original S16 path used to pin the pipeline to 48 kHz, so a 44.1 kHz source
+could be upsampled by LibVLC and then downsampled again by miniaudio's default
+linear resampler. The bounded fix now negotiates `GaplessFormat.SampleRate`
+from the first opened output device before either decoder is constructed. A
+44.1 kHz source on a 44.1 kHz endpoint consequently has only LibVLC's one
+conversion. The negotiated session rate remains fixed when the output device
+changes, so an active or armed decoder never changes timing mid-track.
 
 ### J. Smaller, worth fixing while in there
 
@@ -412,15 +409,12 @@ no LibVLC, CI-runnable)
 
 ### Out of scope this round
 
-**The double resample (finding I).** The fix is to resolve `GaplessFormat`'s
-`SampleRate` once from the opened device's native rate rather than a
-compile-time constant, leaving exactly one SRC in the chain (LibVLC's soxr) and
-taking miniaudio's linear interpolator out of the path. It reworks
-`GaplessFormat`, `TrackDecoder.SetAudioFormat` and the device-change path, and it
-is a steady-state quality ceiling rather than a cause of the reported glitches —
-so it does not belong in the same change. It is the next fidelity item after
-this one; `AUDIOPHILE-PLAN.md` §5 already owns the adjacent
-hi-res/format-pinning question and should carry it.
+**Hi-res/direct output.** The fixed session-rate path still receives S16 PCM
+from LibVLC's `amem` callback, so it cannot preserve a 24-bit source. The
+completed decoder/backend spike is recorded in `AUDIOPHILE-PLAN.md` §5: a
+narrow native FFmpeg façade is the selected route, with direct mode choosing a
+track's native format only when the device accepts it. That is a separate
+format-aware pipeline, not an extension of this quality pass.
 
 ## Files
 

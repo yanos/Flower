@@ -16,7 +16,7 @@ namespace Flower.Tests;
 // scaled to the same +-32768 range the samples occupy there.
 public class EqualizerTests
 {
-    private const uint SampleRate = GaplessFormat.SampleRate;
+    private const uint SampleRate = GaplessFormat.DefaultSampleRate;
 
     private static float[] GenerateSine(double frequencyHz, int frameCount, float amplitude = 0.5f)
     {

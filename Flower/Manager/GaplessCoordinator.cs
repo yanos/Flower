@@ -20,7 +20,7 @@ namespace Flower.Manager
     // spliced directly into the shared ring's write cursor and promoted to
     // "current", so the render sink never sees a gap or a reconfiguration.
     //
-    // EndReached fires at exactly the same moment/meaning VlcAudioManager's
+    // EndReached fires at exactly the same moment/meaning the former VlcAudioManager's
     // did: once per track, when its decode is exhausted - regardless of
     // whether a gapless handover happened underneath it. This is what lets
     // PlaylistControlViewModel's existing EndReached handler (play-count,
@@ -34,7 +34,8 @@ namespace Flower.Manager
         // well ahead of playback without unbounded memory growth. Doesn't
         // rely on any assumption about how fast LibVLC's callback-mode
         // decode paces itself relative to real time.
-        public const int DefaultStagingCapacityBytes = 60 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
+        public static int DefaultStagingCapacityBytes =>
+            60 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
 
         // Only ever non-default in tests, which shrink it so decode-ahead
         // fills it in a fraction of a second - the "staging ring already
@@ -147,7 +148,7 @@ namespace Flower.Manager
             GaplessRingBuffer sharedRing,
             ILogger<GaplessCoordinator>? logger = null,
             ILogger<TrackDecoder>? trackDecoderLogger = null,
-            int stagingCapacityBytes = DefaultStagingCapacityBytes)
+            int stagingCapacityBytes = 0)
             : this(sharedRing, (track, ring) => new TrackDecoder(libVLC, track, ring, trackDecoderLogger), logger, stagingCapacityBytes)
         {
             _secondCore = new LibVLC();
@@ -169,9 +170,9 @@ namespace Flower.Manager
             GaplessRingBuffer sharedRing,
             Func<Track, GaplessRingBuffer, ITrackDecoder> decoderFactory,
             ILogger<GaplessCoordinator>? logger = null,
-            int stagingCapacityBytes = DefaultStagingCapacityBytes)
+            int stagingCapacityBytes = 0)
         {
-            _stagingCapacityBytes = stagingCapacityBytes;
+            _stagingCapacityBytes = stagingCapacityBytes == 0 ? DefaultStagingCapacityBytes : stagingCapacityBytes;
             _sharedRing = sharedRing;
             _currentDecoderFactory = decoderFactory;
             _armedDecoderFactory = decoderFactory;

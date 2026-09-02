@@ -27,8 +27,6 @@ namespace Flower.Manager
         // and the render sink to absorb normal scheduling jitter; the real
         // decode-ahead buffering for gapless transitions happens in each
         // TrackDecoder's own staging ring (see GaplessCoordinator), not here.
-        private const int RingCapacityBytes = 2 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
-
         private readonly GaplessRingBuffer _sharedRing;
         private readonly GaplessCoordinator _coordinator;
         private readonly IAudioSink _sink;
@@ -54,7 +52,7 @@ namespace Flower.Manager
             ILogger<GaplessAudioManager> logger,
             ILogger<GaplessCoordinator>? coordinatorLogger = null,
             ILogger<TrackDecoder>? trackDecoderLogger = null)
-            : this(new GaplessRingBuffer(RingCapacityBytes), libVLC, sink, logger, coordinatorLogger, trackDecoderLogger)
+            : this(StartSink(sink), libVLC, sink, logger, coordinatorLogger, trackDecoderLogger)
         {
         }
 
@@ -65,8 +63,19 @@ namespace Flower.Manager
             ILogger<GaplessAudioManager> logger,
             ILogger<GaplessCoordinator>? coordinatorLogger,
             ILogger<TrackDecoder>? trackDecoderLogger)
-            : this(sharedRing, new GaplessCoordinator(libVLC, sharedRing, coordinatorLogger, trackDecoderLogger), sink, logger)
+            : this(sharedRing, new GaplessCoordinator(libVLC, sharedRing, coordinatorLogger, trackDecoderLogger), sink, logger, sinkAlreadyStarted: true)
         {
+        }
+
+        private static GaplessRingBuffer StartSink(IAudioSink sink)
+        {
+            // The device tells MiniaudioSink its native rate during Start.
+            // Allocate for the conservative 48k fallback first; 44.1k gets a
+            // little more than two seconds of headroom, higher-rate devices a
+            // little less, without delaying the native-rate negotiation.
+            var ring = new GaplessRingBuffer(2 * (int)GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerFrame);
+            sink.Start(ring);
+            return ring;
         }
 
         // Lets tests substitute a GaplessCoordinator built against a fake
@@ -80,7 +89,8 @@ namespace Flower.Manager
             GaplessCoordinator coordinator,
             IAudioSink sink,
             ILogger<GaplessAudioManager> logger,
-            IPlatformAudioSession? platformAudioSession = null)
+            IPlatformAudioSession? platformAudioSession = null,
+            bool sinkAlreadyStarted = false)
         {
             _sink = sink;
             _logger = logger;
@@ -128,9 +138,10 @@ namespace Flower.Manager
             _sink.Paused += (_, e) => Paused?.Invoke(this, e);
             _sink.Stopped += (_, e) => Stopped?.Invoke(this, e);
             _userVolume = _sink.Volume;
-            _sink.Start(_sharedRing);
+            if (!sinkAlreadyStarted)
+                _sink.Start(_sharedRing);
 
-            // VlcAudioManager's single MediaPlayer used to raise
+            // The former VlcAudioManager's single MediaPlayer used to raise
             // PositionChanged on its own as it played; splitting decode from
             // render means nothing does that automatically anymore, so this
             // polls CurrentlyPlayingControlViewModel's seek bar/elapsed-time

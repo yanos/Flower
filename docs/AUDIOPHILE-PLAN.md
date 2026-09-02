@@ -7,7 +7,7 @@ Five requested features: gapless playback, multi-channel/hi-res sample rate supp
 Items #2 and #5 below are written against LibVLC as the *output* stage — its
 `aout` modules, its `file-caching`, its device selection. That stopped being
 true. LibVLC is decode-only now: every platform renders through `MiniaudioSink`
-pulling canonical S16/48k/stereo PCM out of `GaplessRingBuffer`. Neither item is
+pulling canonical S16/native-rate/stereo PCM out of `GaplessRingBuffer`. Neither item is
 wrong about *what the user wants*; both are wrong about where the knob lives, so
 each needs re-scoping against miniaudio before it is actionable. #1 already hit
 this and was re-scoped when it was built; #6 hit it and was built somewhere else
@@ -15,7 +15,7 @@ entirely.
 
 ## Key findings
 
-- Today's stack: one plain `VlcAudioManager` (`Flower/Manager/VlcAudioManager.cs`) — no equalizer, no preloading, no output-format config. Auto-advance only starts the next track after `EndReached`, so the gap includes full demux/codec-open latency.
+- Historical baseline: one plain `VlcAudioManager` — no equalizer, no preloading, no output-format config. Auto-advance only started the next track after `EndReached`, so the gap included full demux/codec-open latency.
 - Confirmed in installed `LibVLCSharp.dll` (3.10.0): `SetEqualizer(null)`/`UnsetEqualizer()` is a **true bypass**, not a flat 0dB filter. `SetAudioCallbacks`/`SetAudioFormat` exist (same seam `AIRPLAY-BLUETOOTH-PLAN.md` uses). No independent "pass multichannel through untouched" toggle exists in the API. **No longer the implementation path for #1 below** — this API applied to `LibVlcRawStreamSink`'s render `MediaPlayer`, which every platform's render path has since moved off (see `MiniaudioSink`'s own class comment); the finding itself still stands as a fact about LibVLC, just not one anything in this codebase calls anymore.
 - Confirmed in `TagLibSharp.dll` (2.3.0): `.ape` and `.dsf` tag reading works today via the existing `TagLib.File.Create` call; `.dff` (DSDIFF) is not supported by this version.
 - **Confirmed by inspecting the installed macOS VLC's native plugin directory: no Monkey's Audio or DSD demux/decode plugins exist.** Mainline VLC does not ship native `.ape`/`.dsf` playback support — a real gap, not an assumption. Android/iOS's LibVLC NuGets haven't been checked yet and could be in the same position.
@@ -55,11 +55,81 @@ better outcome than one that ships and then has to be unpicked.
 
 ## 5. Multi-channel / hi-res passthrough — Medium effort, Medium risk
 
-**Now also owns the double-resample problem, which is the next fidelity item and is not hypothetical.** `GaplessFormat` pins the whole pipeline to 48kHz as a compile-time constant, because a track boundary must never be a format change. So a 44.1kHz source — most of a library — is resampled up to 48kHz by LibVLC, and then, whenever the endpoint's own rate is 44.1kHz (most of them), resampled back down by miniaudio using its default `ma_resample_algorithm_linear`, a 4th-order-LPF linear interpolator. `MiniaudioSink.OpenDevice` never overrides it. That is two conversions where there should be one, the second with the weaker resampler, on nearly every track.
+**The bounded double-resample slice is done.** At sink initialization, `MiniaudioSink.OpenDevice` asks miniaudio for the endpoint's native rate, then configures `GaplessFormat` before either decoder is constructed. A 44.1kHz source on a 44.1kHz endpoint is consequently converted once by LibVLC, rather than first to fixed 48kHz and then again by miniaudio's linear resampler. The fallback remains 48kHz for headless/test sinks.
 
-The fix belongs here rather than in `AUDIO-QUALITY-PLAN.md` (which deliberately deferred it) because it is the same question this section already asks: resolve the pipeline's sample rate once from the opened device's native rate instead of a constant, leaving exactly one SRC in the chain (LibVLC's soxr) and taking miniaudio's interpolator out of the path entirely. It reworks `GaplessFormat`, `TrackDecoder.SetAudioFormat` and the device-change path — a device swap becomes a possible rate change, which is precisely the passthrough problem below.
+The session rate is deliberately held across later output-device changes: changing it while a current or armed decoder exists would corrupt timing and playback speed. If the newly selected endpoint differs, miniaudio can resample for that switch. Full per-device native-rate renegotiation belongs with the wider format/passthrough redesign below.
 
-Hard dependency on `AIRPLAY-BLUETOOTH-PLAN.md` Phase 1's device picker — VLC's aout modules only attempt sample-rate matching against an explicitly selected device, not the OS default. Once a device is selected: Windows WASAPI has an exclusive-mode setting (confirm exact confvar at implementation time), macOS `auhal` can match nominal sample rate to the stream, Linux is best-effort only (PulseAudio resamples; would need ALSA/PipeWire directly). Multichannel has no explicit toggle to add — just verify it already works when source and device both support >2 channels. This is a spike, not a scoped task yet.
+`AIRPLAY-BLUETOOTH-PLAN.md` Phase 1's picker gives desktop direct mode an
+explicit endpoint; iOS uses the system route picker instead. The current
+name/id-only device list does not expose format capabilities, so the direct
+path must add an exact-format probe and retain the normal shared-mode fallback.
+
+### Decoder/backend spike — complete
+
+**Finding:** `TrackDecoder` cannot be the hi-res decoder. Its one LibVLC `amem`
+path calls `SetAudioFormat("S16N", ...)`; LibVLC decodes a 24-bit source but
+hands Flower S16 samples. No downstream device capability can recover the lost
+precision. The existing 96kHz/24-bit PCM probe confirms the alternative is
+real: FFmpeg reports the file as `pcm_s24le`, `sample_fmt=s32`,
+`sample_rate=96000`, and `bits_per_raw_sample=24`. FFmpeg represents 24-bit
+PCM in a 32-bit integer container, with the eight low bits empty; packing that
+to miniaudio's tightly-packed `ma_format_s24` preserves every source value.
+
+**Decision:** add a small, owned `flower-ffmpeg` native façade, linked only to
+FFmpeg's `avformat`, `avcodec`, `avutil`, and `swresample` libraries. It will
+open one file/stream, expose its decoded PCM format, read interleaved frames,
+seek, and close. Keep its ABI deliberately small and consume it with ordinary
+P/Invoke; do **not** adopt `FFmpeg.AutoGen`. AutoGen is generated C# bindings,
+not a packaged decoder runtime: Flower would still have to build, ship, load,
+and keep ABI-compatible FFmpeg libraries for every target. A façade confines
+that ABI, C-structure, callback, and ownership surface to one pinned native
+component, which is materially safer for iOS/Android AOT builds. AutoGen's
+static-binding option could be made to work, but offers no corresponding
+packaging or ABI advantage here.
+
+This is a cross-platform design, not yet a proven cross-platform feature. The
+same exported façade ABI must be built and exercised on Windows (`.dll`),
+macOS (`.dylib`), Linux (`.so`), Android (one `.so` per supported ABI), and iOS
+(a pinned framework/XCFramework). Desktop may dynamically deploy LGPL-only
+FFmpeg libraries; Android and iOS need Flower-built, pinned native libraries
+and the corresponding FFmpeg source/configuration offer. No GPL or non-free
+FFmpeg component may be enabled. Do not describe the decoder as supporting all
+Flower platforms until CI builds, packages, and hardware-tests every one of
+those artifacts.
+
+The future `FfmpegTrackDecoder` implements `ITrackDecoder`, so
+`GaplessCoordinator` keeps its current decode-ahead/retargeting logic. The
+current `TrackDecoder` remains the normal S16 decoder until direct mode elects
+the new backend. FFmpeg's decoded samples can be either packed S32 or float;
+the façade must normalize planar output before it crosses into managed code.
+
+**Direct-mode format policy:** choose the track's native sample rate, bit depth
+and channel layout when the selected output device accepts that exact format in
+an exclusive/native path. Do not upsample merely because the device advertises
+a higher rate: that is a conversion, not passthrough. If the device rejects the
+native format, choose a supported output format and make one high-quality
+conversion at the output boundary. Device capabilities are discovered by
+attempting to open the exact miniaudio configuration, not from the current
+name/id-only picker. A successful *shared-mode* open is not proof of
+bit-perfect delivery—WASAPI shared mode mixes in float, and mobile/managed
+routes may be converted by the OS. Windows can request miniaudio's exclusive
+WASAPI mode; macOS, Linux, Android and iOS each require platform-specific
+hardware-path verification before Flower can claim bit-perfect output.
+
+**Switching policy:** normal mode retains its session format across a device
+change and continues uninterrupted, as it does today. Direct mode is allowed a
+short intentional interruption: stop the callback, flush/retire current and
+armed decoders, open the new device in its selected format, recreate the
+decoder/ring, seek to the measured playback position, prebuffer, and resume.
+The same transition is required at a track boundary whose native formats differ;
+sample-accurate gapless remains available only for adjacent tracks sharing the
+selected output format.
+
+**Bit-perfect boundary:** direct mode bypasses Flower's EQ, software gain,
+dither and any crossfade. Enabling one of those features opts into the managed
+float/DSP path and therefore is not bit-perfect. DSD is still out of scope for
+this decoder path: it must be explicitly converted to PCM, not represented as
+24-bit passthrough.
 
 ## 6. True sample-accurate gapless — Done
 
@@ -73,9 +143,9 @@ twice" warning was answered by deleting the second path, not by sharing it.
 
 The pipeline (`Flower/Manager/`):
 
-- `GaplessFormat` — one canonical PCM format (S16N/48kHz/stereo) every track is
-  decoded to, so a track boundary is never a format change and the render sink
-  never reconfigures mid-stream. S16N specifically, because LibVLC 3.0.x's
+- `GaplessFormat` — one canonical PCM format (S16N/native-session-rate/stereo)
+  every track is decoded to, so a track boundary is never a format change and
+  the render sink never reconfigures mid-stream. S16N specifically, because LibVLC 3.0.x's
   `amem` module hardcodes it and silently ignores the requested fourcc.
 - `TrackDecoder` — one track's decode, writing canonical PCM through a
   `RetargetableRingWriter`.
@@ -150,7 +220,7 @@ underrun count when it was not.
    and the decode-outside-LibVLC option it floats is more attractive now that
    the pipeline already speaks raw PCM.
 6. #5 Multi-channel/hi-res — after AirPlay/Bluetooth Phase 1 ships, and after
-   the same re-scope as #2. The format is currently pinned to S16/48k by
-   `GaplessFormat`, which is a deliberate gapless requirement, so hi-res
-   passthrough is now in tension with #6 rather than independent of it — that
-   tension is the actual design question and it is not yet answered.
+   the same re-scope as #2. The S16/native-session-rate format is a deliberate
+   gapless requirement; the completed decoder spike defines the separate
+   format-aware direct path needed for hi-res output and the controlled
+   transitions it requires.
