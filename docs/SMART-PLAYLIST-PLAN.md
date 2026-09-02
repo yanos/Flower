@@ -5,7 +5,8 @@ A playlist defined by a query ("genre is Jazz, added in the last 30 days,
 limit 25 by least recently played") that re-evaluates itself instead of
 holding a hand-picked list.
 
-**Phase 1 (the engine) is built and tested; phases 2-5 are not started.**
+**Phases 1 (the engine) and 2 (persistence) are built and tested; phases 3-5
+are not started.**
 The rest is the design, and the reasoning behind the parts that were not
 obvious.
 
@@ -162,9 +163,8 @@ so the queue built from a smart playlist is already detached from it.
 ## Persistence
 
 Schema **V6**, appended as its own step — never by editing a released
-migration. (The V5 step being added right now exists precisely because a
-column was folded into an already-stamped V4 and never reached the databases
-that had been stamped.)
+migration. (V5 exists precisely because a column was folded into an
+already-stamped V4 and never reached the databases that had been stamped.)
 
 ```sql
 ALTER TABLE playlists ADD COLUMN rules TEXT;   -- JSON, NULL for ordinary playlists
@@ -252,9 +252,24 @@ is a one-liner and worth having; the reverse is not offered.
    `Validate` - which runs conditions against a blank track - saw nothing
    wrong with it. `EnsureValueFits` now runs first, before anything reads
    the track.
-2. **Persistence.** Schema V6, `PlaylistRepository` read/write,
-   `Playlist.Rules`, the non-`Touch()`ing materialization path, store
-   round-trip tests alongside the existing ones in `StoreRoundTripTests`.
+2. **Persistence.** ✅ Done. `Schema.V6` (`ALTER TABLE playlists ADD COLUMN
+   rules TEXT`) appended as its own migration step, `Playlist.Rules` /
+   `IsSmart` / `Materialize`, `PlaylistRepository` reading and writing the
+   blob, and `SmartPlaylistRulesJson` (+ its source-generated context) for the
+   blob itself. Tests: round trip and migration in `StoreRoundTripTests`, the
+   serialization shapes in `SmartPlaylistRulesJsonTests`, and the
+   `UpdatedAt` invariant in `PlaylistTests`.
+
+   Two decisions the writing settled. `SmartValue`'s JSON discriminators are
+   short strings (`"text"`, `"relative"`, …) declared with `[JsonDerivedType]`
+   rather than System.Text.Json's default, which is the assembly-qualified name
+   of a private nested type - that would bake a namespace into every stored
+   rule and make renaming the file a data migration. And `Read` returns null
+   for anything it cannot parse instead of throwing: a blob can arrive from a
+   peer or a newer build, and degrading one playlist to an ordinary one holding
+   its last materialized contents beats failing the whole playlist load, which
+   is the same tolerance `playlist_tracks` already applies to a track id that
+   no longer resolves.
 3. **Recomputation wiring.** Debounced pass hung off `Library.TracksUpdated`
    and the play-count/star paths.
 4. **UI.** Editor window, sidebar icon, disabled mutations.

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace Flower.Models;
 
@@ -117,13 +118,33 @@ public enum SmartOperator
 // The right-hand side of a condition. One case per value kind, plus the two
 // that are not literals: Relative (a date offset, never collapsed to an
 // instant) and Range (the pair Between needs).
+//
+// The discriminators are persisted (Schema V6's playlists.rules) and travel
+// over the sync wire, so like SmartField's numbers they are the contract - a
+// case can be renamed in C#, its tag cannot. Short strings rather than the
+// default assembly-qualified name, which would bake the namespace of a private
+// nested type into every stored rule.
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(Text), "text")]
+[JsonDerivedType(typeof(Number), "number")]
+[JsonDerivedType(typeof(Duration), "duration")]
+[JsonDerivedType(typeof(Date), "date")]
+[JsonDerivedType(typeof(Relative), "relative")]
+[JsonDerivedType(typeof(Bool), "bool")]
+[JsonDerivedType(typeof(PlaylistRef), "playlist")]
+[JsonDerivedType(typeof(Range), "range")]
+[JsonDerivedType(typeof(None), "none")]
 public abstract record SmartValue
 {
     public sealed record Text(string Value) : SmartValue;
 
     public sealed record Number(double Value) : SmartValue;
 
-    public sealed record Duration(TimeSpan Value) : SmartValue;
+    // Ticks on the wire, matching TimeSpanTicksConverter's choice everywhere
+    // else in this codebase, rather than System.Text.Json's own "hh:mm:ss"
+    // string - the same value in one representation, not two.
+    public sealed record Duration(
+        [property: JsonConverter(typeof(TimeSpanTicksConverter))] TimeSpan Value) : SmartValue;
 
     public sealed record Date(DateTimeOffset Value) : SmartValue;
 
@@ -141,6 +162,9 @@ public abstract record SmartValue
 
     // Nothing on the right-hand side at all - IsEmpty/IsNotEmpty. A singleton
     // rather than null so a condition never has to carry a nullable value.
+    // Round-tripping it produces a fresh instance rather than Instance, which
+    // is why every comparison of one is by value (record equality) and never
+    // ReferenceEquals.
     public sealed record None : SmartValue
     {
         public static readonly None Instance = new();

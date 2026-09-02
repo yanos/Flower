@@ -205,5 +205,22 @@ namespace Flower.Persistence.Sql
         public const string V5 = """
             ALTER TABLE tracks ADD COLUMN encoder_profile            TEXT;
             """;
+
+        // Smart playlists (docs/SMART-PLAYLIST-PLAN.md phase 2). The rules -
+        // SmartPlaylistRules as JSON, via SmartPlaylistRulesJson - are the
+        // whole of what a smart playlist *is*; NULL means an ordinary,
+        // hand-picked one, which is every playlist that exists today.
+        //
+        // A step rather than a fold into V1 for the usual reason (see
+        // SqliteMigrations' remarks): playlists are precisely the thing a
+        // delete-and-rescan cannot reproduce.
+        //
+        // playlist_tracks keeps holding the materialized rows for a smart
+        // playlist too, so every reader - the sidebar, playback, the Subsonic
+        // surface, the track-shipping half of sync - stays exactly as it is
+        // and nothing has to evaluate anything to answer a request.
+        public const string V6 = """
+            ALTER TABLE playlists ADD COLUMN rules TEXT;
+            """;
     }
 }

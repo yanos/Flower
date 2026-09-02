@@ -1423,6 +1423,148 @@ public class StoreRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task A_smart_playlists_rules_round_trip_alongside_its_materialized_contents()
+    {
+        var db = new FlowerDb(Path.Combine(PlatformDataDirectory.Current!, "flower.db"));
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
+        var playlistStore = new PlaylistStore(NullLogger<PlaylistStore>.Instance, db);
+
+        var jazz = new Track { Title = "Blue in Green", Genre = "Jazz", Path = "/music/blue.mp3" };
+        Repo(db).ReplaceAll([jazz]);
+
+        var playlist = new Playlist("Recent Jazz", [jazz])
+        {
+            Rules = new SmartPlaylistRules(
+                MatchMode.All,
+                [
+                    new SmartCondition(SmartField.Genre, SmartOperator.Is, new SmartValue.Text("Jazz")),
+                    new SmartCondition(SmartField.DateAdded, SmartOperator.InTheLast, new SmartValue.Relative(30, RelativeUnit.Days)),
+                ],
+                new SmartLimit(25, LimitUnit.Items, LimitSelector.LeastRecentlyPlayed)),
+        };
+        PlaylistRepo(db).Save([playlist]);
+
+        var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
+
+        Assert.True(reloaded.IsSmart);
+        Assert.Equal(playlist.Rules!.Conditions, reloaded.Rules!.Conditions);
+        Assert.Equal(playlist.Rules.Limit, reloaded.Rules.Limit);
+        // The materialized rows are still what a load produces, so the sidebar
+        // has contents before anything re-evaluates - see Schema.V6.
+        Assert.Equal(["Blue in Green"], reloaded.Tracks.Select(t => t.Title));
+    }
+
+    [Fact]
+    public async Task An_ordinary_playlist_stores_no_rules_at_all()
+    {
+        var db = new FlowerDb(Path.Combine(PlatformDataDirectory.Current!, "flower.db"));
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
+        var playlistStore = new PlaylistStore(NullLogger<PlaylistStore>.Instance, db);
+
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        Repo(db).ReplaceAll([track]);
+        PlaylistRepo(db).Save([new Playlist("Mix", [track])]);
+
+        Assert.False(Assert.Single(playlistStore.Load(libraryStore.Load())).IsSmart);
+
+        using var connection = db.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM playlists WHERE rules IS NOT NULL;";
+        Assert.Equal(0L, command.ExecuteScalar());
+    }
+
+    // "Convert to ordinary playlist": drop the rules, keep whatever was last
+    // materialized. Unlike created_at, rules is in the upsert's DO UPDATE for
+    // exactly this - a clear that never reached the row would leave the
+    // playlist recomputing itself forever.
+    [Fact]
+    public async Task Clearing_the_rules_converts_a_smart_playlist_back_to_an_ordinary_one()
+    {
+        var db = new FlowerDb(Path.Combine(PlatformDataDirectory.Current!, "flower.db"));
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
+        var playlistStore = new PlaylistStore(NullLogger<PlaylistStore>.Instance, db);
+
+        var track = new Track { Title = "A", Genre = "Jazz", Path = "/music/a.mp3" };
+        Repo(db).ReplaceAll([track]);
+
+        var playlist = new Playlist("Jazz", [track])
+        {
+            Rules = SmartPlaylistRules.MatchAll(
+                new SmartCondition(SmartField.Genre, SmartOperator.Is, new SmartValue.Text("Jazz"))),
+        };
+        PlaylistRepo(db).Save([playlist]);
+
+        playlist.Rules = null;
+        PlaylistRepo(db).Save([playlist]);
+
+        var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
+        Assert.False(reloaded.IsSmart);
+        Assert.Equal(["A"], reloaded.Tracks.Select(t => t.Title));
+    }
+
+    // A rules blob can arrive from a peer or a newer build. Failing the whole
+    // playlist load over one is worse than losing the rules: the playlist keeps
+    // the tracks it last materialized and behaves as an ordinary one.
+    [Fact]
+    public async Task A_playlist_whose_rules_blob_cannot_be_read_still_loads()
+    {
+        var db = new FlowerDb(Path.Combine(PlatformDataDirectory.Current!, "flower.db"));
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance, db);
+        var playlistStore = new PlaylistStore(NullLogger<PlaylistStore>.Instance, db);
+
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        Repo(db).ReplaceAll([track]);
+        PlaylistRepo(db).Save([new Playlist("Mix", [track])]);
+
+        using (var connection = db.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE playlists SET rules = 'not json at all';";
+            command.ExecuteNonQuery();
+        }
+
+        var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
+        Assert.False(reloaded.IsSmart);
+        Assert.Equal(["A"], reloaded.Tracks.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void A_version_five_database_gains_the_rules_column_without_losing_its_playlists()
+    {
+        var path = Path.Combine(PlatformDataDirectory.Current!, "pre-rules.db");
+
+        using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            connection.Open();
+            using var setup = connection.CreateCommand();
+            setup.CommandText =
+                Schema.V1 + Schema.V2 + Schema.V3 + Schema.V4 + Schema.V5
+                + "INSERT INTO playlists (id, name, updated_at) VALUES ('abc', 'Kept', 0);"
+                + "PRAGMA user_version = 5;";
+            setup.ExecuteNonQuery();
+        }
+
+        var db = new FlowerDb(path);
+        using var migrated = db.Open();
+
+        using (var columns = migrated.CreateCommand())
+        {
+            columns.CommandText = "SELECT name FROM pragma_table_info('playlists') WHERE name = 'rules';";
+            Assert.Equal("rules", columns.ExecuteScalar());
+        }
+
+        // The point of a step rather than a fold into V1: playlists are exactly
+        // what a delete-and-rescan cannot reproduce.
+        using (var kept = migrated.CreateCommand())
+        {
+            kept.CommandText = "SELECT name FROM playlists;";
+            Assert.Equal("Kept", kept.ExecuteScalar());
+        }
+
+        Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(migrated));
+    }
+
+    [Fact]
     public void The_schema_is_created_at_the_latest_version_and_migrating_again_is_a_no_op()
     {
         var path = Path.Combine(PlatformDataDirectory.Current!, "versioned.db");

@@ -38,6 +38,7 @@ namespace Flower.Persistence.Sql
             new Migration(Schema.V3),
             new Migration(Schema.V4),
             new Migration(Schema.V5, connection => HasColumn(connection, "tracks", "encoder_profile")),
+            new Migration(Schema.V6),
         ];
 
         public static int LatestVersion => Scripts.Count;

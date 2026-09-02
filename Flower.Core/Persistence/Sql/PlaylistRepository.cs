@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
 
 using Flower.Models;
+using Flower.Services;
 
 namespace Flower.Persistence.Sql
 {
@@ -24,7 +25,7 @@ namespace Flower.Persistence.Sql
             var playlists = new List<PlaylistRow>();
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT id, name, updated_at, comment, is_public, created_at FROM playlists;";
+                command.CommandText = "SELECT id, name, updated_at, comment, is_public, created_at, rules FROM playlists;";
                 using var reader = command.ExecuteReader();
                 while (reader.Read())
                 {
@@ -34,7 +35,11 @@ namespace Flower.Persistence.Sql
                         new DateTimeOffset(reader.GetInt64(2), TimeSpan.Zero),
                         reader.IsDBNull(3) ? null : reader.GetString(3),
                         reader.GetInt64(4) != 0,
-                        new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero)));
+                        new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero),
+                        // Null for every ordinary playlist, which is all of
+                        // them until a smart one is created. An unreadable blob
+                        // also reads as null - see SmartPlaylistRulesJson.Read.
+                        SmartPlaylistRulesJson.Read(reader.IsDBNull(6) ? null : reader.GetString(6))));
                 }
             }
 
@@ -64,6 +69,10 @@ namespace Flower.Persistence.Sql
             var result = new List<Playlist>(playlists.Count);
             foreach (var row in playlists)
             {
+                // A smart playlist loads with its last materialized contents,
+                // exactly like an ordinary one - the rules are re-evaluated by
+                // the recomputation pass, not by the load, so the app has a
+                // populated sidebar before any of that runs.
                 result.Add(new Playlist(
                     row.Id,
                     row.Name,
@@ -71,7 +80,8 @@ namespace Flower.Persistence.Sql
                     row.UpdatedAt,
                     row.Comment,
                     row.IsPublic,
-                    row.CreatedAt));
+                    row.CreatedAt,
+                    row.Rules));
             }
 
             return result;
@@ -83,7 +93,8 @@ namespace Flower.Persistence.Sql
             DateTimeOffset UpdatedAt,
             string? Comment,
             bool IsPublic,
-            DateTimeOffset CreatedAt);
+            DateTimeOffset CreatedAt,
+            SmartPlaylistRules? Rules);
 
         // Replaces the stored playlist set with the one given, in a single
         // transaction. Membership is rewritten wholesale per playlist rather
@@ -103,13 +114,14 @@ namespace Flower.Persistence.Sql
             {
                 upsert.Transaction = transaction;
                 upsert.CommandText = """
-                    INSERT INTO playlists (id, name, updated_at, comment, is_public, created_at)
-                    VALUES ($id, $name, $updated_at, $comment, $is_public, $created_at)
+                    INSERT INTO playlists (id, name, updated_at, comment, is_public, created_at, rules)
+                    VALUES ($id, $name, $updated_at, $comment, $is_public, $created_at, $rules)
                     ON CONFLICT (id) DO UPDATE SET
                         name = excluded.name,
                         updated_at = excluded.updated_at,
                         comment = excluded.comment,
-                        is_public = excluded.is_public;
+                        is_public = excluded.is_public,
+                        rules = excluded.rules;
                     -- created_at is not in the DO UPDATE: it is set once, when
                     -- the row is first written, and Playlist has no way to
                     -- change it afterwards.
@@ -126,6 +138,7 @@ namespace Flower.Persistence.Sql
                 var upsertComment = upsert.Parameters.Add("$comment", SqliteType.Text);
                 var upsertIsPublic = upsert.Parameters.Add("$is_public", SqliteType.Integer);
                 var upsertCreatedAt = upsert.Parameters.Add("$created_at", SqliteType.Integer);
+                var upsertRules = upsert.Parameters.Add("$rules", SqliteType.Text);
 
                 clear.Transaction = transaction;
                 clear.CommandText = "DELETE FROM playlist_tracks WHERE playlist_id = $playlist_id;";
@@ -153,6 +166,12 @@ namespace Flower.Persistence.Sql
                     upsertComment.Value = (object?)playlist.Comment ?? DBNull.Value;
                     upsertIsPublic.Value = playlist.IsPublic ? 1 : 0;
                     upsertCreatedAt.Value = playlist.CreatedAt.UtcTicks;
+                    // In the DO UPDATE, unlike created_at: converting a smart
+                    // playlist back to an ordinary one is clearing the rules,
+                    // and that has to be able to reach the row.
+                    upsertRules.Value = playlist.Rules is { } rules
+                        ? SmartPlaylistRulesJson.Write(rules)
+                        : (object)DBNull.Value;
                     upsert.ExecuteNonQuery();
 
                     clearId.Value = id;

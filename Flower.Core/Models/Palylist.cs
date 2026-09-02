@@ -62,6 +62,30 @@ namespace Flower.Models
         // in Flower edits it.
         public DateTimeOffset CreatedAt { get; }
 
+        private SmartPlaylistRules? _rules;
+
+        // The query this playlist is, or null for an ordinary hand-picked one -
+        // see docs/SMART-PLAYLIST-PLAN.md. Deliberately one nullable property
+        // on Playlist rather than a SmartPlaylist subclass: Tracks stays the
+        // materialized result either way, so the sidebar, playback,
+        // PlaylistRepository, the Subsonic surface and the track-shipping half
+        // of sync all keep working untouched. Only the write path is new.
+        //
+        // A Touch()ing property, unlike Materialize below: editing the rules is
+        // a user editing the playlist, and it is the one thing about a smart
+        // playlist that sync has to carry.
+        public SmartPlaylistRules? Rules
+        {
+            get => _rules;
+            set
+            {
+                _rules = value;
+                Touch();
+            }
+        }
+
+        public bool IsSmart => _rules != null;
+
         // Copy-on-write, never mutated in place, for the same reason
         // Library.Playlists is: the save triggered by Changed runs on a
         // threadpool thread (App.axaml.cs) and enumerates this while the UI
@@ -105,12 +129,14 @@ namespace Flower.Models
             DateTimeOffset updatedAt,
             string? comment = null,
             bool isPublic = false,
-            DateTimeOffset? createdAt = null)
+            DateTimeOffset? createdAt = null,
+            SmartPlaylistRules? rules = null)
         {
             Id = id;
             _name = name;
             _comment = comment;
             _isPublic = isPublic;
+            _rules = rules;
             CreatedAt = createdAt ?? updatedAt;
             // Defensive copy, matching Library's own constructor - callers can pass a
             // list they keep their own reference to (App.axaml.cs constructs
@@ -211,6 +237,43 @@ namespace Flower.Models
                     next[i] = current;
             }
             _tracks = next;
+        }
+
+        // Installs the result of evaluating Rules, without touching UpdatedAt.
+        // Returns whether the contents actually changed, so a recomputation
+        // pass over every smart playlist can persist only the ones that moved.
+        //
+        // Not Touch()ing is the invariant the whole design rests on, and it is
+        // the same one RebindTracks above relies on: PlaylistSyncPlanner decides
+        // "did this side change?" purely from UpdatedAt against a per-peer
+        // baseline, and a re-evaluation is not a user edit - the songs changed
+        // because the library did. Bumping UpdatedAt here would manufacture a
+        // sync-visible edit on both devices out of a rescan, every rescan, and
+        // make a content conflict reachable for a playlist that has no content
+        // of its own to conflict over.
+        //
+        // Public, unlike RebindTracks, because the recomputation pass that
+        // drives it is not Library - see SMART-PLAYLIST-PLAN.md phase 3.
+        public bool Materialize(IReadOnlyList<Track> tracks)
+        {
+            if (_tracks.Count == tracks.Count)
+            {
+                var identical = true;
+                for (var i = 0; i < tracks.Count; i++)
+                {
+                    if (ReferenceEquals(_tracks[i], tracks[i]))
+                        continue;
+
+                    identical = false;
+                    break;
+                }
+
+                if (identical)
+                    return false;
+            }
+
+            _tracks = new List<Track>(tracks);
+            return true;
         }
 
         public Track? GetTrack(int index)

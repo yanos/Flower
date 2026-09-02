@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using Flower.Models;
 using Xunit;
@@ -204,5 +205,66 @@ public class PlaylistTests
         Assert.False(playlist.MoveTrack(T("stranger"), null));
 
         Assert.Equal(before, playlist.UpdatedAt);
+    }
+
+    // The invariant the whole smart-playlist design rests on. UpdatedAt is the
+    // only thing PlaylistSyncPlanner consults to decide "did this side change?"
+    // against its per-peer baseline, so a re-evaluation that bumped it would
+    // manufacture a sync-visible edit on every device, on every rescan, out of
+    // a change nobody made - and make a content conflict reachable for a
+    // playlist whose content is not its state.
+    [Fact]
+    public void Materialize_replaces_the_contents_without_bumping_UpdatedAt()
+    {
+        var playlist = new Playlist("Smart", new List<Track> { T("A") });
+        var before = playlist.UpdatedAt;
+
+        Assert.True(playlist.Materialize(new List<Track> { T("B"), T("C") }));
+
+        Assert.Equal(new[] { "B", "C" }, playlist.Tracks.Select(t => t.Title));
+        Assert.Equal(before, playlist.UpdatedAt);
+    }
+
+    // So a recomputation pass over every smart playlist writes only the ones
+    // that actually moved - which, after the first pass, is usually none.
+    [Fact]
+    public void Materialize_reports_false_when_the_result_is_the_same_tracks_in_the_same_order()
+    {
+        var a = T("A");
+        var b = T("B");
+        var playlist = new Playlist("Smart", new List<Track> { a, b });
+
+        Assert.False(playlist.Materialize(new List<Track> { a, b }));
+        Assert.True(playlist.Materialize(new List<Track> { b, a }));
+    }
+
+    [Fact]
+    public void Materialize_copies_the_list_it_is_given()
+    {
+        var source = new List<Track> { T("A") };
+        var playlist = new Playlist("Smart", new List<Track>());
+
+        playlist.Materialize(source);
+        source.Clear();
+
+        Assert.Single(playlist.Tracks);
+    }
+
+    // Editing the rules is a real user edit, unlike materializing their result,
+    // and it is the one thing about a smart playlist sync has to carry.
+    [Fact]
+    public void Setting_Rules_is_an_edit_and_bumps_UpdatedAt()
+    {
+        // An explicit stale UpdatedAt rather than "now", so the assertion
+        // below cannot depend on the clock's granularity.
+        var before = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var playlist = new Playlist(Guid.NewGuid(), "Smart", new List<Track>(), before);
+        Assert.False(playlist.IsSmart);
+
+        playlist.Rules = SmartPlaylistRules.MatchAll(
+            new SmartCondition(SmartField.Genre, SmartOperator.Is, new SmartValue.Text("Jazz")));
+
+        Assert.True(playlist.IsSmart);
+        Assert.True(playlist.UpdatedAt > before);
     }
 }
