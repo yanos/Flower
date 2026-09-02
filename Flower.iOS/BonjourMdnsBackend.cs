@@ -91,12 +91,44 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
     private static extern int DNSServiceProcessResult(IntPtr sdRef);
 
     [DllImport(DnsSdLib)]
+    private static extern int DNSServiceRefSockFD(IntPtr sdRef);
+
+    [DllImport(DnsSdLib)]
     private static extern void DNSServiceRefDeallocate(IntPtr sdRef);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PollDescriptor
+    {
+        public int FileDescriptor;
+        public short Events;
+        public short ReturnedEvents;
+    }
+
+    private const short PollInput = 0x0001;
+
+    [DllImport(DnsSdLib)]
+    private static extern int poll(ref PollDescriptor descriptors, uint descriptorCount, int timeoutMilliseconds);
 
     private IntPtr _registerRef;
     private IntPtr _browseRef;
-    private GCHandle _browseContext;
+    private readonly object _browseGate = new();
+    private BrowseOperation? _browseOperation;
     private string _serviceType = "";
+
+    // DNS-SD makes no thread-safety guarantees for a DNSServiceRef. In
+    // particular, DNSServiceRefDeallocate must not race a concurrent
+    // DNSServiceProcessResult - Apple's dns_sd.h calls that out as a common
+    // crash, and it is exactly what a periodic Browse() used to do here.
+    //
+    // The operation owns both native resources. The pump is its only code
+    // path that deallocates them, after it has stopped processing the socket.
+    private sealed class BrowseOperation
+    {
+        public required IntPtr ServiceReference { get; init; }
+        public required GCHandle Context { get; init; }
+        public required Thread Thread { get; init; }
+        public bool IsStopping { get; set; }
+    }
 
     public event EventHandler<MdnsInstanceFound>? InstanceFound;
     public event EventHandler<string>? InstanceLost;
@@ -138,51 +170,100 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
 
     public void Browse(string serviceType)
     {
-        _serviceType = serviceType;
-
-        // Browse() repeats periodically (NetworkDiscoveryService's
-        // RebrowseInterval) - tear down the previous browse op first, or
-        // every rebrowse leaks another live socket and pump thread forever,
-        // each still redelivering duplicate results on top of the new one.
-        if (_browseRef != IntPtr.Zero)
+        lock (_browseGate)
         {
-            DNSServiceRefDeallocate(_browseRef);
-            _browseRef = IntPtr.Zero;
-        }
-        if (_browseContext.IsAllocated)
-            _browseContext.Free();
+            // A DNS-SD browse is continuous. NetworkDiscoveryService calls
+            // Browse every five seconds to recover backends that issue only a
+            // one-shot query, but replacing an already-live DNS-SD operation
+            // is both unnecessary and unsafe while its result pump is active.
+            if (_browseOperation != null)
+                return;
 
-        _browseContext = GCHandle.Alloc(this);
-        var err = DNSServiceBrowse(out _browseRef, 0, InterfaceIndexAny, serviceType, "local.",
-            &OnBrowseReply, GCHandle.ToIntPtr(_browseContext));
-        if (err != ErrNoError)
-        {
-            // The one that matters most: browsing is how this device finds any
-            // server at all, so failing here means an empty sidebar forever,
-            // with nothing anywhere to say why.
-            Logger.LogWarning(
-                "DNSServiceBrowse for {ServiceType} failed ({ErrorCode}); no peers will be discovered on this network.",
-                serviceType, err);
-            _browseRef = IntPtr.Zero;
-            _browseContext.Free();
-            return;
-        }
-
-        // DNSServiceProcessResult blocks internally until a reply arrives,
-        // invokes the callback synchronously, then returns - so pumping it in
-        // a plain loop on a dedicated background thread is sufficient, no
-        // manual poll/select needed. The loop (and the thread) ends on its
-        // own once the ref above is deallocated - either by a future Browse()
-        // call replacing it, or by Stop()/Dispose() - which makes the blocked
-        // call return a non-zero error.
-        var sdRef = _browseRef;
-        new Thread(() =>
-        {
-            while (DNSServiceProcessResult(sdRef) == ErrNoError)
+            _serviceType = serviceType;
+            var context = GCHandle.Alloc(this);
+            var err = DNSServiceBrowse(out var serviceReference, 0, InterfaceIndexAny, serviceType, "local.",
+                &OnBrowseReply, GCHandle.ToIntPtr(context));
+            if (err != ErrNoError)
             {
+                // The one that matters most: browsing is how this device finds any
+                // server at all, so failing here means an empty sidebar forever,
+                // with nothing anywhere to say why.
+                Logger.LogWarning(
+                    "DNSServiceBrowse for {ServiceType} failed ({ErrorCode}); no peers will be discovered on this network.",
+                    serviceType, err);
+                context.Free();
+                return;
             }
-        })
-        { IsBackground = true, Name = "BonjourBrowse" }.Start();
+
+            BrowseOperation? operation = null;
+            var thread = new Thread(() => PumpBrowse(operation!))
+            {
+                IsBackground = true,
+                Name = "BonjourBrowse",
+            };
+            operation = new BrowseOperation
+            {
+                ServiceReference = serviceReference,
+                Context = context,
+                Thread = thread,
+            };
+            _browseOperation = operation;
+            _browseRef = serviceReference;
+            thread.Start();
+        }
+    }
+
+    private void PumpBrowse(BrowseOperation operation)
+    {
+        // ProcessResult blocks when the socket has no reply waiting. Polling
+        // first keeps each call short, so Stop can mark the operation as done
+        // and this same thread can safely deallocate it without a cross-thread
+        // free/use race.
+        while (true)
+        {
+            int socket;
+            lock (_browseGate)
+            {
+                if (_browseOperation != operation || operation.IsStopping)
+                    break;
+                socket = DNSServiceRefSockFD(operation.ServiceReference);
+            }
+
+            if (socket < 0)
+                break;
+
+            var descriptor = new PollDescriptor { FileDescriptor = socket, Events = PollInput };
+            var pollResult = poll(ref descriptor, 1, 100);
+            if (pollResult <= 0)
+                continue;
+            if ((descriptor.ReturnedEvents & PollInput) == 0)
+                break;
+
+            int processResult;
+            lock (_browseGate)
+            {
+                if (_browseOperation != operation || operation.IsStopping)
+                    break;
+                processResult = DNSServiceProcessResult(operation.ServiceReference);
+            }
+
+            if (processResult != ErrNoError)
+            {
+                Logger.LogDebug("DNSServiceProcessResult for browse failed ({ErrorCode}).", processResult);
+                break;
+            }
+        }
+
+        lock (_browseGate)
+        {
+            if (_browseOperation == operation)
+            {
+                _browseOperation = null;
+                _browseRef = IntPtr.Zero;
+            }
+            DNSServiceRefDeallocate(operation.ServiceReference);
+            operation.Context.Free();
+        }
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -302,13 +383,18 @@ public sealed unsafe class BonjourMdnsBackend : IMdnsBackend
             DNSServiceRefDeallocate(_registerRef);
             _registerRef = IntPtr.Zero;
         }
-        if (_browseRef != IntPtr.Zero)
+        BrowseOperation? browseOperation;
+        lock (_browseGate)
         {
-            DNSServiceRefDeallocate(_browseRef);
-            _browseRef = IntPtr.Zero;
+            browseOperation = _browseOperation;
+            if (browseOperation != null)
+                browseOperation.IsStopping = true;
         }
-        if (_browseContext.IsAllocated)
-            _browseContext.Free();
+
+        // PumpBrowse polls with a short timeout and owns deallocation, so this
+        // join cannot race DNSServiceProcessResult with a free of its ref.
+        if (browseOperation != null && browseOperation.Thread != Thread.CurrentThread)
+            browseOperation.Thread.Join();
     }
 
     public void Dispose() => Stop();
