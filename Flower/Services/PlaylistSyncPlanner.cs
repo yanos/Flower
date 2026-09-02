@@ -84,6 +84,51 @@ public static class PlaylistSyncPlanner
                 continue;
             }
 
+            // A smart playlist is decided on its query, never on its contents.
+            // Two devices holding different music legitimately materialize the
+            // same rules into different track lists, so ContentEquals below
+            // would report a difference on every sync, and - since
+            // materialization deliberately does not bump UpdatedAt - neither
+            // side would look changed against the baseline, landing every smart
+            // playlist in Conflict forever.
+            //
+            // So: same query, same name, nothing to do. Otherwise someone
+            // really did edit the query (the only thing about a smart playlist
+            // that moves UpdatedAt) and the newer edit wins outright. No
+            // conflict window, because there is nothing of the user's to lose -
+            // a query replaced by a newer query, not a hand-built track list.
+            //
+            // The same branch covers smart on one side and manual on the other,
+            // for the same reason and with the same answer: newest wins,
+            // including the change of kind, and a manual playlist that wins
+            // brings its track list with it.
+            //
+            // A tie in UpdatedAt goes to whichever side actually has rules,
+            // rather than to local. Losing rules is never something a user did:
+            // the only way a playlist stops being smart is an edit, and an edit
+            // moves UpdatedAt. So equal timestamps with rules on one side only
+            // means the other side is a lossy copy of this same playlist - made
+            // by a peer that predates rules travelling at all, or that dropped
+            // them in transit. Handing the tie to local would let that copy win
+            // wherever it happens to be the local one, and then be pushed back
+            // over the good one at the end of the session: the query dies on
+            // every device rather than healing on the next sync.
+            if (l.IsSmart || r.Rules != null)
+            {
+                var smartKind =
+                    l.Name == r.Name && SmartPlaylistRules.Equivalent(l.Rules, r.Rules)
+                        ? PlaylistSyncDecisionKind.NoChange
+                    : l.UpdatedAt != r.UpdatedAt
+                        ? l.UpdatedAt > r.UpdatedAt
+                            ? PlaylistSyncDecisionKind.KeepLocal
+                            : PlaylistSyncDecisionKind.AdoptRemote
+                    : l.IsSmart
+                        ? PlaylistSyncDecisionKind.KeepLocal
+                        : PlaylistSyncDecisionKind.AdoptRemote;
+                decisions.Add(new PlaylistSyncDecision(id, smartKind, l, r));
+                continue;
+            }
+
             if (ContentEquals(l, r))
             {
                 decisions.Add(new PlaylistSyncDecision(id, PlaylistSyncDecisionKind.NoChange, l, r));

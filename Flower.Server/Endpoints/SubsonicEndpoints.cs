@@ -382,6 +382,18 @@ public static class SubsonicEndpoints
         if (library.FindPlaylist(playlistId) is not { } existing)
             return SubsonicResults.Failed(70, "Playlist not found.");
 
+        // A smart playlist's contents are the output of its rules, so an edit
+        // accepted here would be erased by the next recomputation - a silent
+        // undo minutes later, which is worse for a third-party client than an
+        // error it can show. Refused whole rather than partly applied: there is
+        // no wire vocabulary for rules in OpenSubsonic (getPlaylist reports one
+        // of these as an ordinary playlist, because that is the only thing the
+        // protocol can describe), so a client cannot tell which parts of its
+        // call would have survived. Editing the rules is Flower's own editor,
+        // and deletePlaylist still works.
+        if (existing.IsSmart)
+            return SubsonicResults.Failed(50, "This is a smart playlist; its contents come from its rules and cannot be edited directly.");
+
         var removeIndexes = request.Query["songIndexToRemove"]
             .Where(s => int.TryParse(s, out _))
             .Select(s => int.Parse(s!))

@@ -5,8 +5,8 @@ A playlist defined by a query ("genre is Jazz, added in the last 30 days,
 limit 25 by least recently played") that re-evaluates itself instead of
 holding a hand-picked list.
 
-**Phases 1 (the engine), 2 (persistence), 3 (recomputation) and 4 (UI) are
-built and tested; phase 5 (sync + server) is not started.**
+**All five phases - the engine, persistence, recomputation, the UI and sync -
+are built and tested.**
 The rest is the design, and the reasoning behind the parts that were not
 obvious.
 
@@ -229,20 +229,69 @@ read and written whole, never queried across, and it has to travel over the
 sync wire as a unit anyway. A `SmartPlaylistRulesJsonContext` (source-
 generated, matching `PlaylistSyncJsonContext`) keeps it AOT-safe.
 
+Enums in that blob are written **by name**, not by their number:
+
+```json
+{"Mode":"All","Conditions":[{"Field":"IsLocallyDownloaded","Operator":"Is","Value":{"kind":"bool","Value":true}}]}
+```
+
+This blob is the entire definition of a smart playlist, it is what crosses
+the sync wire, and it is all anyone gets when asking "why is this playlist
+wrong on my phone" about a device they cannot attach a debugger to. `"Field":72`
+answers none of that. It is neither a hot path nor a large payload — a
+handful of conditions per playlist, written when the user edits them.
+
+So the names are the contract and the explicit numbers on `SmartField` /
+`SmartOperator` are not: renumbering a case is now free, renaming one orphans
+every stored rule that used it. The numbers stay regardless — they cost
+nothing, they still document the grouping by value kind, and reading accepts
+them, so rules written before this change still load and are rewritten in the
+readable form on the next save.
+
 ## Sync
 
-`PlaylistSyncPlaylistDto` gains a nullable `Rules`. Each device evaluates
+`PlaylistSyncPlaylistDto` carries a nullable `Rules`. Each device evaluates
 against its own library — which is the desired behaviour, not a compromise:
 on a phone holding a subset, "Recently Added" should mean recently added
 *there*.
 
 Merging two smart playlists is replacing the query with the more recent one.
-No track-level diff, no conflict window: the existing `UpdatedAt`-vs-
-baseline comparison in `PlaylistSyncPlanner` already expresses it, and since
-materialization does not bump `UpdatedAt`, the only thing that can differ is
-a real rule edit. `PlaylistSyncDecisionKind.Conflict` should therefore never
-be reachable for a playlist that is smart on both sides — worth asserting in
-a test.
+No track-level diff, no conflict window, and — this is the part that had to
+be written rather than inherited — no content comparison either. The
+`ContentEquals` path the ordinary merge takes reports a difference on every
+sync for a smart playlist, because the same rules over different music are
+*meant* to produce different tracks; and since materialization does not bump
+`UpdatedAt`, neither side then looks changed against the baseline, so the
+`(false, false)` arm would call it a `Conflict` every time. So
+`PlaylistSyncPlanner` decides a playlist that is smart on either side up
+front: same name and equivalent rules is `NoChange`, anything else is the
+newer `UpdatedAt` winning outright. `PlaylistSyncDecisionKind.Conflict` is
+therefore unreachable for one — asserted directly, with and without a
+baseline.
+
+A tie in `UpdatedAt` goes to whichever side still has rules, not to local.
+Losing rules is never a user edit — the only way out of being smart is an
+edit, and an edit moves `UpdatedAt` — so equal timestamps with rules on one
+side only means the other side is a lossy copy of that same version. This is
+not hypothetical: the first real device to sync a smart playlist got one, from
+a peer built before rules travelled at all, which kept the tracks and dropped
+the query. Handing the tie to local would have let that stripped copy win
+wherever it happened to be local, and then be pushed back over the good one at
+the end of the session — the query dying on every device instead of healing on
+the next sync.
+
+Comparing rules needs `SmartPlaylistRules.Equivalent` rather than `==`: the
+record's generated equality compares `Conditions` by reference, so two rule
+sets that say the same thing never match. Everything below that list
+(`SmartCondition`, `SmartLimit`, every `SmartValue` case including `Range`,
+recursively) compares itself properly.
+
+Nothing has to schedule the evaluation of rules that just arrived: installing
+the merged set raises `Library.PlaylistsChanged`, which
+`SmartPlaylistRefresher` is already subscribed to. The peer's materialized
+tracks travel alongside the rules anyway, so an adopted playlist is not empty
+in the meantime — and stays as the peer left it for a `LiveUpdating = false`
+one, which no recomputation pass will ever touch.
 
 Two edges, both cheap:
 
@@ -258,9 +307,13 @@ Third-party clients see an ordinary playlist, because that is the only thing
 OpenSubsonic can describe: `getPlaylists`/`getPlaylist` read the
 materialized `playlist_tracks` rows and need no changes at all.
 
-`updatePlaylist` against a smart playlist must be rejected rather than
+`updatePlaylist` against a smart playlist is rejected (error 50) rather than
 silently accepted — an accepted edit would be erased by the next
-recomputation, which is worse than an error. `createPlaylist` can only ever
+recomputation, a silent undo minutes later, which is worse for a client than
+an error it can show. Refused whole rather than partly applied: a client
+cannot tell which parts of its call would have survived, since the protocol
+never told it this playlist was smart in the first place. `deletePlaylist`
+still works. `createPlaylist` can only ever
 make ordinary playlists; there is no wire vocabulary for rules, and adding
 one to a published protocol needs a better reason than this
 (CLAUDE.md, "No Users Yet" — third-party client compatibility is the one
@@ -378,12 +431,33 @@ is a one-liner and worth having; the reverse is not offered.
    (`Fields`, `Operators`, the unit and selector tables) are exposed as instance
    properties, because a compiled binding resolves its path against
    `x:DataType`'s instance members and cannot reach a static one.
-5. **Sync + server.** DTO field, planner assertions, `updatePlaylist`
-   rejection.
+5. **Sync + server.** ✅ Done. `PlaylistSyncPlaylistDto.Rules` (carried both
+   ways by `PlaylistSyncMapper`), the smart branch in `PlaylistSyncPlanner`,
+   `SmartPlaylistRules.Equivalent`, and `updatePlaylist` refusing a smart
+   playlist. 17 tests in `Flower.Tests/SmartPlaylistSyncTests.cs` plus two on
+   the server (`SubsonicWriteEndpointTests`, `SyncEndpointTests`).
 
-Phase 5 is what is left: rules do not yet cross the wire, so a smart playlist
-syncs as whatever tracks it currently holds and arrives at the peer as an
-ordinary one.
+   Three things the writing settled. **`SmartPlaylistRules` needed a real
+   equality**: the generated `==` compares `Conditions` by reference, being an
+   `IReadOnlyList`, so two rule sets that say the same thing are never equal -
+   which is exactly the question the planner has to ask. **A smart playlist is
+   merged on its query, never on its contents**, and the branch has to come
+   before `ContentEquals`: two devices holding different music legitimately
+   materialize the same rules differently, and since materialization does not
+   move `UpdatedAt`, neither side looks changed against the baseline - so the
+   ordinary merge's `(false, false)` arm would have landed every smart playlist
+   in `Conflict` on every sync, forever. And **nothing schedules the evaluation
+   of newly arrived rules**: installing the merged set raises
+   `Library.PlaylistsChanged`, which `SmartPlaylistRefresher` already
+   subscribes to. The peer's materialized tracks travel anyway, so the playlist
+   is not empty in the meantime - and permanently, for a `LiveUpdating = false`
+   one that no pass will ever touch.
+
+All five phases are built and tested. What is deliberately not here: rules have
+no place in the OpenSubsonic vocabulary (third-party clients see an ordinary
+playlist and are refused `updatePlaylist` on it), and `Flower.Web` has no
+editor of its own yet - `SmartPlaylistLabels` sits in `Flower.Core` so that one
+agrees with the desktop's when it is written.
 
 ## Testing
 

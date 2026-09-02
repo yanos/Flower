@@ -40,6 +40,42 @@ public class SmartPlaylistRulesJsonTests
         Assert.Equal(rules.LiveUpdating, reloaded.LiveUpdating);
     }
 
+    [Fact]
+    public void The_units_inside_a_value_and_a_limit_are_written_by_name_too()
+    {
+        var json = SmartPlaylistRulesJson.Write(new SmartPlaylistRules(
+            MatchMode.Any,
+            [new SmartCondition(SmartField.DateAdded, SmartOperator.InTheLast, new SmartValue.Relative(2, RelativeUnit.Years))],
+            new SmartLimit(25, LimitUnit.Items, LimitSelector.LeastRecentlyPlayed)));
+
+        Assert.Contains("\"Unit\":\"Years\"", json);
+        Assert.Contains("\"Unit\":\"Items\"", json);
+        Assert.Contains("\"SelectedBy\":\"LeastRecentlyPlayed\"", json);
+    }
+
+    // Verbatim out of a real playlists.rules column, written by the build that
+    // stored enums as numbers. Reading stays permissive so those rules keep
+    // working rather than silently degrading to ordinary playlists on the first
+    // launch after the change - the numbers are still unambiguous, they are
+    // just no longer what gets written back.
+    [Fact]
+    public void Rules_stored_as_numbers_by_an_older_build_still_load()
+    {
+        const string stored =
+            """{"Mode":0,"Conditions":[{"Field":72,"Operator":1,"Value":{"kind":"bool","Value":true}}],"LiveUpdating":true}""";
+
+        var rules = Assert.IsType<SmartPlaylistRules>(SmartPlaylistRulesJson.Read(stored));
+
+        Assert.Equal(MatchMode.All, rules.Mode);
+        var condition = Assert.Single(rules.Conditions);
+        Assert.Equal(SmartField.IsLocallyDownloaded, condition.Field);
+        Assert.Equal(SmartOperator.Is, condition.Operator);
+        Assert.Equal(new SmartValue.Bool(true), condition.Value);
+
+        // And it is rewritten in the readable form the next time it is saved.
+        Assert.Contains("\"IsLocallyDownloaded\"", SmartPlaylistRulesJson.Write(rules));
+    }
+
     // One case per SmartValue shape, because the discriminator is what the
     // stored blob is written in terms of and a case with no test is a case
     // whose tag nothing pins.
@@ -81,22 +117,22 @@ public class SmartPlaylistRulesJsonTests
         Assert.Equal(RelativeUnit.Days, value.Unit);
     }
 
-    // The numbers on SmartField and SmartOperator are the persisted contract,
-    // not their names - a stored rule written by an older build has to keep
-    // meaning what it meant. Asserting on the JSON itself is the only way to
-    // catch a switch to string enums, which would round-trip perfectly here
-    // and still orphan every rule already on disk.
+    // The blob is what a human reads when a playlist misbehaves on a device
+    // they cannot attach a debugger to, so it has to say what it means.
+    // Asserted on the JSON itself rather than only through a round trip, which
+    // passes just as happily with the small integers this used to write.
     [Fact]
-    public void Fields_and_operators_are_stored_as_their_numbers()
+    public void Fields_and_operators_are_stored_by_name()
     {
         var json = SmartPlaylistRulesJson.Write(SmartPlaylistRules.MatchAll(
             new SmartCondition(SmartField.Playlist, SmartOperator.IsNot, new SmartValue.PlaylistRef(Guid.Empty))));
 
         using var document = JsonDocument.Parse(json);
-        var condition = document.RootElement.GetProperty("Conditions")[0];
+        Assert.Equal(nameof(MatchMode.All), document.RootElement.GetProperty("Mode").GetString());
 
-        Assert.Equal((int)SmartField.Playlist, condition.GetProperty("Field").GetInt32());
-        Assert.Equal((int)SmartOperator.IsNot, condition.GetProperty("Operator").GetInt32());
+        var condition = document.RootElement.GetProperty("Conditions")[0];
+        Assert.Equal(nameof(SmartField.Playlist), condition.GetProperty("Field").GetString());
+        Assert.Equal(nameof(SmartOperator.IsNot), condition.GetProperty("Operator").GetString());
         Assert.Equal("playlist", condition.GetProperty("Value").GetProperty("kind").GetString());
     }
 

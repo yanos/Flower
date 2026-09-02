@@ -12,7 +12,7 @@ namespace Flower.Services;
 public static class PlaylistSyncMapper
 {
     public static PlaylistSyncPlaylistDto ToDto(Playlist playlist) =>
-        new(playlist.Id, playlist.Name, playlist.UpdatedAt, playlist.Tracks.Select(ToDto).ToList());
+        new(playlist.Id, playlist.Name, playlist.UpdatedAt, playlist.Tracks.Select(ToDto).ToList(), playlist.Rules);
 
     // Track.RoundedSeconds, not a separate inline Math.Round - must agree with
     // Track.SyncKey's own rounding (see its doc comment) or a duration near a
@@ -42,6 +42,14 @@ public static class PlaylistSyncMapper
             .ToList();
     }
 
+    // A smart playlist arrives carrying both its rules and whatever the peer
+    // had materialized from them. Both are kept: the tracks so the playlist is
+    // not empty for the moment before it is evaluated here (and permanently,
+    // for a LiveUpdating = false one, which no recomputation pass will ever
+    // touch), the rules so this device evaluates them against its own library
+    // from then on. Nothing has to schedule that evaluation - installing the
+    // merged set raises Library.PlaylistsChanged, which SmartPlaylistRefresher
+    // is already subscribed to.
     public static Playlist ToPlaylist(PlaylistSyncPlaylistDto dto, IReadOnlyList<Track> localLibrary) =>
-        new(dto.Id, dto.Name, ResolveTracks(dto.Tracks, localLibrary), dto.UpdatedAt);
+        new(dto.Id, dto.Name, ResolveTracks(dto.Tracks, localLibrary), dto.UpdatedAt, rules: dto.Rules);
 }

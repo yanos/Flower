@@ -812,6 +812,45 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
         await server.GetAsync($"/rest/deletePlaylist{server.AuthQuery}&id={id}");
     }
 
+    // A smart playlist is the one thing on this surface a third-party client
+    // can see but must not edit: getPlaylist reports it as an ordinary
+    // playlist, because that is all OpenSubsonic can describe, and an accepted
+    // edit would be silently erased by the next recomputation. See
+    // docs/SMART-PLAYLIST-PLAN.md, "Server / Subsonic surface".
+    [Fact]
+    public async Task updatePlaylist_is_refused_on_a_smart_playlist()
+    {
+        var created = await server.GetAsync(
+            $"/rest/createPlaylist{server.AuthQuery}&name=Made+Smart&songId={SongId("Alpha Song")}");
+        var id = created.GetProperty("playlist").GetProperty("id").GetString();
+
+        var library = server.Services.GetRequiredService<Library>();
+        var playlist = library.FindPlaylist(id!)!;
+        // Frozen, so the server's own recomputation pass leaves the seeded
+        // track alone and the assertions below are about this endpoint.
+        playlist.Rules = SmartPlaylistRules.MatchAll(
+            new SmartCondition(SmartField.PlayCount, SmartOperator.GreaterThan, new SmartValue.Number(0)))
+            with { LiveUpdating = false };
+
+        var refused = await server.GetAsync(
+            $"/rest/updatePlaylist{server.AuthQuery}&playlistId={id}&name=Renamed"
+            + $"&songIndexToRemove=0&songIdToAdd={SongId("Beta Song")}");
+        Assert.Equal(50, refused.GetProperty("error").GetProperty("code").GetInt32());
+
+        // Nothing was partly applied - not the rename either.
+        var reread = await server.GetAsync($"/rest/getPlaylist{server.AuthQuery}&id={id}");
+        Assert.Equal("Made Smart", reread.GetProperty("playlist").GetProperty("name").GetString());
+        Assert.Equal(
+            ["Alpha Song"],
+            reread.GetProperty("playlist").GetProperty("entry")
+                .EnumerateArray().Select(e => e.GetProperty("title").GetString()));
+
+        // Deleting one is still allowed - it is the contents that come from the
+        // rules, not the playlist's right to exist.
+        Assert.Equal("ok", (await server.GetAsync($"/rest/deletePlaylist{server.AuthQuery}&id={id}"))
+            .GetProperty("status").GetString());
+    }
+
     [Fact]
     public async Task A_deleted_playlist_is_gone_and_deleting_it_again_reports_not_found()
     {

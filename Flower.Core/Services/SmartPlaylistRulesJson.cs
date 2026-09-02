@@ -44,8 +44,10 @@ public static class SmartPlaylistRulesJson
 // context in this folder is source-generated: this type has to serialize on
 // iOS, where there is no JIT to build a reflection-based contract at runtime.
 //
-// Enums stay numbers - SmartField and SmartOperator say so in their own
-// remarks, and the numbers are what a stored rule is written in terms of.
+// Enums are written by name, not by number - the attributes are on the enums
+// themselves (see SmartField's remarks for why), so every serializer that
+// touches a rule agrees: this blob, the sync wire read source-generated on a
+// client, and the same wire read reflection-based on the server.
 [JsonSourceGenerationOptions(
     WriteIndented = false,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

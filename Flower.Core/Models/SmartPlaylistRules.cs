@@ -25,8 +25,48 @@ public sealed record SmartPlaylistRules(
 
     public static SmartPlaylistRules MatchAny(params SmartCondition[] conditions) =>
         new(MatchMode.Any, conditions);
+
+    // "Do these two say the same thing?" - which the generated == does not
+    // answer, because Conditions is an IReadOnlyList and a record compares one
+    // by reference. Two rule sets built from the same JSON are never == to each
+    // other, and the array literal a test writes is never == to the List a
+    // round trip produces.
+    //
+    // Sync needs a real answer: the same rules materialize to different tracks
+    // on two devices holding different music, so comparing contents cannot tell
+    // "we agree" from "someone edited the query" - only comparing the queries
+    // can. See PlaylistSyncPlanner.
+    //
+    // Everything below the list compares itself properly: SmartCondition,
+    // SmartLimit and every SmartValue case (including Range, recursively) are
+    // records over plain values.
+    public static bool Equivalent(SmartPlaylistRules? left, SmartPlaylistRules? right)
+    {
+        if (ReferenceEquals(left, right))
+            return true;
+
+        if (left is null || right is null)
+            return false;
+
+        if (left.Mode != right.Mode || left.Limit != right.Limit || left.LiveUpdating != right.LiveUpdating)
+            return false;
+
+        if (left.Conditions.Count != right.Conditions.Count)
+            return false;
+
+        for (var i = 0; i < left.Conditions.Count; i++)
+        {
+            if (left.Conditions[i] != right.Conditions[i])
+                return false;
+        }
+
+        return true;
+    }
 }
 
+// Every enum in a rule is written to JSON by name, not by number - see
+// SmartField below for the whole argument.
+[JsonConverter(typeof(JsonStringEnumConverter<MatchMode>))]
 public enum MatchMode
 {
     All,
@@ -38,10 +78,28 @@ public sealed record SmartCondition(SmartField Field, SmartOperator Operator, Sm
 // Every field a condition can test, and the only place new ones get added -
 // SmartPlaylistFields maps each to its display name, value kind and accessor.
 //
-// Explicitly numbered because these are persisted (Schema V6's playlists.rules)
-// and travel over the sync wire, so the numbers are the contract even while the
-// names are not. Grouped in blocks of ten by value kind, leaving room to add a
-// field beside its relatives instead of at the end.
+// Written to JSON by name: a stored rule reads
+// {"Field":"IsLocallyDownloaded","Operator":"Is",...} rather than
+// {"Field":72,"Operator":1,...}. The blob is the entire definition of a smart
+// playlist - it is what sits in Schema V6's playlists.rules, what crosses the
+// sync wire, and the only thing anyone debugging "why is this playlist wrong
+// on my phone" has to read - and a wall of small integers is unreadable
+// exactly when it matters most. It is not a hot path or a large payload: a
+// handful of conditions per playlist, written when the user edits them.
+//
+// So the *names* are the contract now, not the numbers: a case can be
+// renumbered freely, but renaming one orphans every stored rule that used it
+// (which degrades that playlist to an ordinary one - see
+// SmartPlaylistRulesJson's forgiving Read). The explicit numbers stay anyway.
+// They cost nothing, they still document the grouping, and reading is
+// permissive enough to accept them, so rules written by a build from before
+// this change still load - which is how the first real smart playlists
+// survived it.
+//
+// Grouped in blocks of ten by value kind, leaving room to add a field beside
+// its relatives instead of at the end. That grouping is now purely a comment
+// to the reader; nothing depends on the values.
+[JsonConverter(typeof(JsonStringEnumConverter<SmartField>))]
 public enum SmartField
 {
     Title          = 1,
@@ -91,7 +149,8 @@ public enum SmartValueKind
     Playlist,
 }
 
-// Numbered for the same reason SmartField is.
+// By name for the same reason SmartField is, and numbered for the same reason.
+[JsonConverter(typeof(JsonStringEnumConverter<SmartOperator>))]
 public enum SmartOperator
 {
     Is             = 1,
@@ -171,6 +230,7 @@ public abstract record SmartValue
     }
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<RelativeUnit>))]
 public enum RelativeUnit
 {
     Minutes,
@@ -186,6 +246,7 @@ public enum RelativeUnit
 // playlist rather than a report.
 public sealed record SmartLimit(int Amount, LimitUnit Unit, LimitSelector SelectedBy);
 
+[JsonConverter(typeof(JsonStringEnumConverter<LimitUnit>))]
 public enum LimitUnit
 {
     Items,
@@ -193,6 +254,7 @@ public enum LimitUnit
     Hours,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<LimitSelector>))]
 public enum LimitSelector
 {
     Random,

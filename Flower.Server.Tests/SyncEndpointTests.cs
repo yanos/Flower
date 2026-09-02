@@ -229,6 +229,58 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         }
     }
 
+    // The server serializes this manifest reflection-based (SyncEndpoints'
+    // own JsonOptions) while the client reads it through a source-generated
+    // context, and SmartValue is a polymorphic hierarchy - so "the rules
+    // survived the wire" is worth asserting against a real request rather than
+    // against a round trip inside one serializer.
+    [Fact]
+    public async Task A_smart_playlists_rules_are_served_and_come_back_through_apply()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        var rules = new SmartPlaylistRules(
+            MatchMode.Any,
+            [
+                new SmartCondition(SmartField.Genre, SmartOperator.Contains, new SmartValue.Text("Jazz")),
+                new SmartCondition(SmartField.DateAdded, SmartOperator.InTheLast, new SmartValue.Relative(30, RelativeUnit.Days)),
+            ],
+            new SmartLimit(25, LimitUnit.Items, LimitSelector.MostRecentlyAdded),
+            // Frozen, so the server's own recomputation pass does not empty it
+            // against a library that has no Jazz in it.
+            LiveUpdating: false);
+
+        try
+        {
+            var pushed = new PlaylistSyncManifestDto(device.Fingerprint,
+            [
+                new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Recent Jazz", DateTimeOffset.UtcNow, [], rules),
+            ]);
+
+            var (applyStatus, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/playlists/apply", "10.0.2.4",
+                body: JsonSerializer.Serialize(pushed));
+            Assert.Equal(HttpStatusCode.NoContent, applyStatus);
+
+            // Stored as a smart playlist on this side, not flattened to the
+            // (empty) track list it arrived with.
+            Assert.True(Assert.Single(library.Playlists).IsSmart);
+
+            var (getStatus, body, _) = await SendAsync(device, "GET", "/api/flower/v1/playlists", "10.0.2.4");
+            Assert.Equal(HttpStatusCode.OK, getStatus);
+
+            var served = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(body)!;
+            Assert.True(SmartPlaylistRules.Equivalent(rules, Assert.Single(served.Playlists).Rules));
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // The return leg. A play reported here is stored on this server and has to
     // come back out in the manifest, or a tab counts a play and then never sees
     // it again - the count was kept and never served, which is how this looked

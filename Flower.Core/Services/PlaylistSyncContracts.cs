@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+using Flower.Models;
+
 namespace Flower.Services;
 
 // Wire shapes for the playlist sync protocol (see PlaylistSyncService / SYNC-PLAN.md
@@ -15,7 +17,14 @@ public sealed record PlaylistSyncPlaylistDto(
     Guid Id,
     string Name,
     DateTimeOffset UpdatedAt,
-    List<PlaylistSyncTrackDto> Tracks);
+    List<PlaylistSyncTrackDto> Tracks,
+    // The query, for a smart playlist - null for an ordinary one. This, not
+    // Tracks, is what actually syncs about a smart playlist: each device
+    // evaluates it against its own library, which is the wanted behaviour
+    // rather than a compromise (on a phone holding a subset, "Recently Added"
+    // should mean recently added there). Tracks still travels, and is still
+    // what a peer holding no rules of its own ends up with.
+    SmartPlaylistRules? Rules = null);
 
 // GET /api/flower/v1/playlists returns one of these describing the responding
 // device's current playlists. POST /api/flower/v1/playlists/apply sends one back:
