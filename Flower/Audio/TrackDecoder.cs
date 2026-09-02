@@ -9,7 +9,7 @@ using LibVLCSharp.Shared;
 
 using Flower.Models;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Wraps one decode-only LibVLC MediaPlayer: SetAudioFormat +
     // SetAudioCallbacks redirect its decoded PCM into a GaplessRingBuffer

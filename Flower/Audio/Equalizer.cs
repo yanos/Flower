@@ -1,6 +1,6 @@
 using System;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Real-time-safe 10-band graphic EQ, run from OutputStage inside
     // MiniaudioSink's render callback. Pure C# RBJ-cookbook peaking/bell

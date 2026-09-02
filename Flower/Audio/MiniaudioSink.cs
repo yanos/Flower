@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 
 using Miniaudio;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Default IAudioSink on every platform: plays the shared GaplessRingBuffer
     // back out through a dedicated miniaudio playback device - one real-time

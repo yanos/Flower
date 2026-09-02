@@ -9,7 +9,7 @@ using Avalonia.Threading;
 
 using Microsoft.Extensions.Logging;
 
-using Flower.Manager;
+using Flower.Audio;
 using Flower.Services;
 using Flower.Models;
 

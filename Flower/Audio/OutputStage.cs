@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Everything that happens to PCM between the ring buffer and the sound
     // card, in one place and in float.

@@ -2,7 +2,7 @@ using System.Threading.Tasks;
 
 using LibVLCSharp.Shared;
 
-namespace Flower.Manager;
+namespace Flower.Audio;
 
 // Teaches a LibVLC core not to stall on a certificate it does not recognise.
 //

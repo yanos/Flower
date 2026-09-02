@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 using Flower.Models;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Raised instead of EndReached when a track stops because it could not be
     // decoded rather than because it finished - see IAudioManager.TrackFailed.

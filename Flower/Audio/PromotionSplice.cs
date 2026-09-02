@@ -1,4 +1,4 @@
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // What happened at one gapless handover, measured across the window that
     // actually decides whether the handover was audible: from entering

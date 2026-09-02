@@ -2,7 +2,7 @@ using System;
 
 using Microsoft.Extensions.Logging;
 
-namespace Flower.Manager;
+namespace Flower.Audio;
 
 // iOS needs the AVAudioSession category and activation to be timed around real
 // playback. Starting that session at app launch interrupts another app's music

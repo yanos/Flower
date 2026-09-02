@@ -7,7 +7,7 @@ using Avalonia.Headless.XUnit;
 
 using Flower.Controls;
 using Flower.Logging;
-using Flower.Manager;
+using Flower.Audio;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;

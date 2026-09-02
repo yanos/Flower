@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Adapts a GaplessRingBuffer into a .NET Stream so it can be handed to
     // LibVLCSharp's StreamMediaInput and played back as one continuous raw

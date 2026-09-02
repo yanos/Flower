@@ -3,7 +3,7 @@ using System;
 using Avalonia.Controls;
 using Avalonia.Data.Converters;
 
-using Flower.Manager;
+using Flower.Audio;
 using Flower.ViewModels;
 
 namespace Flower.UserControls

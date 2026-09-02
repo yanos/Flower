@@ -6,7 +6,7 @@ using System.Threading;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 
-using Flower.Manager;
+using Flower.Audio;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;

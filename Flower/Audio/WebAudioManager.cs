@@ -5,7 +5,7 @@ using System.Timers;
 
 using Flower.Models;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Browser's IAudioManager - see App.axaml.cs's Bootstrap() for the
     // OperatingSystem.IsBrowser() fork that constructs this instead of

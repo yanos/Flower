@@ -16,7 +16,7 @@ using LibVLCSharp.Shared;
 
 using Flower.Controls;
 using Flower.Logging;
-using Flower.Manager;
+using Flower.Audio;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Persistence.Sql;
@@ -486,7 +486,7 @@ public partial class App : Application
     {
         if (OperatingSystem.IsBrowser())
         {
-            services.AddSingleton<IAudioManager>(_ => new Manager.WebAudioManager());
+            services.AddSingleton<IAudioManager>(_ => new WebAudioManager());
             return;
         }
 
@@ -498,7 +498,7 @@ public partial class App : Application
                 // Before anything opens a stream URL on it - see
                 // VlcCertificateDialogs for what this accepts and what it does
                 // not.
-                Manager.VlcCertificateDialogs.AnswerUnattended(libVLC);
+                VlcCertificateDialogs.AnswerUnattended(libVLC);
                 return libVLC;
             })
             .AddSingleton(sp => PlatformAudioManager.Current
@@ -585,7 +585,9 @@ public partial class App : Application
         // plays, rather than waiting for the user to open the Equalizer window
         // this session - see EqualizerViewModel.
         if (audioManager is GaplessAudioManager gapless && appSettings.EqualizerSettings is { Enabled: true } eqSettings)
-            gapless.ApplyEqualizer(Manager.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
+        {
+            gapless.ApplyEqualizer(Flower.Audio.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
+        }
 
         // Same idea for the render path's own tuning - prebuffer depth, fade
         // and ramp lengths. Clamped on the way in, since settings.json is

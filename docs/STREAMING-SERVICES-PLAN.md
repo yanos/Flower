@@ -18,7 +18,7 @@ Not yet started; not yet committed to git.
 
 No public API; every third-party client scrapes. A track/album page embeds a `data-tralbum` JSON blob with a direct, signed but public `mp3-128` MP3 URL — playable by LibVLC with no decryption. Purchased (DRM-free, higher quality) downloads require scraping an authenticated fan-collection page.
 
-**Approach:** `BandcampProvider : IMusicProvider`, plain `HttpClient` scraping (search page or the internal `fuzzysearch` autocomplete endpoint) — no third-party library needed. Resolve the stream URL lazily *at play time* (never cache in `library.json` — it's time-limited), hand it to the existing `VlcAudioManager` unchanged. Optional: import a logged-in user's purchased collection as placeholder tracks (`Path == null`), same shape as a sync peer's tracks.
+**Approach:** `BandcampProvider : IMusicProvider`, plain `HttpClient` scraping (search page or the internal `fuzzysearch` autocomplete endpoint) — no third-party library needed. Resolve the stream URL lazily *at play time* (never cache in `library.json` — it's time-limited), hand it to the existing `GaplessAudioManager` unchanged. Optional: import a logged-in user's purchased collection as placeholder tracks (`Path == null`), same shape as a sync peer's tracks.
 
 **Limitations:** scraping is brittle and against ToS (though no DRM circumvention); streaming capped at 128kbps; some tracks are purchase-only.
 
@@ -46,7 +46,7 @@ This is additive to `SYNC-PLAN.md`'s "iOS owns its files, no `MPMediaLibrary` in
 
 ## Core architectural work
 
-**Seam 1 — `IMusicProvider` (cheap, shared by all three):** a provider abstraction generalizing what `OpenSubsonicClient` already does — `SearchAsync`, `BrowseLibraryAsync`, `ResolvePlayableUrlAsync(track)` (`null` ⇒ not URL-playable). Add a `Source`/provider tag to `Track` alongside the existing `OriginDeviceFingerprint` pattern. `ResolvePlayableUrlAsync` results must never be persisted to `library.json` (signed/time-limited URLs). Local, sync, and Bandcamp all implement this fully and reuse `VlcAudioManager` untouched.
+**Seam 1 — `IMusicProvider` (cheap, shared by all three):** a provider abstraction generalizing what `OpenSubsonicClient` already does — `SearchAsync`, `BrowseLibraryAsync`, `ResolvePlayableUrlAsync(track)` (`null` ⇒ not URL-playable). Add a `Source`/provider tag to `Track` alongside the existing `OriginDeviceFingerprint` pattern. `ResolvePlayableUrlAsync` results must never be persisted to `library.json` (signed/time-limited URLs). Local, sync, and Bandcamp all implement this fully and reuse `GaplessAudioManager` untouched.
 
 **Seam 2 — multiple `IAudioManager`s + a router (expensive, DRM services only):** for Spotify/Apple Music, `ResolvePlayableUrlAsync` returns `null` and playback needs a per-backend `IAudioManager` (`MusicKitAudioManager`, `LibrespotAudioManager`) behind an `AudioManagerRouter` that picks the engine from `track.Source`. Hard problems: reconciling two engines' clocks, gapless handoff across engines, volume normalization, running a native SDK player alongside LibVLC. This is why DRM-service playback is a late phase, not a quick win.
 

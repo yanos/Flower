@@ -1,4 +1,4 @@
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Set by the platform entry point (e.g. a future Flower.Mac's Program.cs)
     // before Avalonia starts - same timing/convention as

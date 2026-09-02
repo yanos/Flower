@@ -22,7 +22,7 @@ entirely.
 
 ## 1. EQ with true bypass — Done
 
-Implemented as a 10-band graphic EQ, not against LibVLC (see above) — LibVLC is decode-only now, and every platform renders through `MiniaudioSink`, a plain `ma_device` pulling raw PCM from `GaplessRingBuffer`. The EQ is a pure-C# RBJ-cookbook peaking/bell biquad cascade (`Equalizer`/`EqualizerSettings`, `Flower/Manager/`), spliced directly into `MiniaudioSink.DataCallback` after the ring read. `IAudioSink.ApplyEqualizer(Equalizer? equalizer)` carries a rebuilt-and-atomically-swapped processor down from `IAudioManager`/`GaplessAudioManager`; passing `null` is **true bypass** — `DataCallback` skips the processing call entirely rather than running an all-zero-dB filter, preserving this section's original bypass requirement under the new render pipeline.
+Implemented as a 10-band graphic EQ, not against LibVLC (see above) — LibVLC is decode-only now, and every platform renders through `MiniaudioSink`, a plain `ma_device` pulling raw PCM from `GaplessRingBuffer`. The EQ is a pure-C# RBJ-cookbook peaking/bell biquad cascade (`Equalizer`/`EqualizerSettings`, `Flower/Audio/`), spliced directly into `MiniaudioSink.DataCallback` after the ring read. `IAudioSink.ApplyEqualizer(Equalizer? equalizer)` carries a rebuilt-and-atomically-swapped processor down from `IAudioManager`/`GaplessAudioManager`; passing `null` is **true bypass** — `DataCallback` skips the processing call entirely rather than running an all-zero-dB filter, preserving this section's original bypass requirement under the new render pipeline.
 
 Fixed at 10 bands (31Hz–16kHz, ISO-ish spacing, `Q≈1.41`), ±12dB per band, plus a preamp stage applied before the cascade — no presets, no parametric (frequency/Q) adjustment; out of scope for what was asked. `EqualizerSettings` (enabled flag, preamp, 10 band gains) persists via `AppSettings.EqualizerSettings`/`AppSettingsStore`, and is eagerly re-applied at startup in `App.axaml.cs` — not only when the Equalizer window happens to be opened. UI: `EqualizerWindow`/`EqualizerViewModel`, reachable via **View → Equalizer…**, live-apply with no "Apply" button. A settings change still rebuilds the whole processor (fresh coefficients and fresh filter delay-line state together), but that is no longer heard: `OutputStage` crossfades from the outgoing filter's output to the incoming one's across a single render callback. The "accepted minor transient click" this section used to record is gone — see `AUDIO-QUALITY-PLAN.md`, which also moved the EQ off S16 (it used to round and hard-clamp to 16-bit mid-chain, so any positive band gain clipped outright) onto the float path that requantises once, at the end, with dither.
 
@@ -141,7 +141,7 @@ renders through `MiniaudioSink`, so there is exactly one render path to be
 gapless on and no Apple-specific bridge to wait for. The "don't build this
 twice" warning was answered by deleting the second path, not by sharing it.
 
-The pipeline (`Flower/Manager/`):
+The pipeline (`Flower/Audio/`):
 
 - `GaplessFormat` — one canonical PCM format (S16N/native-session-rate/stereo)
   every track is decoded to, so a track boundary is never a format change and

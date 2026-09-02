@@ -1,4 +1,4 @@
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // One entry in the output-device picker. Id is an opaque, backend-specific
     // handle produced by whichever IAudioSink enumerated it - base64 of

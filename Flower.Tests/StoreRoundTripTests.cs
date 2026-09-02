@@ -130,7 +130,7 @@ public class StoreRoundTripTests : IDisposable
     // reaches its Dispatcher.UIThread.Post call - this test lives here (not
     // there) because it does touch LibraryStore for real and needs this
     // class's HOME redirection.
-    private sealed class FakeAudioManager : Flower.Manager.IAudioManager
+    private sealed class FakeAudioManager : Flower.Audio.IAudioManager
     {
         public bool IsPlaying { get; set; }
         public int Volume { get; set; }
@@ -143,9 +143,9 @@ public class StoreRoundTripTests : IDisposable
         public void Resume() { }
         public void Pause() { }
         public void Stop() { }
-        public void ApplyEqualizer(Flower.Manager.Equalizer? equalizer) { }
-        public void ApplyAudioTiming(Flower.Manager.AudioTimingSettings timing) { }
-        public System.Collections.Generic.IReadOnlyList<Flower.Manager.AudioOutputDevice> GetOutputDevices() => [];
+        public void ApplyEqualizer(Flower.Audio.Equalizer? equalizer) { }
+        public void ApplyAudioTiming(Flower.Audio.AudioTimingSettings timing) { }
+        public System.Collections.Generic.IReadOnlyList<Flower.Audio.AudioOutputDevice> GetOutputDevices() => [];
         public string? OutputDeviceId => null;
         public void SetOutputDevice(string? deviceId) { }
         public void RaiseEndReached() => EndReached?.Invoke(this, EventArgs.Empty);
@@ -156,7 +156,7 @@ public class StoreRoundTripTests : IDisposable
         public event EventHandler? PositionChanged;
         public event EventHandler? VolumeChanged;
         public event EventHandler? EndReached;
-        public event EventHandler<Flower.Manager.TrackFailedEventArgs>? TrackFailed;
+        public event EventHandler<Flower.Audio.TrackFailedEventArgs>? TrackFailed;
 #pragma warning restore CS0067
     }
 

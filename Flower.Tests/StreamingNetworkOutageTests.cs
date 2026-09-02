@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
-using Flower.Manager;
+using Flower.Audio;
 using Flower.Models;
 using Flower.Tests.TestSupport;
 

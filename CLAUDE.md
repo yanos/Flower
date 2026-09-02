@@ -146,7 +146,7 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 - `Track` — immutable metadata record, plus `DateAdded` (first-seen date, carried forward across rescans by `Library.UpdateTracks` matching on `Path`).
 - `Library` — canonical track list; fires `TracksUpdated` after each background rescan.
 - `MainPlaylist : Playlist` — the play queue.
-- `IAudioManager` / `VlcAudioManager` — LibVLC wrapper; raises playback events ViewModels subscribe to.
+- `IAudioManager` / `GaplessAudioManager` — playback abstraction and implementation; raises playback events ViewModels subscribe to.
 - `MainViewModel` — track list, sidebar navigation, search, columns, status bar, and the Cmd/Ctrl+L "scroll to now playing" flow. Recently Added has its own independent sort state from Songs/Albums/Artists.
 - `PlaylistControlViewModel` — play/pause/next/previous, repeat/shuffle (persisted in `settings.json`). Shuffle/repeat only affect auto-advance and `Next()`, never manual `Previous()`.
 - `CurrentlyPlayingControlViewModel` — seek bar + elapsed/total time.

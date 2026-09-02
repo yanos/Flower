@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // The one platform-forking piece of the gapless pipeline: consumes the
     // shared GaplessRingBuffer that GaplessCoordinator keeps continuously
@@ -43,7 +43,7 @@ namespace Flower.Manager
         // Begins consuming ringBuffer. Called once, at construction time of
         // whichever GaplessAudioManager owns this sink - the sink runs for
         // the app's entire lifetime after this, the same way the old
-        // VlcAudioManager's single MediaPlayer did.
+        // the former VlcAudioManager's single MediaPlayer did.
         void Start(GaplessRingBuffer ringBuffer);
 
         // Swaps in a new EQ processor (rebuilt from settings), or clears it

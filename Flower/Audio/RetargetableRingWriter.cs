@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // The write side of a decoder that can have its output ring swapped
     // underneath it mid-decode: an armed (decode-ahead) TrackDecoder writes

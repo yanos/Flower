@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Single-producer/single-consumer byte ring buffer carrying canonical PCM
     // (S16/48kHz/stereo throughout the gapless pipeline - see

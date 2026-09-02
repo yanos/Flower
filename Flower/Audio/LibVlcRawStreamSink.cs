@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 using LibVLCSharp.Shared;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Former default, cross-platform IAudioSink: plays the shared
     // GaplessRingBuffer back out through LibVLC's own aout (WASAPI/

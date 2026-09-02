@@ -12,7 +12,7 @@ using LibVLCSharp.Shared;
 
 using Flower.Models;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // The one IAudioManager implementation used on every platform: decode
     // (via GaplessCoordinator/TrackDecoder) and render (via the injected

@@ -4,7 +4,7 @@ using Avalonia.Threading;
 
 using Microsoft.Extensions.Logging;
 
-using Flower.Manager;
+using Flower.Audio;
 using Flower.ViewModels;
 
 namespace Flower.Services

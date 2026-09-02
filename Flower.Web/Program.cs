@@ -5,7 +5,7 @@ using Avalonia;
 using Avalonia.Browser;
 
 using Flower;
-using Flower.Manager;
+using Flower.Audio;
 using Flower.Services;
 
 internal sealed partial class Program

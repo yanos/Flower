@@ -1,6 +1,6 @@
 using System.Threading;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // The one canonical PCM format every track is decoded to before it ever
     // reaches a GaplessRingBuffer - fixed so that a track boundary is never a

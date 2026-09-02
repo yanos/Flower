@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 using Flower.Logging;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     public static class VlcNativeSetup
     {

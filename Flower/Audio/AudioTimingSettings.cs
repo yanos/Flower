@@ -1,6 +1,6 @@
 using System;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // The latency/declick trade, exposed rather than hardcoded. Every value is
     // a few milliseconds of audio, and the right answer depends on taste and

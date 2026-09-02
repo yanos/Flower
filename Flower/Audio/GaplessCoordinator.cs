@@ -8,7 +8,7 @@ using LibVLCSharp.Shared;
 
 using Flower.Models;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Owns the decode-ahead/handover state machine that makes track
     // transitions sample-accurate: a "current" TrackDecoder writes directly

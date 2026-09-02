@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 using Flower.Models;
 
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // The subset of TrackDecoder's surface GaplessCoordinator actually
     // depends on - lets tests substitute a fake decoder and exercise the

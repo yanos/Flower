@@ -1,6 +1,6 @@
 using System;
 
-using Flower.Manager;
+using Flower.Audio;
 using Flower.Tests.TestSupport;
 
 namespace Flower.Tests;

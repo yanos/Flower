@@ -61,7 +61,7 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
 
     // A placeholder (not yet downloaded) with no peer to stream from must be
     // declined rather than handed to the audio manager - passing a null Path
-    // straight to Play is what used to crash inside the old VlcAudioManager.
+    // straight to Play is what used to crash inside the former VlcAudioManager.
     // That guard lived in MainViewModel.PlayResolvingPlaceholder and in a copy
     // of it here, then in one shared place; it now lives one layer lower still,
     // inside PlaylistControlViewModel.Play itself, so no caller can miss it -

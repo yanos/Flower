@@ -1,4 +1,4 @@
-namespace Flower.Manager
+namespace Flower.Audio
 {
     // Persisted EQ configuration - see Equalizer for the DSP that consumes
     // this. BandGainsDb is fixed at Equalizer.BandCount (10) entries, one per

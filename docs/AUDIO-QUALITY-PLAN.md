@@ -35,7 +35,7 @@ latency/declick trade is exposed as settings rather than hardcoded.
 
 ### A. The ring replays stale audio after every flush — the "loop" symptom
 
-`Flower/Manager/GaplessRingBuffer.cs:111-154`. `Read()` notices a generation
+`Flower/Audio/GaplessRingBuffer.cs:111-154`. `Read()` notices a generation
 change, rebases **its own** index to 0, then reads `_writeIndex` raw without
 checking that the writer has rebased too:
 
@@ -231,7 +231,7 @@ backlog, so the now-playing UI would have waited that long. The split into
 
 ### Phase 1 — the defects behind the reported symptoms
 
-**1.1 Fix the ring's post-`Reset()` race** — `Flower/Manager/GaplessRingBuffer.cs`.
+**1.1 Fix the ring's post-`Reset()` race** — `Flower/Audio/GaplessRingBuffer.cs`.
 
 Keep the generation design; close the hole by making each side treat a
 counterpart that has not yet rebased as *empty*, and publish the rebased index
@@ -264,7 +264,7 @@ timeout loops) — they are decode/promotion threads where a 1 ms poll costs
 nothing. `Write`, `ReadBlocking` and `RetargetableRingWriter.PromoteTarget` all
 keep their current external behaviour and timeouts.
 
-**1.3 Stop discarding the buffered tail** — `Flower/Manager/GaplessCoordinator.cs`.
+**1.3 Stop discarding the buffered tail** — `Flower/Audio/GaplessCoordinator.cs`.
 
 Split "the user skipped" from "the queue advanced": add an `immediate` parameter
 to `Play`, threaded through `IAudioManager.Play`.
@@ -291,7 +291,7 @@ the decode thread.
 
 ### Phase 2 — a real output stage: float, ramps, dither
 
-New `Flower/Manager/OutputStage.cs`, owned by `MiniaudioSink` and driven from
+New `Flower/Audio/OutputStage.cs`, owned by `MiniaudioSink` and driven from
 `DataCallback`. Per callback, on the bytes read from the ring:
 
 1. Widen S16 → float into a preallocated scratch buffer (allocated in `Start`,
@@ -420,14 +420,14 @@ format-aware pipeline, not an extension of this quality pass.
 
 | File | Change |
 |---|---|
-| `Flower/Manager/GaplessRingBuffer.cs` | 1.1 generation guard + atomic indices, 1.2 no signal from `Read` |
-| `Flower/Manager/RetargetableRingWriter.cs` | 1.2 polling instead of event waits |
-| `Flower/Manager/GaplessCoordinator.cs` | 1.3 tail drain, 1.4 sync seek flush, 1.5 reorder, Phase 3 lock-free reads |
-| `Flower/Manager/GaplessAudioManager.cs`, `IAudioManager.cs` | `Play(track, immediate)` |
+| `Flower/Audio/GaplessRingBuffer.cs` | 1.1 generation guard + atomic indices, 1.2 no signal from `Read` |
+| `Flower/Audio/RetargetableRingWriter.cs` | 1.2 polling instead of event waits |
+| `Flower/Audio/GaplessCoordinator.cs` | 1.3 tail drain, 1.4 sync seek flush, 1.5 reorder, Phase 3 lock-free reads |
+| `Flower/Audio/GaplessAudioManager.cs`, `IAudioManager.cs` | `Play(track, immediate)` |
 | `Flower/ViewModels/PlaylistControlViewModel.cs` | pass `immediate`; DB writes off the decode thread; marshal `Stopped` |
-| `Flower/Manager/OutputStage.cs` (new) | float path, ramps, declick, dither |
-| `Flower/Manager/MiniaudioSink.cs` | own the output stage; master volume 1.0; fade-then-stop; prime latch; callback exception guard |
-| `Flower/Manager/Equalizer.cs` | float in/out, headroom, soft clip, coefficient crossfade |
+| `Flower/Audio/OutputStage.cs` (new) | float path, ramps, declick, dither |
+| `Flower/Audio/MiniaudioSink.cs` | own the output stage; master volume 1.0; fade-then-stop; prime latch; callback exception guard |
+| `Flower/Audio/Equalizer.cs` | float in/out, headroom, soft clip, coefficient crossfade |
 | `Flower/Persistence/AppSettingsStore.cs` | `AudioTimingSettings` on `AppSettings`, clamped on load |
 | `Flower/App.axaml.cs` | apply the timing snapshot to the sink at startup, as the EQ already is (`:587-588`) |
 | `Flower.Tests/TestSupport/Pcm.cs`, `RenderPumpSink.cs` (new) | shared PCM harness |
