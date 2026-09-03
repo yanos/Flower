@@ -133,13 +133,14 @@
                                            IsVisible="{Binding IsDownloadIdle}"
                                            ToolTip.Tip="Download" />
               <!-- Rotation directly on the icon, matching MainView.axaml's
-                   own already-working status-bar spinner exactly (same Sync
-                   icon, same RelativePoint.Center-equivalent origin, same
-                   RotateTransform) - an earlier attempt wrapped this in a
-                   sized Border instead, which was the wrong fix. -->
+                   own status-bar spinner exactly (same Sync icon, same
+                   centred origin, same RotateTransform) - an earlier attempt
+                   wrapped this in a sized Border instead, which was the
+                   wrong fix. The origin is left unset for the reason
+                   TrackDownloadButton.axaml spells out: "0.5,0.5" is half a
+                   pixel, not half the icon. -->
               <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7"
-                                           IsVisible="{Binding IsDownloading}"
-                                           RenderTransformOrigin="0.5,0.5">
+                                           IsVisible="{Binding IsDownloading}">
                 <materialIcons:MaterialIcon.RenderTransform>
                   <RotateTransform Angle="{Binding SpinAngle}" />
                 </materialIcons:MaterialIcon.RenderTransform>
