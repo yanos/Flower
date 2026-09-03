@@ -386,6 +386,15 @@ namespace Flower.Audio
             Interlocked.Add(ref _silenceBytesRendered, snapshot.SilenceBytes);
             Interlocked.Add(ref _shortReadCount, snapshot.ShortReadCount);
             Interlocked.Exchange(ref _lastPcmFingerprint, snapshot.LastPcmFingerprint);
+
+            // Folded like the rest, and it was the one field that was not:
+            // _lastCallbackReadBytes is written only by the managed render
+            // callback, which is dead code whenever the bridge is doing the
+            // rendering. So every identical-PCM warning off a phone reported
+            // LastReadBytes=0 - not a zero read, just a field nobody had
+            // written - which reads as "the sink read nothing from a ring that
+            // had data in it" and is a different bug entirely.
+            Volatile.Write(ref _lastCallbackReadBytes, (int)snapshot.LastReadBytes);
             if (snapshot.MaxIdenticalCallbackRun > Volatile.Read(ref _maxIdenticalCallbackRun))
                 Volatile.Write(ref _maxIdenticalCallbackRun, snapshot.MaxIdenticalCallbackRun);
         }
@@ -991,12 +1000,12 @@ namespace Flower.Audio
 
                 if (read > 0)
                 {
-                    var fingerprint = Fingerprint(dest[..read]);
+                    var fingerprint = Fingerprint(dest[..read], out var audible);
                     var previousFingerprint = Interlocked.Exchange(ref sink._lastCallbackFingerprint, fingerprint);
                     var previousRead = Interlocked.Exchange(ref sink._lastCallbackReadBytes, read);
                     Interlocked.Exchange(ref sink._lastPcmFingerprint, fingerprint);
 
-                    if (previousFingerprint == fingerprint && previousRead == read)
+                    if (audible && previousFingerprint == fingerprint && previousRead == read)
                     {
                         var repeated = Interlocked.Increment(ref sink._consecutiveIdenticalCallbacks);
                         if (repeated > Volatile.Read(ref sink._maxIdenticalCallbackRun))
@@ -1033,16 +1042,28 @@ namespace Flower.Audio
         // real-time callback. It is not a content hash; it is a cheap signal
         // for detecting the exact same device buffer being replayed over and
         // over, which is one reported failure shape.
-        private static long Fingerprint(ReadOnlySpan<byte> data)
+        //
+        // Reports through `audible` whether any of the sampled bytes was
+        // non-zero, so the caller can tell "the same buffer again" from
+        // "silence again". Both hash the same, and only the first of them is
+        // worth a warning: a run of silent callbacks is a pause, a fade-out or
+        // a starved ring, all of which have counters of their own, while a run
+        // of identical *audible* buffers is the repeated-buffer static this
+        // exists to catch.
+        private static long Fingerprint(ReadOnlySpan<byte> data, out bool audible)
         {
             const ulong offset = 14695981039346656037;
             const ulong prime = 1099511628211;
             var hash = offset;
+            byte seen = 0;
             for (var i = 0; i < data.Length; i += 64)
             {
                 hash ^= data[i];
                 hash *= prime;
+                seen |= data[i];
             }
+
+            audible = seen != 0;
 
             hash ^= (uint)data.Length;
             hash *= prime;

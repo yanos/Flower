@@ -858,14 +858,26 @@ static void flower_audio_bridge_apply_envelope(flower_audio_bridge* pBridge, int
     }
 }
 
-static uint64_t flower_audio_bridge_fingerprint(const uint8_t* pData, uint32_t byteCount)
+/* Reports whether any of the sampled bytes was non-zero through pAudible, so
+   the caller can tell "the same buffer again" from "silence again". They are
+   the same fingerprint, and only the first of them is worth a warning: a run
+   of silent callbacks is a pause, a fade-out or a starved ring, all of which
+   have their own counters, while a run of identical *audible* buffers is the
+   repeated-buffer static this exists to catch. */
+static uint64_t flower_audio_bridge_fingerprint(const uint8_t* pData, uint32_t byteCount, int* pAudible)
 {
     uint64_t hash = 14695981039346656037ULL;
+    uint8_t seen = 0;
     uint32_t i;
 
     for (i = 0; i < byteCount; i += FLOWER_AUDIO_BRIDGE_FINGERPRINT_STRIDE) {
         hash ^= pData[i];
         hash *= 1099511628211ULL;
+        seen |= pData[i];
+    }
+
+    if (pAudible != NULL) {
+        *pAudible = (seen != 0);
     }
 
     return hash;
@@ -960,11 +972,12 @@ static void flower_audio_bridge_on_data(ma_device* pDevice, void* pOutput, const
     if (toRead > 0) {
         uint64_t previousFingerprint;
         uint64_t previousRead;
+        int audible = 0;
 
-        fingerprint = flower_audio_bridge_fingerprint(pDestination, toRead);
+        fingerprint = flower_audio_bridge_fingerprint(pDestination, toRead, &audible);
         previousFingerprint = atomic_exchange_explicit(&pBridge->lastPcmFingerprint, fingerprint, memory_order_relaxed);
         previousRead = atomic_exchange_explicit(&pBridge->lastReadBytes, toRead, memory_order_relaxed);
-        if (previousFingerprint == fingerprint && previousRead == toRead) {
+        if (audible && previousFingerprint == fingerprint && previousRead == toRead) {
             uint32_t repeated = atomic_fetch_add_explicit(&pBridge->consecutiveIdenticalCallbacks, 1, memory_order_relaxed) + 1;
             uint32_t current = atomic_load_explicit(&pBridge->maxIdenticalCallbackRun, memory_order_relaxed);
             while (repeated > current && !atomic_compare_exchange_weak_explicit(
