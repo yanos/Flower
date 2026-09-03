@@ -145,6 +145,26 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     public string VolumeAdjustmentDisplay =>
         Track.VolumeAdjustment == 0 ? "" : $"{Track.VolumeAdjustment:+#;-#}%";
 
+    // Same rule for the rest of the off-by-default set: an unset numeric tag
+    // is blank, not "0". Disc shows "1/2" only when the album says how many
+    // there are, since "1" alone is the answer for almost every album and says
+    // nothing.
+    public string DiscDisplay =>
+        Track.DiscNumber == 0 ? ""
+        : Track.DiscCount > 0 ? $"{Track.DiscNumber}/{Track.DiscCount}"
+        : Track.DiscNumber.ToString();
+
+    public string BpmDisplay        => Track.BeatsPerMinute > 0 ? Track.BeatsPerMinute.ToString() : "";
+    public string BitrateDisplay    => Track.Bitrate > 0 ? $"{Track.Bitrate} kbps" : "";
+    public string SampleRateDisplay => Track.SampleRate > 0 ? $"{Track.SampleRate / 1000.0:0.#} kHz" : "";
+    public string ChannelsDisplay   => Track.Channels > 0 ? Track.Channels.ToString() : "";
+    public string BitDepthDisplay   => Track.BitsPerSample > 0 ? $"{Track.BitsPerSample}-bit" : "";
+
+    // The star Track Info's Rating row toggles (Track.Starred) - a glyph
+    // rather than "Yes", so a starred track is findable by eye down a column
+    // of blanks.
+    public string StarredDisplay => Track.Starred ? "\u2605" : "";
+
     // Track is not INotifyPropertyChanged and these two read straight off it,
     // so a play-count/LastPlayedAt bump has to be pushed in from outside. Rows
     // used to be rebuilt wholesale on every play, which is what made that

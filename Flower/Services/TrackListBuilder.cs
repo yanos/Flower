@@ -76,6 +76,16 @@ public static class TrackListBuilder
     // too - so sorting by Album descending also reversed disc/track order
     // within every album, listing each one back to front.
     private static IEnumerable<Track> Sort(IEnumerable<Track> tracks, string col, bool asc, bool sortArtistAlbumsByYear) =>
+        SortBy(tracks, col, asc, sortArtistAlbumsByYear) ?? ByAlbum(tracks, asc);
+
+    // Whether `columnId` names an order this knows - i.e. whether a column of
+    // that id sorts on itself or silently falls back to album order. Asked by
+    // the tests, which hold every offered column to it; a null arm here rather
+    // than a second list of ids is what keeps the two answers the same one.
+    public static bool CanSortBy(string columnId) =>
+        SortBy([], columnId, true, false) is not null;
+
+    private static IEnumerable<Track>? SortBy(IEnumerable<Track> tracks, string col, bool asc, bool sortArtistAlbumsByYear) =>
         col switch
         {
             "PlaylistOrder" => tracks,
@@ -108,8 +118,36 @@ public static class TrackListBuilder
             "ResumePosition"   => Order(tracks, t => t.ResumePosition ?? TimeSpan.Zero, asc),
             "SkipInShuffle"    => Order(tracks, t => t.IgnoreWhenShuffling, asc),
             "VolumeAdjustment" => Order(tracks, t => t.VolumeAdjustment, asc),
-            _             => Order(tracks, t => SortKey(t.AlbumSortValue), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
+            "AlbumArtist"      => Order(tracks, t => SortKey(t.AlbumArtists), asc),
+            "Subtitle"         => Order(tracks, t => SortKey(t.Subtitle), asc),
+            // Disc sorts within the album it numbers - a bare disc number is
+            // 1 for most of the library, so ordering by it alone would just
+            // shuffle every album together.
+            "Disc"             => Order(tracks, t => t.DiscNumber, asc).ThenBy(t => SortKey(t.AlbumSortValue)).ThenBy(t => t.TrackNumber),
+            "Conductor"        => Order(tracks, t => SortKey(t.Conductor), asc),
+            "RemixedBy"        => Order(tracks, t => SortKey(t.RemixedBy), asc),
+            "Bpm"              => Order(tracks, t => t.BeatsPerMinute, asc),
+            "InitialKey"       => Order(tracks, t => SortKey(t.InitialKey), asc),
+            "Grouping"         => Order(tracks, t => SortKey(t.Grouping), asc),
+            "Publisher"        => Order(tracks, t => SortKey(t.Publisher), asc),
+            "Isrc"             => Order(tracks, t => SortKey(t.ISRC), asc),
+            "Comment"          => Order(tracks, t => SortKey(t.Comment), asc),
+            "Description"      => Order(tracks, t => SortKey(t.Description), asc),
+            "Copyright"        => Order(tracks, t => SortKey(t.Copyright), asc),
+            "Starred"          => Order(tracks, t => t.Starred, asc),
+            "Codec"            => Order(tracks, t => SortKey(t.Codec), asc),
+            "Bitrate"          => Order(tracks, t => t.Bitrate, asc),
+            "SampleRate"       => Order(tracks, t => t.SampleRate, asc),
+            "Channels"         => Order(tracks, t => t.Channels, asc),
+            "BitDepth"         => Order(tracks, t => t.BitsPerSample, asc),
+            "Location"         => Order(tracks, t => SortKey(t.Path), asc),
+            _             => null,
         };
+
+    // What an unrecognised sort column falls back to, and what "TrackNumber"
+    // and "Album" both mean in full: album, then disc, then track.
+    private static IEnumerable<Track> ByAlbum(IEnumerable<Track> tracks, bool asc) =>
+        Order(tracks, t => SortKey(t.AlbumSortValue), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber);
 
     private static IOrderedEnumerable<Track> Order<TKey>(IEnumerable<Track> tracks, Func<Track, TKey> keySelector, bool ascending) =>
         ascending ? tracks.OrderBy(keySelector) : tracks.OrderByDescending(keySelector);

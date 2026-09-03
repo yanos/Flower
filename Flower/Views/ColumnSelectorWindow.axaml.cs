@@ -24,6 +24,7 @@ public partial class ColumnSelectorWindow : Window
     {
         InitializeComponent();
         ColumnsList.ItemsSource = columnManager.Columns.OrderBy(c => c.Order).ToList();
+        AlbumArtCheck.DataContext = columnManager;
         DataContext = viewModel;
         NativeMenuHelper.InheritFromMainWindow(this);
     }

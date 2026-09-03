@@ -9,10 +9,17 @@
         WindowStartupLocation="CenterOwner"
         CanResize="False">
   <StackPanel Margin="10" Spacing="8">
+    <!-- A UniformGrid, not a WrapPanel: wrapping packs each row to whatever
+         fits, so the second and third checkbox of one row started at a
+         different x than the row above it however carefully the items were
+         given a MinWidth. Fixed columns are what actually lines them up, and
+         with the full Track Info field set here there are enough of them for
+         that to matter. Four columns keeps the window about as wide as it was
+         and about as tall as the screen allows. -->
     <ItemsControl x:Name="ColumnsList">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
-          <WrapPanel Orientation="Horizontal" MaxWidth="260"/>
+          <UniformGrid Columns="4"/>
         </ItemsPanelTemplate>
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
@@ -20,8 +27,7 @@
           <CheckBox Content="{Binding Header}"
                     IsChecked="{Binding IsVisible}"
                     FontSize="11"
-                    Margin="0,1,10,1"
-                    MinWidth="70"/>
+                    Margin="0,1,14,1"/>
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>
@@ -30,9 +36,21 @@
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
             Margin="0,2,0,0"
             Padding="0,8,0,0">
-      <CheckBox Content="Sort artist's albums by year"
-                IsChecked="{Binding SortArtistAlbumsByYear}"
-                FontSize="11"/>
+      <StackPanel Spacing="6">
+        <!-- Its own DataContext (the ColumnManager, set in the constructor):
+             the art well is track-list layout like every checkbox above it,
+             and ColumnManager is what owns and persists that - see
+             ColumnManager.ShowAlbumArt. The window's own DataContext, and so
+             the checkbox below, is still the MainViewModel. -->
+        <CheckBox x:Name="AlbumArtCheck"
+                  x:DataType="controls:ColumnManager"
+                  Content="Show album art"
+                  IsChecked="{Binding ShowAlbumArt}"
+                  FontSize="11"/>
+        <CheckBox Content="Sort artist's albums by year"
+                  IsChecked="{Binding SortArtistAlbumsByYear}"
+                  FontSize="11"/>
+      </StackPanel>
     </Border>
 
     <Button x:Name="CloseButton"

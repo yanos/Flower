@@ -26,7 +26,11 @@
     </Style>
   </UserControl.Styles>
 
-  <Grid ColumnDefinitions="80,*">
+  <!-- The first column is the album-art well; its width is set from
+       ColumnManager.ArtColumnWidth in BuildCells (0 when the art is turned
+       off) rather than fixed here, and the art cell's own visibility with
+       it. -->
+  <Grid x:Name="RowGrid" ColumnDefinitions="80,*">
     <!-- Hover background (column 1 only — stops before the art) -->
     <Border Grid.Column="1"
             x:Name="HoverBorder"
@@ -51,16 +55,18 @@
            x:Name="ArtCell"
            Classes.dimmed="{Binding IsAlbumGroupUnavailable}"
            Margin="2,2,2,0"
-           ClipToBounds="False"
-           IsVisible="{Binding IsFirstInAlbumGroup}">
+           ClipToBounds="False">
 
-      <!-- Album art (or placeholder); height = min(groupSize × rowHeight, maxArt) — spans multiple rows visually -->
-      <controls:AlbumArtView IsHitTestVisible="False"
+      <!-- Album art (or placeholder); height = min(groupSize × rowHeight, maxArt) — spans multiple rows visually.
+           The AlbumArt binding itself is made in code-behind (ApplyArtWell), not here:
+           reading that property is what starts the load, which for a synced library is a
+           network fetch, and a hidden well should not be fetching covers nobody can see. -->
+      <controls:AlbumArtView x:Name="ArtImage"
+              IsHitTestVisible="False"
               Width="{Binding AlbumArtDisplaySize}"
               Height="{Binding AlbumArtDisplaySize}"
               VerticalAlignment="Top"
-              HorizontalAlignment="Center"
-              AlbumArt="{Binding AlbumArt}"/>
+              HorizontalAlignment="Center"/>
     </Panel>
 
     <!-- ── Data cells (built in code-behind from ColumnManager) ──────────── -->

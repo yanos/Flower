@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Flower.Persistence;
+using Flower.ViewModels;
 
 namespace Flower.Controls;
 
@@ -19,6 +20,32 @@ public class ColumnManager
 
     public IEnumerable<MusicColumnDefinition> VisibleColumns =>
         Columns.Where(c => c.IsVisible).OrderBy(c => c.Order);
+
+    // The album-art well down the left of the track list (see
+    // TrackRowControl's art cell). Not a MusicColumnDefinition, because it is
+    // not one: it has no header, no sort, no resize handle, and its content
+    // spans a whole album run rather than a row. It still belongs here rather
+    // than in MainViewModel because every consumer of a column change - the
+    // header bar, the row cells, the panel's content width - is exactly the
+    // set that has to react to this too, and they already listen to
+    // ColumnsChanged.
+    public bool ShowAlbumArt
+    {
+        get => _appSettings.ShowAlbumArtColumn;
+        set
+        {
+            if (_appSettings.ShowAlbumArtColumn == value)
+                return;
+            _appSettings.ShowAlbumArtColumn = value;
+            ColumnsChanged?.Invoke(this, EventArgs.Empty);
+            ScheduleSave();
+        }
+    }
+
+    // What the art well costs in width right now - the one number the header
+    // spacer, the row grid and the panel's content width all offset by, so
+    // hiding the art closes the gap instead of leaving an empty margin.
+    public double ArtColumnWidth => ShowAlbumArt ? TrackRowViewModel.ArtColumnWidth : 0;
 
     public ColumnManager(AppSettings appSettings, AppSettingsStore appSettingsStore)
     {
@@ -175,5 +202,29 @@ public class ColumnManager
         new("ResumePosition",   "Resume At",         80, 50, false, 18),
         new("SkipInShuffle",    "Skip in Shuffle",   90, 50, false, 19),
         new("VolumeAdjustment", "Volume",            70, 50, false, 20),
+
+        // The rest of Track Info, on the same terms: every field that window
+        // shows one track at a time is a column here, hidden until asked for.
+        // Lyrics is the single exception - a whole song's words is not a cell.
+        new("AlbumArtist",  "Album Artist", 160, 60, false, 21),
+        new("Subtitle",     "Subtitle",     140, 60, false, 22),
+        new("Disc",         "Disc",          50, 40, false, 23),
+        new("Conductor",    "Conductor",    140, 60, false, 24),
+        new("RemixedBy",    "Remixed By",   140, 60, false, 25),
+        new("Bpm",          "BPM",           55, 40, false, 26),
+        new("InitialKey",   "Key",           50, 40, false, 27),
+        new("Grouping",     "Grouping",     120, 60, false, 28),
+        new("Publisher",    "Publisher",    140, 60, false, 29),
+        new("Isrc",         "ISRC",         120, 60, false, 30),
+        new("Comment",      "Comment",      200, 60, false, 31),
+        new("Description",  "Description",  200, 60, false, 32),
+        new("Copyright",    "Copyright",    160, 60, false, 33),
+        new("Starred",      "Rating",        60, 40, false, 34),
+        new("Codec",        "Codec",         80, 50, false, 35),
+        new("Bitrate",      "Bit Rate",      80, 50, false, 36),
+        new("SampleRate",   "Sample Rate",   90, 50, false, 37),
+        new("Channels",     "Channels",      70, 50, false, 38),
+        new("BitDepth",     "Bit Depth",     70, 50, false, 39),
+        new("Location",     "Location",     300, 80, false, 40),
     ];
 }

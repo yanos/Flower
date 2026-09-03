@@ -59,6 +59,7 @@ public partial class TrackRowControl : UserControl
             col.PropertyChanged -= handler;
         _widthSubs.Clear();
 
+        ApplyArtWell();
         CellsPanel.Children.Clear();
 
         foreach (var col in _columnManager.VisibleColumns)
@@ -86,6 +87,38 @@ public partial class TrackRowControl : UserControl
         }
     }
 
+    // The art well is only shown to the first row of an album run, which is
+    // an ordinary binding - but only while the well exists at all. Turning it
+    // off has to beat that binding, and a local IsVisible = false would be
+    // overwritten the next time the binding produced a value, so the binding
+    // itself is what goes: both of these live here, held as subscriptions,
+    // rather than in the XAML where they cannot be withdrawn. The grid column
+    // collapses to zero alongside them, since the art deliberately overflows
+    // its cell (ClipToBounds="False") and would otherwise still paint over the
+    // title; and the art binding goes too, because reading
+    // TrackRowViewModel.AlbumArt is what starts the load - a fetch off the
+    // paired server, for a library synced from one.
+    private readonly List<IDisposable> _artBindings = new();
+
+    private void ApplyArtWell()
+    {
+        foreach (var binding in _artBindings)
+            binding.Dispose();
+        _artBindings.Clear();
+
+        RowGrid.ColumnDefinitions[0].Width = new GridLength(_columnManager.ArtColumnWidth);
+
+        if (!_columnManager.ShowAlbumArt)
+        {
+            ArtCell.IsVisible = false;
+            ArtImage.AlbumArt = null;
+            return;
+        }
+
+        _artBindings.Add(ArtCell.Bind(IsVisibleProperty, new Binding(nameof(TrackRowViewModel.IsFirstInAlbumGroup))));
+        _artBindings.Add(ArtImage.Bind(AlbumArtView.AlbumArtProperty, new Binding(nameof(TrackRowViewModel.AlbumArt))));
+    }
+
     // Cell content is built per-column from ColumnManager's runtime-configurable
     // definitions, so these bindings are constructed in code (new Binding(...))
     // rather than declared in TrackRowControl.axaml, where compiled bindings are
@@ -99,11 +132,9 @@ public partial class TrackRowControl : UserControl
     // Track, whose properties are referenced directly all over - were fine.
     //
     // DynamicDependency rather than a descriptor XML because the dependency is
-    // genuinely this method's: it is what turns a column id into a property
-    // name, and a root declared anywhere else would be a fact about this switch
-    // stored away from it.
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(TrackRowViewModel))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(Models.Track))]
+    // genuinely CellBindingPathFor's below: it is what turns a column id into a
+    // property name, and a root declared anywhere else would be a fact about
+    // that switch stored away from it.
     private Control BuildCellContent(MusicColumnDefinition col)
     {
         if (col.Id == "Title")
@@ -149,8 +180,21 @@ public partial class TrackRowControl : UserControl
         }
 
         var tb = MakeText();
-        tb.Bind(TextBlock.TextProperty, new Binding(col.Id switch
+        tb.Bind(TextBlock.TextProperty, new Binding(CellBindingPathFor(col.Id)));
+        return tb;
+    }
+
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(TrackRowViewModel))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(Models.Track))]
+    // The property each column's cell shows, as a binding path. Internal and
+    // separate from the cell it feeds so the tests can hold every column
+    // ColumnManager offers to it: a column whose id lands on the "." fallback
+    // renders an empty cell forever, which is the kind of thing only noticed
+    // once someone turns that column on.
+    internal static string CellBindingPathFor(string columnId) =>
+        columnId switch
         {
+            "Title" => "Track.Title",
             "TrackNumber" => nameof(TrackRowViewModel.TrackNumberDisplay),
             "Artist"      => "Track.Artists",
             "Album"       => "Track.Album",
@@ -171,10 +215,28 @@ public partial class TrackRowControl : UserControl
             "ResumePosition"   => nameof(TrackRowViewModel.ResumePositionDisplay),
             "SkipInShuffle"    => nameof(TrackRowViewModel.SkipInShuffleDisplay),
             "VolumeAdjustment" => nameof(TrackRowViewModel.VolumeAdjustmentDisplay),
+            "AlbumArtist"  => "Track.AlbumArtists",
+            "Subtitle"     => "Track.Subtitle",
+            "Disc"         => nameof(TrackRowViewModel.DiscDisplay),
+            "Conductor"    => "Track.Conductor",
+            "RemixedBy"    => "Track.RemixedBy",
+            "Bpm"          => nameof(TrackRowViewModel.BpmDisplay),
+            "InitialKey"   => "Track.InitialKey",
+            "Grouping"     => "Track.Grouping",
+            "Publisher"    => "Track.Publisher",
+            "Isrc"         => "Track.ISRC",
+            "Comment"      => "Track.Comment",
+            "Description"  => "Track.Description",
+            "Copyright"    => "Track.Copyright",
+            "Starred"      => nameof(TrackRowViewModel.StarredDisplay),
+            "Codec"        => "Track.Codec",
+            "Bitrate"      => nameof(TrackRowViewModel.BitrateDisplay),
+            "SampleRate"   => nameof(TrackRowViewModel.SampleRateDisplay),
+            "Channels"     => nameof(TrackRowViewModel.ChannelsDisplay),
+            "BitDepth"     => nameof(TrackRowViewModel.BitDepthDisplay),
+            "Location"     => "Track.Path",
             _             => ".",
-        }));
-        return tb;
-    }
+        };
 
     private static TextBlock MakeText() => new()
     {

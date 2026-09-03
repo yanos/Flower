@@ -48,7 +48,7 @@ public class MusicListPanel : Panel
     }
 
     private double ContentWidth =>
-        TrackRowViewModel.ArtColumnWidth + _columnManager.VisibleColumns.Sum(c => c.Width);
+        _columnManager.ArtColumnWidth + _columnManager.VisibleColumns.Sum(c => c.Width);
 
     // A row's own download icon was clicked - see TrackDownloadButton.
     public event EventHandler<TrackRowViewModel>? RowDownloadRequested;

@@ -2,7 +2,9 @@ using System.Linq;
 
 using Flower.Controls;
 using Flower.Persistence;
+using Flower.Services;
 using Flower.Tests.TestSupport;
+using Flower.ViewModels;
 
 using Xunit;
 
@@ -133,5 +135,44 @@ public class ColumnManagerTests : PinnedDataDirectory
 
         Column(manager, "Genre").IsVisible = false;
         Assert.True(raised > 0);
+    }
+
+    // The art well is not a MusicColumnDefinition, but everything that reacts
+    // to a column change has to react to it - so it goes out on the same event
+    // and offsets the same width.
+    [Fact]
+    public void Hiding_the_album_art_closes_the_width_it_occupied()
+    {
+        var settings = new AppSettings();
+        var manager = new ColumnManager(settings, new AppSettingsStore());
+        var raised = 0;
+        manager.ColumnsChanged += (_, _) => raised++;
+
+        Assert.True(manager.ShowAlbumArt);
+        Assert.Equal(TrackRowViewModel.ArtColumnWidth, manager.ArtColumnWidth);
+
+        manager.ShowAlbumArt = false;
+
+        Assert.Equal(0, manager.ArtColumnWidth);
+        Assert.False(settings.ShowAlbumArtColumn);
+        Assert.Equal(1, raised);
+
+        // Setting it to what it already is changes nothing and tells nobody.
+        manager.ShowAlbumArt = false;
+        Assert.Equal(1, raised);
+    }
+
+    // Every field Track Info shows should be offerable as a column - the rule
+    // BuildDefaults' own comment states. Lyrics is the stated exception.
+    [Fact]
+    public void Every_offered_column_can_be_sorted_and_rendered()
+    {
+        var manager = New();
+
+        foreach (var column in manager.Columns)
+        {
+            Assert.NotEqual(".", TrackRowControl.CellBindingPathFor(column.Id));
+            Assert.True(TrackListBuilder.CanSortBy(column.Id), $"{column.Id} has no sort");
+        }
     }
 }

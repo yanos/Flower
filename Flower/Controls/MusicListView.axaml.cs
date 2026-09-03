@@ -416,8 +416,10 @@ public partial class MusicListView : UserControl
         _headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
         var separatorBrush = GetSeparatorBrush();
 
-        // Spacer for the art column (matches ColumnDefinitions="80,*" in TrackRowControl)
-        _headerPanel.Children.Add(new Border { Width = TrackRowViewModel.ArtColumnWidth });
+        // Spacer for the art well, matching the row grid's own first column
+        // (see TrackRowControl.BuildCells) - zero-wide when the art is turned
+        // off, so the header does not sit 80px right of its cells.
+        _headerPanel.Children.Add(new Border { Width = _columnManager.ArtColumnWidth });
 
         foreach (var col in _columnManager.VisibleColumns)
             _headerPanel.Children.Add(MakeHeaderCell(col, separatorBrush));
@@ -447,7 +449,7 @@ public partial class MusicListView : UserControl
     // at its edge.
     private int FullGapIndexAt(double headerX)
     {
-        double cursor = TrackRowViewModel.ArtColumnWidth;
+        double cursor = _columnManager.ArtColumnWidth;
         var cols = _columnManager.VisibleColumns.ToList();
         for (int i = 0; i < cols.Count; i++)
         {
@@ -461,7 +463,7 @@ public partial class MusicListView : UserControl
     // x-offset, in that same real-layout coordinate space, where a given gap index begins.
     private double FullGapX(int gapIndex)
     {
-        double cursor = TrackRowViewModel.ArtColumnWidth;
+        double cursor = _columnManager.ArtColumnWidth;
         var cols = _columnManager.VisibleColumns.ToList();
         for (int i = 0; i < gapIndex && i < cols.Count; i++)
             cursor += cols[i].Width;
