@@ -36,6 +36,8 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
     private readonly AVAudioSession _session = AVAudioSession.SharedInstance();
     private readonly NSObject _routeChangeObserver;
     private readonly NSObject _interruptionObserver;
+    private readonly NSObject _mediaServicesLostObserver;
+    private readonly NSObject _mediaServicesResetObserver;
 
     // Set between an interruption beginning and ending. Read only by
     // DeactivateAfterPlayback, to keep it from arguing with the OS - see there.
@@ -84,6 +86,8 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
         // interruption is the notification that matters most, and it arrives
         // when Flower is - by definition - not the app holding the session.
         _interruptionObserver = AVAudioSession.Notifications.ObserveInterruption(OnInterruption);
+        _mediaServicesLostObserver = AVAudioSession.Notifications.ObserveMediaServicesWereLost(OnMediaServicesWereLost);
+        _mediaServicesResetObserver = AVAudioSession.Notifications.ObserveMediaServicesWereReset(OnMediaServicesWereReset);
     }
 
     public void ActivateForPlayback()
@@ -163,9 +167,9 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
             : "nothing";
 
         _logger.LogInformation(
-            "iOS audio session {When}: category={Category} mode={Mode} policy={Policy} options={Options} route={Route} otherAudioPlaying={OtherAudio}",
+            "iOS audio session {When}: category={Category} mode={Mode} policy={Policy} options={Options} route={Route} otherAudioPlaying={OtherAudio} sampleRate={SampleRate}Hz ioBufferMs={IoBufferMs:F2}",
             when, _session.Category, _session.Mode, _session.RouteSharingPolicy, _session.CategoryOptions,
-            route, _session.OtherAudioPlaying);
+            route, _session.OtherAudioPlaying, _session.SampleRate, _session.IOBufferDuration * 1000);
     }
 
     public void DeactivateAfterPlayback()
@@ -197,6 +201,7 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
     private void OnInterruption(object? sender, AVAudioSessionInterruptionEventArgs e)
     {
         _logger.LogInformation("iOS audio interrupted: {Type} (options {Options})", e.InterruptionType, e.Option);
+        LogSessionState($"interruption {e.InterruptionType}");
 
         if (e.InterruptionType == AVAudioSessionInterruptionType.Began)
         {
@@ -226,6 +231,7 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
     private void OnRouteChange(object? sender, AVAudioSessionRouteChangeEventArgs e)
     {
         _logger.LogInformation("iOS audio route changed: {Reason}", e.Reason);
+        LogSessionState($"route change {e.Reason}");
 
         if (e.Reason != AVAudioSessionRouteChangeReason.OldDeviceUnavailable)
             return;
@@ -236,9 +242,22 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
         DispatchQueue.MainQueue.DispatchAsync(() => OutputDeviceLost?.Invoke(this, EventArgs.Empty));
     }
 
+    private void OnMediaServicesWereLost(object? sender, NSNotificationEventArgs e)
+    {
+        _logger.LogWarning("iOS media services were lost; audio output may be interrupted");
+    }
+
+    private void OnMediaServicesWereReset(object? sender, NSNotificationEventArgs e)
+    {
+        _logger.LogWarning("iOS media services were reset; recording the replacement audio-session state");
+        LogSessionState("media services reset");
+    }
+
     public void Dispose()
     {
         _routeChangeObserver.Dispose();
         _interruptionObserver.Dispose();
+        _mediaServicesLostObserver.Dispose();
+        _mediaServicesResetObserver.Dispose();
     }
 }

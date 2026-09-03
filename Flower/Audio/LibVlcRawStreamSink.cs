@@ -194,6 +194,10 @@ namespace Flower.Audio
             _media?.Dispose();
         }
 
+        // Nothing sits between the ring and LibVLC's own aout here - see
+        // IAudioSink.BufferedBytes.
+        public long BufferedBytes => 0;
+
         public void Resume()
         {
                         _renderPlayer?.SetPause(false);

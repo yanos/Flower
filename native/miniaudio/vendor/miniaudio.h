@@ -33617,6 +33617,12 @@ static OSStatus ma_on_output__coreaudio(void* pUserData, AudioUnitRenderActionFl
 
     MA_ASSERT(pDevice != NULL);
 
+    flower_coreaudio_diagnostics_callback_started(
+        pDevice,
+        frameCount,
+        (pTimeStamp != NULL && (pTimeStamp->mFlags & kAudioTimeStampHostTimeValid) != 0) ? pTimeStamp->mHostTime : 0,
+        (pActionFlags != NULL) ? *pActionFlags : 0);
+
     /*ma_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_DEBUG, "INFO: Output Callback: busNumber=%d, frameCount=%d, mNumberBuffers=%d\n", (int)busNumber, (int)frameCount, (int)pBufferList->mNumberBuffers);*/
 
     /* We need to check whether or not we are outputting interleaved or non-interleaved samples. The way we do this is slightly different for each type. */
@@ -33633,6 +33639,13 @@ static OSStatus ma_on_output__coreaudio(void* pUserData, AudioUnitRenderActionFl
                 ma_uint32 frameCountForThisBuffer = pBufferList->mBuffers[iBuffer].mDataByteSize / ma_get_bytes_per_frame(pDevice->playback.internalFormat, pDevice->playback.internalChannels);
                 if (frameCountForThisBuffer > 0) {
                     ma_device_handle_backend_data_callback(pDevice, pBufferList->mBuffers[iBuffer].mData, NULL, frameCountForThisBuffer);
+                    if (pDevice->playback.internalFormat == ma_format_s16 && pDevice->playback.internalChannels == 2) {
+                        flower_coreaudio_diagnostics_pcm_submitted_s16_interleaved(pDevice, (const int16_t*)pBufferList->mBuffers[iBuffer].mData, frameCountForThisBuffer, 2);
+                    }
+                    if (pDevice->playback.internalFormat == ma_format_f32 && pDevice->playback.internalChannels == 2) {
+                        flower_coreaudio_diagnostics_pcm_submitted_f32_interleaved(pDevice, (const float*)pBufferList->mBuffers[iBuffer].mData, frameCountForThisBuffer, 2);
+                    }
+                    flower_coreaudio_diagnostics_frames_submitted(pDevice, frameCountForThisBuffer);
                 }
 
                 /*a_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_DEBUG, "  frameCount=%d, mNumberChannels=%d, mDataByteSize=%d\n", (int)frameCount, (int)pBufferList->mBuffers[iBuffer].mNumberChannels, (int)pBufferList->mBuffers[iBuffer].mDataByteSize);*/
@@ -33671,6 +33684,13 @@ static OSStatus ma_on_output__coreaudio(void* pUserData, AudioUnitRenderActionFl
                     }
 
                     ma_device_handle_backend_data_callback(pDevice, tempBuffer, NULL, framesToRead);
+                    if (pDevice->playback.internalFormat == ma_format_s16 && pDevice->playback.internalChannels == 2) {
+                        flower_coreaudio_diagnostics_pcm_submitted_s16_interleaved(pDevice, (const int16_t*)tempBuffer, framesToRead, 2);
+                    }
+                    if (pDevice->playback.internalFormat == ma_format_f32 && pDevice->playback.internalChannels == 2) {
+                        flower_coreaudio_diagnostics_pcm_submitted_f32_interleaved(pDevice, (const float*)tempBuffer, framesToRead, 2);
+                    }
+                    flower_coreaudio_diagnostics_frames_submitted(pDevice, framesToRead);
 
                     for (iChannel = 0; iChannel < pDevice->playback.internalChannels; ++iChannel) {
                         ppDeinterleavedBuffers[iChannel] = (void*)ma_offset_ptr(pBufferList->mBuffers[iBuffer+iChannel].mData, (frameCountPerBuffer - framesRemaining) * ma_get_bytes_per_sample(pDevice->playback.internalFormat));
@@ -33688,6 +33708,8 @@ static OSStatus ma_on_output__coreaudio(void* pUserData, AudioUnitRenderActionFl
     (void)pTimeStamp;
     (void)busNumber;
     (void)frameCount;
+
+    flower_coreaudio_diagnostics_callback_completed(pDevice, (pActionFlags != NULL) ? *pActionFlags : 0);
 
     return noErr;
 }

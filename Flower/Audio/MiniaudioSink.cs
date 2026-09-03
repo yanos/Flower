@@ -45,6 +45,16 @@ namespace Flower.Audio
         private readonly object _gate = new();
         private GaplessRingBuffer? _ringBuffer;
 
+        // Non-null only where a native miniaudio build carrying
+        // flower_audio_bridge is what got loaded - Android and iOS. There the
+        // render callback is pure C draining _bridge, and _feeder is the
+        // managed thread that fills it; DataCallback below is dead code on
+        // those platforms. Everywhere else both stay null and the managed
+        // callback runs as it always has. See NativeAudioBridge for why the
+        // split falls where it does.
+        private NativeAudioBridge? _bridge;
+        private AudioFeeder? _feeder;
+
         // Everything between the ring and the sound card - float widening, EQ,
         // gain ramping, declick envelope, dithered requantisation. Owned here
         // and driven from DataCallback; see OutputStage for why none of that
@@ -126,6 +136,7 @@ namespace Flower.Audio
         private readonly Timer _watchdog;
         private long _watchdogLastUnderrunCount;
         private long _watchdogLastShortReadCount;
+        private long _watchdogLastCallbackExceptionCount;
         private bool _watchdogLastStarted;
         private long _watchdogLastRealBytesRendered;
         private int _watchdogNoProgressTicks;
@@ -140,11 +151,41 @@ namespace Flower.Audio
         private long _realBytesRendered;
         private long _silenceBytesRendered;
         private long _shortReadCount;
+        private long _callbackExceptionCount;
         private long _lastPcmFingerprint;
         private long _lastCallbackFingerprint;
         private int _lastCallbackReadBytes;
         private int _consecutiveIdenticalCallbacks;
         private int _maxIdenticalCallbackRun;
+        private readonly AudioCallbackTiming _callbackTiming = new();
+
+        // The managed callback tells us whether Flower supplied PCM on time.
+        // These native counters fill in the next boundary on iOS: CoreAudio's
+        // callback cadence, its host timestamps, and whether every requested
+        // frame was actually handed to miniaudio. They are sampled from the
+        // watchdog rather than logged from the real-time callback.
+        [StructLayout(LayoutKind.Sequential)]
+        private struct CoreAudioDiagnosticsSnapshot
+        {
+            public ulong CallbackCount;
+            public ulong RequestedFrames;
+            public ulong SubmittedFrames;
+            public ulong ActionFlags;
+            public ulong MaxCallbackGapNanoseconds;
+            public ulong MaxHostTimeGapNanoseconds;
+            public ulong MaxCallbackDurationNanoseconds;
+            public ulong MaxSampleDelta;
+            public ulong AbruptFrameCount;
+            public ulong RepeatedBufferCount;
+            public uint MinFrames;
+            public uint MaxFrames;
+            public uint MaxActionFlags;
+            public uint MaxRepeatedBufferRun;
+
+            public double MaxCallbackGapMilliseconds => MaxCallbackGapNanoseconds / 1_000_000.0;
+            public double MaxHostTimeGapMilliseconds => MaxHostTimeGapNanoseconds / 1_000_000.0;
+            public double MaxCallbackDurationMilliseconds => MaxCallbackDurationNanoseconds / 1_000_000.0;
+        }
 
         public event EventHandler? Playing;
         public event EventHandler? Paused;
@@ -196,13 +237,25 @@ namespace Flower.Audio
             if (ring == null)
                 return;
 
+            // In bridge mode the counters live in C, on the far side of the
+            // hand-off. Folding them into the same fields the managed callback
+            // would have written keeps every line below identical on both
+            // paths - the numbers mean the same thing either way, they are
+            // just gathered by whoever is doing the rendering.
+            FoldBridgeCounters();
+
             var underrunCount = ring.UnderrunCount;
             var started = _started;
             var realBytesRendered = Interlocked.Read(ref _realBytesRendered);
             var shortReadCount = Interlocked.Read(ref _shortReadCount);
             var newShortReads = shortReadCount - Interlocked.Read(ref _watchdogLastShortReadCount);
             Interlocked.Exchange(ref _watchdogLastShortReadCount, shortReadCount);
+            var callbackExceptionCount = Interlocked.Read(ref _callbackExceptionCount);
+            var newCallbackExceptions = callbackExceptionCount - Interlocked.Read(ref _watchdogLastCallbackExceptionCount);
+            Interlocked.Exchange(ref _watchdogLastCallbackExceptionCount, callbackExceptionCount);
             var maxIdenticalRun = Interlocked.Exchange(ref _maxIdenticalCallbackRun, 0);
+            var callbackTiming = _callbackTiming.TakeSnapshot();
+            var coreAudioDiagnostics = TakeCoreAudioDiagnostics();
 
             if (started && realBytesRendered == _watchdogLastRealBytesRendered)
                 _watchdogNoProgressTicks++;
@@ -214,6 +267,13 @@ namespace Flower.Audio
                 _logger.LogWarning(
                     "Render watchdog: underrun(s) detected - Started={Started} RingAvailable={Available}/{Capacity} Underruns={Underruns} (+{NewUnderruns})",
                     started, ring.AvailableBytes, ring.Capacity, underrunCount, underrunCount - _watchdogLastUnderrunCount);
+            }
+            else if (newCallbackExceptions > 0)
+            {
+                _logger.LogError(
+                    "Render watchdog: managed callback exception(s) were silenced - CallbackExceptions={CallbackExceptions} (+{NewCallbackExceptions}) RingAvailable={Available}/{Capacity} RingGeneration={RingGeneration}",
+                    callbackExceptionCount, newCallbackExceptions, ring.AvailableBytes,
+                    ring.Capacity, ring.Generation);
             }
             else if (newShortReads > 0)
             {
@@ -250,22 +310,84 @@ namespace Flower.Audio
                     ring.Capacity, ring.Generation);
             }
 
+            if (callbackTiming.InterestingGaps > 0 || callbackTiming.RenderOverruns > 0)
+            {
+                _logger.LogWarning(
+                    "Render watchdog: callback timing pressure detected - InterestingGaps={InterestingGaps} RenderOverruns={RenderOverruns} Callbacks={Callbacks} TotalFrames={TotalFrames} AverageFrames={AverageFrames:F1} MaxGapMs={MaxGapMs:F2} ExpectedPeriodMs={ExpectedPeriodMs:F2} MaxLateMs={MaxLateMs:F2} MaxRenderMs={MaxRenderMs:F2} Frames={MinFrames}-{MaxFrames} MaxGapFrames={PrecedingFrames}->{CurrentFrames}",
+                    callbackTiming.InterestingGaps, callbackTiming.RenderOverruns,
+                    callbackTiming.CallbackCount, callbackTiming.TotalFrames, callbackTiming.AverageFramesPerCallback,
+                    callbackTiming.MaxGapMilliseconds, callbackTiming.ExpectedPeriodMilliseconds,
+                    callbackTiming.MaxLateMilliseconds, callbackTiming.MaxRenderMilliseconds,
+                    callbackTiming.MinFrames, callbackTiming.MaxFrames,
+                    callbackTiming.PrecedingFramesAtMaxGap, callbackTiming.CurrentFramesAtMaxGap);
+            }
+
+            if (coreAudioDiagnostics is { } coreAudioPressure
+                && (coreAudioPressure.MaxCallbackGapMilliseconds >= 60
+                    || coreAudioPressure.ActionFlags != 0
+                    || coreAudioPressure.RequestedFrames != coreAudioPressure.SubmittedFrames
+                    || coreAudioPressure.AbruptFrameCount != 0
+                    || coreAudioPressure.RepeatedBufferCount != 0))
+            {
+                _logger.LogWarning(
+                    "CoreAudio render diagnostics: Callbacks={Callbacks} RequestedFrames={RequestedFrames} SubmittedFrames={SubmittedFrames} MaxCallbackGapMs={MaxCallbackGapMs:F2} MaxHostTimeGapMs={MaxHostTimeGapMs:F2} MaxCallbackDurationMs={MaxCallbackDurationMs:F2} Frames={MinFrames}-{MaxFrames} ActionFlags=0x{ActionFlags:X} MaxSampleDelta={MaxSampleDelta} AbruptFrames={AbruptFrames} RepeatedBuffers={RepeatedBuffers} MaxRepeatedBufferRun={MaxRepeatedBufferRun}",
+                    coreAudioPressure.CallbackCount, coreAudioPressure.RequestedFrames, coreAudioPressure.SubmittedFrames,
+                    coreAudioPressure.MaxCallbackGapMilliseconds, coreAudioPressure.MaxHostTimeGapMilliseconds,
+                    coreAudioPressure.MaxCallbackDurationMilliseconds, coreAudioPressure.MinFrames, coreAudioPressure.MaxFrames,
+                    coreAudioPressure.ActionFlags, coreAudioPressure.MaxSampleDelta, coreAudioPressure.AbruptFrameCount,
+                    coreAudioPressure.RepeatedBufferCount, coreAudioPressure.MaxRepeatedBufferRun);
+            }
+
             _watchdogTickCount++;
             if (_watchdogTickCount % 10 == 0 && started)
             {
                 _logger.LogDebug(
-                    "Render snapshot: Started={Started} Callbacks={Callbacks} RequestedBytes={RequestedBytes} RealBytes={RealBytes} SilenceBytes={SilenceBytes} ShortReads={ShortReads} Underruns={Underruns} RingRead={RingRead} RingWritten={RingWritten} RingAvailable={Available}/{Capacity} RingGeneration={RingGeneration} PcmFingerprint={PcmFingerprint}",
-                    started, Interlocked.Read(ref _callbackCount),
+                    "Render snapshot: Started={Started} Callbacks={Callbacks} TimingCallbacks={TimingCallbacks} TimingTotalFrames={TimingTotalFrames} TimingAverageFrames={TimingAverageFrames:F1} RequestedBytes={RequestedBytes} RealBytes={RealBytes} SilenceBytes={SilenceBytes} ShortReads={ShortReads} Underruns={Underruns} RingRead={RingRead} RingWritten={RingWritten} RingAvailable={Available}/{Capacity} RingGeneration={RingGeneration} PcmFingerprint={PcmFingerprint} MaxGapMs={MaxGapMs:F2} ExpectedPeriodMs={ExpectedPeriodMs:F2} MaxLateMs={MaxLateMs:F2} MaxRenderMs={MaxRenderMs:F2} Frames={MinFrames}-{MaxFrames} MaxGapFrames={PrecedingFrames}->{CurrentFrames}",
+                    started, Interlocked.Read(ref _callbackCount), callbackTiming.CallbackCount,
+                    callbackTiming.TotalFrames, callbackTiming.AverageFramesPerCallback,
                     Interlocked.Read(ref _requestedBytes), realBytesRendered,
                     Interlocked.Read(ref _silenceBytesRendered), shortReadCount,
                     underrunCount, ring.TotalBytesRead, ring.TotalBytesWritten,
                     ring.AvailableBytes, ring.Capacity, ring.Generation,
-                    Interlocked.Read(ref _lastPcmFingerprint));
+                    Interlocked.Read(ref _lastPcmFingerprint), callbackTiming.MaxGapMilliseconds,
+                    callbackTiming.ExpectedPeriodMilliseconds, callbackTiming.MaxLateMilliseconds,
+                    callbackTiming.MaxRenderMilliseconds, callbackTiming.MinFrames,
+                    callbackTiming.MaxFrames, callbackTiming.PrecedingFramesAtMaxGap,
+                    callbackTiming.CurrentFramesAtMaxGap);
+
+                if (coreAudioDiagnostics is { } coreAudioSnapshot)
+                {
+                    _logger.LogDebug(
+                        "CoreAudio render snapshot: Callbacks={Callbacks} RequestedFrames={RequestedFrames} SubmittedFrames={SubmittedFrames} MaxCallbackGapMs={MaxCallbackGapMs:F2} MaxHostTimeGapMs={MaxHostTimeGapMs:F2} MaxCallbackDurationMs={MaxCallbackDurationMs:F2} Frames={MinFrames}-{MaxFrames} ActionFlags=0x{ActionFlags:X} MaxSampleDelta={MaxSampleDelta} AbruptFrames={AbruptFrames} RepeatedBuffers={RepeatedBuffers} MaxRepeatedBufferRun={MaxRepeatedBufferRun}",
+                        coreAudioSnapshot.CallbackCount, coreAudioSnapshot.RequestedFrames, coreAudioSnapshot.SubmittedFrames,
+                        coreAudioSnapshot.MaxCallbackGapMilliseconds, coreAudioSnapshot.MaxHostTimeGapMilliseconds,
+                        coreAudioSnapshot.MaxCallbackDurationMilliseconds, coreAudioSnapshot.MinFrames, coreAudioSnapshot.MaxFrames,
+                        coreAudioSnapshot.ActionFlags, coreAudioSnapshot.MaxSampleDelta, coreAudioSnapshot.AbruptFrameCount,
+                        coreAudioSnapshot.RepeatedBufferCount, coreAudioSnapshot.MaxRepeatedBufferRun);
+                }
             }
 
             _watchdogLastUnderrunCount = underrunCount;
             _watchdogLastStarted = started;
             _watchdogLastRealBytesRendered = realBytesRendered;
+        }
+
+        // Reading the native snapshot resets it, so this must happen exactly
+        // once per watchdog tick and nowhere else.
+        private void FoldBridgeCounters()
+        {
+            if (_bridge is not { } bridge)
+                return;
+
+            var snapshot = bridge.TakeSnapshot();
+            Interlocked.Add(ref _callbackCount, snapshot.CallbackCount);
+            Interlocked.Add(ref _requestedBytes, snapshot.RequestedBytes);
+            Interlocked.Add(ref _realBytesRendered, snapshot.RealBytes);
+            Interlocked.Add(ref _silenceBytesRendered, snapshot.SilenceBytes);
+            Interlocked.Add(ref _shortReadCount, snapshot.ShortReadCount);
+            Interlocked.Exchange(ref _lastPcmFingerprint, snapshot.LastPcmFingerprint);
+            if (snapshot.MaxIdenticalCallbackRun > Volatile.Read(ref _maxIdenticalCallbackRun))
+                Volatile.Write(ref _maxIdenticalCallbackRun, snapshot.MaxIdenticalCallbackRun);
         }
 
         public bool IsPlaying => _started;
@@ -379,17 +501,30 @@ namespace Flower.Audio
             // converter in the chain. Keep that rate on later device changes:
             // existing current and armed decoders cannot safely change format.
             config.sampleRate = _hasNegotiatedFormat ? GaplessFormat.SampleRate : 0;
-            config.dataCallback = &DataCallback;
+            // The bridge's callback is a native symbol in the same library
+            // miniaudio itself came from, so installing it costs nothing and
+            // needs no managed thunk. It renders silence until AttachTo binds
+            // a bridge to this device below, which happens before anything
+            // can start the device.
+            var useBridge = NativeAudioBridge.IsAvailable && _outputStage.Timing.NativeBufferMs > 0;
+            if (useBridge)
+                config.dataCallback = NativeAudioBridge.RenderCallback;
+            else
+                config.dataCallback = &DataCallback;
             config.notificationCallback = &NotificationCallback;
             config.pUserData = (void*)GCHandle.ToIntPtr(_selfHandle);
 
             // miniaudio's default (low-latency) profile picks a very small
-            // period size, tuned for tight native C callbacks. This callback
-            // runs on a managed .NET thread (a GCHandle lookup, a
-            // bounds-checked Span copy, all under the CLR), which can
-            // occasionally take just long enough to miss that tiny window -
-            // heard as crackling. Conservative trades a little extra latency
-            // for a much bigger per-period safety margin.
+            // period size, tuned for tight native C callbacks. Conservative
+            // trades a little extra latency for a much bigger per-period
+            // safety margin, which is what the managed callback below needs -
+            // a GCHandle lookup and a bounds-checked Span copy, all under the
+            // CLR, can take just long enough to miss a tiny window.
+            //
+            // It is not enough on its own, and was never the real answer on
+            // mobile: what actually stalls the render thread there is Mono
+            // suspending it for a GC, for hundreds of milliseconds, which no
+            // period size survives. That is what the bridge below exists for.
             config.performanceProfile = ma_performance_profile.ma_performance_profile_conservative;
 
             // Only read by device_init, so a stack local is enough - nothing
@@ -431,6 +566,7 @@ namespace Flower.Audio
             }
 
             _device = device;
+            RegisterCoreAudioDiagnostics();
 
             if (!_hasNegotiatedFormat)
             {
@@ -459,6 +595,34 @@ namespace Flower.Audio
             // undithered integer multiply. OutputStage does the gain in float
             // before requantising, so this path must never be used.
             ma.device_set_master_volume(_device, 1f);
+
+            // After the sample-rate negotiation above, so the buffer is sized
+            // in the rate actually being rendered rather than the assumed one.
+            if (useBridge && _ringBuffer is { } ringBuffer)
+            {
+                var capacity = _outputStage.Timing.NativeBufferMs * (long)GaplessFormat.SampleRate
+                    * GaplessFormat.BytesPerFrame / 1000;
+                _bridge = NativeAudioBridge.TryCreate((int)capacity, GaplessFormat.BytesPerFrame);
+                if (_bridge == null)
+                {
+                    // Nothing to fall back to: the device was initialised with
+                    // the native callback, which without a bridge renders
+                    // silence. Reopening with the managed one is a bigger
+                    // hammer than a failed malloc of a third of a second of
+                    // PCM warrants, and it has never been seen to happen.
+                    _logger.LogError("Could not allocate the native audio bridge; playback will be silent");
+                }
+                else
+                {
+                    _bridge.AttachTo(_device);
+                    _feeder = new AudioFeeder(ringBuffer, _bridge, _outputStage);
+                    _feeder.Start();
+                    _logger.LogInformation(
+                        "Rendering through the native audio bridge: {BufferMs}ms ({Capacity} bytes) ahead of the device",
+                        _outputStage.Timing.NativeBufferMs, _bridge.Capacity);
+                }
+            }
+
             _activeDeviceId = ResolveActiveDeviceId(_outputDeviceId, GetOutputDevices());
             return true;
         }
@@ -491,9 +655,16 @@ namespace Flower.Audio
             if (_device == null)
                 return;
 
+            // Stopped before device_uninit: the feeder thread must not be
+            // mid-write into a bridge that is about to be detached, and the
+            // callback must not be mid-read from one about to be freed.
+            _feeder?.Dispose();
+            _feeder = null;
+
             _intentionalStopDepth++;
             try
             {
+                UnregisterCoreAudioDiagnostics();
                 ma.device_uninit(_device);
             }
             finally
@@ -501,9 +672,14 @@ namespace Flower.Audio
                 _intentionalStopDepth--;
             }
 
+            _bridge?.DetachFromDevice();
+            _bridge?.Dispose();
+            _bridge = null;
+
             NativeMemory.Free(_device);
             _device = null;
             _started = false;
+            _callbackTiming.Reset();
             _activeDeviceId = null;
         }
 
@@ -669,6 +845,45 @@ namespace Flower.Audio
         private void RaiseOutputDeviceLost() =>
             Dispatcher.UIThread.Post(() => OutputDeviceLost?.Invoke(this, EventArgs.Empty));
 
+        private unsafe void RegisterCoreAudioDiagnostics()
+        {
+            if (!OperatingSystem.IsIOS() || _device == null)
+                return;
+
+            if (flower_coreaudio_diagnostics_register(_device) == 0)
+                _logger.LogWarning("Could not register native CoreAudio render diagnostics for the output device");
+        }
+
+        private unsafe void UnregisterCoreAudioDiagnostics()
+        {
+            if (!OperatingSystem.IsIOS() || _device == null)
+                return;
+
+            flower_coreaudio_diagnostics_unregister(_device);
+        }
+
+        private unsafe CoreAudioDiagnosticsSnapshot? TakeCoreAudioDiagnostics()
+        {
+            if (!OperatingSystem.IsIOS() || _device == null)
+                return null;
+
+            CoreAudioDiagnosticsSnapshot snapshot;
+            return flower_coreaudio_diagnostics_take_snapshot(_device, out snapshot) != 0
+                ? snapshot
+                : null;
+        }
+
+        [DllImport("miniaudio", EntryPoint = "flower_coreaudio_diagnostics_register")]
+        private static extern unsafe int flower_coreaudio_diagnostics_register(ma_device* device);
+
+        [DllImport("miniaudio", EntryPoint = "flower_coreaudio_diagnostics_unregister")]
+        private static extern unsafe void flower_coreaudio_diagnostics_unregister(ma_device* device);
+
+        [DllImport("miniaudio", EntryPoint = "flower_coreaudio_diagnostics_take_snapshot")]
+        private static extern unsafe int flower_coreaudio_diagnostics_take_snapshot(
+            ma_device* device,
+            out CoreAudioDiagnosticsSnapshot snapshot);
+
         // Wrapped whole in a try/catch, unlike anything else in this class:
         // this is an [UnmanagedCallersOnly] boundary, and an exception that
         // reaches it does not unwind into a handler - it takes the process
@@ -684,15 +899,38 @@ namespace Flower.Audio
 
             try
             {
-                Render(pDevice, dest, byteCount);
+                Render(pDevice, dest, byteCount, frameCount);
             }
             catch
             {
+                RecordCallbackException(pDevice);
                 dest.Clear();
             }
         }
 
-        private static void Render(ma_device* pDevice, Span<byte> dest, int byteCount)
+        // The unmanaged callback boundary cannot let a managed exception
+        // escape, so it must still return silence. Counting it is safe on the
+        // real-time thread and turns what used to be an invisible dropout into
+        // a watchdog error one second later.
+        private static void RecordCallbackException(ma_device* pDevice)
+        {
+            try
+            {
+                if (pDevice == null)
+                    return;
+
+                var handle = GCHandle.FromIntPtr((IntPtr)pDevice->pUserData);
+                if (handle.Target is MiniaudioSink sink)
+                    Interlocked.Increment(ref sink._callbackExceptionCount);
+            }
+            catch
+            {
+                // This is already on the exception path of an unmanaged
+                // callback. Diagnostics must never become a second escape.
+            }
+        }
+
+        private static void Render(ma_device* pDevice, Span<byte> dest, int byteCount, uint frameCount)
         {
             var handle = GCHandle.FromIntPtr((IntPtr)pDevice->pUserData);
             if (handle.Target is not MiniaudioSink sink || sink._ringBuffer is not { } ring)
@@ -701,81 +939,94 @@ namespace Flower.Audio
                 return;
             }
 
-            var generation = ring.Generation;
-
-            // Prime latch - see _primed. A flush (a fresh start, a seek, a
-            // manual skip) empties the ring while the decoder is still opening
-            // the file, and rendering during that window produces a starved
-            // trickle rather than audio. Silence instead, until there is
-            // enough buffered to play through it.
-            if (generation != sink._primeGeneration)
+            // Capture timestamps rather than logging from the real-time
+            // thread. The watchdog reports the sampled maxima later, which
+            // makes a mid-song click diagnosable even when the PCM ring never
+            // ran short.
+            var callbackStartedAt = Stopwatch.GetTimestamp();
+            try
             {
-                sink._primeGeneration = generation;
-                sink._primed = false;
-                sink._primeDeadlineTimestamp = Stopwatch.GetTimestamp()
-                    + (long)(Stopwatch.Frequency * (PrimeDeadlineMs / 1000.0));
-            }
 
-            if (!sink._primed)
-            {
-                var required = sink._outputStage.Timing.PrebufferMs * (long)GaplessFormat.SampleRate
-                    * GaplessFormat.BytesPerFrame / 1000;
-                sink._primed = ring.AvailableBytes >= required
-                    || Stopwatch.GetTimestamp() >= sink._primeDeadlineTimestamp;
-            }
+                var generation = ring.Generation;
 
-            // Read() never blocks - a short/zero read just means the ring is
-            // temporarily empty (decode running behind), not end-of-stream.
-            // This callback runs on miniaudio's real-time thread, so the
-            // remainder of the requested frames is silence-padded rather
-            // than waited for.
-            var read = sink._primed ? ring.Read(dest) : 0;
-            if (read < byteCount)
-                dest[read..].Clear();
-
-            Interlocked.Increment(ref sink._callbackCount);
-            Interlocked.Add(ref sink._requestedBytes, byteCount);
-            Interlocked.Add(ref sink._realBytesRendered, read);
-            if (read < byteCount)
-            {
-                Interlocked.Add(ref sink._silenceBytesRendered, byteCount - read);
-                if (sink._primed)
-                    Interlocked.Increment(ref sink._shortReadCount);
-            }
-
-            if (read > 0)
-            {
-                var fingerprint = Fingerprint(dest[..read]);
-                var previousFingerprint = Interlocked.Exchange(ref sink._lastCallbackFingerprint, fingerprint);
-                var previousRead = Interlocked.Exchange(ref sink._lastCallbackReadBytes, read);
-                Interlocked.Exchange(ref sink._lastPcmFingerprint, fingerprint);
-
-                if (previousFingerprint == fingerprint && previousRead == read)
+                // Prime latch - see _primed. A flush (a fresh start, a seek, a
+                // manual skip) empties the ring while the decoder is still opening
+                // the file, and rendering during that window produces a starved
+                // trickle rather than audio. Silence instead, until there is
+                // enough buffered to play through it.
+                if (generation != sink._primeGeneration)
                 {
-                    var repeated = Interlocked.Increment(ref sink._consecutiveIdenticalCallbacks);
-                    if (repeated > Volatile.Read(ref sink._maxIdenticalCallbackRun))
-                        Volatile.Write(ref sink._maxIdenticalCallbackRun, repeated);
+                    sink._primeGeneration = generation;
+                    sink._primed = false;
+                    sink._primeDeadlineTimestamp = Stopwatch.GetTimestamp()
+                        + (long)(Stopwatch.Frequency * (PrimeDeadlineMs / 1000.0));
                 }
-                else
+
+                if (!sink._primed)
                 {
-                    Interlocked.Exchange(ref sink._consecutiveIdenticalCallbacks, 0);
+                    var required = sink._outputStage.Timing.PrebufferMs * (long)GaplessFormat.SampleRate
+                        * GaplessFormat.BytesPerFrame / 1000;
+                    sink._primed = ring.AvailableBytes >= required
+                        || Stopwatch.GetTimestamp() >= sink._primeDeadlineTimestamp;
                 }
+
+                // Read() never blocks - a short/zero read just means the ring is
+                // temporarily empty (decode running behind), not end-of-stream.
+                // This callback runs on miniaudio's real-time thread, so the
+                // remainder of the requested frames is silence-padded rather
+                // than waited for.
+                var read = sink._primed ? ring.Read(dest) : 0;
+                if (read < byteCount)
+                    dest[read..].Clear();
+
+                Interlocked.Increment(ref sink._callbackCount);
+                Interlocked.Add(ref sink._requestedBytes, byteCount);
+                Interlocked.Add(ref sink._realBytesRendered, read);
+                if (read < byteCount)
+                {
+                    Interlocked.Add(ref sink._silenceBytesRendered, byteCount - read);
+                    if (sink._primed)
+                        Interlocked.Increment(ref sink._shortReadCount);
+                }
+
+                if (read > 0)
+                {
+                    var fingerprint = Fingerprint(dest[..read]);
+                    var previousFingerprint = Interlocked.Exchange(ref sink._lastCallbackFingerprint, fingerprint);
+                    var previousRead = Interlocked.Exchange(ref sink._lastCallbackReadBytes, read);
+                    Interlocked.Exchange(ref sink._lastPcmFingerprint, fingerprint);
+
+                    if (previousFingerprint == fingerprint && previousRead == read)
+                    {
+                        var repeated = Interlocked.Increment(ref sink._consecutiveIdenticalCallbacks);
+                        if (repeated > Volatile.Read(ref sink._maxIdenticalCallbackRun))
+                            Volatile.Write(ref sink._maxIdenticalCallbackRun, repeated);
+                    }
+                    else
+                    {
+                        Interlocked.Exchange(ref sink._consecutiveIdenticalCallbacks, 0);
+                    }
+                }
+
+                // Skipped entirely while the prime latch is holding: the buffer is
+                // already pure silence, and running the output stage over it would
+                // spend the declick fade-in on that silence, so the first real
+                // audio after a flush would arrive at full gain - the click the
+                // fade exists to remove. Not calling Process leaves the stage's
+                // last-seen generation untouched, so the first primed callback is
+                // the one that arms the fade-in, which is where it belongs.
+                if (!sink._primed)
+                    return;
+
+                // The whole buffer, silence padding included - the EQ's delay
+                // lines and the gain ramp both have to keep advancing across a
+                // gap, or they resume from pre-gap state on the other side of it.
+                sink._outputStage.Process(dest, generation);
             }
-
-            // Skipped entirely while the prime latch is holding: the buffer is
-            // already pure silence, and running the output stage over it would
-            // spend the declick fade-in on that silence, so the first real
-            // audio after a flush would arrive at full gain - the click the
-            // fade exists to remove. Not calling Process leaves the stage's
-            // last-seen generation untouched, so the first primed callback is
-            // the one that arms the fade-in, which is where it belongs.
-            if (!sink._primed)
-                return;
-
-            // The whole buffer, silence padding included - the EQ's delay
-            // lines and the gain ramp both have to keep advancing across a
-            // gap, or they resume from pre-gap state on the other side of it.
-            sink._outputStage.Process(dest, generation);
+            finally
+            {
+                sink._callbackTiming.Record(callbackStartedAt, Stopwatch.GetTimestamp(), frameCount, GaplessFormat.SampleRate);
+            }
         }
 
         // Samples one byte per 64 rather than walking every PCM byte on the
@@ -809,7 +1060,12 @@ namespace Flower.Audio
                 // already renders through the fade-in envelope rather than
                 // jumping straight in at whatever amplitude the stream
                 // happens to begin on.
-                _outputStage.BeginFadeIn();
+                if (_bridge is { } bridge)
+                    bridge.BeginFadeIn(FadeFrames(_outputStage.Timing.TransportFadeMs));
+                else
+                    _outputStage.BeginFadeIn();
+
+                _callbackTiming.Reset();
 
                 var result = ma.device_start(_device);
                 if (result != ma_result.MA_SUCCESS)
@@ -834,9 +1090,10 @@ namespace Flower.Audio
                 // which is a click. Give the callback TransportFadeMs to walk
                 // it down to silence first - bounded, because the callback
                 // may never run again and a pause must not hang the caller.
-                _outputStage.FadeOutAndWait();
+                FadeOutAndWait();
                 StopDeviceIntentionally();
                 _started = false;
+                _callbackTiming.Reset();
                 Paused?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -849,12 +1106,42 @@ namespace Flower.Audio
                     return;
 
                 // Faded, for the same reason as Pause above.
-                _outputStage.FadeOutAndWait();
+                FadeOutAndWait();
                 StopDeviceIntentionally();
                 _started = false;
+                _callbackTiming.Reset();
                 Stopped?.Invoke(this, EventArgs.Empty);
             }
         }
+
+        // Whichever side of the hand-off owns the transport envelope. In
+        // bridge mode it is the native callback, so that a pause is as
+        // immediate with a third of a second buffered downstream as it is
+        // with nothing; the output stage's own fade only applies when this
+        // sink is still rendering in managed code.
+        private void FadeOutAndWait()
+        {
+            if (_bridge is not { } bridge)
+            {
+                _outputStage.FadeOutAndWait();
+                return;
+            }
+
+            bridge.BeginFadeOut(FadeFrames(_outputStage.Timing.TransportFadeMs));
+
+            var deadline = Stopwatch.GetTimestamp()
+                + (long)(Stopwatch.Frequency
+                    * ((_outputStage.Timing.TransportFadeMs + _outputStage.Timing.FadeOutWaitMs) / 1000.0));
+            while (!bridge.FadeOutCompleted && Stopwatch.GetTimestamp() < deadline)
+                Thread.Sleep(1);
+        }
+
+        private static int FadeFrames(int milliseconds) =>
+            (int)(milliseconds * (long)GaplessFormat.SampleRate / 1000);
+
+        // See IAudioSink.BufferedBytes - zero without a bridge, where nothing
+        // sits between the shared ring and the speaker.
+        public long BufferedBytes => _feeder?.BufferedBytes ?? 0;
 
         public IReadOnlyList<AudioOutputDevice> GetOutputDevices()
         {

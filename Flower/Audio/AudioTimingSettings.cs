@@ -46,6 +46,22 @@ namespace Flower.Audio
         // no device at all), and a pause must not hang the UI thread.
         public int FadeOutWaitMs { get; set; } = 30;
 
+        // How much already-processed PCM the native bridge holds ahead of the
+        // device on the platforms that have one (see NativeAudioBridge). This
+        // is the only buffer a GC pause cannot stall, so it is what decides
+        // how long a pause has to be before it is audible: iPhone logs put
+        // almost every stall under 200ms with a rare outlier near 700ms, and
+        // 300 buys all but the outlier. It costs the same in responsiveness -
+        // a volume or EQ change is applied here, so it reaches the speaker
+        // this many milliseconds later. Zero disables the bridge and puts the
+        // render callback back in managed code.
+        //
+        // The one value here that is not live: it sizes a buffer allocated
+        // when the output device is opened, so a change takes effect on the
+        // next device open (an output switch, or a restart) rather than
+        // immediately like the rest.
+        public int NativeBufferMs { get; set; } = 300;
+
         // Clamped on the way in rather than trusted: this file is meant to be
         // hand-edited, and a typo that puts a two-second fade on every pause
         // or a zero-length prebuffer back where it started should not be able
@@ -57,6 +73,7 @@ namespace Flower.Audio
             DeclickFadeMs = Math.Clamp(DeclickFadeMs, 0, 200),
             GainRampMs = Math.Clamp(GainRampMs, 0, 500),
             FadeOutWaitMs = Math.Clamp(FadeOutWaitMs, 0, 500),
+            NativeBufferMs = Math.Clamp(NativeBufferMs, 0, 2000),
         };
     }
 }

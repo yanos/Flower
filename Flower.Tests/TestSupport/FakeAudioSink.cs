@@ -82,7 +82,9 @@ public sealed class FakeAudioSink : IAudioSink
         OutputDeviceId = deviceId is null || OutputDevices.Any(d => d.Id == deviceId) ? deviceId : null;
     }
 
-    public void Resume()
+    public long BufferedBytes => 0;
+
+        public void Resume()
     {
         CancellationTokenSource cts;
         GaplessRingBuffer ring;

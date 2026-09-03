@@ -1,9 +1,13 @@
 # Audio quality: fix the render-path defects, then prove it with PCM-level tests
 
-**Status: Phases 1–4 are built. Findings A–H and J are fixed; I is deferred to
-`AUDIOPHILE-PLAN.md` §5, which now owns it. What is left is listening: the fast
-suite (1540 tests) and the `RequiresLibVLC` real-decode tests are green, but
-"does it still click" is a question only ears answer — see Verification below.**
+**Status: Phases 1–5 are built. Findings A–H and J are fixed; I is deferred to
+`AUDIOPHILE-PLAN.md` §5, which now owns it. Phase 5 (below) is the mobile-only
+one, added after device logs showed a defect none of A–J covers. What is left is
+listening: the suite (1572 tests) including the `RequiresLibVLC` real-decode
+tests is green, but "does it still click" is a question only ears answer — see
+Verification below. Phase 6 is Phase 5's fork collapsed back into one render
+path across every platform; it is not started, and deliberately waits on that
+listening.**
 
 Findings A–J below were read out of the code, not reproduced from logs; A, B, C
 and D each map onto a symptom that was actually reported. They are kept in the
@@ -416,6 +420,134 @@ narrow native FFmpeg façade is the selected route, with direct mode choosing a
 track's native format only when the device accepts it. That is a separate
 format-aware pipeline, not an extension of this quality pass.
 
+## Phase 5 — the render thread itself (mobile only)
+
+Added after Phases 1–4 shipped, from a real iPhone's pushed logs during one
+playthrough of *Generique*. Nothing in A–J explains what they show, and the
+symptom — occasional blips — survived all of it.
+
+**What the logs say.** For the whole track the ring stayed roughly 1.3s ahead,
+`ShortReads=0 Underruns=0 SilenceBytes=0`, and the native continuity check on
+what was handed to CoreAudio found `AbruptFrames=0 RepeatedBuffers=0`. The
+render callback never took more than ~3ms. But the callback itself arrived late
+six times in two minutes — 66, 70, 84, 159, 189 and once **668** ms against a
+42.7ms period — and the window after the worst one reported
+`MaxHostTimeGapMs=442`: CoreAudio's own timestamps skipped between two
+consecutive 1024-frame buffers, so the hardware played ~420ms of nothing.
+
+Two things say it is a whole-process stall rather than an audio-thread problem.
+The watchdog timer was late in the same window (1.27s after the previous tick on
+a 1s schedule, then catching up), and there was nothing else running — 125 log
+lines in the entire two minutes, none near any spike. On Mono, a few hundred
+milliseconds of the whole process stopping with no work to explain it is a GC
+stop-the-world pause; every managed thread is suspended at a safepoint, and the
+miniaudio data callback *was* managed code. macOS, same code on CoreCLR, has not
+recorded a single late callback.
+
+`performance_profile_conservative` was the earlier answer to this and is not
+enough: 42.7ms of period slack does not cover a 626ms pause, and raising the
+period does not help on iOS, where the real IO buffer rises with it.
+
+**The fix.** A thread that never enters managed code is never suspended, so the
+render callback became pure C. `native/miniaudio/flower_audio_bridge.h` is a
+single-producer/single-consumer PCM buffer with a `ma_device_data_proc` that
+does a memcpy, a fade and some counters, and nothing else.
+`Flower/Audio/AudioFeeder.cs` is the ordinary managed thread that fills it —
+prime latch, EQ, gain ramp, dither, everything the callback used to do, now
+running `NativeBufferMs` ahead of the speaker. A GC pause that suspends the
+feeder is then a pause in refilling a buffer deep enough to play through it.
+
+Details worth keeping:
+
+- **The flush handshake.** A seek or a skip has to drop what is already
+  buffered, and "drop everything queued" cannot tell pre-flush audio from
+  post-flush audio written a microsecond later. So the producer requests, the
+  callback acknowledges by dropping, and the producer writes nothing in
+  between — with a 120ms timeout after which it applies the flush itself, for
+  the case where the device stopped and no callback will ever run again.
+  Indices are monotonic and never rebased, so there is no epoch to get wrong.
+- **The transport envelope moved into C.** A fade applied on the producer side
+  would not reach the speaker for a bridge-depth, so pause would keep playing.
+  The callback owns it, and pause/resume stay immediate. The cost is that the
+  fade multiplies already-dithered S16 — quantisation error during a ramp to
+  silence, which is where it cannot be heard.
+- **Position.** `IAudioSink.BufferedBytes` reports what the sink has taken but
+  not played, and `GaplessAudioManager.Time` subtracts it; otherwise the seek
+  bar runs a bridge-depth ahead of the music.
+- **Where it applies.** Only where Flower builds its own miniaudio — Android and
+  iOS. Desktop's binary is the `Miniaudio-CS` NuGet and carries none of these
+  symbols, so `NativeAudioBridge.IsAvailable` is false there and the managed
+  callback stays. That is probed rather than switched on
+  `OperatingSystem.IsIOS()`, so the decision follows the binary that actually
+  loaded.
+
+**The trade, stated plainly.** `NativeBufferMs` defaults to 300. That is how
+long a stall has to be before it is audible, and equally how long a volume or EQ
+change takes to reach the speaker, because both are applied on the feeder. The
+iPhone's own numbers pick the value: across a full day, seven stalls over 100ms
+and exactly one over 250ms.
+
+Untested by the suite, and knowingly so: the C itself. `AudioFeederTests` covers
+every byte-conservation and flush-ordering rule against `FakeAudioBridge`, which
+keeps the same refuse-writes-until-acknowledged contract, but no test on a
+desktop can exercise a callback that only exists in an iOS/Android binary.
+
+## Phase 6 — the same path everywhere (not started)
+
+Phase 5 left a fork: pure-C render callback on Android and iOS, managed
+callback on desktop. That was scoped by evidence — a full day of macOS client
+logs contains no late render callback at all, against seven on the phone, and
+CoreCLR does not suspend a thread the way Mono does — but the fork itself has a
+cost the evidence does not weigh. Two render paths means the one covered by
+`AudioFeederTests` is not the one desktop ships, and `MiniaudioSink` carries a
+`_bridge is { } bridge / else` branch through `Resume`, `Pause`,
+`FadeOutAndWait` and the watchdog. Collapsing to one path deletes the managed
+`DataCallback` and its fingerprint helper outright, along with every branch.
+
+**The bridge does not depend on miniaudio.** This is the fact that makes it
+affordable, and it was checked rather than assumed: the bridge takes
+`ma_device*` purely as an opaque key for its device registry and never
+dereferences it, and `ma_uint32` is `uint32_t`. Extracted into a standalone
+file and compiled against nothing but its own header, it builds clean, exports
+all 17 `flower_audio_bridge_*` symbols, and links against `libSystem` alone.
+
+So desktop does *not* mean rebuilding miniaudio from source and dropping the
+`Miniaudio-CS` NuGet, which is what made this look expensive. Split the bridge
+out of `impl.c` into its own `flower_audio_bridge.c`, ship it as a small
+standalone `libflowerbridge` alongside the NuGet's `libminiaudio`, and hand
+miniaudio a `dataCallback` pointer that lives in a different library — it has no
+opinion about that. Mobile keeps compiling the same source into its existing
+single library, so there is no second variant to hold in sync.
+
+What it takes:
+
+- Split `flower_audio_bridge.c` out of `impl.c`; both mobile builds pick it up
+  as a second translation unit.
+- A desktop build script producing six RIDs. `osx-arm64` and `osx-x64` both
+  build on a Mac today (the x64 cross was verified). `linux-x64`/`linux-arm64`
+  need a container. `win-x64`/`win-arm64` are the real snag: MSVC only supports
+  C11 `stdatomic` on VS 17.5+ behind `/experimental:c11atomics`, so it is clang
+  or a recent-VS floor, and neither Linux nor Windows can be produced from a
+  Mac without extra tooling. This is the whole cost of the phase, and it is
+  build infrastructure rather than code.
+- `NativeAudioBridge`'s `DllImport("miniaudio")` becomes
+  `DllImport("flowerbridge")`. The `IsAvailable` probe needs no change and
+  keeps its value: a RID nobody built for degrades to the managed callback
+  instead of failing to start — which is also what makes this landable one
+  platform at a time.
+- Delete the managed `DataCallback` once every shipped RID has a binary.
+
+**`NativeBufferMs` should not stay at 300 on desktop.** That number is sized to
+survive a Mono GC pause and buys nothing on CoreCLR, while costing 300ms of lag
+on the volume slider and every EQ change, because both are applied on the
+feeder. Desktop wants something like 60–80ms: the same architecture without the
+insurance premium.
+
+**Sequencing.** After mobile listening testing settles, not before. If more
+testing turns up a bridge bug it is worth fixing in one place rather than after
+the bridge is the only path on six more RIDs — and unlike the phone, desktop
+has no defect waiting on this. `Flower.Web` is out of scope permanently.
+
 ## Files
 
 | File | Change |
@@ -456,6 +588,10 @@ callback — non-blocking `Read()`, silence padding, short-period counting —
 rather than `FakeAudioSink`'s `ReadBlocking`, which is why none of these
 failures were visible before). `OutputStageTests`, `RenderStarvationTests` and a
 rewritten `EqualizerTests` build on them.
+
+Phase 5 adds `AudioFeederTests` (11 tests) and `TestSupport/FakeAudioBridge.cs`.
+The native callback it feeds has no automated coverage — see that phase's last
+paragraph.
 
 Still to do, and only ears can do it:
 

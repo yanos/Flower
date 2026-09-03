@@ -208,7 +208,11 @@ namespace Flower.Audio
         {
             get
             {
-                var bytesProduced = _coordinator.CurrentTrackBytesProduced;
+                // Less whatever the sink has taken but not yet played: the
+                // coordinator counts bytes read out of the shared ring, and a
+                // sink that buffers downstream of it reads ahead of the
+                // speaker by exactly that much.
+                var bytesProduced = Math.Max(0, _coordinator.CurrentTrackBytesProduced - _sink.BufferedBytes);
                 return (long)(bytesProduced / (double)GaplessFormat.BytesPerFrame / GaplessFormat.SampleRate * 1000);
             }
         }

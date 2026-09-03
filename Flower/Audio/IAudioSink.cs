@@ -59,6 +59,13 @@ namespace Flower.Audio
         // change takes effect without restarting playback.
         void ApplyTiming(AudioTimingSettings timing);
 
+        // PCM this sink has taken from the ring buffer but not yet played -
+        // the depth of whatever buffer sits between the two. Subtracted from
+        // the playback position, which is derived from the ring's read cursor
+        // and would otherwise run ahead of what can be heard. Zero for a sink
+        // that renders straight out of the ring.
+        long BufferedBytes { get; }
+
         void Resume();
         void Pause();
         void Stop();

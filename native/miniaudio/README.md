@@ -2,6 +2,25 @@
 
 Desktop already gets `libminiaudio` via the community `Miniaudio-CS` NuGet package (`~/.nuget/packages/miniaudio-cs/`). That package ships no `android-*`/`ios-*` binaries at all, so mobile is built here instead - no NuGet, no hosting, just compiled binaries checked directly into `Flower.Android/libs/` and `Flower.iOS/Frameworks/`.
 
+## Flower's own C in here
+
+Two files alongside the vendored header are ours, compiled into the same
+library by `impl.c`:
+
+- `flower_coreaudio_diagnostics.h` - iOS-only counters around miniaudio's
+  CoreAudio render callback (callback gap, host-time gap, callback duration,
+  abrupt-sample and repeated-buffer detection). `vendor/miniaudio.h` carries a
+  small patch calling into them from `ma_on_output__coreaudio`; that patch is
+  the only edit to the vendored source and has to be reapplied if it is
+  re-pinned.
+- `flower_audio_bridge.h` - the PCM hand-off that keeps managed code off the
+  real-time thread on Mono platforms. Read its header comment for why it
+  exists; the short version is that Mono's GC suspends the render thread, and
+  iPhone logs caught it doing so for 668ms mid-track.
+
+Both are absent from the desktop NuGet binary, which is why `MiniaudioSink`
+probes for them rather than assuming a platform.
+
 ## Why this exact miniaudio commit
 
 `vendor/miniaudio.h` is pinned to commit `350784a9467a79d0fa65802132668e5afbcf3777` (tag `0.11.22`) - **not** the latest miniaudio release. This is the exact commit `Miniaudio-CS` 1.0.4's own C# bindings were generated against (confirmed via `Miniaudio-CS`'s own pinned git submodule at its published commit `9c64a8fb404c965a538584bf76a691f0d4ffccd6`, and cross-checked against the version string embedded in the desktop `libminiaudio.dylib`). Building a different miniaudio version here would risk a silent ABI mismatch (`ma_context`/`ma_device` struct layout, enum values) against the existing C# struct definitions - do not bump this without also verifying `Miniaudio-CS` itself was rebuilt against the same newer commit.
