@@ -494,12 +494,84 @@ public static class SubsonicEndpoints
         return SubsonicResults.Ok();
     }
 
-    private static IResult Stream(string? id, Library library)
+    // The one route on this surface that carries the music, and until now the
+    // one route that left no trace of having been asked.
+    //
+    // That mattered the first time a client reported that streaming had
+    // stopped working: ninety-two tracks skipped in one afternoon on a phone,
+    // every one of them remote, every one of them decoding to zero bytes -
+    // and nothing at all on the server to say whether the requests had even
+    // arrived. The catalog routes were answering fine the whole time, so
+    // "reachable" was never the question; "reachable for the bytes" was, and
+    // it was unanswerable.
+    //
+    // Logged in two halves, because the interesting failures are not in the
+    // first one. Starting a stream is a synchronous decision - the track is
+    // known, or it is not - while everything that goes wrong afterwards
+    // happens while ASP.NET Core is writing the file, long after this method
+    // has returned its IResult. So the response's completion carries the other
+    // half: how much actually went out, and whether the client was still there
+    // at the end of it.
+    private static IResult Stream(string? id, Library library, HttpContext context, ILoggerFactory loggerFactory)
     {
+        var logger = loggerFactory.CreateLogger(StreamLogCategory);
         var track = FindPlayable(id, library);
-        return track is null
-            ? Results.NotFound()
-            : Results.File(track.Path!, SubsonicMapper.ContentTypeOf(track), enableRangeProcessing: true);
+        if (track is null)
+        {
+            logger.LogWarning(
+                "Refusing to stream {Id} to {Peer}: no playable track with that id (unknown, or its file is gone)",
+                id, StreamPeer(context));
+            return Results.NotFound();
+        }
+
+        var range = context.Request.Headers.Range.ToString();
+        logger.LogInformation(
+            "Streaming \"{Title}\" ({Id}) to {Peer}{Range}",
+            track.Title, id, StreamPeer(context), range.Length > 0 ? $" for range {range}" : "");
+
+        var startedAt = DateTimeOffset.UtcNow;
+        context.Response.OnCompleted(() =>
+        {
+            var elapsed = DateTimeOffset.UtcNow - startedAt;
+            var sent = context.Response.ContentLength;
+
+            if (context.RequestAborted.IsCancellationRequested)
+            {
+                // Not necessarily trouble - a skip, a seek and closing the app
+                // all abort a stream mid-flight. It is trouble when it happens
+                // to every track in a row, which is what this exists to show.
+                logger.LogInformation(
+                    "Stream of \"{Title}\" ({Id}) to {Peer} was cut off after {ElapsedMs:F0}ms",
+                    track.Title, id, StreamPeer(context), elapsed.TotalMilliseconds);
+                return Task.CompletedTask;
+            }
+
+            logger.LogInformation(
+                "Finished streaming \"{Title}\" ({Id}) to {Peer}: {Status}, {Bytes} byte(s) in {ElapsedMs:F0}ms",
+                track.Title, id, StreamPeer(context), context.Response.StatusCode, sent, elapsed.TotalMilliseconds);
+            return Task.CompletedTask;
+        });
+
+        return Results.File(track.Path!, SubsonicMapper.ContentTypeOf(track), enableRangeProcessing: true);
+    }
+
+    // Named rather than typed: ILogger<T> needs a T, and this class is static.
+    private const string StreamLogCategory = "Flower.Server.Subsonic.Stream";
+
+    // Who asked, in whichever of the three currencies this surface accepts: a
+    // paired device's fingerprint, a Subsonic username, or - for a stream
+    // ticket, which names nobody - the address alone.
+    private static string StreamPeer(HttpContext context)
+    {
+        var address = context.Connection.RemoteIpAddress?.ToString() ?? "an unknown address";
+
+        if (DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Fingerprint") is { Length: > 0 } fingerprint)
+            return $"{fingerprint} at {address}";
+
+        if (context.Request.Query["u"].ToString() is { Length: > 0 } username)
+            return $"{username} at {address}";
+
+        return address;
     }
 
     private static IResult Download(string? id, Library library)
