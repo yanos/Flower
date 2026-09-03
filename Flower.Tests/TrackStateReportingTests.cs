@@ -310,6 +310,52 @@ public class TrackStateReportingTests
         Assert.True(Assert.Single(report).Starred);
     }
 
+    // The settings half of the same rule: these are edited rather than played
+    // into existence, so a device says so even when it has never played the
+    // track and has nothing to say about listening.
+    [Fact]
+    public void An_admin_device_reports_a_setting_it_changed_on_a_track_it_never_played()
+    {
+        var served = Played("Second Song", "server-track-7", 0);
+        served.LastPlayedAt = DateTimeOffset.UtcNow;
+
+        var track = Played("Second Song", "server-track-7", 0);
+        track.IgnoreWhenShuffling = true;
+        track.VolumeAdjustment = -6;
+
+        var report = LibrarySyncService.UnreportedTrackState(
+            [track], new Dictionary<string, int>(),
+            ServerSaid("server-track-7", served), includeOwnerState: true);
+
+        var reported = Assert.Single(report);
+        Assert.True(reported.IgnoreWhenShuffling);
+        Assert.Equal(-6, reported.VolumeAdjustment);
+        // Nothing is claimed about listening, so the server keeps its own
+        // high-water mark - see Library.ApplyReportedOwnerState.
+        Assert.Null(reported.LastPlayedAt);
+    }
+
+    // ResumePosition is the one that does not travel on its own: where a
+    // sitting got to is only meaningful attached to the sitting, so a
+    // difference in it alone is something the server would refuse.
+    [Fact]
+    public void An_admin_device_says_nothing_about_a_resume_position_from_an_older_listen()
+    {
+        var served = Played("Second Song", "server-track-7", 0);
+        served.LastPlayedAt = DateTimeOffset.UtcNow;
+        served.ResumePosition = TimeSpan.FromSeconds(120);
+
+        var track = Played("Second Song", "server-track-7", 0);
+        track.LastPlayedAt = served.LastPlayedAt;
+        track.ResumePosition = TimeSpan.FromSeconds(4);
+
+        var report = LibrarySyncService.UnreportedTrackState(
+            [track], new Dictionary<string, int>(),
+            ServerSaid("server-track-7", served), includeOwnerState: true);
+
+        Assert.Empty(report);
+    }
+
     // StarredAt is deliberately outside the comparison: it is set on starring
     // and nulled on unstarring, so two devices that agree on the star must not
     // be made to disagree forever over the second it was clicked at.

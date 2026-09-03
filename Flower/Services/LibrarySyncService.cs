@@ -362,13 +362,18 @@ public class LibrarySyncService
         // "Applied 0 of 11 track state report(s)" line was, once per pull,
         // indefinitely.
         public bool WouldMove(TrackStateSnapshot served) =>
-            Starred != served.Starred || MovesListeningForward(served);
+            Starred != served.Starred
+            || RememberPlaybackPosition != served.RememberPlaybackPosition
+            || IgnoreWhenShuffling != served.IgnoreWhenShuffling
+            || VolumeAdjustment != served.VolumeAdjustment
+            || MovesListeningForward(served);
 
         // LastPlayedAt is a high-water mark there, so only a later one is
         // news - and a device that has never played the track has no opinion
-        // at all rather than an early one. The playback options ride with it
-        // on both sides (see ApplyReportedOwnerState), so they cannot travel
-        // on their own and are not asked about here.
+        // at all rather than an early one. ResumePosition is not asked about
+        // separately because it rides with the listen on both sides (see
+        // ApplyReportedOwnerState): where in the file a sitting got to is only
+        // meaningful attached to the sitting.
         private bool MovesListeningForward(TrackStateSnapshot served) =>
             LastPlayedAt is { } mine && (served.LastPlayedAt is not { } theirs || mine > theirs);
     }

@@ -684,10 +684,10 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
 
     // LastPlayedAt is a high-water mark of "when was this last put on,
     // anywhere", so a device reporting an older session is not news - and the
-    // playback options ride with it, exactly as they do in the pulling
+    // resume position rides with it, exactly as it does in the pulling
     // direction (see Library.MergePlaybackOptions).
     [Fact]
-    public async Task An_older_session_does_not_walk_back_last_played_or_the_options_riding_with_it()
+    public async Task An_older_session_does_not_walk_back_last_played_or_the_resume_position_riding_with_it()
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
@@ -716,6 +716,55 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         {
             track.LastPlayedAt = null;
             track.ResumePosition = null;
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // RememberPlaybackPosition, IgnoreWhenShuffling and VolumeAdjustment are
+    // settings an owner edits in the track info window, not state a sitting
+    // leaves behind. They used to ride with LastPlayedAt, which made them
+    // unreachable from any device that was not also the one to have played the
+    // track most recently: the report was refused, the next catalog pull
+    // re-seeded the client baseline, and the same refused report went out
+    // again for as long as the pairing lasted.
+    [Fact]
+    public async Task An_admin_can_change_the_track_settings_without_having_played_it()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await AdminDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        var playedHere = DateTimeOffset.UtcNow;
+        track.LastPlayedAt = playedHere;
+
+        try
+        {
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/track-state", "10.0.4.5",
+                body: JsonSerializer.Serialize(new TrackStateReportDto(
+                [
+                    new TrackStateDto(
+                        track.Id.ToKey(), Count: 0, LastPlayedAt: null,
+                        RememberPlaybackPosition: true, IgnoreWhenShuffling: true,
+                        VolumeAdjustment: -6),
+                ])));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.True(track.RememberPlaybackPosition);
+            Assert.True(track.IgnoreWhenShuffling);
+            Assert.Equal(-6, track.VolumeAdjustment);
+
+            // The listening half is untouched by a report that says nothing
+            // about listening - the settings travel on their own, not by
+            // quietly claiming a session that never happened.
+            Assert.Equal(playedHere, track.LastPlayedAt);
+        }
+        finally
+        {
+            track.LastPlayedAt = null;
+            track.RememberPlaybackPosition = false;
+            track.IgnoreWhenShuffling = false;
+            track.VolumeAdjustment = 0;
             await trustedPeers.RevokeAsync(device.Fingerprint);
         }
     }

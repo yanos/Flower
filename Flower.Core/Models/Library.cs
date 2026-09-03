@@ -738,8 +738,15 @@ namespace Flower.Models
         // DateAdded above), and this is a one-directional pull: the client has
         // no way to push its own answer back, so preferring the local one would
         // just mean the two never converge. What that costs is real and worth
-        // naming - turning an option on for a never-played track on the phone
-        // is undone by the next sync.
+        // naming, though it is now a window rather than a standing rule: a
+        // client pushes the three settings on their own (see
+        // MergeReportedTrackState, and LibrarySyncService's five-second tick),
+        // so a change made on the phone is normally already the server's answer
+        // by the time the next pull restates it. What is left is the race - a
+        // pull landing between the edit and the tick that would have carried
+        // it - and losing that race costs one setting on one track, which is
+        // the cheaper end of the trade against giving up server-to-client
+        // propagation of these entirely.
         private static void MergePlaybackOptions(Track existing, Track remote)
         {
             if (existing.LastPlayedAt is { } mine && (remote.LastPlayedAt is not { } theirs || mine > theirs))
@@ -990,8 +997,8 @@ namespace Flower.Models
         //  - LastPlayedAt moves forward only. It is a high-water mark of "when
         //    was this last put on, anywhere", and a device reporting a session
         //    older than one the server already knows about is not news.
-        //  - The playback options ride with it, exactly as MergePlaybackOptions
-        //    has them ride in the pulling direction: a resume position is not a
+        //  - ResumePosition rides with it, exactly as MergePlaybackOptions has
+        //    it ride in the pulling direction: a resume position is not a
         //    counter, going backwards in a file is normal, and the device that
         //    played the track most recently is the one whose idea of where it
         //    got to is worth having.
@@ -1002,6 +1009,15 @@ namespace Flower.Models
         //    tracks whose value differs from what this server last told it
         //    (see LibrarySyncService.UnreportedTrackState), so a star only
         //    crosses the wire when an admin actually moved it.
+        //  - RememberPlaybackPosition, IgnoreWhenShuffling and VolumeAdjustment
+        //    are taken as stated for the same reason, and used to ride with
+        //    LastPlayedAt instead. That made them unreachable: they are per-track
+        //    settings an owner edits in the track info window, not state a
+        //    sitting leaves behind, so requiring the editing device to also hold
+        //    the most recent play meant a setting changed on a phone that had
+        //    never played the track was refused here forever - and re-offered
+        //    after every catalog pull, since the client had no way to know it
+        //    was being refused.
         //
         // Returns how many tracks actually moved, so a caller can log a real
         // number: an id this server does not have, and a report that says
@@ -1077,6 +1093,20 @@ namespace Flower.Models
                 moved = true;
             }
 
+            // The settings, before the listening half below returns early on
+            // them: what the reporting device holds is what it was told to
+            // hold, and it only speaks up when that differs from what this
+            // server last served it.
+            if (track.RememberPlaybackPosition != entry.RememberPlaybackPosition ||
+                track.IgnoreWhenShuffling != entry.IgnoreWhenShuffling ||
+                track.VolumeAdjustment != entry.VolumeAdjustment)
+            {
+                track.RememberPlaybackPosition = entry.RememberPlaybackPosition;
+                track.IgnoreWhenShuffling = entry.IgnoreWhenShuffling;
+                track.VolumeAdjustment = entry.VolumeAdjustment;
+                moved = true;
+            }
+
             // Nothing to say about listening: a report from before this server's
             // own last-played, or from a device that has never played the track,
             // leaves both the timestamp and the options that ride with it alone.
@@ -1086,21 +1116,9 @@ namespace Flower.Models
                 return moved;
 
             track.LastPlayedAt = reportedAt;
-
-            var resume = entry.ResumePositionSeconds is { } seconds
+            track.ResumePosition = entry.ResumePositionSeconds is { } seconds
                 ? TimeSpan.FromSeconds(seconds)
-                : (TimeSpan?)null;
-
-            if (track.RememberPlaybackPosition != entry.RememberPlaybackPosition ||
-                track.ResumePosition != resume ||
-                track.IgnoreWhenShuffling != entry.IgnoreWhenShuffling ||
-                track.VolumeAdjustment != entry.VolumeAdjustment)
-            {
-                track.RememberPlaybackPosition = entry.RememberPlaybackPosition;
-                track.ResumePosition = resume;
-                track.IgnoreWhenShuffling = entry.IgnoreWhenShuffling;
-                track.VolumeAdjustment = entry.VolumeAdjustment;
-            }
+                : null;
 
             return true;
         }
