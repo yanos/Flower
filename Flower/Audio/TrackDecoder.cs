@@ -460,9 +460,54 @@ namespace Flower.Audio
             // Android's MediaStore importer hands back content:// URIs
             // rather than filesystem paths; those need FromLocation, not
             // the default FromPath.
-            return _media ??= path.Contains("://")
+            if (_media is not null)
+                return _media;
+
+            _media = path.Contains("://")
                 ? new Media(_libVLC, path, FromType.FromLocation)
                 : new Media(_libVLC, path);
+
+            ApplyNetworkOptions(_media, path);
+            return _media;
+        }
+
+        // How much of a remote track LibVLC reads ahead of what is playing.
+        //
+        // Its own default is one second, which is what a phone streaming from
+        // a server over the open internet had to ride out every hiccup on -
+        // a second of buffer plus the two seconds the shared PCM ring holds.
+        // Anything longer than three seconds of trouble was audible, and a day
+        // of logs where the network was having a bad time is a day of
+        // starvation warnings.
+        //
+        // The cost is start latency: LibVLC fills this before the first sample
+        // comes out, so a manually-started track takes correspondingly longer
+        // to begin. Auto-advance does not pay it, because the next decoder is
+        // armed and filling well before the current track ends. Ten seconds is
+        // the compromise - long enough to be worth having, short enough that
+        // pressing play still feels like pressing play.
+        //
+        // This is buffering, not caching: nothing is held on disk, and a track
+        // is still fetched again the next time it is played. Keeping whole
+        // tracks would be a download, which is a feature this pipeline does
+        // not have (see LibraryDownloadService for the deliberate kind).
+        private const int RemoteNetworkCachingMs = 10_000;
+
+        private static void ApplyNetworkOptions(Media media, string path)
+        {
+            if (!path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            media.AddOption($":network-caching={RemoteNetworkCachingMs}");
+
+            // A stream that drops mid-track is otherwise the end of that
+            // track: LibVLC reports an error, the coordinator gives up, and
+            // the row is skipped as unplayable. Reconnecting is the difference
+            // between a gap and a song the listener never heard.
+            media.AddOption(":http-reconnect");
         }
 
         private void OnPlay(IntPtr data, IntPtr samples, uint count, long pts)
