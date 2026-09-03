@@ -38,7 +38,8 @@ public sealed class FakeTrackDecoder : ITrackDecoder
 
     public FakeTrackDecoder(Track track) => Track = track;
 
-    public Task<bool> PrepareAsync(CancellationToken cancellationToken = default) => Task.FromResult(PrepareResult);
+    public Task<DecodePrepareResult> PrepareAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(PrepareResult ? DecodePrepareResult.Ready : DecodePrepareResult.Failed);
     public void StartDecoding() => StartDecodingCalled = true;
     public void Seek(float position) => LastSeekPosition = position;
     // Moves nothing by default: the real one only moves anything when the

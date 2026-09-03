@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 
 using Flower.Audio;
+using Flower.Logging;
 using Flower.Services;
 using Flower.Models;
 using Flower.Persistence;
@@ -199,7 +200,7 @@ namespace Flower.ViewModels
                 if (CurrentlyPlayingTrack != null)
                 {
                     var finishedTrack = CurrentlyPlayingTrack;
-                    _logger.LogDebug("EndReached: {Title} ({Path})", finishedTrack.Title, finishedTrack.Path);
+                    _logger.LogDebug("EndReached: {Title} ({Path})", finishedTrack.Title, LogPath.Short(finishedTrack.Path));
 
                     // finishedTrack can be a stale reference: every launch kicks off a
                     // background rescan (see App.axaml.cs) that replaces _library.Tracks
@@ -259,7 +260,7 @@ namespace Flower.ViewModels
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "Post-playback bookkeeping failed for {Path}", finishedTrack.Path);
+                            _logger.LogError(ex, "Post-playback bookkeeping failed for {Path}", LogPath.Short(finishedTrack.Path));
                         }
                     });
                 }
@@ -274,7 +275,7 @@ namespace Flower.ViewModels
             // LastPlayedAt - and re-raise for whoever wants to tell the user.
             _subscriptions.Add<EventHandler<TrackFailedEventArgs>>((_, e) =>
             {
-                _logger.LogWarning("Skipping {Title} ({Path}) - it could not be played", e.Track.Title, e.Track.Path);
+                _logger.LogWarning("Skipping {Title} ({Path}) - it could not be played", e.Track.Title, LogPath.Short(e.Track.Path));
                 PlaybackFailed?.Invoke(this, e);
 
                 // Repeat would re-attempt the same broken file forever, so the
@@ -520,7 +521,7 @@ namespace Flower.ViewModels
         // the deferred path below can rejoin here rather than restating it.
         private void Start(Track track, bool immediate)
         {
-            _logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, track.Path);
+            _logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, LogPath.Short(track.Path));
 
             // Everything owed to the track being left behind, before anything
             // about the new one is set - see _positionTrack on why the order

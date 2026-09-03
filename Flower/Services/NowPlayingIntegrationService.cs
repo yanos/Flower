@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 
 using Flower.Audio;
+using Flower.Logging;
 using Flower.ViewModels;
 
 namespace Flower.Services
@@ -104,7 +105,7 @@ namespace Flower.Services
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Could not load art for now-playing metadata ({Path})", track.Path);
+                _logger.LogDebug(ex, "Could not load art for now-playing metadata ({Path})", LogPath.Short(track.Path));
             }
 
             _platform.UpdateMetadata(new NowPlayingMetadata

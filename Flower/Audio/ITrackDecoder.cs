@@ -29,7 +29,10 @@ namespace Flower.Audio
         // the demuxer moved - see GaplessCoordinator.Seek.
         event Action<long>? SeekSettled;
 
-        Task<bool> PrepareAsync(CancellationToken cancellationToken = default);
+        // Returns why, not just whether - a streamed track that was never
+        // parsed, one whose server stopped answering, and one that is simply
+        // broken are three different findings. See DecodePrepareResult.
+        Task<DecodePrepareResult> PrepareAsync(CancellationToken cancellationToken = default);
         void StartDecoding();
         void Seek(float position);
         // Moves whatever staged audio fits into newTarget right now without

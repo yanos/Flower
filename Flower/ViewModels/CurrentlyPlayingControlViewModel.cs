@@ -10,6 +10,7 @@ using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 
 using Flower.Audio;
+using Flower.Logging;
 using Flower.Services;
 using Flower.Models;
 
@@ -176,7 +177,7 @@ namespace Flower.ViewModels
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogDebug(ex, "Could not read/decode embedded art from album sibling {Path}", sibling.Path);
+                            _logger.LogDebug(ex, "Could not read/decode embedded art from album sibling {Path}", LogPath.Short(sibling.Path));
                         }
                     }
                 }

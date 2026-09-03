@@ -492,6 +492,35 @@ every byte-conservation and flush-ordering rule against `FakeAudioBridge`, which
 keeps the same refuse-writes-until-acknowledged contract, but no test on a
 desktop can exercise a callback that only exists in an iOS/Android binary.
 
+### K. Decode-ahead never armed for a streamed track — fixed
+
+Found while reading a phone's pushed log for something else: 32 tracks played,
+32 `Decode-ahead prepare failed` warnings, zero successful arms. Not a server
+problem — the same session streamed all 32 tracks fine.
+
+`TrackDecoder.PrepareAsync` parsed with `MediaParseOptions.ParseLocal`, which
+LibVLC documents as "parse media if it's a *local* file". A track streamed from
+a server was therefore skipped without a single network request, came back
+not-`Done`, and `GaplessCoordinator` read that as a failed prepare and cleared
+the armed slot. So decode-ahead was off for all streamed playback, always, and
+every handover that gapless exists to cover was an ordinary gap. Fixed by
+parsing with `ParseNetwork`, which covers local media too ("parse media *even
+if* it's a network file"), so there is one path rather than a branch.
+
+It hid for this long because every decode fixture was a file on disk.
+`TestSupport/LocalFileServer` serves one over loopback HTTP so a test can hand
+LibVLC a real URL; against the old code the new test fails with exactly
+`NotAttempted`.
+
+The second half was that the failure could not be diagnosed from the log at
+all. `PrepareAsync` returned a bool, so "the server stopped answering", "the
+track is broken" and "we never tried" were one indistinguishable warning with
+no cause attached. It now returns `DecodePrepareResult`
+(`Ready`/`NotAttempted`/`TimedOut`/`Failed`/`Retired`) and the warning names the
+reason — `TimedOut` being the only one of them that says anything about the
+network. A decoder retired underneath a prepare is an ordinary skip and drops
+to Trace.
+
 ## Phase 6 — the same path everywhere (not started)
 
 Phase 5 left a fork: pure-C render callback on Android and iOS, managed

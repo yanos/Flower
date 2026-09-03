@@ -55,6 +55,13 @@ namespace Flower.Audio
         // still playing but has simply stopped calling OnPlay". Only logs
         // when something looks wrong (stalled/mismatched/unexpected state);
         // a healthy decode ticks silently.
+        // How long a prepare waits for the media to be parsed. Now that this
+        // reaches the network (see PrepareAsync), it is also how long a
+        // stopped or unreachable server takes to be reported as TimedOut. It
+        // runs off the lock while the current track keeps playing, so the
+        // cost of waiting is a late arm rather than a stall.
+        private const int ParseTimeoutMs = 5000;
+
         private readonly System.Timers.Timer? _watchdog;
         private long _watchdogLastBytesProduced = -1;
         private long _watchdogLastBackpressureWaits = -1;
@@ -127,7 +134,7 @@ namespace Flower.Audio
             // things is harmless.
             _mediaPlayer.EndReached += (_, _) =>
             {
-                _logger?.LogTrace("EndReached (high-level) for {Path}", Track.Path);
+                _logger?.LogTrace("EndReached (high-level) for {Path}", LogPath.Short(Track.Path));
                 _ = FallbackDrainIfOnDrainNeverFiresAsync();
             };
 
@@ -168,7 +175,7 @@ namespace Flower.Audio
         // shared ring buffer, letting the coordinator degrade to "nothing
         // armed" instead of glitching playback. Safe to skip for the
         // "currently playing" role, where the user just explicitly chose it.
-        public async Task<bool> PrepareAsync(CancellationToken cancellationToken = default)
+        public async Task<DecodePrepareResult> PrepareAsync(CancellationToken cancellationToken = default)
         {
             // See Retire(): the gate keeps this method's native Media alive for
             // as long as Parse is using it, even if the coordinator retires this
@@ -177,11 +184,30 @@ namespace Flower.Audio
             try
             {
                 if (Volatile.Read(ref _retired) == 1)
-                    return false;
+                    return DecodePrepareResult.Retired;
 
                 var media = EnsureMedia();
-                var status = await media.Parse(MediaParseOptions.ParseLocal, 5000, cancellationToken);
-                return status == MediaParsedStatus.Done;
+
+                // ParseNetwork, not ParseLocal. ParseLocal is documented as
+                // "parse media if it's a local file", so a track streamed from
+                // a server was skipped without a single network request and
+                // came back not-Done - which the coordinator read as a failed
+                // prepare and answered by clearing the armed slot. Decode-ahead
+                // was therefore off for every streamed track, always, and the
+                // gapless seam it exists to cover became an ordinary gap. One
+                // device log: 32 tracks played, 32 prepare failures, zero
+                // successful arms. ParseNetwork covers local media too (the
+                // flag reads "parse media *even if* it's a network file"), so
+                // there is one path here rather than a branch on the path.
+                var status = await media.Parse(MediaParseOptions.ParseNetwork, ParseTimeoutMs, cancellationToken);
+
+                return status switch
+                {
+                    MediaParsedStatus.Done => DecodePrepareResult.Ready,
+                    MediaParsedStatus.Timeout => DecodePrepareResult.TimedOut,
+                    MediaParsedStatus.Skipped => DecodePrepareResult.NotAttempted,
+                    _ => DecodePrepareResult.Failed,
+                };
             }
             finally
             {
@@ -191,7 +217,7 @@ namespace Flower.Audio
 
         public void StartDecoding()
         {
-            _logger?.LogTrace("StartDecoding() for {Path}", Track.Path);
+            _logger?.LogTrace("StartDecoding() for {Path}", LogPath.Short(Track.Path));
 
             _nativeGate.Wait();
             try
@@ -377,7 +403,7 @@ namespace Flower.Audio
             if (Interlocked.Exchange(ref _retired, 1) == 1)
                 return;
 
-            _logger?.LogTrace("Retire() for {Path}", Track.Path);
+            _logger?.LogTrace("Retire() for {Path}", LogPath.Short(Track.Path));
             _watchdog?.Stop();
 
             var path = Track.Path;
@@ -473,7 +499,7 @@ namespace Flower.Audio
                 var target = _writer.Target;
                 _logger.LogDebug(
                     "Decode progress: Path={Path} MediaTimeMs={MediaTimeMs} BytesProduced={BytesProduced} DecodedMs={DecodedMs} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration}",
-                    Track.Path, _mediaPlayer.Time, bytesProduced,
+                    LogPath.Short(Track.Path), _mediaPlayer.Time, bytesProduced,
                     bytesProduced / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame) * 1000,
                     target.TotalBytesRead, target.TotalBytesWritten, target.AvailableBytes,
                     target.Capacity, target.Generation);
@@ -482,12 +508,12 @@ namespace Flower.Audio
 
         private void OnPause(IntPtr data, long pts)
         {
-            _logger?.LogTrace("OnPause for {Path}", Track.Path);
+            _logger?.LogTrace("OnPause for {Path}", LogPath.Short(Track.Path));
         }
 
         private void OnResume(IntPtr data, long pts)
         {
-            _logger?.LogTrace("OnResume for {Path}", Track.Path);
+            _logger?.LogTrace("OnResume for {Path}", LogPath.Short(Track.Path));
         }
 
         private void OnFlush(IntPtr data, long pts)

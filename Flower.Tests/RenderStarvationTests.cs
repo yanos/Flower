@@ -68,7 +68,7 @@ public class RenderStarvationTests
         public event Action? Faulted;
         public event Action<long>? SeekSettled;
 
-        public Task<bool> PrepareAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<DecodePrepareResult> PrepareAsync(CancellationToken cancellationToken = default) => Task.FromResult(DecodePrepareResult.Ready);
 
         public void StartDecoding() => _decode = Task.Run(Decode);
 

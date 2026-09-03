@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 
 using LibVLCSharp.Shared;
 
+using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.Audio
@@ -103,7 +104,7 @@ namespace Flower.Audio
                 // Trace: PlaylistControlViewModel logs the same event with the
                 // track title and the queue decision it led to, which is the
                 // version worth reading. This one is the plumbing underneath it.
-                _logger.LogTrace("EndReached: {Path}", track.Path);
+                _logger.LogTrace("EndReached: {Path}", LogPath.Short(track.Path));
                 EndReached?.Invoke(this, EventArgs.Empty);
             };
             _coordinator.TrackFailed += track =>
@@ -112,7 +113,7 @@ namespace Flower.Audio
                 // and did not get. It's also the only signal they have until
                 // the UI grows a real "couldn't play this" surface - the Log
                 // window is reachable, a silently-skipped track is not.
-                _logger.LogWarning("Playback failed for {Path} - decode error, skipping", track.Path);
+                _logger.LogWarning("Playback failed for {Path} - decode error, skipping", LogPath.Short(track.Path));
                 TrackFailed?.Invoke(this, new TrackFailedEventArgs(track));
             };
 
@@ -223,7 +224,7 @@ namespace Flower.Audio
         {
             _logger.LogInformation(
                 "Playback requested: {Title} ({Path}), tagged duration {DurationMs}ms, immediate={Immediate}",
-                track.Title, track.Path, track.Duration.TotalMilliseconds, immediate);
+                track.Title, LogPath.Short(track.Path), track.Duration.TotalMilliseconds, immediate);
             _coordinator.Play(track, immediate);
             _platformAudioSession?.ActivateForPlayback();
             _sink.Resume();

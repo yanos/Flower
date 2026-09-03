@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 using LibVLCSharp.Shared;
 
+using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.Audio
@@ -319,7 +320,7 @@ namespace Flower.Audio
             {
                 if (_current != null && _currentPath == track.Path)
                 {
-                    _logger?.LogTrace("Play({Path}): no-op, already current", track.Path);
+                    _logger?.LogTrace("Play({Path}): no-op, already current", LogPath.Short(track.Path));
                     return;
                 }
 
@@ -340,7 +341,7 @@ namespace Flower.Audio
                 }
                 else
                 {
-                    _logger?.LogInformation("Play({Path}): hard-flush from {PreviousPath}", track.Path, _currentPath);
+                    _logger?.LogInformation("Play({Path}): hard-flush from {PreviousPath}", LogPath.Short(track.Path), LogPath.Short(_currentPath));
                 }
 
                 unchecked
@@ -413,7 +414,7 @@ namespace Flower.Audio
                 if (_armedTrack != null && _armedTrack.Path == next.Path)
                     return;
 
-                _logger?.LogTrace("SetUpcoming({Path})", next.Path);
+                _logger?.LogTrace("SetUpcoming({Path})", LogPath.Short(next.Path));
 
                 ClearArmedSlot(retireDecoder: true);
 
@@ -498,7 +499,7 @@ namespace Flower.Audio
             {
                 if (!ReferenceEquals(_current, decoder))
                 {
-                    _logger?.LogTrace("HandleSeekSettled for {Path}: stale decoder, ignoring", decoder.Track.Path);
+                    _logger?.LogTrace("HandleSeekSettled for {Path}: stale decoder, ignoring", LogPath.Short(decoder.Track.Path));
                     return;
                 }
 
@@ -519,9 +520,11 @@ namespace Flower.Audio
             // failure with no cause attached, which is the hardest possible
             // shape to diagnose from a log somebody mailed in.
             Exception? prepareFailure = null;
+            var prepareResult = DecodePrepareResult.Failed;
             try
             {
-                prepared = await decoder.PrepareAsync();
+                prepareResult = await decoder.PrepareAsync();
+                prepared = prepareResult == DecodePrepareResult.Ready;
             }
             catch (Exception ex)
             {
@@ -555,7 +558,16 @@ namespace Flower.Audio
                 {
                     if (stillArmed)
                     {
-                        _logger?.LogWarning(prepareFailure, "Decode-ahead prepare failed for {Path} - clearing armed slot", decoder.Track.Path);
+                        // Retired underneath us is an ordinary skip or queue
+                        // change, not a finding - the armed slot still has to
+                        // go, but nobody needs telling about it.
+                        if (prepareResult == DecodePrepareResult.Retired)
+                            _logger?.LogTrace("Decode-ahead prepare for {Path} was retired - clearing armed slot", LogPath.Short(decoder.Track.Path));
+                        else
+                            _logger?.LogWarning(prepareFailure,
+                                "Decode-ahead prepare failed for {Path} ({Reason}) - clearing armed slot, this track's handover will not be gapless",
+                                LogPath.Short(decoder.Track.Path), prepareResult);
+
                         ClearArmedSlot(retireDecoder: true);
                         return;
                     }
@@ -566,8 +578,8 @@ namespace Flower.Audio
                     // can't be called from inside this lock (see its own
                     // remarks on why), so just flag it and handle it below.
                     _logger?.LogWarning(prepareFailure,
-                        "Decode-ahead prepare failed for {Path} after it was already promoted to current - "
-                        + "reporting it as a playback failure", decoder.Track.Path);
+                        "Decode-ahead prepare failed for {Path} ({Reason}) after it was already promoted to current - "
+                        + "reporting it as a playback failure", LogPath.Short(decoder.Track.Path), prepareResult);
                     promotedWhilePreparingAndFailed = true;
                 }
                 else
@@ -579,7 +591,7 @@ namespace Flower.Audio
                     }
                     else
                     {
-                        _logger?.LogInformation("{Path} was promoted to current before its own decode-ahead prepare finished - starting it now", decoder.Track.Path);
+                        _logger?.LogInformation("{Path} was promoted to current before its own decode-ahead prepare finished - starting it now", LogPath.Short(decoder.Track.Path));
                     }
 
                     decoder.StartDecoding();
@@ -597,7 +609,7 @@ namespace Flower.Audio
                 if (!ReferenceEquals(_armed, decoder))
                     return;
 
-                _logger?.LogInformation("Armed track {Path} finished decoding before the current track did", decoder.Track.Path);
+                _logger?.LogInformation("Armed track {Path} finished decoding before the current track did", LogPath.Short(decoder.Track.Path));
                 _armedAlreadyDrained = true;
             }
         }
@@ -641,7 +653,7 @@ namespace Flower.Audio
             {
                 if (!ReferenceEquals(_current, decoder))
                 {
-                    _logger?.LogTrace("HandleDrainedOrFaulted for {Path}: stale decoder, ignoring", decoder.Track.Path);
+                    _logger?.LogTrace("HandleDrainedOrFaulted for {Path}: stale decoder, ignoring", LogPath.Short(decoder.Track.Path));
                     return;
                 }
 
@@ -718,7 +730,7 @@ namespace Flower.Audio
 
                     ClearArmedSlot(retireDecoder: false);
                     PublishCurrent();
-                    _logger?.LogInformation("{Finished} drained - promoting armed {Next}", finishedTrack.Path, promoted.Track.Path);
+                    _logger?.LogInformation("{Finished} drained - promoting armed {Next}", LogPath.Short(finishedTrack.Path), LogPath.Short(promoted.Track.Path));
                 }
                 else
                 {
@@ -726,7 +738,7 @@ namespace Flower.Audio
                     _current = null;
                     _currentPath = null;
                     PublishCurrent();
-                    _logger?.LogInformation("{Finished} drained - nothing armed, stopping", finishedTrack.Path);
+                    _logger?.LogInformation("{Finished} drained - nothing armed, stopping", LogPath.Short(finishedTrack.Path));
                 }
             }
 
@@ -799,7 +811,7 @@ namespace Flower.Audio
                 // "current" track did.
                 if (promotedAlreadyDrained)
                 {
-                    _logger?.LogInformation("{Path} had already finished decoding while armed - handling its completion immediately", promoted.Track.Path);
+                    _logger?.LogInformation("{Path} had already finished decoding while armed - handling its completion immediately", LogPath.Short(promoted.Track.Path));
                     HandleDrainedOrFaulted(promoted, faulted: false);
                 }
             }

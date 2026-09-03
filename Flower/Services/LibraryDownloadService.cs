@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 
@@ -183,7 +184,7 @@ public class LibraryDownloadService
             // Not a failed download - the audio is on disk and playable. The
             // Technical tab keeps whatever the origin sent, which is what it
             // showed before this read existed.
-            _logger.LogDebug(ex, "Could not read audio properties of downloaded file {Path}", track.Path);
+            _logger.LogDebug(ex, "Could not read audio properties of downloaded file {Path}", LogPath.Short(track.Path));
         }
     }
 
@@ -213,7 +214,7 @@ public class LibraryDownloadService
             // Still proceed to revert to a placeholder below even if the file
             // is already gone/inaccessible - a failed delete of a file that
             // doesn't exist anymore isn't a reason to leave Path pointing at it.
-            _logger.LogWarning(ex, "Failed to delete downloaded file for {Title} ({Path})", track.Title, track.Path);
+            _logger.LogWarning(ex, "Failed to delete downloaded file for {Title} ({Path})", track.Title, LogPath.Short(track.Path));
         }
 
         track.Path = null;

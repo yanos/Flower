@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 
 using Flower.Audio;
 using Flower.Models;
@@ -144,5 +145,49 @@ public class TrackDecoderTests : IDisposable
         Assert.Equal(0, stagingRing.AvailableBytes);
 
         decoder.Retire();
+    }
+
+    // The bug this covers: PrepareAsync used MediaParseOptions.ParseLocal,
+    // documented as "parse media if it's a local file", so every track
+    // streamed from a server was skipped without a single network request.
+    // GaplessCoordinator read the not-Done result as a failed prepare and
+    // cleared the armed slot, which meant decode-ahead was off for all
+    // streamed playback and every handover was a gap. It went unnoticed for
+    // as long as it did because nothing here had ever prepared a URL - a
+    // real device log showed 32 tracks played, 32 prepare failures and zero
+    // successful arms.
+    [Fact]
+    public async Task A_track_served_over_http_can_be_prepared()
+    {
+        var duration = TimeSpan.FromSeconds(1);
+        var path = SyntheticWav.CreateFile(_tempDir, "served.wav", duration, SyntheticWav.Marker(0x22));
+
+        using var server = new LocalFileServer(path);
+        var decoder = new TrackDecoder(_libVLC, MakeTrack(server.Url, duration), new GaplessRingBuffer(BytesFor(duration) + 4096));
+
+        Assert.Equal(DecodePrepareResult.Ready, await decoder.PrepareAsync());
+    }
+
+    // The other half of the same question, and the reason the result is an
+    // enum rather than a bool: a server that is not answering has to be
+    // distinguishable from a track that was never parsed and from one that
+    // is broken. Here the socket is closed, so LibVLC rejects the media
+    // rather than waiting on it.
+    [Fact]
+    public async Task A_track_whose_server_is_gone_reports_a_failure_rather_than_a_skip()
+    {
+        var duration = TimeSpan.FromSeconds(1);
+        var path = SyntheticWav.CreateFile(_tempDir, "gone.wav", duration, SyntheticWav.Marker(0x33));
+
+        string url;
+        using (var server = new LocalFileServer(path))
+            url = server.Url;
+
+        var decoder = new TrackDecoder(_libVLC, MakeTrack(url, duration), new GaplessRingBuffer(BytesFor(duration) + 4096));
+
+        var result = await decoder.PrepareAsync();
+
+        Assert.NotEqual(DecodePrepareResult.Ready, result);
+        Assert.NotEqual(DecodePrepareResult.NotAttempted, result);
     }
 }
