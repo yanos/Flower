@@ -109,50 +109,85 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
     }
 
     // Playback, with the long-form route sharing policy AVRoutePickerView needs
-    // to offer AirPlay 2 receivers, and A2DP so Bluetooth output is stereo
-    // music rather than the mono headset path.
+    // to offer AirPlay 2 receivers. Bluetooth output is stereo A2DP rather than
+    // the mono headset path without asking: AllowBluetoothA2DP is implicit for
+    // the playback category, and is one of the options iOS refuses to be *told*
+    // about there.
     //
-    // Written as a ladder rather than one call because the two things this asks
-    // for are not equally important. The route sharing policy buys AirPlay 2
-    // receivers in the picker; iOS accepts it only alongside an exact
-    // combination of category, mode and options, and rejects the whole call if
-    // anything about that combination displeases it. Playback itself is what
-    // makes Flower a music app at all - audible with the ringer switch down,
-    // alive with the screen locked. Losing the first is a missing feature;
-    // losing the second is the app not working, so it must not be possible for
-    // one refused call to cost both.
+    // That refusal is why this used to fail on every single call. Passing
+    // AllowBluetoothA2DP alongside Playback is not a no-op that iOS shrugs at -
+    // it is an invalid option for the category, so setCategory returns
+    // paramErr (OSStatus -50) and applies nothing. Both of the first two rungs
+    // passed it, so both always failed, and the session was left on the bare
+    // third rung with the default route sharing policy: no AirPlay 2 receivers
+    // in the picker, and a warning pair in the log for every play, pause,
+    // resume and route change (1,056 of them in one day of phone logs).
+    //
+    // Still written as a ladder, because the two things this asks for are not
+    // equally important. The route sharing policy buys AirPlay 2 receivers in
+    // the picker; iOS accepts it only alongside an exact combination of
+    // category, mode and options, and rejects the whole call if anything about
+    // that combination displeases it. Playback itself is what makes Flower a
+    // music app at all - audible with the ringer switch down, alive with the
+    // screen locked. Losing the first is a missing feature; losing the second
+    // is the app not working, so it must not be possible for one refused call
+    // to cost both.
     private bool ConfigureCategory()
     {
         if (_session.SetCategory(AVAudioSessionCategory.Playback, AVAudioSessionMode.Default,
                                  AVAudioSessionRouteSharingPolicy.LongFormAudio,
-                                 AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
+                                 default,
                                  out var longFormError))
         {
             return true;
         }
 
-        _logger.LogWarning(
+        LogConfigurationFailure(
             "Could not configure the iOS audio session for long-form audio: {Error}. Falling back to plain playback - the route picker may only offer legacy AirPlay devices.",
             longFormError);
 
-        if (_session.SetCategory(AVAudioSession.CategoryPlayback,
-                                 AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
-                                 out var playbackError))
+        // Last rung: the bare category, no mode, policy or options at all. If
+        // even this fails the session is whatever iOS made it, which is
+        // SoloAmbient - silent through the speaker with the ringer switch down,
+        // and stopped by the screen locking.
+        if (_session.SetCategory(AVAudioSessionCategory.Playback, AVAudioSessionMode.Default,
+                                 AVAudioSessionRouteSharingPolicy.Default, default, out var bareError))
         {
             return true;
         }
 
-        _logger.LogWarning("Could not configure the iOS audio session for playback with A2DP: {Error}", playbackError);
-
-        // Last rung: the bare category, no options at all. If even this fails
-        // the session is whatever iOS made it, which is SoloAmbient - silent
-        // through the speaker with the ringer switch down, and stopped by the
-        // screen locking.
-        if (_session.SetCategory(AVAudioSession.CategoryPlayback, out var bareError))
-            return true;
-
         _logger.LogError("Could not put the iOS audio session into the playback category at all: {Error}", bareError);
         return false;
+    }
+
+    // ConfigureCategory runs on every play, pause, resume and route change, so
+    // a failure that is a standing condition rather than an event - the wrong
+    // iOS version, an option this OS will not take - reports itself hundreds of
+    // times a day and buries everything else in the log. Only a *change* is
+    // news: the same message with the same error is logged once and then
+    // counted, and the count rides along with the next distinct one.
+    private string? _lastConfigurationFailure;
+    private int _repeatedConfigurationFailures;
+
+    private void LogConfigurationFailure(string template, NSError? error)
+    {
+        var signature = $"{template}|{error?.Code}|{error?.Domain}";
+        if (signature == _lastConfigurationFailure)
+        {
+            _repeatedConfigurationFailures++;
+            return;
+        }
+
+        if (_repeatedConfigurationFailures > 0)
+        {
+            _logger.LogWarning(
+                "The previous iOS audio session configuration warning repeated {RepeatCount} more time(s) before this one",
+                _repeatedConfigurationFailures);
+        }
+
+        _lastConfigurationFailure = signature;
+        _repeatedConfigurationFailures = 0;
+        _logger.LogWarning(template, error);
     }
 
     // What the session actually is, as opposed to what was asked for. Logged
