@@ -783,8 +783,22 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // Runs *before* TriggerSyncIfReady in the DeviceDiscovered handler, so the
     // first observation of a peer can be told apart from a later change: that
     // first one is TriggerSyncIfReady's initial sync to make, not this one's.
-    // A redundant trigger is cheap anyway - LibrarySyncService sends the token
-    // back as If-None-Match, so an unchanged catalog costs one 304.
+    //
+    // A redundant trigger was assumed to be cheap - LibrarySyncService sends
+    // the token back as If-None-Match, so an unchanged catalog costs one 304 -
+    // and for one whole class of trigger that assumption was wrong, because the
+    // catalog had genuinely changed. This device reports what it plays; the
+    // server records that against the track; the token moves; the poll below
+    // sees a change and pulls all 16,116 tracks back to learn a play count it
+    // is the one that reported. Then it plays the next track and does it again.
+    // A phone's logs for one day of listening carry 396 of those against a
+    // normal day's 34, and that is real CPU, allocation and radio time spent
+    // alongside decoding, on the device least able to spare any of it.
+    //
+    // So a token this device's own reporting produced is not news. Every other
+    // reason a token moves still is - the owner editing something, a rescan,
+    // another listener's plays - and still syncs. See TrackStateReportHeaders
+    // for the server half.
     public void TriggerSyncIfPeerCatalogChanged(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint) || string.IsNullOrEmpty(device.LibraryToken))
@@ -796,6 +810,17 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _observedPeerLibraryTokens[device.Fingerprint] = device.LibraryToken;
         if (isFirstObservation || previousToken == device.LibraryToken)
             return;
+
+        // Recorded above before this returns, deliberately: the echo is now the
+        // token to compare the *next* one against, so a real change that lands
+        // after it still reads as a change.
+        if (_librarySyncService?.CausedPeerLibraryToken(device.Fingerprint, device.LibraryToken) == true)
+        {
+            _logger.LogDebug(
+                "{Alias} ({Fingerprint}) reports a changed library ({Previous} -> {Current}), but it is this device's own track-state report coming back; not syncing",
+                device.Alias, device.Fingerprint, previousToken, device.LibraryToken);
+            return;
+        }
 
         _logger.LogInformation("{Alias} ({Fingerprint}) reports a changed library ({Previous} -> {Current}), syncing",
             device.Alias, device.Fingerprint, previousToken, device.LibraryToken);

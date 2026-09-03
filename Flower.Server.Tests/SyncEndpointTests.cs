@@ -34,6 +34,17 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         DeviceSigningKey device, string method, string path, string remoteIp,
         string? body = null, string? ifNoneMatch = null)
     {
+        var (status, responseBody, headers) = await SendWithHeadersAsync(
+            device, method, path, remoteIp, body, ifNoneMatch);
+        return (status, responseBody, headers.ETag.ToString() is { Length: > 0 } etag ? etag : null);
+    }
+
+    // The same request, with the whole response header set rather than just the
+    // ETag - for the routes that answer with a header of their own.
+    private async Task<(HttpStatusCode Status, string Body, IHeaderDictionary Headers)> SendWithHeadersAsync(
+        DeviceSigningKey device, string method, string path, string remoteIp,
+        string? body = null, string? ifNoneMatch = null)
+    {
         var bodyBytes = body == null ? [] : Encoding.UTF8.GetBytes(body);
         var (signature, timestamp, nonce) = device.Sign(method, path, [], bodyBytes);
 
@@ -61,7 +72,7 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
         using var reader = new StreamReader(context.Response.Body);
         return ((HttpStatusCode)context.Response.StatusCode,
             await reader.ReadToEndAsync(),
-            context.Response.Headers.ETag.ToString() is { Length: > 0 } etag ? etag : null);
+            context.Response.Headers);
     }
 
     private static async Task<DeviceSigningKey> TrustedDeviceAsync(TrustedPeerStore trustedPeers)
@@ -434,6 +445,40 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
     // a client, so a track played on the owner's own desktop - paired to their
     // server, admin or not - was a play the server could never hear about. It
     // stayed on the desktop and was invisible to every other listener.
+    // The reporter has to be able to recognise the token its own report
+    // produced, or the /info poll reads it as a catalog change and pulls all of
+    // it back to learn what it just said. See TrackStateReportHeaders.
+    [Fact]
+    public async Task Reporting_track_state_answers_with_the_resulting_library_token()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        var tokenBefore = library.ChangeToken;
+
+        try
+        {
+            var (status, _, headers) = await SendWithHeadersAsync(
+                device, "POST", "/api/flower/v1/track-state", "10.0.3.1",
+                body: JsonSerializer.Serialize(
+                    new TrackStateReportDto([new TrackStateDto(track.Id.ToKey(), 11)])));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            var echoed = headers[TrackStateReportHeaders.LibraryToken].ToString();
+
+            // Read after the merge, so it is the token the report itself
+            // produced rather than the one that was current on arrival.
+            Assert.NotEqual(tokenBefore, echoed);
+            Assert.Equal(library.ChangeToken, echoed);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(device.Fingerprint);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     [Fact]
     public async Task A_paired_devices_play_count_reaches_the_server_under_that_devices_fingerprint()
     {

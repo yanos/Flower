@@ -91,3 +91,23 @@ public sealed record TrackStateDto(
 // attacker-controlled on a route every paired device can call, and believing
 // it would let one device write another's tally.
 public sealed record TrackStateReportDto(List<TrackStateDto> Tracks);
+
+// The library token the server's catalog carried once a track-state report had
+// been merged into it, returned on the response to that report.
+//
+// It exists to break a loop. A device reporting a play changes what the
+// server's catalog says about that track, so the server's library token moves,
+// so the /info poll that watches that token sees a change and pulls the whole
+// catalog back - a catalog whose only difference is the thing the device just
+// said. One play, one full-library fetch, on a five-second tick, for as long as
+// music is playing. A phone's logs for a single day of listening carry 396 full
+// fetches of a 16,116-track catalog against a normal day's 34.
+//
+// Handing the resulting token straight back lets the reporter recognise its own
+// echo and not chase it. Every other reason a token moves - the owner editing
+// something, a rescan, another device's report - still reads as a change and
+// still syncs.
+public static class TrackStateReportHeaders
+{
+    public const string LibraryToken = "X-Flower-Library-Token";
+}

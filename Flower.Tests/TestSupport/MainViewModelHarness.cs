@@ -134,6 +134,14 @@ public static class MainViewModelHarness
             return Task.FromResult(Result);
         }
 
+        // Tokens this device is to claim its own track-state reporting caused,
+        // so a test can drive the echo-suppression path in
+        // TriggerSyncIfPeerCatalogChanged without a server to report to.
+        public HashSet<string> TokensThisDeviceCaused { get; } = new();
+
+        public override bool CausedPeerLibraryToken(string fingerprint, string token) =>
+            TokensThisDeviceCaused.Contains(token);
+
         // Recorded separately from SyncedWith: the point of several tests is
         // that the periodic log push happens *without* a catalog pull.
         public override Task<bool> PushLogsOnlyAsync(DiscoveredDevice device)

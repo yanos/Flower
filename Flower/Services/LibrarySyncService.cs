@@ -77,6 +77,19 @@ public class LibrarySyncService
     // (see Library.ChangeToken), so persisting it would buy nothing.
     private readonly ConcurrentDictionary<string, string> _lastSeenTokens = new();
 
+    // Per peer, the library token that peer reported back after merging this
+    // device's own last track-state push - see TrackStateReportHeaders for why
+    // one is handed back at all. Not persisted, and not a substitute for
+    // _lastSeenTokens: this says "that value is my own echo", never "that
+    // catalog is already merged here".
+    private readonly ConcurrentDictionary<string, string> _tokensThisDeviceCaused = new();
+
+    // Whether a token a peer is now advertising is one this device's own
+    // reporting produced a moment ago. Virtual for the same reason the sync
+    // entry points are: a coordinator test drives this seam without a server.
+    public virtual bool CausedPeerLibraryToken(string fingerprint, string token) =>
+        !string.IsNullOrEmpty(token) && _tokensThisDeviceCaused.GetValueOrDefault(fingerprint) == token;
+
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
     private readonly IPeerCredentials _credentials;
@@ -274,6 +287,18 @@ public class LibrarySyncService
 
             using var response = await Http.SendAsync(request);
             response.EnsureSuccessStatusCode();
+
+            // See TrackStateReportHeaders: this is the token our own report
+            // produced, remembered so the /info poll can tell that change apart
+            // from one worth pulling a whole catalog for.
+            if (response.Headers.TryGetValues(TrackStateReportHeaders.LibraryToken, out var echoedTokens))
+            {
+                foreach (var echoed in echoedTokens)
+                {
+                    if (!string.IsNullOrEmpty(echoed))
+                        _tokensThisDeviceCaused[device.Fingerprint] = echoed;
+                }
+            }
 
             // Only on a 2xx. A failed push leaves the marks where they were, so
             // the same values go out again with the next tick rather than being

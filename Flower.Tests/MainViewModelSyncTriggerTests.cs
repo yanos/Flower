@@ -425,6 +425,52 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         Assert.False(vm.IsSyncing);
     }
 
+    // The loop this trigger used to close on itself: this device reports a
+    // play, the server records it, the server's token moves, and the poll
+    // pulls the whole catalog back to learn the play count it just reported.
+    // See TrackStateReportHeaders.
+    [AvaloniaFact]
+    public void A_catalog_change_this_device_caused_does_not_sync()
+    {
+        var parts = Own(MainViewModelHarness.BuildParts(
+            new Library(new List<Track>()), new MainPlaylist(new List<Track>()),
+            new AppSettings { PairedServerFingerprint = "fp-server", PairedServerAlias = "Server" },
+            stubSyncServices: true));
+        var stub = parts.StubLibrarySync!;
+        parts.Main.AddOrUpdateDeviceSidebarItem(Peer("fp-server", "Server"));
+
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", libraryToken: "tok-1"));
+        stub.SyncedWith.Clear();
+
+        stub.TokensThisDeviceCaused.Add("tok-2");
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", libraryToken: "tok-2"));
+        Wait(300);
+
+        Assert.Empty(stub.SyncedWith);
+    }
+
+    // ...and every other reason a token moves still syncs, including the very
+    // next change after an echo was ignored.
+    [AvaloniaFact]
+    public void A_catalog_change_after_an_ignored_echo_still_syncs()
+    {
+        var parts = Own(MainViewModelHarness.BuildParts(
+            new Library(new List<Track>()), new MainPlaylist(new List<Track>()),
+            new AppSettings { PairedServerFingerprint = "fp-server", PairedServerAlias = "Server" },
+            stubSyncServices: true));
+        var stub = parts.StubLibrarySync!;
+        parts.Main.AddOrUpdateDeviceSidebarItem(Peer("fp-server", "Server"));
+
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", libraryToken: "tok-1"));
+        stub.TokensThisDeviceCaused.Add("tok-2");
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", libraryToken: "tok-2"));
+        stub.SyncedWith.Clear();
+
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", libraryToken: "tok-3"));
+
+        PumpUntil(() => stub.SyncedWith.Count > 0, 5000);
+    }
+
     // A peer that reports no token at all (older code, or one that has not
     // resolved yet) is left to the other trigger paths.
     [AvaloniaFact]

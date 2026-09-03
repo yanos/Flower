@@ -383,6 +383,10 @@ public static class SyncEndpoints
             "Applied {AppliedCount} of {ReportedCount} track state report(s) from {Fingerprint} (admin: {IsAdmin})",
             applied, report.Tracks.Count, fingerprint, callerIsAdmin);
 
+        // Read after the merge, so it is the token the caller's own report
+        // produced - see TrackStateReportHeaders for the loop this closes.
+        context.Response.Headers[TrackStateReportHeaders.LibraryToken] = library.ChangeToken;
+
         return Results.NoContent();
     }
 }
