@@ -516,22 +516,52 @@ namespace Flower.Audio
             _logger?.LogTrace("OnResume for {Path}", LogPath.Short(Track.Path));
         }
 
+        // LibVLC's aout flush. Only the *requested* kind empties the ring.
+        //
+        // A flush this decoder asked for - a seek - means everything buffered
+        // is audio from somewhere the listener is no longer going to, so it has
+        // to go. A flush nobody asked for means something reset LibVLC's audio
+        // output underneath us: on iOS, an output-route change or the app
+        // coming back from a long suspension does exactly that. The PCM already
+        // in the ring is still this track, still contiguous, and still the next
+        // thing due to be played - throwing it away turns a route change into a
+        // guaranteed dropout.
+        //
+        // That is what a day of phone logs shows: a spontaneous flush arrived
+        // 1.5s after a suspend/resume with 341,624 of 384,000 bytes buffered
+        // (3.5s of audio, ready to play), reset the ring to empty, and LibVLC
+        // then produced nothing at all for the next fifteen seconds - its own
+        // clock had run on while the app was suspended, so every freshly
+        // decoded buffer read as late and was dropped until the decode caught
+        // up. Keeping the ring does not shorten that catch-up, but it does play
+        // through the first three and a half seconds of it instead of
+        // rendering silence from the first moment.
         private void OnFlush(IntPtr data, long pts)
         {
             if (Volatile.Read(ref _retired) == 1)
                 return;
 
+            var requested = Interlocked.Exchange(ref _seekRequested, 0) == 1;
             var target = _writer.Target;
-            _logger?.LogInformation(
-                "Decode flush for {Path}: Pts={Pts} SeekRequested={SeekRequested} BytesProduced={BytesProduced} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration}; resetting target ring",
-                Track.Path, pts, Volatile.Read(ref _seekRequested), BytesProduced,
+
+            if (requested)
+            {
+                _logger?.LogInformation(
+                    "Decode flush for {Path}: Pts={Pts} BytesProduced={BytesProduced} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration}; seek requested it, resetting target ring",
+                    Track.Path, pts, BytesProduced,
+                    target.TotalBytesRead, target.TotalBytesWritten, target.AvailableBytes,
+                    target.Capacity, target.Generation);
+
+                Interlocked.Exchange(ref _seekAwaitingFirstSample, 1);
+                _writer.ResetTarget();
+                return;
+            }
+
+            _logger?.LogWarning(
+                "Decode flush for {Path}: Pts={Pts} BytesProduced={BytesProduced} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration}; nothing asked for it, keeping the buffered audio",
+                Track.Path, pts, BytesProduced,
                 target.TotalBytesRead, target.TotalBytesWritten, target.AvailableBytes,
                 target.Capacity, target.Generation);
-
-            if (Interlocked.Exchange(ref _seekRequested, 0) == 1)
-                Interlocked.Exchange(ref _seekAwaitingFirstSample, 1);
-
-            _writer.ResetTarget();
         }
 
         private void OnDrain(IntPtr data)
