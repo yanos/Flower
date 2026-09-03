@@ -254,6 +254,62 @@ public class TrackStateReportingTests
         Assert.Empty(report);
     }
 
+    // The resend loop this rule exists to stop. A track the server has a
+    // last-played for and this device has never played is a difference, and
+    // used to be reported as one - which the server refuses (a null cannot
+    // move a high-water mark forward), so the next catalog pull re-seeded the
+    // baseline and the same report went out again, once per pull, forever.
+    [Fact]
+    public void An_admin_device_says_nothing_about_a_track_only_the_server_has_ever_played()
+    {
+        var served = Played("Second Song", "server-track-7", 0);
+        served.LastPlayedAt = DateTimeOffset.UtcNow;
+
+        var report = LibrarySyncService.UnreportedTrackState(
+            [Played("Second Song", "server-track-7", 0)], new Dictionary<string, int>(),
+            ServerSaid("server-track-7", served), includeOwnerState: true);
+
+        Assert.Empty(report);
+    }
+
+    // Same rule one step along: this device did play it, but the server has
+    // since heard about a later listen from somewhere else.
+    [Fact]
+    public void An_admin_device_says_nothing_about_a_listen_older_than_the_servers()
+    {
+        var served = Played("Second Song", "server-track-7", 0);
+        served.LastPlayedAt = DateTimeOffset.UtcNow;
+
+        var track = Played("Second Song", "server-track-7", 0);
+        track.LastPlayedAt = DateTimeOffset.UtcNow.AddDays(-1);
+
+        var report = LibrarySyncService.UnreportedTrackState(
+            [track], new Dictionary<string, int>(),
+            ServerSaid("server-track-7", served), includeOwnerState: true);
+
+        Assert.Empty(report);
+    }
+
+    // A star still crosses on its own terms: it is applied as stated rather
+    // than ordered by a timestamp, so an older listen alongside it must not
+    // hold it back.
+    [Fact]
+    public void An_admin_device_reports_a_star_even_when_its_listen_is_the_older_one()
+    {
+        var served = Played("Second Song", "server-track-7", 0);
+        served.LastPlayedAt = DateTimeOffset.UtcNow;
+
+        var track = Played("Second Song", "server-track-7", 0);
+        track.LastPlayedAt = DateTimeOffset.UtcNow.AddDays(-1);
+        track.Starred = true;
+
+        var report = LibrarySyncService.UnreportedTrackState(
+            [track], new Dictionary<string, int>(),
+            ServerSaid("server-track-7", served), includeOwnerState: true);
+
+        Assert.True(Assert.Single(report).Starred);
+    }
+
     // StarredAt is deliberately outside the comparison: it is set on starring
     // and nulled on unstarring, so two devices that agree on the star must not
     // be made to disagree forever over the second it was clicked at.

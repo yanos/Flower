@@ -350,6 +350,27 @@ public class LibrarySyncService
             entry.LastPlayedAt, entry.Starred, entry.RememberPlaybackPosition,
             entry.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
             entry.IgnoreWhenShuffling, entry.VolumeAdjustment);
+
+        // Would telling the server this actually move it? Deliberately not
+        // `!=` against what it served: the two sides have to agree about what
+        // counts as news, and Library.ApplyReportedOwnerState is the side that
+        // decides. A plain difference test reported everything the server
+        // holds and this device does not - a track played on the desktop and
+        // never on the phone reads as a difference forever - and each of those
+        // reports was refused, re-seeded by the next catalog pull (see
+        // SeedKnownServerState) and sent again, which is what the server's
+        // "Applied 0 of 11 track state report(s)" line was, once per pull,
+        // indefinitely.
+        public bool WouldMove(TrackStateSnapshot served) =>
+            Starred != served.Starred || MovesListeningForward(served);
+
+        // LastPlayedAt is a high-water mark there, so only a later one is
+        // news - and a device that has never played the track has no opinion
+        // at all rather than an early one. The playback options ride with it
+        // on both sides (see ApplyReportedOwnerState), so they cannot travel
+        // on their own and are not asked about here.
+        private bool MovesListeningForward(TrackStateSnapshot served) =>
+            LastPlayedAt is { } mine && (served.LastPlayedAt is not { } theirs || mine > theirs);
     }
 
     // What this device would say about the server's tracks that the server has
@@ -374,7 +395,10 @@ public class LibrarySyncService
     // last said, seeded from the catalog pull. Compare against that and this
     // device speaks up exactly when its answer differs from the server's -
     // which for an unchanged track is never, so a restart re-states nothing
-    // and cannot walk back a star some other client set in the meantime. A
+    // and cannot walk back a star some other client set in the meantime -
+    // narrowed by TrackStateSnapshot.WouldMove to the differences the server
+    // would actually act on, since the rest are offered again after every
+    // pull and refused every time. A
     // track with no seed at all is a track this session has not pulled yet,
     // and it is left alone for the same reason: with nothing to compare
     // against there is no way to tell a local change from a local value.
@@ -402,7 +426,7 @@ public class LibrarySyncService
             var local = TrackStateSnapshot.Of(track);
             var stateIsNews = includeOwnerState
                 && knownServerState.TryGetValue(originTrackId, out var known)
-                && known != local;
+                && local.WouldMove(known);
 
             if (!countIsNews && !stateIsNews)
                 continue;
