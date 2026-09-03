@@ -213,4 +213,43 @@ public class RetargetableRingWriterTests
         Assert.Equal(-1, splice.MillisecondsToFirstByte);
         Assert.Equal(-1, splice.DestinationUnderrunsAtFirstByte);
     }
+
+    // BackpressureWaits is what tells TrackDecoder's watchdog apart a decoder
+    // that has wedged from one that is simply waiting for playback to drain
+    // the ring it filled. Before it existed the watchdog called every
+    // decode-ahead a stall: a real device logged 2430 of them in one day,
+    // every single one with the ring at exactly 384000/384000.
+    [Fact]
+    public void Parking_on_a_full_ring_is_counted()
+    {
+        var ring = new GaplessRingBuffer(4096);
+        var writer = new RetargetableRingWriter(ring);
+
+        Assert.Equal(0, writer.BackpressureWaits);
+
+        // More than the ring holds, so the write cannot finish until
+        // something reads - it has to park at least once.
+        var abandon = false;
+        var write = Task.Run(() => writer.Write(Ramp(8192), () => Volatile.Read(ref abandon)));
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (writer.BackpressureWaits == 0 && DateTime.UtcNow < deadline)
+            Thread.Sleep(5);
+
+        Assert.True(writer.BackpressureWaits > 0, "a write that could not fit never registered as parked");
+
+        Volatile.Write(ref abandon, true);
+        Assert.True(write.Wait(TimeSpan.FromSeconds(5)), "the abandoned write never returned");
+    }
+
+    [Fact]
+    public void A_write_that_fits_never_registers_as_parked()
+    {
+        var ring = new GaplessRingBuffer(4096);
+        var writer = new RetargetableRingWriter(ring);
+
+        AssertCompletes(() => writer.Write(Ramp(2048)), "a write that fits should not block");
+
+        Assert.Equal(0, writer.BackpressureWaits);
+    }
 }

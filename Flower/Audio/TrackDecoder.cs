@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 
 using LibVLCSharp.Shared;
 
+using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.Audio
@@ -56,6 +57,7 @@ namespace Flower.Audio
         // a healthy decode ticks silently.
         private readonly System.Timers.Timer? _watchdog;
         private long _watchdogLastBytesProduced = -1;
+        private long _watchdogLastBackpressureWaits = -1;
         private long _nextProgressLogBytes = BytesForSeconds(10);
 
         public Track Track { get; }
@@ -104,7 +106,7 @@ namespace Flower.Audio
             _mediaPlayer = new MediaPlayer(_libVLC);
             _mediaPlayer.EncounteredError += (_, _) =>
             {
-                _logger?.LogWarning("Decode MediaPlayer for {Path} encountered an error", Track.Path);
+                _logger?.LogWarning("Decode MediaPlayer for {Path} encountered an error", LogPath.Short(Track.Path));
                 Faulted?.Invoke();
             };
 
@@ -157,7 +159,7 @@ namespace Flower.Audio
             if (Volatile.Read(ref _retired) == 1 || _drainFired)
                 return;
 
-            _logger?.LogWarning("OnDrain never fired for {Path} within 500ms of EndReached - forcing the handover from here instead", Track.Path);
+            _logger?.LogWarning("OnDrain never fired for {Path} within 500ms of EndReached - forcing the handover from here instead", LogPath.Short(Track.Path));
             Drained?.Invoke();
         }
 
@@ -223,7 +225,25 @@ namespace Flower.Audio
             var bytesProduced = BytesProduced;
             var target = _writer.Target;
 
-            var stalled = state == VLCState.Playing && isPlaying && bytesProduced == _watchdogLastBytesProduced;
+            // A decoder that has filled its ring and is waiting for playback
+            // to drain it produces no bytes either, and that is the healthy
+            // steady state for most of a track, not a wedge. Without this the
+            // watchdog cried stall on every decode-ahead: a real device logged
+            // 2430 of these in a day, every one of them with the ring at
+            // exactly 384000/384000 and nothing whatsoever wrong.
+            //
+            // The signal is the writer's own parked-for-room count rather than
+            // free space here, because a snapshot of free space is taken at an
+            // arbitrary instant - the reader drains a period every few
+            // milliseconds, so a full ring reads as briefly not-full - whereas
+            // "did it park at any point during this window" is exactly the
+            // question and cannot be lost to sampling.
+            var backpressureWaits = _writer.BackpressureWaits;
+
+            var stalled = IsStalled(
+                state, isPlaying,
+                bytesProduced, _watchdogLastBytesProduced,
+                backpressureWaits, _watchdogLastBackpressureWaits);
             var stateMismatch = state == VLCState.Playing && !isPlaying;
             var unexpectedState = Volatile.Read(ref _retired) == 0
                 && state is VLCState.Error or VLCState.Stopped;
@@ -232,12 +252,42 @@ namespace Flower.Audio
             {
                 _logger?.LogWarning(
                     "Decode watchdog for {Path}: State={State} IsPlaying={IsPlaying} Time={Time}ms BytesProduced={BytesProduced} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration} (Stalled={Stalled} StateMismatch={StateMismatch} UnexpectedState={UnexpectedState})",
-                    Track.Path, state, isPlaying, _mediaPlayer.Time, bytesProduced,
+                    LogPath.Short(Track.Path), state, isPlaying, _mediaPlayer.Time, bytesProduced,
                     target.TotalBytesRead, target.TotalBytesWritten, target.AvailableBytes,
                     target.Capacity, target.Generation, stalled, stateMismatch, unexpectedState);
             }
 
             _watchdogLastBytesProduced = bytesProduced;
+            _watchdogLastBackpressureWaits = backpressureWaits;
+        }
+
+        // Pulled out of CheckWatchdog so it can be tested: the surrounding
+        // method can only be driven through a real MediaPlayer, and this
+        // predicate getting it wrong is what produced 2430 false alarms a day.
+        // The two "last" arguments are the previous tick's samples, -1 on the
+        // first tick, where nothing can be concluded from a delta yet.
+        internal static bool IsStalled(
+            VLCState state,
+            bool isPlaying,
+            long bytesProduced,
+            long lastBytesProduced,
+            long backpressureWaits,
+            long lastBackpressureWaits)
+        {
+            if (state != VLCState.Playing || !isPlaying)
+                return false;
+
+            // First tick: no previous sample of either counter, so there is no
+            // delta to conclude anything from. The watchdog runs once a
+            // second and there is always a next one.
+            if (lastBytesProduced < 0)
+                return false;
+
+            if (bytesProduced != lastBytesProduced)
+                return false;
+
+            var waitedForRoom = lastBackpressureWaits >= 0 && backpressureWaits != lastBackpressureWaits;
+            return !waitedForRoom;
         }
 
         // Seeks this decoder's own demux/decode to the given position

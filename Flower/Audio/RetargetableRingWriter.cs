@@ -19,8 +19,18 @@ namespace Flower.Audio
     {
         private readonly object _gate = new();
         private GaplessRingBuffer _target;
+        private long _backpressureWaits;
 
         public RetargetableRingWriter(GaplessRingBuffer target) => _target = target;
+
+        // How many times a Write has parked because the target was full,
+        // ever. Monotonic and sampled rather than read as a live flag: a
+        // decoder pacing itself against playback is parked for almost the
+        // whole of a one-second watchdog window but not necessarily at the
+        // instant it happens to look. Comparing two samples answers the
+        // question that is actually being asked - "did this decoder spend
+        // this window waiting for room?" - with no race to lose.
+        public long BackpressureWaits => Interlocked.Read(ref _backpressureWaits);
 
         public GaplessRingBuffer Target
         {
@@ -75,6 +85,7 @@ namespace Flower.Audio
                     // Times out rather than waiting purely on a pulse: an
                     // ordinary "ring is full, playback will drain it" wait
                     // has nobody to pulse it.
+                    Interlocked.Increment(ref _backpressureWaits);
                     Monitor.Wait(_gate, 20);
 
                     if (!ReferenceEquals(_target, target))
