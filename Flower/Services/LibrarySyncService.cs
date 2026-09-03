@@ -59,7 +59,15 @@ public class LibrarySyncService
     // its much smaller payload, but this one needs enough headroom for a much
     // bigger JSON response over a possibly-imperfect WiFi link without silently
     // timing out and aborting the whole sync (see the catch below).
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(2) };
+    //
+    // Through PeerHttpClient, not `new HttpClient()`: the endpoint this dials
+    // is whichever address ranks best for the paired server, and among equal
+    // addresses that is the https one (see NetworkDiscoveryService.PickBest).
+    // A self-hosted server serves that with its own self-signed certificate,
+    // which only the pinning callback accepts - a bare client refuses every
+    // request to it, silently and forever, while discovery, art and playback
+    // (all already pinned) carry on working.
+    private static readonly HttpClient Http = PeerHttpClient.Create(TimeSpan.FromMinutes(2));
 
     // The ETag (Library.ChangeToken) each peer served with the manifest we
     // last successfully merged from it, sent back as If-None-Match so an

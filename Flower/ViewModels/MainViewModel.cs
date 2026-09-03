@@ -670,7 +670,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         IsOpeningServerSettings = true;
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var http = PeerHttpClient.Create(TimeSpan.FromSeconds(15));
             var client = CreateServerAdminClient(http, device);
 
             var pairing = await client.IssuePairingCodeAsync(grantsAdmin: true);
@@ -831,7 +831,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         IsIssuingPairingCode = true;
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var http = PeerHttpClient.Create(TimeSpan.FromSeconds(15));
             var client = CreateServerAdminClient(http, device);
             var pairing = await client.IssuePairingCodeAsync(PairingCodeGrantsAdmin);
             IssuedPairingCode = pairing.Code;
@@ -916,7 +916,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _serverSettings.Remove(device.Fingerprint);
         }
 
-        _adminHttp ??= new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        _adminHttp ??= PeerHttpClient.Create(TimeSpan.FromSeconds(15));
         var settings = new SettingsViewModel(
             new RemoteServerSettingsBackend(CreateServerAdminClient(_adminHttp, device)),
             _appSettings, _appSettingsStore);

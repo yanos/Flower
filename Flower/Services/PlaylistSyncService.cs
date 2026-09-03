@@ -48,7 +48,8 @@ public sealed class PlaylistConflictEventArgs : EventArgs
 // actual merge decisions and is unit tested on its own.
 public class PlaylistSyncService
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    // Pinned, for the same reason LibrarySyncService's is - see its remarks.
+    private static readonly HttpClient Http = PeerHttpClient.Create(TimeSpan.FromSeconds(10));
 
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;

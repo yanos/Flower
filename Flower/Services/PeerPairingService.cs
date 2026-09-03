@@ -19,7 +19,8 @@ public class PeerPairingService
     // A code redemption is a near-instant round trip, but it is also the one
     // request a user is watching a spinner for, so it gets a longer leash than
     // the background sync calls before it gives up and says so.
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    // Pinned, for the same reason LibrarySyncService's is - see its remarks.
+    private static readonly HttpClient Http = PeerHttpClient.Create(TimeSpan.FromSeconds(30));
 
     private readonly DeviceIdentity _deviceIdentity;
     private readonly DeviceSigningKey _signingKey;
