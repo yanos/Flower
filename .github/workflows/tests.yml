@@ -31,11 +31,28 @@ jobs:
             Flower/Flower.csproj
             Flower.Tests/Flower.Tests.csproj
 
+      # The RequiresFfmpeg tests fail rather than skip without the façade -
+      # deliberately, since a decoder silently not under test is the failure
+      # mode this whole area keeps hitting - so the platforms that can build
+      # it build it, and the one that cannot filters those tests out by name.
+      - name: Build flower-ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev libswresample-dev
+          native/ffmpeg/linux/build.sh
+
+      - name: Build flower-ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg
+          native/ffmpeg/macos/build.sh
+
       # None of the hosted runner images ship VLC, so RequiresLibVLC-tagged
       # tests (real-decode/native-audio coverage) don't run here - same
       # "fast, day-to-day" filter as CLAUDE.md's local dev instructions.
       - name: Run tests
-        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter Category!=RequiresLibVLC
+        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter "${{ runner.os == 'Windows' && 'Category!=RequiresLibVLC&Category!=RequiresFfmpeg' || 'Category!=RequiresLibVLC' }}"
 
   decode-checks:
     # Does each platform actually turn a track into the right audio? The rest
@@ -82,7 +99,35 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install vlc --no-progress -y
 
+      # The checks run once per decoder this platform has, so a platform
+      # without a built façade checks LibVLC and nothing else. Building it
+      # here is what makes the FFmpeg half of the suite exist on CI at all -
+      # it is elected by real users on macOS today and had two outright
+      # playback bugs that no green run ever saw, because no green run was
+      # running it.
+      #
+      # A distro or Homebrew FFmpeg is GPL-enabled and fine here; it is not
+      # fine in anything that ships. See native/ffmpeg/README.md.
+      - name: Build flower-ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev libswresample-dev
+          native/ffmpeg/linux/build.sh
+
+      - name: Build flower-ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg
+          native/ffmpeg/macos/build.sh
+
       - name: Run the decode checks
+        # Named rather than left to whatever loaded, because the failure this
+        # guards against is a run that goes green having checked half of what
+        # it did yesterday: a façade that did not build, or built and would
+        # not load, otherwise just shortens the suite. Windows has no façade
+        # yet, so it requires only LibVLC.
+        env:
+          FLOWER_REQUIRE_DECODERS: ${{ runner.os == 'Windows' && 'LibVLC' || 'LibVLC,FFmpeg' }}
         run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter FullyQualifiedName~DeviceChecksTests --logger "console;verbosity=detailed"
 
   server-test:

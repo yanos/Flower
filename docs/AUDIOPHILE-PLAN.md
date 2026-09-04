@@ -485,6 +485,43 @@ optional" lived only in `TrackDecoder`'s implementation - and every check here
 called both in the same order, which is exactly the order that hides the
 question.
 
+### Linux, and taking CI out of the same blind spot
+
+Both of those bugs happened on the one platform where the façade is built, and
+were caught by a person listening. That is not a coincidence: `flower_ffmpeg`
+was built on macOS only, so `DecoderElection` fell back to LibVLC everywhere
+else, `FfmpegDecoder.IsAvailable` was false on every CI runner, and the FFmpeg
+half of the checks did not exist on CI at all. The decoder with two outright
+playback bugs in it was the one nothing automated had ever run.
+
+Linux is now built the same way macOS is - `native/ffmpeg/linux/build.sh`, the
+same `CMakeLists.txt`, FFmpeg found through `pkg-config`. Written but not yet
+run on a Linux machine: there is no Linux here and no container runtime, so
+CI's first run is the thing that proves it rather than a local build. The one thing in the
+way was a version floor of FFmpeg 7 that nothing needed: the newest APIs
+`flower_ffmpeg.c` uses are `AVChannelLayout` and `swr_alloc_set_opts2`, both
+5.1, and 7 was simply the version of the machine it was first built on. Ubuntu
+24.04 ships 6, so that accident was the difference between a distro FFmpeg
+being found and not.
+
+Both CI jobs now build the façade on Linux and macOS, so the `RequiresFfmpeg`
+tests and the FFmpeg decode checks run on two platforms per push instead of
+zero. Windows still has no façade and filters those tests out by name.
+
+The guard matters as much as the build. The checks loop over the decoders that
+loaded, so a façade that stopped building would not fail - it would shorten the
+suite, and the run would stay green having checked half of what it did the day
+before. `FLOWER_REQUIRE_DECODERS` names what a caller expects the platform to
+have and turns a missing one into a failing check. It is unset on a phone,
+where a decoder's absence is a true fact about the platform, and set on CI,
+where it never is.
+
+What this does not do is make FFmpeg cross-platform. Windows needs an FFmpeg
+build and an import-lib route; Android and iOS need FFmpeg cross-compiled and
+linked in statically. Until then the decoder is macOS-and-Linux, honestly
+labelled as such in `native/ffmpeg/README.md`'s table, and `TrackDecoder`
+remains the default.
+
 ## 6. True sample-accurate gapless — Done
 
 Built, and not the way this section sketched. The plan was a custom PCM pipeline

@@ -15,11 +15,17 @@ target_include_directories(flower_ffmpeg PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # cross builds point PKG_CONFIG_LIBDIR at their own prefix rather than teaching
 # CMake a second way to find FFmpeg.
 find_package(PkgConfig REQUIRED)
+# The floor is FFmpeg 5.1, which is where AVChannelLayout and
+# swr_alloc_set_opts2 arrived - the newest APIs this façade uses, and the ones
+# that make its channel handling a single code path. Higher numbers were an
+# accident of the machine it was first built on rather than a requirement, and
+# an accident that costs something real: Ubuntu 24.04 ships FFmpeg 6, so a
+# floor of 61 meant the Linux build could not find a distro FFmpeg at all.
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
-    libavformat>=61
-    libavcodec>=61
-    libavutil>=59
-    libswresample>=5)
+    libavformat>=59.27
+    libavcodec>=59.37
+    libavutil>=57.28
+    libswresample>=4.7)
 
 target_link_libraries(flower_ffmpeg PRIVATE PkgConfig::FFMPEG)
 

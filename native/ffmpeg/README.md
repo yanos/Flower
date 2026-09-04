@@ -67,20 +67,48 @@ LGPL-only prefix for anything that ships.
 No decoder Flower needs is GPL-only. The GPL components in a distro build are
 filters and encoders this façade never touches.
 
+## Building for development (Linux)
+
+```
+sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev libswresample-dev
+native/ffmpeg/linux/build.sh
+```
+
+The same `CMakeLists.txt` as macOS, found the same way through `pkg-config`,
+landing in `native/ffmpeg/artifacts/linux/`. A distro FFmpeg is GPL-enabled and
+so is a development build only, exactly as MacPorts' is.
+
+The version floor is FFmpeg 5.1 - where `AVChannelLayout` and
+`swr_alloc_set_opts2` arrived, which are the newest APIs in
+`flower_ffmpeg.c`. It was briefly 7.x, which was not a requirement but the
+version of the one machine this was first built on, and it kept the Linux
+build from finding Ubuntu 24.04's FFmpeg 6 at all.
+
 ## Platform status
 
-Only macOS is built here so far. The same source and the same `CMakeLists.txt`
-are meant to serve all five heads, but "meant to" is not "does", and the plan
-doc is explicit that this decoder must not be described as cross-platform
-until each artifact is built, packaged and tested on real hardware:
+Two of the five heads are built. The same source and the same `CMakeLists.txt`
+are meant to serve all of them, but "meant to" is not "does", and the plan doc
+is explicit that this decoder must not be described as cross-platform until
+each artifact is built, packaged and tested on real hardware:
 
 | Platform | Artifact | Status |
 |---|---|---|
-| macOS | `libflower_ffmpeg.dylib` | Built, tested against MacPorts FFmpeg |
-| Linux | `libflower_ffmpeg.so` | Should work via `pkg-config`; unbuilt |
+| macOS | `libflower_ffmpeg.dylib` | Built and tested against MacPorts FFmpeg, and elected in real listening; built and checked on CI |
+| Linux | `libflower_ffmpeg.so` | `linux/build.sh` written and wired into CI; the first CI run is what proves it - it has never been built on a Linux machine here |
 | Windows | `flower_ffmpeg.dll` | Unbuilt; needs an FFmpeg build and an import-lib route |
 | Android | `libflower_ffmpeg.so` per ABI | Unbuilt; needs a static NDK FFmpeg (`FLOWER_FFMPEG_STATIC`) |
 | iOS | `flower_ffmpeg.xcframework` | Unbuilt; needs a static FFmpeg and `<NativeReference>` wiring |
+
+## On CI
+
+Both the `test` and `decode-checks` jobs build the façade on Linux and macOS,
+so the FFmpeg decoder is exercised there rather than only on the one developer
+machine that happens to have built it. `decode-checks` additionally sets
+`FLOWER_REQUIRE_DECODERS=LibVLC,FFmpeg`, which turns a decoder the platform
+turns out not to have into a failing check rather than a shorter run - the
+checks loop over the decoders that loaded, so a façade that quietly stopped
+building would otherwise present as a green run that checked half as much.
+Windows requires only LibVLC, having no façade yet.
 
 Android and iOS follow `native/miniaudio/`'s precedent - build scripts here,
 binaries checked in beside the platform head - with the difference that FFmpeg
