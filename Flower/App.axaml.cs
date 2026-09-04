@@ -17,6 +17,7 @@ using LibVLCSharp.Shared;
 using Flower.Controls;
 using Flower.Logging;
 using Flower.Audio;
+using Flower.Audio.Ffmpeg;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Persistence.Sql;
@@ -510,7 +511,18 @@ public partial class App : Application
                 sp.GetRequiredService<ILogger<GaplessAudioManager>>(),
                 sp.GetRequiredService<ILogger<GaplessCoordinator>>(),
                 sp.GetRequiredService<ILogger<TrackDecoder>>(),
-                sp.GetRequiredService<ILogger<VlcDiagnosticLog>>()));
+                sp.GetRequiredService<ILogger<VlcDiagnosticLog>>(),
+                // Resolved here rather than persisted-and-trusted: the
+                // preference can name a decoder this platform has no artifact
+                // for, and the answer to that is LibVLC and a warning, not a
+                // silent failure to play anything. Everything that follows
+                // from the decision - the canonical sample format, the device
+                // open, which factory the coordinator uses - happens inside
+                // the constructor below, in that order.
+                DecoderElection.Resolve(
+                    sp.GetRequiredService<AppSettings>().AudioDecoder,
+                    sp.GetRequiredService<ILogger<GaplessAudioManager>>()),
+                sp.GetRequiredService<ILogger<FfmpegTrackDecoder>>()));
     }
 
     // The composition root. Every service is registered by *type* (or by a

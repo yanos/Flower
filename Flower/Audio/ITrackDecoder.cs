@@ -33,6 +33,13 @@ namespace Flower.Audio
         // parsed, one whose server stopped answering, and one that is simply
         // broken are three different findings. See DecodePrepareResult.
         Task<DecodePrepareResult> PrepareAsync(CancellationToken cancellationToken = default);
+        // Optional, and a decoder that treats it as mandatory is broken.
+        // GaplessCoordinator only prepares a track it is decoding ahead of the
+        // one playing; Play() - what pressing play reaches - goes straight to
+        // StartDecoding. So StartDecoding must open the track itself when no
+        // prepare has happened, and it must not block doing it: it runs under
+        // the coordinator's lock. See DecodeChecks' "plays the way pressing
+        // play plays it".
         void StartDecoding();
         void Seek(float position);
         // Moves whatever staged audio fits into newTarget right now without

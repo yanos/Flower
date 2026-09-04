@@ -34,6 +34,19 @@ namespace Flower.Audio
     {
         private readonly uint _sampleRate;
 
+        // Cached rather than read from GaplessFormat per callback: this runs
+        // on the render path, and the format is frozen for the session anyway
+        // (see GaplessFormat). Holding it here is also what lets a test build
+        // a stage in either format without configuring a process-wide static.
+        private readonly PcmSampleFormat _sampleFormat;
+        private readonly int _bytesPerSample;
+
+        // Full-scale for the format being requantised to, as the float
+        // magnitude one LSB below it. The dither and the clamp are both in
+        // native integer units - see Requantise.
+        private readonly float _positiveFullScale;
+        private readonly float _negativeFullScale;
+
         // The two float scratch buffers. _samples carries the signal;
         // _crossfade only ever holds the *other* EQ's output for the one
         // callback that spans an EQ change (see Process).
@@ -89,7 +102,23 @@ namespace Flower.Audio
         private uint _ditherState = 0x9E3779B9;
         private float _previousDither;
 
-        public OutputStage(uint sampleRate) => _sampleRate = sampleRate;
+        public OutputStage(uint sampleRate, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat)
+        {
+            _sampleRate = sampleRate;
+            _sampleFormat = sampleFormat;
+            _bytesPerSample = GaplessFormat.BytesPerSampleOf(sampleFormat);
+
+            var bits = _bytesPerSample * 8;
+            _negativeFullScale = -(1 << (bits - 1));
+            _positiveFullScale = (1 << (bits - 1)) - 1;
+        }
+
+        // What this stage was built for. MiniaudioSink compares them against
+        // the negotiated format to decide whether reopening a device needs a
+        // new stage or can keep the one carrying the user's EQ and volume.
+        public uint SampleRate => _sampleRate;
+
+        public PcmSampleFormat SampleFormat => _sampleFormat;
 
         public AudioTimingSettings Timing
         {
@@ -161,8 +190,7 @@ namespace Flower.Audio
         // second discontinuity stacked on top of the first.
         public void Process(Span<byte> buffer, int generation)
         {
-            var samples = MemoryMarshal.Cast<byte, short>(buffer);
-            var sampleCount = samples.Length;
+            var sampleCount = buffer.Length / _bytesPerSample;
             if (sampleCount == 0)
                 return;
 
@@ -183,12 +211,46 @@ namespace Flower.Audio
             EnsureCapacity(sampleCount);
             var work = _samples.AsSpan(0, sampleCount);
 
-            for (var i = 0; i < sampleCount; i++)
-                work[i] = samples[i];
-
+            Widen(buffer, work);
             ApplyEqualizer(work, sampleCount);
             ApplyGainAndEnvelope(work, timing);
-            Requantise(work, samples);
+            Requantise(work, buffer);
+        }
+
+        // Interleaved PCM to float, in native integer units rather than
+        // normalised to +-1.
+        //
+        // Units matter here: everything downstream - the dither's one-LSB
+        // triangle, the clamp at full scale, and the "already an exact
+        // integer, so do not dither it" test in Requantise - is expressed in
+        // LSBs of the destination format, and staying in integer units is what
+        // makes all three the same code at 16 bits and at 24. Both formats are
+        // exact in a float (a mantissa holds 24 bits), so this direction never
+        // loses anything and the round trip at unity gain is bit-identical.
+        private void Widen(ReadOnlySpan<byte> source, Span<float> destination)
+        {
+            if (_sampleFormat == PcmSampleFormat.S16)
+            {
+                var samples = MemoryMarshal.Cast<byte, short>(source);
+                for (var i = 0; i < destination.Length; i++)
+                    destination[i] = samples[i];
+
+                return;
+            }
+
+            for (var i = 0; i < destination.Length; i++)
+            {
+                var at = i * 3;
+                var value = source[at] | (source[at + 1] << 8) | (source[at + 2] << 16);
+
+                // Sign-extend out of 24 bits. Packed S24 carries no sign bit
+                // of its own in the 32-bit sense, so a negative sample read
+                // as-is comes back as a large positive one.
+                if ((value & 0x00800000) != 0)
+                    value |= unchecked((int)0xFF000000);
+
+                destination[i] = value;
+            }
         }
 
         // Runs the EQ, crossfading over exactly this buffer when it changed
@@ -288,21 +350,30 @@ namespace Flower.Audio
             }
         }
 
-        // Float -> S16, once, at the end.
+        // Float -> the canonical integer format, once, at the end.
         //
         // Deliberately a hard clamp and not a soft-knee limiter, having tried
-        // one: the source is already S16, so a unity-gain pass with no EQ has
-        // to come back out bit-identical, and any knee that starts below full
-        // scale attenuates real signal to buy headroom nothing here needs. (A
-        // knee that starts *at* full scale is arithmetically the same as a
-        // clamp - a monotone map that is the identity on [-1,1] and bounded by
-        // 1 has nowhere else to go.) Clipping is now reachable only by a
-        // deliberate EQ boost past full scale, which is the user asking for
-        // it; every internal stage before this one runs in float and can no
+        // one: the source is already in this format, so a unity-gain pass with
+        // no EQ has to come back out bit-identical, and any knee that starts
+        // below full scale attenuates real signal to buy headroom nothing here
+        // needs. (A knee that starts *at* full scale is arithmetically the
+        // same as a clamp - a monotone map that is the identity on [-1,1] and
+        // bounded by 1 has nowhere else to go.) Clipping is now reachable only
+        // by a deliberate EQ boost past full scale, which is the user asking
+        // for it; every internal stage before this one runs in float and can no
         // longer clip on its own, which is the actual fix - the EQ used to
         // round and hard-clamp to S16 itself, mid-chain, with no headroom.
-        private void Requantise(Span<float> work, Span<short> destination)
+        //
+        // Full scale is the destination format's, not a constant. Both are
+        // what the widening is worth: the dither is still +-0.5 LSB, but an
+        // LSB is 256 times smaller relative to full scale, so the
+        // requantisation noise floor drops by 48dB - and a clamp left at
+        // +-32767 would have hard-limited every 24-bit sample above -48dBFS.
+        private void Requantise(Span<float> work, Span<byte> destination)
         {
+            var s16 = _sampleFormat == PcmSampleFormat.S16;
+            var shorts = s16 ? MemoryMarshal.Cast<byte, short>(destination) : default;
+
             for (var i = 0; i < work.Length; i++)
             {
                 var value = work[i];
@@ -326,7 +397,18 @@ namespace Flower.Audio
                     _previousDither = dither;
                 }
 
-                destination[i] = (short)Math.Clamp(MathF.Round(value), -32768f, 32767f);
+                var quantised = (int)Math.Clamp(MathF.Round(value), _negativeFullScale, _positiveFullScale);
+
+                if (s16)
+                {
+                    shorts[i] = (short)quantised;
+                    continue;
+                }
+
+                var at = i * 3;
+                destination[at] = (byte)quantised;
+                destination[at + 1] = (byte)(quantised >> 8);
+                destination[at + 2] = (byte)(quantised >> 16);
             }
         }
 

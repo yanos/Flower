@@ -23,7 +23,7 @@ namespace Flower.Tests;
 // this runs in CI.
 public class RenderStarvationTests
 {
-    private const int RingBytes = 100 * (int)GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerFrame / 1000; // 100ms
+    private static readonly int RingBytes = 100 * (int)GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerFrame / 1000; // 100ms
 
     private static Track T(string title) =>
         new() { Title = title, Path = $"/music/{title}.mp3", Duration = TimeSpan.FromSeconds(1) };

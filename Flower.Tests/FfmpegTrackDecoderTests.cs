@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 using Flower.Audio;
 using Flower.Audio.Ffmpeg;
+using Flower.DeviceChecks;
 using Flower.Models;
 using Flower.Tests.TestSupport;
 
@@ -172,10 +173,36 @@ public class FfmpegTrackDecoderTests : IDisposable
         Assert.False(faulted, "a retire is not a fault");
     }
 
+    // The shape GaplessCoordinator.Play uses. It calls PrepareAsync only when
+    // decoding a track ahead of the one playing, so pressing play reaches
+    // StartDecoding with nothing opened - and a decoder that faulted here
+    // faulted on every press of play, while every check that prepared first
+    // stayed green. This test previously asserted that fault, which was
+    // mistaking the bug for the contract.
     [Fact]
-    public async Task Starting_without_a_prepare_faults_rather_than_decoding_nothing()
+    public async Task Starting_without_a_prepare_decodes_anyway()
     {
         var track = Fixture(TimeSpan.FromSeconds(1), SyntheticWav.Ramp());
+        var ring = new GaplessRingBuffer(1024 * 1024);
+        using var decoder = new FfmpegTrackDecoder(track, ring);
+
+        var faulted = false;
+        decoder.Faulted += () => faulted = true;
+
+        decoder.StartDecoding();
+
+        var started = Stopwatch.StartNew();
+        while (decoder.BytesProduced == 0 && !faulted && started.Elapsed < Patience)
+            await Task.Delay(2);
+
+        Assert.False(faulted, "an unprepared start is the normal way to start");
+        Assert.True(decoder.BytesProduced > 0, "no audio came out of an unprepared start");
+    }
+
+    [Fact]
+    public async Task Starting_without_a_prepare_on_a_track_that_cannot_open_faults()
+    {
+        var track = new Track { Path = Path.Combine(Path.GetTempPath(), $"flower-missing-{Guid.NewGuid():N}.wav") };
         using var decoder = new FfmpegTrackDecoder(track, new GaplessRingBuffer(64 * 1024));
 
         var faulted = new TaskCompletionSource();
@@ -186,11 +213,21 @@ public class FfmpegTrackDecoderTests : IDisposable
         await faulted.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
     }
 
+    // Only the MP4 family, and that narrowness is the point rather than an
+    // omission. The suffix comes from the server's catalog and describes a
+    // file on the server's disk, not the bytes on the wire; forcing a demuxer
+    // discards FFmpeg's probe entirely, so a suffix that is wrong stops being
+    // a slow open and becomes a track that will not play. MP4 keeps its hint
+    // because there it buys something probing cannot: a moov atom at the end
+    // of a stream nobody can seek. See FfmpegTrackDecoder.DemuxerHintFor, and
+    // A_stream_whose_catalogued_container_is_wrong_still_opens below for what
+    // happens when even that one is wrong.
     [Theory]
     [InlineData("m4a", "mp4")]
     [InlineData("ALAC", "mp4")]
-    [InlineData("mp3", "mp3")]
-    [InlineData("flac", "flac")]
+    [InlineData("mp3", null)]
+    [InlineData("flac", null)]
+    [InlineData("wav", null)]
     [InlineData("ogg", null)]
     [InlineData(null, null)]
     public void The_catalogs_container_becomes_a_demuxer_name(string? suffix, string? expected) =>
@@ -200,6 +237,26 @@ public class FfmpegTrackDecoderTests : IDisposable
             Path = "http://server:4533/rest/stream?id=abc",
             OriginFileExtension = suffix,
         }));
+
+    // The other half of narrowing the hint: even the one container still
+    // hinted has to survive being wrong about the bytes. A forced demuxer
+    // that will not open the stream costs a rewind, not the track.
+    [Fact]
+    public void A_stream_whose_catalogued_container_is_wrong_still_opens()
+    {
+        var wav = SyntheticWav.Build(TimeSpan.FromSeconds(1), SyntheticWav.Ramp());
+        using var stream = new MemoryStream(wav);
+
+        using var decoder = FfmpegDecoder.OpenStream(
+            stream, FfmpegSampleFormat.S16, formatHint: "mp4");
+
+        // Opened by probing, so it found what the bytes actually are rather
+        // than what the caller claimed they were.
+        Assert.Equal(GaplessFormat.SampleRate, (uint)decoder.Format.SourceSampleRate);
+
+        var buffer = new byte[4096];
+        Assert.True(decoder.Read(buffer) > 0);
+    }
 
     private static async Task<byte[]> ReadOneFrameAsync(GaplessRingBuffer ring)
     {

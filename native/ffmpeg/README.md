@@ -13,6 +13,24 @@ every platform, whatever format is requested. See `docs/AUDIOPHILE-PLAN.md`,
 its first two tests decode the same 24-bit fixture twice and show the low byte
 surviving one way and gone the other.
 
+## Electing it
+
+`AppSettings.AudioDecoder` in `settings.json` chooses which decoder runs:
+
+```json
+{ "AudioDecoder": "Ffmpeg" }
+```
+
+`FLOWER_DECODER=ffmpeg` (or `libvlc`) overrides that for one run, so an A/B
+needs neither an edit nor a rebuild. Asking for FFmpeg where the façade is not
+loadable is not an error - `DecoderElection` falls back to LibVLC and says so
+in the log, which is the ordinary outcome on every platform in the table below
+except macOS.
+
+Electing it is also what widens the pipeline to 24 bits: the canonical PCM
+format follows the decoder, since LibVLC cannot fill anything wider. See
+`GaplessFormat` and `docs/AUDIOPHILE-PLAN.md`'s step three.
+
 ## Building for development (macOS)
 
 ```

@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Flower.Audio;
+using Flower.Audio.Ffmpeg;
 using Flower.Models;
 using Flower.Services;
 
@@ -51,11 +52,64 @@ public static class DecodeChecks
     // second is well beyond any of that and well short of a missing verse.
     private const int LossyTailToleranceMs = 250;
 
+    // One decoder, named, plus the canonical PCM format decoding through it
+    // pins the pipeline to. Both halves matter: LibVLC's amem seam cannot
+    // deliver more than 16 bits whatever it is asked for, and FFmpeg's
+    // widens the pipeline to packed 24 - so "does this platform decode a
+    // track" has a different answer per decoder, and asking it of one of
+    // them is not asking it of the other.
+    public sealed record DecoderUnderTest(
+        string Name,
+        PcmSampleFormat Format,
+        Func<Track, GaplessRingBuffer, ITrackDecoder> Create);
+
+    // Every decoder this platform can actually run. FFmpeg is absent from
+    // four of the five heads today (no built artifact), and a check suite
+    // that threw there rather than reporting what it could would be useless
+    // on exactly the platforms it exists for.
+    public static IReadOnlyList<DecoderUnderTest> AvailableDecoders(LibVLC libVlc)
+    {
+        var decoders = new List<DecoderUnderTest>
+        {
+            new("LibVLC", PcmSampleFormat.S16, (track, ring) => new TrackDecoder(libVlc, track, ring)),
+        };
+
+        if (FfmpegDecoder.IsAvailable)
+            decoders.Add(new("FFmpeg", PcmSampleFormat.S24,
+                (track, ring) => new FfmpegTrackDecoder(track, ring, sampleFormat: PcmSampleFormat.S24)));
+
+        return decoders;
+    }
+
     public static IReadOnlyList<CheckResult> RunAll()
     {
         VlcNativeSetup.Initialize();
         using var libVlc = new LibVLC();
 
+        var results = new List<CheckResult>();
+
+        // Once per decoder, rather than once. The whole suite was written
+        // against TrackDecoder by name, so electing FfmpegTrackDecoder moved
+        // the entire streaming path - open, probe, range requests, seek,
+        // fault - out from under every check here while all of them stayed
+        // green. A decoder nobody checks is a decoder nobody has checked, and
+        // the first thing that happened when one was elected is that an album
+        // played nothing on a phone.
+        //
+        // Each decoder is told its own sample format rather than the run
+        // setting the canonical one and putting it back. GaplessFormat is
+        // process-wide, so moving it would reach every other test sharing
+        // this process - and it did: two checks failed intermittently, in the
+        // full suite only, for reasons that had nothing to do with what they
+        // check.
+        foreach (var subject in AvailableDecoders(libVlc))
+            results.AddRange(RunChecks(subject));
+
+        return results;
+    }
+
+    private static IReadOnlyList<CheckResult> RunChecks(DecoderUnderTest subject)
+    {
         var results = new List<CheckResult>();
 
         // Every format a library actually holds, local and streamed, before
@@ -65,24 +119,26 @@ public static class DecodeChecks
         // variable, and nothing was varying it.
         foreach (var fixture in Fixture.All)
         {
-            results.Add(Run($"{fixture.Name} decodes from a local file", () => FixtureFromDisk(libVlc, fixture)));
-            results.Add(Run($"{fixture.Name} decodes when streamed", () => FixtureFromServer(libVlc, fixture, servesRanges: true, answersHead: true)));
-            results.Add(Run($"{fixture.Name} decodes when streamed from a server that refuses ranges", () => FixtureFromServer(libVlc, fixture, servesRanges: false, answersHead: true)));
-            results.Add(Run($"{fixture.Name} decodes when streamed from a server that refuses HEAD", () => FixtureFromServer(libVlc, fixture, servesRanges: true, answersHead: false)));
+            results.Add(Run($"{subject.Name}: {fixture.Name} decodes from a local file", () => FixtureFromDisk(subject, fixture)));
+            results.Add(Run($"{subject.Name}: {fixture.Name} decodes when streamed", () => FixtureFromServer(subject, fixture, servesRanges: true, answersHead: true)));
+            results.Add(Run($"{subject.Name}: {fixture.Name} decodes when streamed from a server that refuses ranges", () => FixtureFromServer(subject, fixture, servesRanges: false, answersHead: true)));
+            results.Add(Run($"{subject.Name}: {fixture.Name} decodes when streamed from a server that refuses HEAD", () => FixtureFromServer(subject, fixture, servesRanges: true, answersHead: false)));
+            results.Add(Run($"{subject.Name}: {fixture.Name} decodes when the catalog has the wrong extension for it", () => MislabelledFixtureStillDecodes(subject, fixture)));
+            results.Add(Run($"{subject.Name}: {fixture.Name} plays the way pressing play plays it", () => FixtureStartedWithoutPrepare(subject, fixture)));
         }
 
         results.AddRange(
         [
-            Run("A local file decodes to exactly the PCM it holds", () => LocalFileIsExact(libVlc)),
-            Run("A streamed track decodes to exactly the PCM the server holds", () => StreamedIsExact(libVlc)),
-            Run("A server that refuses ranges still decodes", () => WithoutRangesStillDecodes(libVlc)),
-            Run("A seek mid-stream lands in unbroken audio", () => SeekLandsInUnbrokenAudio(libVlc)),
-            Run("A server that is not there reports a failed prepare", () => AbsentServerFailsPrepare(libVlc)),
-            Run("A stream cut mid-track faults rather than ending quietly", () => CutStreamFaults(libVlc)),
-            Run("A throttled server costs a wait, not the track", () => ThrottledStreamStillDecodes(libVlc, sendsRetryAfter: true)),
-            Run("A throttled server that sends no Retry-After still costs only a wait", () => ThrottledStreamStillDecodes(libVlc, sendsRetryAfter: false)),
-            Run("A server that requires a fresh nonce per request still decodes", () => ReplayGuardedStreamStillDecodes(libVlc)),
-            Run("An error on an HTTP 200 is refused rather than decoded", () => ProtocolErrorIsNotAudio(libVlc)),
+            Run($"{subject.Name}: A local file decodes to exactly the PCM it holds", () => LocalFileIsExact(subject)),
+            Run($"{subject.Name}: A streamed track decodes to exactly the PCM the server holds", () => StreamedIsExact(subject)),
+            Run($"{subject.Name}: A server that refuses ranges still decodes", () => WithoutRangesStillDecodes(subject)),
+            Run($"{subject.Name}: A seek mid-stream lands in unbroken audio", () => SeekLandsInUnbrokenAudio(subject)),
+            Run($"{subject.Name}: A server that is not there reports a failed prepare", () => AbsentServerFailsPrepare(subject)),
+            Run($"{subject.Name}: A stream cut mid-track faults rather than ending quietly", () => CutStreamFaults(subject)),
+            Run($"{subject.Name}: A throttled server costs a wait, not the track", () => ThrottledStreamStillDecodes(subject, sendsRetryAfter: true)),
+            Run($"{subject.Name}: A throttled server that sends no Retry-After still costs only a wait", () => ThrottledStreamStillDecodes(subject, sendsRetryAfter: false)),
+            Run($"{subject.Name}: A server that requires a fresh nonce per request still decodes", () => ReplayGuardedStreamStillDecodes(subject)),
+            Run($"{subject.Name}: An error on an HTTP 200 is refused rather than decoded", () => ProtocolErrorIsNotAudio(subject)),
         ]);
 
         return results;
@@ -91,7 +147,7 @@ public static class DecodeChecks
     // One format, off a disk. The baseline each streamed result is read
     // against: a format that fails here fails everywhere, and HTTP is not
     // implicated.
-    private static void FixtureFromDisk(LibVLC libVlc, Fixture fixture)
+    private static void FixtureFromDisk(DecoderUnderTest subject, Fixture fixture)
     {
         var directory = Path.Combine(Path.GetTempPath(), "flower-checks-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -100,7 +156,7 @@ public static class DecodeChecks
             var path = Path.Combine(directory, "check." + fixture.Extension);
             File.WriteAllBytes(path, fixture.Bytes());
 
-            AssertPlayable(fixture, DecodeFully(libVlc, TrackFor(fixture, path)));
+            AssertPlayable(fixture, DecodeFully(subject, TrackFor(fixture, path)));
         }
         finally
         {
@@ -119,12 +175,47 @@ public static class DecodeChecks
     // thorough about - it is the exact condition that made VLC's mp4 demuxer
     // discard itself and an album of AAC play nothing, so it earns its own
     // result line per format rather than being folded into the one above.
-    private static void FixtureFromServer(LibVLC libVlc, Fixture fixture, bool servesRanges, bool answersHead)
+    private static void FixtureFromServer(DecoderUnderTest subject, Fixture fixture, bool servesRanges, bool answersHead)
     {
         using var server = new LoopbackMediaServer { ServesRanges = servesRanges, AnswersHead = answersHead };
         var url = server.Serve(fixture.Bytes(), "rest/stream?id=" + fixture.Extension);
 
-        AssertPlayable(fixture, DecodeFully(libVlc, TrackFor(fixture, url)));
+        AssertPlayable(fixture, DecodeFully(subject, TrackFor(fixture, url)));
+    }
+
+    // The catalogued extension is not a fact about the bytes.
+    //
+    // OriginFileExtension comes from the server's catalog (Child.Suffix), and
+    // it describes a file on the server's disk: what arrives on the wire is
+    // whatever that server chose to send, which for anything that transcodes
+    // is a different container entirely - and a catalog can simply be wrong
+    // besides. Both decoders take that extension as a demuxer hint, so this
+    // is the check that says a hint is a hint.
+    //
+    // It is here rather than in a unit test because of how it failed: an mp3
+    // whose bytes were not mp3 was forced into the mp3 demuxer, which does
+    // not fall back to probing, and the track did not play at all. Nothing on
+    // a desktop suite streams, so nothing on a desktop suite had ever handed
+    // either decoder a suffix it could not trust.
+    // The same streamed decode as FixtureFromServer, started the way Play()
+    // starts one: no prepare, no decode-ahead, straight to StartDecoding.
+    private static void FixtureStartedWithoutPrepare(DecoderUnderTest subject, Fixture fixture)
+    {
+        using var server = new LoopbackMediaServer();
+        var url = server.Serve(fixture.Bytes(), $"rest/stream?id={fixture.Extension}");
+
+        AssertPlayable(fixture, DecodeFully(subject, TrackFor(fixture, url), prepare: false));
+    }
+
+    private static void MislabelledFixtureStillDecodes(DecoderUnderTest subject, Fixture fixture)
+    {
+        using var server = new LoopbackMediaServer();
+        var url = server.Serve(fixture.Bytes(), "rest/stream?id=mislabelled");
+
+        var track = TrackFor(fixture, url);
+        track.OriginFileExtension = fixture.Extension == "mp3" ? "flac" : "mp3";
+
+        AssertPlayable(fixture, DecodeFully(subject, track));
     }
 
     private static Track TrackFor(Fixture fixture, string path) => new()
@@ -185,7 +276,7 @@ public static class DecodeChecks
 
     // The baseline the streamed checks are read against. If this one fails,
     // nothing about HTTP is implicated - the platform cannot decode a WAV.
-    private static void LocalFileIsExact(LibVLC libVlc)
+    private static void LocalFileIsExact(DecoderUnderTest subject)
     {
         var directory = Path.Combine(Path.GetTempPath(), "flower-checks-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -195,7 +286,7 @@ public static class DecodeChecks
             var path = Path.Combine(directory, "check.wav");
             File.WriteAllBytes(path, content);
 
-            var decoded = DecodeFully(libVlc, TrackAt(path, ShortTrack));
+            var decoded = DecodeFully(subject, TrackAt(path, ShortTrack));
 
             AssertMatchesSource(content, decoded);
         }
@@ -215,13 +306,13 @@ public static class DecodeChecks
     // The headline. Same fixture, same oracle, fetched over a socket through
     // SeekableHttpStream instead of read off a disk - so a difference between
     // this and the local check is the streaming path and nothing else.
-    private static void StreamedIsExact(LibVLC libVlc)
+    private static void StreamedIsExact(DecoderUnderTest subject)
     {
         using var server = new LoopbackMediaServer();
         var content = SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp());
         var url = server.Serve(content);
 
-        var decoded = DecodeFully(libVlc, TrackAt(url, ShortTrack));
+        var decoded = DecodeFully(subject, TrackAt(url, ShortTrack));
 
         AssertMatchesSource(content, decoded);
     }
@@ -229,13 +320,13 @@ public static class DecodeChecks
     // A forward-only read is all a WAV needs, so refusing ranges must degrade
     // to "plays" rather than to "plays nothing" - the shape the original iOS
     // failure wore.
-    private static void WithoutRangesStillDecodes(LibVLC libVlc)
+    private static void WithoutRangesStillDecodes(DecoderUnderTest subject)
     {
         using var server = new LoopbackMediaServer { ServesRanges = false };
         var content = SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp());
         var url = server.Serve(content);
 
-        var decoded = DecodeFully(libVlc, TrackAt(url, ShortTrack));
+        var decoded = DecodeFully(subject, TrackAt(url, ShortTrack));
 
         AssertMatchesSource(content, decoded);
     }
@@ -244,14 +335,23 @@ public static class DecodeChecks
     // "worked" means the audio after the seek is continuous - not that an
     // event fired. Stale pre-seek audio spliced onto the new position is a
     // real bug this shape has caught before, and it breaks the ramp.
-    private static void SeekLandsInUnbrokenAudio(LibVLC libVlc)
+    private static void SeekLandsInUnbrokenAudio(DecoderUnderTest subject)
     {
         using var server = new LoopbackMediaServer();
         var content = SyntheticWav.Build(SeekableTrack, SyntheticWav.Ramp());
         var url = server.Serve(content);
 
-        var ring = new GaplessRingBuffer(4 * 1024 * 1024);
-        using var decoder = new TrackDecoder(libVlc, TrackAt(url, SeekableTrack), ring);
+        // Smaller than the track on purpose, and nothing draining it yet.
+        // A seek is only meaningful while a decode is in flight, and with a
+        // ring big enough to hold the whole track the decoder finishes it -
+        // in a fraction of a second, off a loopback socket - and the seek
+        // arrives at a thread that has already exited. That is a race the
+        // check loses only when the machine is busy, which is to say in the
+        // full suite and not on its own. Held on backpressure instead, the
+        // decoder is still there to be seeked, which is also the state it is
+        // in during real playback.
+        var ring = new GaplessRingBuffer(1024 * 1024);
+        using var decoder = subject.Create(TrackAt(url, SeekableTrack), ring);
 
         var settled = new ManualResetEventSlim();
         var landedAt = -1L;
@@ -261,29 +361,33 @@ public static class DecodeChecks
             settled.Set();
         };
 
-        using var drain = new Drain(ring);
-
         if (decoder.PrepareAsync().GetAwaiter().GetResult() != DecodePrepareResult.Ready)
             throw new CheckFailedException("the stream would not open");
 
         decoder.StartDecoding();
 
-        if (!SpinFor(() => decoder.BytesProduced > 0, TimeSpan.FromSeconds(30)))
+        if (!SpinFor(() => ring.TotalBytesWritten > 0, TimeSpan.FromSeconds(30)))
             throw new CheckFailedException("the decode never started");
 
         decoder.Seek(0.5f);
 
         if (!settled.Wait(TimeSpan.FromSeconds(30)))
-            throw new CheckFailedException("the seek never landed");
+            throw new CheckFailedException($"the seek never landed ({decoder.BytesProduced} bytes decoded)");
 
-        // The ring is reset by the seek, and Drain throws away everything from
-        // before the reset, so what it holds now is post-seek audio only.
-        SpinFor(() => drain.Collected > 4 * BytesPerSecond(), TimeSpan.FromSeconds(30));
-        var after = drain.Snapshot();
+        // Only now, so everything it collects is post-seek by construction
+        // rather than by the Drain noticing the ring's generation change.
+        using var drain = new Drain(ring);
 
-        var half = BytesPerSecond() * 5;
-        if (landedAt < half * 0.7 || landedAt > half * 1.3)
-            throw new CheckFailedException($"a seek to the middle of a 10s track landed at {landedAt / (double)BytesPerSecond():F2}s");
+        SpinFor(() => drain.Collected > 2 * BytesPerSecond(), TimeSpan.FromSeconds(30));
+        var after = InFixtureUnits(subject, drain.Snapshot());
+
+        // SeekSettled carries an offset in the pipeline's own bytes, so it is
+        // read back through the pipeline's own frame size rather than the
+        // fixture's.
+        var landedAtSeconds = landedAt
+            / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerSampleOf(subject.Format) * GaplessFormat.Channels);
+        if (landedAtSeconds < 3.5 || landedAtSeconds > 6.5)
+            throw new CheckFailedException($"a seek to the middle of a 10s track landed at {landedAtSeconds:F2}s");
 
         if (PcmOracle.IsSilent(after))
             throw new CheckFailedException($"{after.Length} bytes of silence after the seek");
@@ -294,11 +398,11 @@ public static class DecodeChecks
 
     // An unreachable server has to be a distinguishable answer, because the
     // coordinator responds to it differently from an unplayable file.
-    private static void AbsentServerFailsPrepare(LibVLC libVlc)
+    private static void AbsentServerFailsPrepare(DecoderUnderTest subject)
     {
         var url = $"http://127.0.0.1:{LoopbackMediaServer.ClosedPort()}/rest/stream?id=abc";
         var ring = new GaplessRingBuffer(64 * 1024);
-        using var decoder = new TrackDecoder(libVlc, TrackAt(url, ShortTrack), ring);
+        using var decoder = subject.Create(TrackAt(url, ShortTrack), ring);
 
         var prepared = decoder.PrepareAsync().GetAwaiter().GetResult();
 
@@ -309,7 +413,7 @@ public static class DecodeChecks
     // A stream that dies mid-track is a failed track, not a finished one -
     // otherwise it ends quietly and collects a play count for audio nobody
     // heard.
-    private static void CutStreamFaults(LibVLC libVlc)
+    private static void CutStreamFaults(DecoderUnderTest subject)
     {
         using var server = new LoopbackMediaServer();
         var content = SyntheticWav.Build(SeekableTrack, SyntheticWav.Ramp());
@@ -317,20 +421,35 @@ public static class DecodeChecks
         server.CutBodyAt = content.Length / 4;
 
         var ring = new GaplessRingBuffer(8 * 1024 * 1024);
-        using var decoder = new TrackDecoder(libVlc, TrackAt(url, SeekableTrack), ring);
+        using var decoder = subject.Create(TrackAt(url, SeekableTrack), ring);
         using var drain = new Drain(ring);
 
         var faulted = new ManualResetEventSlim();
         decoder.Faulted += () => faulted.Set();
+
+        // Prepared first, deliberately. Starting a decoder that was never
+        // prepared also faults, and a check that accepts that fault is
+        // checking nothing: it passes without a byte of the stream having
+        // been read. The cut is a quarter of the way in, so the open itself
+        // is well clear of it and the fault under check is the one that
+        // happens mid-decode.
+        var prepared = decoder.PrepareAsync().GetAwaiter().GetResult();
+        if (prepared != DecodePrepareResult.Ready)
+            throw new CheckFailedException($"the track would not open before the cut: {prepared}");
 
         decoder.StartDecoding();
 
         if (!faulted.Wait(DecodeTimeout))
             throw new CheckFailedException("a stream cut mid-track should fault");
 
-        var partial = drain.Snapshot();
+        // Settled first: the fault and the last write into the ring are on
+        // the same thread, so a snapshot taken the instant Faulted fires can
+        // legitimately race the drain thread and see nothing at all.
+        drain.Settle();
+
+        var partial = InFixtureUnits(subject, drain.Snapshot());
         if (partial.Length == 0)
-            throw new CheckFailedException("no audio at all came out before the cut");
+            throw new CheckFailedException($"no audio at all came out before the cut ({decoder.BytesProduced} bytes decoded)");
 
         // What did arrive still has to be the real thing. A fabricated tail -
         // LibVLC's own habit when it is handed a clean end of stream - reads
@@ -347,7 +466,39 @@ public static class DecodeChecks
         Duration = duration,
     };
 
-    private static int BytesPerSecond() => (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
+    // Bytes as the fixtures themselves hold them: 16-bit stereo at the
+    // pipeline's rate. Everything decoded is narrowed to this before an
+    // oracle sees it, so every length and offset in this file means the same
+    // thing whatever canonical format the decoder under check pins the
+    // pipeline to. See InFixtureUnits.
+    private const int FixtureBytesPerFrame = 2 * (int)GaplessFormat.Channels;
+
+    private static int BytesPerSecond() => (int)GaplessFormat.SampleRate * FixtureBytesPerFrame;
+
+    // Whatever the decoder delivered, in the fixture's units.
+    //
+    // Narrowing packed 24 back to 16 is exact here rather than approximate,
+    // and that is a fact about the sources, not a tolerance: every fixture is
+    // 16-bit, so FFmpeg's widening is a shift of exactly eight bits
+    // (swresample scales S16 to S32 by 16, pack_s24 keeps the top three
+    // bytes) and dropping the low byte undoes it. A byte-for-byte oracle
+    // stays byte-for-byte, and a decoder that got the widening wrong fails it
+    // rather than being quietly rounded into passing.
+    private static byte[] InFixtureUnits(DecoderUnderTest subject, byte[] pcm)
+    {
+        if (subject.Format != PcmSampleFormat.S24)
+            return pcm;
+
+        var samples = pcm.Length / 3;
+        var narrowed = new byte[samples * 2];
+        for (var i = 0; i < samples; i++)
+        {
+            narrowed[i * 2] = pcm[i * 3 + 1];
+            narrowed[i * 2 + 1] = pcm[i * 3 + 2];
+        }
+
+        return narrowed;
+    }
 
     // The fixture's own samples, which is what the decoder should hand back
     // byte for byte: SyntheticWav writes at the pipeline's rate and channel
@@ -370,7 +521,7 @@ public static class DecodeChecks
     // the *audio arrives*, on the platform, after the wait. Held to the same
     // byte-for-byte oracle as an unthrottled stream, because being throttled
     // is not licence to return different audio.
-    private static void ThrottledStreamStillDecodes(LibVLC libVlc, bool sendsRetryAfter)
+    private static void ThrottledStreamStillDecodes(DecoderUnderTest subject, bool sendsRetryAfter)
     {
         using var server = new LoopbackMediaServer
         {
@@ -385,7 +536,7 @@ public static class DecodeChecks
         var wav = SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp());
         var url = server.Serve(wav, "rest/stream?id=throttled");
 
-        var decoded = DecodeFully(libVlc, new Track
+        var decoded = DecodeFully(subject, new Track
         {
             Title = "Throttled",
             Path = url,
@@ -412,14 +563,14 @@ public static class DecodeChecks
     // streams, and the loopback server here authenticated nothing, so it could
     // not express a replay at all. What has to be true, on the platform, is
     // that every request the pipeline makes carries its own fresh credential.
-    private static void ReplayGuardedStreamStillDecodes(LibVLC libVlc)
+    private static void ReplayGuardedStreamStillDecodes(DecoderUnderTest subject)
     {
         using var server = new LoopbackMediaServer { RequiresFreshNonce = true };
 
         var wav = SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp());
         var url = server.Serve(wav, "rest/stream?id=replay-guarded");
 
-        var decoded = WithSigningCredentials(new FreshNonceCredentials(), () => DecodeFully(libVlc, new Track
+        var decoded = WithSigningCredentials(new FreshNonceCredentials(), () => DecodeFully(subject, new Track
         {
             Title = "Replay guarded",
             Path = url,
@@ -438,13 +589,13 @@ public static class DecodeChecks
     // mandates and what makes EnsureSuccessStatusCode useless on this surface.
     // A prepare that "succeeds" on 130 bytes of JSON is the bug; a prepare that
     // fails is the fix.
-    private static void ProtocolErrorIsNotAudio(LibVLC libVlc)
+    private static void ProtocolErrorIsNotAudio(DecoderUnderTest subject)
     {
         using var server = new LoopbackMediaServer { RequiresFreshNonce = true };
         var url = server.Serve(SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp()), "rest/stream?id=refused");
 
         var ring = new GaplessRingBuffer(64 * 1024);
-        using var decoder = new TrackDecoder(libVlc, TrackAt(url, ShortTrack), ring);
+        using var decoder = subject.Create(TrackAt(url, ShortTrack), ring);
 
         var prepared = WithSigningCredentials(null, () => decoder.PrepareAsync().GetAwaiter().GetResult());
 
@@ -507,19 +658,28 @@ public static class DecodeChecks
         }
     }
 
-    private static byte[] DecodeFully(LibVLC libVlc, Track track)
+    // prepare: false is the golden path, not a variation on it.
+    // GaplessCoordinator calls PrepareAsync only when it is decoding a track
+    // ahead of the one playing; Play() - which is what pressing play reaches -
+    // constructs a decoder and calls StartDecoding on it directly. Every check
+    // here prepared first, so a decoder that could not start without one was
+    // caught by none of them while failing every press of play.
+    private static byte[] DecodeFully(DecoderUnderTest subject, Track track, bool prepare = true)
     {
         var ring = new GaplessRingBuffer(4 * 1024 * 1024);
-        using var decoder = new TrackDecoder(libVlc, track, ring);
+        using var decoder = subject.Create(track, ring);
         using var drain = new Drain(ring);
 
         var finished = new ManualResetEventSlim();
         decoder.Drained += () => finished.Set();
         decoder.Faulted += () => finished.Set();
 
-        var prepared = decoder.PrepareAsync().GetAwaiter().GetResult();
-        if (prepared != DecodePrepareResult.Ready)
-            throw new CheckFailedException($"the track would not open: {prepared}");
+        if (prepare)
+        {
+            var prepared = decoder.PrepareAsync().GetAwaiter().GetResult();
+            if (prepared != DecodePrepareResult.Ready)
+                throw new CheckFailedException($"the track would not open: {prepared}");
+        }
 
         decoder.StartDecoding();
 
@@ -529,7 +689,7 @@ public static class DecodeChecks
         // Drained fires when the decoder stops producing, which can be a beat
         // before the last write lands in the ring.
         drain.Settle();
-        return drain.Snapshot();
+        return InFixtureUnits(subject, drain.Snapshot());
     }
 
     // Pulls the ring dry on its own thread and keeps what came out. Without a

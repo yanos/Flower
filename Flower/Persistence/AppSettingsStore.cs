@@ -193,6 +193,23 @@ namespace Flower.Persistence
         // be overridden by hand-editing settings.json. Applied at startup in
         // App.axaml.cs the same way the equalizer is.
         public AudioTimingSettings AudioTiming { get; set; } = new();
+
+        // Which decoder turns a file into PCM - see DecoderElection, and
+        // docs/AUDIOPHILE-PLAN.md for why there are two.
+        //
+        // Hand-edited like AudioTiming above, and for a stronger reason than
+        // "no UI has been built yet": a picker in Settings would offer every
+        // listener a choice that only resolves one way on four of the five
+        // platform heads, because only macOS has a built flower_ffmpeg
+        // artifact so far (native/ffmpeg/README.md). Asking somebody to pick
+        // between a decoder and a decoder that silently is not there is worse
+        // than not asking. It becomes a real setting when the artifacts exist;
+        // until then FLOWER_DECODER overrides it per run for A/B.
+        //
+        // Read once, at startup: the format the whole pipeline carries follows
+        // from this, and nothing downstream of a running decoder can change
+        // format.
+        public TrackDecoderKind AudioDecoder { get; set; } = TrackDecoderKind.LibVlc;
     }
 
     public class ColumnState

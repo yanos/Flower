@@ -502,7 +502,7 @@ namespace Flower.Audio
         private bool OpenDevice()
         {
             var config = ma.device_config_init(ma_device_type.ma_device_type_playback);
-            config.playback.format = ma_format.ma_format_s16;
+            config.playback.format = MiniaudioFormatFor(GaplessFormat.SampleFormat);
             config.playback.channels = GaplessFormat.Channels;
             // During the first open, zero asks miniaudio for the endpoint's
             // native rate. The decoder is configured from that result before
@@ -515,7 +515,36 @@ namespace Flower.Audio
             // needs no managed thunk. It renders silence until AttachTo binds
             // a bridge to this device below, which happens before anything
             // can start the device.
-            var useBridge = NativeAudioBridge.IsAvailable && _outputStage.Timing.NativeBufferMs > 0;
+            //
+            // S16 only, and that is a real constraint rather than caution:
+            // flower_audio_bridge's transport fade walks its buffer as
+            // int16_t* (flower_audio_bridge_apply_envelope in
+            // native/miniaudio/impl.c), so handing it packed 24-bit PCM would
+            // not merely skip the fade, it would rewrite every sample as
+            // though three-byte frames were two-byte ones - noise, not audio.
+            //
+            // Unreachable today, because the bridge exists only where Flower
+            // builds its own miniaudio (Android and iOS) and neither has a
+            // flower_ffmpeg artifact yet, so the election there always settles
+            // on LibVLC and S16. It is gated here rather than left to that
+            // coincidence, because the coincidence ends the moment the mobile
+            // FFmpeg cross-builds land - and the failure it would cause is a
+            // native one, on the platform hardest to debug on. Falling back to
+            // the managed callback costs the GC-pause resilience the bridge
+            // was built for; teaching the envelope about the sample format is
+            // the fix, and it belongs in the same change as those builds.
+            var canUseBridgeFormat = GaplessFormat.SampleFormat == PcmSampleFormat.S16;
+            var useBridge = NativeAudioBridge.IsAvailable
+                && _outputStage.Timing.NativeBufferMs > 0
+                && canUseBridgeFormat;
+
+            if (NativeAudioBridge.IsAvailable && !canUseBridgeFormat)
+            {
+                _logger.LogWarning(
+                    "The native audio bridge renders 16-bit only; {Format} playback falls back to the managed render callback",
+                    GaplessFormat.SampleFormat);
+            }
+
             if (useBridge)
                 config.dataCallback = NativeAudioBridge.RenderCallback;
             else
@@ -567,6 +596,42 @@ namespace Flower.Audio
             const int deviceAllocationPadding = 4096;
             var device = (ma_device*)NativeMemory.Alloc((nuint)sizeof(ma_device) + deviceAllocationPadding);
             var result = ma.device_init(_context, &config, device);
+
+            // The one place the device gets a say in the sample format. It is
+            // asked for whatever the elected decoder can deliver (see
+            // DecoderElection), and a refusal here is what says the pipeline
+            // has to narrow back to S16 - which is a real answer rather than a
+            // failure, because every decoder can produce S16 and every device
+            // takes it.
+            //
+            // Only on the first open, and only downward. Later reopens keep
+            // the negotiated format for the same reason they keep the
+            // negotiated rate: current and armed decoders are already running
+            // and cannot change format underneath the ring they share.
+            if (result != ma_result.MA_SUCCESS
+                && !_hasNegotiatedFormat
+                && GaplessFormat.SampleFormat != PcmSampleFormat.S16)
+            {
+                _logger.LogWarning(
+                    "miniaudio refused a {Format} playback device ({Result}); falling back to 16-bit",
+                    GaplessFormat.SampleFormat, result);
+                GaplessFormat.ConfigureSampleFormat(PcmSampleFormat.S16);
+                config.playback.format = MiniaudioFormatFor(PcmSampleFormat.S16);
+
+                // Narrowing back to S16 puts the native bridge in reach again,
+                // and the callback has to be chosen before the device is
+                // initialised - so this is the last moment it can be changed.
+                // Without it, a device that refused 24-bit would cost the
+                // bridge as well, on exactly the platforms that need it most.
+                if (NativeAudioBridge.IsAvailable && _outputStage.Timing.NativeBufferMs > 0)
+                {
+                    useBridge = true;
+                    config.dataCallback = NativeAudioBridge.RenderCallback;
+                }
+
+                result = ma.device_init(_context, &config, device);
+            }
+
             if (result != ma_result.MA_SUCCESS)
             {
                 _logger.LogError("miniaudio device_init failed: {Result}", result);
@@ -581,19 +646,27 @@ namespace Flower.Audio
             {
                 var nativeSampleRate = device->sampleRate;
                 if (nativeSampleRate == 0)
-                {
                     _logger.LogWarning("miniaudio did not report a device sample rate; retaining {SampleRate}Hz", GaplessFormat.SampleRate);
-                }
                 else
-                {
                     GaplessFormat.ConfigureSampleRate(nativeSampleRate);
-                    // OpenDevice only runs while the output callback is
-                    // stopped, so replacing the stage cannot race it. EQ and
-                    // timing are applied immediately after IAudioManager
-                    // construction.
-                    _outputStage = new OutputStage(nativeSampleRate);
-                    _logger.LogInformation("Using the output device's native {SampleRate}Hz PCM rate", nativeSampleRate);
+
+                // Rebuilt only when it would actually be a different stage.
+                // Replacing it drops the EQ curve, the timing and the gain the
+                // caller set on it, which are re-applied right after
+                // IAudioManager construction and not again - so an
+                // unconditional replacement here would be a silent way to lose
+                // them on any path that reached this block without changing
+                // anything. OpenDevice only runs while the output callback is
+                // stopped, so a replacement cannot race the render path.
+                if (_outputStage.SampleRate != GaplessFormat.SampleRate
+                    || _outputStage.SampleFormat != GaplessFormat.SampleFormat)
+                {
+                    _outputStage = new OutputStage(GaplessFormat.SampleRate, GaplessFormat.SampleFormat);
                 }
+
+                _logger.LogInformation(
+                    "Rendering the output device's native {SampleRate}Hz at {Format}",
+                    GaplessFormat.SampleRate, GaplessFormat.SampleFormat);
 
                 _hasNegotiatedFormat = true;
             }
@@ -635,6 +708,13 @@ namespace Flower.Audio
             _activeDeviceId = ResolveActiveDeviceId(_outputDeviceId, GetOutputDevices());
             return true;
         }
+
+        // The canonical format in miniaudio's own terms. ma_format_s24 is
+        // packed three-byte little-endian, the same layout PcmSampleFormat.S24
+        // names and flower-ffmpeg's pack_s24 writes, so nothing converts
+        // between the ring and the device buffer.
+        internal static ma_format MiniaudioFormatFor(PcmSampleFormat format) =>
+            format == PcmSampleFormat.S24 ? ma_format.ma_format_s24 : ma_format.ma_format_s16;
 
         // What OpenDevice just ended up on: the explicit pick if there was
         // one, otherwise whichever device the OS currently calls default -

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 using LibVLCSharp.Shared;
 
+using Flower.Audio.Ffmpeg;
 using Flower.Logging;
 using Flower.Models;
 
@@ -150,9 +151,27 @@ namespace Flower.Audio
             ILogger<GaplessCoordinator>? logger = null,
             ILogger<TrackDecoder>? trackDecoderLogger = null,
             ILogger<VlcDiagnosticLog>? vlcLogger = null,
-            int stagingCapacityBytes = 0)
+            int stagingCapacityBytes = 0,
+            TrackDecoderKind decoderKind = TrackDecoderKind.LibVlc,
+            ILogger<FfmpegTrackDecoder>? ffmpegDecoderLogger = null)
             : this(sharedRing, (track, ring) => new TrackDecoder(libVLC, track, ring, trackDecoderLogger), logger, stagingCapacityBytes)
         {
+            if (decoderKind == TrackDecoderKind.Ffmpeg)
+            {
+                // No second core, and none of what it is for. The contention
+                // documented in this class's remarks is between two
+                // SetAudioCallbacks MediaPlayers on one LibVLC core; an
+                // FfmpegTrackDecoder owns a plain AVFormatContext and a thread
+                // of its own, so current and armed share nothing at all and
+                // there is nothing to isolate them from. The LibVLC handed in
+                // is still the process's, still used by everything else that
+                // wants one - it simply does no decoding this session.
+                _currentDecoderFactory = (track, ring) => new FfmpegTrackDecoder(track, ring, ffmpegDecoderLogger);
+                _armedDecoderFactory = _currentDecoderFactory;
+                logger?.LogInformation("Decoding through flower-ffmpeg at {Format}", GaplessFormat.SampleFormat);
+                return;
+            }
+
             _secondCore = new LibVLC();
             // The armed role's core is a second, independent LibVLC (see this
             // class's remarks), so it needs the dialog handlers set on it too -

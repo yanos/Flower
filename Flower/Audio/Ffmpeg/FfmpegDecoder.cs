@@ -4,6 +4,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
+using Microsoft.Extensions.Logging;
+
 namespace Flower.Audio.Ffmpeg
 {
     // What the caller wants the decoder to hand back. S24 is packed three-byte
@@ -86,6 +88,45 @@ namespace Flower.Audio.Ffmpeg
                 format.DurationMs < 0 ? null : TimeSpan.FromMilliseconds(format.DurationMs));
         }
 
+        // Whether this build can decode through the façade at all - i.e.
+        // whether flower_ffmpeg is present, loadable, and the ABI this
+        // assembly was compiled against.
+        //
+        // A question worth asking rather than assuming, because the answer is
+        // "no" on four of the five platform heads today: only macOS has a
+        // built artifact (see native/ffmpeg/README.md's status table). Asking
+        // it costs one P/Invoke, once, and the alternative is a
+        // DllNotFoundException thrown from a decode thread at the moment
+        // somebody presses play.
+        //
+        // Cached because a failure is permanent for the process: the resolver
+        // has already walked every candidate path by the time this returns.
+        public static bool IsAvailable => _isAvailable ??= ProbeAvailability();
+
+        private static bool? _isAvailable;
+
+        private static bool ProbeAvailability()
+        {
+            try
+            {
+                return FfmpegNative.AbiVersion() == FfmpegNative.ExpectedAbiVersion;
+            }
+            catch (DllNotFoundException)
+            {
+                return false;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return false;
+            }
+            catch (BadImageFormatException)
+            {
+                // A library built for the wrong architecture - a stale x64
+                // artifact on an arm64 machine, most likely.
+                return false;
+            }
+        }
+
         // Verified once rather than per open: a library whose ABI does not
         // match reads the format struct at the wrong offsets and reports
         // plausible nonsense instead of failing.
@@ -110,16 +151,61 @@ namespace Flower.Audio.Ffmpeg
             return new FfmpegDecoder(handle, stream: null, ownsStream: false, default);
         }
 
-        // formatHint names a demuxer to force (FFmpeg's short name, e.g.
-        // "mp4"), skipping the probe on a stream whose container the catalog
+        // formatHint names a demuxer to prefer (FFmpeg's short name, e.g.
+        // "mp4"), skipping the probe on a stream whose container the caller
         // already knows.
+        //
+        // A preference rather than a verdict: forcing a demuxer discards
+        // FFmpeg's probe, so a hint that is wrong about the bytes does not
+        // open slowly, it does not open at all. The hint's source is a
+        // catalog entry describing a file on a server's disk, and the bytes
+        // on the wire are whatever that server chose to send - so being wrong
+        // is an ordinary event, not a corrupt library. When the forced open
+        // fails the stream is rewound and opened again by probing, which is
+        // what would have happened with no hint at all.
         public static FfmpegDecoder OpenStream(Stream stream, FfmpegSampleFormat format,
                                                int sampleRate = 0, int channels = 0,
-                                               string? formatHint = null, bool ownsStream = false)
+                                               string? formatHint = null, bool ownsStream = false,
+                                               ILogger? logger = null)
         {
             ArgumentNullException.ThrowIfNull(stream);
             EnsureAbi();
 
+            if (formatHint is { Length: > 0 } && stream.CanSeek)
+            {
+                try
+                {
+                    // ownsStream deliberately false on this attempt: a failure
+                    // here is not the end of the stream's life, it is the
+                    // start of the second attempt on the same stream.
+                    return OpenStreamAs(stream, format, sampleRate, channels, formatHint, ownsStream: false);
+                }
+                catch (FfmpegDecodeException rejected)
+                {
+                    // Logged rather than swallowed: the fallback means a
+                    // mislabelled track plays, but the label is still wrong,
+                    // and this is the only place that ever finds out.
+                    logger?.LogWarning(
+                        rejected,
+                        "The {Hint} demuxer would not open this stream; probing for the real container instead",
+                        formatHint);
+
+                    // Back to where the forced attempt started reading. A
+                    // demuxer that refused the stream still consumed some of
+                    // it, and probing from the middle of a file finds nothing.
+                    stream.Seek(0, SeekOrigin.Begin);
+                }
+
+                return OpenStreamAs(stream, format, sampleRate, channels, formatHint: null, ownsStream);
+            }
+
+            return OpenStreamAs(stream, format, sampleRate, channels, formatHint, ownsStream);
+        }
+
+        private static FfmpegDecoder OpenStreamAs(Stream stream, FfmpegSampleFormat format,
+                                                  int sampleRate, int channels,
+                                                  string? formatHint, bool ownsStream)
+        {
             var state = new StreamState(stream);
             var self = GCHandle.Alloc(state);
             long size;

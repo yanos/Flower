@@ -29,10 +29,13 @@ namespace Flower.Audio.Ffmpeg
     // one thread - but the correlation problem is gone, not merely handled.
     //
     // Delivers GaplessFormat's canonical PCM, same as TrackDecoder, so it
-    // drops into the existing pipeline unchanged. Choosing the source's own
-    // format instead - the thing this decoder exists to make possible - is
-    // direct mode's job and needs the output device to have agreed to it
-    // first; see docs/AUDIOPHILE-PLAN.md.
+    // drops into the existing pipeline unchanged - but unlike TrackDecoder it
+    // can actually fill it: electing this decoder is what widens that format
+    // to 24 bits in the first place (see DecoderElection), and the request
+    // below is what asks the façade for them. Choosing the *source's* own rate
+    // and channel layout as well - no resample at all - is direct mode's job
+    // and needs the output device to have agreed to it first; see
+    // docs/AUDIOPHILE-PLAN.md.
     public sealed class FfmpegTrackDecoder : ITrackDecoder
     {
         // One decode read, and so also the granularity at which a retire or a
@@ -44,6 +47,17 @@ namespace Flower.Audio.Ffmpeg
         private readonly RetargetableRingWriter _writer;
         private readonly Func<bool> _isRetired;
         private readonly ILogger<FfmpegTrackDecoder>? _logger;
+
+        // Captured once, at construction, rather than read live from
+        // GaplessFormat on each use. In the app the two are the same thing -
+        // the canonical format is negotiated before any decoder exists and
+        // frozen after - but a decoder that re-reads it is a decoder whose
+        // frame size can change halfway through a track, which is not a state
+        // anything downstream is written for. Taking it as a parameter also
+        // lets Flower.DeviceChecks run one decoder at S16 and another at S24
+        // in the same process without moving a global out from under either.
+        private readonly PcmSampleFormat _sampleFormat;
+        private readonly int _bytesPerFrame;
 
         private FfmpegDecoder? _decoder;
         private SeekableHttpStream? _remoteStream;
@@ -65,9 +79,13 @@ namespace Flower.Audio.Ffmpeg
         public event Action? Faulted;
         public event Action<long>? SeekSettled;
 
-        public FfmpegTrackDecoder(Track track, GaplessRingBuffer initialTarget, ILogger<FfmpegTrackDecoder>? logger = null)
+        public FfmpegTrackDecoder(Track track, GaplessRingBuffer initialTarget,
+                                  ILogger<FfmpegTrackDecoder>? logger = null,
+                                  PcmSampleFormat? sampleFormat = null)
         {
             Track = track;
+            _sampleFormat = sampleFormat ?? GaplessFormat.SampleFormat;
+            _bytesPerFrame = GaplessFormat.BytesPerSampleOf(_sampleFormat) * (int)GaplessFormat.Channels;
             _writer = new RetargetableRingWriter(initialTarget);
             _isRetired = () => Volatile.Read(ref _retired) == 1;
             _logger = logger;
@@ -117,14 +135,19 @@ namespace Flower.Audio.Ffmpeg
                 return DecodePrepareResult.Retired;
             }
 
+            LogOpened(path);
+
+            return DecodePrepareResult.Ready;
+        }
+
+        private void LogOpened(string path)
+        {
             var format = _decoder!.Format;
             _logger?.LogInformation(
                 "Opened {Path}: Source={SourceRate}Hz/{SourceDepth}-bit/{SourceChannels}ch Delivering={Rate}Hz/{Format}/{Channels}ch Duration={DurationMs}ms",
                 LogPath.Short(path), format.SourceSampleRate, format.SourceBitDepth, format.SourceChannels,
                 format.SampleRate, format.SampleFormat, format.Channels,
                 format.Duration?.TotalMilliseconds ?? -1);
-
-            return DecodePrepareResult.Ready;
         }
 
         // Same budget as TrackDecoder's parse, and for the same reason: it is
@@ -145,33 +168,39 @@ namespace Flower.Audio.Ffmpeg
                 _remoteStream.ProbeAsync(cancellationToken).GetAwaiter().GetResult();
                 _decoder = FfmpegDecoder.OpenStream(
                     _remoteStream,
-                    FfmpegSampleFormat.S16,
+                    DecoderElection.FfmpegFormatFor(_sampleFormat),
                     (int)GaplessFormat.SampleRate,
                     (int)GaplessFormat.Channels,
-                    DemuxerHintFor(Track));
+                    DemuxerHintFor(Track),
+                    logger: _logger);
             }
             else
             {
                 _decoder = FfmpegDecoder.OpenPath(
                     path,
-                    FfmpegSampleFormat.S16,
+                    DecoderElection.FfmpegFormatFor(_sampleFormat),
                     (int)GaplessFormat.SampleRate,
                     (int)GaplessFormat.Channels);
             }
         }
 
+        // A prepare is an optimisation, not a precondition. GaplessCoordinator
+        // calls PrepareAsync only on the decode-ahead path; pressing play on a
+        // track goes straight from Play() to here, and LibVLC's TrackDecoder
+        // supports that by doing its own open inside StartDecoding. A decoder
+        // that instead required a prepare faulted on every single press of
+        // play, and only tracks that happened to be armed ahead of time ever
+        // opened at all - the golden path was the one path that never worked.
+        //
+        // So an unprepared start opens on the decode thread rather than here:
+        // this runs under GaplessCoordinator's lock, and opening a remote
+        // track is a network round trip.
         public void StartDecoding()
         {
             if (Interlocked.Exchange(ref _started, 1) == 1)
                 return;
             if (Volatile.Read(ref _retired) == 1)
                 return;
-            if (_decoder is null)
-            {
-                _logger?.LogWarning("StartDecoding() for {Path} without a successful prepare", LogPath.Short(Track.Path));
-                Faulted?.Invoke();
-                return;
-            }
 
             _thread = new Thread(DecodeLoop)
             {
@@ -181,9 +210,52 @@ namespace Flower.Audio.Ffmpeg
             _thread.Start();
         }
 
+        // The open PrepareAsync would have done, on the decode thread, for a
+        // decoder that was started without one. Reports a failure the same way
+        // a failed decode does - Faulted - because that is the only channel a
+        // started decoder has left; PrepareAsync's richer DecodePrepareResult
+        // has no caller here.
+        private bool OpenForUnpreparedStart()
+        {
+            if (Track.Path is not { } path)
+            {
+                _logger?.LogWarning("StartDecoding() for \"{Title}\" which has no local path", Track.Title);
+                Faulted?.Invoke();
+                return false;
+            }
+
+            using var timeout = new CancellationTokenSource(OpenTimeoutMs);
+            try
+            {
+                Open(path, timeout.Token);
+            }
+            catch (Exception ex)
+            {
+                if (Volatile.Read(ref _retired) == 1)
+                    return false;
+
+                _logger?.LogWarning(ex, "Could not open {Path} for decoding", LogPath.Short(path));
+                Faulted?.Invoke();
+                return false;
+            }
+
+            if (Volatile.Read(ref _retired) == 1)
+            {
+                Retire();
+                return false;
+            }
+
+            LogOpened(path);
+            return true;
+        }
+
         private void DecodeLoop()
         {
             var buffer = new byte[ReadBufferBytes];
+
+            if (_decoder is null && !OpenForUnpreparedStart())
+                return;
+
             var decoder = _decoder!;
 
             try
@@ -215,7 +287,7 @@ namespace Flower.Audio.Ffmpeg
                             _logger?.LogInformation(
                                 "Decode drain for {Path}: TaggedDurationMs={TaggedDurationMs} DecodedMs={DecodedMs} BytesProduced={BytesProduced}",
                                 LogPath.Short(Track.Path), Track.Duration.TotalMilliseconds,
-                                BytesProduced / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame) * 1000,
+                                BytesProduced / (double)(GaplessFormat.SampleRate * _bytesPerFrame) * 1000,
                                 BytesProduced);
                             Drained?.Invoke();
                         }
@@ -353,19 +425,35 @@ namespace Flower.Audio.Ffmpeg
                 ? BytesForSeconds(Track.Duration.TotalSeconds)
                 : long.MaxValue;
 
-        private static long BytesForSeconds(double seconds) =>
-            (long)(seconds * GaplessFormat.SampleRate) * GaplessFormat.BytesPerFrame;
+        private long BytesForSeconds(double seconds) =>
+            (long)(seconds * GaplessFormat.SampleRate) * _bytesPerFrame;
 
         private static bool IsRemote(string path) =>
             path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
-        // FFmpeg's own demuxer names, not LibVLC's module names. Skipping the
-        // probe on a container the catalog already knows costs nothing and
-        // saves a round trip's worth of reads on a remote track; unlike the
-        // LibVLC hint this replaces, it is not working around a demuxer that
-        // refuses unseekable input, because libavformat's is the one that
-        // never refused.
+        // FFmpeg's own demuxer names, not LibVLC's module names, and named
+        // for the same containers TrackDecoder.DemuxHintFor names and no
+        // others.
+        //
+        // This used to list mp3, flac and wav as well, on the reasoning that
+        // skipping the probe saves a round trip on a remote track. It cost an
+        // album instead. The extension is the *catalog's* (Child.Suffix, kept
+        // as OriginFileExtension), and the catalog describes the file on the
+        // server's disk - not necessarily the bytes on the wire, which a
+        // server is free to transcode, and not necessarily right in the first
+        // place. Forcing a demuxer discards FFmpeg's probe entirely, so a
+        // suffix that disagrees with the bytes is not a slow open, it is
+        // "Failed to find two consecutive MPEG audio frames" and a track that
+        // will not play at all. TrackDecoder's own hint already carried this
+        // conclusion in its comment - "forcing the wrong demuxer is worse than
+        // probing" - and this is that lesson, learned twice.
+        //
+        // The MP4 family stays because there the hint buys something a probe
+        // cannot: a moov atom at the end of a stream that cannot be seeked.
+        // Even there the force is a preference rather than a verdict - see
+        // FfmpegDecoder.OpenStream, which falls back to probing when a forced
+        // demuxer will not open the stream.
         internal static string? DemuxerHintFor(Track track)
         {
             var extension = track.OriginFileExtension?.TrimStart('.');
@@ -375,9 +463,6 @@ namespace Flower.Audio.Ffmpeg
             return extension?.ToLowerInvariant() switch
             {
                 "m4a" or "m4b" or "mp4" or "alac" => "mp4",
-                "mp3" => "mp3",
-                "flac" => "flac",
-                "wav" => "wav",
                 _ => null,
             };
         }

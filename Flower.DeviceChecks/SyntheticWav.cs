@@ -24,6 +24,18 @@ public static class SyntheticWav
 {
     private const int HeaderSize = 44;
 
+    // A fixture is a *source file*, so its width is a property of the file
+    // and not of whatever the pipeline happens to be decoding into today.
+    // Following GaplessFormat here was wrong in a way that only showed up
+    // once the canonical format could be something other than S16: the header
+    // then described 24-bit frames while FillData still wrote 16-bit samples
+    // into them, so every frame carried two bytes of ramp and two of silence
+    // and every byte-exact check read as corrupt audio. 16-bit is also what
+    // every committed fixture in Fixtures/ is, and what sampleAt's own return
+    // type says.
+    private const int BytesPerSample = 2;
+    private const int BytesPerFrame = BytesPerSample * (int)GaplessFormat.Channels;
+
     public static Func<int, short> Marker(byte value) => _ => value;
 
     public static Func<int, short> Ramp() => frame => unchecked((short)frame);
@@ -38,7 +50,7 @@ public static class SyntheticWav
     public static byte[] Build(TimeSpan duration, Func<int, short> sampleAt)
     {
         var frameCount = (int)(duration.TotalSeconds * GaplessFormat.SampleRate);
-        var dataSize = frameCount * GaplessFormat.BytesPerFrame;
+        var dataSize = frameCount * BytesPerFrame;
         var buffer = new byte[HeaderSize + dataSize];
 
         WriteHeader(buffer, dataSize);
@@ -60,9 +72,9 @@ public static class SyntheticWav
         BinaryPrimitives.WriteInt16LittleEndian(span[20..], 1); // AudioFormat = PCM
         BinaryPrimitives.WriteInt16LittleEndian(span[22..], (short)GaplessFormat.Channels);
         BinaryPrimitives.WriteInt32LittleEndian(span[24..], (int)GaplessFormat.SampleRate);
-        BinaryPrimitives.WriteInt32LittleEndian(span[28..], (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame); // byte rate
-        BinaryPrimitives.WriteInt16LittleEndian(span[32..], (short)GaplessFormat.BytesPerFrame); // block align
-        BinaryPrimitives.WriteInt16LittleEndian(span[34..], (short)(GaplessFormat.BytesPerSample * 8)); // bits per sample
+        BinaryPrimitives.WriteInt32LittleEndian(span[28..], (int)GaplessFormat.SampleRate * BytesPerFrame); // byte rate
+        BinaryPrimitives.WriteInt16LittleEndian(span[32..], (short)BytesPerFrame); // block align
+        BinaryPrimitives.WriteInt16LittleEndian(span[34..], (short)(BytesPerSample * 8)); // bits per sample
 
         Encoding.ASCII.GetBytes("data").CopyTo(span[36..]);
         BinaryPrimitives.WriteInt32LittleEndian(span[40..], dataSize);
@@ -73,7 +85,7 @@ public static class SyntheticWav
         for (var frame = 0; frame < frameCount; frame++)
         {
             var sample = sampleAt(frame);
-            var frameSpan = data.Slice(frame * GaplessFormat.BytesPerFrame, GaplessFormat.BytesPerFrame);
+            var frameSpan = data.Slice(frame * BytesPerFrame, BytesPerFrame);
             BinaryPrimitives.WriteInt16LittleEndian(frameSpan[..2], sample);
             BinaryPrimitives.WriteInt16LittleEndian(frameSpan[2..4], sample);
         }

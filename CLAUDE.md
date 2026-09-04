@@ -178,6 +178,36 @@ symptom was "the track has a length and plays nothing"). See
 docs/OPEN-INTERNET-REVIEW.md #2b for the whole chain and the three places it is
 fixed.
 
+The whole suite runs **once per decoder this platform has** (`DecoderUnderTest`,
+`AvailableDecoders`), not once. It was written against `TrackDecoder` by name,
+so electing `FfmpegTrackDecoder` moved the entire streaming path out from under
+every check here while all of them stayed green - and the first thing that
+happened was an album playing nothing on a phone. Each decoder is handed its own
+sample format rather than the run moving `GaplessFormat`'s process-wide one, so
+LibVLC's S16 and FFmpeg's S24 coexist without either reaching the rest of the
+test process.
+
+Another is that a decoder must play when started the way pressing play starts
+one. `GaplessCoordinator.PrepareAsync` is called only on the decode-ahead path;
+`Play()` constructs a decoder and calls `StartDecoding()` on it directly, which
+`TrackDecoder` supports by doing its own open there. Every check here prepared
+first, so `FfmpegTrackDecoder` requiring a prepare faulted on every press of
+play - only tracks that happened to be armed ahead of time opened at all - and
+not one check noticed. `... plays the way pressing play plays it` is that shape,
+per fixture per decoder, and `FfmpegTrackDecoder.StartDecoding` now opens on its
+decode thread when no prepare has happened.
+
+One of those checks is that the catalogued extension is not a fact about the
+bytes. `OriginFileExtension` is `Child.Suffix` - it describes a file on the
+server's disk, and what arrives is whatever that server chose to send. Both
+decoders take it as a demuxer hint, and forcing a demuxer discards the probe
+entirely, so a suffix that disagrees with the bytes is not a slow open, it is a
+track that will not play at all. `FfmpegTrackDecoder.DemuxerHintFor` therefore
+names only the MP4 family (where a hint buys something a probe cannot: a moov
+atom at the end of an unseekable stream), exactly as `TrackDecoder.DemuxHintFor`
+already did, and `FfmpegDecoder.OpenStream` rewinds and probes when even that
+hint will not open the stream.
+
 CI runs the same checks per-OS in the `decode-checks` job, which installs VLC
 for them. The two runs are meant to be comparable: when they disagree, the
 difference is the platform. Android has no head yet.
@@ -232,7 +262,13 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 
 **Album art is fetched in batches** (`CoverArtBatch`, `POST /api/flower/v1/cover-art/batch`): a grid asks for one cover per tile, and a library of 1400 albums is 1400 requests during one cold scroll - more than any per-source budget worth having, and when that budget ran out what got refused was playback. `AlbumArtLoader` coalesces a viewport's worth of misses over a 40ms debounce into one request of up to 32 ids; a peer that cannot answer one degrades to the old request-per-album path. Deliberately on Flower's own surface rather than `/rest`, which is a published protocol other clients implement. See `docs/OPEN-INTERNET-REVIEW.md` #2b.
 
-**FFmpeg façade** (`native/ffmpeg/`): `flower-ffmpeg`, an eight-function C façade over `avformat`/`avcodec`/`avutil`/`swresample`, plus `Flower/Audio/Ffmpeg/`'s `FfmpegDecoder` and `FfmpegTrackDecoder : ITrackDecoder`. It exists because LibVLC's `amem` seam truncates every track to 16 bits whatever format is requested — see `docs/AUDIOPHILE-PLAN.md`. Built, not restored: run `native/ffmpeg/macos/build.sh` before the `RequiresFfmpeg` tests, or filter them out. **Nothing routes through it yet** — `TrackDecoder` is still the app's decoder, and only macOS is built. Read `native/ffmpeg/README.md` before touching it: the per-platform status and the LGPL-only constraint on any shipping build are both there.
+**FFmpeg façade** (`native/ffmpeg/`): `flower-ffmpeg`, an eight-function C façade over `avformat`/`avcodec`/`avutil`/`swresample`, plus `Flower/Audio/Ffmpeg/`'s `FfmpegDecoder` and `FfmpegTrackDecoder : ITrackDecoder`. It exists because LibVLC's `amem` seam truncates every track to 16 bits whatever format is requested — see `docs/AUDIOPHILE-PLAN.md`. Built, not restored: run `native/ffmpeg/macos/build.sh` before the `RequiresFfmpeg` tests, or filter them out. Read `native/ffmpeg/README.md` before touching it: the per-platform status and the LGPL-only constraint on any shipping build are both there.
+
+**The decoder is elected, and the election decides the bit depth** (`DecoderElection`, `GaplessFormat`, `PcmSampleFormat`): `AppSettings.AudioDecoder` names LibVLC or FFmpeg, `FLOWER_DECODER` overrides it per run, and asking for a decoder this platform has no artifact for falls back to LibVLC with a warning rather than throwing from a decode thread. `TrackDecoder` is still the default; only macOS has a built façade.
+
+The canonical PCM format follows from that choice — LibVLC pins the pipeline to S16 because `amem` hardcodes S16N and ignores the requested fourcc, FFmpeg widens it to packed S24 — and `MiniaudioSink` gets a veto: a device that refuses `ma_format_s24` narrows it back and reopens. Negotiated once at startup and frozen, like the sample rate, because a decoder already open cannot change format. `PcmSampleFormat` stops at S24 deliberately: `OutputStage` works in float, whose mantissa is exactly 24 bits, so S32 would be a widening that quietly narrows again.
+
+Two consequences worth knowing before touching the render path. `OutputStage`'s dither and clamp are the destination format's, not S16 constants. And `flower_audio_bridge`'s fade walks its buffer as `int16_t*`, so `MiniaudioSink` refuses the native bridge at S24 and falls back to the managed callback — unreachable today (the bridge is Android/iOS only, where FFmpeg has no artifact) but gated rather than left to that coincidence.
 
 ## UI Structure
 

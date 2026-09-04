@@ -304,10 +304,132 @@ against an **LGPL-only** FFmpeg - MacPorts' and Homebrew's are GPL-enabled and
 are development-only. `native/ffmpeg/README.md` carries the per-platform
 status table and the licensing constraint in full.
 
-Nothing routes through this decoder yet. `TrackDecoder` remains the decoder
-the app uses; `FfmpegTrackDecoder` is selectable behind `ITrackDecoder` and is
-what direct mode will elect once the format policy below is built and the
-remaining platforms are proven.
+### Step three, built: a pipeline that can carry what the decoder delivers
+
+Moving the ceiling out of LibVLC was not the same as removing it.
+`GaplessFormat.BytesPerSample` was `const int = 2`, and the ring buffer, the
+feeder, the render callback, the position arithmetic and every fade computed
+off it - so a 24-bit decode would have been narrowed one stage later by the
+pipeline itself, and the only thing that changed would have been which
+component did the truncating. `FfmpegDecoderTests` proved the decoder could
+carry 24 bits; nothing proved the pipeline could, because it could not.
+
+The canonical format is now negotiated once at startup and frozen for the
+session, the same way the sample rate already was:
+
+- **The decoder chooses it.** `DecoderElection.CanonicalFormatFor` maps LibVLC
+  to S16 and flower-ffmpeg to S24. That direction is forced rather than
+  preferred: amem hardcodes S16N and never reads back the fourcc it was asked
+  for, so a pipeline carrying 24 bits over the LibVLC decoder would be carrying
+  eight zeroes and calling it hi-res.
+- **The device gets a veto, not a vote.** `MiniaudioSink.OpenDevice` asks for
+  `ma_format_s24`, and a refusal narrows the pipeline back to S16 and re-opens.
+  That is a real answer rather than a failure: every decoder produces S16 and
+  every device takes it.
+- **Frozen afterwards.** A decoder already open cannot change format, so a
+  device change mid-session keeps the negotiated one - the same rule, and the
+  same `_hasNegotiatedFormat` guard, the sample rate has always had.
+
+`PcmSampleFormat` stops at S24 on purpose. `OutputStage` does its arithmetic in
+float, and a float mantissa holds 24 bits exactly and no more, so S24 is the
+widest integer format that survives the round trip bit-identically; a true S32
+source would have its bottom eight bits eaten by the EQ and gain stage - a
+widening that quietly narrows again. F32 would avoid that and buy nothing, as
+every PCM source a music library contains is 16- or 24-bit integer.
+
+`OutputStage`'s dither and clamp move with the format rather than staying at
+S16 constants, which is most of what the widening is worth: the requantisation
+noise floor drops by 48dB, and a clamp left at ±32767 would have hard-limited
+every 24-bit sample above -48dBFS. `CanonicalFormatTests` holds both, plus the
+packed-S24 sign extension - three bytes carry no sign bit in the 32-bit sense,
+so a negative sample read without it comes back as full-scale positive noise.
+
+**One thing this cost, deliberately.** `flower_audio_bridge`'s transport fade
+walks its buffer as `int16_t*`, so it cannot render packed 24-bit PCM - it
+would rewrite every sample as though three-byte frames were two-byte ones.
+`MiniaudioSink` therefore refuses the bridge at S24 and falls back to the
+managed render callback. Unreachable today, because the bridge exists only on
+Android and iOS and neither has a flower_ffmpeg artifact; gated anyway, because
+that coincidence ends the moment the mobile cross-builds land and the failure
+would be a native one on the platforms hardest to debug on. Teaching
+`flower_audio_bridge_apply_envelope` about the sample format belongs in the
+same change as those builds.
+
+### The decoder is now electable
+
+`AppSettings.AudioDecoder` picks it, `FLOWER_DECODER` overrides that per run,
+and `DecoderElection.Resolve` turns either into the decoder that will actually
+run - falling back to LibVLC with a warning when `flower_ffmpeg` is not
+loadable, which is the ordinary state on four of the five heads.
+
+Hand-edited rather than given a picker in Settings, and not only because no UI
+has been built: a picker would offer every listener a choice that resolves one
+way everywhere but macOS. It becomes a real setting when the artifacts exist.
+
+Verified end to end on macOS: a 24-bit/48kHz source decoded through
+`FfmpegTrackDecoder` reaches the shared ring bit-identically, with 95,624 of
+96,000 low bytes non-zero - the sub-16-bit content is genuinely present rather
+than zero-padded.
+
+`TrackDecoder` is still the default, and stays the default until FFmpeg has
+listening hours behind it.
+
+### What electing it broke, and what that says about the checks
+
+The first real library it met was a self-hosted server over the LAN, and a
+track would not open: *"Failed to find two consecutive MPEG audio frames"*,
+`Invalid data found when processing input`. Every test in the repo was green,
+including `Flower.DeviceChecks`, whose entire reason for existing is to answer
+"does this platform actually turn a track into the right audio?" - because
+`DecodeChecks` named `TrackDecoder` in its constructor calls. Electing a
+different decoder moved open, probe, range requests, seek and fault out from
+under all 42 of them at once, and nothing said so.
+
+So the suite now runs once per decoder the platform has (`DecoderUnderTest`),
+which is the standing rule this initiative should be held to: a decoder nobody
+checks is a decoder nobody has checked. Each subject is handed its own sample
+format rather than the run moving `GaplessFormat`'s process-wide one - which
+also closes the follow-up recorded here earlier, since the format is now
+injected at the point that actually needed it (`FfmpegTrackDecoder`'s
+constructor) rather than read from a static mid-decode.
+
+Running them found four things:
+
+1. **The demuxer hint was being forced, not preferred.** `DemuxerHintFor`
+   listed mp3, flac and wav alongside mp4, on the reasoning that skipping the
+   probe saves a round trip on a remote track. But the extension comes from
+   the *catalog* (`Child.Suffix`), which describes a file on a server's disk -
+   not the bytes on the wire, which a server is free to transcode, and not
+   necessarily right in the first place. Forcing a demuxer discards FFmpeg's
+   probe entirely, so a wrong suffix is not a slow open, it is a track that
+   never plays. `TrackDecoder.DemuxHintFor` already carried this conclusion in
+   its own comment - "forcing the wrong demuxer is worse than probing" - and
+   this is that lesson learned twice. The hint is now MP4-only, and even that
+   one falls back to probing (`FfmpegDecoder.OpenStream` rewinds and retries),
+   with a warning logged so a mislabelled track is still *reported* rather than
+   silently rescued.
+2. **`SyntheticWav` followed the canonical format.** It is a *source file*
+   generator, but it sized its frames from `GaplessFormat.BytesPerFrame` - so
+   the moment that could be something other than S16 it wrote a 24-bit header
+   over 16-bit samples, and every byte-exact check read corrupt audio. Pinned
+   to 16 bits, which is what its `Func<int, short>` said all along.
+3. **The cut-stream check passed vacuously for any decoder.** It called
+   `StartDecoding()` without preparing first, and starting an unprepared
+   decoder also faults - so the check was satisfied without a byte of the
+   stream having been read.
+4. **Two checks raced under load.** The seek check let the decoder finish the
+   whole track before seeking it (a 10s WAV off a loopback socket decodes in
+   a fraction of a second), so the seek arrived at a thread that had already
+   exited; it now holds the decoder on backpressure with a ring smaller than
+   the track, which is also the state it is in during real playback. The cut
+   check snapshotted the drain the instant `Faulted` fired, racing the last
+   write. Both only failed in the full suite, on a busy machine.
+
+None of those four is the field failure's root cause with certainty - that one
+is (1) if the server sent bytes that were not what the catalog said, which is
+what the error message describes. The check that would have caught it now
+exists per format and per decoder: *"decodes when the catalog has the wrong
+extension for it"*, which fails 10 ways against the old hint table.
 
 **Direct-mode format policy:** choose the track's native sample rate, bit depth
 and channel layout when the selected output device accepts that exact format in
@@ -336,6 +458,32 @@ dither and any crossfade. Enabling one of those features opts into the managed
 float/DSP path and therefore is not bit-perfect. DSD is still out of scope for
 this decoder path: it must be explicitly converted to PCM, not represented as
 24-bit passthrough.
+
+A second round, after the first fix still played nothing on a Mac. The log said
+`StartDecoding() ... without a successful prepare` on every track, and the one
+track that did open was `Armed=`, decoding 17MB into a staging ring while
+`Current=null` and the sink rendered silence.
+
+`GaplessCoordinator` calls `PrepareAsync` on one path only - decode-ahead.
+`Play()`, which is what pressing play reaches, constructs a decoder and calls
+`StartDecoding()` on it. `TrackDecoder` supports that because its open *is*
+`StartDecoding` (`EnsureMedia` + `MediaPlayer.Play`); prepare is a parse it can
+skip. `FfmpegTrackDecoder` put the whole open in `PrepareAsync`, so it faulted
+instantly on every press of play, and only a track lucky enough to be armed
+ahead of time ever opened. The golden path was the one path that never worked.
+
+Two things follow. `StartDecoding` opens on its own decode thread when no
+prepare has happened - it runs under the coordinator's lock, so it cannot open a
+remote track inline. And the checks now include `plays the way pressing play
+plays it`: the same streamed decode with no prepare, per fixture per decoder.
+Against the faulting version it fails ten times on FFmpeg and passes on LibVLC,
+which is the whole asymmetry in one line.
+
+The lesson generalises past this decoder. `ITrackDecoder` documents what each
+method returns and says nothing about which are mandatory, so "prepare is
+optional" lived only in `TrackDecoder`'s implementation - and every check here
+called both in the same order, which is exactly the order that hides the
+question.
 
 ## 6. True sample-accurate gapless — Done
 

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 
 using LibVLCSharp.Shared;
 
+using Flower.Audio.Ffmpeg;
 using Flower.Logging;
 using Flower.Models;
 
@@ -53,8 +54,10 @@ namespace Flower.Audio
             ILogger<GaplessAudioManager> logger,
             ILogger<GaplessCoordinator>? coordinatorLogger = null,
             ILogger<TrackDecoder>? trackDecoderLogger = null,
-            ILogger<VlcDiagnosticLog>? vlcLogger = null)
-            : this(StartSink(sink), libVLC, sink, logger, coordinatorLogger, trackDecoderLogger, vlcLogger)
+            ILogger<VlcDiagnosticLog>? vlcLogger = null,
+            TrackDecoderKind decoderKind = TrackDecoderKind.LibVlc,
+            ILogger<FfmpegTrackDecoder>? ffmpegDecoderLogger = null)
+            : this(StartSink(sink, decoderKind), libVLC, sink, logger, coordinatorLogger, trackDecoderLogger, vlcLogger, decoderKind, ffmpegDecoderLogger)
         {
         }
 
@@ -65,18 +68,35 @@ namespace Flower.Audio
             ILogger<GaplessAudioManager> logger,
             ILogger<GaplessCoordinator>? coordinatorLogger,
             ILogger<TrackDecoder>? trackDecoderLogger,
-            ILogger<VlcDiagnosticLog>? vlcLogger)
-            : this(sharedRing, new GaplessCoordinator(libVLC, sharedRing, coordinatorLogger, trackDecoderLogger, vlcLogger), sink, logger, sinkAlreadyStarted: true)
+            ILogger<VlcDiagnosticLog>? vlcLogger,
+            TrackDecoderKind decoderKind,
+            ILogger<FfmpegTrackDecoder>? ffmpegDecoderLogger)
+            : this(sharedRing,
+                   new GaplessCoordinator(libVLC, sharedRing, coordinatorLogger, trackDecoderLogger, vlcLogger,
+                                          decoderKind: decoderKind, ffmpegDecoderLogger: ffmpegDecoderLogger),
+                   sink, logger, sinkAlreadyStarted: true)
         {
         }
 
-        private static GaplessRingBuffer StartSink(IAudioSink sink)
+        // The whole of the canonical format's ordering, in one place because
+        // getting it wrong is silent: the sample format has to be settled
+        // before the sink opens a device (that open is the device's chance to
+        // refuse it) and before any decoder is constructed against it, and the
+        // sink's Start is also what settles the rate. Everything downstream -
+        // the coordinator, its staging rings, every decoder - is built after
+        // this returns.
+        private static GaplessRingBuffer StartSink(IAudioSink sink, TrackDecoderKind decoderKind)
         {
-            // The device tells MiniaudioSink its native rate during Start.
-            // Allocate for the conservative 48k fallback first; 44.1k gets a
-            // little more than two seconds of headroom, higher-rate devices a
-            // little less, without delaying the native-rate negotiation.
-            var ring = new GaplessRingBuffer(2 * (int)GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerFrame);
+            GaplessFormat.ConfigureSampleFormat(DecoderElection.CanonicalFormatFor(decoderKind));
+
+            // The device tells MiniaudioSink its native rate and settles the
+            // sample format during Start, which is after this - so both are
+            // sized for the worst case rather than for what is configured
+            // right now. The conservative 48k fallback gives 44.1k a little
+            // more than two seconds of headroom and higher-rate devices a
+            // little less; MaxBytesPerFrame keeps that depth from halving if
+            // the format then negotiates up to 24-bit.
+            var ring = new GaplessRingBuffer(2 * (int)GaplessFormat.DefaultSampleRate * GaplessFormat.MaxBytesPerFrame);
             sink.Start(ring);
             return ring;
         }
