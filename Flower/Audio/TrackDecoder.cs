@@ -467,7 +467,7 @@ namespace Flower.Audio
                 ? new Media(_libVLC, path, FromType.FromLocation)
                 : new Media(_libVLC, path);
 
-            ApplyNetworkOptions(_media, path);
+            ApplyNetworkOptions(_media, path, Track, _logger);
             return _media;
         }
 
@@ -493,7 +493,7 @@ namespace Flower.Audio
         // not have (see LibraryDownloadService for the deliberate kind).
         private const int RemoteNetworkCachingMs = 10_000;
 
-        private static void ApplyNetworkOptions(Media media, string path)
+        private static void ApplyNetworkOptions(Media media, string path, Track track, ILogger<TrackDecoder>? logger)
         {
             if (!path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
                 && !path.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
@@ -508,6 +508,51 @@ namespace Flower.Audio
             // the row is skipped as unplayable. Reconnecting is the difference
             // between a gap and a song the listener never heard.
             media.AddOption(":http-reconnect");
+
+            if (DemuxHintFor(track) is { } demux)
+            {
+                media.AddOption($":demux={demux}");
+                logger?.LogDebug("Streaming {Path} with the {Demux} demuxer rather than letting LibVLC probe for one",
+                                 LogPath.Short(path), demux);
+            }
+            else
+            {
+                logger?.LogDebug("Streaming {Path} with no demuxer hint - container unknown ({Extension})",
+                                 LogPath.Short(path), track.OriginFileExtension ?? "none recorded");
+            }
+        }
+
+        // Which demuxer LibVLC should use, when guessing is the thing that has
+        // been going wrong.
+        //
+        // A local file tells LibVLC what it is twice over - the extension in
+        // the path and the bytes themselves - and probing gets it right. A
+        // stream URL is /rest/stream?id=<hex>: no extension, nothing to go on
+        // but the bytes and a Content-Type header. Desktop LibVLC still lands
+        // on the mp4 demuxer for an m4a and plays it, seeking straight to the
+        // file's mdat to do it. iOS's build does not: it reads from the front,
+        // never seeks, and reports the track finished having produced no audio
+        // at all - which the coordinator can only read as a track that ended,
+        // so it advances, and the next one fails identically. A whole album of
+        // AAC goes past in twenty seconds without a sound.
+        //
+        // The catalog already knows the answer (Child.Suffix, kept as
+        // OriginFileExtension - see LibrarySyncMapper), so the client can stop
+        // making LibVLC guess. Named for containers whose probe has actually
+        // been seen to fail: mp3 streams fine as it is, and forcing a demuxer
+        // that turns out to be the wrong one is worse than probing, so
+        // anything not listed here keeps the old behaviour.
+        internal static string? DemuxHintFor(Track track)
+        {
+            var extension = track.OriginFileExtension?.TrimStart('.');
+            if (string.IsNullOrEmpty(extension))
+                extension = track.Path is { } p && !p.Contains("://") ? System.IO.Path.GetExtension(p).TrimStart('.') : null;
+
+            return extension?.ToLowerInvariant() switch
+            {
+                "m4a" or "m4b" or "mp4" or "alac" => "mp4",
+                _ => null,
+            };
         }
 
         private void OnPlay(IntPtr data, IntPtr samples, uint count, long pts)
