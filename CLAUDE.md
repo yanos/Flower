@@ -80,7 +80,7 @@ yet, and their absence is not a problem to fix. See `docs/agents/domain.md`.
 ```bash
 dotnet build Flower.Desktop/Flower.Desktop.csproj                               # Windows/Linux head
 dotnet build Flower.MacOS/Flower.MacOS.csproj                                   # macOS head, needs `sudo dotnet workload install macos`
-dotnet test Flower.Tests/Flower.Tests.csproj --filter Category!=RequiresLibVLC   # fast, day-to-day
+dotnet test Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresLibVLC&Category!=RequiresFfmpeg'  # fast, day-to-day
 dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs a local VLC install
 dotnet run --project Flower.Server                                              # server + its browser UI
 ```
@@ -207,6 +207,8 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 **VLC native libraries** (`VlcNativeSetup.Initialize()`): Windows and Android/iOS are self-contained via NuGet. macOS requires VLC.app installed (the official NuGet is abandoned) and Linux requires a system VLC install (no NuGet exists), with a `DllImportResolver` mapping `libvlc` → `libvlc.so.5`. A missing VLC on macOS/Linux still hard-crashes at startup — friendly UX for that is still open (`CROSS-PLATFORM-PLAN.md`).
 
 **Miniaudio native libraries** (`native/miniaudio/`): the `Miniaudio-CS` NuGet only ships desktop binaries, so Android (`android/build.sh`, NDK/CMake → `Flower.Android/libs/<abi>/libminiaudio.so`) and iOS (`ios/build.sh`, Xcode → `Flower.iOS/Frameworks/ios-{device,simulator}/miniaudio.framework`) are compiled and vendored directly in-repo instead — no NuGet package, see `native/miniaudio/README.md` to rebuild. Pinned to the exact miniaudio commit `Miniaudio-CS`'s own bindings were generated against (0.11.22), not the latest upstream release, to avoid an ABI mismatch. iOS additionally needs a `DllImportResolver` in `MiniaudioSink`'s static constructor — unlike Android, where naming the output `libminiaudio.so` alone is enough, .NET-for-iOS's default P/Invoke probing doesn't know to look inside an embedded framework's nested bundle path. `App.axaml.cs` now routes every platform, including Android/iOS, to `MiniaudioSink`; `LibVlcRawStreamSink` is kept unreferenced as a fallback for one release cycle (see its own remarks) rather than deleted outright.
+
+**FFmpeg façade** (`native/ffmpeg/`): `flower-ffmpeg`, an eight-function C façade over `avformat`/`avcodec`/`avutil`/`swresample`, plus `Flower/Audio/Ffmpeg/`'s `FfmpegDecoder` and `FfmpegTrackDecoder : ITrackDecoder`. It exists because LibVLC's `amem` seam truncates every track to 16 bits whatever format is requested — see `docs/AUDIOPHILE-PLAN.md`. Built, not restored: run `native/ffmpeg/macos/build.sh` before the `RequiresFfmpeg` tests, or filter them out. **Nothing routes through it yet** — `TrackDecoder` is still the app's decoder, and only macOS is built. Read `native/ffmpeg/README.md` before touching it: the per-platform status and the LGPL-only constraint on any shipping build are both there.
 
 ## UI Structure
 

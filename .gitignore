@@ -485,3 +485,9 @@ Flower.Server/[Dd]ata/*.db-shm
 Flower.Server/[Dd]ata/*.db-wal
 Flower.Server/[Dd]ata/*.json
 Flower.Server/[Dd]ata/logs/
+
+# flower-ffmpeg build output. The façade is built, not restored - see
+# native/ffmpeg/README.md.
+native/ffmpeg/build/
+native/ffmpeg/*/build/
+native/ffmpeg/artifacts/

@@ -1,0 +1,398 @@
+using System;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+
+using Microsoft.Extensions.Logging;
+
+using Flower.Logging;
+using Flower.Models;
+using Flower.Services;
+
+namespace Flower.Audio.Ffmpeg
+{
+    // ITrackDecoder over the flower-ffmpeg façade - the second implementation
+    // GaplessCoordinator can drive, alongside the LibVLC-based TrackDecoder it
+    // was written for. Everything above ITrackDecoder is unchanged: the
+    // decode-ahead role, the staging ring, the retarget at handover.
+    //
+    // The shape below is different from TrackDecoder's in one way that is
+    // worth stating, because it is the reason several of that class's hardest
+    // bugs cannot occur here. LibVLC pushes: it owns a thread, calls OnPlay
+    // when it feels like it, and a seek is a request whose effects arrive
+    // later on callbacks that have to be correlated back to it (hence
+    // _seekRequested, _seekAwaitingFirstSample, and OnFlush having to tell a
+    // seek's flush from a route change's). FFmpeg pulls: this class owns the
+    // thread and asks for samples, so a seek is a function call that returns
+    // where it landed. The seek is still posted to the decode thread rather
+    // than performed on the caller's, because one FFmpeg decoder belongs to
+    // one thread - but the correlation problem is gone, not merely handled.
+    //
+    // Delivers GaplessFormat's canonical PCM, same as TrackDecoder, so it
+    // drops into the existing pipeline unchanged. Choosing the source's own
+    // format instead - the thing this decoder exists to make possible - is
+    // direct mode's job and needs the output device to have agreed to it
+    // first; see docs/AUDIOPHILE-PLAN.md.
+    public sealed class FfmpegTrackDecoder : ITrackDecoder
+    {
+        // One decode read, and so also the granularity at which a retire or a
+        // seek interrupts one. A quarter of a second of canonical PCM: small
+        // enough that neither is felt, large enough that the P/Invoke and the
+        // ring's own locking are not the work.
+        private const int ReadBufferBytes = 48 * 1024;
+
+        private readonly RetargetableRingWriter _writer;
+        private readonly Func<bool> _isRetired;
+        private readonly ILogger<FfmpegTrackDecoder>? _logger;
+
+        private FfmpegDecoder? _decoder;
+        private SeekableHttpStream? _remoteStream;
+        private Thread? _thread;
+
+        private long _bytesProduced;
+        private int _retired;
+        private int _started;
+
+        // -1 when no seek is outstanding. Written by whoever calls Seek, read
+        // and cleared by the decode thread.
+        private long _pendingSeekMs = -1;
+
+        public Track Track { get; }
+
+        public long BytesProduced => Interlocked.Read(ref _bytesProduced);
+
+        public event Action? Drained;
+        public event Action? Faulted;
+        public event Action<long>? SeekSettled;
+
+        public FfmpegTrackDecoder(Track track, GaplessRingBuffer initialTarget, ILogger<FfmpegTrackDecoder>? logger = null)
+        {
+            Track = track;
+            _writer = new RetargetableRingWriter(initialTarget);
+            _isRetired = () => Volatile.Read(ref _retired) == 1;
+            _logger = logger;
+        }
+
+        // Opening is the whole of the prepare: unlike LibVLC's parse, which
+        // answers Skipped for a stream it was handed callbacks for, FFmpeg
+        // reads the container here and either has an audio stream or does not.
+        // So Ready genuinely means decodable, not merely reachable.
+        public async Task<DecodePrepareResult> PrepareAsync(CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref _retired) == 1)
+                return DecodePrepareResult.Retired;
+
+            if (Track.Path is not { } path)
+                throw new InvalidOperationException($"Cannot decode \"{Track.Title}\" - it has no local Path (undownloaded sync placeholder).");
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(OpenTimeoutMs);
+
+            try
+            {
+                await Task.Run(() => Open(path, timeout.Token), timeout.Token);
+            }
+            catch (OperationCanceledException) when (Volatile.Read(ref _retired) == 1)
+            {
+                return DecodePrepareResult.Retired;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger?.LogWarning("Opening {Path} did not answer within {TimeoutMs}ms", LogPath.Short(path), OpenTimeoutMs);
+                return DecodePrepareResult.TimedOut;
+            }
+            catch (OperationCanceledException)
+            {
+                return DecodePrepareResult.Retired;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Could not open {Path} for decoding", LogPath.Short(path));
+                return DecodePrepareResult.Failed;
+            }
+
+            if (Volatile.Read(ref _retired) == 1)
+            {
+                Retire();
+                return DecodePrepareResult.Retired;
+            }
+
+            var format = _decoder!.Format;
+            _logger?.LogInformation(
+                "Opened {Path}: Source={SourceRate}Hz/{SourceDepth}-bit/{SourceChannels}ch Delivering={Rate}Hz/{Format}/{Channels}ch Duration={DurationMs}ms",
+                LogPath.Short(path), format.SourceSampleRate, format.SourceBitDepth, format.SourceChannels,
+                format.SampleRate, format.SampleFormat, format.Channels,
+                format.Duration?.TotalMilliseconds ?? -1);
+
+            return DecodePrepareResult.Ready;
+        }
+
+        // Same budget as TrackDecoder's parse, and for the same reason: it is
+        // how long a stopped or unreachable server takes to be reported, and
+        // it runs off the lock while the current track keeps playing.
+        private const int OpenTimeoutMs = 5000;
+
+        private void Open(string path, CancellationToken cancellationToken)
+        {
+            if (IsRemote(path))
+            {
+                // The same stream LibVLC reads through today, handed to
+                // FFmpeg's AVIOContext callbacks instead - which is the point
+                // of having built it before this: range requests, a known
+                // length, a real seek, and every byte fetched on Flower's own
+                // pinned client.
+                _remoteStream = new SeekableHttpStream(AudioHttpClient, new Uri(path), logger: _logger);
+                _remoteStream.ProbeAsync(cancellationToken).GetAwaiter().GetResult();
+                _decoder = FfmpegDecoder.OpenStream(
+                    _remoteStream,
+                    FfmpegSampleFormat.S16,
+                    (int)GaplessFormat.SampleRate,
+                    (int)GaplessFormat.Channels,
+                    DemuxerHintFor(Track));
+            }
+            else
+            {
+                _decoder = FfmpegDecoder.OpenPath(
+                    path,
+                    FfmpegSampleFormat.S16,
+                    (int)GaplessFormat.SampleRate,
+                    (int)GaplessFormat.Channels);
+            }
+        }
+
+        public void StartDecoding()
+        {
+            if (Interlocked.Exchange(ref _started, 1) == 1)
+                return;
+            if (Volatile.Read(ref _retired) == 1)
+                return;
+            if (_decoder is null)
+            {
+                _logger?.LogWarning("StartDecoding() for {Path} without a successful prepare", LogPath.Short(Track.Path));
+                Faulted?.Invoke();
+                return;
+            }
+
+            _thread = new Thread(DecodeLoop)
+            {
+                IsBackground = true,
+                Name = $"flower-decode {LogPath.Short(Track.Path)}",
+            };
+            _thread.Start();
+        }
+
+        private void DecodeLoop()
+        {
+            var buffer = new byte[ReadBufferBytes];
+            var decoder = _decoder!;
+
+            try
+            {
+                while (Volatile.Read(ref _retired) == 0)
+                {
+                    var requested = Interlocked.Exchange(ref _pendingSeekMs, -1);
+                    if (requested >= 0)
+                        ApplySeek(decoder, requested);
+
+                    int read;
+                    try
+                    {
+                        read = decoder.Read(buffer);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (Volatile.Read(ref _retired) == 1)
+                            return;
+                        _logger?.LogWarning(ex, "Decoding {Path} failed", LogPath.Short(Track.Path));
+                        Faulted?.Invoke();
+                        return;
+                    }
+
+                    if (read == 0)
+                    {
+                        if (Volatile.Read(ref _retired) == 0)
+                        {
+                            _logger?.LogInformation(
+                                "Decode drain for {Path}: TaggedDurationMs={TaggedDurationMs} DecodedMs={DecodedMs} BytesProduced={BytesProduced}",
+                                LogPath.Short(Track.Path), Track.Duration.TotalMilliseconds,
+                                BytesProduced / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame) * 1000,
+                                BytesProduced);
+                            Drained?.Invoke();
+                        }
+                        return;
+                    }
+
+                    // Parks here for as long as the target ring stays full,
+                    // which for an armed decoder that filled its staging ring
+                    // is most of a track. The predicate is how a retire gets
+                    // out of that; a seek gets out through ResetTarget's
+                    // generation bump - see RetargetableRingWriter.Write.
+                    _writer.Write(buffer.AsSpan(0, read), _isRetired);
+
+                    // Counted only once the whole buffer is actually in the
+                    // ring. Write returns early on a retire or a seek having
+                    // written part of it, and counting the rest would push the
+                    // reported position past audio nobody will hear - a retire
+                    // measured exactly one buffer of phantom progress before
+                    // this check existed.
+                    if (Volatile.Read(ref _retired) == 0 && Interlocked.Read(ref _pendingSeekMs) < 0)
+                        Interlocked.Add(ref _bytesProduced, read);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (Volatile.Read(ref _retired) == 1)
+                    return;
+                _logger?.LogError(ex, "The decode thread for {Path} ended unexpectedly", LogPath.Short(Track.Path));
+                Faulted?.Invoke();
+            }
+        }
+
+        private void ApplySeek(FfmpegDecoder decoder, long requestedMs)
+        {
+            try
+            {
+                var landed = decoder.Seek(TimeSpan.FromMilliseconds(requestedMs));
+
+                // Second reset, after the seek rather than before it. Seek()
+                // resets to unblock this thread out of a full ring; anything
+                // it managed to write between that reset and this line is
+                // still pre-seek audio, and this is what drops it.
+                _writer.ResetTarget();
+
+                var landedBytes = Math.Clamp(BytesForSeconds(landed.TotalSeconds), 0, DurationBytes());
+                Interlocked.Exchange(ref _bytesProduced, landedBytes);
+
+                _logger?.LogTrace("Seek settled for {Path}: asked {RequestedMs}ms, landed {LandedMs}ms ({LandedBytes} bytes)",
+                                  LogPath.Short(Track.Path), requestedMs, landed.TotalMilliseconds, landedBytes);
+                SeekSettled?.Invoke(landedBytes);
+            }
+            catch (Exception ex)
+            {
+                // A refused seek is not a dead track - a forward-only stream
+                // simply cannot go there. Decode continues from where it was,
+                // and the position the caller was told stands.
+                _logger?.LogWarning(ex, "Seeking {Path} to {RequestedMs}ms failed", LogPath.Short(Track.Path), requestedMs);
+            }
+        }
+
+        // Posted to the decode thread rather than performed here: one FFmpeg
+        // decoder belongs to one thread. The provisional position is published
+        // immediately so the scrubber moves on the press, and corrected to
+        // where the demuxer actually landed when the seek runs - see
+        // SeekSettled.
+        public void Seek(float position)
+        {
+            var requestedMs = (long)(Track.Duration.TotalMilliseconds * Math.Clamp(position, 0f, 1f));
+            Interlocked.Exchange(ref _pendingSeekMs, requestedMs);
+            Interlocked.Exchange(ref _bytesProduced, Math.Clamp(BytesForSeconds(requestedMs / 1000.0), 0, DurationBytes()));
+
+            // Discards the pre-seek audio already buffered, and in doing so
+            // frees the room that lets a decode thread parked on a full ring
+            // notice the request.
+            _writer.ResetTarget();
+        }
+
+        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget) => _writer.PrimeTarget(newTarget);
+
+        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget)
+        {
+            var oldTarget = _writer.Target;
+            var stagedBytes = oldTarget.AvailableBytes;
+
+            var splice = _writer.PromoteTarget(newTarget);
+
+            _logger?.LogInformation(
+                "Decoder output promotion completed for {Path}: MovedBytes={MovedBytes} SnapshotStagedBytes={SnapshotStagedBytes} MsToFirstByte={MsToFirstByte} TotalMs={TotalMs}",
+                LogPath.Short(Track.Path), splice.BytesMoved, stagedBytes,
+                splice.MillisecondsToFirstByte, splice.TotalMilliseconds);
+
+            return splice;
+        }
+
+        public void Retire()
+        {
+            if (Interlocked.Exchange(ref _retired, 1) == 1)
+                return;
+
+            _logger?.LogTrace("Retire() for {Path}", LogPath.Short(Track.Path));
+
+            // Unblocks a decode thread parked on a full ring, which the
+            // retire predicate alone cannot do - it is only consulted between
+            // waits, and a wait it never leaves is never between them.
+            _writer.ResetTarget();
+
+            var thread = _thread;
+            var decoder = _decoder;
+            var stream = _remoteStream;
+            _decoder = null;
+            _remoteStream = null;
+
+            // Off the caller's thread: this is called from the coordinator
+            // during a skip, and joining a decode thread that is mid-read of a
+            // slow network stream would stall the UI.
+            _ = Task.Run(() =>
+            {
+                // Joined rather than raced: the native decoder must not be
+                // closed while a read is inside it, and the read holds a
+                // pointer this call frees.
+                if (thread is not null && !thread.Join(TimeSpan.FromSeconds(5)))
+                    _logger?.LogWarning("The decode thread for {Path} did not stop within 5s; leaking its decoder rather than closing it underneath",
+                                        LogPath.Short(Track.Path));
+                else
+                    decoder?.Dispose();
+
+                stream?.Dispose();
+            });
+        }
+
+        public void Dispose() => Retire();
+
+        private long DurationBytes() =>
+            Track.Duration > TimeSpan.Zero
+                ? BytesForSeconds(Track.Duration.TotalSeconds)
+                : long.MaxValue;
+
+        private static long BytesForSeconds(double seconds) =>
+            (long)(seconds * GaplessFormat.SampleRate) * GaplessFormat.BytesPerFrame;
+
+        private static bool IsRemote(string path) =>
+            path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+        // FFmpeg's own demuxer names, not LibVLC's module names. Skipping the
+        // probe on a container the catalog already knows costs nothing and
+        // saves a round trip's worth of reads on a remote track; unlike the
+        // LibVLC hint this replaces, it is not working around a demuxer that
+        // refuses unseekable input, because libavformat's is the one that
+        // never refused.
+        internal static string? DemuxerHintFor(Track track)
+        {
+            var extension = track.OriginFileExtension?.TrimStart('.');
+            if (string.IsNullOrEmpty(extension))
+                extension = track.Path is { } p && !p.Contains("://") ? System.IO.Path.GetExtension(p).TrimStart('.') : null;
+
+            return extension?.ToLowerInvariant() switch
+            {
+                "m4a" or "m4b" or "mp4" or "alac" => "mp4",
+                "mp3" => "mp3",
+                "flac" => "flac",
+                "wav" => "wav",
+                _ => null,
+            };
+        }
+
+        // Shared with TrackDecoder's own, and for the same reasons - see
+        // TrackDecoder.CreateAudioHttpClient. Both decoders exist at once
+        // during the migration, and a second client would double the socket
+        // pool for nothing.
+        private static readonly HttpClient AudioHttpClient = CreateAudioHttpClient();
+
+        private static HttpClient CreateAudioHttpClient()
+        {
+            var client = PeerHttpClient.Create();
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            return client;
+        }
+    }
+}
