@@ -522,26 +522,40 @@ namespace Flower.Audio
             }
         }
 
-        // Which demuxer LibVLC should use, when guessing is the thing that has
-        // been going wrong.
+        // Which demuxer LibVLC should use for a streamed MP4-family track,
+        // because the one it would pick refuses to work without seeking.
         //
-        // A local file tells LibVLC what it is twice over - the extension in
-        // the path and the bytes themselves - and probing gets it right. A
-        // stream URL is /rest/stream?id=<hex>: no extension, nothing to go on
-        // but the bytes and a Content-Type header. Desktop LibVLC still lands
-        // on the mp4 demuxer for an m4a and plays it, seeking straight to the
-        // file's mdat to do it. iOS's build does not: it reads from the front,
-        // never seeks, and reports the track finished having produced no audio
-        // at all - which the coordinator can only read as a track that ended,
-        // so it advances, and the next one fails identically. A whole album of
-        // AAC goes past in twenty seconds without a sound.
+        // A streamed m4a on iOS produced no audio at all: it read from the
+        // front, never seeked, and reported the track finished - which the
+        // coordinator could only read as a track that ended, so it advanced,
+        // and the next one failed identically. A whole album of AAC went past
+        // in twenty seconds without a sound. The same files play when local,
+        // and mp3 streams from the same server fine.
         //
-        // The catalog already knows the answer (Child.Suffix, kept as
-        // OriginFileExtension - see LibrarySyncMapper), so the client can stop
-        // making LibVLC guess. Named for containers whose probe has actually
-        // been seen to fail: mp3 streams fine as it is, and forcing a demuxer
-        // that turns out to be the wrong one is worse than probing, so
-        // anything not listed here keeps the old behaviour.
+        // Serving the same file over HTTP *without* range support reproduces
+        // it exactly, and VLC says why:
+        //
+        //     mp4 demux warning: MP4 plugin discarded (not seekable)
+        //     main demux debug: using demux module "avcodec"
+        //
+        // VLC's mp4 demuxer gives up on a stream it cannot seek, whatever the
+        // layout. Desktop survives that only by *falling back* to libavformat's
+        // demuxer, which reads the same file front-to-back and hands mp4a to
+        // faad without complaint. So the container was never the problem and
+        // naming "mp4" here - the first attempt at this - was worse than
+        // nothing: it pinned VLC to the one module that refuses the job and
+        // took away the fallback that was doing the work.
+        //
+        // Naming "avformat" instead asks for the module that is known to
+        // handle this case, on a stream that is seekable or not. (Both
+        // "avformat" and "avcodec" resolve to it; "avformat" is the name that
+        // matches the plugin, _vlc_entry__demux_avformat_libavformat, which is
+        // present in the iOS build as well.)
+        //
+        // The catalog already knows the container (Child.Suffix, kept as
+        // OriginFileExtension - see LibrarySyncMapper). Only the MP4 family is
+        // named: mp3 streams as it is, and forcing the wrong demuxer is worse
+        // than probing, so anything not listed here keeps the old behaviour.
         internal static string? DemuxHintFor(Track track)
         {
             var extension = track.OriginFileExtension?.TrimStart('.');
@@ -550,7 +564,7 @@ namespace Flower.Audio
 
             return extension?.ToLowerInvariant() switch
             {
-                "m4a" or "m4b" or "mp4" or "alac" => "mp4",
+                "m4a" or "m4b" or "mp4" or "alac" => "avformat",
                 _ => null,
             };
         }
