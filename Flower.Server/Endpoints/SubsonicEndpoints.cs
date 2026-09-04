@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Options;
 
 using Flower.Models;
@@ -34,10 +35,22 @@ public static class SubsonicEndpoints
     // costs an attacker nothing to retry - this surface had no rate limiting
     // at all. Two budgets:
     //
-    // - RequestLimiter is charged on every request, keyed by source via
-    //   RateLimiter.KeyFor, and sized for real client behaviour: an album grid
-    //   pulls one getCoverArt per tile, which is bursty enough that a
-    //   120/60s browse ceiling would be too tight here.
+    // - Three request budgets, one per plane, charged by route. They used to
+    //   be one 600/60s ceiling across the whole surface, and the cost of that
+    //   was not theoretical: an album grid pulls one getCoverArt per tile, a
+    //   library of 1400 albums has 1400 covers, and a cold scroll spent the
+    //   entire budget on pictures. What got refused next was /stream - so the
+    //   client's body GETs came back 429, its decoder faulted, and the queue
+    //   skipped the album track by track until it gave up. Sharing one budget
+    //   means the cheapest, burstiest traffic on the surface can starve the
+    //   one thing a music server exists to do.
+    //
+    //   Splitting them is not a widening. Each ceiling is *lower* than the one
+    //   it replaces; what changes is that spending one cannot spend another,
+    //   so a flood of art requests throttles art and nothing else. The sizes
+    //   are what each plane actually needs: media is a handful of requests per
+    //   track and decode-ahead doubles it, art is bursty but now batched (see
+    //   SyncEndpoints' /cover-art/batch), browsing is a request per screen.
     // - FailedAuthLimiter is charged only when a *password* attempt fails, and
     //   gates only the password path.
     //
@@ -60,7 +73,21 @@ public static class SubsonicEndpoints
     // human-chosen password), so guessing was never the threat this bounds.
     // What it bounds is a probe flood, and it still does.
     private static readonly RateLimiter FailedAuthLimiter = new(max: 10, TimeSpan.FromSeconds(60));
-    private static readonly RateLimiter RequestLimiter = new(max: 600, TimeSpan.FromSeconds(60));
+
+    // Playing a track costs a probe plus one body GET, plus a reopen or two on
+    // a phone changing networks, and decode-ahead means two tracks in flight
+    // at once. 240/60s is an order of magnitude more than any listener can
+    // use and still bounds a source that decides to open every track at once.
+    private static readonly RateLimiter MediaLimiter = new(max: 240, TimeSpan.FromSeconds(60));
+
+    // Art is the bursty one, which is why it now has its own budget to be
+    // bursty inside of. Still generous, because a third-party Subsonic client
+    // has no batch endpoint to use and will genuinely ask one tile at a time.
+    private static readonly RateLimiter ArtLimiter = new(max: 300, TimeSpan.FromSeconds(60));
+
+    // Everything else: catalogs, searches, playlist edits, scrobbles. A client
+    // that needs more than two of these a second is looping.
+    private static readonly RateLimiter BrowseLimiter = new(max: 120, TimeSpan.FromSeconds(60));
 
     public static void MapSubsonicEndpoints(this WebApplication app)
     {
@@ -71,8 +98,8 @@ public static class SubsonicEndpoints
             var key = RateLimiter.KeyFor(context.HttpContext.Connection.RemoteIpAddress);
             var now = DateTimeOffset.UtcNow;
 
-            if (!RequestLimiter.TryAcquire(key, now))
-                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            if (!LimiterFor(context.HttpContext.Request.Path).TryAcquire(key, now))
+                return RateLimited(context.HttpContext);
 
             // Three ways in, deliberately unequal in power. A path-A device
             // signature authenticates the whole /rest surface for a paired
@@ -110,7 +137,7 @@ public static class SubsonicEndpoints
             var attempted = query["u"].ToString();
             var failedAuthKey = $"{key}|{attempted}";
             if (!FailedAuthLimiter.WouldAllow(failedAuthKey, now))
-                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+                return RateLimited(context.HttpContext);
 
             var credentials = services.GetRequiredService<SubsonicCredentialStore>();
             var username = SubsonicAuth.Validate(query, credentials);
@@ -165,6 +192,42 @@ public static class SubsonicEndpoints
             rest.MapGet(route + ".view", handler);
         }
     }
+
+    // Which plane a request belongs to, decided by route and nothing else.
+    // Matched on the suffix so the legacy ".view" alias lands in the same
+    // budget as the bare name - the two are the same endpoint, and putting
+    // them in different buckets would make the ceiling depend on which
+    // spelling a client happened to use.
+    internal static RateLimiter LimiterFor(PathString path)
+    {
+        var route = path.Value ?? "";
+        if (route.EndsWith(".view", StringComparison.OrdinalIgnoreCase))
+            route = route[..^5];
+
+        if (route.EndsWith("/stream", StringComparison.OrdinalIgnoreCase) ||
+            route.EndsWith("/download", StringComparison.OrdinalIgnoreCase))
+        {
+            return MediaLimiter;
+        }
+
+        return route.EndsWith("/getCoverArt", StringComparison.OrdinalIgnoreCase) ? ArtLimiter : BrowseLimiter;
+    }
+
+    // A 429 with nothing else on it tells a client only that it lost; it has
+    // to guess how long to wait, and the guess a decoder makes under pressure
+    // is "immediately, three times". Retry-After turns the refusal into an
+    // instruction - SeekableHttpStream believes it, waits, and keeps the track
+    // rather than declaring it dead.
+    internal static IResult RateLimited(HttpContext context)
+    {
+        context.Response.Headers.RetryAfter = RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+    }
+
+    // One window, rounded up. Anything shorter invites a client to spend the
+    // budget it does not have yet; anything longer stalls a listener over a
+    // burst that has already passed.
+    internal const int RetryAfterSeconds = 60;
 
     private static IResult GetArtists(Library library)
     {

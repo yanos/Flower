@@ -31,6 +31,19 @@ public interface ICoverArtUrlResolver
     // where the fetch stack owns connection reuse and the header is not ours
     // to set.
     bool ClosesConnection => false;
+
+    // Where to ask for many albums' art at once, and which id this track's
+    // art is under there. Null when there is no batch door and the caller must
+    // fall back to Resolve above, one request per track.
+    //
+    // This exists because one request per tile is what a grid naturally does
+    // and what a server cannot afford to be asked. A library of 1400 albums is
+    // 1400 requests during a single cold scroll, which is more than any
+    // per-source request budget worth having - and when that budget ran out,
+    // what got refused was playback: /rest/stream came back 429, the decoder
+    // faulted, and the queue skipped the album track by track. AlbumArtLoader
+    // coalesces the asking side; this says where to send it.
+    (string Endpoint, string Id)? ResolveBatch(Track track) => null;
 }
 
 // The app's implementation: whichever peer currently holds the track, asked
@@ -52,6 +65,22 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
 
         var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
         return peer.Url($"/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}").ToString();
+    }
+
+    // Flower's own surface rather than /rest, even though the single-art call
+    // above uses /rest. A batch is not an OpenSubsonic idea and /rest is a
+    // published protocol other clients implement, so inventing a route there
+    // would be putting a private extension on a shared surface. The paired
+    // peer is a Flower.Server (PeerTrackResolver enforces "only the currently
+    // paired Server"), and the same device signature opens both doors - so
+    // this costs nothing and keeps the extension where extensions belong.
+    public (string Endpoint, string Id)? ResolveBatch(Track track)
+    {
+        var peer = peerTrackResolver.Resolve(track);
+        if (peer == null)
+            return null;
+
+        return (peer.Url("/api/flower/v1/cover-art/batch").ToString(), LibraryOpenSubsonicMapper.AlbumIdFor(track));
     }
 }
 
@@ -78,5 +107,13 @@ public sealed class OriginCoverArtUrlResolver(Uri baseAddress) : ICoverArtUrlRes
 
         var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
         return new Uri(baseAddress, $"/api/flower/v1/cover-art?id={Uri.EscapeDataString(albumId)}").ToString();
+    }
+
+    public (string Endpoint, string Id)? ResolveBatch(Track track)
+    {
+        if (string.IsNullOrEmpty(track.Album) && string.IsNullOrEmpty(track.EffectiveAlbumArtist))
+            return null;
+
+        return (new Uri(baseAddress, "/api/flower/v1/cover-art/batch").ToString(), LibraryOpenSubsonicMapper.AlbumIdFor(track));
     }
 }

@@ -548,6 +548,13 @@ public partial class App : Application
                 trustedPeers.IsTrusted(SignedRequestCanonicalizer.ComputeFingerprint(publicKey));
         }
 
+        // What the audio pipeline's client signs each of its requests with.
+        // Set the same way and for the same reason as the pin above: the
+        // client that reads it is a static field on TrackDecoder, built before
+        // any of this ran. Resolved per request rather than captured, so it
+        // costs nothing here and is always the registered implementation.
+        PeerHttpClient.SigningCredentials = () => Ioc.Default.GetService<IPeerCredentials>();
+
         var appSettings = provider.GetRequiredService<AppSettings>();
         // Before any window is created, so the very first frame already
         // renders in the saved variant instead of flashing OS-default then

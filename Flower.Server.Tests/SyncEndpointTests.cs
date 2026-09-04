@@ -75,6 +75,40 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
             context.Response.Headers);
     }
 
+    // The same request again, reading the response as bytes. The cover-art
+    // batch answers with a binary frame, and decoding that through a
+    // StreamReader turns every byte the encoder does not like into U+FFFD -
+    // which is a test that passes on a response nothing could have read.
+    private async Task<(HttpStatusCode Status, byte[] Body)> SendForBytesAsync(
+        DeviceSigningKey device, string method, string path, string remoteIp, string? body = null)
+    {
+        var bodyBytes = body == null ? [] : Encoding.UTF8.GetBytes(body);
+        var (signature, timestamp, nonce) = device.Sign(method, path, [], bodyBytes);
+
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = method;
+            c.Request.Path = path;
+            c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+            c.Request.Headers["X-Flower-Fingerprint"] = device.Fingerprint;
+            c.Request.Headers["X-Flower-Alias"] = "Kitchen iPad";
+            c.Request.Headers["X-Flower-Role"] = "client";
+            c.Request.Headers["X-Flower-Signature"] = signature;
+            c.Request.Headers["X-Flower-Timestamp"] = timestamp;
+            c.Request.Headers["X-Flower-Nonce"] = nonce;
+            if (body != null)
+            {
+                c.Request.ContentType = "application/json";
+                c.Request.Body = new MemoryStream(bodyBytes);
+                c.Request.ContentLength = bodyBytes.Length;
+            }
+        });
+
+        using var buffer = new MemoryStream();
+        await context.Response.Body.CopyToAsync(buffer);
+        return ((HttpStatusCode)context.Response.StatusCode, buffer.ToArray());
+    }
+
     private static async Task<DeviceSigningKey> TrustedDeviceAsync(TrustedPeerStore trustedPeers)
     {
         var device = NewDevice();
@@ -988,6 +1022,120 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
             }
 
             var (status, _, _) = await SendAsync(device, "GET", "/api/flower/v1/library", "10.0.2.11");
+
+            Assert.Equal(HttpStatusCode.OK, status);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The route that exists so art stops competing with playback at all. One
+    // request per tile is what a grid naturally does and what no per-source
+    // budget can absorb: 1400 albums is 1400 requests during one cold scroll.
+    // Asking for a screenful at a time is the fix that removes the burst
+    // rather than raising the ceiling until it stops hurting.
+    [Fact]
+    public async Task POST_cover_art_batch_answers_every_id_it_was_asked_about()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var (status, body) = await SendForBytesAsync(
+                device, "POST", "/api/flower/v1/cover-art/batch", "10.0.2.12",
+                body: """{"Ids":["al-one","al-two","al-three"]}""");
+
+            Assert.Equal(HttpStatusCode.OK, status);
+
+            var art = CoverArtBatch.Read(body);
+            Assert.NotNull(art);
+
+            // The fixture library is empty, so every album is a zero-length
+            // entry - which is the point being pinned: "no picture" is an
+            // answer that comes back, not an id quietly dropped. A client
+            // tells the two apart, and asks again only for what is missing.
+            Assert.Equal(3, art.Count);
+            foreach (var id in new[] { "al-one", "al-two", "al-three" })
+            {
+                Assert.True(art.ContainsKey(id));
+                Assert.Empty(art[id]);
+            }
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The id list is a list of file reads, so its length is not the caller's
+    // to choose. A batch is a way to ask for less traffic, not a way to ask
+    // for one request's worth of unbounded work.
+    [Fact]
+    public async Task POST_cover_art_batch_refuses_a_list_longer_than_the_cap()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var ids = string.Join(",", Enumerable.Range(0, CoverArtBatch.MaxIds + 1).Select(i => $"\"al-{i}\""));
+            var (status, _) = await SendForBytesAsync(
+                device, "POST", "/api/flower/v1/cover-art/batch", "10.0.2.13",
+                body: $$"""{"Ids":[{{ids}}]}""");
+
+            Assert.Equal(HttpStatusCode.BadRequest, status);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task POST_cover_art_batch_refuses_a_body_that_is_not_a_batch()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            foreach (var body in new[] { "{}", """{"Ids":[]}""", "not json at all" })
+            {
+                var (status, _) = await SendForBytesAsync(
+                    device, "POST", "/api/flower/v1/cover-art/batch", "10.0.2.14", body: body);
+
+                Assert.Equal(HttpStatusCode.BadRequest, status);
+            }
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The batch shares ArtLimiter with the single-id route, deliberately: it
+    // is the route that exists so art stops competing with the sync, and
+    // putting it back on the bulk budget would undo exactly that.
+    [Fact]
+    public async Task POST_cover_art_batch_does_not_spend_the_bulk_budget()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            for (var i = 0; i < 40; i++)
+            {
+                var (artStatus, _) = await SendForBytesAsync(
+                    device, "POST", "/api/flower/v1/cover-art/batch", "10.0.2.15",
+                    body: """{"Ids":["al-one"]}""");
+                Assert.NotEqual(HttpStatusCode.TooManyRequests, artStatus);
+            }
+
+            var (status, _, _) = await SendAsync(device, "GET", "/api/flower/v1/library", "10.0.2.15");
 
             Assert.Equal(HttpStatusCode.OK, status);
         }

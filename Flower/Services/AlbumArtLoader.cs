@@ -4,9 +4,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 
 using Avalonia.Media.Imaging;
 
@@ -420,27 +422,9 @@ public class AlbumArtLoader
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            // Signed, like every other call into a peer's /rest surface. This
-            // used to send a bare fingerprint and alias with no signature at
-            // all, which the app's own listener tolerated but Flower.Server
-            // does not - and its refusal is a *Subsonic* refusal, so it comes
-            // back as HTTP 200 carrying an error envelope. Two things followed
-            // from that, both of them bad: the JSON error body was written
-            // straight into the art cache as if it were an image (see the
-            // content check below), and each refusal charged the server's
-            // FailedAuthLimiter, so ten album tiles were enough to 429 the
-            // entire /rest surface for a minute - including /rest/stream, which
-            // is why playback of server-hosted tracks died wholesale.
-            await request.AddPeerCredentialsAsync(_credentials);
-            if (_artUrls.ClosesConnection)
-                request.Headers.ConnectionClose = true;
-
-            using var response = await Http.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
+            var bytes = await FetchArtBytesAsync(track, url);
+            if (bytes == null || bytes.Length == 0)
                 return null;
-
-            var bytes = await response.Content.ReadAsByteArrayAsync();
 
             // Decode off the UI thread - same reason LoadLocalAsync/the cached-file
             // path above both use Task.Run: this runs on whatever thread called
@@ -475,6 +459,205 @@ public class AlbumArtLoader
                 track.Album, track.OriginDeviceFingerprint);
             return null;
         }
+    }
+
+    // How long a tile waits for its neighbours before the request goes out.
+    // Short enough that a stationary grid does not visibly hesitate, long
+    // enough that a scroll's worth of tiles - which arrive within a frame or
+    // two of each other - land in the same request.
+    private const int BatchDebounceMs = 40;
+
+    private readonly Lock _batchLock = new();
+    private readonly Dictionary<string, PendingArt> _waiting = new(StringComparer.Ordinal);
+    private bool _batchRunning;
+
+    // One album's art, and everything needed to ask for it either way: the
+    // batch id, the single-request URL that is the fallback, and the callers
+    // waiting on the answer. Several tracks from the same album collapse onto
+    // one of these, which is most of what the batching buys on a track list.
+    private sealed record PendingArt(string Endpoint, string Id, string Url, TaskCompletionSource<byte[]?> Completion);
+
+    // The bytes for one track's art, asked for in company where that is
+    // possible. Returns null for "no art", which is a real answer and not an
+    // error: plenty of albums have no picture.
+    private async Task<byte[]?> FetchArtBytesAsync(Track track, string url)
+    {
+        if (_artUrls!.ResolveBatch(track) is { } batch)
+            return await JoinBatchAsync(batch.Endpoint, batch.Id, url);
+
+        return await FetchOneAsync(url);
+    }
+
+    private Task<byte[]?> JoinBatchAsync(string endpoint, string id, string url)
+    {
+        PendingArt pending;
+        var start = false;
+
+        lock (_batchLock)
+        {
+            if (!_waiting.TryGetValue(id, out pending!))
+            {
+                pending = new PendingArt(endpoint, id, url,
+                    new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously));
+                _waiting[id] = pending;
+            }
+
+            if (!_batchRunning)
+            {
+                _batchRunning = true;
+                start = true;
+            }
+        }
+
+        if (start)
+            _ = Task.Run(DrainBatchesAsync);
+
+        return pending.Completion.Task;
+    }
+
+    // Keeps draining for as long as tiles keep arriving, so a long scroll is a
+    // steady handful of requests rather than one per debounce window that
+    // happens to be empty. Stops as soon as a window passes with nothing
+    // waiting; the next tile starts it again.
+    private async Task DrainBatchesAsync()
+    {
+        while (true)
+        {
+            await Task.Delay(BatchDebounceMs);
+
+            List<PendingArt> batch;
+            lock (_batchLock)
+            {
+                if (_waiting.Count == 0)
+                {
+                    _batchRunning = false;
+                    return;
+                }
+
+                // Grouped by endpoint, because the paired server can change
+                // between one tile and the next and a batch is addressed to
+                // one server. Taking only the first endpoint's entries leaves
+                // the others for the next pass rather than mixing them.
+                var endpoint = _waiting.Values.First().Endpoint;
+                batch = _waiting.Values
+                    .Where(entry => entry.Endpoint == endpoint)
+                    .Take(CoverArtBatch.MaxIds)
+                    .ToList();
+
+                foreach (var entry in batch)
+                    _waiting.Remove(entry.Id);
+            }
+
+            await SendBatchAsync(batch);
+        }
+    }
+
+    private async Task SendBatchAsync(List<PendingArt> batch)
+    {
+        try
+        {
+            var payload = JsonSerializer.SerializeToUtf8Bytes(
+                new CoverArtBatchRequest { Ids = batch.Select(entry => entry.Id).ToList() });
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, batch[0].Endpoint)
+            {
+                Content = new ByteArrayContent(payload),
+            };
+            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+            // Signed over the body, like every other POST into a peer. The
+            // signature covers the id list, so a batch cannot be rewritten in
+            // flight into a request for something else.
+            await request.AddPeerCredentialsAsync(_credentials!, payload);
+            if (_artUrls!.ClosesConnection)
+                request.Headers.ConnectionClose = true;
+
+            using var response = await Http.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                await FallBackToSingleAsync(batch, $"the server answered {(int)response.StatusCode}");
+                return;
+            }
+
+            var frame = await response.Content.ReadAsByteArrayAsync();
+            var art = CoverArtBatch.Read(frame);
+            if (art == null)
+            {
+                await FallBackToSingleAsync(batch, $"the {frame.Length}-byte response was not a readable batch frame");
+                return;
+            }
+
+            foreach (var entry in batch)
+            {
+                // An id the response left out is not an id with no art - the
+                // server truncates at its byte cap - so it goes back through
+                // the single-request path rather than being answered "none".
+                // An id that came back with zero bytes *is* an answer.
+                if (art.TryGetValue(entry.Id, out var bytes))
+                    entry.Completion.TrySetResult(bytes.Length == 0 ? null : bytes);
+                else
+                    entry.Completion.TrySetResult(await FetchOneAsync(entry.Url));
+            }
+        }
+        catch (Exception ex)
+        {
+            await FallBackToSingleAsync(batch, ex.Message);
+        }
+    }
+
+    // One request per album, which is what this code did before the batch
+    // existed - so a server that has no batch door, or one that answered
+    // something unreadable, degrades to the old behaviour rather than to blank
+    // tiles.
+    private async Task FallBackToSingleAsync(List<PendingArt> batch, string reason)
+    {
+        _logger.LogDebug("Batched album art for {Count} albums did not work out ({Reason}); asking one at a time instead",
+            batch.Count, reason);
+
+        foreach (var entry in batch)
+            entry.Completion.TrySetResult(await FetchOneAsync(entry.Url));
+    }
+
+    private async Task<byte[]?> FetchOneAsync(string url)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            // Signed, like every other call into a peer's /rest surface. This
+            // used to send a bare fingerprint and alias with no signature at
+            // all, which the app's own listener tolerated but Flower.Server
+            // does not - and its refusal is a *Subsonic* refusal, so it comes
+            // back as HTTP 200 carrying an error envelope. Two things followed
+            // from that, both of them bad: the JSON error body was written
+            // straight into the art cache as if it were an image (see
+            // LoadRemoteAsync's decode-before-cache rule), and each refusal
+            // charged the server's FailedAuthLimiter, so ten album tiles were
+            // enough to 429 the entire /rest surface for a minute - including
+            // /rest/stream, which is why playback of server-hosted tracks died
+            // wholesale.
+            await request.AddPeerCredentialsAsync(_credentials!);
+            if (_artUrls!.ClosesConnection)
+                request.Headers.ConnectionClose = true;
+
+            using var response = await Http.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            return await response.Content.ReadAsByteArrayAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not fetch album art from {Url}; showing the placeholder icon instead", url);
+            return null;
+        }
+    }
+
+    // The request shape SyncEndpoints reads. Declared here rather than shared
+    // with the server's own copy because it is two lines and a shared DTO
+    // would drag the whole sync JSON context across for them.
+    private sealed class CoverArtBatchRequest
+    {
+        public List<string> Ids { get; set; } = [];
     }
 
     private Bitmap? TryDecodeBytes(byte[] bytes)

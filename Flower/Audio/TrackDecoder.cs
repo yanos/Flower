@@ -585,9 +585,14 @@ namespace Flower.Audio
         // stops producing.
         private static readonly HttpClient AudioHttpClient = CreateAudioHttpClient();
 
+        // CreateSigned, not Create: this client is handed a stream URL that
+        // was signed once, at resolve time, and then asked to fetch it several
+        // times - a probe, a body GET, a reopen. The nonce baked into that URL
+        // is good for the first of those only, so the rest have to carry a
+        // signature of their own. See PeerCredentialsHandler.
         private static HttpClient CreateAudioHttpClient()
         {
-            var client = PeerHttpClient.Create();
+            var client = PeerHttpClient.CreateSigned();
             client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
             return client;
         }

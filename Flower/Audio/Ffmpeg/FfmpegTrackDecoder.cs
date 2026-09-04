@@ -390,7 +390,7 @@ namespace Flower.Audio.Ffmpeg
 
         private static HttpClient CreateAudioHttpClient()
         {
-            var client = PeerHttpClient.Create();
+            var client = PeerHttpClient.CreateSigned();
             client.Timeout = Timeout.InfiniteTimeSpan;
             return client;
         }

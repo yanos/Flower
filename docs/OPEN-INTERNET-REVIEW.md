@@ -144,6 +144,134 @@ rotating usernames does get a fresh budget each, bounded only by
 guessing was never the threat this bounds. What it bounds is a probe flood, and
 it still does.
 
+### 2b. One budget across browse, art and audio — the burst starves the playback
+
+Not found by reading the code for this review. Found by an album that would not
+play.
+
+`SubsonicEndpoints` charged one `RequestLimiter` (600/60s, per source) across
+the *entire* `/rest` group: `getAlbumList2`, `getCoverArt`, `stream`,
+`download`, all of it. The comment beside it explained the size as headroom for
+an album grid's cover-art burst, which was the right observation and the wrong
+conclusion — the burst does not need headroom, it needs to not be spending the
+same budget as the audio.
+
+A library of 1400 albums has 1400 covers, and `AlbumArtLoader` asked for one
+per tile. A cold grid scroll therefore spent 600 requests on pictures in well
+under a minute, and the next request refused was `/rest/stream`. What the
+client did with that 429 made it far worse than a pause: `SeekableHttpStream`
+treated it as a retryable I/O error and reopened three times — spending more of
+an exhausted budget — the decoder faulted, `PlaylistControlViewModel` skipped
+to the next track, which probed and retried and failed the same way, until it
+stopped after five consecutive unplayable tracks. An entire album disappeared
+because some pictures were being fetched, and nothing in any log said
+"throttled".
+
+This is the shape the earlier findings were about, arriving from the other
+direction: not an attacker exhausting a budget to deny service, but the
+server's own client doing it by accident. A single ceiling means the cheapest
+and burstiest traffic on the surface decides whether the most important traffic
+gets through.
+
+**Fixed, in three places.**
+
+*The budget is split by plane.* `MediaLimiter` (240/60s) for `/stream` and
+`/download`, `ArtLimiter` (300/60s) for `/getCoverArt`, `BrowseLimiter`
+(120/60s) for everything else. Every one of those ceilings is **lower** than the
+600 it replaces — this is not a widening. What changes is that spending one
+cannot spend another, so a flood of art requests throttles art. Note that no
+choice of a single number would have fixed this: any ceiling a grid can reach
+is one it can reach while a track is playing.
+
+*Every 429 now carries `Retry-After`.* A refusal with nothing on it makes the
+client guess, and the guess a decoder makes under pressure is "immediately,
+three times".
+
+*The client waits rather than retries.* `SeekableHttpStream` treats 429 as
+back-off rather than as I/O failure: it honours `Retry-After` (capped), never
+counts a throttle against its reopen budget, and never latches the stream
+broken over one. A throttled track stalls. It does not vanish. Covered by
+`SeekableHttpStreamTests` and, on the platform, by two `Flower.DeviceChecks`
+checks — because "the audio still arrives after the wait" is not a claim a
+desktop suite can make on a phone's behalf.
+
+And the burst itself is gone rather than merely contained: `POST
+/api/flower/v1/cover-art/batch` fetches up to 32 covers in one request, and
+`AlbumArtLoader` coalesces a viewport's worth of tiles into it. A cold scroll
+through 1400 albums is now on the order of 45 requests rather than 1400. On
+Flower's own private surface, not `/rest` — a batch is not an OpenSubsonic
+idea, and third-party clients still get the one-at-a-time route with a budget
+of its own.
+
+### 2c. A stream URL is signed once and fetched many times
+
+Also not found by reading the code. Found by the same album, still not playing
+after #2b was fixed — which is the useful part of the story: #2b was real, and
+it was not the whole reason.
+
+`PeerStreamUrlResolver` builds a streamed track's URL once, through
+`OpenSubsonicClient.BuildUrlAsync`, which bakes the entire signed credential set
+into the query string — fingerprint, timestamp, signature and **nonce**. That
+one string becomes `Track.Path` and is handed to `SeekableHttpStream`, which
+reuses it verbatim for every request it makes: the HEAD probe, the `bytes=0-0`
+length probe, the body GET, and each reopen.
+
+One URL is one nonce, and a nonce is single-use by design —
+`NonceReplayGuard.TryRecord` is a `TryAdd`. So the first request on that URL was
+accepted and every later one was refused as a replay. `SignatureVerifier`'s own
+comment states the assumption that fails here:
+
+> a legitimate caller always generates a fresh nonce per attempt (see
+> `DeviceSigningKey.Sign`), so this never blocks a genuine retry.
+
+True of `OpenSubsonicClient.SendAsync`, which signs per call. Never true of a URL
+handed to something else to fetch repeatedly.
+
+**What made it unreadable was the ordering, and one protocol decision.** The
+probe went first, so it succeeded and the track got a correct length. The body
+GET that followed was the first request refused — and a refusal on this surface
+is Subsonic's `"Wrong username or password"` on an **HTTP 200**, because the
+protocol carries its errors in the body of a success. `EnsureSuccessStatusCode`
+therefore proves nothing here, and about 130 bytes of JSON went into the decoder
+as the opening of the track. The stream then ended far short of the length the
+probe had just established, which reads as a cut connection, which reopened —
+replaying the same spent nonce — three times, faulted the decoder, and the queue
+skipped to the next track, which failed identically. Five in a row stopped
+playback.
+
+The 429s in the client log were downstream of that reopen storm, not its cause.
+
+Nothing caught it, and the reasons are worth keeping. The desktop head plays
+local files, so it never streams. `Flower.Server`'s log showed only successful
+one-byte probes, because a refused body GET dies in middleware before reaching
+the handler that logs. And `Flower.DeviceChecks` authenticated nothing, so it
+could not express a replay: the checks proved a decoder turns a stream into
+audio, and here the audio never reached a decoder.
+
+**Fixed, in three places.**
+
+*The client signs per request rather than per URL.* `PeerCredentialsHandler` is a
+`DelegatingHandler` that re-signs every outgoing request and strips any spent
+credential set from the URL it was given — provably inert for the signature,
+since `SignedRequestCanonicalizer` excludes every `X-Flower-*` param from the
+canonical query, and it keeps a used nonce from riding along into the server's
+device log at rest. The audio pipeline's client is built through
+`PeerHttpClient.CreateSigned`; every other client is unchanged, so nothing that
+already signs per call is now signing twice.
+
+*A 200 that is not audio is refused rather than decoded.* `SeekableHttpStream`
+rejects any textual body under a 2xx and raises `HttpProtocolErrorException`
+carrying the server's own words, and does not retry it — a protocol error is not
+a dropped connection, and asking again produces the same error three times and
+then a dead track. The rule is keyed on content type rather than on Subsonic's
+shape, so a proxy's sign-in page and a captive portal land there too.
+
+*The device checks can now fail on it.* `LoopbackMediaServer.RequiresFreshNonce`
+enforces `NonceReplayGuard`'s rule and answers a repeat with the real error
+envelope on its real 200, and two checks run against it on the platform: that a
+per-request-signed stream still decodes byte for byte, and that a refusal is
+refused instead of decoded. Both fail without the fixes above.
+
 ### 3. Per-IP keying is close to free to evade over IPv6
 
 Every key above is a full address string. A caller with an ordinary IPv6 /64 —
@@ -421,7 +549,10 @@ Ordered by what blocks what, not by severity:
 **Reviewed; everything Cloudflare Tunnel needs is fixed, including the bearer
 token that was the last thing standing before it.**
 
-Built: #1 (`/info` answers its address list and `TrustsCaller` only to a
+Built: #2c (a stream URL signed per request instead of once, a protocol
+error never decoded as audio, and device checks that can fail on both), #2b (the `/rest` budget split by plane, `Retry-After` on every refusal,
+a client that waits out a throttle instead of skipping the track, and a batch
+cover-art route that removes the burst), #1 (`/info` answers its address list and `TrustsCaller` only to a
 verified trusted peer, and the client signs its poll to be one), #5 (an
 unambiguous canonical form), #3 (one shared per-source rate-limit key, IPv6
 collapsed to its /64), #4 (a budget on `/api/admin`) and #2 (an undeclared proxy

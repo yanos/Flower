@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
@@ -496,4 +499,231 @@ public class AlbumArtLoaderTests : IDisposable
 
         Assert.Equal(picture, AlbumArtLoader.TryGetLocalArtBytes(track));
     }
+    // --- batching ---
+
+    // The change that stopped an album disappearing. A grid asks for one cover
+    // per tile, a library of 1400 albums is 1400 requests during one cold
+    // scroll, and on Flower.Server that spent a request budget shared with
+    // /rest/stream - so the next thing refused was the audio, the decoder
+    // faulted, and the queue skipped the album track by track.
+    //
+    // What is pinned here is the coalescing itself: tiles that ask at the same
+    // moment cost one request between them, not one each.
+    [AvaloniaFact]
+    public async Task Tiles_that_ask_at_once_cost_one_request_between_them()
+    {
+        var art = SyntheticPng.Build(64, 64);
+        var requests = new List<string>();
+        var batched = 0;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            lock (requests)
+            {
+                requests.Add(context.Request.Url?.AbsolutePath ?? "");
+            }
+
+            var ids = await ReadBatchIdsAsync(context);
+            Interlocked.Add(ref batched, ids.Count);
+
+            var frame = CoverArtBatch.Write(ids.Select(id => (id, art)).ToList());
+            context.Response.ContentType = CoverArtBatch.ContentType;
+            await context.Response.OutputStream.WriteAsync(frame);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        var tracks = Enumerable.Range(0, 12).Select(_ => RemoteTrack(Unique("hash"))).ToList();
+        var bitmaps = await Task.WhenAll(tracks.Select(loader.LoadAsync));
+
+        Assert.All(bitmaps, bitmap => Assert.NotNull(bitmap));
+        Assert.Equal(12, batched);
+
+        // One request, not twelve. The exact count is allowed to be more than
+        // one - a slow enough machine can close a debounce window between two
+        // tiles - but nothing like one per tile.
+        lock (requests)
+        {
+            Assert.All(requests, path => Assert.EndsWith("/cover-art/batch", path));
+            Assert.InRange(requests.Count, 1, 4);
+        }
+    }
+
+    // A batch is a request for a screenful, not a request for unbounded work,
+    // so a scroll past the cap is split into whole requests rather than one
+    // enormous one.
+    [AvaloniaFact]
+    public async Task More_tiles_than_the_cap_are_split_into_whole_batches()
+    {
+        var art = SyntheticPng.Build(32, 32);
+        var largest = 0;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            var ids = await ReadBatchIdsAsync(context);
+            Assert.InRange(ids.Count, 1, CoverArtBatch.MaxIds);
+            lock (art)
+            {
+                largest = Math.Max(largest, ids.Count);
+            }
+
+            var frame = CoverArtBatch.Write(ids.Select(id => (id, art)).ToList());
+            context.Response.ContentType = CoverArtBatch.ContentType;
+            await context.Response.OutputStream.WriteAsync(frame);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        var tracks = Enumerable.Range(0, CoverArtBatch.MaxIds + 10)
+            .Select(_ => RemoteTrack(Unique("hash"))).ToList();
+        var bitmaps = await Task.WhenAll(tracks.Select(loader.LoadAsync));
+
+        Assert.All(bitmaps, bitmap => Assert.NotNull(bitmap));
+    }
+
+    // An album the server has no picture for is an answer, not a failure, and
+    // it must not send the caller back for a second look one id at a time.
+    [AvaloniaFact]
+    public async Task An_album_the_server_has_no_art_for_costs_one_request()
+    {
+        var requests = 0;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            Interlocked.Increment(ref requests);
+            var ids = await ReadBatchIdsAsync(context);
+            var frame = CoverArtBatch.Write(ids.Select(id => (id, Array.Empty<byte>())).ToList());
+            context.Response.ContentType = CoverArtBatch.ContentType;
+            await context.Response.OutputStream.WriteAsync(frame);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        Assert.Null(await loader.LoadAsync(RemoteTrack(Unique("hash"))));
+        Assert.Equal(1, requests);
+    }
+
+    // A peer with no batch door, or one that answers something unreadable,
+    // degrades to a request per album - the behaviour this code had before the
+    // batch existed - rather than to blank tiles.
+    [AvaloniaFact]
+    public async Task A_peer_that_cannot_answer_a_batch_is_asked_one_at_a_time()
+    {
+        var art = SyntheticPng.Build(48, 48);
+        var singles = 0;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            if ((context.Request.Url?.AbsolutePath ?? "").EndsWith("/cover-art/batch", StringComparison.Ordinal))
+            {
+                context.Response.StatusCode = 404;
+                context.Response.Close();
+                return;
+            }
+
+            Interlocked.Increment(ref singles);
+            context.Response.ContentType = "image/png";
+            await context.Response.OutputStream.WriteAsync(art);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        var tracks = Enumerable.Range(0, 3).Select(_ => RemoteTrack(Unique("hash"))).ToList();
+        var bitmaps = await Task.WhenAll(tracks.Select(loader.LoadAsync));
+
+        Assert.All(bitmaps, bitmap => Assert.NotNull(bitmap));
+        Assert.Equal(3, singles);
+    }
+
+    // An id the response leaves out is not an id with no art: the server
+    // truncates at its byte cap, and treating a truncation as "no picture"
+    // would blank exactly the albums whose covers are largest.
+    [AvaloniaFact]
+    public async Task An_id_the_batch_left_out_is_asked_for_on_its_own()
+    {
+        var art = SyntheticPng.Build(48, 48);
+        var singles = 0;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            if ((context.Request.Url?.AbsolutePath ?? "").EndsWith("/cover-art/batch", StringComparison.Ordinal))
+            {
+                // Answers the first id and drops the rest, exactly as the
+                // server does when a response reaches MaxBytes.
+                var ids = await ReadBatchIdsAsync(context);
+                var frame = CoverArtBatch.Write([(ids[0], art)]);
+                context.Response.ContentType = CoverArtBatch.ContentType;
+                await context.Response.OutputStream.WriteAsync(frame);
+                context.Response.Close();
+                return;
+            }
+
+            Interlocked.Increment(ref singles);
+            context.Response.ContentType = "image/png";
+            await context.Response.OutputStream.WriteAsync(art);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        var tracks = Enumerable.Range(0, 4).Select(_ => RemoteTrack(Unique("hash"))).ToList();
+        var bitmaps = await Task.WhenAll(tracks.Select(loader.LoadAsync));
+
+        Assert.All(bitmaps, bitmap => Assert.NotNull(bitmap));
+        Assert.True(singles > 0, "the ids the batch dropped should have been asked for individually");
+    }
+
+    // The batch is signed over its body, so the id list cannot be rewritten in
+    // flight into a request for something else - and, more immediately, an
+    // unsigned art request is one Flower.Server refuses.
+    [AvaloniaFact]
+    public async Task A_batch_is_signed_over_the_ids_it_asks_for()
+    {
+        string? fingerprint = null;
+        string? signature = null;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            fingerprint = context.Request.Headers["X-Flower-Fingerprint"];
+            signature = context.Request.Headers["X-Flower-Signature"];
+            var ids = await ReadBatchIdsAsync(context);
+            var frame = CoverArtBatch.Write(ids.Select(id => (id, SyntheticPng.Build(16, 16))).ToList());
+            context.Response.ContentType = CoverArtBatch.ContentType;
+            await context.Response.OutputStream.WriteAsync(frame);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        Assert.NotNull(await loader.LoadAsync(RemoteTrack(Unique("hash"))));
+        Assert.Equal(SigningKey.Fingerprint, fingerprint);
+        Assert.False(string.IsNullOrEmpty(signature));
+    }
+
+    private static async Task<List<string>> ReadBatchIdsAsync(HttpListenerContext context)
+    {
+        using var buffer = new MemoryStream();
+        await context.Request.InputStream.CopyToAsync(buffer);
+        using var document = JsonDocument.Parse(buffer.ToArray());
+        return document.RootElement.GetProperty("Ids").EnumerateArray()
+            .Select(id => id.GetString()!)
+            .ToList();
+    }
+
 }

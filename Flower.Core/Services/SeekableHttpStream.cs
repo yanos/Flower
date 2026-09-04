@@ -4,6 +4,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -69,6 +70,30 @@ public sealed class SeekableHttpStream : Stream
 
     private const int RetryBackoffMs = 250;
 
+    // Being throttled is not the stream failing. 429 means "ask again later",
+    // and the difference between honouring that and treating it as an I/O
+    // error is the difference between a track that stalls and a track the
+    // queue declares dead - which is what used to happen: a cover-art burst
+    // spent the server's shared per-source budget, every body GET for the
+    // album came back 429, this class reopened three times (spending more of
+    // an exhausted budget), the decoder faulted, the queue skipped to the next
+    // track, and five of those in a row stopped playback altogether. An entire
+    // album vanished because some pictures were being fetched.
+    //
+    // So a 429 is waited out rather than retried against, it never latches
+    // _broken, and Retry-After is believed when the server sends one. The
+    // budget below bounds the wait: a server that is throttling this hard for
+    // two minutes is a problem the caller should hear about, but it is still
+    // never grounds for calling the stream unrecoverable.
+    private static readonly TimeSpan FirstThrottleWait = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaxThrottleWait = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan DefaultThrottleWaitBudget = TimeSpan.FromSeconds(120);
+
+    // Only ever moved by tests, which otherwise have to spend the real budget
+    // in real seconds to see what happens at the end of it. Per-instance
+    // rather than a static so setting it cannot leak into another test.
+    internal TimeSpan ThrottleWaitBudget { get; set; } = DefaultThrottleWaitBudget;
+
     private readonly HttpClient _client;
     private readonly Uri _uri;
     private readonly ILogger? _logger;
@@ -132,7 +157,7 @@ public sealed class SeekableHttpStream : Stream
         if (Volatile.Read(ref _facts) != null)
             return;
 
-        var (length, acceptsRanges) = await ProbeServerAsync(_client, _uri, cancellationToken);
+        var (length, acceptsRanges) = await ProbeServerAsync(_client, _uri, _logger, ThrottleWaitBudget, cancellationToken);
         Adopt(length, acceptsRanges);
     }
 
@@ -146,7 +171,7 @@ public sealed class SeekableHttpStream : Stream
             if (Volatile.Read(ref _facts) is { } raced)
                 return raced;
 
-            var (length, acceptsRanges) = ProbeServerAsync(_client, _uri, CancellationToken.None).GetAwaiter().GetResult();
+            var (length, acceptsRanges) = ProbeServerAsync(_client, _uri, _logger, ThrottleWaitBudget, CancellationToken.None).GetAwaiter().GetResult();
             return Adopt(length, acceptsRanges);
         }
     }
@@ -174,10 +199,191 @@ public sealed class SeekableHttpStream : Stream
         return _facts!;
     }
 
-    private static async Task<(long Length, bool AcceptsRanges)> ProbeServerAsync(HttpClient client, Uri uri, CancellationToken cancellationToken)
+    // Every request this class makes goes through here, so there is one place
+    // that knows what a 429 means. A throttled request is re-sent after the
+    // wait the server asked for - not counted as an attempt, not retried
+    // against, and never turned into a broken stream.
+    private static async Task<HttpResponseMessage> SendAsync(
+        HttpClient client,
+        Uri uri,
+        Func<HttpRequestMessage> build,
+        ILogger? logger,
+        TimeSpan budget,
+        CancellationToken cancellationToken)
     {
-        using var head = new HttpRequestMessage(HttpMethod.Head, uri);
-        using var response = await client.SendAsync(head, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var waited = TimeSpan.Zero;
+        var wait = FirstThrottleWait;
+
+        while (true)
+        {
+            var request = build();
+            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (response.StatusCode != HttpStatusCode.TooManyRequests)
+            {
+                if (await ProtocolErrorFor(response, cancellationToken) is { } complaint)
+                {
+                    response.Dispose();
+                    throw new HttpProtocolErrorException(
+                        $"{LogPath.Short(uri.ToString())} answered {complaint}");
+                }
+
+                return response;
+            }
+
+            var asked = RetryAfter(response);
+            response.Dispose();
+
+            // A named delay is believed, only capped: a server that knows its
+            // own window is a better source than a guess, and one that says
+            // "come back in an hour" still must not park a decoder for an
+            // hour. Absent a header there is nothing to believe, so the guess
+            // starts at a second and doubles - never a hot retry loop against
+            // a server that has just said it is overloaded.
+            var pause = TimeSpan.FromMilliseconds(Math.Min(
+                (asked ?? wait).TotalMilliseconds, MaxThrottleWait.TotalMilliseconds));
+            if (pause < TimeSpan.Zero)
+                pause = TimeSpan.Zero;
+
+            if (waited + pause > budget)
+            {
+                throw new HttpThrottledException(
+                    $"{LogPath.Short(uri.ToString())} has been rate limited for {waited.TotalSeconds:F0}s and is still refusing requests");
+            }
+
+            logger?.LogWarning(
+                "{Uri} answered 429; waiting {Wait:F1}s before asking again ({Waited:F0}s so far)",
+                LogPath.Short(uri.ToString()), pause.TotalSeconds, waited.TotalSeconds);
+
+            await Task.Delay(pause, cancellationToken);
+            waited += pause;
+            wait = TimeSpan.FromMilliseconds(Math.Min(wait.TotalMilliseconds * 2, MaxThrottleWait.TotalMilliseconds));
+        }
+    }
+
+    // How much of a textual response is worth reading to quote it back. An
+    // error envelope is a couple of hundred bytes; anything beyond this is not
+    // going to become a better log line.
+    private const int MaxProtocolErrorBytes = 2048;
+
+    // "This is a 200, and it is still not audio."
+    //
+    // The Subsonic protocol answers a failed request with HTTP 200 and an error
+    // envelope in the body - "Wrong username or password" is a 200 - so
+    // EnsureSuccessStatusCode is not, on this surface, a check that anything
+    // went right. Without this, a refusal became roughly 130 bytes of JSON
+    // handed to a decoder as though it were the start of the track: the stream
+    // then ended far short of the length the probe had just established, which
+    // read as a cut connection, which reopened, which got the same JSON again.
+    // What the listener saw was an album skipping through itself in seconds,
+    // and what every log showed was a successful probe.
+    //
+    // Keyed on the content type rather than on parsing the body, because the
+    // rule is broader than Subsonic and does not depend on a shape: a success
+    // on /rest/stream is audio bytes, so any textual body under a 2xx is an
+    // error being mistaken for one - a proxy's HTML sign-in page and a
+    // captive portal land here too, and used to be decoded just as eagerly.
+    private static async Task<string?> ProtocolErrorFor(
+        HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        if (response.Content.Headers.ContentType?.MediaType is not { } mediaType || !IsTextual(mediaType))
+            return null;
+
+        var body = await ReadPrefixAsync(response, cancellationToken);
+        var detail = SubsonicErrorMessage(body) ?? Summarize(body);
+        return detail.Length > 0
+            ? $"{(int)response.StatusCode} {mediaType} rather than audio: {detail}"
+            : $"{(int)response.StatusCode} {mediaType} rather than audio";
+    }
+
+    private static bool IsTextual(string mediaType) =>
+        mediaType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)
+        || mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase)
+        || mediaType.Equals("application/xml", StringComparison.OrdinalIgnoreCase)
+        || mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase)
+        || mediaType.EndsWith("+xml", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<string> ReadPrefixAsync(
+        HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var buffer = new byte[MaxProtocolErrorBytes];
+            var filled = 0;
+
+            while (filled < buffer.Length)
+            {
+                var read = await stream.ReadAsync(buffer.AsMemory(filled), cancellationToken);
+                if (read <= 0)
+                    break;
+
+                filled += read;
+            }
+
+            return Encoding.UTF8.GetString(buffer, 0, filled);
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException)
+        {
+            // The status and content type are the finding; the body was only
+            // ever going to make the message nicer.
+            return "";
+        }
+    }
+
+    // Pulls the human-readable half out of a Subsonic error envelope, in either
+    // of the two encodings the protocol defines:
+    //   {"subsonic-response":{"status":"failed","error":{"code":40,"message":"..."}}}
+    //   <subsonic-response status="failed"><error code="40" message="..."/>
+    // Hand-rolled rather than parsed, because this runs on a failure path in
+    // the shared library and the answer is one string.
+    private static string? SubsonicErrorMessage(string body)
+    {
+        foreach (var opening in (string[])["\"message\":\"", "message=\""])
+        {
+            var at = body.IndexOf(opening, StringComparison.Ordinal);
+            if (at < 0)
+                continue;
+
+            var from = at + opening.Length;
+            var to = body.IndexOf('"', from);
+            if (to > from)
+                return body[from..to];
+        }
+
+        return null;
+    }
+
+    private static string Summarize(string body)
+    {
+        var collapsed = string.Join(' ', body.Split((char[])['\r', '\n', '\t', ' '],
+            StringSplitOptions.RemoveEmptyEntries));
+        return collapsed.Length <= 200 ? collapsed : collapsed[..200] + "...";
+    }
+
+    private static TimeSpan? RetryAfter(HttpResponseMessage response)
+    {
+        if (response.Headers.RetryAfter is not { } header)
+            return null;
+
+        if (header.Delta is { } delta)
+            return delta;
+
+        // The date form. Measured against the server's own clock where it sent
+        // one, because a phone's clock and a server's are not the same clock
+        // and the difference is exactly the size of the mistake.
+        if (header.Date is { } date)
+            return date - (response.Headers.Date ?? DateTimeOffset.UtcNow);
+
+        return null;
+    }
+
+    private static async Task<(long Length, bool AcceptsRanges)> ProbeServerAsync(HttpClient client, Uri uri, ILogger? logger, TimeSpan budget, CancellationToken cancellationToken)
+    {
+        using var response = await SendAsync(
+            client, uri, () => new HttpRequestMessage(HttpMethod.Head, uri), logger, budget, cancellationToken);
 
         if (response.IsSuccessStatusCode)
         {
@@ -189,9 +395,12 @@ public sealed class SeekableHttpStream : Stream
         // The fallback: ask for one byte. A server that honours it answers 206
         // with a Content-Range whose total is the length, which settles both
         // questions at once and costs one byte of body.
-        using var probe = new HttpRequestMessage(HttpMethod.Get, uri);
-        probe.Headers.Range = new RangeHeaderValue(0, 0);
-        using var probed = await client.SendAsync(probe, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var probed = await SendAsync(client, uri, () =>
+        {
+            var probe = new HttpRequestMessage(HttpMethod.Get, uri);
+            probe.Headers.Range = new RangeHeaderValue(0, 0);
+            return probe;
+        }, logger, budget, cancellationToken);
         probed.EnsureSuccessStatusCode();
 
         if (probed.StatusCode == HttpStatusCode.PartialContent && probed.Content.Headers.ContentRange is { Length: { } total })
@@ -265,6 +474,30 @@ public sealed class SeekableHttpStream : Stream
                     "Stream for {Uri} ended at {Position} of {Length} bytes; reopening from there",
                     LogPath.Short(_uri.ToString()), _position, facts.Length);
             }
+            // Ahead of the general clause below, because it is the one
+            // failure that must not spend an attempt or latch the stream. By
+            // the time this is thrown the sender has already waited out its
+            // whole budget, so retrying here would only add to a wait the
+            // caller has been in for two minutes - but the stream is intact,
+            // and a read a moment later may well succeed.
+            catch (HttpThrottledException)
+            {
+                DropBody();
+                throw;
+            }
+            // Also ahead of the general clause, for the opposite reason: this
+            // is the one failure that must not be *retried* at all. A server
+            // answering a protocol error is not a connection that dropped -
+            // asking again produces the same error, three times, and then
+            // reports a dead track for what is very often a fixable thing like
+            // a credential the caller can refresh. Failing at once puts the
+            // server's own words in the log instead.
+            catch (HttpProtocolErrorException)
+            {
+                _broken = true;
+                DropBody();
+                throw;
+            }
             catch (Exception ex) when (ex is IOException or HttpRequestException)
             {
                 if (lastAttempt)
@@ -334,11 +567,14 @@ public sealed class SeekableHttpStream : Stream
             DropBody();
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Get, _uri);
-        if (EnsureProbed().CanSeek && position > 0)
-            request.Headers.Range = new RangeHeaderValue(position, null);
-
-        var response = _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
+        var seekable = EnsureProbed().CanSeek;
+        var response = SendAsync(_client, _uri, () =>
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, _uri);
+            if (seekable && position > 0)
+                request.Headers.Range = new RangeHeaderValue(position, null);
+            return request;
+        }, _logger, ThrottleWaitBudget, CancellationToken.None).GetAwaiter().GetResult();
         response.EnsureSuccessStatusCode();
 
         // A server that answers a ranged request with 200 is serving from
@@ -434,3 +670,16 @@ public sealed class SeekableHttpStream : Stream
         base.Dispose(disposing);
     }
 }
+
+// A server that asked to be left alone, rather than one that broke. Separate
+// from every other IOException so SeekableHttpStream.Read can tell the two
+// apart in a catch clause - and an IOException at all so a caller that only
+// knows about streams still handles it.
+public sealed class HttpThrottledException(string message) : IOException(message);
+
+// A response that arrived intact and is not the track: a Subsonic error
+// envelope on its mandated HTTP 200, a proxy's sign-in page, a captive portal.
+// An IOException so every existing caller treats it as a failed read rather
+// than as a finished one, but distinct so SeekableHttpStream's own read loop
+// can refuse to retry it - see the catch there.
+public sealed class HttpProtocolErrorException(string message) : IOException(message);

@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 
 using Flower.Audio;
 using Flower.Models;
+using Flower.Services;
 
 using LibVLCSharp.Shared;
 
@@ -77,6 +79,10 @@ public static class DecodeChecks
             Run("A seek mid-stream lands in unbroken audio", () => SeekLandsInUnbrokenAudio(libVlc)),
             Run("A server that is not there reports a failed prepare", () => AbsentServerFailsPrepare(libVlc)),
             Run("A stream cut mid-track faults rather than ending quietly", () => CutStreamFaults(libVlc)),
+            Run("A throttled server costs a wait, not the track", () => ThrottledStreamStillDecodes(libVlc, sendsRetryAfter: true)),
+            Run("A throttled server that sends no Retry-After still costs only a wait", () => ThrottledStreamStillDecodes(libVlc, sendsRetryAfter: false)),
+            Run("A server that requires a fresh nonce per request still decodes", () => ReplayGuardedStreamStillDecodes(libVlc)),
+            Run("An error on an HTTP 200 is refused rather than decoded", () => ProtocolErrorIsNotAudio(libVlc)),
         ]);
 
         return results;
@@ -346,6 +352,137 @@ public static class DecodeChecks
     // The fixture's own samples, which is what the decoder should hand back
     // byte for byte: SyntheticWav writes at the pipeline's rate and channel
     // count precisely so nothing legitimately alters them on the way.
+    // The failure this check exists for: a server that is refusing requests
+    // because its per-source budget is spent, not because anything is wrong
+    // with the track.
+    //
+    // On Flower.Server that budget used to be shared across the whole /rest
+    // surface, so an album grid's cover-art burst spent it and the next thing
+    // refused was /rest/stream. The client treated 429 as an I/O error,
+    // reopened three times - spending more of an exhausted budget - faulted
+    // the decoder, and the queue skipped the track. Five of those in a row and
+    // playback stopped altogether. An entire album vanished because some
+    // pictures were being fetched, and nothing anywhere said "throttled".
+    //
+    // The budget is split by plane now and the client waits 429s out, but the
+    // reason this is a check rather than only a unit test is that neither of
+    // those is visible from a desktop suite: what has to still be true is that
+    // the *audio arrives*, on the platform, after the wait. Held to the same
+    // byte-for-byte oracle as an unthrottled stream, because being throttled
+    // is not licence to return different audio.
+    private static void ThrottledStreamStillDecodes(LibVLC libVlc, bool sendsRetryAfter)
+    {
+        using var server = new LoopbackMediaServer
+        {
+            // Enough refusals to be past any "retry three times" budget - the
+            // shape that used to lose the track - and few enough that the
+            // check is seconds. Retry-After of 1s, or none at all, in which
+            // case the client falls back to its own first backoff.
+            RefuseBodiesWith429 = 4,
+            RetryAfterSeconds = sendsRetryAfter ? 1 : 0,
+        };
+
+        var wav = SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp());
+        var url = server.Serve(wav, "rest/stream?id=throttled");
+
+        var decoded = DecodeFully(libVlc, new Track
+        {
+            Title = "Throttled",
+            Path = url,
+            OriginFileExtension = "wav",
+            Duration = ShortTrack,
+        });
+
+        AssertMatchesSource(wav, decoded);
+    }
+
+    // The failure this check exists for, and the one that cost the most to
+    // find: a track that is fetched with a credential good for a single
+    // request.
+    //
+    // A streamed track's URL is signed once, when it is resolved, and then
+    // fetched several times - the bytes=0-0 probe, the body GET, a reopen. The
+    // nonce baked into it is single-use on the server (NonceReplayGuard), so
+    // the probe spent it and the body GET was refused as a replay. Because the
+    // probe went first the track had a correct length and no audio, and because
+    // the refusal was Subsonic's HTTP 200 the client decoded the error message.
+    //
+    // Neither half is visible from a desktop suite, and it is worth being
+    // precise about why: the desktop head plays local files, so it never
+    // streams, and the loopback server here authenticated nothing, so it could
+    // not express a replay at all. What has to be true, on the platform, is
+    // that every request the pipeline makes carries its own fresh credential.
+    private static void ReplayGuardedStreamStillDecodes(LibVLC libVlc)
+    {
+        using var server = new LoopbackMediaServer { RequiresFreshNonce = true };
+
+        var wav = SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp());
+        var url = server.Serve(wav, "rest/stream?id=replay-guarded");
+
+        var decoded = WithSigningCredentials(new FreshNonceCredentials(), () => DecodeFully(libVlc, new Track
+        {
+            Title = "Replay guarded",
+            Path = url,
+            OriginFileExtension = "wav",
+            Duration = ShortTrack,
+        }));
+
+        AssertMatchesSource(wav, decoded);
+    }
+
+    // The other half, from the other side: when a request really is refused,
+    // the refusal must not be mistaken for the track.
+    //
+    // Nothing signs here, so every request is refused - and the refusal is a
+    // 200 carrying an error envelope, which is what the Subsonic protocol
+    // mandates and what makes EnsureSuccessStatusCode useless on this surface.
+    // A prepare that "succeeds" on 130 bytes of JSON is the bug; a prepare that
+    // fails is the fix.
+    private static void ProtocolErrorIsNotAudio(LibVLC libVlc)
+    {
+        using var server = new LoopbackMediaServer { RequiresFreshNonce = true };
+        var url = server.Serve(SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp()), "rest/stream?id=refused");
+
+        var ring = new GaplessRingBuffer(64 * 1024);
+        using var decoder = new TrackDecoder(libVlc, TrackAt(url, ShortTrack), ring);
+
+        var prepared = WithSigningCredentials(null, () => decoder.PrepareAsync().GetAwaiter().GetResult());
+
+        if (prepared is not (DecodePrepareResult.Failed or DecodePrepareResult.TimedOut))
+            throw new CheckFailedException($"a refused stream prepared as {prepared}");
+    }
+
+    // The audio pipeline's HttpClient is a static built once, and it reads its
+    // credentials through PeerHttpClient.SigningCredentials on every request -
+    // which is what lets a check swap them without rebuilding anything.
+    private static T WithSigningCredentials<T>(IPeerCredentials? credentials, Func<T> body)
+    {
+        var original = PeerHttpClient.SigningCredentials;
+        PeerHttpClient.SigningCredentials = () => credentials;
+        try
+        {
+            return body();
+        }
+        finally
+        {
+            PeerHttpClient.SigningCredentials = original;
+        }
+    }
+
+    // Enough of a credential for a server that only checks freshness. The real
+    // one signs (SignedDeviceCredentials); what both have in common, and all
+    // this check needs, is a nonce that is different every time.
+    private sealed class FreshNonceCredentials : IPeerCredentials
+    {
+        public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
+            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) =>
+            Task.FromResult<IReadOnlyList<(string Key, string Value)>>(
+            [
+                ("X-Flower-Fingerprint", "device-checks"),
+                ("X-Flower-Nonce", Guid.NewGuid().ToString("N")),
+            ]);
+    }
+
     private static void AssertMatchesSource(byte[] wav, byte[] decoded)
     {
         const int headerSize = 44;

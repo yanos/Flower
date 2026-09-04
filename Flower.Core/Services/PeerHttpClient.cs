@@ -41,6 +41,15 @@ public static class PeerHttpClient
     // certificate, so only ordinary chain validation can let one through.
     public static Func<byte[], bool>? IsPinnedServerKey { get; set; }
 
+    // How a client built by CreateSigned proves who it is, consulted per
+    // request. A settable static for exactly the reason IsPinnedServerKey
+    // above is one: the client that needs it is the audio pipeline's, which is
+    // a static field on TrackDecoder built before any container exists.
+    //
+    // Null means "sign nothing", which is the correct answer for a head that
+    // has no signing key rather than a failure - see PeerCredentialsHandler.
+    public static Func<IPeerCredentials?>? SigningCredentials { get; set; }
+
     public static HttpClient Create(TimeSpan? timeout = null)
     {
         // Under WebAssembly there is no TLS stack to configure: fetch is the
@@ -57,6 +66,39 @@ public static class PeerHttpClient
             ServerCertificateCustomValidationCallback = (_, certificate, _, errors) =>
                 IsAcceptable(certificate, errors),
         };
+
+        return timeout is { } value ? new HttpClient(handler) { Timeout = value } : new HttpClient(handler);
+    }
+
+    // The same client, plus a fresh device signature on every request it makes.
+    //
+    // For callers that fetch a URL somebody else built and then keep fetching
+    // it - the audio pipeline, whose SeekableHttpStream issues a probe, a body
+    // GET and a reopen per track against one URL string. A signature baked into
+    // that URL is good for exactly one of those requests, because the nonce in
+    // it is single-use; see PeerCredentialsHandler for the whole failure and
+    // what it cost.
+    //
+    // Not folded into Create: a caller that already signs per request
+    // (OpenSubsonicClient.SendAsync, the sync services) must not be given a
+    // second set of credential headers, and most clients built here are talking
+    // to a peer they authenticate some other way or not at all.
+    public static HttpClient CreateSigned(TimeSpan? timeout = null)
+    {
+        // No TLS stack to configure under WebAssembly, and nothing to sign
+        // with either: a tab holds a stream ticket rather than a signing key
+        // (BrowserPeerCredentials, StreamTicketService), so the ticket already
+        // in the URL is the credential and there is nothing to add per request.
+        if (OperatingSystem.IsBrowser())
+            return Create(timeout);
+
+        var handler = new PeerCredentialsHandler(
+            () => SigningCredentials?.Invoke(),
+            new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, certificate, _, errors) =>
+                    IsAcceptable(certificate, errors),
+            });
 
         return timeout is { } value ? new HttpClient(handler) { Timeout = value } : new HttpClient(handler);
     }

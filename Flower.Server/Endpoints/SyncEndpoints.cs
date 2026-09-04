@@ -58,6 +58,8 @@ public static class SyncEndpoints
     private const string GroupPrefix = "/api/flower/v1";
     private const string CoverArtRoute = "/cover-art";
     private const string CoverArtPath = GroupPrefix + CoverArtRoute;
+    private const string CoverArtBatchRoute = "/cover-art/batch";
+    private const string CoverArtBatchPath = GroupPrefix + CoverArtBatchRoute;
 
     // A playlist manifest for a large library, with a wide margin - the same
     // ceiling Kestrel is capped at process-wide (see Program.cs), applied here
@@ -87,9 +89,7 @@ public static class SyncEndpoints
             var http = context.HttpContext;
             var services = http.RequestServices;
             var key = RateLimiter.KeyFor(http.Connection.RemoteIpAddress);
-            var limiter = http.Request.Path.Equals(CoverArtPath, StringComparison.OrdinalIgnoreCase)
-                ? ArtLimiter
-                : BulkLimiter;
+            var limiter = IsCoverArt(http.Request.Path) ? ArtLimiter : BulkLimiter;
             var now = DateTimeOffset.UtcNow;
             if (!limiter.TryAcquire(key, now))
             {
@@ -108,7 +108,7 @@ public static class SyncEndpoints
                         suppressed == 0 ? "" : $" ({suppressed} more since the last one.)");
                 }
 
-                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+                return SubsonicEndpoints.RateLimited(http);
             }
 
             if (http.Request.ContentLength > MaxBodyBytes)
@@ -185,6 +185,93 @@ public static class SyncEndpoints
         // (an <audio> element is what cannot). Deliberately the existing
         // handler rather than a second implementation of "an album's art".
         sync.MapGet(CoverArtRoute, SubsonicEndpoints.GetCoverArt);
+
+        // The same art, for up to CoverArtBatch.MaxIds albums at once.
+        //
+        // One request per tile is what a grid naturally does and what a server
+        // cannot afford to be asked: a 1400-album library is 1400 requests
+        // during one cold scroll, which is more than any per-source budget
+        // worth having, and the traffic that got refused when that budget ran
+        // out was playback. Batching is the fix that removes the burst rather
+        // than raising the ceiling until it stops hurting - see
+        // CoverArtBatch's own header, and AlbumArtLoader, which coalesces the
+        // asking end.
+        //
+        // POST rather than GET because the id list is the request: thirty-odd
+        // album ids do not belong in a query string, and this group signs
+        // bodies already.
+        sync.MapPost(CoverArtBatchRoute, (HttpContext context, Library library) => GetCoverArtBatch(context, library));
+    }
+
+    // Both cover-art routes share ArtLimiter. The batch one especially: it is
+    // the route that exists so art stops competing with playback, and putting
+    // it back in the general budget would undo exactly that.
+    private static bool IsCoverArt(PathString path) =>
+        path.Equals(CoverArtPath, StringComparison.OrdinalIgnoreCase) ||
+        path.Equals(CoverArtBatchPath, StringComparison.OrdinalIgnoreCase);
+
+    // Deliberately built on SubsonicEndpoints.CoverArtCandidates, the same
+    // "which files is this id's art in" rule the single-id route and the admin
+    // replace route both use. A second answer to that question is how a batch
+    // starts returning different pictures from the endpoint it is meant to
+    // replace.
+    private static IResult GetCoverArtBatch(HttpContext context, Library library)
+    {
+        var ids = ReadBatchRequest(context);
+        if (ids == null)
+            return Results.BadRequest();
+
+        var entries = new List<(string Id, byte[] Bytes)>(ids.Count);
+        var total = 0;
+
+        foreach (var id in ids)
+        {
+            byte[] bytes = [];
+            foreach (var candidate in SubsonicEndpoints.CoverArtCandidates(id, library))
+            {
+                if (LocalAlbumArtReader.ForFile(candidate.Path) is { } art)
+                {
+                    bytes = art.Bytes;
+                    break;
+                }
+            }
+
+            // Truncation, not failure: the covers already gathered are worth
+            // sending, and the caller asks again for the ids that are missing
+            // from the answer. Checked before appending so one very large
+            // picture cannot carry the response past the cap.
+            if (total + bytes.Length > CoverArtBatch.MaxBytes && entries.Count > 0)
+                break;
+
+            entries.Add((id, bytes));
+            total += bytes.Length;
+        }
+
+        return Results.Bytes(CoverArtBatch.Write(entries), CoverArtBatch.ContentType);
+    }
+
+    // Null for anything malformed or over the cap. The list is a list of file
+    // reads, so its length is not the caller's to choose without a bound.
+    private static List<string>? ReadBatchRequest(HttpContext context)
+    {
+        try
+        {
+            context.Request.Body.Position = 0;
+            var request = JsonSerializer.Deserialize<CoverArtBatchRequest>(context.Request.Body, JsonOptions);
+            if (request?.Ids is not { Count: > 0 } ids || ids.Count > CoverArtBatch.MaxIds)
+                return null;
+
+            return ids.Where(id => !string.IsNullOrEmpty(id)).ToList()!;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public sealed class CoverArtBatchRequest
+    {
+        public List<string>? Ids { get; set; }
     }
 
     private static readonly RefusalLogThrottle RateLimitLogThrottle = new();

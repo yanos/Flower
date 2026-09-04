@@ -156,6 +156,28 @@ dotnet test Flower.Tests/Flower.Tests.csproj --filter FullyQualifiedName~DeviceC
 scripts/ios-device-checks.sh                                                                # iOS Simulator
 ```
 
+Two checks are not about decoding at all. The first is authentication:
+`LoopbackMediaServer.RequiresFreshNonce` enforces the same single-use-nonce rule
+`NonceReplayGuard` does on the real server, and answers a repeat the way the
+real one does - Subsonic's error envelope on an HTTP 200. It exists because a
+stream URL was signed once, at resolve time, and then fetched several times
+(probe, body, reopen), so the probe spent the nonce and the body GET was refused
+as a replay. The track got a correct length and ~130 bytes of JSON for audio.
+Nothing here could catch it while the loopback authenticated nothing, which is
+the general lesson: a check that cannot refuse a request cannot find a bug about
+being refused. See `PeerCredentialsHandler` and docs/OPEN-INTERNET-REVIEW.md #2c.
+
+The second is a server answering 429. Being throttled
+is not a track failing, and the difference between waiting it out and treating
+it as an I/O error is the difference between playback stalling and an album
+disappearing - which is what happened, because `/rest` charged one request
+budget across browsing, cover art and audio, and a cover-art burst spent it.
+`LoopbackMediaServer.RefuseBodiesWith429` reproduces it (bodies only - the
+cheap `bytes=0-0` probe got through in the real failure, which is why the
+symptom was "the track has a length and plays nothing"). See
+docs/OPEN-INTERNET-REVIEW.md #2b for the whole chain and the three places it is
+fixed.
+
 CI runs the same checks per-OS in the `decode-checks` job, which installs VLC
 for them. The two runs are meant to be comparable: when they disagree, the
 difference is the platform. Android has no head yet.
@@ -207,6 +229,8 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 **VLC native libraries** (`VlcNativeSetup.Initialize()`): Windows and Android/iOS are self-contained via NuGet. macOS requires VLC.app installed (the official NuGet is abandoned) and Linux requires a system VLC install (no NuGet exists), with a `DllImportResolver` mapping `libvlc` → `libvlc.so.5`. A missing VLC on macOS/Linux still hard-crashes at startup — friendly UX for that is still open (`CROSS-PLATFORM-PLAN.md`).
 
 **Miniaudio native libraries** (`native/miniaudio/`): the `Miniaudio-CS` NuGet only ships desktop binaries, so Android (`android/build.sh`, NDK/CMake → `Flower.Android/libs/<abi>/libminiaudio.so`) and iOS (`ios/build.sh`, Xcode → `Flower.iOS/Frameworks/ios-{device,simulator}/miniaudio.framework`) are compiled and vendored directly in-repo instead — no NuGet package, see `native/miniaudio/README.md` to rebuild. Pinned to the exact miniaudio commit `Miniaudio-CS`'s own bindings were generated against (0.11.22), not the latest upstream release, to avoid an ABI mismatch. iOS additionally needs a `DllImportResolver` in `MiniaudioSink`'s static constructor — unlike Android, where naming the output `libminiaudio.so` alone is enough, .NET-for-iOS's default P/Invoke probing doesn't know to look inside an embedded framework's nested bundle path. `App.axaml.cs` now routes every platform, including Android/iOS, to `MiniaudioSink`; `LibVlcRawStreamSink` is kept unreferenced as a fallback for one release cycle (see its own remarks) rather than deleted outright.
+
+**Album art is fetched in batches** (`CoverArtBatch`, `POST /api/flower/v1/cover-art/batch`): a grid asks for one cover per tile, and a library of 1400 albums is 1400 requests during one cold scroll - more than any per-source budget worth having, and when that budget ran out what got refused was playback. `AlbumArtLoader` coalesces a viewport's worth of misses over a 40ms debounce into one request of up to 32 ids; a peer that cannot answer one degrades to the old request-per-album path. Deliberately on Flower's own surface rather than `/rest`, which is a published protocol other clients implement. See `docs/OPEN-INTERNET-REVIEW.md` #2b.
 
 **FFmpeg façade** (`native/ffmpeg/`): `flower-ffmpeg`, an eight-function C façade over `avformat`/`avcodec`/`avutil`/`swresample`, plus `Flower/Audio/Ffmpeg/`'s `FfmpegDecoder` and `FfmpegTrackDecoder : ITrackDecoder`. It exists because LibVLC's `amem` seam truncates every track to 16 bits whatever format is requested — see `docs/AUDIOPHILE-PLAN.md`. Built, not restored: run `native/ffmpeg/macos/build.sh` before the `RequiresFfmpeg` tests, or filter them out. **Nothing routes through it yet** — `TrackDecoder` is still the app's decoder, and only macOS is built. Read `native/ffmpeg/README.md` before touching it: the per-platform status and the LGPL-only constraint on any shipping build are both there.
 

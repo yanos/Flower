@@ -218,6 +218,27 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
         return ((HttpStatusCode)context.Response.StatusCode, await reader.ReadToEndAsync());
     }
 
+    // The same request, reporting one response header instead of the body.
+    // Exists for the rate-limit tests: what a 429 carries is the whole point
+    // of the 429, and it has no body to read it out of.
+    public async Task<(HttpStatusCode Status, string? Header)> SendWithHeaderAsync(
+        string pathAndQuery, string remoteIp, string header)
+    {
+        var split = pathAndQuery.IndexOf('?');
+        var path = split < 0 ? pathAndQuery : pathAndQuery[..split];
+        var query = split < 0 ? "" : pathAndQuery[split..];
+
+        var context = await Server.SendAsync(c =>
+        {
+            c.Request.Method = HttpMethods.Get;
+            c.Request.Path = path;
+            c.Request.QueryString = new QueryString(query);
+            c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+        });
+
+        return ((HttpStatusCode)context.Response.StatusCode, context.Response.Headers[header].ToString());
+    }
+
     public async Task<JsonElement> GetAsync(string pathAndQuery)
     {
         var (status, body) = await SendAsync(pathAndQuery);
@@ -621,14 +642,70 @@ public class SubsonicRateLimitTests(SubsonicServerFixture server) : IClassFixtur
         Assert.Equal("ok", document.RootElement.GetProperty("subsonic-response").GetProperty("status").GetString());
     }
 
+    // The whole point of splitting the budget, and the shape of a real
+    // outage. /rest used to share one 600/60s ceiling across browsing, cover
+    // art and audio, so an album grid's cover-art burst on a 1400-album
+    // library spent it - and what got refused next was the stream. The client
+    // read the 429s as a dead track and skipped the album track by track until
+    // playback stopped altogether.
+    //
+    // Art and media on separate budgets is what makes that impossible rather
+    // than merely unlikely, and a bigger art budget would not have: any single
+    // ceiling is one that a grid can reach.
+    [Fact]
+    public async Task Exhausting_the_cover_art_budget_does_not_refuse_a_stream()
+    {
+        const string ip = "10.20.30.45";
+        var art = $"/rest/getCoverArt{server.AuthQuery}&id=al-nothing-here";
+
+        // Past the art ceiling, which is what a cold grid scroll does.
+        HttpStatusCode last = HttpStatusCode.OK;
+        for (var i = 0; i < 400; i++)
+        {
+            last = (await server.SendAsync(art, ip)).Status;
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, last);
+
+        // Same source, same instant, and the audio plane is untouched. Not
+        // found, because the fixture library is empty - what matters is that
+        // it reached the handler at all rather than being refused at the gate.
+        var (streamed, _) = await server.SendAsync($"/rest/stream{server.AuthQuery}&id=nope", ip);
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, streamed);
+
+        var (browsed, _) = await server.SendAsync("/rest/ping" + server.AuthQuery, ip);
+        Assert.Equal(HttpStatusCode.OK, browsed);
+    }
+
+    // A 429 that says only "no" makes a client guess how long to wait, and the
+    // guess a decoder makes under pressure is "immediately, three times" -
+    // which spends more of a budget that is already gone. Retry-After turns
+    // the refusal into an instruction SeekableHttpStream can follow.
+    [Fact]
+    public async Task A_refused_request_says_when_to_come_back()
+    {
+        const string ip = "10.20.30.46";
+        var art = $"/rest/getCoverArt{server.AuthQuery}&id=al-nothing-here";
+
+        for (var i = 0; i < 400; i++)
+        {
+            await server.SendAsync(art, ip);
+        }
+
+        var (status, retryAfter) = await server.SendWithHeaderAsync(art, ip, "Retry-After");
+        Assert.Equal(HttpStatusCode.TooManyRequests, status);
+        Assert.False(string.IsNullOrEmpty(retryAfter));
+    }
+
     [Fact]
     public async Task Normal_authenticated_traffic_is_not_rate_limited()
     {
         const string ip = "10.20.30.44";
 
-        // Well under the 600/60s request ceiling, which is sized for an album
-        // grid's burst of getCoverArt calls rather than for a single client
-        // browsing slowly.
+        // Well under the 120/60s browse ceiling. Browsing is the plane with
+        // the tightest budget now, precisely because it is the one a client
+        // does slowly - the bursty traffic (art) and the traffic that must
+        // never be starved (media) have their own.
         for (var i = 0; i < 50; i++)
         {
             var (status, _) = await server.SendAsync("/rest/ping" + server.AuthQuery, ip);

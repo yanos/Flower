@@ -41,9 +41,52 @@ public class SeekableHttpStreamTests
         public int Requests { get; private set; }
         public int RangedRequests { get; private set; }
 
+        // Refuses this many requests with 429 before serving anything, and
+        // says how long to wait - or does not, which is the case a client has
+        // to have its own answer for.
+        public int Refusals { get; set; }
+        public TimeSpan? RetryAfter { get; init; } = TimeSpan.FromMilliseconds(1);
+        public int Refused { get; private set; }
+
         // Cuts the body short once, at this offset, to stand in for a
         // connection dropped mid-track.
         public long? TruncateAt { get; set; }
+
+        // Refuses body requests the way the real server refuses an
+        // unauthenticated one: with Subsonic's error envelope on an HTTP 200,
+        // which the protocol mandates and which makes a status-code check
+        // useless on this surface.
+        //
+        // Bodies only, and the probe deliberately let through, because that
+        // asymmetry is the whole reason the field failure was so hard to read:
+        // a stream URL was signed once and its single-use nonce was spent by
+        // the bytes=0-0 probe, so the track got a correct length from a request
+        // that succeeded and then 130 bytes of JSON from the one that mattered.
+        public bool RefusesBodiesWithSubsonicError { get; init; }
+
+        // The other body that is not audio and used to be decoded as though it
+        // were: a proxy or captive portal answering with a sign-in page.
+        public bool RefusesBodiesWithHtml { get; init; }
+
+        public const string SubsonicErrorMessage = "Wrong username or password.";
+
+        private static HttpResponseMessage SubsonicError() =>
+            Textual("application/json",
+                "{\"subsonic-response\":{\"status\":\"failed\",\"version\":\"1.16.1\","
+                + "\"error\":{\"code\":40,\"message\":\"" + SubsonicErrorMessage + "\"}}}");
+
+        private static HttpResponseMessage Textual(string mediaType, string body)
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body),
+            };
+            response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType)
+            {
+                CharSet = "utf-8",
+            };
+            return response;
+        }
 
         // Exactly what a phone does. .NET's mobile HttpClientHandler has no
         // synchronous path, so this throws for every request - which is how
@@ -56,6 +99,19 @@ public class SeekableHttpStreamTests
         private HttpResponseMessage Respond(HttpRequestMessage request)
         {
             Requests++;
+
+            if (Refusals > 0)
+            {
+                Refusals--;
+                Refused++;
+                var throttled = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                {
+                    Content = new ByteArrayContent([]),
+                };
+                if (RetryAfter is { } after)
+                    throttled.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(after);
+                return throttled;
+            }
 
             if (request.Method == HttpMethod.Head)
             {
@@ -71,6 +127,12 @@ public class SeekableHttpStreamTests
 
             if (FailsEverything)
                 throw new IOException("connection reset");
+
+            var probe = request.Headers.Range?.Ranges.FirstOrDefault() is { From: 0, To: 0 };
+            if (!probe && RefusesBodiesWithSubsonicError)
+                return SubsonicError();
+            if (!probe && RefusesBodiesWithHtml)
+                return Textual("text/html", "<html><body>Please sign in</body></html>");
 
             var from = 0L;
             var to = _content.Length - 1L;
@@ -303,5 +365,140 @@ public class SeekableHttpStreamTests
             Assert.Throws<IOException>(() => stream.Read(new byte[1024]));
 
         Assert.InRange(server.Requests - afterProbe, 1, 8);
+    }
+
+    // The one that cost an album. 429 is not the stream failing - it is the
+    // server asking to be left alone for a moment - and the difference between
+    // waiting it out and treating it as an I/O error is the difference between
+    // a track that stalls and a track the queue declares dead and skips. On
+    // Flower.Server the budget was shared across the whole /rest surface, so a
+    // cover-art burst spent it and the next thing refused was the audio.
+    [Fact]
+    public async Task A_throttled_server_is_waited_out_rather_than_retried_against()
+    {
+        var content = Content(20_000);
+        var server = new FakeServer(content);
+        var (stream, _) = await OpenAsync(content, server: server);
+
+        // More refusals than the reopen budget, which is exactly the shape
+        // that used to lose the track: three attempts, then dead.
+        server.Refusals = 5;
+
+        Assert.Equal(content, ReadFully(stream, content.Length));
+        Assert.Equal(5, server.Refused);
+    }
+
+    // Without a Retry-After the client has to pick its own wait, and still
+    // must not turn the refusal into a failure.
+    [Fact]
+    public async Task A_throttled_server_that_names_no_delay_is_still_waited_out()
+    {
+        var content = Content(20_000);
+        var server = new FakeServer(content) { RetryAfter = null };
+        var (stream, _) = await OpenAsync(content, server: server);
+
+        server.Refusals = 1;
+
+        Assert.Equal(content, ReadFully(stream, content.Length));
+    }
+
+    // Being throttled must not spend the reopen budget either. A 429 that
+    // counted as an attempt would leave a stream that was fine one real
+    // failure away from being latched broken.
+    [Fact]
+    public async Task Being_throttled_does_not_spend_the_reopen_budget()
+    {
+        var content = Content(20_000);
+        var server = new FakeServer(content) { TruncateAt = 8_000 };
+        var (stream, _) = await OpenAsync(content, server: server);
+
+        server.Refusals = 4;
+
+        Assert.Equal(content, ReadFully(stream, content.Length));
+    }
+
+    // Even a throttle that outlasts the wait budget leaves the stream usable:
+    // the server is busy, not gone, and latching it broken is how a transient
+    // refusal became a permanently unplayable track.
+    [Fact]
+    public async Task A_throttle_that_outlasts_the_wait_does_not_break_the_stream()
+    {
+        var content = Content(20_000);
+        var server = new FakeServer(content) { RetryAfter = TimeSpan.FromMilliseconds(20) };
+        var (stream, _) = await OpenAsync(content, server: server);
+        stream.ThrottleWaitBudget = TimeSpan.FromMilliseconds(100);
+
+        server.Refusals = 1_000;
+        Assert.Throws<HttpThrottledException>(() => stream.Read(new byte[1024]));
+
+        server.Refusals = 0;
+        Assert.Equal(content, ReadFully(stream, content.Length));
+    }
+
+    // The Subsonic protocol answers a failed request with HTTP 200 and an
+    // error envelope, so EnsureSuccessStatusCode proves nothing on this
+    // surface. Without this check those ~130 bytes of JSON became the start of
+    // the track: the body then ended far short of the length the probe had
+    // just established, which read as a dropped connection, which reopened and
+    // got the same JSON again. The album skipped through itself in seconds and
+    // every log showed a successful probe.
+    [Fact]
+    public async Task A_subsonic_error_on_a_200_is_not_read_as_audio()
+    {
+        var content = Content(20_000);
+        var (stream, _) = await OpenAsync(content, server: new FakeServer(content)
+        {
+            RefusesBodiesWithSubsonicError = true,
+        });
+
+        var thrown = Assert.Throws<HttpProtocolErrorException>(() => stream.Read(new byte[1024]));
+
+        // The server's own words, rather than a byte count nobody can act on.
+        Assert.Contains(FakeServer.SubsonicErrorMessage, thrown.Message);
+    }
+
+    // The rule is about the content type, not about Subsonic: any textual body
+    // under a 2xx on this surface is an error wearing a success. A captive
+    // portal's sign-in page was decoded just as eagerly.
+    [Fact]
+    public async Task A_sign_in_page_on_a_200_is_not_read_as_audio()
+    {
+        var content = Content(20_000);
+        var (stream, _) = await OpenAsync(content, server: new FakeServer(content)
+        {
+            RefusesBodiesWithHtml = true,
+        });
+
+        var thrown = Assert.Throws<HttpProtocolErrorException>(() => stream.Read(new byte[1024]));
+
+        Assert.Contains("text/html", thrown.Message);
+    }
+
+    // A protocol error is not a connection that dropped, so retrying produces
+    // the same error three times and then reports a dead track. Failing at once
+    // is both faster and the only way the reason survives into the log.
+    [Fact]
+    public async Task A_protocol_error_is_not_retried()
+    {
+        var content = Content(20_000);
+        var server = new FakeServer(content) { RefusesBodiesWithSubsonicError = true };
+        var (stream, _) = await OpenAsync(content, server: server);
+
+        var beforeRead = server.Requests;
+        Assert.Throws<HttpProtocolErrorException>(() => stream.Read(new byte[1024]));
+
+        Assert.Equal(1, server.Requests - beforeRead);
+    }
+
+    // The counterpart, so the check above cannot be satisfied by refusing
+    // everything: a server sending actual audio under a 200 is still audio,
+    // whatever its Accept-Ranges say.
+    [Fact]
+    public async Task An_ordinary_body_is_still_read_as_audio()
+    {
+        var content = Content(20_000);
+        var (stream, _) = await OpenAsync(content);
+
+        Assert.Equal(content, ReadFully(stream, content.Length));
     }
 }
