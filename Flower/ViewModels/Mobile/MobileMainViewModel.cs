@@ -1089,24 +1089,29 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     private static IEnumerable<AlbumTileViewModel> AlbumTilesIn(IEnumerable<AlbumGridRow> rows) =>
         rows.SelectMany(row => row.Tiles);
 
-    private void RebuildRecentlyAddedAlbums()
-    {
-        RecentlyAddedAlbumRows.Clear();
-        var tiles = RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks);
-        TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
-        foreach (var row in AlbumGridRow.Chunk(tiles, AlbumGridColumns))
-            RecentlyAddedAlbumRows.Add(row);
+    private void RebuildRecentlyAddedAlbums() =>
+        RefillAlbumRows(RecentlyAddedAlbumRows, RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks));
 
-        RaiseEmptyStateChanged();
-    }
+    private void RebuildAlbumGrid() =>
+        RefillAlbumRows(AlbumGridRows, AlbumGridBuilder.Build(Main.Library.Tracks));
 
-    private void RebuildAlbumGrid()
+    // Re-chunks a grid from freshly built tiles, keeping the tile instances
+    // that are still on screen - these grids are rebuilt on every library
+    // change, and a completing download is a library change, so replacing the
+    // tiles wholesale abandoned the very spinner the album's own download
+    // button had just started. See AlbumTileMerge; desktop's own grids go
+    // through the same merge from LibraryBrowserViewModel.
+    private void RefillAlbumRows(ObservableCollection<AlbumGridRow> rows, List<AlbumTileViewModel> built)
     {
-        AlbumGridRows.Clear();
-        var tiles = AlbumGridBuilder.Build(Main.Library.Tracks);
+        var tiles = AlbumTileMerge.Apply(AlbumTilesIn(rows).ToList(), built, out var retired);
         TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+
+        rows.Clear();
         foreach (var row in AlbumGridRow.Chunk(tiles, AlbumGridColumns))
-            AlbumGridRows.Add(row);
+            rows.Add(row);
+
+        foreach (var tile in retired)
+            tile.Dispose();
 
         RaiseEmptyStateChanged();
     }
@@ -1118,17 +1123,18 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // grid never lingers if this fires while the picker itself is showing.
     private void RebuildArtistAlbumGrid()
     {
-        ArtistAlbumGridRows.Clear();
-        if (_selectedArtistName != null)
+        if (_selectedArtistName == null)
         {
-            var tracks = Main.Library.Tracks.Where(t => t.Artists == _selectedArtistName);
-            var tiles = AlbumGridBuilder.Build(tracks);
-            TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
-            foreach (var row in AlbumGridRow.Chunk(tiles, AlbumGridColumns))
-                ArtistAlbumGridRows.Add(row);
+            foreach (var tile in AlbumTilesIn(ArtistAlbumGridRows))
+                tile.Dispose();
+            ArtistAlbumGridRows.Clear();
+            RaiseEmptyStateChanged();
+            return;
         }
 
-        RaiseEmptyStateChanged();
+        RefillAlbumRows(
+            ArtistAlbumGridRows,
+            AlbumGridBuilder.Build(Main.Library.Tracks.Where(t => t.Artists == _selectedArtistName)));
     }
 
     private CancellationTokenSource? _searchResultsCts;

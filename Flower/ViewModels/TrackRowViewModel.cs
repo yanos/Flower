@@ -106,7 +106,11 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
         IsAlbumGroupUnavailable = plan.IsAlbumGroupUnavailable;
     }
 
-    private static bool ArtSourceMatches(Track a, Track b) =>
+    // Internal rather than private because an album tile asks the same
+    // question of its representative track when it is reused (see
+    // AlbumTileViewModel.ApplyBuilt) - one answer to "would AlbumArtLoader
+    // return something different for this track now", not two.
+    internal static bool ArtSourceMatches(Track a, Track b) =>
         a.Album == b.Album &&
         a.Path == b.Path &&
         a.OriginAlbumArtHash == b.OriginAlbumArtHash &&

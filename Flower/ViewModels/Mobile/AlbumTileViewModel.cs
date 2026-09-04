@@ -7,6 +7,7 @@ using Avalonia.Media.Imaging;
 
 using Flower.Models;
 using Flower.Services;
+using Flower.ViewModels;
 
 namespace Flower.ViewModels.Mobile;
 
@@ -38,8 +39,14 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
 {
     public required string Name { get; init; }
     public string? Artist { get; init; }
-    public required Track RepresentativeTrack { get; init; }
-    public DateTimeOffset MostRecentlyAdded { get; init; }
+
+    // Settable rather than init-only, and only by ApplyBuilt below: a rebuild
+    // reuses the tile already on screen instead of allocating a fresh one (see
+    // AlbumTileMerge), so the three things a rebuild can actually change about
+    // an album of a given name and artist have to be writable. Same trade
+    // TrackRowViewModel.Track makes, for the same reason.
+    public required Track RepresentativeTrack { get; set; }
+    public DateTimeOffset MostRecentlyAdded { get; set; }
 
     // What identifies this tile among its grid's tiles - see AlbumTileKey.
     // Derived rather than stored so it cannot drift from the two fields it is
@@ -50,7 +57,38 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
     // instances are the library's own) purely so IsUnavailable below can be
     // recomputed whenever the paired server comes or goes, without rebuilding
     // the grid and throwing away art that is already loaded.
-    public required IReadOnlyList<Track> Tracks { get; init; }
+    public required IReadOnlyList<Track> Tracks { get; set; }
+
+    // Takes on what a freshly built tile for the same album says, so the
+    // instance the grid is bound to survives the rebuild with its art, its
+    // expansion, its selection and above all its in-flight download intact -
+    // an album download's own spinner lives here, and a download completing is
+    // itself what triggers the rebuild that used to replace this tile
+    // mid-flight. Name and Artist are not copied because they are the key the
+    // reuse matched on.
+    internal void ApplyBuilt(AlbumTileViewModel built)
+    {
+        if (!ReferenceEquals(RepresentativeTrack, built.RepresentativeTrack))
+        {
+            var previous = RepresentativeTrack;
+            RepresentativeTrack = built.RepresentativeTrack;
+            OnPropertyChanged(nameof(RepresentativeTrack));
+
+            // The point of reuse is that the decoded bitmap survives; it only
+            // stops being the right image when what AlbumArtLoader keys on
+            // changed - see TrackRowViewModel.ArtSourceMatches.
+            if (!TrackRowViewModel.ArtSourceMatches(previous, built.RepresentativeTrack))
+                ResetAlbumArt();
+        }
+
+        if (MostRecentlyAdded != built.MostRecentlyAdded)
+        {
+            MostRecentlyAdded = built.MostRecentlyAdded;
+            OnPropertyChanged(nameof(MostRecentlyAdded));
+        }
+
+        Tracks = built.Tracks;
+    }
 
     // Greyed-out state for the tile: true only when *none* of Tracks can be
     // played right now - see TrackAvailability.IsAlbumUnavailable for why one
@@ -96,6 +134,10 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
     private Bitmap? _albumArt;
     private int _artState; // 0=idle, 1=loading, 2=done
     private int _artCacheGeneration;
+    // Bumped by ResetAlbumArt so a load already in flight for the previous
+    // representative track can tell it has been superseded and drop its
+    // result - same guard, and same reason, as TrackRowViewModel's.
+    private int _artGeneration;
 
     public Bitmap? AlbumArt
     {
@@ -114,10 +156,23 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
         private set { _albumArt = value; OnPropertyChanged(); }
     }
 
+    // Back to idle rather than straight to a reload, like the row's: nothing
+    // may ever read AlbumArt on this tile again, and the getter is what
+    // decides that.
+    private void ResetAlbumArt()
+    {
+        Interlocked.Increment(ref _artGeneration);
+        Interlocked.Exchange(ref _artState, 0);
+        AlbumArt = null;
+    }
+
     private async Task LoadArtAsync()
     {
+        var generation = Volatile.Read(ref _artGeneration);
         var cacheGeneration = AlbumArtLoader.CacheGeneration;
         var bmp = await AlbumArtLoader.Current.LoadAsync(RepresentativeTrack);
+        if (Volatile.Read(ref _artGeneration) != generation)
+            return;
         Volatile.Write(ref _artCacheGeneration, cacheGeneration);
         Interlocked.Exchange(ref _artState, 2);
         AlbumArt = bmp;

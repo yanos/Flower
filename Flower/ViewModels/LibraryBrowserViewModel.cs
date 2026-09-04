@@ -324,10 +324,30 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         private set { _recentlyAddedGridTiles = value; OnPropertyChanged(); }
     }
 
+    // Both grids at once, through the merge that keeps a tile the user is
+    // looking at - and, more to the point, one whose album download is still
+    // running - rather than replacing it with an equivalent-looking fresh
+    // instance. See AlbumTileMerge, and TrackRowMerge for the row-list
+    // original. Retired tiles are disposed for the same reason retired rows
+    // are: an abandoned spinner otherwise keeps its animation-clock
+    // subscription, and the tile behind it, alive forever.
+    private void SetTiles(IReadOnlyList<AlbumTileViewModel> albums, IReadOnlyList<AlbumTileViewModel> recent)
+    {
+        var mergedAlbums = AlbumTileMerge.Apply(AlbumGridTiles, albums, out var retiredAlbums);
+        var mergedRecent = AlbumTileMerge.Apply(RecentlyAddedGridTiles, recent, out var retiredRecent);
+
+        AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(mergedAlbums);
+        RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(mergedRecent);
+
+        foreach (var tile in retiredAlbums)
+            tile.Dispose();
+        foreach (var tile in retiredRecent)
+            tile.Dispose();
+    }
+
     private void RebuildAlbumGrids()
     {
-        AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(AlbumGridBuilder.Build(_allTracks));
-        RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(RecentlyAddedAlbumsBuilder.Build(_allTracks));
+        SetTiles(AlbumGridBuilder.Build(_allTracks), RecentlyAddedAlbumsBuilder.Build(_allTracks));
         ApplyTileAvailability();
 
         // An expanded album's tracks came from a tile built against the
@@ -622,8 +642,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             row.Dispose();
         if (buildGrids)
         {
-            AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(albumTiles!);
-            RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(recentTiles!);
+            SetTiles(albumTiles!, recentTiles!);
             ApplyTileAvailability();
         }
         OnPropertyChanged(nameof(StatusBarText));
