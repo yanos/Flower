@@ -15,8 +15,8 @@ namespace Flower.iOS;
 // Own the process-wide AVAudioSession only while Flower has audio to render.
 // Playback is intentionally non-mixing: Flower's music should replace another
 // music app only after the user explicitly presses Play. The playback category
-// supports AirPlay and, with AllowBluetoothA2DP, stereo Bluetooth output such
-// as AirPods rather than falling back to the handset speaker.
+// supports AirPlay and stereo Bluetooth output such as AirPods rather than
+// falling back to the handset speaker.
 //
 // The route sharing policy is what decides whether AVRoutePickerView (see
 // AppleRoutePicker) can offer AirPlay 2 receivers - HomePods, an Apple TV, a
@@ -69,11 +69,21 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
         // speaker) and stopped when the screen locks, background mode in
         // Info.plist or not.
         //
-        // Doing this at launch does not interrupt whatever else is playing.
-        // Only *activating* a non-mixing session does that, and activation
-        // still waits for real playback - which is the whole point of the split
-        // between this and ActivateForPlayback.
-        ConfigureCategory();
+        // Mixable at launch, and only at launch. The theory that setting a
+        // category is inert until something activates the session does not
+        // survive contact with the device: opening Flower while another app
+        // was playing cut that app off, before a single note of Flower's own
+        // had been asked for. Whether it is setCategory itself or CoreAudio
+        // implicitly activating the session when MiniaudioSink initialises its
+        // output unit - which also happens at startup, from
+        // GaplessAudioManager's constructor - does not much matter, because
+        // MixWithOthers answers both: a mixable session takes nobody's audio
+        // away, activated or not.
+        //
+        // The category underneath it is still Playback, which is the part that
+        // had to be in place this early. What is deferred is only the claim to
+        // be the one app playing, and that is ActivateForPlayback's to make.
+        ConfigureCategory(SessionShape.Silent);
         LogSessionState("configured at startup");
 
         // Registered for the app's whole life, not just while the session is
@@ -100,12 +110,27 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
         // Activation goes ahead even when that failed. A session in the wrong
         // category still plays; a session that is never made active does not,
         // so a category problem must not be allowed to turn into silence.
-        ConfigureCategory();
+        //
+        // This is also where the mixable launch category is dropped: from here
+        // on Flower is the app playing, so it is entitled to say so.
+        ConfigureCategory(SessionShape.Playing);
 
         if (!_session.SetActive(true, out var activationError))
             _logger.LogWarning("Could not activate the iOS playback audio session: {Error}", activationError);
 
         LogSessionState("activated for playback");
+    }
+
+    private enum SessionShape
+    {
+        // Playback, but mixable - the shape for every moment Flower is not
+        // actually rendering, so that merely existing costs another app
+        // nothing.
+        Silent,
+
+        // Playback proper: non-mixing, long-form, the app in charge of the
+        // route.
+        Playing,
     }
 
     // Playback, with the long-form route sharing policy AVRoutePickerView needs
@@ -132,8 +157,27 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
     // screen locked. Losing the first is a missing feature; losing the second
     // is the app not working, so it must not be possible for one refused call
     // to cost both.
-    private bool ConfigureCategory()
+    private bool ConfigureCategory(SessionShape shape)
     {
+        if (shape == SessionShape.Silent)
+        {
+            if (_session.SetCategory(AVAudioSessionCategory.Playback, AVAudioSessionMode.Default,
+                                     AVAudioSessionRouteSharingPolicy.Default,
+                                     AVAudioSessionCategoryOptions.MixWithOthers,
+                                     out var mixableError))
+            {
+                return true;
+            }
+
+            // Falling through to the playing ladder rather than giving up: a
+            // session left in iOS's SoloAmbient default is an app that goes
+            // silent with the ringer switch down and stops at the lock screen,
+            // which is worse than one that is rude to whatever was playing.
+            LogConfigurationFailure(
+                "Could not put the iOS audio session into mixable playback: {Error}. Falling back to the ordinary playback category - another app's audio may stop when Flower opens its output device.",
+                mixableError);
+        }
+
         if (_session.SetCategory(AVAudioSessionCategory.Playback, AVAudioSessionMode.Default,
                                  AVAudioSessionRouteSharingPolicy.LongFormAudio,
                                  default,
@@ -221,6 +265,13 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
         // Tell a player Flower interrupted (e.g. Music) that it may resume.
         if (!_session.SetActive(false, AVAudioSessionSetActiveOptions.NotifyOthersOnDeactivation, out var deactivationError))
             _logger.LogWarning("Could not deactivate the iOS playback audio session: {Error}", deactivationError);
+
+        // Back to the launch shape, so the invariant is the same at every
+        // moment Flower is not playing rather than only at startup: an
+        // inactive non-mixing session is one implicit activation - a device
+        // reopened after its output vanished, say - away from silencing
+        // whoever took over while Flower was paused.
+        ConfigureCategory(SessionShape.Silent);
     }
 
     // A call, Siri, an alarm, or another app claiming the session. iOS has
