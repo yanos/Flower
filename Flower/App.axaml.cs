@@ -491,7 +491,7 @@ public partial class App : Application
         }
 
         services
-            .AddSingleton(_ =>
+            .AddSingleton(sp =>
             {
                 VlcNativeSetup.Initialize();
                 var libVLC = new LibVLC();
@@ -499,6 +499,7 @@ public partial class App : Application
                 // VlcCertificateDialogs for what this accepts and what it does
                 // not.
                 VlcCertificateDialogs.AnswerUnattended(libVLC);
+                VlcDiagnosticLog.Attach(libVLC, sp.GetRequiredService<ILogger<VlcDiagnosticLog>>());
                 return libVLC;
             })
             .AddSingleton(sp => PlatformAudioManager.Current
@@ -508,7 +509,8 @@ public partial class App : Application
                 sp.GetRequiredService<IAudioSink>(),
                 sp.GetRequiredService<ILogger<GaplessAudioManager>>(),
                 sp.GetRequiredService<ILogger<GaplessCoordinator>>(),
-                sp.GetRequiredService<ILogger<TrackDecoder>>()));
+                sp.GetRequiredService<ILogger<TrackDecoder>>(),
+                sp.GetRequiredService<ILogger<VlcDiagnosticLog>>()));
     }
 
     // The composition root. Every service is registered by *type* (or by a

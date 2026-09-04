@@ -149,6 +149,7 @@ namespace Flower.Audio
             GaplessRingBuffer sharedRing,
             ILogger<GaplessCoordinator>? logger = null,
             ILogger<TrackDecoder>? trackDecoderLogger = null,
+            ILogger<VlcDiagnosticLog>? vlcLogger = null,
             int stagingCapacityBytes = 0)
             : this(sharedRing, (track, ring) => new TrackDecoder(libVLC, track, ring, trackDecoderLogger), logger, stagingCapacityBytes)
         {
@@ -157,7 +158,10 @@ namespace Flower.Audio
             // class's remarks), so it needs the dialog handlers set on it too -
             // it is the one that opens the *next* track's URL, which is exactly
             // where a certificate question would appear and stall a handover.
+            // Same for its log: a handover that fails to open the next track
+            // fails on this core, not the one App.axaml.cs attached.
             VlcCertificateDialogs.AnswerUnattended(_secondCore);
+            VlcDiagnosticLog.Attach(_secondCore, vlcLogger);
             _cores = [libVLC, _secondCore];
             _currentDecoderFactory = (track, ring) => new TrackDecoder(_cores[_currentCoreIndex], track, ring, trackDecoderLogger);
             _armedDecoderFactory = (track, ring) => new TrackDecoder(_cores[1 - _currentCoreIndex], track, ring, trackDecoderLogger);

@@ -52,8 +52,9 @@ namespace Flower.Audio
             IAudioSink sink,
             ILogger<GaplessAudioManager> logger,
             ILogger<GaplessCoordinator>? coordinatorLogger = null,
-            ILogger<TrackDecoder>? trackDecoderLogger = null)
-            : this(StartSink(sink), libVLC, sink, logger, coordinatorLogger, trackDecoderLogger)
+            ILogger<TrackDecoder>? trackDecoderLogger = null,
+            ILogger<VlcDiagnosticLog>? vlcLogger = null)
+            : this(StartSink(sink), libVLC, sink, logger, coordinatorLogger, trackDecoderLogger, vlcLogger)
         {
         }
 
@@ -63,8 +64,9 @@ namespace Flower.Audio
             IAudioSink sink,
             ILogger<GaplessAudioManager> logger,
             ILogger<GaplessCoordinator>? coordinatorLogger,
-            ILogger<TrackDecoder>? trackDecoderLogger)
-            : this(sharedRing, new GaplessCoordinator(libVLC, sharedRing, coordinatorLogger, trackDecoderLogger), sink, logger, sinkAlreadyStarted: true)
+            ILogger<TrackDecoder>? trackDecoderLogger,
+            ILogger<VlcDiagnosticLog>? vlcLogger)
+            : this(sharedRing, new GaplessCoordinator(libVLC, sharedRing, coordinatorLogger, trackDecoderLogger, vlcLogger), sink, logger, sinkAlreadyStarted: true)
         {
         }
 

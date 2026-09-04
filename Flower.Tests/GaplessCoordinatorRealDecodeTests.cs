@@ -168,7 +168,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
             sharedRing,
             NullLogger<GaplessCoordinator>.Instance,
             NullLogger<TrackDecoder>.Instance,
-            stagingCapacity);
+            stagingCapacityBytes: stagingCapacity);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
         sink.Resume();
