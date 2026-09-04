@@ -43,6 +43,12 @@ public static class DecodeChecks
 
     private static readonly TimeSpan DecodeTimeout = TimeSpan.FromSeconds(60);
 
+    // How long the drain is given to catch up with the decoder once decoding
+    // has stopped. Emptying a ring is memcpy, so this is not a budget for the
+    // work - it is a bound on how long a descheduled thread is waited for
+    // before its shortfall is reported as one.
+    private static readonly TimeSpan SettlePatience = TimeSpan.FromSeconds(5);
+
     // LibVLC's own resampler can trim or pad the very edges of a track by a
     // frame or two; a difference of more than this is a real one.
     private const int TailToleranceMs = 50;
@@ -102,10 +108,55 @@ public static class DecodeChecks
         // this process - and it did: two checks failed intermittently, in the
         // full suite only, for reasons that had nothing to do with what they
         // check.
-        foreach (var subject in AvailableDecoders(libVlc))
+        var subjects = AvailableDecoders(libVlc);
+        results.AddRange(RequiredDecodersArePresent(subjects));
+
+        foreach (var subject in subjects)
             results.AddRange(RunChecks(subject));
 
         return results;
+    }
+
+    // FLOWER_REQUIRE_DECODERS names the decoders a caller expects this
+    // platform to have, comma-separated, and turns a missing one into a
+    // failing check rather than a shorter run.
+    //
+    // Unset everywhere a decoder's absence is a fact about the platform - a
+    // phone with no built façade should report what it can decode, not fail
+    // for what nobody built. Set on CI, where a decoder going missing is
+    // never a fact about the platform: it means the artifact did not build,
+    // or built and would not load, and the visible consequence is a green
+    // run that quietly checked half of what it used to. That is the exact
+    // shape of the bug this whole per-decoder loop exists because of, so the
+    // suite is not allowed to shrink in silence.
+    private static IEnumerable<CheckResult> RequiredDecodersArePresent(IReadOnlyList<DecoderUnderTest> available)
+    {
+        var required = Environment.GetEnvironmentVariable("FLOWER_REQUIRE_DECODERS");
+        if (required is not { Length: > 0 })
+            yield break;
+
+        foreach (var name in required.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var wanted = name;
+            yield return Run($"{wanted} is available to be checked at all", () =>
+            {
+                foreach (var subject in available)
+                {
+                    if (string.Equals(subject.Name, wanted, StringComparison.OrdinalIgnoreCase))
+                        return;
+                }
+
+                var present = available.Count == 0 ? "none" : string.Join(", ", Names(available));
+                throw new CheckFailedException(
+                    $"FLOWER_REQUIRE_DECODERS asked for \"{wanted}\" and this platform has {present}");
+            });
+        }
+    }
+
+    private static IEnumerable<string> Names(IReadOnlyList<DecoderUnderTest> subjects)
+    {
+        foreach (var subject in subjects)
+            yield return subject.Name;
     }
 
     private static IReadOnlyList<CheckResult> RunChecks(DecoderUnderTest subject)
@@ -445,7 +496,7 @@ public static class DecodeChecks
         // Settled first: the fault and the last write into the ring are on
         // the same thread, so a snapshot taken the instant Faulted fires can
         // legitimately race the drain thread and see nothing at all.
-        drain.Settle();
+        drain.Settle(decoder.BytesProduced);
 
         var partial = InFixtureUnits(subject, drain.Snapshot());
         if (partial.Length == 0)
@@ -474,6 +525,13 @@ public static class DecodeChecks
     private const int FixtureBytesPerFrame = 2 * (int)GaplessFormat.Channels;
 
     private static int BytesPerSecond() => (int)GaplessFormat.SampleRate * FixtureBytesPerFrame;
+
+    // The same second, counted in the bytes the decoder under check actually
+    // writes: FFmpeg's are half as many again as the fixture's. Used only for
+    // measuring what the ring holds against what the decoder produced, which
+    // is a question in the pipeline's units rather than the fixture's.
+    private static int PipelineBytesPerSecond(DecoderUnderTest subject) =>
+        (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerSampleOf(subject.Format) * (int)GaplessFormat.Channels;
 
     // Whatever the decoder delivered, in the fixture's units.
     //
@@ -670,9 +728,20 @@ public static class DecodeChecks
         using var decoder = subject.Create(track, ring);
         using var drain = new Drain(ring);
 
+        // Which of the two fired, not merely that one did. They used to share
+        // a latch and nothing else, so a decode that broke mid-stream was
+        // indistinguishable from one that ended cleanly and short: the fault
+        // went unmentioned, the bytes that had arrived went to the length
+        // oracle, and the check reported a tail that came up short. That
+        // number was true and said nothing about why.
         var finished = new ManualResetEventSlim();
+        var faulted = false;
         decoder.Drained += () => finished.Set();
-        decoder.Faulted += () => finished.Set();
+        decoder.Faulted += () =>
+        {
+            faulted = true;
+            finished.Set();
+        };
 
         if (prepare)
         {
@@ -684,12 +753,29 @@ public static class DecodeChecks
         decoder.StartDecoding();
 
         if (!finished.Wait(DecodeTimeout))
-            throw new CheckFailedException("the decode never finished");
+            throw new CheckFailedException($"the decode never finished ({decoder.BytesProduced} bytes produced)");
 
         // Drained fires when the decoder stops producing, which can be a beat
         // before the last write lands in the ring.
-        drain.Settle();
-        return InFixtureUnits(subject, drain.Snapshot());
+        var produced = decoder.BytesProduced;
+        drain.Settle(produced);
+        var collected = drain.Snapshot();
+
+        if (faulted)
+            throw new CheckFailedException(
+                $"the decode faulted after producing {produced} bytes, of which {collected.Length} arrived");
+
+        // The third thing a short result can be, and the one that says the
+        // decoder was fine: everything was decoded and the reader did not
+        // collect it. Separated here so it can never again be handed to the
+        // length oracle and reported as a track that ended early - the two
+        // have entirely different causes and only one of them is about audio.
+        var missing = produced - collected.Length;
+        if (missing > PipelineBytesPerSecond(subject) * TailToleranceMs / 1000)
+            throw new CheckFailedException(
+                $"the drain collected {collected.Length} of the {produced} bytes the decoder produced");
+
+        return InFixtureUnits(subject, collected);
     }
 
     // Pulls the ring dry on its own thread and keeps what came out. Without a
@@ -755,19 +841,48 @@ public static class DecodeChecks
             }
         }
 
-        // Waits for the ring to stop producing, so a check does not read a
-        // buffer the decoder is still writing the tail of.
-        public void Settle()
+        // Waits until the drain has actually collected everything the decoder
+        // says it produced, so a check does not read a ring the decoder has
+        // finished writing but the reader has not finished emptying.
+        //
+        // Waiting for the collection to merely stop growing is what this used
+        // to do, and it was wrong in a way that only showed up under load: two
+        // samples 20ms apart look identical whether the ring is empty or the
+        // drain thread was simply not scheduled in between, and a check that
+        // gave up there read the audio still sitting in the ring as a track
+        // that ended early. BytesProduced is the reader's own finish line and
+        // is known exactly - the decoder counts it after each write - so it is
+        // used instead of guessing from the outside.
+        //
+        // Quiescence stays as the fallback for the case that has no reachable
+        // finish line: a decoder that faulted part-way through a write, whose
+        // last counted bytes never made it into the ring. Reaching that
+        // fallback is itself a finding, and DecodeFully reports the shortfall
+        // rather than passing it on as a length.
+        public void Settle(long produced)
         {
+            var deadline = Stopwatch.StartNew();
             var last = -1L;
-            for (var i = 0; i < 50; i++)
+            var unchangedTicks = 0;
+
+            while (deadline.Elapsed < SettlePatience)
             {
                 var now = Collected;
-                if (now == last)
+                if (now >= produced)
                     return;
 
-                last = now;
-                Thread.Sleep(20);
+                if (now == last)
+                {
+                    if (++unchangedTicks >= 5)
+                        return;
+                }
+                else
+                {
+                    unchangedTicks = 0;
+                    last = now;
+                }
+
+                Thread.Sleep(10);
             }
         }
 

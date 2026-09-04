@@ -516,6 +516,54 @@ have and turns a missing one into a failing check. It is unset on a phone,
 where a decoder's absence is a true fact about the platform, and set on CI,
 where it never is.
 
+### The intermittent one, and why its message was useless
+
+`LibVLC: FLAC at 44.1kHz decodes when streamed from a server that refuses
+ranges` failed once in three full-suite runs on this Mac - 283,660 bytes of an
+expected 384,000, so 523ms of a two-second track never arrived - and passed on
+the other two. It is the LibVLC path, which nothing in this section touches.
+
+It has not been reproduced. Thirty runs of that check alone, twenty-five more
+with twenty spinning cores against it, and four further full-suite runs are all
+green, so what follows is what was ruled out rather than a fix.
+
+What the investigation did find is that the check could not have told anyone
+what happened. `DecodeFully` wired `Drained` and `Faulted` to the same latch and
+recorded nothing about which fired, so three unrelated events arrived at the
+length oracle as one number:
+
+- the decode faulted mid-stream and stopped,
+- the decode ended cleanly but short,
+- the decode was complete and the *reader* lost the tail.
+
+"523ms off" is true of all three and distinguishes none of them, and two of them
+are not about audio at all. Each now reports itself: a fault says it faulted and
+how many bytes it had produced, and a shortfall between what the decoder counted
+and what the drain collected says exactly that.
+
+The third of those is also now impossible rather than merely reported. `Settle`
+waited for the collection to stop growing, which is a guess from the outside: two
+samples 20ms apart look identical whether the ring is empty or the drain thread
+simply was not scheduled between them. It now waits for the decoder's own
+`BytesProduced`, which is an exact finish line - the decoder increments it after
+each write - with quiescence kept only as the fallback for a decoder that
+faulted part-way through a write and left a target nothing will ever reach.
+
+That was the leading theory, and measuring it is what killed it: the ring holds
+a steady 22,880 bytes - 119ms - at the moment `Drained` fires on this fixture,
+so a starved drain cannot lose 523ms of audio, because 523ms of audio is never
+in there. Two other theories died the same way. Cutting the body mid-track does
+not truncate anything (`SeekableHttpStream` reopens from zero and skips forward,
+and the decode comes back whole), and LibVLC issues no seek at all on this path,
+so `HttpMediaInput.Seek` returning false against a server that refuses ranges -
+which would make LibVLC abandon the demuxer - never happens here.
+
+So the cause is still open, and the value of the change is that the next
+occurrence will name it instead of being a number three things could produce.
+That matters more on CI than here: the run that sees this next is the one that
+cannot be attached to a debugger, and a disagreement between two platforms is
+the entire signal this suite exists to carry.
+
 What this does not do is make FFmpeg cross-platform. Windows needs an FFmpeg
 build and an import-lib route; Android and iOS need FFmpeg cross-compiled and
 linked in statically. Until then the decoder is macOS-and-Linux, honestly
