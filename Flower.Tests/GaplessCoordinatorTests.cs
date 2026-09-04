@@ -183,6 +183,10 @@ public class GaplessCoordinatorTests
         h.Coordinator.Play(a);
         WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
 
+        // A decoder that produced nothing did not play, and the coordinator
+        // reports that as TrackFailed rather than EndReached - so a drain that
+        // is meant to stand for a finished track has to have made some audio.
+        h.LatestDecoderFor(a).BytesProduced = 4096;
         h.LatestDecoderFor(a).RaiseDrained();
 
         Assert.Same(a, endReachedTrack);
@@ -202,6 +206,10 @@ public class GaplessCoordinatorTests
         h.Coordinator.SetUpcoming(b);
         WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should be armed");
 
+        // A decoder that produced nothing did not play, and the coordinator
+        // reports that as TrackFailed rather than EndReached - so a drain that
+        // is meant to stand for a finished track has to have made some audio.
+        h.LatestDecoderFor(a).BytesProduced = 4096;
         h.LatestDecoderFor(a).RaiseDrained();
 
         Assert.Same(a, endReachedTrack);
@@ -234,6 +242,30 @@ public class GaplessCoordinatorTests
         Assert.Null(h.Coordinator.CurrentTrack);
     }
 
+    // LibVLC reports a clean end for a stream it could not make sense of at
+    // all - no error, no fault, just a track that is suddenly over. EndReached
+    // means "finished", which counts a play and advances the queue, so a whole
+    // album of tracks the decoder could not open went past silently and each
+    // one counted. Zero bytes is the one unambiguous way to tell from here.
+    [Fact]
+    public void A_drain_that_produced_no_audio_reports_TrackFailed_rather_than_EndReached()
+    {
+        var h = new Harness();
+        var a = T("A");
+        Track? endReachedTrack = null;
+        Track? failedTrack = null;
+        h.Coordinator.EndReached += t => endReachedTrack = t;
+        h.Coordinator.TrackFailed += t => failedTrack = t;
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+
+        h.LatestDecoderFor(a).BytesProduced = 0;
+        h.LatestDecoderFor(a).RaiseDrained();
+
+        Assert.Same(a, failedTrack);
+        Assert.Null(endReachedTrack);
+    }
+
     [Fact]
     public void Faulted_current_track_still_promotes_the_armed_track()
     {
@@ -264,6 +296,10 @@ public class GaplessCoordinatorTests
         WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should be armed");
 
         h.LatestDecoderFor(b).RaiseFaulted();
+        // A decoder that produced nothing did not play, and the coordinator
+        // reports that as TrackFailed rather than EndReached - so a drain that
+        // is meant to stand for a finished track has to have made some audio.
+        h.LatestDecoderFor(a).BytesProduced = 4096;
         h.LatestDecoderFor(a).RaiseDrained();
 
         Assert.Same(a, endReachedTrack);

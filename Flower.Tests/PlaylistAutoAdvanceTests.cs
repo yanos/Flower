@@ -204,4 +204,97 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         Assert.Same(a, reported);
     }
+
+    // ── Giving up on a source that fails everything ──────────────────────────
+    //
+    // Skipping one broken file is right; skipping every file in the queue at
+    // two a second, forever, is what an unreachable server looks like from in
+    // here. See PlaylistControlViewModel.MaxConsecutiveFailures.
+
+    private static void Pump(TimeSpan duration)
+    {
+        var deadline = DateTime.UtcNow + duration;
+        while (DateTime.UtcNow < deadline)
+        {
+            Dispatcher.UIThread.RunJobs();
+            Thread.Sleep(1);
+        }
+    }
+
+    // Fails whatever is playing, over and over, until the view model stops
+    // handing back a new track - and answers how many failures that took.
+    private static int FailEverything(PlaylistControlViewModel vm, FakeAudioManager audio)
+    {
+        var failures = 0;
+        vm.PlaybackFailed += (_, _) => failures++;
+
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            var current = vm.CurrentlyPlayingTrack;
+            if (current == null)
+                break;
+
+            audio.RaiseTrackFailed(current);
+            Pump(TimeSpan.FromMilliseconds(20));
+
+            if (vm.CurrentlyPlayingTrack == current)
+                break;
+        }
+
+        return failures;
+    }
+
+    // Repeat is what makes this unbounded rather than merely long: without a
+    // limit the queue wraps and starts again, and nothing ever stops it.
+    [AvaloniaFact]
+    public void A_source_that_fails_every_track_is_given_up_on_rather_than_cycled_forever()
+    {
+        var tracks = new List<Track> { T("A"), T("B"), T("C") };
+        var vm = MakeViewModel(tracks, out var audio);
+        vm.ToggleRepeat();
+        vm.Play(tracks[0]);
+
+        Assert.Equal(5, FailEverything(vm, audio));
+    }
+
+    // The limit counts a *run*. One bad file in the middle of a working album
+    // must not spend part of the budget for the next one.
+    [AvaloniaFact]
+    public void A_track_that_plays_to_the_end_starts_the_count_over()
+    {
+        // Long enough that the run below never has to wrap: repeat is what
+        // would make a natural end replay the same track rather than move on.
+        var tracks = new List<Track> { T("A"), T("B"), T("C"), T("D"), T("E"), T("F"), T("G"), T("H"), T("I"), T("J") };
+        var vm = MakeViewModel(tracks, out var audio);
+        vm.Play(tracks[0]);
+
+        for (var i = 0; i < 4; i++)
+        {
+            var current = vm.CurrentlyPlayingTrack!;
+            audio.RaiseTrackFailed(current);
+            PumpUntil(() => vm.CurrentlyPlayingTrack != current, TimeSpan.FromSeconds(5));
+        }
+
+        var played = vm.CurrentlyPlayingTrack!;
+        audio.RaiseEndReached();
+        PumpUntil(() => vm.CurrentlyPlayingTrack != played, TimeSpan.FromSeconds(5));
+
+        Assert.Equal(5, FailEverything(vm, audio));
+    }
+
+    // Pressing play is the user saying "try again" - a server that came back
+    // should not be one stumble away from being given up on.
+    [AvaloniaFact]
+    public void Starting_a_track_by_hand_starts_the_count_over()
+    {
+        var tracks = new List<Track> { T("A"), T("B"), T("C") };
+        var vm = MakeViewModel(tracks, out var audio);
+        vm.ToggleRepeat();
+        vm.Play(tracks[0]);
+
+        FailEverything(vm, audio);
+        vm.Play(tracks[0]);
+
+        Assert.Equal(5, FailEverything(vm, audio));
+    }
 }

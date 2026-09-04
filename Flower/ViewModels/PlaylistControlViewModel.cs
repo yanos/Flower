@@ -202,6 +202,13 @@ namespace Flower.ViewModels
                     var finishedTrack = CurrentlyPlayingTrack;
                     _logger.LogDebug("EndReached: {Title} ({Path})", finishedTrack.Title, LogPath.Short(finishedTrack.Path));
 
+                    // Reaching the end is proof that playback works, so a run
+                    // of failures before it was a run of bad files rather than
+                    // a bad source - see MaxConsecutiveFailures. A track that
+                    // produced no audio does not arrive here at all; the
+                    // coordinator sends that one to TrackFailed instead.
+                    _consecutiveFailures = 0;
+
                     // finishedTrack can be a stale reference: every launch kicks off a
                     // background rescan (see App.axaml.cs) that replaces _library.Tracks
                     // wholesale with brand-new Track instances, even for files that didn't
@@ -278,6 +285,14 @@ namespace Flower.ViewModels
                 _logger.LogWarning("Skipping {Title} ({Path}) - it could not be played", e.Track.Title, LogPath.Short(e.Track.Path));
                 PlaybackFailed?.Invoke(this, e);
 
+                if (++_consecutiveFailures >= MaxConsecutiveFailures)
+                {
+                    _logger.LogWarning(
+                        "Stopping after {Count} tracks in a row that could not be played - at that point the problem is the source, not any one track",
+                        _consecutiveFailures);
+                    return;
+                }
+
                 // Repeat would re-attempt the same broken file forever, so the
                 // next track here is always the *next* one, never a repeat of
                 // this one.
@@ -287,6 +302,29 @@ namespace Flower.ViewModels
             },
                 h => _audioManager.TrackFailed += h, h => _audioManager.TrackFailed -= h);
         }
+
+        // Skipping past a track that won't play is the right thing to do once.
+        // Doing it forever is what a broken *source* looks like from in here:
+        // an unreachable server, a disconnected drive, a container LibVLC
+        // cannot open. Every track fails the same way, each failure advances to
+        // the next, and the queue empties itself at two tracks a second without
+        // a sound - fifteen tracks in twenty seconds, then round again, because
+        // repeat put it back at the top.
+        //
+        // One count and one limit rather than a rule per mode. Repeat-one,
+        // repeat-all, shuffle and no repeat at all differ only in *which* track
+        // comes next, and none of them has an answer for "none of them work";
+        // asking each mode when to give up would be four ways of writing five.
+        // Five is enough to be sure it is not one bad file, few enough that
+        // nobody sits through it, and short enough that the notification each
+        // failure raises still reads as a handful rather than a flood.
+        private const int MaxConsecutiveFailures = 5;
+
+        // Reset by anything that proves playback works: a track that reaches
+        // its end with audio behind it, and any track the user starts by hand.
+        // Not reset by the automatic advance itself, which is the run being
+        // counted.
+        private int _consecutiveFailures;
 
         // How work that must not run on the LibVLC decode callback thread gets
         // off it - see the EndReached handler above for why. Settable so a
@@ -476,6 +514,13 @@ namespace Flower.ViewModels
         // auto-advance handlers pass false.
         public void Play(Track track, int queueIndex, bool immediate = true)
         {
+            // A gesture is the user saying "try again", so it starts the count
+            // of consecutive failures over - otherwise a source that came back
+            // (the server reachable again, the drive remounted) would still be
+            // five failures deep and give up on the first stumble.
+            if (immediate)
+                _consecutiveFailures = 0;
+
             // Worked out against the track as queued - the placeholder - since
             // that is what the queue holds. ResolveForPlayback's copy keeps
             // Track.Id, so this stays correct either way, but doing it first

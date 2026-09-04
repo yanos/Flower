@@ -676,6 +676,28 @@ namespace Flower.Audio
                     _sharedRing.Generation, _armedTrack?.Path, _armed?.BytesProduced ?? 0,
                     _armedAlreadyDrained);
 
+                // A track that produced not one sample did not play, whatever
+                // LibVLC calls it. It reports a clean end for this - no error,
+                // no fault - and EndReached is a *finished* track: the play
+                // count goes up, the resume position is cleared, and the queue
+                // advances as if it had been listened to. So a track LibVLC
+                // could not make sense of at all (see TrackDecoder.DemuxHintFor
+                // for the way this was found: every AAC stream on iOS) went
+                // past silently and counted, and the next one did the same, and
+                // an album emptied itself in twenty seconds.
+                //
+                // Reclassified here rather than handled in the ViewModel
+                // because "was any audio produced" is only knowable here, and
+                // because TrackFailed already means exactly this: don't count
+                // it, don't repeat it, tell the user.
+                if (!faulted && decoder.BytesProduced == 0)
+                {
+                    _logger?.LogWarning(
+                        "Decoder for {Path} ended without producing any audio; treating it as a failure rather than a finished track",
+                        LogPath.Short(finishedTrack.Path));
+                    faulted = true;
+                }
+
                 if (!faulted && expectedBytes > 0 && decoder.BytesProduced + BytesForDuration(TimeSpan.FromSeconds(2)) < expectedBytes)
                 {
                     _logger?.LogWarning(

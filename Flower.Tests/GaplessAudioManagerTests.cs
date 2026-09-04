@@ -208,6 +208,10 @@ public class GaplessAudioManagerTests
         var raised = false;
         manager.EndReached += (_, _) => raised = true;
 
+        // A drain that produced nothing is reported as TrackFailed instead -
+        // see GaplessCoordinator.HandleDrainedOrFaulted - so a track standing
+        // in for one the listener heard has to have made some audio.
+        decoder.BytesProduced = 4096;
         decoder.RaiseDrained();
 
         Assert.True(raised);
