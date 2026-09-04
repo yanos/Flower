@@ -491,3 +491,9 @@ Flower.Server/[Dd]ata/logs/
 native/ffmpeg/build/
 native/ffmpeg/*/build/
 native/ffmpeg/artifacts/
+
+# FFmpeg's own source and the static prefix ios/build-ffmpeg.sh cross-compiles
+# it into. Not checked in: it is 40MB of upstream tarball and a build tree that
+# the script reproduces from a version number, and the thing worth committing -
+# the framework it ends up inside - lives in Flower.iOS/Frameworks/.
+native/ffmpeg/ios/ffmpeg/

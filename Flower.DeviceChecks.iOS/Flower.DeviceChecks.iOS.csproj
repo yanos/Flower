@@ -43,4 +43,23 @@
     <ProjectReference Include="..\Flower.DeviceChecks\Flower.DeviceChecks.csproj" />
   </ItemGroup>
 
+  <!-- The FFmpeg façade, out of Flower.iOS's Frameworks rather than a copy of
+       its own: it is the app's binary, and a runner checking a different one
+       would be checking the wrong thing. The checks run once per decoder the
+       platform has, so embedding this is what makes the FFmpeg half of an iOS
+       run exist at all - without it DecoderElection finds nothing loadable and
+       the run goes green having checked LibVLC twice as thoroughly as nothing.
+
+       No miniaudio here: this runner decodes and never plays. -->
+  <ItemGroup Condition="('$(Platform)' == 'iPhoneSimulator') OR $(RuntimeIdentifier.StartsWith('iossimulator'))">
+    <NativeReference Include="..\Flower.iOS\Frameworks\ios-simulator\flower_ffmpeg.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+  <ItemGroup Condition="('$(Platform)' == 'iPhone') OR ('$(RuntimeIdentifier)' == 'ios') OR $(RuntimeIdentifier.StartsWith('ios-')) OR $(RuntimeIdentifier.StartsWith('ios.'))">
+    <NativeReference Include="..\Flower.iOS\Frameworks\ios-device\flower_ffmpeg.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+
 </Project>

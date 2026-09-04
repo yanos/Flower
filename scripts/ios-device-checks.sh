@@ -70,7 +70,14 @@ LOG="$CONTAINER/Documents/$TRANSCRIPT"
 rm -f "$LOG"
 
 echo "==> Running"
-xcrun simctl launch "$DEVICE" "$BUNDLE_ID" >/dev/null
+# Both decoders, named rather than left to whatever loaded. iOS has a built
+# façade now, so FFmpeg going missing here means the framework did not embed or
+# would not load - not a fact about the platform - and the visible symptom is a
+# green run of exactly half the checks. That is not hypothetical: the first run
+# with the framework in the bundle reported 70 passed, 0 failed, having
+# silently checked LibVLC only.
+SIMCTL_CHILD_FLOWER_REQUIRE_DECODERS=LibVLC,FFmpeg \
+  xcrun simctl launch "$DEVICE" "$BUNDLE_ID" >/dev/null
 
 for _ in $(seq "$TIMEOUT_SECONDS"); do
   if [ -f "$LOG" ] && grep -q 'FLOWER-CHECKS ' "$LOG"; then

@@ -23,7 +23,17 @@ namespace Flower.Audio.Ffmpeg
 
         internal const int SeekSize = 0x10000;
 
-        static FfmpegNative()
+        // A module initializer rather than this class's static constructor,
+        // which is where it was and which worked everywhere except the one
+        // platform that needs it most. A P/Invoke has no body for a type
+        // initializer to run in front of, and Mono on iOS resolves the library
+        // for the stub before it runs the declaring type's cctor - so the
+        // resolver was registered by the very call that had already failed
+        // with DllNotFoundException. The framework loaded fine when asked
+        // directly; nothing was ever asking. Registering at module load has no
+        // such ordering to get wrong.
+        [System.Runtime.CompilerServices.ModuleInitializer]
+        internal static void RegisterResolver()
         {
             NativeLibrary.SetDllImportResolver(typeof(FfmpegNative).Assembly, Resolve);
         }
@@ -41,6 +51,19 @@ namespace Flower.Audio.Ffmpeg
             if (Environment.GetEnvironmentVariable("FLOWER_FFMPEG") is { Length: > 0 } explicitPath
                 && NativeLibrary.TryLoad(explicitPath, out var fromEnvironment))
                 return fromEnvironment;
+
+            // iOS ships the façade as an embedded framework, whose binary sits
+            // at a nested path the loader is never told about: .NET-for-iOS
+            // resolves a P/Invoke by dlopen-ing the DllImport string, which
+            // matches nothing here even though the app's own load commands
+            // name the framework. MiniaudioSink's static constructor says the
+            // same thing about the same failure, and VlcNativeSetup's Linux
+            // resolver about the same one again.
+            if (OperatingSystem.IsIOS())
+            {
+                var framework = Path.Combine(AppContext.BaseDirectory, "Frameworks", "flower_ffmpeg.framework", "flower_ffmpeg");
+                return NativeLibrary.TryLoad(framework, out var embedded) ? embedded : IntPtr.Zero;
+            }
 
             foreach (var candidate in Candidates())
             {

@@ -84,9 +84,45 @@ The version floor is FFmpeg 5.1 - where `AVChannelLayout` and
 version of the one machine this was first built on, and it kept the Linux
 build from finding Ubuntu 24.04's FFmpeg 6 at all.
 
+## Building for iOS
+
+```
+native/ffmpeg/ios/build-ffmpeg.sh   # slow: cross-compiles FFmpeg itself, both slices
+native/ffmpeg/ios/build.sh          # wraps it in flower_ffmpeg.framework
+```
+
+Unlike macOS and Linux there is nothing for `pkg-config` to find, so the first
+script builds FFmpeg from the release tarball for device arm64 and Apple
+Silicon simulator arm64, and the second links it *into* the façade: one
+framework per slice rather than five libraries, which is what
+`-DFLOWER_FFMPEG_STATIC` means for mobile. The frameworks land in
+`Flower.iOS/Frameworks/ios-{device,simulator}/` and are checked in, the same
+arrangement `native/miniaudio/` uses and for the same reason - a phone has no
+package manager. They are about 1.9MB each.
+
+Two things about that build are load-bearing rather than incidental.
+
+The configure line is where the LGPL obligation is actually met: a phone links
+FFmpeg statically, so unlike desktop there is no distro build to blame or
+replace. No `--enable-gpl`, no `--enable-nonfree`, and `--disable-everything`
+plus an explicit list of the decoders and demuxers a music library is made of.
+The `config.h` it produces says `CONFIG_GPL 0`, which is the thing to check
+after any change here.
+
+And the export list. `CMAKE_C_VISIBILITY_PRESET hidden` cannot reach inside a
+static archive, so without `-exported_symbols_list` the framework would
+re-export FFmpeg's entire ABI - which is precisely the second route to FFmpeg
+that this façade exists in order not to have. `ios/build.sh` derives the list
+from the `FLOWER_API` lines in the header and ends by printing anything else
+that got out.
+
+`--disable-network`, because Flower never lets FFmpeg open a URL: a streamed
+track arrives through the façade's own AVIO callbacks over `SeekableHttpStream`,
+which is what keeps authentication, range probing and 429 handling in one place.
+
 ## Platform status
 
-Two of the five heads are built. The same source and the same `CMakeLists.txt`
+Three of the five heads are built. The same source and the same `CMakeLists.txt`
 are meant to serve all of them, but "meant to" is not "does", and the plan doc
 is explicit that this decoder must not be described as cross-platform until
 each artifact is built, packaged and tested on real hardware:
@@ -97,7 +133,7 @@ each artifact is built, packaged and tested on real hardware:
 | Linux | `libflower_ffmpeg.so` | `linux/build.sh` written and wired into CI; the first CI run is what proves it - it has never been built on a Linux machine here |
 | Windows | `flower_ffmpeg.dll` | Unbuilt; needs an FFmpeg build and an import-lib route |
 | Android | `libflower_ffmpeg.so` per ABI | Unbuilt; needs a static NDK FFmpeg (`FLOWER_FFMPEG_STATIC`) |
-| iOS | `flower_ffmpeg.xcframework` | Unbuilt; needs a static FFmpeg and `<NativeReference>` wiring |
+| iOS | `flower_ffmpeg.framework` per slice | Built; all 70 FFmpeg decode checks pass on the simulator, and elected on a physical device via `FLOWER_DECODER=ffmpeg` |
 
 ## On CI
 

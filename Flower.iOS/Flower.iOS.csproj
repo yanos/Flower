@@ -80,13 +80,25 @@
        own proven ios-device/ios-simulator NativeReference pattern
        (~/.nuget/packages/videolan.libvlc.ios/*/build/VideoLAN.LibVLC.iOS.targets)
        instead, conditioned the same way. -->
+  <!-- flower_ffmpeg is the same arrangement for the same reasons
+       (native/ffmpeg/ios/build.sh), with one difference worth knowing: FFmpeg
+       itself is linked into it statically, because a phone has no package
+       manager to find one and shipping four more libraries per slice to reach
+       an eight-function façade is not a trade worth making. That is also where
+       the LGPL obligation lands - see native/ffmpeg/README.md. -->
   <ItemGroup Condition="('$(Platform)' == 'iPhoneSimulator') OR $(RuntimeIdentifier.StartsWith('iossimulator'))">
     <NativeReference Include="Frameworks\ios-simulator\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+    <NativeReference Include="Frameworks\ios-simulator\flower_ffmpeg.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>
   <ItemGroup Condition="('$(Platform)' == 'iPhone') OR ('$(RuntimeIdentifier)' == 'ios') OR $(RuntimeIdentifier.StartsWith('ios-')) OR $(RuntimeIdentifier.StartsWith('ios.'))">
     <NativeReference Include="Frameworks\ios-device\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+    <NativeReference Include="Frameworks\ios-device\flower_ffmpeg.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>

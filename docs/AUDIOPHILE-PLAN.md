@@ -564,9 +564,59 @@ That matters more on CI than here: the run that sees this next is the one that
 cannot be attached to a debugger, and a disagreement between two platforms is
 the entire signal this suite exists to carry.
 
+### iOS, where the decoder has to bring its own FFmpeg
+
+The difference between this and the desktop builds is that there is nothing to
+find. macOS and Linux ask `pkg-config` for an FFmpeg somebody else installed; a
+phone has no package manager, so `native/ffmpeg/ios/build-ffmpeg.sh`
+cross-compiles FFmpeg itself for device arm64 and Apple Silicon simulator
+arm64, and `ios/build.sh` links it into `flower_ffmpeg.framework` - one
+framework per slice, checked in beside the platform head exactly as
+`native/miniaudio/` does. About 1.9MB a slice, which is what
+`--disable-everything` plus the decoders and demuxers a music library is
+actually made of costs.
+
+That static link is also where the LGPL stops being somebody else's problem. On
+desktop the FFmpeg is a distro or MacPorts build, replaceable by whoever
+installed it; here it is inside the app, so the configure line is the
+compliance. No `--enable-gpl`, no `--enable-nonfree`, and `config.h` says
+`CONFIG_GPL 0` - which is the thing to re-check after any change to that
+script, because nothing else will.
+
+The narrow ABI needed defending in a way it did not on desktop.
+`CMAKE_C_VISIBILITY_PRESET hidden` cannot reach inside a static archive, so a
+framework built the obvious way re-exports all of FFmpeg - the second route to
+FFmpeg that this façade exists in order not to have. The build derives an
+export list from the `FLOWER_API` lines in the header and ends by printing
+anything else that escaped.
+
+**The bug this found is the one worth writing down.** With the framework
+embedded, signed, loadable and exporting `flower_abi_version`, the first
+simulator run reported 70 passed, 0 failed - LibVLC only, with no FFmpeg checks
+in it at all and nothing saying so. `FfmpegNative` registered its
+`DllImportResolver` in its own static constructor, which works on every desktop
+runtime and cannot work here: a P/Invoke has no body for a type initializer to
+run in front of, and Mono on iOS resolves the library for the stub *before*
+running the declaring type's cctor. The resolver was being registered by the
+very call that had already thrown `DllNotFoundException`. It is a
+`[ModuleInitializer]` now, which has no such ordering to get wrong.
+
+And the shape of that failure is the argument for the guard, restated: an
+absent decoder shortened the run instead of failing it, and the tally was green.
+`scripts/ios-device-checks.sh` now passes `FLOWER_REQUIRE_DECODERS=LibVLC,FFmpeg`
+into the simulator, so on iOS - which has a built façade as of this change - a
+missing FFmpeg is a failing check rather than half a suite. With that fixed the
+run is 140 passed, 0 failed: every fixture, every streaming shape, both
+decoders, on the iOS runtime.
+
+The device slice is not simulator-only by inference: it was installed on a
+phone through `Flower.iOS/deploy.sh` with `FLOWER_DECODER=ffmpeg`, and the app
+played through the FFmpeg decoder there. That is the run that matters, since
+the simulator shares this Mac's arm64 and its dynamic loader is not iOS's.
+
 What this does not do is make FFmpeg cross-platform. Windows needs an FFmpeg
-build and an import-lib route; Android and iOS need FFmpeg cross-compiled and
-linked in statically. Until then the decoder is macOS-and-Linux, honestly
+build and an import-lib route; Android needs the same cross-compile as iOS
+against the NDK. Until then the decoder is macOS, Linux and iOS, honestly
 labelled as such in `native/ffmpeg/README.md`'s table, and `TrackDecoder`
 remains the default.
 
