@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Flower Checks</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.yanos.flower.devicechecks</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>MinimumOSVersion</key>
+	<string>12.2</string>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+		<integer>2</integer>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<!-- The checks talk to a loopback server this app starts itself. That is
+	     still the local network as far as iOS is concerned. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>The checks decode audio from a server running inside this app.</string>
+	<!-- Plain http, to 127.0.0.1 only: the loopback server exists to be the
+	     Subsonic /stream endpoint without a certificate. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

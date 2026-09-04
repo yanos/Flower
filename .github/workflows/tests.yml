@@ -37,6 +37,54 @@ jobs:
       - name: Run tests
         run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter Category!=RequiresLibVLC
 
+  decode-checks:
+    # Does each platform actually turn a track into the right audio? The rest
+    # of the suite answers that on whatever machine happens to run it; this
+    # job answers it per-OS, on the same checks Flower.DeviceChecks.iOS runs
+    # on a simulator - see Flower.DeviceChecks/DecodeChecks.cs.
+    #
+    # Its own job rather than a step in `test`, and installing VLC is why: the
+    # fast suite must not start failing because a package mirror had a bad
+    # morning.
+    name: Decode checks
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower/Flower.csproj
+            Flower.Tests/Flower.Tests.csproj
+
+      # The checks decode for real, so they need the same VLC the app needs.
+      # None of the hosted images ship it.
+      - name: Install VLC (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y vlc libvlc-dev
+
+      - name: Install VLC (macOS)
+        if: runner.os == 'macOS'
+        run: brew install --cask vlc
+
+      - name: Install VLC (Windows)
+        if: runner.os == 'Windows'
+        run: choco install vlc --no-progress -y
+
+      - name: Run the decode checks
+        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter FullyQualifiedName~DeviceChecksTests --logger "console;verbosity=detailed"
+
   server-test:
     runs-on: ubuntu-latest
 

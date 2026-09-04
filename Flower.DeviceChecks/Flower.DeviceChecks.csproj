@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- Committed rather than generated: a phone has no encoder, and a fixture
+       built at run time could drift between the two platforms these checks
+       exist to compare. See Fixtures/regenerate.sh. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Fixtures\*.wav;Fixtures\*.flac;Fixtures\*.mp3;Fixtures\*.m4a" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flower\Flower.csproj" />
+  </ItemGroup>
+
+</Project>

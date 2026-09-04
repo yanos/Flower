@@ -107,11 +107,58 @@ lsof -nP -iTCP -sTCP:LISTEN | grep -i flower   # expect no output
 Also pass `--Flower:DataDirectory=<scratch>` to anything throwaway, so a test
 instance never writes to `~/Library/Application Support/Flower/Server`.
 
-`Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `TrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no LibVLC), real-LibVLC decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresLibVLC`, need a local VLC install same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`) these all build on.
+`Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `TrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no LibVLC), real-LibVLC decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresLibVLC`, need a local VLC install same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
 
 `GaplessCoordinator` gives the armed (decode-ahead) role its own independent LibVLC core, separate from current's — two `MediaPlayer`s sharing one core was silently dropping `OnDrain`/`EndReached` under real decode load. See its `_secondCore`/`_cores` remarks and `GaplessCoordinatorRealDecodeTests`' class comment for the full writeup, including a second bug that fix exposed (a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`).
 
 Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is driven off `GaplessCoordinator.CurrentTrackBytesProduced`, which is computed from the shared ring's actual bytes-*read* (real playback consumption), not a decoder's own `BytesProduced` (decode progress) — a decoder that finished decoding ahead before its track was promoted stops producing any new bytes at all, so a decode-side counter reads as permanently frozen at zero for that whole track. See `_currentTrackReadSplit`'s remarks on `GaplessCoordinator`.
+
+## Device Checks
+
+`Flower.DeviceChecks/` answers one question — *does this platform actually turn
+a track into the right audio?* — on the platform in question rather than on a
+developer's Mac. `DecodeChecks.RunAll()` decodes a synthetic WAV from disk and
+over a loopback HTTP server, and compares the result to the fixture's own
+samples byte for byte; a decoder producing the right number of bytes and none
+of the right ones fails here and passes every byte-count assertion ever
+written.
+
+It exists because both streaming bugs so far were invisible to a green desktop
+suite: VLC's mp4 demuxer refusing an unseekable stream, then .NET's mobile
+`HttpClientHandler` having no synchronous path at all. Both were found by a
+person listening to a phone.
+
+The fixture set is the point. `Fixtures/` holds the same two seconds of 440Hz
+sine as WAV, FLAC, ALAC, MP3 and AAC, at both 48kHz and 44.1kHz, committed
+rather than generated (`Fixtures/regenerate.sh`) because a phone has no
+encoder. 44.1kHz is not thoroughness: it is what a music library is actually
+made of, and it is the one rate the pipeline resamples, so a 48kHz-only
+fixture never touched the resampler. Each is decoded from disk, over the
+loopback server, from a server that refuses ranges, and from one that refuses
+HEAD - `Flower.Server` maps `/rest/stream` with `MapGet`, so a HEAD to it is a
+405 and every real stream reaches its length through the ranged-GET probe
+instead. `LoopbackMediaServer` honours the end of a range for the same reason:
+serving a whole file to a `bytes=0-0` probe is something no real server does,
+and a loopback that did it decoded a track the probe had already delivered.
+
+Which oracle applies is a property of the fixture, not a choice: lossless at
+the pipeline's own rate must come back byte for byte, and everything else is
+held to `PcmOracle.ToneMismatch` - audible, in tune, right length. That is a
+real bar rather than a lowered one, and `PcmOracleTests` is what says so: it
+rejects silence, noise, and a wrong tone at the same loudness.
+
+So the checks carry no test framework, no `HttpListener` (iOS has none — hence
+`LoopbackMediaServer` on a raw `TcpListener`), and no assertion that is not
+about the samples:
+
+```bash
+dotnet test Flower.Tests/Flower.Tests.csproj --filter FullyQualifiedName~DeviceChecksTests  # here
+scripts/ios-device-checks.sh                                                                # iOS Simulator
+```
+
+CI runs the same checks per-OS in the `decode-checks` job, which installs VLC
+for them. The two runs are meant to be comparable: when they disagree, the
+difference is the platform. Android has no head yet.
 
 ## Git Workflow
 
@@ -133,6 +180,8 @@ Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is drive
 | `Flower.Android/` | Android entry point |
 | `Flower.iOS/` | iOS entry point |
 | `Flower.Tests/` | xUnit tests for the shared library |
+| `Flower.DeviceChecks/` | Functional decode checks that run on any platform, phone included |
+| `Flower.DeviceChecks.iOS/` | iOS head that runs them on a simulator or a device |
 
 All meaningful code lives in `Flower/`.
 

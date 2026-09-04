@@ -5,7 +5,7 @@ using System.Text;
 
 using Flower.Audio;
 
-namespace Flower.Tests.TestSupport;
+namespace Flower.DeviceChecks;
 
 // Generates minimal, valid PCM WAV files at GaplessFormat's own sample
 // rate/channel count, so LibVLC never needs to resample/channel-mix them -

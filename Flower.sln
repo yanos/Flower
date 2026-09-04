@@ -23,6 +23,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Server.Tests", "Flow
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.MacOS", "Flower.MacOS\Flower.MacOS.csproj", "{D63557B2-25CB-42DA-A9BA-1A7767CACED4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks", "Flower.DeviceChecks\Flower.DeviceChecks.csproj", "{6ECA890F-834D-4FA3-881C-97334D977176}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks.iOS", "Flower.DeviceChecks.iOS\Flower.DeviceChecks.iOS.csproj", "{E6915A17-2368-45B1-AB42-EAD733852069}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -153,6 +157,30 @@ Global
 		{D63557B2-25CB-42DA-A9BA-1A7767CACED4}.Release|x64.Build.0 = Release|Any CPU
 		{D63557B2-25CB-42DA-A9BA-1A7767CACED4}.Release|x86.ActiveCfg = Release|Any CPU
 		{D63557B2-25CB-42DA-A9BA-1A7767CACED4}.Release|x86.Build.0 = Release|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Debug|x64.Build.0 = Debug|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Debug|x86.Build.0 = Debug|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Release|x64.ActiveCfg = Release|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Release|x64.Build.0 = Release|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Release|x86.ActiveCfg = Release|Any CPU
+		{6ECA890F-834D-4FA3-881C-97334D977176}.Release|x86.Build.0 = Release|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Debug|x64.Build.0 = Debug|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Debug|x86.Build.0 = Debug|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Release|x64.ActiveCfg = Release|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Release|x64.Build.0 = Release|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Release|x86.ActiveCfg = Release|Any CPU
+		{E6915A17-2368-45B1-AB42-EAD733852069}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

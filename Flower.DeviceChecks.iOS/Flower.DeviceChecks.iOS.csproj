@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A test runner, not an app. It launches, runs Flower.DeviceChecks
+       against the real iOS runtime, prints one line per check and a final
+       tally, and stays on screen with the same text so a run on a physical
+       device is readable without a cable. scripts/ios-device-checks.sh drives
+       it on a simulator and turns the tally into an exit code.
+
+       No Avalonia, no audio output, no UI framework beyond a UILabel: what is
+       under test is decoding and the HTTP path beneath it, and every
+       dependency this does not have is one that cannot explain a failure. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-ios26.0</TargetFramework>
+    <SupportedOSPlatformVersion>12.2</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+
+    <!-- Simulator by default, unlike Flower.iOS: this is run far more often
+         from a script on this machine than from a device, and a simulator
+         build needs no signing. A device run is `-r ios-arm64`. -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">iossimulator-arm64</RuntimeIdentifier>
+    <ProvisioningType Condition="'$(RuntimeIdentifier)' == 'ios-arm64'">automatic</ProvisioningType>
+    <ProvisioningType Condition="'$(RuntimeIdentifier)' != 'ios-arm64'">manual</ProvisioningType>
+
+    <!-- The same choice Flower.iOS makes, and it has to be the same one:
+         NSUrlSessionHandler cannot do the certificate pinning PeerHttpClient
+         relies on. Checking the streaming path against a different HTTP stack
+         than the app ships would make a passing run mean nothing. -->
+    <UseNativeHttpHandler>false</UseNativeHttpHandler>
+
+    <ApplicationVersion>1</ApplicationVersion>
+    <NoWarn>$(NoWarn);IL2104</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="VideoLAN.LibVLC.iOS" Version="3.6.1" />
+    <PackageReference Include="LibVLCSharp" Version="3.10.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flower.DeviceChecks\Flower.DeviceChecks.csproj" />
+  </ItemGroup>
+
+</Project>

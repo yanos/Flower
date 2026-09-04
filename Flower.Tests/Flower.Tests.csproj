@@ -36,6 +36,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Flower\Flower.csproj" />
+    <ProjectReference Include="..\Flower.DeviceChecks\Flower.DeviceChecks.csproj" />
   </ItemGroup>
 
 </Project>
