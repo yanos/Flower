@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using LibVLCSharp.Shared;
 
 using Flower.Logging;
 using Flower.Models;
+using Flower.Services;
 
 namespace Flower.Audio
 {
@@ -36,6 +38,12 @@ namespace Flower.Audio
         // callback - see OnPlay.
         private readonly Func<bool> _isRetired;
         private Media? _media;
+
+        // Non-null only for a remote track: the HTTP stream LibVLC reads
+        // through, and the MediaInput wrapping it. Both are owned by this
+        // decoder and released in Retire() alongside the native Media.
+        private SeekableHttpStream? _remoteStream;
+        private HttpMediaInput? _remoteInput;
         private byte[] _scratch = [];
         private long _bytesProduced;
         private int _retired;
@@ -188,6 +196,9 @@ namespace Flower.Audio
 
                 var media = EnsureMedia();
 
+                if (_remoteStream is { } stream)
+                    return await ProbeRemoteAsync(stream, cancellationToken);
+
                 // ParseNetwork, not ParseLocal. ParseLocal is documented as
                 // "parse media if it's a local file", so a track streamed from
                 // a server was skipped without a single network request and
@@ -212,6 +223,48 @@ namespace Flower.Audio
             finally
             {
                 _nativeGate.Release();
+            }
+        }
+
+        // What a prepare means for a track Flower fetches itself.
+        //
+        // LibVLC will not parse a callbacks-media at all - it answers Skipped
+        // whether asked with ParseLocal, ParseNetwork or both, because the
+        // media has no URI for it to judge. Measured, not assumed: handing it
+        // one and asking returned NotAttempted every time, while the same
+        // media decoded perfectly. So the question a prepare exists to answer
+        // is asked of the server directly instead.
+        //
+        // It is a weaker answer than a parse in one respect and a stronger one
+        // in another. Weaker: a reachable file in a container LibVLC cannot
+        // decode passes this and fails later, where a parse would have caught
+        // it. Stronger: this distinguishes "the server is not answering" from
+        // "the server said no" cleanly, which is the distinction
+        // DecodePrepareResult was created for and the one that actually
+        // matters for a phone on a bad network.
+        private async Task<DecodePrepareResult> ProbeRemoteAsync(SeekableHttpStream stream, CancellationToken cancellationToken)
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ParseTimeoutMs);
+
+            try
+            {
+                await stream.ProbeAsync(timeout.Token);
+                return DecodePrepareResult.Ready;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger?.LogWarning("Streamed track {Path} did not answer within {Timeout}ms", LogPath.Short(Track.Path), ParseTimeoutMs);
+                return DecodePrepareResult.TimedOut;
+            }
+            catch (OperationCanceledException)
+            {
+                return DecodePrepareResult.Retired;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Streamed track {Path} could not be opened", LogPath.Short(Track.Path));
+                return DecodePrepareResult.Failed;
             }
         }
 
@@ -437,6 +490,8 @@ namespace Flower.Audio
                     _watchdog?.Dispose();
                     _media?.Dispose();
                     _mediaPlayer.Dispose();
+                    _remoteInput?.Dispose();
+                    _remoteStream?.Dispose();
                 }
                 catch (Exception ex)
                 {
@@ -457,15 +512,37 @@ namespace Flower.Audio
             if (Track.Path is not { } path)
                 throw new InvalidOperationException($"Cannot decode \"{Track.Title}\" - it has no local Path (undownloaded sync placeholder).");
 
-            // Android's MediaStore importer hands back content:// URIs
-            // rather than filesystem paths; those need FromLocation, not
-            // the default FromPath.
             if (_media is not null)
                 return _media;
 
-            _media = path.Contains("://")
-                ? new Media(_libVLC, path, FromType.FromLocation)
-                : new Media(_libVLC, path);
+            if (IsRemote(path))
+            {
+                // LibVLC is handed a Stream rather than the URL, so the
+                // fetching is Flower's - see SeekableHttpStream for the two
+                // things that fixes (a stream the platform declared
+                // unseekable, and audio bypassing this app's certificate
+                // pinning). Construction here costs no round trip; the first
+                // request happens inside LibVLC's own open callback.
+                _remoteStream = new SeekableHttpStream(AudioHttpClient, new Uri(path), logger: _logger);
+                _remoteInput = new HttpMediaInput(_remoteStream, path, _logger);
+
+                // A stream that stops being readable is a failed track, not a
+                // finished one. LibVLC is handed a clean end of stream (see
+                // HttpMediaInput.Read), so without this the track would end
+                // quietly, collect a play count and be indistinguishable from
+                // one the listener actually heard.
+                _remoteInput.Failed += () => Faulted?.Invoke();
+                _media = new Media(_libVLC, _remoteInput);
+            }
+            else
+            {
+                // Android's MediaStore importer hands back content:// URIs
+                // rather than filesystem paths; those need FromLocation, not
+                // the default FromPath.
+                _media = path.Contains("://")
+                    ? new Media(_libVLC, path, FromType.FromLocation)
+                    : new Media(_libVLC, path);
+            }
 
             ApplyNetworkOptions(_media, path, Track, _logger);
             return _media;
@@ -493,21 +570,43 @@ namespace Flower.Audio
         // not have (see LibraryDownloadService for the deliberate kind).
         private const int RemoteNetworkCachingMs = 10_000;
 
+        // One client for every track this process streams, rather than one per
+        // decoder: two exist at once during decode-ahead, and a fresh
+        // HttpClient per track is the classic way to exhaust sockets.
+        //
+        // The infinite timeout is not laziness. HttpClient.Timeout bounds the
+        // whole operation including reading the body, so any finite value is a
+        // hard cap on how long a single track may take to stream - a five
+        // minute track on a slow connection would be cut off mid-song by a
+        // default 100-second timeout. Progress is policed where it can be
+        // judged instead: SeekableHttpStream reopens a body that stops early
+        // (which is where :http-reconnect's job went when LibVLC stopped doing
+        // the fetching), and the decoder's own watchdog notices a decode that
+        // stops producing.
+        private static readonly HttpClient AudioHttpClient = CreateAudioHttpClient();
+
+        private static HttpClient CreateAudioHttpClient()
+        {
+            var client = PeerHttpClient.Create();
+            client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+            return client;
+        }
+
+        private static bool IsRemote(string path) =>
+            path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
         private static void ApplyNetworkOptions(Media media, string path, Track track, ILogger<TrackDecoder>? logger)
         {
-            if (!path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                && !path.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
+            if (!IsRemote(path))
                 return;
-            }
 
-            media.AddOption($":network-caching={RemoteNetworkCachingMs}");
-
-            // A stream that drops mid-track is otherwise the end of that
-            // track: LibVLC reports an error, the coordinator gives up, and
-            // the row is skipped as unplayable. Reconnecting is the difference
-            // between a gap and a song the listener never heard.
-            media.AddOption(":http-reconnect");
+            // file-caching, not network-caching: with the fetching moved into
+            // SeekableHttpStream there is no HTTP access module left for
+            // network-caching to configure, and LibVLC reads a callbacks-media
+            // through the same path it reads a file. The number and the reason
+            // for it are unchanged.
+            media.AddOption($":file-caching={RemoteNetworkCachingMs}");
 
             if (DemuxHintFor(track) is { } demux)
             {
