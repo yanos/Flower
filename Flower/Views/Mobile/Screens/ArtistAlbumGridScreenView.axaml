@@ -47,13 +47,17 @@
                               Classes.dimmed="{Binding IsUnavailable}">
                     <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" />
                     <!-- Explicit LineHeights, not the font default: Inter has no CJK
-                         glyphs, so a Japanese title falls back to a system face about
-                         1.45x taller, and a row pairing one with a Latin title puts the
-                         two captions at different heights. Pinning both lines makes every
-                         caption 37px whatever script it is in. -->
+                         glyphs, so a Japanese title falls back to a system face 1.45x to
+                         1.6x taller (which face, and so which of those, depends on the
+                         machine), and a row pairing one with a Latin title puts the two
+                         captions at different heights. Pinning both lines makes every
+                         caption 39px whatever script it is in - 39 rather than the 37
+                         these were first set to because that was the tallest fallback on
+                         one Mac, and a CI runner's is two pixels taller still. See
+                         AlbumTileCaptionTests. -->
                     <StackPanel>
-                      <TextBlock Text="{Binding Name}" FontSize="13" LineHeight="20" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Text="{Binding Artist}" FontSize="11" LineHeight="17" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Name}" FontSize="13" LineHeight="21" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Artist}" FontSize="11" LineHeight="18" Opacity="0.6" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </StackPanel>
                 </Button>

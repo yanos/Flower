@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -58,8 +59,34 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
             NullLogger<MobileMainViewModel>.Instance);
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         mobile.SelectAlbumOrArtistCommand.Execute(Album);
-        Dispatcher.UIThread.RunJobs();
+        WaitForTheDrillIn(mobile);
         return new MainViewModelHarness.MobileParts(mobile, parts);
+    }
+
+    // SelectAlbumOrArtistCommand is fire-and-forget over an async drill-in
+    // (MobileMainViewModel.SelectAlbumOrArtist -> DrillIntoAsync ->
+    // RebuildRowsImmediatelyAsync), and the filter/sort pass at the bottom of
+    // that runs on the thread pool. RunJobs() only drains what has already been
+    // posted back to the dispatcher, so calling it once is a bet that the pool
+    // got there first - which it wins on a developer Mac and loses on a loaded
+    // CI runner, where three of the tests below failed at once with nothing in
+    // the visual tree at all. Wait for the state they are about instead, and
+    // say so plainly if it never arrives rather than leaving the next line to
+    // fail on an empty collection.
+    private static void WaitForTheDrillIn(MobileMainViewModel mobile)
+    {
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            if (mobile.IsShowingAlbumTrackList && mobile.CurrentAlbumHeader != null && mobile.AlbumDetailRows.Count > 0)
+                return;
+            Thread.Sleep(10);
+        }
+
+        Assert.Fail($"the drill-in into \"{Album}\" never landed: "
+            + $"album track list {mobile.IsShowingAlbumTrackList}, "
+            + $"header {(mobile.CurrentAlbumHeader == null ? "none" : "built")}, "
+            + $"{mobile.AlbumDetailRows.Count} row(s)");
     }
 
     private static (Window Window, TrackListScreenView View) Show(
