@@ -34,7 +34,7 @@ namespace Flower.Audio
         }
 
         [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_create")]
-        private static extern IntPtr Create(uint capacityBytes, uint bytesPerFrame);
+        private static extern IntPtr Create(uint capacityBytes, uint bytesPerFrame, uint bytesPerSample);
 
         [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_destroy")]
         private static extern void Destroy(IntPtr bridge);
@@ -116,12 +116,17 @@ namespace Flower.Audio
         // Null when the native side could not allocate, which the caller
         // treats the same way it treats a platform without the symbols at
         // all: keep the managed callback.
-        public static NativeAudioBridge? TryCreate(int capacityBytes, int bytesPerFrame)
+        public static NativeAudioBridge? TryCreate(int capacityBytes, int bytesPerFrame, int bytesPerSample)
         {
-            if (!IsAvailable || capacityBytes <= 0 || bytesPerFrame <= 0)
+            if (!IsAvailable || capacityBytes <= 0 || bytesPerFrame <= 0 || bytesPerSample <= 0)
                 return null;
 
-            var handle = Create((uint)capacityBytes, (uint)bytesPerFrame);
+            // The width is passed rather than left to be inferred from the
+            // frame size, which cannot distinguish stereo S24 from three
+            // channels of S16. It is the transport fade that needs it - the
+            // one place in the bridge that reads samples instead of bytes -
+            // and the native side refuses anything it cannot fade.
+            var handle = Create((uint)capacityBytes, (uint)bytesPerFrame, (uint)bytesPerSample);
             return handle == IntPtr.Zero ? null : new NativeAudioBridge(handle);
         }
 

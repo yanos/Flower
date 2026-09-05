@@ -516,35 +516,18 @@ namespace Flower.Audio
             // a bridge to this device below, which happens before anything
             // can start the device.
             //
-            // S16 only, and that is a real constraint rather than caution:
-            // flower_audio_bridge's transport fade walks its buffer as
-            // int16_t* (flower_audio_bridge_apply_envelope in
-            // native/miniaudio/impl.c), so handing it packed 24-bit PCM would
-            // not merely skip the fade, it would rewrite every sample as
-            // though three-byte frames were two-byte ones - noise, not audio.
-            //
-            // Reachable as of the mobile FFmpeg cross-builds: the bridge
-            // exists only where Flower builds its own miniaudio (Android and
-            // iOS), and both now have a flower_ffmpeg artifact, so electing
-            // FFmpeg on a phone lands here rather than being kept away by a
-            // coincidence. This was gated ahead of that on purpose, because
-            // the failure it would otherwise cause is a native one on the
-            // platform hardest to debug on. What the fallback costs is real
-            // though - the GC-pause resilience the bridge was built for - so
-            // teaching flower_audio_bridge_apply_envelope the sample format is
-            // still owed, and is now the only thing standing between 24-bit
-            // playback on a phone and the render path it deserves.
-            var canUseBridgeFormat = GaplessFormat.SampleFormat == PcmSampleFormat.S16;
+            // No format gate any more. This used to be S16-only, because
+            // flower_audio_bridge's transport fade walked its buffer as
+            // int16_t*, and handing that packed 24-bit PCM would not merely
+            // skip the fade - it would rewrite every sample as though
+            // three-byte frames were two-byte ones. So electing FFmpeg on a
+            // phone bought 24 bits by giving up the one thing the bridge
+            // exists for, a render callback Mono's GC cannot suspend, on
+            // exactly the two platforms where that matters. The envelope now
+            // takes the width (flower_audio_bridge_create's bytesPerSample),
+            // so neither has to be traded for the other.
             var useBridge = NativeAudioBridge.IsAvailable
-                && _outputStage.Timing.NativeBufferMs > 0
-                && canUseBridgeFormat;
-
-            if (NativeAudioBridge.IsAvailable && !canUseBridgeFormat)
-            {
-                _logger.LogWarning(
-                    "The native audio bridge renders 16-bit only; {Format} playback falls back to the managed render callback",
-                    GaplessFormat.SampleFormat);
-            }
+                && _outputStage.Timing.NativeBufferMs > 0;
 
             if (useBridge)
                 config.dataCallback = NativeAudioBridge.RenderCallback;
@@ -619,17 +602,6 @@ namespace Flower.Audio
                 GaplessFormat.ConfigureSampleFormat(PcmSampleFormat.S16);
                 config.playback.format = MiniaudioFormatFor(PcmSampleFormat.S16);
 
-                // Narrowing back to S16 puts the native bridge in reach again,
-                // and the callback has to be chosen before the device is
-                // initialised - so this is the last moment it can be changed.
-                // Without it, a device that refused 24-bit would cost the
-                // bridge as well, on exactly the platforms that need it most.
-                if (NativeAudioBridge.IsAvailable && _outputStage.Timing.NativeBufferMs > 0)
-                {
-                    useBridge = true;
-                    config.dataCallback = NativeAudioBridge.RenderCallback;
-                }
-
                 result = ma.device_init(_context, &config, device);
             }
 
@@ -685,7 +657,8 @@ namespace Flower.Audio
             {
                 var capacity = _outputStage.Timing.NativeBufferMs * (long)GaplessFormat.SampleRate
                     * GaplessFormat.BytesPerFrame / 1000;
-                _bridge = NativeAudioBridge.TryCreate((int)capacity, GaplessFormat.BytesPerFrame);
+                _bridge = NativeAudioBridge.TryCreate(
+                    (int)capacity, GaplessFormat.BytesPerFrame, GaplessFormat.BytesPerSample);
                 if (_bridge == null)
                 {
                     // Nothing to fall back to: the device was initialised with

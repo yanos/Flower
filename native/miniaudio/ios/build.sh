@@ -106,10 +106,14 @@ build_slice iphonesimulator "arm64-apple-ios${DEPLOYMENT_TARGET}-simulator" ios-
 # folder-pair shape instead, conditioned in Flower.iOS.csproj on
 # $(Platform)/$(RuntimeIdentifier), which is what we mirror here.
 FRAMEWORKS_OUT="$REPO_ROOT/Flower.iOS/Frameworks"
-rm -rf "$FRAMEWORKS_OUT/ios-device" "$FRAMEWORKS_OUT/ios-simulator"
-mkdir -p "$FRAMEWORKS_OUT"
-cp -R "$BUILD_DIR/ios-device" "$FRAMEWORKS_OUT/ios-device"
-cp -R "$BUILD_DIR/ios-simulator" "$FRAMEWORKS_OUT/ios-simulator"
+# Only this framework, not the slice directories that hold it. They used to be
+# removed wholesale, which was harmless while miniaudio was the only thing in
+# them and silently deleted flower_ffmpeg.framework the first time it was not.
+for slice in ios-device ios-simulator; do
+    mkdir -p "$FRAMEWORKS_OUT/$slice"
+    rm -rf "$FRAMEWORKS_OUT/$slice/$FRAMEWORK_NAME.framework"
+    cp -R "$BUILD_DIR/$slice/$FRAMEWORK_NAME.framework" "$FRAMEWORKS_OUT/$slice/"
+done
 
 echo "Done. -> $FRAMEWORKS_OUT/ios-device/$FRAMEWORK_NAME.framework"
 echo "     -> $FRAMEWORKS_OUT/ios-simulator/$FRAMEWORK_NAME.framework"

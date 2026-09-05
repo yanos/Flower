@@ -45,8 +45,17 @@ typedef struct
     uint32_t maxIdenticalCallbackRun;
 } flower_audio_bridge_snapshot;
 
-/* capacityBytes is rounded up to a whole frame. Returns NULL on failure. */
-flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityBytes, uint32_t bytesPerFrame);
+/* capacityBytes is rounded down to a whole frame. Returns NULL on failure.
+
+   bytesPerSample is 2 for S16 or 3 for packed little-endian S24, and it is
+   passed rather than inferred because the ring carries interleaved frames
+   with no header: bytesPerFrame alone cannot tell 2-channel S24 from
+   3-channel S16. The transport envelope is the only thing here that reads
+   individual samples rather than bytes, and it has to scale them in their
+   own width - see flower_audio_bridge_apply_envelope. Anything else is
+   refused, which is a stricter contract than the pipeline needs today and
+   the point: a format this cannot fade is a format it must not render. */
+flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityBytes, uint32_t bytesPerFrame, uint32_t bytesPerSample);
 void flower_audio_bridge_destroy(flower_audio_bridge* pBridge);
 
 /* The ma_device_data_proc to hand to ma_device_config.dataCallback. Cast

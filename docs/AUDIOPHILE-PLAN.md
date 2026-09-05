@@ -344,16 +344,16 @@ every 24-bit sample above -48dBFS. `CanonicalFormatTests` holds both, plus the
 packed-S24 sign extension - three bytes carry no sign bit in the 32-bit sense,
 so a negative sample read without it comes back as full-scale positive noise.
 
-**One thing this cost, deliberately.** `flower_audio_bridge`'s transport fade
-walks its buffer as `int16_t*`, so it cannot render packed 24-bit PCM - it
-would rewrite every sample as though three-byte frames were two-byte ones.
-`MiniaudioSink` therefore refuses the bridge at S24 and falls back to the
-managed render callback. Unreachable today, because the bridge exists only on
-Android and iOS and neither has a flower_ffmpeg artifact; gated anyway, because
-that coincidence ends the moment the mobile cross-builds land and the failure
-would be a native one on the platforms hardest to debug on. Teaching
-`flower_audio_bridge_apply_envelope` about the sample format belongs in the
-same change as those builds.
+**One thing this cost, deliberately - since paid back.**
+`flower_audio_bridge`'s transport fade walked its buffer as `int16_t*`, so it
+could not render packed 24-bit PCM: it would rewrite every sample as though
+three-byte frames were two-byte ones. `MiniaudioSink` therefore refused the
+bridge at S24 and fell back to the managed render callback. Unreachable when
+written, because the bridge exists only on Android and iOS and neither had a
+flower_ffmpeg artifact; gated anyway, because that coincidence would end the
+moment the mobile cross-builds landed and the failure would be a native one on
+the platforms hardest to debug on. It did end, and the envelope has since
+learned the width - see "The bridge learns the sample format" below.
 
 ### The decoder is now electable
 
@@ -644,13 +644,11 @@ head for `Flower.DeviceChecks` is the missing piece, and it is the same
 argument this whole directory was created by: both streaming bugs so far were
 found by a person listening to a phone.
 
-That also makes `MiniaudioSink`'s S24 bridge gate live rather than theoretical.
-`flower_audio_bridge_apply_envelope` walks its buffer as `int16_t*`, so
-electing FFmpeg on either phone now falls back to the managed render callback
-and gives up the GC-pause resilience the native bridge was built for. Correct,
-and audibly fine, but it is a real cost that arrived with these builds rather
-than a hypothetical one, and teaching the envelope its sample format is the
-outstanding work.
+That also made `MiniaudioSink`'s S24 bridge gate live rather than theoretical:
+electing FFmpeg on either phone fell back to the managed render callback and
+gave up the GC-pause resilience the native bridge was built for. Correct, and
+audibly fine, but a real cost that arrived with these builds rather than a
+hypothetical one. It is fixed two sections below.
 
 What this does not do is make FFmpeg cross-platform. Windows still needs an
 FFmpeg build and an import-lib route, and neither mobile head has a decode
@@ -691,6 +689,39 @@ confirmation of a local build - it is the only evidence there has ever been.
 And a packaged Windows app still has nowhere to get those DLLs from: the build
 puts them in `native/ffmpeg/artifacts/windows/`, and copying them into a
 publish output is work nobody has done.
+
+### The bridge learns the sample format
+
+The last thing electing FFmpeg cost. `MiniaudioSink` refused the native audio
+bridge whenever the pipeline was S24, so on Android and iOS - the only two
+platforms that have a bridge at all - the choice was 24 bits *or* a render
+callback Mono's GC cannot suspend, and those are the two platforms where the
+second one is not a nicety. The gate was right while it stood: the envelope
+walked its buffer as `int16_t*`, and packed 24-bit PCM through a 16-bit walk is
+not a skipped fade, it is every sample reinterpreted and then scaled.
+
+`flower_audio_bridge_create` now takes a `bytesPerSample` alongside
+`bytesPerFrame`, and `flower_audio_bridge_apply_envelope` branches on it -
+`int16_t` as before, or a sign-extending read/scale/write of packed
+little-endian three-byte samples. The width is passed rather than derived,
+because a ring of interleaved frames with no header cannot tell stereo S24 from
+three channels of S16, and `create` refuses any other width outright: a format
+the bridge cannot fade is a format it must not render, and a NULL at startup is
+a log line where a silent fallback would be noise on a phone.
+
+The arithmetic was checked by compiling `impl.c` on the host and driving the
+envelope directly - full-scale positive and negative S24 at a held gain, a
+fade-in ramping monotonically without wrapping, a fade-out reaching zero and
+setting `fadeOutCompleted` - because the shipped paths are cross-compiled for
+hardware no test here runs on. That is a harness, not a suite; it is not
+checked in, and the standing gap is still an Android device-checks head.
+
+Both vendored miniaudio binaries were rebuilt for the new signature:
+`Flower.Android/libs/<abi>/libminiaudio.so` and
+`Flower.iOS/Frameworks/ios-{device,simulator}/miniaudio.framework`. They are
+the ABI the managed `DllImport` talks to, so a rebuild is not optional
+housekeeping - a stale one would take the third argument as whatever happened
+to be in the register.
 
 ## 6. True sample-accurate gapless — Done
 

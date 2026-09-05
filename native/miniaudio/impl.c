@@ -513,6 +513,7 @@ struct flower_audio_bridge
     uint8_t* pData;
     uint32_t capacity;
     uint32_t bytesPerFrame;
+    uint32_t bytesPerSample;
 
     _Atomic uint64_t writeIndex;
     _Atomic uint64_t readIndex;
@@ -561,12 +562,20 @@ static uint32_t flower_audio_bridge_float_to_bits(float value)
     return bits;
 }
 
-flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityBytes, uint32_t bytesPerFrame)
+flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityBytes, uint32_t bytesPerFrame, uint32_t bytesPerSample)
 {
     flower_audio_bridge* pBridge;
     uint32_t capacity;
 
     if (bytesPerFrame == 0 || capacityBytes < bytesPerFrame) {
+        return NULL;
+    }
+
+    /* Refusing an unknown width here rather than falling back to 16-bit is
+       deliberate: the caller would get a working ring whose fades quietly
+       rewrote every sample, which is noise that sounds like a decoder bug.
+       A NULL is a startup log line instead. */
+    if ((bytesPerSample != 2 && bytesPerSample != 3) || bytesPerFrame % bytesPerSample != 0) {
         return NULL;
     }
 
@@ -585,6 +594,7 @@ flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityBytes, uint32_t
 
     pBridge->capacity = capacity;
     pBridge->bytesPerFrame = bytesPerFrame;
+    pBridge->bytesPerSample = bytesPerSample;
     pBridge->gain = 0.0f;
     atomic_store_explicit(&pBridge->fadeTargetBits, flower_audio_bridge_float_to_bits(1.0f), memory_order_relaxed);
     atomic_store_explicit(&pBridge->fadeStepBits, flower_audio_bridge_float_to_bits(1.0f), memory_order_relaxed);
@@ -816,10 +826,49 @@ void flower_audio_bridge_take_snapshot(flower_audio_bridge* pBridge, flower_audi
     pSnapshot->maxIdenticalCallbackRun = atomic_exchange_explicit(&pBridge->maxIdenticalCallbackRun, 0, memory_order_relaxed);
 }
 
-/* Applies the transport envelope in place over interleaved 16-bit frames,
-   silence padding included: a fade-out that lands in a starved callback
-   still has to reach zero and stay there. */
-static void flower_audio_bridge_apply_envelope(flower_audio_bridge* pBridge, int16_t* pSamples, uint32_t frameCount, uint32_t channels)
+/* Packed little-endian 24-bit, sign-extended into the int32 the arithmetic
+   below wants. The same layout ma_format_s24 renders and flower-ffmpeg's
+   pack_s24 produces - three bytes, low first, top byte carrying the sign. */
+static int32_t flower_audio_bridge_read_s24(const uint8_t* pSample)
+{
+    uint32_t bits = (uint32_t)pSample[0]
+        | ((uint32_t)pSample[1] << 8)
+        | ((uint32_t)pSample[2] << 16);
+
+    /* Sign-extend bit 23 without relying on a right shift of a negative,
+       which is implementation-defined. */
+    if ((bits & 0x800000u) != 0) {
+        bits |= 0xFF000000u;
+    }
+
+    return (int32_t)bits;
+}
+
+static void flower_audio_bridge_write_s24(uint8_t* pSample, int32_t value)
+{
+    pSample[0] = (uint8_t)(value & 0xFF);
+    pSample[1] = (uint8_t)((value >> 8) & 0xFF);
+    pSample[2] = (uint8_t)((value >> 16) & 0xFF);
+}
+
+/* Applies the transport envelope in place over interleaved frames, silence
+   padding included: a fade-out that lands in a starved callback still has to
+   reach zero and stay there.
+
+   Both sample widths the pipeline can carry, because the alternative was
+   worse than not fading. This walked its buffer as int16_t* unconditionally,
+   so MiniaudioSink refused the whole bridge whenever the elected decoder was
+   FFmpeg - handing packed 24-bit PCM to a 16-bit walk does not skip the fade,
+   it reinterprets three-byte samples as two-byte ones and scales the wreckage.
+   That refusal cost the bridge's entire reason for existing (a render callback
+   Mono's GC cannot suspend) on the two platforms that have one, in exchange
+   for the bit depth. Neither is worth trading for the other. */
+static void flower_audio_bridge_apply_envelope(
+    flower_audio_bridge* pBridge,
+    uint8_t* pSamples,
+    uint32_t frameCount,
+    uint32_t channels,
+    uint32_t bytesPerSample)
 {
     float target = flower_audio_bridge_bits_to_float(
         atomic_load_explicit(&pBridge->fadeTargetBits, memory_order_acquire));
@@ -846,9 +895,24 @@ static void flower_audio_bridge_apply_envelope(flower_audio_bridge* pBridge, int
             }
         }
 
-        for (channelIndex = 0; channelIndex < channels; ++channelIndex) {
-            pSamples[frameIndex * channels + channelIndex] =
-                (int16_t)((float)pSamples[frameIndex * channels + channelIndex] * gain);
+        /* Branched per frame rather than per sample, and not hoisted out of
+           the loop into two copies of it: the gain ramp is the part worth
+           having once, and this predicts perfectly. */
+        if (bytesPerSample == 2) {
+            int16_t* pFrame = (int16_t*)(pSamples + (size_t)frameIndex * channels * 2);
+            for (channelIndex = 0; channelIndex < channels; ++channelIndex) {
+                pFrame[channelIndex] = (int16_t)((float)pFrame[channelIndex] * gain);
+            }
+        } else {
+            uint8_t* pFrame = pSamples + (size_t)frameIndex * channels * 3;
+            for (channelIndex = 0; channelIndex < channels; ++channelIndex) {
+                uint8_t* pSample = pFrame + (size_t)channelIndex * 3;
+                /* Gain is in [0,1] throughout a transport fade, so the result
+                   cannot leave the range the input already occupied and needs
+                   no clamp. */
+                flower_audio_bridge_write_s24(
+                    pSample, (int32_t)((float)flower_audio_bridge_read_s24(pSample) * gain));
+            }
         }
     }
 
@@ -950,9 +1014,10 @@ static void flower_audio_bridge_on_data(ma_device* pDevice, void* pOutput, const
        nothing - the first real audio after a flush would then arrive at full
        gain, which is the click the fade exists to remove. */
     if (atomic_load_explicit(&pBridge->primed, memory_order_relaxed) != 0) {
-        channels = pBridge->bytesPerFrame / (uint32_t)sizeof(int16_t);
+        channels = pBridge->bytesPerFrame / pBridge->bytesPerSample;
         if (channels > 0) {
-            flower_audio_bridge_apply_envelope(pBridge, (int16_t*)pOutput, frameCount, channels);
+            flower_audio_bridge_apply_envelope(
+                pBridge, (uint8_t*)pOutput, frameCount, channels, pBridge->bytesPerSample);
         }
     }
 
