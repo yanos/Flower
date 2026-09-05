@@ -133,8 +133,11 @@ namespace Flower.Audio
         // for data) versus some other cause (format/rate mismatch, etc).
         // Only logs when the underrun count actually moves or the device's
         // running state changes - a healthy render loop ticks silently.
+        //
+        // "Moves" is an edge, not a level - see UnderrunRunTracker, which is
+        // where that distinction and the reason for it live.
         private readonly Timer _watchdog;
-        private long _watchdogLastUnderrunCount;
+        private readonly UnderrunRunTracker _underruns = new();
         private long _watchdogLastShortReadCount;
         private long _watchdogLastCallbackExceptionCount;
         private bool _watchdogLastStarted;
@@ -284,11 +287,20 @@ namespace Flower.Audio
             else
                 _watchdogNoProgressTicks = 0;
 
-            if (underrunCount != _watchdogLastUnderrunCount)
+            var underruns = _underruns.Observe(underrunCount);
+
+            if (underruns.Cleared is { } run)
+            {
+                _logger.LogInformation(
+                    "Render watchdog: underruns stopped after {RunSeconds}s - Underruns={Underruns} (+{RunUnderruns} over the run) Started={Started} RingAvailable={Available}/{Capacity}",
+                    run.Ticks, underrunCount, run.Underruns, started, ring.AvailableBytes, ring.Capacity);
+            }
+
+            if (underruns.Log)
             {
                 _logger.LogWarning(
-                    "Render watchdog: underrun(s) detected - Started={Started} RingAvailable={Available}/{Capacity} Underruns={Underruns} (+{NewUnderruns})",
-                    started, ring.AvailableBytes, ring.Capacity, underrunCount, underrunCount - _watchdogLastUnderrunCount);
+                    "Render watchdog: underrun(s) detected - Started={Started} RingAvailable={Available}/{Capacity} Underruns={Underruns} (+{NewUnderruns}) UnderrunningFor={RunSeconds}s",
+                    started, ring.AvailableBytes, ring.Capacity, underrunCount, underruns.New, underruns.RunTicks);
             }
             else if (newCallbackExceptions > 0)
             {
@@ -389,7 +401,6 @@ namespace Flower.Audio
                 }
             }
 
-            _watchdogLastUnderrunCount = underrunCount;
             _watchdogLastStarted = started;
             _watchdogLastRealBytesRendered = realBytesRendered;
         }
@@ -774,6 +785,13 @@ namespace Flower.Audio
         // notification. The caller holds _gate.
         private void StopDeviceIntentionally()
         {
+            // The feeder exists to keep a running device fed, so it parks
+            // whenever that device stops. Before the stop rather than after:
+            // a tick that lands in between would read the ring for bytes the
+            // device is no longer going to render, and those bytes are gone
+            // from the ring once read.
+            _feeder?.Pause();
+
             _intentionalStopDepth++;
             try
             {
@@ -1170,6 +1188,14 @@ namespace Flower.Audio
                     return;
                 }
 
+                // After the device is running, not before: the feeder's first
+                // tick may have a flush to carry through, and a flush is
+                // acknowledged by the render callback - which only runs on a
+                // started device. Asking for one first would spend the whole
+                // FlushAckTimeoutMs waiting for an acknowledgement nobody was
+                // there to give.
+                _feeder?.Resume();
+
                 _started = true;
                 Playing?.Invoke(this, EventArgs.Empty);
             }
@@ -1317,6 +1343,10 @@ namespace Flower.Audio
                 var startResult = ma.device_start(_device);
                 if (startResult == ma_result.MA_SUCCESS)
                 {
+                    // Same order as Resume(): the feeder follows the device.
+                    // This one is a fresh feeder - CloseDevice disposed the
+                    // old one and OpenDevice built another, parked.
+                    _feeder?.Resume();
                     _started = true;
                 }
                 else

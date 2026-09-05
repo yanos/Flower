@@ -746,6 +746,19 @@ review does not spend its time here.
   `UnderrunCount` counts pre-playback idle reads, so a non-zero value before the
   first track is normal and not evidence of anything.
 
+  That last sentence was true and hid something. Idle reads were normal because
+  `AudioFeeder` never stopped: it was started when the device opened and disposed
+  only when it closed, so `Pause`/`Stop` left it polling an empty ring ~435 times
+  a second at `ThreadPriority.Highest`, scoring an underrun each time. On a phone
+  that was a permanent CPU and battery drain, one render-watchdog warning per
+  second forever, and — because those warnings kept `DeviceLogArchive.Ingest`
+  from ever finding nothing to drain — a full read-and-rehash of the retained
+  week every five seconds (~800ms per drain over a phone's own logs). Fixed on
+  all three counts: the feeder parks on a gate that follows the device, the
+  watchdog reports a *run* of underruns rather than each tick
+  (`UnderrunRunTracker`), and the archive appends instead of rewriting
+  (`ClientLogStore.Append`).
+
 - **`Library.Tracks` being enumerated outside the lock.** Safe, because every
   mutation replaces the list wholesale (lines 232, 256, 392, 474, 661) rather
   than mutating in place. The stale-snapshot race in B3 is a different problem

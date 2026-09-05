@@ -296,5 +296,104 @@ namespace Flower.Tests
             Buffer.BlockCopy(bridge.Drained.ToArray(), 0, rendered, 0, bridge.Drained.Count);
             Assert.All(rendered[(int)GaplessFormat.Channels..], sample => Assert.InRange(sample, 4999, 5001));
         }
-    }
+    
+        // ── Following the device ──────────────────────────────────────────
+
+        // The regression this pair exists for.
+        //
+        // The feeder was started when the device was opened and disposed only
+        // when it was closed, so a pause or a stop left it running: a thread at
+        // the highest priority in the process, waking 400-odd times a second to
+        // read a ring nothing was filling, for as long as the app stayed open.
+        // GaplessRingBuffer.Read counts every read of an empty ring as an
+        // underrun, so each of those ticks scored one - which is how an idle
+        // phone came to log "underrun(s) detected - Started=False ... (+435)"
+        // every second, all night, with nothing playing.
+        private static bool WaitUntil(Func<bool> condition)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (condition())
+                    return true;
+                Thread.Sleep(5);
+            }
+
+            return condition();
+        }
+
+        [Fact]
+        public void A_feeder_whose_device_never_started_does_not_touch_the_ring()
+        {
+            var ring = new GaplessRingBuffer(64 * 1024);
+            var bridge = new FakeAudioBridge(64 * 1024);
+            using var feeder = Feeder(ring, bridge);
+
+            ring.TryWrite(Ramp(4096));
+            feeder.Start();
+            Thread.Sleep(100);
+
+            // Nothing moved, and - the part that matters - nothing was counted
+            // as an underrun on the way to not moving.
+            Assert.Equal(0, bridge.Available);
+            Assert.Equal(4096, ring.AvailableBytes);
+            Assert.Equal(0, ring.UnderrunCount);
+        }
+
+        [Fact]
+        public void A_paused_device_stops_the_feeder_polling_the_ring()
+        {
+            // An empty ring behind a running device: the shape a track ending
+            // leaves behind, and what the feeder used to sit in forever.
+            var ring = new GaplessRingBuffer(64 * 1024);
+            var bridge = new FakeAudioBridge(64 * 1024);
+            using var feeder = Feeder(ring, bridge);
+
+            feeder.Start();
+            feeder.Resume();
+            Assert.True(WaitUntil(() => ring.UnderrunCount > 0), "a running device should be polling the ring");
+
+            feeder.Pause();
+            Thread.Sleep(50);
+            var settled = ring.UnderrunCount;
+            Thread.Sleep(200);
+
+            Assert.Equal(settled, ring.UnderrunCount);
+        }
+
+        [Fact]
+        public void A_started_device_wakes_the_feeder()
+        {
+            var ring = new GaplessRingBuffer(64 * 1024);
+            var bridge = new FakeAudioBridge(64 * 1024);
+            using var feeder = Feeder(ring, bridge);
+
+            ring.TryWrite(Ramp(4096));
+            feeder.Start();
+            feeder.Resume();
+
+            Assert.True(WaitUntil(() => bridge.Available == 4096), "a running device should be fed");
+            feeder.Pause();
+        }
+
+        // A pause is not a teardown: the thread parks and comes back, however
+        // many times the transport is worked.
+        [Fact]
+        public void The_feeder_survives_being_parked_and_woken_repeatedly()
+        {
+            var ring = new GaplessRingBuffer(64 * 1024);
+            var bridge = new FakeAudioBridge(64 * 1024);
+            using var feeder = Feeder(ring, bridge);
+
+            feeder.Start();
+
+            for (var i = 0; i < 5; i++)
+            {
+                feeder.Resume();
+                ring.TryWrite(Ramp(1024));
+                Assert.True(WaitUntil(() => bridge.Available >= 1024 * (i + 1)), $"pass {i} was never fed");
+                feeder.Pause();
+            }
+        }
+}
 }

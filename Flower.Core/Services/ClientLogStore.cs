@@ -82,6 +82,44 @@ public sealed class ClientLogStore
         return merged;
     }
 
+    // Appends without reading the device's history back first.
+    //
+    // SetSnapshot's read-merge-write is what a server needs: clients push
+    // overlapping in-memory snapshots, so every incoming line has to be
+    // checked against the whole retained week before it can be written. A
+    // device archiving its *own* log has no such overlap - InMemoryLogStore
+    // hands each line out exactly once, and DeviceLogArchive only ever asks
+    // for the slice after the last one it took - so that read buys nothing
+    // and costs everything: on a phone holding a week of logs it was ~50MB of
+    // JSON parsed and ~300k SHA-256 hashes computed to append a single line,
+    // measured at ~800ms per call, on a five-second timer.
+    //
+    // Retention is still enforced on the way in. Expired lines already on
+    // disk are compacted by the next read (see LoadEntries), which is where
+    // they were always dealt with.
+    public void Append(string fingerprint, string alias, IReadOnlyList<LogEntryDto> entries, DateTimeOffset receivedAt)
+    {
+        lock (_lock)
+        {
+            var directory = FindDeviceDirectory(fingerprint) ?? CreateDeviceDirectory(alias, fingerprint);
+            var cutoff = receivedAt.Subtract(Retention);
+
+            foreach (var group in entries
+                         .Where(entry => entry.Timestamp >= cutoff)
+                         .GroupBy(entry => LogFileName(entry.Timestamp)))
+            {
+                AppendEntries(Path.Combine(directory, group.Key), group);
+            }
+
+            AtomicJsonFile.Write(
+                Path.Combine(directory, MetadataFileName),
+                new ClientLogMetadata(fingerprint, alias, receivedAt),
+                ClientLogFileJsonContext.Default.ClientLogMetadata);
+        }
+
+        SnapshotUpdated?.Invoke(this, fingerprint);
+    }
+
     public ClientLogSnapshot? Get(string fingerprint)
     {
         lock (_lock)

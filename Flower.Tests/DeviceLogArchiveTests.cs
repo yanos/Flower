@@ -99,4 +99,79 @@ public class DeviceLogArchiveTests : IDisposable
 
         Assert.Equal(archive.EntriesAfter(null).Count, everything.Count);
     }
+
+    // Every drain after the first is an append (see ClientLogStore.Append), so
+    // this is the test that the cheap path still carries everything: what the
+    // ring gained between two drains has to end up retained alongside what the
+    // first drain wrote, exactly once each.
+    //
+    // The expensive path it replaced read and re-hashed the whole retained week
+    // to work that out. On a phone holding a week of its own logs that was
+    // ~800ms of CPU to append one line, on a five-second timer - the thing that
+    // made an idle phone spike to 100% every few seconds.
+    [Fact]
+    public void A_second_drain_keeps_what_the_first_one_archived()
+    {
+        var marker = Guid.NewGuid().ToString();
+        var archive = NewArchive();
+
+        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-first", null));
+        archive.Ingest("fp", "Client");
+
+        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-second", null));
+        archive.Ingest("fp", "Client");
+
+        var mine = archive.EntriesAfter(null)
+            .Where(entry => entry.Message.StartsWith(marker, StringComparison.Ordinal))
+            .Select(entry => entry.Message)
+            .ToList();
+
+        Assert.Equal([marker + "-first", marker + "-second"], mine);
+    }
+
+    // The same, read back off disk by a later session rather than out of the
+    // memory the appending archive happens to be holding: an append that never
+    // reached the file would still look right to the archive that made it.
+    [Fact]
+    public void What_a_later_drain_appended_is_on_disk_for_the_next_session()
+    {
+        var marker = Guid.NewGuid().ToString();
+        var archive = NewArchive();
+
+        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-first", null));
+        archive.Ingest("fp", "Client");
+
+        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-second", null));
+        archive.Ingest("fp", "Client");
+
+        var reopened = new ClientLogStore(Path.Combine(_root, "logs", "devices")).Get("fp");
+
+        Assert.Contains(reopened!.Entries, entry => entry.Message == marker + "-first");
+        Assert.Contains(reopened!.Entries, entry => entry.Message == marker + "-second");
+    }
+
+    // A drain that found nothing must not write anything either. It is the
+    // common case by far - the timer fires every five seconds whether or not
+    // anything was logged - and on a phone every avoided write is a flash write
+    // and an fsync avoided.
+    [Fact]
+    public void A_drain_with_nothing_new_leaves_the_archive_alone()
+    {
+        var archive = NewArchive();
+        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", Guid.NewGuid().ToString(), null));
+        archive.Ingest("fp", "Client");
+
+        var directory = Directory.EnumerateDirectories(Path.Combine(_root, "logs", "devices")).Single();
+        var writtenAt = Directory.EnumerateFiles(directory, "*.logs.jsonl")
+            .Select(path => (path, stamp: File.GetLastWriteTimeUtc(path), length: new FileInfo(path).Length))
+            .ToList();
+
+        archive.Ingest("fp", "Client");
+
+        foreach (var (path, stamp, length) in writtenAt)
+        {
+            Assert.Equal(stamp, File.GetLastWriteTimeUtc(path));
+            Assert.Equal(length, new FileInfo(path).Length);
+        }
+    }
 }

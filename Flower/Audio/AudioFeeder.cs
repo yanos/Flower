@@ -43,6 +43,22 @@ namespace Flower.Audio
         private Thread? _thread;
         private volatile bool _running;
 
+        // Whether the device this feeder fills is actually running. The thread
+        // parks on this rather than ticking, because a stopped device drains
+        // nothing: every tick would read an empty ring, find nothing, sleep
+        // 2ms and do it again - 400-odd wakeups a second, at the highest
+        // priority in the process, for as long as the device stayed open.
+        //
+        // Nothing used to clear it. The feeder was started when the device was
+        // opened and disposed only when it was closed, so Pause() and Stop()
+        // left it spinning - and since GaplessRingBuffer.Read counts *any*
+        // read of an empty ring as an underrun, every one of those ticks
+        // scored one. A phone sitting idle overnight logged "Render watchdog:
+        // underrun(s) detected - Started=False ... (+435)" every second for as
+        // long as it was left alone, which is both the drain itself and what
+        // kept the log archive rewriting (see DeviceLogArchive.Ingest).
+        private readonly ManualResetEventSlim _awake = new(false);
+
         private int _generation = int.MinValue;
         private long _pendingFlush;
         private long _flushDeadlineTimestamp;
@@ -70,6 +86,9 @@ namespace Flower.Audio
         // subtracts this to keep the seek bar honest.
         public int BufferedBytes => _bridge.Available;
 
+        // Starts the thread parked. The device is open but stopped at this
+        // point (see MiniaudioSink.OpenDevice), and there is nothing to fill
+        // ahead of a device that is not running.
         public void Start()
         {
             if (_thread != null)
@@ -88,10 +107,35 @@ namespace Flower.Audio
             _thread.Start();
         }
 
+        // Follows the device: called once it is actually running, so the
+        // bridge starts filling behind a callback that is there to drain it.
+        //
+        // Re-arms the prime latch, because a deadline that has been sitting
+        // parked for the length of a pause has long since expired, and
+        // arriving already primed is the one thing the latch exists to
+        // prevent.
+        public void Resume()
+        {
+            ArmPrimeLatch();
+            _awake.Set();
+        }
+
+        // Parked, not stopped: the thread stays alive and the bridge keeps
+        // whatever it holds, so a resume is a wake rather than a restart.
+        public void Pause() => _awake.Reset();
+
         private void Run()
         {
             while (_running)
             {
+                if (!_awake.IsSet)
+                {
+                    // No timeout: Dispose sets this on its way past, so a
+                    // parked thread still leaves promptly.
+                    _awake.Wait();
+                    continue;
+                }
+
                 // A tick that moved nothing means the ring is empty or the
                 // bridge is full; either way the next opportunity is a device
                 // period away, so there is nothing to gain from spinning.
@@ -193,9 +237,23 @@ namespace Flower.Audio
 
         public void Dispose()
         {
+            if (_thread == null)
+                return;
+
             _running = false;
-            _thread?.Join(TimeSpan.FromSeconds(1));
+            // Unparks a thread waiting on the gate above, which then sees
+            // _running and returns rather than ticking.
+            _awake.Set();
+
+            var exited = _thread.Join(TimeSpan.FromSeconds(1));
             _thread = null;
+
+            // Only once the thread has actually gone. Disposing the gate out
+            // from under one still parked on it throws on that thread, where
+            // there is nobody to catch it - and the join above is bounded, so
+            // "it did not exit" is a state this has to survive.
+            if (exited)
+                _awake.Dispose();
         }
     }
 }

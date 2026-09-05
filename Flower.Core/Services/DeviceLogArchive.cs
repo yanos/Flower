@@ -27,7 +27,11 @@ public sealed class DeviceLogArchive
     private readonly object _lock = new();
     private long _archived = InMemoryLogStore.BeforeFirstSequence;
     private bool _loaded;
-    private IReadOnlyList<LogEntryDto> _retained = [];
+
+    // The retained week, held rather than re-read. Ordered oldest-first, which
+    // is what makes the retention check below an O(1) look at the head rather
+    // than a pass over the whole list every drain.
+    private readonly List<LogEntryDto> _retained = [];
 
     public DeviceLogArchive(ClientLogStore store, InMemoryLogStore live)
     {
@@ -39,6 +43,12 @@ public sealed class DeviceLogArchive
     // Must run on its own schedule rather than inside a push: lines logged
     // while no server is listed are exactly the ones worth keeping, and the
     // ring drops them within a session if nobody is draining it.
+    //
+    // Costs one read of the archive per session, on the first drain, and an
+    // append per drain after that. It used to read and re-hash the entire
+    // retained week on every drain - see ClientLogStore.Append, which exists
+    // because that is a second of a phone's CPU every five seconds once the
+    // week is big enough.
     public void Ingest(string fingerprint, string alias)
     {
         lock (_lock)
@@ -47,16 +57,47 @@ public sealed class DeviceLogArchive
             if (slice.Entries.Count == 0 && _loaded)
                 return;
 
-            var snapshot = _store.SetSnapshot(
-                fingerprint,
-                alias,
-                slice.Entries.Select(LogEntryDto.FromEntry).ToList(),
-                DateTimeOffset.UtcNow);
+            var now = DateTimeOffset.UtcNow;
+            var entries = slice.Entries.Select(LogEntryDto.FromEntry).ToList();
 
+            if (_loaded)
+            {
+                _store.Append(fingerprint, alias, entries, now);
+            }
+            else
+            {
+                // The one drain that has to read: it is where a previous
+                // session's week comes back into memory. SetSnapshot also
+                // dedups, which matters exactly here - a crash between the
+                // append and the sequence advance would otherwise re-archive
+                // whatever the ring still holds from before the restart.
+                _retained.AddRange(_store.SetSnapshot(fingerprint, alias, entries, now).Entries);
+                _archived = slice.LastSequence;
+                _loaded = true;
+                return;
+            }
+
+            _retained.AddRange(entries);
+            DropExpired(now);
             _archived = slice.LastSequence;
-            _retained = snapshot.Entries;
-            _loaded = true;
         }
+    }
+
+    // Retention, in memory. The list is ordered oldest-first and lines arrive
+    // in time order, so anything expired is a prefix - which makes the common
+    // case (nothing has aged out since the last drain) a single comparison.
+    // The caller holds _lock.
+    private void DropExpired(DateTimeOffset now)
+    {
+        var cutoff = now.Subtract(ClientLogStore.Retention);
+        if (_retained.Count == 0 || _retained[0].Timestamp >= cutoff)
+            return;
+
+        var expired = 0;
+        while (expired < _retained.Count && _retained[expired].Timestamp < cutoff)
+            expired++;
+
+        _retained.RemoveRange(0, expired);
     }
 
     // Everything retained that orders after the server's watermark. A null
@@ -66,8 +107,11 @@ public sealed class DeviceLogArchive
     {
         lock (_lock)
         {
+            // Copied rather than handed over: _retained is appended to by
+            // every drain now, and a caller serializing it on another thread
+            // must not have it grow underneath them.
             if (watermark?.LastEntryTimestamp is not { } timestamp)
-                return _retained;
+                return _retained.ToList();
 
             var eventId = watermark.LastEventId ?? string.Empty;
             return _retained
