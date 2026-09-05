@@ -48,6 +48,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `REMOTE-TRANSPORT-PLAN.md` — who carries the traffic when neither end has a public address: Tailscale vs Cloudflare Tunnel vs embedding `tsnet`.
 - `OPEN-INTERNET-REVIEW.md` — the `LanGuard`/rate-limit/signature read-through that gates turning any remote transport on.
 - `ARCHITECTURE-REVIEW.md` — standing whole-codebase backlog: correctness, performance, duplicated sources of truth, test gaps.
+- `CODE-REVIEW-2026-09.md` — September 2026 review pass: audio-quality and deadlock defects, security/trust-boundary gaps, allocation hot spots, dead code. Findings only, with the evidence for each; nothing in it is fixed yet.
 - `CROSS-PLATFORM-PLAN.md` — iOS/Android platform-gap remediation.
 - `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server (same OpenSubsonic client protocol).
 - `MOBILE-PLAN.md` — getting iOS/Android from scaffolding to runnable.
