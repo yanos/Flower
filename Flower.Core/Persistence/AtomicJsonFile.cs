@@ -81,16 +81,43 @@ namespace Flower.Persistence
             }
         }
 
+        // Indentation is a property of being a file rather than of any one
+        // type's serializer options, which is why it lives here and not in the
+        // eight JsonSourceGenerationOptions that would otherwise each have to
+        // remember it. Everything this writes is a file a person may open: the
+        // settings they hand-edit, the peers they are asked to trust, the keys
+        // they might have to compare against another machine's. A serializer
+        // context is the wrong place to decide that, because the same context
+        // also serializes Flower's device-to-device wire protocol, where an
+        // indent is nothing but bytes on a LAN.
+        //
+        // Supplying the writer is what makes that stick: JsonWriterOptions.
+        // Indented wins over the type info's own WriteIndented, so a disk file
+        // is indented whether or not its context asked to be.
+        //
+        // The one file that would have argued against this is gone. library.json
+        // was ~18MB at 16k tracks and rewritten on every track start and end,
+        // which is why FlowerJsonContext turned indentation off in the first
+        // place; the library lives in SQLite now and JsonLibraryImport only ever
+        // reads that file. What is left is a handful of files measured in
+        // kilobytes.
+        private static readonly JsonWriterOptions WriterOptions = new() { Indented = true };
+
         private static void WriteCore<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly)
         {
             var temp = PrepareWrite(path);
             using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
                 RestrictToOwner(temp, ownerOnly);
-                JsonSerializer.Serialize(stream, value, typeInfo);
+                using (var writer = new Utf8JsonWriter(stream, WriterOptions))
+                {
+                    JsonSerializer.Serialize(writer, value, typeInfo);
+                }
+
                 // flushToDisk: the whole point is surviving a crash between
                 // here and the swap below - a write sitting in the OS page
-                // cache would not.
+                // cache would not. After the writer is disposed, so its own
+                // buffer has reached the stream first.
                 stream.Flush(flushToDisk: true);
             }
 
@@ -119,7 +146,12 @@ namespace Flower.Persistence
             await using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
                 RestrictToOwner(temp, ownerOnly);
-                await JsonSerializer.SerializeAsync(stream, value, typeInfo);
+                await using (var writer = new Utf8JsonWriter(stream, WriterOptions))
+                {
+                    JsonSerializer.Serialize(writer, value, typeInfo);
+                    await writer.FlushAsync();
+                }
+
                 stream.Flush(flushToDisk: true);
             }
 

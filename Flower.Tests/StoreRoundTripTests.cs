@@ -1073,6 +1073,56 @@ public class StoreRoundTripTests : IDisposable
         Assert.True(File.Exists(AtomicJsonFile.CorruptPath(AppSettingsStore.StorePath)));
     }
 
+    // ── Indentation ──────────────────────────────────────────────────────────
+    //
+    // Every file AtomicJsonFile writes is one a person may open - the settings
+    // they hand-edit, the peers they are asked to trust - so it indents, and
+    // does so by supplying its own Utf8JsonWriter rather than by asking eight
+    // serializer contexts to agree. settings.json is the sharpest case: its
+    // context sets WriteIndented = false, because that same context also
+    // serializes the device-to-device wire protocol, where an indent is bytes
+    // on a LAN. So this is not "the option is set" - it is "the file wins over
+    // the type", which is the part a future refactor back to
+    // JsonSerializer.SerializeAsync(stream, ...) would silently undo.
+
+    [Fact]
+    public async Task A_file_written_asynchronously_is_indented()
+    {
+        await new AppSettingsStore(NullLogger<AppSettingsStore>.Instance)
+            .SaveAsync(new AppSettings { SortColumn = "Album" });
+
+        var text = await File.ReadAllTextAsync(AppSettingsStore.StorePath);
+
+        Assert.Contains("\n  \"", text);
+        Assert.DoesNotContain("\":\"", text);
+    }
+
+    [Fact]
+    public void A_file_written_synchronously_is_indented()
+    {
+        new AppSettingsStore(NullLogger<AppSettingsStore>.Instance)
+            .Save(new AppSettings { SortColumn = "Album" });
+
+        var text = File.ReadAllText(AppSettingsStore.StorePath);
+
+        Assert.Contains("\n  \"", text);
+        Assert.DoesNotContain("\":\"", text);
+    }
+
+    // And an indented file still round-trips, which is the only thing that
+    // makes the above safe to want.
+    [Fact]
+    public async Task An_indented_file_reads_back()
+    {
+        var store = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        await store.SaveAsync(new AppSettings { SortColumn = "Year", SortAscending = false });
+
+        var loaded = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance).Load();
+
+        Assert.Equal("Year", loaded.SortColumn);
+        Assert.False(loaded.SortAscending);
+    }
+
     [Fact]
     public async Task AtomicJsonFile_leaves_no_temp_file_behind_after_a_successful_write()
     {
