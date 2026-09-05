@@ -1,6 +1,6 @@
 # flower-ffmpeg
 
-A small native façade over FFmpeg's decode libraries, and the second
+A small native façade over FFmpeg's decode libraries, and the only
 implementation behind `ITrackDecoder`. `flower_ffmpeg.h` is the whole
 interface: eight functions over ints and byte buffers. Read its header comment
 first - it says why this exists rather than `FFmpeg.AutoGen`, and why the ABI
@@ -13,35 +13,21 @@ every platform, whatever format is requested. See `docs/AUDIOPHILE-PLAN.md`,
 its first two tests decode the same 24-bit fixture twice and show the low byte
 surviving one way and gone the other.
 
-## Electing it
+## The only decoder
 
-It is elected by default. `AppSettings.AudioDecoder` in `settings.json` is what
-chooses, and it now starts at `Ffmpeg`:
+There is nothing to elect any more. There was: `AppSettings.AudioDecoder`, a
+`FLOWER_DECODER` override, and a LibVLC fallback for a head with no built
+artifact. All five heads have an artifact now, LibVLC was permanently 16-bit,
+and a fallback whose whole job is to play something at a ceiling nobody chose
+is not worth a second code path - so it went, and this façade is what decodes.
 
-```json
-{ "AudioDecoder": "LibVlc" }
-```
+That also settles the pipeline's width: the canonical PCM format is S24
+because that is what this delivers, rather than following whichever decoder
+won. See `GaplessFormat` and `docs/AUDIOPHILE-PLAN.md`'s step three.
 
-is the way back. That default is the whole point of the façade rather than a
-vote of confidence in it: LibVLC truncates every track to 16 bits, so leaving it
-as the default leaves a ceiling in place that nobody chose and no setting most
-listeners will ever open removes.
-
-Two things make defaulting to it safe rather than brave. Asking for FFmpeg where
-the façade is not loadable is not an error - `DecoderElection` falls back to
-LibVLC and says so in the log - so a head whose artifact is missing plays
-anyway, one bit-depth poorer. And `FLOWER_DECODER=ffmpeg` (or `libvlc`)
-overrides the setting for one run, so an A/B needs neither an edit nor a
-rebuild, and a session that goes wrong is recovered without editing
-`settings.json` back.
-
-Note that `settings.json` is written whole on every save, so changing this
-default does nothing for a machine that has already run the app: its file still
-says what it said. Edit the key, or delete the file.
-
-Electing it is also what widens the pipeline to 24 bits: the canonical PCM
-format follows the decoder, since LibVLC cannot fill anything wider. See
-`GaplessFormat` and `docs/AUDIOPHILE-PLAN.md`'s step three.
+The cost of being the only one is that a façade which will not load is no
+longer a quieter kind of playback. `App.axaml.cs` logs one critical line at
+startup and the app browses, edits and syncs; it just cannot decode anything.
 
 ## Building for development (macOS)
 
@@ -55,11 +41,11 @@ managed side finds it by walking up from the test/app output directory, or
 from `FLOWER_FFMPEG` if that names a file. Both are in
 `FfmpegNative.Resolve`.
 
-Without it, the `RequiresFfmpeg` tests fail rather than skip, the same way the
-`RequiresLibVLC` ones do - filter them out on a machine that has not built it:
+Without it, the `RequiresFfmpeg` tests fail rather than skip - filter them out
+on a machine that has not built it:
 
 ```
-dotnet test Flower.Tests/Flower.Tests.csproj --filter "Category!=RequiresLibVLC&Category!=RequiresFfmpeg"
+dotnet test Flower.Tests/Flower.Tests.csproj --filter "Category!=RequiresFfmpeg"
 ```
 
 ## Licensing - the constraint on every shipping build
@@ -212,18 +198,21 @@ each artifact is built, packaged and tested on real hardware:
 | Linux | `libflower_ffmpeg.so` | `linux/build.sh` written and wired into CI; the first CI run is what proves it - it has never been built on a Linux machine here |
 | Windows | `flower_ffmpeg.dll` | Built on CI against a pinned LGPL FFmpeg download, and required there; never built or listened to on a Windows machine here |
 | Android | `libflower_ffmpeg.so` per ABI | Built for arm64-v8a, armeabi-v7a and x86_64, and packaged into the APK. Never run on a device or emulator - Android has no device-checks head |
-| iOS | `flower_ffmpeg.framework` per slice | Built; all 70 FFmpeg decode checks pass on the simulator, and elected on a physical device via `FLOWER_DECODER=ffmpeg` |
+| iOS | `flower_ffmpeg.framework` per slice | Built; the decode checks pass on the simulator and on a physical device |
 
 ## On CI
 
-Both the `test` and `decode-checks` jobs build the façade on all three
-desktops, so the FFmpeg decoder is exercised there rather than only on the one
-developer machine that happens to have built it. `decode-checks` additionally
-sets `FLOWER_REQUIRE_DECODERS=LibVLC,FFmpeg`, which turns a decoder the
-platform turns out not to have into a failing check rather than a shorter run
-- the checks loop over the decoders that loaded, so a façade that quietly
-stopped building would otherwise present as a green run that checked half as
-much.
+The `test` job builds the façade on all three desktops and runs the whole
+suite, device checks included, so the decoder is exercised there rather than
+only on the one developer machine that happens to have built it. There is no
+separate `decode-checks` job any more: it had its own matrix only to install
+LibVLC, and there is nothing left to install.
+
+Every run - the three desktops, the iOS simulator, the Android emulator - sets
+`FLOWER_REQUIRE_DECODERS=FFmpeg`, which turns a decoder the platform turns out
+not to have into a failing check rather than a shorter run. The checks loop
+over the decoders that loaded, so a façade that quietly stopped building would
+otherwise present as a green run that checked nothing at all.
 
 Windows is the interesting one of the three: it is the only platform whose
 FFmpeg is four loose DLLs next to the façade rather than a prefix the loader

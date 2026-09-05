@@ -47,7 +47,7 @@ public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
             .WithFlowerFonts();
     }
 
-    // A native crash (e.g. inside libvlc.so) bypasses .NET's own exception
+    // A native crash (e.g. inside libflower_ffmpeg.so) bypasses .NET's own exception
     // handling entirely - Android's own record of why the previous process
     // died (ApplicationExitInfo, API 30+) is the only way to learn about it
     // without a third-party native-crash library. Stashed via

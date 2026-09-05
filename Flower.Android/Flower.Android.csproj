@@ -92,9 +92,9 @@
        also where the LGPL obligation lands for a phone build - there is no
        distro FFmpeg here to point at or replace. See native/ffmpeg/README.md.
 
-       Without these the election falls back to LibVLC with a warning, so a
-       missing ABI is a quieter failure than a crash and a louder one than
-       silence. -->
+       Without these there is no decoder at all on that ABI: App.axaml.cs logs
+       one critical line at startup and the app browses, edits and syncs
+       without being able to play anything. -->
   <ItemGroup>
     <AndroidNativeLibrary Include="libs\arm64-v8a\libflower_ffmpeg.so">
       <Abi>arm64-v8a</Abi>

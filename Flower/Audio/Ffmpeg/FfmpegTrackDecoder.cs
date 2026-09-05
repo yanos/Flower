@@ -66,6 +66,18 @@ namespace Flower.Audio.Ffmpeg
         private int _retired;
         private int _started;
 
+        // The decode loop has ended of its own accord - drained, faulted, or
+        // returned. Deliberately distinct from _retired, which is somebody
+        // else's decision about this decoder rather than its own report about
+        // itself: the watchdog below is interested in exactly the gap between
+        // the two.
+        private int _finished;
+        private int _reported;
+
+        private System.Timers.Timer? _watchdog;
+        private long _watchdogLastBytesProduced = -1;
+        private long _watchdogLastBackpressureWaits = -1;
+
         // -1 when no seek is outstanding. Written by whoever calls Seek, read
         // and cleared by the decode thread.
         private long _pendingSeekMs = -1;
@@ -214,6 +226,124 @@ namespace Flower.Audio.Ffmpeg
                 Name = $"flower-decode {LogPath.Short(Track.Path)}",
             };
             _thread.Start();
+
+            // Only where somebody is listening: a decoder built without a
+            // logger - the device checks, most of the tests - has nowhere to
+            // report to, and a once-a-second timer per decoder that can only
+            // write into the void is pure cost.
+            if (_logger is not null)
+            {
+                _watchdog = new System.Timers.Timer(1000) { AutoReset = true };
+                _watchdog.Elapsed += (_, _) => CheckWatchdog();
+                _watchdog.Start();
+            }
+        }
+
+        // Only logs when something looks wrong, so a healthy decode does not
+        // spam a line a second for the whole track.
+        //
+        // The LibVLC decoder had one of these and it went out with the
+        // decoder, which left the app with no way at all to tell a wedged
+        // decode from a long one. This is the same idea against a different
+        // set of facts: there is no player to ask for a state here, so the
+        // only authorities are the byte counter, the writer's own
+        // parked-for-room count, and whether the decode thread is still
+        // running.
+        private void CheckWatchdog()
+        {
+            var retired  = Volatile.Read(ref _retired) == 1;
+            var finished = Volatile.Read(ref _finished) == 1;
+            var decoding = !retired && !finished;
+
+            var bytesProduced     = BytesProduced;
+            var backpressureWaits = _writer.BackpressureWaits;
+            var target            = _writer.Target;
+
+            var stalled = IsStalled(
+                decoding,
+                bytesProduced, _watchdogLastBytesProduced,
+                backpressureWaits, _watchdogLastBackpressureWaits);
+
+            // The other half, and the one that has no LibVLC equivalent
+            // because LibVLC always had a state to read: the loop ended by
+            // itself, nobody retired this decoder, and neither Drained nor
+            // Faulted was raised. The coordinator is then waiting for an event
+            // that will never come, and the symptom is a track that simply
+            // stops with nothing advancing after it.
+            var endedSilently = finished && !retired && Volatile.Read(ref _reported) == 0;
+
+            if (stalled || endedSilently)
+            {
+                _logger?.LogWarning(
+                    "Decode watchdog for {Path}: BytesProduced={BytesProduced} BackpressureWaits={BackpressureWaits} TargetRead={TargetRead} TargetWritten={TargetWritten} TargetAvailable={TargetAvailable}/{TargetCapacity} TargetGeneration={TargetGeneration} (Stalled={Stalled} EndedSilently={EndedSilently})",
+                    LogPath.Short(Track.Path), bytesProduced, backpressureWaits,
+                    target.TotalBytesRead, target.TotalBytesWritten, target.AvailableBytes,
+                    target.Capacity, target.Generation, stalled, endedSilently);
+            }
+
+            _watchdogLastBytesProduced     = bytesProduced;
+            _watchdogLastBackpressureWaits = backpressureWaits;
+
+            // A finished decoder has nothing left to say. Stopping here rather
+            // than only in Retire matters because a decoder that drained is
+            // often not retired for a while - the coordinator keeps it around
+            // while its tail plays out - and endedSilently would otherwise
+            // report the same thing every second until it was.
+            if (!decoding)
+                StopWatchdog();
+        }
+
+        private void StopWatchdog()
+        {
+            var watchdog = Interlocked.Exchange(ref _watchdog, null);
+            if (watchdog is null)
+                return;
+
+            watchdog.Stop();
+            watchdog.Dispose();
+        }
+
+        // Pulled out of CheckWatchdog so it can be tested: the surrounding
+        // method needs a live decode thread and a native decoder, and the
+        // interesting cases are exactly the ones a real decode cannot be asked
+        // to produce on demand. Getting this predicate wrong is also not a
+        // quiet failure - the LibVLC version without the backpressure term
+        // logged 2430 false alarms in a single day on one phone, every one of
+        // them with the target ring full and nothing whatsoever wrong.
+        //
+        // The two "last" arguments are the previous tick's samples, -1 on the
+        // first tick, where nothing can be concluded from a delta yet.
+        internal static bool IsStalled(
+            bool decoding,
+            long bytesProduced,
+            long lastBytesProduced,
+            long backpressureWaits,
+            long lastBackpressureWaits)
+        {
+            if (!decoding)
+                return false;
+
+            // First tick: no previous sample of either counter, so there is no
+            // delta to conclude anything from. The watchdog runs once a second
+            // and there is always a next one.
+            if (lastBytesProduced < 0)
+                return false;
+
+            if (bytesProduced != lastBytesProduced)
+                return false;
+
+            // A decoder that filled its ring and is waiting for playback to
+            // drain it produces no bytes either, and for an armed decoder that
+            // is most of a track rather than a wedge.
+            //
+            // The signal is the writer's own parked-for-room count rather than
+            // the ring's free space, because free space is sampled at an
+            // arbitrary instant - the reader drains a period every few
+            // milliseconds, so a full ring reads as briefly not-full - whereas
+            // "did it park at any point during this window" is exactly the
+            // question and cannot be lost to sampling.
+            var waitedForRoom = lastBackpressureWaits >= 0 && backpressureWaits != lastBackpressureWaits;
+            return !waitedForRoom;
         }
 
         // The open PrepareAsync would have done, on the decode thread, for a
@@ -226,7 +356,7 @@ namespace Flower.Audio.Ffmpeg
             if (Track.Path is not { } path)
             {
                 _logger?.LogWarning("StartDecoding() for \"{Title}\" which has no local path", Track.Title);
-                Faulted?.Invoke();
+                ReportFaulted();
                 return false;
             }
 
@@ -241,7 +371,7 @@ namespace Flower.Audio.Ffmpeg
                     return false;
 
                 _logger?.LogWarning(ex, "Could not open {Path} for decoding", LogPath.Short(path));
-                Faulted?.Invoke();
+                ReportFaulted();
                 return false;
             }
 
@@ -255,7 +385,35 @@ namespace Flower.Audio.Ffmpeg
             return true;
         }
 
+        // Every exit this decoder has that the coordinator is waiting to hear
+        // about goes through one of these two, so that "the loop ended and
+        // nobody was told" is a state the watchdog can name rather than a
+        // silence indistinguishable from a slow track.
+        private void ReportDrained()
+        {
+            Interlocked.Exchange(ref _reported, 1);
+            Drained?.Invoke();
+        }
+
+        private void ReportFaulted()
+        {
+            Interlocked.Exchange(ref _reported, 1);
+            Faulted?.Invoke();
+        }
+
         private void DecodeLoop()
+        {
+            try
+            {
+                DecodeUntilDone();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _finished, 1);
+            }
+        }
+
+        private void DecodeUntilDone()
         {
             var buffer = new byte[ReadBufferBytes];
 
@@ -282,7 +440,7 @@ namespace Flower.Audio.Ffmpeg
                         if (Volatile.Read(ref _retired) == 1)
                             return;
                         _logger?.LogWarning(ex, "Decoding {Path} failed", LogPath.Short(Track.Path));
-                        Faulted?.Invoke();
+                        ReportFaulted();
                         return;
                     }
 
@@ -295,7 +453,7 @@ namespace Flower.Audio.Ffmpeg
                                 LogPath.Short(Track.Path), Track.Duration.TotalMilliseconds,
                                 BytesProduced / (double)(GaplessFormat.SampleRate * _bytesPerFrame) * 1000,
                                 BytesProduced);
-                            Drained?.Invoke();
+                            ReportDrained();
                         }
                         return;
                     }
@@ -322,7 +480,7 @@ namespace Flower.Audio.Ffmpeg
                 if (Volatile.Read(ref _retired) == 1)
                     return;
                 _logger?.LogError(ex, "The decode thread for {Path} ended unexpectedly", LogPath.Short(Track.Path));
-                Faulted?.Invoke();
+                ReportFaulted();
             }
         }
 
@@ -394,6 +552,8 @@ namespace Flower.Audio.Ffmpeg
                 return;
 
             _logger?.LogTrace("Retire() for {Path}", LogPath.Short(Track.Path));
+
+            StopWatchdog();
 
             // Wakes a decode thread parked on a full ring so it notices the
             // retirement now rather than up to 20ms from now.

@@ -155,6 +155,7 @@ about the samples:
 ```bash
 dotnet test Flower.Tests/Flower.Tests.csproj --filter FullyQualifiedName~DeviceChecksTests  # here
 scripts/ios-device-checks.sh                                                                # iOS Simulator
+scripts/android-device-checks.sh                                                            # Android emulator
 ```
 
 Two checks are not about decoding at all. The first is authentication:
@@ -209,14 +210,33 @@ names only the MP4 family (where a hint buys something a probe cannot: a moov
 atom at the end of an unseekable stream), and `FfmpegDecoder.OpenStream` rewinds
 and probes when even that hint will not open the stream.
 
-CI runs the same checks per-OS inside the `test` job - they need nothing the
-fast suite does not already build - and on an iOS Simulator in
-`ios-device-checks`, which drives
-`scripts/ios-device-checks.sh`. The runs are meant to be comparable: when they
+CI runs the same checks on every platform Flower has a head for: per-OS inside
+the `test` job on the three desktops - they need nothing the fast suite does
+not already build - on an iOS Simulator in `ios-device-checks`, and on an
+Android emulator in `android-device-checks`. The mobile two are a head apiece
+(`Flower.DeviceChecks.iOS`, `Flower.DeviceChecks.Android`) driven by a script
+apiece, written to be twins: a runner with no Avalonia, no audio output and no
+UI beyond a text view, reporting the same `FLOWER-CHECK`/`FLOWER-CHECKS` lines
+to a transcript in its own container, which the script reads back and turns
+into an exit code. The runs are meant to be comparable line for line: when they
 disagree, the difference is the platform - and iOS is the platform where the
-answer has actually been no twice. Android has no head yet, which is the only
-thing keeping it to a build-only job: the x86_64 natives an emulator would need
-are already built and committed under `Flower.Android/libs/x86_64/`.
+answer has actually been no twice.
+
+The transcript is a file rather than the obvious console, on both, for the same
+reason arrived at separately: `Console.WriteLine` from a .NET iOS app does not
+reliably reach `simctl launch --console-pty`, and logcat is a ring buffer
+shared with the whole system, so a chatty emulator drops lines out of the
+middle of a long one. A run that decoded everything and reported two thirds of
+its tally is indistinguishable from a failing one.
+
+Which ABI an Android run exercises is a property of the host - arm64-v8a on a
+developer's Mac, x86_64 on a CI runner - and `Flower.Android/libs/` carries a
+built façade for both. Two Android-specific things are load-bearing and neither
+is obvious: `EmbedAssembliesIntoApk`, because Fast Deployment keeps the managed
+assemblies out of a Debug APK and pushes them over adb separately, so an APK
+installed by the script aborts at startup; and the `INTERNET` permission, which
+the loopback server needs even though both ends of the connection are the same
+process.
 
 ## Git Workflow
 
@@ -240,6 +260,7 @@ are already built and committed under `Flower.Android/libs/x86_64/`.
 | `Flower.Tests/` | xUnit tests for the shared library |
 | `Flower.DeviceChecks/` | Functional decode checks that run on any platform, phone included |
 | `Flower.DeviceChecks.iOS/` | iOS head that runs them on a simulator or a device |
+| `Flower.DeviceChecks.Android/` | Android head that runs them on an emulator or a device |
 
 All meaningful code lives in `Flower/`.
 

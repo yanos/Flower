@@ -294,6 +294,53 @@ jobs:
       - name: Build for Android
         run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
 
+  android-device-checks:
+    name: Decode checks (Android emulator)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower/Flower.csproj
+            Flower.DeviceChecks.Android/Flower.DeviceChecks.Android.csproj
+
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      # The emulator needs hardware acceleration to be usable rather than
+      # merely possible: without KVM an x86_64 image falls back to full
+      # emulation and a decode check that takes seconds takes minutes. Ubuntu
+      # runners have the device but not the permissions.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The action owns the emulator's lifecycle, so the script is told to use
+      # the device it finds rather than start one of its own - two processes
+      # fighting over one AVD lock is a failure with no useful error.
+      #
+      # x86_64 here and arm64-v8a on a developer's Mac: which ABI gets
+      # exercised is a property of the host, and Flower.Android carries a
+      # built façade for both.
+      - name: Run the decode checks on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: default
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          script: FLOWER_ANDROID_SERIAL=emulator-5554 scripts/android-device-checks.sh
+
   build-web:
     runs-on: ubuntu-latest
 

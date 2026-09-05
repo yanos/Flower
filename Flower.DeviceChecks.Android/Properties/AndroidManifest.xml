@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+	<!-- The only permission the checks need, and they need it on the loopback
+	     server: Android denies a socket to a process without INTERNET even
+	     when both ends of the connection are this process. -->
+	<uses-permission android:name="android.permission.INTERNET" />
+	<!-- usesCleartextTraffic, because the loopback server is plain HTTP and
+	     Android has blocked cleartext by default since API 28. Without it
+	     every streamed check fails identically to a decoder that cannot open a
+	     stream at all - which is precisely the bug this suite exists to catch,
+	     so the platform's own policy would have been indistinguishable from
+	     the finding. -->
+	<application android:label="Flower checks" android:usesCleartextTraffic="true" />
+</manifest>

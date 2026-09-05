@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A test runner, not an app. It launches, runs Flower.DeviceChecks
+       against the real Android runtime, writes one line per check and a final
+       tally, and leaves the same text on screen so a run on a physical phone
+       is readable without a cable. scripts/android-device-checks.sh drives it
+       on an emulator and turns the tally into an exit code.
+
+       The counterpart of Flower.DeviceChecks.iOS, and deliberately its twin:
+       the two runs are only worth comparing if the only difference between
+       them is the platform. No Avalonia, no audio output, no UI beyond a
+       TextView - what is under test is decoding and the HTTP path beneath it,
+       and every dependency this does not have is one that cannot explain a
+       failure. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>23</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <ApplicationId>com.yanos.flower.devicechecks</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <AndroidEnableProfiledAot>False</AndroidEnableProfiledAot>
+
+    <!-- Fast Deployment off, in every configuration. It keeps the managed
+         assemblies out of the APK and pushes them over adb as a separate
+         step, which `dotnet build -t:Run` does and `adb install` does not -
+         so a hand-installed Debug APK aborts at startup with "No assemblies
+         found ... Assuming this is part of Fast Deployment". The driver
+         script installs the APK itself, deliberately, so that what runs is
+         the artifact rather than a developer's working tree. -->
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flower.DeviceChecks\Flower.DeviceChecks.csproj" />
+  </ItemGroup>
+
+  <!-- Flower.DeviceChecks reaches Miniaudio-CS transitively and this runner
+       never plays a sample, but "unused" is not the same as "absent": .NET's
+       RID graph treats android-* as falling back to linux-*, so restore is
+       happy to drop the package's desktop libminiaudio.so into the APK's
+       arm64-v8a slot - a glibc binary in a Bionic process. Flower.Android
+       carries the same exclusion for the same reason, with the fuller story. -->
+  <ItemGroup>
+    <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
+  </ItemGroup>
+
+  <!-- The FFmpeg façade out of Flower.Android's libs rather than a copy of its
+       own: it is the app's binary, and a runner checking a different one would
+       be checking the wrong thing. The checks run once per decoder the
+       platform has, so embedding this is what makes an Android run check
+       anything at all - without it AvailableDecoders finds nothing loadable,
+       and FLOWER_REQUIRE_DECODERS is what turns that into a failure rather
+       than a green run of no checks.
+
+       All three ABIs, because which one is exercised is a property of the
+       hardware: an emulator on Apple silicon is arm64-v8a, one on a CI runner
+       is x86_64, and armeabi-v7a is what an older phone would load. -->
+  <ItemGroup>
+    <AndroidNativeLibrary Include="..\Flower.Android\libs\arm64-v8a\libflower_ffmpeg.so">
+      <Abi>arm64-v8a</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="..\Flower.Android\libs\x86_64\libflower_ffmpeg.so">
+      <Abi>x86_64</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="..\Flower.Android\libs\armeabi-v7a\libflower_ffmpeg.so">
+      <Abi>armeabi-v7a</Abi>
+    </AndroidNativeLibrary>
+  </ItemGroup>
+
+</Project>
