@@ -47,22 +47,18 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `REMOTE-ACCESS-PLAN.md` — the client-side half of remote access: how a paired server stays reachable off the LAN (candidate addresses, LAN↔tailnet handover).
 - `REMOTE-TRANSPORT-PLAN.md` — who carries the traffic when neither end has a public address: Tailscale vs Cloudflare Tunnel vs embedding `tsnet`.
 - `OPEN-INTERNET-REVIEW.md` — the `LanGuard`/rate-limit/signature read-through that gates turning any remote transport on.
-- `ARCHITECTURE-REVIEW.md` — standing whole-codebase backlog: correctness, performance, duplicated sources of truth, test gaps.
-- `CODE-REVIEW-2026-09.md` — September 2026 review pass: audio-quality and deadlock defects, security/trust-boundary gaps, allocation hot spots, dead code. Findings only, with the evidence for each; nothing in it is fixed yet.
-- `CROSS-PLATFORM-PLAN.md` — iOS/Android platform-gap remediation.
+- `ARCHITECTURE-REVIEW.md` — the August 2026 structural review. Every tier in it is done; it stays because ~115 source comments cite its tier numbers as the reasoning behind the code they sit on. `CODE-REVIEW-2026-09.md` is the live backlog now.
+- `CODE-REVIEW-2026-09.md` — the standing backlog. September 2026 review pass: audio-quality and deadlock defects, security/trust-boundary gaps, allocation hot spots, dead code. Findings only, with the evidence for each; nothing in it is fixed yet.
 - `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server (same OpenSubsonic client protocol).
-- `MOBILE-PLAN.md` — getting iOS/Android from scaffolding to runnable.
 - `AIRPLAY-BLUETOOTH-PLAN.md` — Bluetooth device picker + AirPlay output routing.
 - `AUDIOPHILE-PLAN.md` — EQ, gapless playback, DSD/APE, hi-res passthrough.
 - `AUDIO-QUALITY-PLAN.md` — render-path defect audit (clicks, looped fragments, truncated tails) and the PCM-level test suite that should prove them fixed.
 - `MEDIA-KEYS-PLAN.md` — hardware media keys + OS now-playing integration.
-- `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack.
-- `VERSIONING-PLAN.md` — git-tag-driven versioning via MinVer.
+- `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack, and the versioning (MinVer, git tags) it consumes. Cutting the first `v*` tag is Phase 1's one remaining task and gates the rest.
 - `CRASH-REPORTING-PLAN.md` — crash reporting options.
-- `STORE-DEPLOYMENT-PLAN.md` — submitting iOS/Android to app stores.
+- `STORE-DEPLOYMENT-PLAN.md` — submitting iOS/Android to app stores, and the real-device verification still owed before that.
 - `PERFORMANCE-TRACKING-PLAN.md` — CI benchmark regression tracking + runtime timing.
 - `STREAMING-SERVICES-PLAN.md` — feasibility of streaming Spotify/Apple Music/YouTube Music.
-- `ALBUM-GRID-PLAN.md` — design record for the Albums/Recently Added art-tile grid.
 - `SMART-PLAYLIST-PLAN.md` — rule-based self-updating playlists (iTunes-style smart playlists).
 
 ## Agent skills

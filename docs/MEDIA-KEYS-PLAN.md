@@ -16,7 +16,7 @@ No cross-platform media-key API exists — each OS routes hardware/lock-screen/h
 
 ## Plan
 
-Add an `IPlatformNowPlaying` seam (matching the `IPlatformShell` pattern from `CROSS-PLATFORM-PLAN.md`), registered per-platform in `App.axaml.cs`'s DI container. Each implementation publishes metadata/play state from `PlaylistControlViewModel`/`Track` and wires transport commands straight into `PlaylistControlViewModel.PlayOrPause()`/`Next()`/`Previous()` — no changes needed to that class.
+Add an `IPlatformNowPlaying` seam (the same shape as the `IPlatformShell` proposed in `CODE-REVIEW-2026-09.md` E7 — a per-platform service behind one interface, with the caller hiding the affordance where the platform returns nothing), registered per-platform in `App.axaml.cs`'s DI container. Each implementation publishes metadata/play state from `PlaylistControlViewModel`/`Track` and wires transport commands straight into `PlaylistControlViewModel.PlayOrPause()`/`Next()`/`Previous()` — no changes needed to that class.
 
 - **Windows** — wrap `SystemMediaTransportControls`, set `DisplayUpdater` fields, update `PlaybackStatus`, verify taskbar thumbnail controls and the lock-screen card. Small-Medium effort, Low risk.
 - **macOS/iOS** — shared `MPNowPlayingInfoCenter`/`MPRemoteCommandCenter` implementation; land alongside whatever native interop `AIRPLAY-BLUETOOTH-PLAN.md` Phase 2 introduces rather than as a separate effort. iOS also needs the `audio` `UIBackgroundModes` declaration (no mobile audio-session code exists yet) — configure the audio session once, not twice, alongside AirPlay/Bluetooth work. Medium effort; Low risk on macOS, iOS carries the same "first real mobile audio verification" risk flagged elsewhere.

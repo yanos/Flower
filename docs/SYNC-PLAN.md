@@ -6,7 +6,7 @@ Two related goals, unified by one decision below: sync music (files + metadata) 
 
 ## Architecture prerequisite (decided)
 
-iOS owns its music files itself — its own sandboxed Documents-folder library, imported/read via TagLib, same as desktop's `Importer` scans `~/Music`. **No `MPMediaLibrary`/Apple Music integration.** Supersedes the `MPMediaLibrary` proposal in `CROSS-PLATFORM-PLAN.md` item #3. `Track.Path` stays a plain filesystem path on iOS.
+iOS owns its music files itself — its own sandboxed Documents-folder library, imported/read via TagLib, same as desktop's `Importer` scans `~/Music`. **No `MPMediaLibrary`/Apple Music integration.** `Track.Path` stays a plain filesystem path on iOS. (This overturned an earlier cross-platform proposal to read iOS's library through `MPMediaLibrary`; that document is gone, and the reason it was wrong is the paragraph below, which is the part worth keeping.)
 
 **Why:** `MPMediaLibrary` has no external write access (DRM-restricted) — syncing *to* iOS would be impossible under any transport. Owning files directly unblocks both USB and WiFi sync.
 
@@ -161,7 +161,7 @@ rejected:
   "not as feature rich as Electron," and its own maintainers just announced leaning on
   AI-assisted triage due to team bandwidth — too much dependency risk to build the whole app
   on.
-- **Mobile Avalonia isn't a pain point to escape** — `MOBILE-PLAN.md` confirms it's fully
+- **Mobile Avalonia isn't a pain point to escape** — the mobile shell is fully
   working today (real-device-validated audio, import, touch UI, not scaffolding). The
   hand-rolled UI surface (`MusicListView`'s virtualization, `RubberBandScroll`'s custom
   physics, `ScreenStackPanel`'s nav stack) would need full reimplementation in Blazor's DOM
@@ -598,7 +598,7 @@ This also completed **seam 1**'s missing half: `AdminSessionCredentials` (`Flowe
 
 **Not wired up yet:** nothing registers `StreamTicketUrlResolver`, because that needs the session token in the container — seam 5.
 
-**Seam 5 — startup wiring — done.** The `if (!OperatingSystem.IsBrowser())` guard around the startup rescan in `App.axaml.cs` is gone; the block runs whatever `IMusicImporter` is registered, and the only surviving fork is the two iTunes syncs, now gated on a new `IMusicImporter.ScansLocalFiles` rather than on a platform check — they read *this* machine's Music.app database and have nothing to say about a catalog pulled off a server. That makes "local files" versus "self-hosted server" a choice of importer rather than a special-cased second code path, which is what the abstraction existed for; it supersedes `CROSS-PLATFORM-PLAN.md` item #3's original `IMusicSource` proposal, which shipped as `IMusicImporter`.
+**Seam 5 — startup wiring — done.** The `if (!OperatingSystem.IsBrowser())` guard around the startup rescan in `App.axaml.cs` is gone; the block runs whatever `IMusicImporter` is registered, and the only surviving fork is the two iTunes syncs, now gated on a new `IMusicImporter.ScansLocalFiles` rather than on a platform check — they read *this* machine's Music.app database and have nothing to say about a catalog pulled off a server. That makes "local files" versus "self-hosted server" a choice of importer rather than a special-cased second code path, which is what the abstraction existed for; it is also where the original `IMusicSource` proposal landed, under the name `IMusicImporter`.
 
 The browser branch of `RegisterServices` is no longer a bare early return: `RegisterBrowserServices` registers a shared `HttpClient`, `AdminSessionCredentials` (as both itself and `IPeerCredentials`), `OriginLibraryImporter` as the `IMusicImporter`, and `StreamTicketUrlResolver` as the `IStreamUrlResolver` — the four things a tab has instead of the peer-to-peer stack.
 
@@ -1056,7 +1056,7 @@ needs to leave a trusted LAN.
 
 ## Status summary
 
-All numbered steps through Phase 4 are **done**: `CROSS-PLATFORM-PLAN.md` item #3 updated to the private-file-library iOS design; WiFi/LAN discovery + LocalSend-style transfer; `UIFileSharingEnabled` for USB; Bluetooth/programmatic-USB deliberately not built; playlist metadata sync; the OpenSubsonic client; the full Phase 3 stack (trust gate, embedded host, merge logic, mobile download UI); and Phase 4's cryptographic identity/signed-request hardening (route table, rate limiting, LAN-only enforcement, persisted denials, server-initiated unpair, body size cap). `Flower.Server` build-order steps 1 (extracting `Flower.Core`), 2 (scaffolding `Flower.Server` itself - SQLite schema, since moved onto `Flower.Core`'s shared layer, importer wiring, the full OpenSubsonic endpoint set, verified end-to-end against a real `OpenSubsonicClient`), and 3 (admin-issued pairing-code endpoint, admin bearer-token auth, `LanGuard` CGNAT allowance + configurable extra CIDRs, rate limiting on the redeem route) are also **done** (see "Project structure", "`Flower.Server` v1", and "Pairing-code endpoint, admin auth, `LanGuard`" above).
+All numbered steps through Phase 4 are **done**: the private-file-library iOS design settled (see "Architecture prerequisite" above); WiFi/LAN discovery + LocalSend-style transfer; `UIFileSharingEnabled` for USB; Bluetooth/programmatic-USB deliberately not built; playlist metadata sync; the OpenSubsonic client; the full Phase 3 stack (trust gate, embedded host, merge logic, mobile download UI); and Phase 4's cryptographic identity/signed-request hardening (route table, rate limiting, LAN-only enforcement, persisted denials, server-initiated unpair, body size cap). `Flower.Server` build-order steps 1 (extracting `Flower.Core`), 2 (scaffolding `Flower.Server` itself - SQLite schema, since moved onto `Flower.Core`'s shared layer, importer wiring, the full OpenSubsonic endpoint set, verified end-to-end against a real `OpenSubsonicClient`), and 3 (admin-issued pairing-code endpoint, admin bearer-token auth, `LanGuard` CGNAT allowance + configurable extra CIDRs, rate limiting on the redeem route) are also **done** (see "Project structure", "`Flower.Server` v1", and "Pairing-code endpoint, admin auth, `LanGuard`" above).
 
 Build order step 4's first two parts - `Flower.Web` scaffolding (existing Views/ViewModels rendering in-browser) and real audio playback (`WebAudioManager`) - are also **done** (see "`Flower.Web` scaffolding — rendering milestone done" and "`WebAudioManager` — real browser playback, done" above). Two real architectural findings along the way: .NET-for-WASM has no asymmetric crypto support at all, so `MainViewModel`'s P2P sync dependencies (`DeviceSigningKey` and everything built on it) are now nullable/defaulted rather than hard requirements, gated on `OperatingSystem.IsBrowser()`; and the browser audio path couldn't reuse `IAudioSink`/`GaplessCoordinator` at all (LibVLC-backed decode has no WASM build either), so it's a separate `IAudioManager` implementation driving a plain `<audio>` element instead.
 

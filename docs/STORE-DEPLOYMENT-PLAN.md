@@ -1,18 +1,18 @@
 # App Store / Play Store Deployment Plan
 
-Goal: get `Flower.iOS`/`Flower.Android` from runnable (`MOBILE-PLAN.md`) to submitted and approved.
+Goal: get `Flower.iOS`/`Flower.Android` from runnable to submitted and approved. Getting them runnable in the first place was `MOBILE-PLAN.md`, which finished and was deleted; what it had left over is Phase 3 below.
 
 ## Key findings
 
 - **Two build-config blockers, open:** `Flower.Android.csproj` produces `.apk` — Play Console requires `.aab`. `Flower.iOS.csproj` targets `net9.0-ios18.0` — Apple requires the iOS 26 SDK (`net10.0-ios26.2`) for submissions since April 2026.
-- **No real version numbers yet** — Android `versionCode`/iOS `CFBundleVersion` need a strictly-increasing integer; neither project has one. Scoped to `VERSIONING-PLAN.md` Phase 3, not here.
+- **No real version numbers yet** — Android `versionCode`/iOS `CFBundleVersion` need a strictly-increasing integer, and both csproj files carry a literal `1` as a dev placeholder. The marketing version *is* real (MinVer stamps it from git tags), but the build number is a release-pipeline concern: `AUTO-UPDATE-PLAN.md` Phase 4 owns the `git tag --list 'v*' | wc -l` recipe and the `/p:ApplicationVersion=<n>` override. What belongs here is only confirming the number actually beats the last accepted submission.
 - Android target API level (36) is already compliant — no action needed.
 - **New personal Google Play accounts need a closed test first:** 12 actively-engaging testers for 14 continuous days — a real ~2-week lead time to plan around.
 - **Apple requires a Privacy Manifest** (`PrivacyInfo.xcprivacy`) for every .NET-for-iOS app, even one using no sensitive APIs directly (the BCL itself triggers "required reason" API categories). Missing it is an automatic rejection.
 - `UIBackgroundModes: audio` is already declared on iOS — background playback needs no new work there. **Android has no equivalent** (no foreground service/media-session notification) — playback likely doesn't survive backgrounding today.
 - **LibVLC LGPL compliance: done.** `LICENSE`/`NOTICE` are committed at the repo root, correctly naming LibVLCSharp/VideoLAN.LibVLC.* as LGPL with source links. VideoLAN's dynamically-linked iOS framework (which Flower already uses) is what makes this workable inside App Store rules.
 - Both stores need a privacy policy URL — trivial content given Flower's only network activity is local mDNS sync between a user's own devices.
-- **Completeness gaps from `MOBILE-PLAN.md` (empty state, permission-retry, now-playing sheet, playlist management, search/filter, track-info page): all done.**
+- **Completeness gaps (empty state, permission-retry, now-playing sheet, playlist management, search/filter, track-info page): all done** — see Phase 3, which also carries the two real-device verification items still outstanding.
 
 ---
 
@@ -29,9 +29,21 @@ Enroll in Apple Developer Program ($99/yr) + Google Play Console ($25 one-time).
 
 Add `PrivacyInfo.xcprivacy` starting from Microsoft's published required-reason-API category list for .NET-for-iOS apps; check whether `LibVLCSharp`/`VideoLAN.LibVLC.iOS` already ship their own. Small effort, but skipping it is an automatic rejection.
 
-## Phase 3: Completeness gaps — done
+## Phase 3: Completeness gaps — done, bar two verification items
 
-See `MOBILE-PLAN.md` Phase 3.
+Every gap is built: empty state, permission-retry, now-playing sheet, playlist
+management, search/filter, track info. Validated against 5 real albums / 33
+tracks on an Android emulator, an iOS simulator and a real iPhone.
+
+Two items survive from `MOBILE-PLAN.md`, which is otherwise finished and gone,
+and both are prerequisites for a submission rather than for running the app:
+
+1. **Android album art on real hardware.** Confirmed on iOS and on the Android
+   emulator; never seen on a physical Android device.
+2. **A committable fixture set.** The 5-album test library was pulled from a
+   real Apple Music collection and is not in the repo, so nobody else can
+   reproduce the validation above. Replace it with something small and
+   royalty-free.
 
 ## Phase 4: Android background playback — open
 

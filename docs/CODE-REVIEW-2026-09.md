@@ -648,6 +648,44 @@ Cosmetic, and bounded — a decoder is promoted once. Listed because the two
 handler sets having different guard conditions (`_armed` vs `_current`) is the
 sort of thing that stops being harmless the moment a third role appears.
 
+### E7. `Process.Start` is called directly, and two platforms cannot run it
+
+`Flower/Views/MainView.axaml.cs` (`LocateFile`),
+`Flower/ViewModels/MainViewModel.cs` (`OpenDatabaseLocation`)
+
+Both branch macOS / Windows / else-as-Linux and call `Process.Start`. That is
+unusable on iOS (sandboxed) and unsupported on Android, so on the two platforms
+where it is wrong the menu item is present and silently does nothing.
+
+The fix is an `IPlatformShell.TryRevealInFileManager(path)` registered per
+platform, with today's logic moved behind it on desktop, `false` on mobile, and
+the caller hiding the affordance rather than failing quietly. Small, low risk.
+
+Inherited from `CROSS-PLATFORM-PLAN.md` item #2, the last unbuilt item in that
+document, which is why the document is gone and this is here. Its item #8
+(vendor the LibVLC natives for macOS) went with it as void rather than open —
+there is no LibVLC to vendor.
+
+### E8. Four loose ends in the album grid
+
+`Flower/Controls/AlbumGridRowControl.axaml(.cs)`, `Flower/Views/AlbumGridView*`,
+`Flower/ViewModels/Mobile/AlbumTileViewModel.cs`
+
+Independent, low-risk, none a blocker; recorded because they were about to stop
+being written down anywhere:
+
+- `RebuildRows` re-chunks on every `SizeChanged`, so a resize snaps between
+  column counts instead of reflowing. Needs a debounce.
+- Expansion height is a hardcoded per-row estimate (`TrackRowHeight = 26`)
+  rather than measured, because Avalonia will not animate to or from `Auto`. It
+  drifts silently if the row template changes.
+- No keyboard navigation in the grid.
+- `AlbumTileViewModel` and friends still live under `Flower.ViewModels.Mobile`
+  although desktop depends on them directly.
+
+Inherited from `ALBUM-GRID-PLAN.md`, which was a design record for shipped work
+and had nothing else left in it.
+
 ---
 
 ## F. Where more testing would have paid
@@ -772,6 +810,7 @@ review does not spend its time here.
    single win in the cold-scroll path.
 8. **B3** — version the snapshot invalidation.
 9. **C2** — a per-device log quota.
-10. **B5**, **D3**, **D4**, **D5**, **E1**, **E6** — when convenient.
+10. **B5**, **D3**, **D4**, **D5**, **E1**, **E6**, **E7**, **E8** — when
+    convenient.
 11. **C1**, **E2**, **E3** — genuine design questions rather than fixes, and
     worth a decision recorded here rather than a patch.
