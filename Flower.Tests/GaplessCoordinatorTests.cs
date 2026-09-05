@@ -53,6 +53,15 @@ public class GaplessCoordinatorTests
 
     private static Track T(string title) => new() { Title = title, Path = $"/music/{title}.mp3", Duration = TimeSpan.FromMinutes(3) };
 
+    // The shape a remote track's Path actually has: an OpenSubsonic stream URL
+    // whose per-request nonce and signature change on every resolve, around a
+    // stable id. Only the query differs between two resolves of one track.
+    private static string StreamUrl(string title, string nonce) =>
+        $"http://server:4533/rest/stream?u=&t={nonce}&s=salt&v=1.16.1&c=Flower&id={title}";
+
+    private static Track Streamed(string title, string nonce) =>
+        new() { Title = title, Path = StreamUrl(title, nonce), Duration = TimeSpan.FromMinutes(3) };
+
     private static void WaitUntil(Func<bool> condition, string because)
     {
         Assert.True(SpinWait.SpinUntil(condition, TimeSpan.FromSeconds(5)), because);
@@ -139,6 +148,72 @@ public class GaplessCoordinatorTests
 
         Assert.Single(h.DecodersFor(b));
         Assert.False(promotedB.RetireCalled);
+    }
+
+    // The same idempotence, for the only kind of track that actually reaches
+    // it in the wild.
+    //
+    // The test above hands Play() the very Track instance that was armed, so a
+    // Path comparison satisfied it. Nothing streamed ever looks like that:
+    // PlaylistControlViewModel.ResolveForPlaybackAsync clones the track and
+    // gives the clone a freshly signed stream URL, once when arming and again
+    // when the queue advances, so the promoted decoder's Path and the Path
+    // Play() is called with differ in their nonce and signature while naming
+    // the same track. Comparing paths therefore missed, and the handover this
+    // whole class exists to protect was undone 70ms after it happened - the
+    // track re-fetched and re-decoded from zero, into a ring still full of the
+    // audio it had just been handed.
+    //
+    // Track.Id is what survives Clone(), so it is what identity means here.
+    [Fact]
+    public void Play_is_a_no_op_for_a_promoted_track_that_arrives_freshly_signed()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = Streamed("B", "nonce-armed");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+        h.Coordinator.SetUpcoming(b);
+        WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should be armed and start decode-ahead");
+
+        h.LatestDecoderFor(a).RaiseDrained();
+        var promotedB = h.LatestDecoderFor(b);
+
+        // What the auto-advance actually hands over: same track, resolved
+        // again, so same Id and a different Path.
+        var resigned = b.Clone();
+        resigned.Path = StreamUrl("B", "nonce-advance");
+        Assert.NotEqual(b.Path, resigned.Path);
+        Assert.Equal(b.Id, resigned.Id);
+
+        h.Coordinator.Play(resigned);
+
+        Assert.Single(h.DecodersFor(b));
+        Assert.False(promotedB.RetireCalled);
+    }
+
+    // Re-arming the same track must not restart its decode-ahead either, and
+    // shuffle/repeat toggles re-arm mid-track - so with a fresh signature each
+    // time this tore down a decoder that was already seconds ahead and started
+    // the network fetch over, once per toggle.
+    [Fact]
+    public void SetUpcoming_is_a_no_op_for_the_armed_track_arriving_freshly_signed()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = Streamed("B", "nonce-first");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+        h.Coordinator.SetUpcoming(b);
+        WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should be armed and start decode-ahead");
+        var armedB = h.LatestDecoderFor(b);
+
+        var resigned = b.Clone();
+        resigned.Path = StreamUrl("B", "nonce-second");
+        h.Coordinator.SetUpcoming(resigned);
+
+        Assert.Single(h.DecodersFor(b));
+        Assert.False(armedB.RetireCalled);
     }
 
     [Fact]

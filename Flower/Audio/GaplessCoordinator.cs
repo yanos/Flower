@@ -341,7 +341,30 @@ namespace Flower.Audio
         {
             lock (_gate)
             {
-                if (_current != null && _currentPath == track.Path)
+                // By identity, not by Path. A local track's Path is a stable
+                // filename, so comparing paths worked for as long as that was
+                // the only kind of track; a streamed one's Path is a signed
+                // OpenSubsonic URL minted fresh - new nonce, new signature -
+                // every time PlaylistControlViewModel.ResolveForPlaybackAsync
+                // runs, and it runs once for the arm and again for the
+                // auto-advance. So the two spellings of the same track never
+                // compared equal off the LAN, and this guard - the one the
+                // class remarks promise makes Play() idempotent against a
+                // natural handover - never fired there.
+                //
+                // What that cost, from a real phone log: the armed decoder was
+                // promoted, and 70ms later the auto-advance's Play() hard-
+                // flushed it and re-opened the same track from zero. Sixty
+                // seconds of decode-ahead and the network fetch behind it
+                // thrown away, the track downloaded and decoded twice, and the
+                // re-opened decoder left writing into a shared ring still full
+                // of the promoted audio - which LibVLC answered with 1,153
+                // "buffer too late: dropped" in 29 seconds, i.e. audible
+                // dropouts, on a phone that was also getting hot.
+                //
+                // Track.Id survives Clone(), which is exactly why
+                // ResolveForPlaybackAsync clones rather than rewriting Path.
+                if (_current != null && _current.Track.Id == track.Id)
                 {
                     _logger?.LogTrace("Play({Path}): no-op, already current", LogPath.Short(track.Path));
                     return;
@@ -434,7 +457,14 @@ namespace Flower.Audio
                     return;
                 }
 
-                if (_armedTrack != null && _armedTrack.Path == next.Path)
+                // Identity again, and for the same reason as Play's guard
+                // above: re-arming is meant to be a no-op when the same track
+                // is already armed, and a streamed track arrives here with a
+                // freshly signed Path every time. Shuffle/repeat changes
+                // re-arm mid-track, so a Path comparison tore down a decoder
+                // that was already several seconds into decoding ahead and
+                // started its network fetch over, once per toggle.
+                if (_armedTrack != null && _armedTrack.Id == next.Id)
                     return;
 
                 _logger?.LogTrace("SetUpcoming({Path})", LogPath.Short(next.Path));
