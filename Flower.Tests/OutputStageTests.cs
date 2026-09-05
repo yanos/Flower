@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 
 using Flower.Audio;
@@ -216,7 +216,17 @@ public class OutputStageTests
             GaplessFormat.SampleRate);
 
         var buffer = Sine(1000, 480);
-        for (var i = 0; i < 4; i++)
+
+        // Warmed well past tiered compilation's promotion threshold (30 calls
+        // by default), not just past OutputStage's own first-call allocation.
+        // EnsureCapacity is the only thing here that can allocate at all, and
+        // at a fixed buffer size it cannot fire twice - so when this failed on
+        // CI with 5,528 bytes in the measured window, the bytes were not
+        // OutputStage's. They were the runtime still rejitting the call tree
+        // underneath it, which four warmup calls leave in mid-flight and which
+        // lands at a different moment on every machine. Measuring a steady
+        // state means waiting for the runtime to reach one too.
+        for (var i = 0; i < 500; i++)
             stage.Process(buffer, generation: 1);
 
         var before = GC.GetAllocatedBytesForCurrentThread();

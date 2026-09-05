@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -198,6 +198,50 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     public void IsSyncing_notifies_once_going_up_and_once_coming_down()
     {
         var vm = PairedClient(out var server);
+        var edges = 0;
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.IsSyncing))
+                edges++;
+        };
+
+        vm.TriggerSyncIfReady(server);
+        SettleSyncs(vm);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(2, edges);
+    }
+
+    // The same edge count, with two syncs that finish the instant they are
+    // started.
+    //
+    // This is the case the one above cannot force. Both stub services return an
+    // already-completed task, and awaiting one of those continues inline - so
+    // the playlist sync runs to completion inside the call that starts it,
+    // before the library sync has been counted at all. Counting each sync as it
+    // was launched, the count reached zero in that gap and the spinner blinked
+    // off mid-gesture: four notifications rather than two. RunTrackedSyncs
+    // counts both up front, which is what makes the pair indivisible.
+    //
+    // The real services do this too, just rarely: a sync against a refused
+    // connection is about the only one that finishes that fast, which is why
+    // this only ever failed on CI.
+    [AvaloniaFact]
+    public void Two_syncs_that_finish_instantly_are_still_one_spinner()
+    {
+        var parts = Own(MainViewModelHarness.BuildParts(
+            new Library(new List<Track>()),
+            new MainPlaylist(new List<Track>()),
+            new AppSettings
+            {
+                PairedServerFingerprint = "fp-server",
+                PairedServerAlias       = "Server",
+            },
+            stubSyncServices: true));
+        var vm = parts.Main;
+        var server = Peer("fp-server", "Server");
+        vm.AddOrUpdateDeviceSidebarItem(server);
+
         var edges = 0;
         vm.PropertyChanged += (_, e) =>
         {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -174,6 +174,31 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _ = RunTrackedSyncAsync(syncCall);
     }
 
+    // Several syncs that should look like one.
+    //
+    // Counted up for all of them before any is started, which is the whole
+    // difference from calling RunTrackedSync in a row. Awaiting an
+    // already-completed task continues inline, so starting the first sync can
+    // run it to completion - and take the count back to zero - before the
+    // second one has been counted at all. That is two notifications instead of
+    // none in the middle, i.e. the spinner blinking off between a playlist
+    // sync and the library sync that was supposed to be part of the same
+    // gesture, which is exactly what IsSyncing's own remarks promise does not
+    // happen. It showed up as a CI-only test failure (four IsSyncing edges
+    // where two were expected) because a sync against a refused connection is
+    // about the only one that ever finishes that fast.
+    private void RunTrackedSyncs(params Func<Task>[] syncCalls)
+    {
+        if (syncCalls.Length == 0)
+            return;
+
+        if (Interlocked.Add(ref _activeSyncCount, syncCalls.Length) == syncCalls.Length)
+            Dispatcher.UIThread.Post(NotifyIsSyncingChanged);
+
+        foreach (var syncCall in syncCalls)
+            _ = RunTrackedSyncAsync(syncCall);
+    }
+
     private async Task RunTrackedSyncAsync(Func<Task> syncCall)
     {
         try
@@ -261,8 +286,9 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             // forceInitiator: true - see TriggerSyncIfReady's identical
             // reasoning; every device here is already this device's own
             // paired server (MayRequestFrom above guarantees it).
-            RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
-            RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
+            RunTrackedSyncs(
+                () => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask,
+                () => SyncLibraryAndConfirmTrust(device));
         }
 
         // Logged after RunTrackedSync has already incremented _activeSyncCount
@@ -855,8 +881,9 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // could decide this side isn't the initiator for roughly half of all
         // possible fingerprint pairs, and since the server never reciprocates,
         // that pair would permanently never sync playlists.
-        RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
-        RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
+        RunTrackedSyncs(
+            () => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask,
+            () => SyncLibraryAndConfirmTrust(device));
     }
 
     // ── Peer track resolution ─────────────────────────────────────────────
