@@ -529,6 +529,42 @@ reason — `TimedOut` being the only one of them that says anything about the
 network. A decoder retired underneath a prepare is an ordinary skip and drops
 to Trace.
 
+### L. A track that finished decoding could not be seeked — fixed
+
+Found by a CI failure that looked like slowness and was not.
+`StreamedTrackDecodeTests.A_streamed_track_can_be_seeked_mid_decode` timed out
+on a contended runner; the reason it timed out is that the seek was never
+applied, and on a fast idle machine the test simply won the race.
+
+`FfmpegTrackDecoder`'s decode loop returned the moment `Read` came back empty.
+`Seek` posts to that loop — it stores the request in `_pendingSeekMs` and lets
+the decode thread do the work, because one FFmpeg decoder belongs to one
+thread. So a seek arriving after the loop had returned was accepted, stored,
+and read by nobody: `SeekSettled` never fired, the scrubber jumped to where the
+listener dropped it, and the audio carried on regardless.
+
+The window this happens in is not small. Draining is not ending —
+`GaplessCoordinator` keeps a drained decoder alive while its tail plays out,
+which is what `CheckWatchdog`'s closing remark is about. Any track that fits
+its ring decodes in milliseconds and then sits fully decoded for its entire
+audible length, so for short tracks the window is *the whole track* and every
+scrub of one was silently dropped.
+
+Fixed by parking rather than returning: `ParkUntilSeekOrRetire` reports
+`Drained` first and unconditionally (the coordinator promotes the next track on
+it, so parking must not delay it), then blocks on a handle that both `Seek` and
+`Retire` set. `Retire` joins with a five-second budget, which is why this is a
+wait handle and not a poll. The watchdog needed to learn the state too: a
+parked decoder produces no bytes and waits on no room, which is exactly the
+signature `IsStalled` looks for, so it would have logged a wedged decode once a
+second for the length of every tail.
+
+`FfmpegTrackDecoderTests.Seeking_after_the_track_has_fully_decoded_still_lands`
+pins it, with a ring deliberately larger than the fixture so the decode
+finishes with nobody reading a byte — the same shape as decode-ahead having
+filled the ring long before the track is over. Against the old code it fails
+with a timeout.
+
 ## Phase 6 — the same path everywhere (not started)
 
 Phase 5 left a fork: pure-C render callback on Android and iOS, managed

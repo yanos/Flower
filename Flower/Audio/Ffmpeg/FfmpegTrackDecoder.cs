@@ -82,6 +82,21 @@ namespace Flower.Audio.Ffmpeg
         // and cleared by the decode thread.
         private long _pendingSeekMs = -1;
 
+        // The decode loop has reached the end of the track and is parked
+        // waiting to be told what to do next, rather than having ended.
+        //
+        // It parks because a drained decoder is not a finished one. The
+        // coordinator keeps it alive while its tail plays out - that is what
+        // CheckWatchdog's closing remark is about - and during that window the
+        // listener can still drag the seek bar. A track short enough to fit
+        // the ring decodes in milliseconds and then sits there fully decoded
+        // for its entire audible duration, so for those tracks this window is
+        // *the whole track*, and returning from the loop here meant every
+        // scrub of one was accepted, recorded in _pendingSeekMs, and read by
+        // nobody. The scrubber jumped and the audio did not.
+        private readonly ManualResetEventSlim _wakeForSeek = new(false);
+        private int _drained;
+
         public Track Track { get; }
 
         public long BytesProduced => Interlocked.Read(ref _bytesProduced);
@@ -227,16 +242,22 @@ namespace Flower.Audio.Ffmpeg
             };
             _thread.Start();
 
-            // Only where somebody is listening: a decoder built without a
-            // logger - the device checks, most of the tests - has nowhere to
-            // report to, and a once-a-second timer per decoder that can only
-            // write into the void is pure cost.
-            if (_logger is not null)
-            {
-                _watchdog = new System.Timers.Timer(1000) { AutoReset = true };
-                _watchdog.Elapsed += (_, _) => CheckWatchdog();
-                _watchdog.Start();
-            }
+            StartWatchdog();
+        }
+
+        // Only where somebody is listening: a decoder built without a logger -
+        // the device checks, most of the tests - has nowhere to report to, and
+        // a once-a-second timer per decoder that can only write into the void
+        // is pure cost.
+        private void StartWatchdog()
+        {
+            if (_logger is null || Volatile.Read(ref _watchdog) is not null)
+                return;
+
+            var watchdog = new System.Timers.Timer(1000) { AutoReset = true };
+            watchdog.Elapsed += (_, _) => CheckWatchdog();
+            _watchdog = watchdog;
+            watchdog.Start();
         }
 
         // Only logs when something looks wrong, so a healthy decode does not
@@ -253,7 +274,14 @@ namespace Flower.Audio.Ffmpeg
         {
             var retired  = Volatile.Read(ref _retired) == 1;
             var finished = Volatile.Read(ref _finished) == 1;
-            var decoding = !retired && !finished;
+
+            // A decoder parked at the end of its track produces no bytes and
+            // waits on no room, which is exactly the signature IsStalled looks
+            // for - so without this it would report a wedged decode once a
+            // second for as long as the tail took to play. It is idle, not
+            // stuck, and it has nothing to watch until a seek wakes it.
+            var drained  = Volatile.Read(ref _drained) == 1;
+            var decoding = !retired && !finished && !drained;
 
             var bytesProduced     = BytesProduced;
             var backpressureWaits = _writer.BackpressureWaits;
@@ -446,16 +474,25 @@ namespace Flower.Audio.Ffmpeg
 
                     if (read == 0)
                     {
-                        if (Volatile.Read(ref _retired) == 0)
-                        {
-                            _logger?.LogInformation(
-                                "Decode drain for {Path}: TaggedDurationMs={TaggedDurationMs} DecodedMs={DecodedMs} BytesProduced={BytesProduced}",
-                                LogPath.Short(Track.Path), Track.Duration.TotalMilliseconds,
-                                BytesProduced / (double)(GaplessFormat.SampleRate * _bytesPerFrame) * 1000,
-                                BytesProduced);
-                            ReportDrained();
-                        }
-                        return;
+                        if (Volatile.Read(ref _retired) == 1)
+                            return;
+
+                        _logger?.LogInformation(
+                            "Decode drain for {Path}: TaggedDurationMs={TaggedDurationMs} DecodedMs={DecodedMs} BytesProduced={BytesProduced}",
+                            LogPath.Short(Track.Path), Track.Duration.TotalMilliseconds,
+                            BytesProduced / (double)(GaplessFormat.SampleRate * _bytesPerFrame) * 1000,
+                            BytesProduced);
+                        ReportDrained();
+
+                        // Drained is reported first and unconditionally: the
+                        // coordinator promotes the next track on it, so parking
+                        // must not delay or replace it. What parking changes is
+                        // only what happens to this decoder afterwards - see
+                        // _wakeForSeek.
+                        if (!ParkUntilSeekOrRetire())
+                            return;
+
+                        continue;
                     }
 
                     // Parks here for as long as the target ring stays full,
@@ -481,6 +518,44 @@ namespace Flower.Audio.Ffmpeg
                     return;
                 _logger?.LogError(ex, "The decode thread for {Path} ended unexpectedly", LogPath.Short(Track.Path));
                 ReportFaulted();
+            }
+        }
+
+        // Blocks until there is something to do again, and says whether the
+        // loop should carry on. False means retired - the only way this
+        // decoder ever ends now - and true means a seek is pending, which the
+        // top of the loop will pick up and apply.
+        //
+        // Waiting on a handle rather than polling because the wait is
+        // unbounded: a drained decoder can sit here for the whole audible
+        // length of its track, and Retire has a five-second join budget it
+        // must not be made to spend.
+        private bool ParkUntilSeekOrRetire()
+        {
+            Interlocked.Exchange(ref _drained, 1);
+            try
+            {
+                while (Volatile.Read(ref _retired) == 0)
+                {
+                    if (Interlocked.Read(ref _pendingSeekMs) >= 0)
+                    {
+                        // Cleared before the loop resumes rather than after,
+                        // so a seek arriving while this thread is on its way
+                        // back to the top is not swallowed by the reset below.
+                        _wakeForSeek.Reset();
+                        return true;
+                    }
+
+                    _wakeForSeek.Wait();
+                    _wakeForSeek.Reset();
+                }
+
+                return false;
+            }
+            finally
+            {
+                if (Interlocked.Exchange(ref _drained, 0) == 1 && Volatile.Read(ref _retired) == 0)
+                    StartWatchdog();
             }
         }
 
@@ -527,6 +602,11 @@ namespace Flower.Audio.Ffmpeg
             // frees the room that lets a decode thread parked on a full ring
             // notice the request.
             _writer.ResetTarget();
+
+            // And this is the other place a decode thread can be parked: at
+            // the end of the track, where no amount of room in the ring will
+            // wake it.
+            _wakeForSeek.Set();
         }
 
         public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget) => _writer.PrimeTarget(newTarget);
@@ -572,6 +652,7 @@ namespace Flower.Audio.Ffmpeg
             // on Monitor.Wait(_gate, 20), so it re-checks the predicate every
             // 20ms regardless.
             _writer.Wake();
+            _wakeForSeek.Set();
 
             var thread = _thread;
             var decoder = _decoder;
@@ -594,6 +675,10 @@ namespace Flower.Audio.Ffmpeg
                     decoder?.Dispose();
 
                 stream?.Dispose();
+
+                // After the join, so a parked thread is never woken by a
+                // disposed handle.
+                _wakeForSeek.Dispose();
             });
         }
 

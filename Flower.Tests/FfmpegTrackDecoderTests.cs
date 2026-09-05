@@ -144,6 +144,57 @@ public class FfmpegTrackDecoderTests : IDisposable
         Assert.InRange(Math.Abs(BitConverter.ToInt16(afterSeek) - expectedFrame), 0, 2048);
     }
 
+    // Draining is not ending, and this is the difference.
+    //
+    // A track that fits its ring decodes in milliseconds and is then fully
+    // buffered for its whole audible length - and the coordinator keeps the
+    // decoder alive that whole time, because the tail still has to play out.
+    // Every scrub during that window lands on a decoder that has already
+    // reached the end of its input. The decode loop used to return there, so
+    // the seek was accepted, stored, and read by nobody: the scrubber jumped
+    // and the audio carried on regardless. For a short track that is not an
+    // edge case, it is every seek of that track.
+    //
+    // The ring here is deliberately larger than the fixture, so the decode
+    // finishes without anyone reading a byte - the same shape as decode-ahead
+    // having filled the ring long before the track is over.
+    [Fact]
+    public async Task Seeking_after_the_track_has_fully_decoded_still_lands()
+    {
+        var duration = TimeSpan.FromSeconds(5);
+        var track = Fixture(duration, SyntheticWav.Ramp(), "fully-decoded.wav");
+
+        var ring = new GaplessRingBuffer(
+            (int)(duration.TotalSeconds + 1) * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        using var decoder = new FfmpegTrackDecoder(track, ring);
+        Assert.Equal(DecodePrepareResult.Ready, await decoder.PrepareAsync(TestContext.Current.CancellationToken));
+
+        var drained = new TaskCompletionSource();
+        decoder.Drained += () => drained.TrySetResult();
+
+        var settled = new TaskCompletionSource<long>();
+        decoder.SeekSettled += bytes => settled.TrySetResult(bytes);
+
+        decoder.StartDecoding();
+
+        await drained.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
+
+        decoder.Seek(0.5f);
+
+        var landedBytes = await settled.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
+        var landedSeconds = landedBytes / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        Assert.InRange(landedSeconds, 2.0, 2.6);
+
+        // And it is a live decoder afterwards, not just one that answered an
+        // event: the audio from the new position has to arrive too. Nothing
+        // needs clearing first - Seek resets the ring on the way in and
+        // ApplySeek resets it again once the demuxer has moved, so everything
+        // still in there was decoded from the landing point.
+        var afterSeek = await ReadOneFrameAsync(ring);
+        var expectedFrame = unchecked((short)(landedBytes / GaplessFormat.BytesPerFrame));
+        Assert.InRange(Math.Abs(BitConverter.ToInt16(afterSeek) - expectedFrame), 0, 2048);
+    }
+
     [Fact]
     public async Task Retiring_mid_decode_stops_the_thread()
     {
