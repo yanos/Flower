@@ -85,6 +85,14 @@ jobs:
 
       # The checks decode for real, so they need the same VLC the app needs.
       # None of the hosted images ship it.
+      #
+      # Windows is missing from this list on purpose: there is no install step
+      # that would help it. LibVLCSharp only ever looks beside the binary
+      # there, so a `choco install vlc` sat in C:\Program Files where nothing
+      # searched, and the checks failed with "Failed to load required native
+      # libraries" while VLC was installed. Windows takes its LibVLC from the
+      # VideoLAN.LibVLC.Windows package instead - see Flower.Tests.csproj -
+      # which is also how the shipping Windows app gets it.
       - name: Install VLC (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -94,10 +102,6 @@ jobs:
       - name: Install VLC (macOS)
         if: runner.os == 'macOS'
         run: brew install --cask vlc
-
-      - name: Install VLC (Windows)
-        if: runner.os == 'Windows'
-        run: choco install vlc --no-progress -y
 
       # The checks run once per decoder this platform has, so a platform
       # without a built façade checks LibVLC and nothing else. Building it

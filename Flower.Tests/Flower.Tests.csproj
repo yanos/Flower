@@ -30,6 +30,19 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
 
+  <!-- Windows gets its LibVLC from NuGet rather than from an install on the
+       machine, exactly as Flower.Desktop does - the package drops
+       libvlc\win-x64\ beside the binary, which is the only place
+       LibVLCSharp's Core.Initialize looks. Without it the decode checks fail
+       on Windows with "Failed to load required native libraries" no matter
+       what VLC is installed, since a system install is on no search path of
+       its own. Conditioned on the build OS so macOS and Linux do not restore
+       ~40MB of win-x64 natives they will never load; those two find their VLC
+       the way the app does (VLC.app, or the distro package). -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" />
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
