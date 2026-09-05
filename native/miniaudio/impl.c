@@ -15,6 +15,20 @@
 #include <stdatomic.h>
 
 #define FLOWER_COREAUDIO_DIAGNOSTIC_DEVICE_CAPACITY 4
+/* A sample-to-sample jump of 75% of full scale, counted per frame by
+   flower_coreaudio_diagnostics_pcm_submitted_s16_interleaved below.
+
+   Worth knowing before reading AbruptFrames as a defect count: music crosses
+   this on its own. A full-scale sine at frequency f has a maximum adjacent
+   delta of 32768 * 2*sin(pi*f/48000), which reaches 24576 at about 5.9kHz - so
+   any loud content above roughly 6kHz trips it legitimately, and cymbals,
+   hi-hats and sibilance on a modern master do so constantly. A handful of
+   abrupt frames per ten seconds out of 480,000 is ordinary percussion, not a
+   discontinuity.
+
+   What the counter is actually good for is a step change: a rate that jumps by
+   orders of magnitude, or abrupt frames appearing in quiet passages, against
+   the same material. Treat it as a comparison, never as an absolute. */
 #define FLOWER_COREAUDIO_ABRUPT_SAMPLE_DELTA 24576
 
 typedef struct

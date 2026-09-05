@@ -187,6 +187,29 @@ namespace Flower.Audio
             public double MaxCallbackDurationMilliseconds => MaxCallbackDurationNanoseconds / 1_000_000.0;
         }
 
+        // MaxSampleDelta, AbruptFrames, RepeatedBuffers and MaxRepeatedBufferRun
+        // are the only counters here derived from the samples themselves, and
+        // they are computed inside the vendored CoreAudio callback - see
+        // ma_on_output__coreaudio in native/miniaudio/vendor/miniaudio.h, which
+        // inspects a buffer only when internalFormat is s16 or f32.
+        //
+        // Flower opens the device at s16 or s24 and never f32, so electing
+        // FFmpeg - which is the default, and widens the pipeline to S24 - means
+        // nothing walks the PCM at all and all four counters stay at zero
+        // forever. Zero reads as "looked and found no discontinuities", which is
+        // the exact opposite of what it means, and a reader comparing a LibVLC
+        // log against an FFmpeg one would conclude the glitches had been fixed
+        // by the switch. Printed as n/a instead, until the native side grows an
+        // s24 path (which needs the vendored binaries rebuilt - see
+        // native/miniaudio/README.md).
+        private static bool PcmShapeCountersApply => GaplessFormat.SampleFormat == PcmSampleFormat.S16;
+
+        private static string PcmShapeCounter(ulong value) =>
+            PcmShapeCountersApply ? value.ToString() : "n/a";
+
+        private static string PcmShapeCounter(uint value) =>
+            PcmShapeCountersApply ? value.ToString() : "n/a";
+
         public event EventHandler? Playing;
         public event EventHandler? Paused;
         public event EventHandler? Stopped;
@@ -334,8 +357,8 @@ namespace Flower.Audio
                     coreAudioPressure.CallbackCount, coreAudioPressure.RequestedFrames, coreAudioPressure.SubmittedFrames,
                     coreAudioPressure.MaxCallbackGapMilliseconds, coreAudioPressure.MaxHostTimeGapMilliseconds,
                     coreAudioPressure.MaxCallbackDurationMilliseconds, coreAudioPressure.MinFrames, coreAudioPressure.MaxFrames,
-                    coreAudioPressure.ActionFlags, coreAudioPressure.MaxSampleDelta, coreAudioPressure.AbruptFrameCount,
-                    coreAudioPressure.RepeatedBufferCount, coreAudioPressure.MaxRepeatedBufferRun);
+                    coreAudioPressure.ActionFlags, PcmShapeCounter(coreAudioPressure.MaxSampleDelta), PcmShapeCounter(coreAudioPressure.AbruptFrameCount),
+                    PcmShapeCounter(coreAudioPressure.RepeatedBufferCount), PcmShapeCounter(coreAudioPressure.MaxRepeatedBufferRun));
             }
 
             _watchdogTickCount++;
@@ -362,8 +385,8 @@ namespace Flower.Audio
                         coreAudioSnapshot.CallbackCount, coreAudioSnapshot.RequestedFrames, coreAudioSnapshot.SubmittedFrames,
                         coreAudioSnapshot.MaxCallbackGapMilliseconds, coreAudioSnapshot.MaxHostTimeGapMilliseconds,
                         coreAudioSnapshot.MaxCallbackDurationMilliseconds, coreAudioSnapshot.MinFrames, coreAudioSnapshot.MaxFrames,
-                        coreAudioSnapshot.ActionFlags, coreAudioSnapshot.MaxSampleDelta, coreAudioSnapshot.AbruptFrameCount,
-                        coreAudioSnapshot.RepeatedBufferCount, coreAudioSnapshot.MaxRepeatedBufferRun);
+                        coreAudioSnapshot.ActionFlags, PcmShapeCounter(coreAudioSnapshot.MaxSampleDelta), PcmShapeCounter(coreAudioSnapshot.AbruptFrameCount),
+                        PcmShapeCounter(coreAudioSnapshot.RepeatedBufferCount), PcmShapeCounter(coreAudioSnapshot.MaxRepeatedBufferRun));
                 }
             }
 
