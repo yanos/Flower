@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Collections.Generic;
 
@@ -24,7 +24,7 @@ public class FfmpegDecoderTests : IDisposable
 
     private readonly string _directory = Directory.CreateTempSubdirectory("flower-ffmpeg").FullName;
 
-    public void Dispose() => Directory.Delete(_directory, recursive: true);
+    public void Dispose() => TempDirectory.DeleteWhenReleased(_directory);
 
     private string HiResFixture(string name = "hires.wav") =>
         SyntheticHiResWav.CreateFile(_directory, name, HiResRate, Frames, SyntheticHiResWav.Ramp24());
@@ -233,7 +233,12 @@ public class FfmpegDecoderTests : IDisposable
                 produced += read;
         });
 
-        Assert.Contains("Input/output error", thrown.Message);
+        // The wording is the C runtime's strerror for EIO, which FFmpeg passes
+        // through untouched, and the runtimes disagree: glibc and Apple libc
+        // say "Input/output error", the MSVC one says "I/O error". Pinning
+        // either spelling on its own asserts about the C library rather than
+        // about the decoder faulting, which is what this test is for.
+        Assert.Contains(OperatingSystem.IsWindows() ? "I/O error" : "Input/output error", thrown.Message);
         Assert.InRange(produced, 1, Frames * 6 - 1);
         Assert.InRange(source.Reads, 1, 200);
     }

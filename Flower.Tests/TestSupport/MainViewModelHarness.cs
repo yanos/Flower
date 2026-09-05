@@ -2,7 +2,10 @@
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
+
+using Avalonia.Threading;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -14,6 +17,8 @@ using Flower.Persistence;
 using Flower.Services;
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
+
+using Xunit;
 
 namespace Flower.Tests.TestSupport;
 
@@ -255,5 +260,42 @@ public static class MainViewModelHarness
         var parts = BuildParts(library, mainPlaylist);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
         return new MobileParts(mobile, parts);
+    }
+
+    // Drilling into an album is fire-and-forget over an async rebuild
+    // (MobileMainViewModel.SelectAlbumOrArtist -> DrillIntoAsync ->
+    // RebuildRowsImmediatelyAsync), and the filter/sort pass at the bottom of
+    // that runs on the thread pool. Dispatcher.UIThread.RunJobs() only drains
+    // what has already been posted back to the dispatcher, so calling it once
+    // is a bet that the pool got there first - which it wins on a developer
+    // Mac and loses on a loaded CI runner. Wait for the state the test is
+    // about instead.
+    //
+    // RunJobs rather than MainLoop: the headless session owns the dispatcher
+    // thread, so a test that parks it in MainLoop holds up every
+    // [AvaloniaFact] queued behind it.
+    //
+    // Failing loudly here rather than letting the caller's own assertion trip
+    // matters more than it looks: with no rows, the visual tree has no track
+    // rows either, and every assertion downstream fails as "not found in
+    // collection: []" - which reads like the feature under test is broken
+    // rather than like the drill-in never happened.
+    public static void WaitForTheDrillIn(MobileMainViewModel mobile, string album, int timeoutMs = 2000)
+    {
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (true)
+        {
+            Dispatcher.UIThread.RunJobs();
+            if (mobile.IsShowingAlbumTrackList && mobile.CurrentAlbumHeader != null && mobile.AlbumDetailRows.Count > 0)
+                return;
+            if (Environment.TickCount64 >= deadline)
+                break;
+            Thread.Sleep(10);
+        }
+
+        Assert.Fail($"the drill-in into \"{album}\" never landed within {timeoutMs}ms: "
+            + $"album track list {mobile.IsShowingAlbumTrackList}, "
+            + $"header {(mobile.CurrentAlbumHeader == null ? "none" : "built")}, "
+            + $"{mobile.AlbumDetailRows.Count} row(s)");
     }
 }

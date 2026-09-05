@@ -25,7 +25,7 @@ public class FfmpegTrackDecoderTests : IDisposable
 
     private readonly string _directory = Directory.CreateTempSubdirectory("flower-ffmpeg-decoder").FullName;
 
-    public void Dispose() => Directory.Delete(_directory, recursive: true);
+    public void Dispose() => TempDirectory.DeleteWhenReleased(_directory);
 
     private Track Fixture(TimeSpan duration, Func<int, short> sampleAt, string name = "fixture.wav")
     {

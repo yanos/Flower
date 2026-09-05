@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -51,7 +51,7 @@ public class TrackRowArtistTests : PinnedDataDirectory
             NullLogger<MobileMainViewModel>.Instance);
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         mobile.SelectAlbumOrArtistCommand.Execute(Album);
-        Dispatcher.UIThread.RunJobs();
+        MainViewModelHarness.WaitForTheDrillIn(mobile, Album);
         return new MainViewModelHarness.MobileParts(mobile, parts);
     }
 

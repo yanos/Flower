@@ -29,7 +29,7 @@ public class TrackDecoderTests : IDisposable
         _tempDir = Directory.CreateTempSubdirectory("flower-trackdecoder-tests-").FullName;
     }
 
-    public void Dispose() => Directory.Delete(_tempDir, recursive: true);
+    public void Dispose() => TempDirectory.DeleteWhenReleased(_tempDir);
 
     private static Track MakeTrack(string path, TimeSpan duration) =>
         new() { Title = "Test", Path = path, Duration = duration };
