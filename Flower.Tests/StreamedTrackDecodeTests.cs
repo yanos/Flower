@@ -157,7 +157,7 @@ public class StreamedTrackDecodeTests : IDisposable
 
         Assert.Equal(DecodePrepareResult.Ready, decoder.PrepareAsync().GetAwaiter().GetResult());
         decoder.StartDecoding();
-        Assert.True(drained.Wait(TimeSpan.FromSeconds(30)), "the decode never finished");
+        PlaybackWait.UntilTrue(() => drained.IsSet, "the decode never finished");
 
         return decoder.BytesProduced;
     }
@@ -219,7 +219,7 @@ public class StreamedTrackDecodeTests : IDisposable
 
         decoder.Seek(0.5f);
 
-        Assert.True(settled.Wait(TimeSpan.FromSeconds(15)), "the seek never landed");
+        PlaybackWait.UntilTrue(() => settled.IsSet, "the seek never landed");
         Assert.InRange(landedAt, ExpectedBytes() * 3, ExpectedBytes() * 7);
     }
 
@@ -265,7 +265,7 @@ public class StreamedTrackDecodeTests : IDisposable
 
         decoder.StartDecoding();
 
-        Assert.True(faulted.Wait(TimeSpan.FromSeconds(30)), "a stream cut mid-track should fault");
+        PlaybackWait.UntilTrue(() => faulted.IsSet, "a stream cut mid-track should fault");
         Assert.InRange(decoder.BytesProduced, 1, ExpectedBytes() * 9);
     }
 

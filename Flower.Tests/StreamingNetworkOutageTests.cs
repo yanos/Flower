@@ -43,17 +43,28 @@ public class StreamingNetworkOutageTests : IDisposable
     private static int BytesFor(TimeSpan duration) =>
         (int)(duration.TotalSeconds * GaplessFormat.SampleRate) * GaplessFormat.BytesPerFrame;
 
-    private static void WaitUntil(Func<bool> condition, string because, int timeoutSeconds = 15) =>
-        Assert.True(SpinWait.SpinUntil(condition, TimeSpan.FromSeconds(timeoutSeconds)), because);
+    private static void WaitUntil(Func<bool> condition, string because) =>
+        PlaybackWait.UntilTrue(condition, because);
 
     // Serves the whole file in one shot with a correct Content-Length - the
     // "peer is up and the network is fine" baseline every outage test below
     // is a variation on.
+    //
+    // It answers a HEAD with headers and no body, which is not politeness: a
+    // SeekableHttpStream probes with HEAD before it reads a byte, so every
+    // test in this class sends one. Writing the body anyway is tolerated by
+    // the managed HttpListener on macOS and Linux, which discards it, and is
+    // not tolerated by http.sys on Windows, where the response is left
+    // unfinished and the GET that should follow never gets answered - a
+    // one-second track that times out after fifteen, on one platform, with a
+    // message about decoding. LocalFileServer and LoopbackMediaServer each
+    // learned this separately; this is the third.
     private static FakePeerHttpServer ServeWholeFile(byte[] bytes) => new(async ctx =>
     {
         ctx.Response.ContentType = "audio/x-wav";
         ctx.Response.ContentLength64 = bytes.Length;
-        await ctx.Response.OutputStream.WriteAsync(bytes);
+        if (ctx.Request.HttpMethod != "HEAD")
+            await ctx.Response.OutputStream.WriteAsync(bytes);
         ctx.Response.OutputStream.Close();
     });
 
@@ -62,9 +73,20 @@ public class StreamingNetworkOutageTests : IDisposable
     // down the connection outright (no clean FIN, no final chunk), which is
     // what a real dropped Wi-Fi connection or a killed peer process looks
     // like at the socket level.
+    //
+    // The HEAD is answered cleanly for the same reason as above, and for one
+    // more: the drop is supposed to happen to the *body*. Aborting the probe
+    // instead tests a peer that dies before it says how long the track is,
+    // which is a different scenario and not this one.
     private static FakePeerHttpServer ServeThenDropConnection(byte[] bytes, double fractionBeforeDrop) => new(async ctx =>
     {
         ctx.Response.ContentLength64 = bytes.Length;
+        if (ctx.Request.HttpMethod == "HEAD")
+        {
+            ctx.Response.OutputStream.Close();
+            return;
+        }
+
         var sendBytes = (int)(bytes.Length * fractionBeforeDrop);
         await ctx.Response.OutputStream.WriteAsync(bytes.AsMemory(0, sendBytes));
         await ctx.Response.OutputStream.FlushAsync();

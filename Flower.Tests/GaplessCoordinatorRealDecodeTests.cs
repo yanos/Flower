@@ -97,7 +97,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // itself to real time regardless of how fast decode-ahead finished,
         // so this reliably takes about durationA + 0.2s of wall-clock time.
         var targetBytes = (long)((durationA.TotalSeconds + 0.2) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        Assert.True(SpinWait.SpinUntil(() => sink.CapturedCount >= targetBytes, TimeSpan.FromSeconds(10)));
+        PlaybackWait.UntilReaches(() => sink.CapturedCount, targetBytes, "playback never reached the splice");
         sink.Pause();
 
         Assert.Contains(trackA, endReachedTracks);
@@ -176,8 +176,9 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // a full second of B out the other side is the actual proof that
         // the promoted decoder kept producing.
         var targetBytes = (long)((durationA.TotalSeconds + 1.0) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        Assert.True(
-            SpinWait.SpinUntil(() => sink.CapturedCount >= targetBytes, TimeSpan.FromSeconds(15)),
+        PlaybackWait.UntilReaches(
+            () => sink.CapturedCount,
+            targetBytes,
             "playback stalled after the handover - the promoted decoder never resumed feeding the shared ring");
 
         sink.Pause();
@@ -239,13 +240,12 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         coordinator.Play(track);
 
-        Assert.True(drained.Wait(TimeSpan.FromSeconds(15)), "the track never finished decoding");
+        PlaybackWait.UntilTrue(() => drained.IsSet, "the track never finished decoding");
 
         // Everything decoded has to make it through the ring before the pump
         // is stopped, or the comparison is against a truncated capture.
-        Assert.True(
-            SpinWait.SpinUntil(() => sink.CapturedCount >= expected.Length - 44, TimeSpan.FromSeconds(15)),
-            $"only {sink.CapturedCount} of {expected.Length - 44} bytes were rendered");
+        PlaybackWait.UntilReaches(
+            () => sink.CapturedCount, expected.Length - 44, "not everything decoded was rendered");
         sink.Pause();
 
         // The WAV's data chunk starts at byte 44 - see SyntheticWav.
@@ -279,7 +279,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         coordinator.SetUpcoming(trackB);
 
         var targetBytes = (long)((durationA.TotalSeconds + 0.3) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        Assert.True(SpinWait.SpinUntil(() => sink.CapturedCount >= targetBytes, TimeSpan.FromSeconds(15)));
+        PlaybackWait.UntilReaches(() => sink.CapturedCount, targetBytes, "playback never reached the splice");
         sink.Pause();
 
         var captured = sink.Captured;
@@ -338,7 +338,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         coordinator.SetUpcoming(trackB);
 
         var targetBytes = (long)((duration.TotalSeconds + 0.3) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        Assert.True(SpinWait.SpinUntil(() => sink.CapturedCount >= targetBytes, TimeSpan.FromSeconds(15)));
+        PlaybackWait.UntilReaches(() => sink.CapturedCount, targetBytes, "playback never reached the splice");
         sink.Pause();
 
         var captured = sink.Captured;
