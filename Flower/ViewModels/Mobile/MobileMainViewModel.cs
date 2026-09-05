@@ -485,8 +485,21 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingSettings));
             OnPropertyChanged(nameof(IsShowingConfirmPairServer));
             OnPropertyChanged(nameof(IsShowingConfirmDeleteFile));
+
+            // Sampling costs a timer tick a second, so it runs only while the
+            // readout that consumes it is actually on screen - a diagnostics
+            // panel that drained the battery would be measuring its own
+            // overhead as much as anything else.
+            if (value == MobileSheet.Settings)
+                Resources.Start();
+            else
+                Resources.Stop();
         }
     }
+
+    // Live CPU/memory for the settings screen. See ResourceUsageViewModel -
+    // it is a debugging readout, not a feature for listeners.
+    public ResourceUsageViewModel Resources { get; } = new();
 
     public bool IsShowingNowPlaying => ActiveSheet == MobileSheet.NowPlaying;
     public bool IsShowingTrackActions => ActiveSheet == MobileSheet.TrackActions;
@@ -720,7 +733,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // six handlers attached to the shared Library/PlaylistControlViewModel.
     private readonly SubscriptionBag _subscriptions = new();
 
-    public void Dispose() => _subscriptions.Dispose();
+    public void Dispose()
+    {
+        Resources.Dispose();
+        _subscriptions.Dispose();
+    }
 
     public MobileMainViewModel(
         MainViewModel main,

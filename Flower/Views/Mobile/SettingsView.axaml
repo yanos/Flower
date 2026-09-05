@@ -56,7 +56,11 @@
                  Margin="12,0,0,0" />
     </Grid>
 
-    <StackPanel Grid.Row="1" Margin="0,8,0,0">
+    <!-- Scrolls because the content is now taller than a small phone. The
+         diagnostics block below is the last thing on the screen and would
+         otherwise simply be unreachable on a 13 mini. -->
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="0,8,0,0">
 
       <StackPanel Margin="20,4,20,16" Spacing="6">
         <TextBlock Text="Device Name" FontSize="13" Opacity="0.6"/>
@@ -266,6 +270,37 @@
                     FontSize="14"
                     Opacity="0.5" />
       </StackPanel>
+
+      <!-- Live process cost, polled once a second and only while this screen
+           is open (MobileMainViewModel.ActiveSheet starts/stops it). Here for
+           debugging rather than for listeners: a hot phone and a stuttering
+           track is a question about CPU and memory, and until this existed
+           there was no way to ask it from the device. -->
+      <StackPanel Margin="20,24,20,24" Spacing="6">
+        <TextBlock Text="Diagnostics" FontSize="13" Opacity="0.6" />
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" >
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="CPU" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
+          <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resources.CpuText}"
+                     FontSize="14" FontFamily="monospace" Margin="0,2" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Memory" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
+          <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Resources.MemoryText}"
+                     FontSize="14" FontFamily="monospace" Margin="0,2" />
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Heap" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
+          <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Resources.HeapText}"
+                     FontSize="14" FontFamily="monospace" Margin="0,2" />
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Text="GC" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
+          <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Resources.GcText}"
+                     FontSize="14" FontFamily="monospace" Margin="0,2" />
+
+          <TextBlock Grid.Row="4" Grid.Column="0" Text="Threads" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
+          <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Resources.ThreadsText}"
+                     FontSize="14" FontFamily="monospace" Margin="0,2" />
+        </Grid>
+      </StackPanel>
     </StackPanel>
+    </ScrollViewer>
   </Grid>
 </UserControl>

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using LibVLCSharp.Shared;
 
 using Flower.Audio.Ffmpeg;
+using Flower.Diagnostics;
 using Flower.Logging;
 using Flower.Models;
 
@@ -131,6 +132,15 @@ namespace Flower.Audio
         private string? _diagnosticLastPath;
         private int _diagnosticLastRingGeneration = -1;
         private long _diagnosticLastBytesRead = -1;
+
+        // What the process is costing, logged beside the decode counters
+        // rather than on its own line so the two can be read together. A phone
+        // that is hot and stuttering is a question about both at once - the
+        // interesting answer is "CPU pinned while the ring stayed full", which
+        // neither half says alone. Its own monitor because CpuPercent is a
+        // delta against whoever last sampled, and the settings screen polls the
+        // same numbers on a different cadence.
+        private readonly ResourceMonitor _resources = new();
 
         // Null in callers that deliberately do not request diagnostics, so
         // every call below remains a no-op there.
@@ -302,13 +312,20 @@ namespace Flower.Audio
                     _sharedRing.Capacity, sharedGeneration);
             }
 
+            var resources = _resources.Sample();
+
             _logger?.LogDebug(
-                "Playback snapshot: RenderStarted={RenderStarted} Current={CurrentPath} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} SharedUnderruns={SharedUnderruns} RingGeneration={RingGeneration} Armed={ArmedPath} ArmedDecodedBytes={ArmedDecodedBytes} StagingRead={StagingRead} StagingWritten={StagingWritten} StagingAvailable={StagingAvailable}/{StagingCapacity} StagingGeneration={StagingGeneration} ArmedAlreadyDrained={ArmedAlreadyDrained}",
+                "Playback snapshot: RenderStarted={RenderStarted} Current={CurrentPath} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} SharedUnderruns={SharedUnderruns} RingGeneration={RingGeneration} Armed={ArmedPath} ArmedDecodedBytes={ArmedDecodedBytes} StagingRead={StagingRead} StagingWritten={StagingWritten} StagingAvailable={StagingAvailable}/{StagingCapacity} StagingGeneration={StagingGeneration} ArmedAlreadyDrained={ArmedAlreadyDrained} CpuPercent={CpuPercent} ProcessMemoryMb={ProcessMemoryMb} ManagedHeapMb={ManagedHeapMb} Gen0={Gen0} Gen1={Gen1} Gen2={Gen2} Threads={Threads}",
                 renderStarted, currentPath, played, currentDecoded, sharedRead,
                 sharedWritten, sharedAvailable, _sharedRing.Capacity,
                 sharedUnderruns, sharedGeneration, armedPath,
                 armedDecoded, stagingRead, stagingWritten, stagingAvailable,
-                stagingCapacity, stagingGeneration, armedAlreadyDrained);
+                stagingCapacity, stagingGeneration, armedAlreadyDrained,
+                resources.CpuPercent?.ToString("F1") ?? "n/a",
+                resources.ProcessMemoryBytes / 1024 / 1024,
+                resources.ManagedHeapBytes / 1024 / 1024,
+                resources.Gen0Collections, resources.Gen1Collections,
+                resources.Gen2Collections, resources.ThreadCount);
         }
 
         // Starts track fresh unless it's already the one that just became
