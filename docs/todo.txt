@@ -49,6 +49,64 @@ details:
   The short version: right now the client refuses to listen to the server about stars and last-played, because listening would sometimes eat your own change before it got out the door.
 
 ----
+1. The identity guard — and a second copy of it
+
+Play() now compares _current.Track.Id instead of _currentPath == track.Path. While 
+reading it I found SetUpcoming had the identical defect (_armedTrack.Path ==
+next.Path), reached the same way — ArmUpcoming also goes through                   ResolveForPlaybackAsync, so every shuffle/repeat toggle mid-track tore down a decoder already seconds into decoding ahead and restarted its network fetch. Both fixed.
+
+Two regression tests, in the streamed shape the old ones missed: same Track.Id, 
+different signed URL. I verified them red first — reverting just the two comparisons
+gives exactly 2 failures out of 23, and restoring gives 23/23.                  
+
+2. CPU/memory instrumentation                                                   
+
+Flower.Core/Diagnostics/ResourceMonitor.cs — resident memory, managed heap, CPU 
+counts by generation, thread count. In Flower.Core so the server can use it.
+                                                                                
+Two things worth knowing:
+- CPU comes from Environment.CpuUsage (.NET 9+); I probed it on this machine fir
+  rather than assuming — busy-loop reads 100.0%, sleep reads 0.3%.
+- Memory goes through mach task_info, not Environment.WorkingSet, on Apple platf
+  WorkingSet returns 0 where the runtime has no implementation, and 0 is
+  indistinguishable from a real answer on a settings screen. Verified against th
+  Mac: 32MB resident, 32768MB device total.
+                                                                                
+ResourceMonitor is instantiable, not static, because CPU % is a delta — the settings
+screen at 1s and the playback snapshot at 10s would otherwise eat each other's  
+baseline. There's a test for exactly that.
+                                                                                
+Also added to the Playback snapshot log line: CpuPercent, ProcessMemoryMb,
+ManagedHeapMb, Gen0/1/2, Threads — beside the decode counters, so "CPU pinned wh
+the ring stayed full" is readable in one line.
+                                                                                
+3. Mobile settings readout
+                                                                                
+ResourceUsageViewModel + a Diagnostics block in SettingsView.axaml: CPU, Memory (148
+MB of 3814 MB), Heap, GC, Threads. Polls once a second and only while the settin
+sheet is open — MobileMainViewModel.ActiveSheet starts and stops it. A diagnostics
+panel that ran a timer for the life of the app would drain the battery it's mean
+investigate.
+                                                                                
+I also wrapped the settings content in a ScrollViewer. It had none, so on a 13 mini
+the new block would simply have been unreachable.                               
+
+4. AbruptFrames — I was wrong about this                                        
+
+I need to correct what I told you earlier. I said MaxSampleDelta=32768 was "a full-scale jump — a click" and that those were "discontinuities in the PCM itself." That was overconfident.
+
+The threshold is FLOWER_COREAUDIO_ABRUPT_SAMPLE_DELTA 24576 — 75% of full scale between adjacent samples. A full-scale sine at frequency f has a maximum adjacent delta of 32768 × 2sin(πf/48000), which reaches 24576 at about 5.9kHz. So any loud content above ~6kHz trips it legitimately, and cymbals and sibilance on a modern master do it constantly. 1–6 frames per 480,000 is ordinary percussion. There is no defect there to chase, and I've written that reasoning into impl.c next to the constant so it isn't misread again.
+
+The real glitch evidence was the 1,153 dropped buffers, whose cause is fixed in item 1.
+
+I also found a genuine problem while checking: those PCM-shape counters are computed in the vendored ma_on_output__coreaudio, which inspects only s16 and f32 buffers. Flower opens at s16 or s24. So on the phone I just switched to FFmpeg, all four counters will read 0 forever — and 0 reads as "found no discontinuities" when it means "never looked." They now print n/a instead. Closing it properly needs an s24 path in the native code and a rebuild of the vendored binaries; I did not do that.
+
+One correction on my own process: I briefly concluded nothing called those functions at all, because I'd excluded vendor/ from the grep. The call sites are in native/miniaudio/vendor/miniaudio.h, and binary and source are in sync.
+
+Nothing is committed. Worth testing on the phone first — particularly whether the FFmpeg façade loads at all on real hardware, which nothing has ever exercised.
+
+
+----
 The volume slider will feel different. It was raw linear amplitude (50% = −6 dB); it's now a cubic taper (50% ≈ −18 dB). That's the fix for "101 steps you can't hear apart", but it's a real change — one line in OutputStage.GainForVolumePercent if you want it gentler.
 ----
 Lock-free synchronisation — correct in shape, but (A) is a bug in the
