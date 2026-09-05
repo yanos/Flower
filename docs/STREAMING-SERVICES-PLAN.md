@@ -2,11 +2,13 @@
 
 Investigation into streaming Spotify/Apple Music/Bandcamp from Flower given valid credentials.
 
-**Bottom line: credentials aren't the gating factor — DRM is.** `IAudioManager.Play(Track)` hands `track.Path`/a URL straight to LibVLC, which decodes anything it's given (this is also how `SYNC-PLAN.md`'s OpenSubsonic streaming works). So the deciding question per service is: **can we get a raw, DRM-free, LibVLC-decodable stream URL?**
+**Bottom line: credentials aren't the gating factor — DRM is.** `IAudioManager.Play(Track)` hands `track.Path` — a filesystem path or a URL — straight to the decoder, which decodes anything it is given (this is also how `SYNC-PLAN.md`'s OpenSubsonic streaming works). So the deciding question per service is: **can we get a raw, DRM-free stream URL?**
+
+That decoder is now `FfmpegTrackDecoder` rather than LibVLC, which changes one thing in this document's favour and nothing against it. A URL is fetched by `SeekableHttpStream` over the pinned `PeerHttpClient` and fed to FFmpeg's `AVIOContext` as range requests, so Flower owns the fetch: a provider needing a header, a signed URL refreshed mid-stream, or a cookie has somewhere to put it, which was not true when a URL disappeared into LibVLC's own HTTP access module. Formats are broadly the same story — `mp3-128` is `mp3-128` to either.
 
 | Service | Metadata API | Decodable stream URL? | Playback path | Platforms | Legitimacy |
 |---|---|---|---|---|---|
-| **Bandcamp** | No official API (scrape) | **Yes** — public `mp3-128` URLs | Existing LibVLC | All 5 | Grey (scraping, no DRM) |
+| **Bandcamp** | No official API (scrape) | **Yes** — public `mp3-128` URLs | Existing decode path | All 5 | Grey (scraping, no DRM) |
 | **Spotify** | Yes (Web API, OAuth2) | **No** — DRM, official SDKs only | Separate player / `librespot` sidecar | Varies | Red (ToS-violating for audio) |
 | **Apple Music** | Yes (Apple Music API) | **No** — FairPlay DRM, MusicKit only | Separate native player | macOS/iOS only | Green, Apple-only |
 
@@ -16,7 +18,7 @@ Not yet started; not yet committed to git.
 
 ## Bandcamp — recommended first
 
-No public API; every third-party client scrapes. A track/album page embeds a `data-tralbum` JSON blob with a direct, signed but public `mp3-128` MP3 URL — playable by LibVLC with no decryption. Purchased (DRM-free, higher quality) downloads require scraping an authenticated fan-collection page.
+No public API; every third-party client scrapes. A track/album page embeds a `data-tralbum` JSON blob with a direct, signed but public `mp3-128` MP3 URL — playable with no decryption. Purchased (DRM-free, higher quality) downloads require scraping an authenticated fan-collection page.
 
 **Approach:** `BandcampProvider : IMusicProvider`, plain `HttpClient` scraping (search page or the internal `fuzzysearch` autocomplete endpoint) — no third-party library needed. Resolve the stream URL lazily *at play time* (never cache in `library.json` — it's time-limited), hand it to the existing `GaplessAudioManager` unchanged. Optional: import a logged-in user's purchased collection as placeholder tracks (`Path == null`), same shape as a sync peer's tracks.
 
@@ -48,7 +50,7 @@ This is additive to `SYNC-PLAN.md`'s "iOS owns its files, no `MPMediaLibrary` in
 
 **Seam 1 — `IMusicProvider` (cheap, shared by all three):** a provider abstraction generalizing what `OpenSubsonicClient` already does — `SearchAsync`, `BrowseLibraryAsync`, `ResolvePlayableUrlAsync(track)` (`null` ⇒ not URL-playable). Add a `Source`/provider tag to `Track` alongside the existing `OriginDeviceFingerprint` pattern. `ResolvePlayableUrlAsync` results must never be persisted to `library.json` (signed/time-limited URLs). Local, sync, and Bandcamp all implement this fully and reuse `GaplessAudioManager` untouched.
 
-**Seam 2 — multiple `IAudioManager`s + a router (expensive, DRM services only):** for Spotify/Apple Music, `ResolvePlayableUrlAsync` returns `null` and playback needs a per-backend `IAudioManager` (`MusicKitAudioManager`, `LibrespotAudioManager`) behind an `AudioManagerRouter` that picks the engine from `track.Source`. Hard problems: reconciling two engines' clocks, gapless handoff across engines, volume normalization, running a native SDK player alongside LibVLC. This is why DRM-service playback is a late phase, not a quick win.
+**Seam 2 — multiple `IAudioManager`s + a router (expensive, DRM services only):** for Spotify/Apple Music, `ResolvePlayableUrlAsync` returns `null` and playback needs a per-backend `IAudioManager` (`MusicKitAudioManager`, `LibrespotAudioManager`) behind an `AudioManagerRouter` that picks the engine from `track.Source`. Hard problems: reconciling two engines' clocks, gapless handoff across engines, volume normalization, running a native SDK player alongside Flower's own render path. This is why DRM-service playback is a late phase, not a quick win.
 
 **Credentials:** store via OS secret stores (Keychain/DPAPI/libsecret/mobile keystores), never `settings.json` — new `ISecretStore` abstraction. Desktop OAuth redirects via a short-lived loopback listener of its own, or a custom URI scheme. (This used to note that Flower already ran one for sync, `SyncHttpServer`, and could borrow it — that listener has been removed, so an OAuth flow now has to open and close its own.)
 

@@ -3,8 +3,7 @@
 **Status: Phases 1–5 are built. Findings A–H and J are fixed; I is deferred to
 `AUDIOPHILE-PLAN.md` §5, which now owns it. Phase 5 (below) is the mobile-only
 one, added after device logs showed a defect none of A–J covers. What is left is
-listening: the suite (1572 tests) including the `RequiresLibVLC` real-decode
-tests is green, but "does it still click" is a question only ears answer — see
+listening: the suite (1572 tests) including the real-decode tests is green, but "does it still click" is a question only ears answer — see
 Verification below. Phase 6 is Phase 5's fork collapsed back into one render
 path across every platform; it is not started, and deliberately waits on that
 listening.**
@@ -162,8 +161,8 @@ The original S16 path used to pin the pipeline to 48 kHz, so a 44.1 kHz source
 could be upsampled by LibVLC and then downsampled again by miniaudio's default
 linear resampler. The bounded fix now negotiates `GaplessFormat.SampleRate`
 from the first opened output device before either decoder is constructed. A
-44.1 kHz source on a 44.1 kHz endpoint consequently has only LibVLC's one
-conversion. The negotiated session rate remains fixed when the output device
+44.1 kHz source on a 44.1 kHz endpoint consequently has only the decoder's one
+conversion — `swresample`'s now, LibVLC's when this was written. The negotiated session rate remains fixed when the output device
 changes, so an active or armed decoder never changes timing mid-track.
 
 ### J. Smaller, worth fixing while in there
@@ -193,9 +192,14 @@ it is recorded here to stop it being re-proposed:
   the circular buffer and miniaudio's `ma_device` data callback is the pull
   model. Already correct.
 - **A float internal format** — worth doing *inside the render callback only*
-  (Phase 2). The ring should stay S16: LibVLC 3.0's `amem` hardcodes S16N and
-  never honours a requested fourcc (`GaplessFormat.cs:9-18`), so a float ring
-  would store an exact widening of S16 at twice the memory for zero benefit.
+  (Phase 2). The ring should stay integer PCM. The reasoning at the time was
+  that LibVLC 3.0's `amem` hardcoded S16N and never honoured a requested
+  fourcc, so a float ring would store an exact widening of S16 at twice the
+  memory for zero benefit. **The premise is gone and the conclusion survives
+  it:** the ring now carries packed S24 because that is what
+  `FfmpegTrackDecoder` delivers, and `PcmSampleFormat` stops at S24 on purpose
+  — `OutputStage` works in float, whose mantissa is exactly 24 bits, so
+  widening the ring further would be a widening that quietly narrows again.
 - **`ArrayPool` / GC-pause avoidance** — the RT callback already allocates
   nothing, and `TrackDecoder.OnPlay`'s `_scratch` (`:396-399`) is grow-only and
   reused. The useful artifact is a regression test asserting zero allocation,
@@ -387,7 +391,7 @@ periods with `Read()` (not `ReadBlocking`), silence-pads short reads exactly as
   `GC.GetAllocatedBytesForCurrentThread`).
 
 **Integration tests** (`FakeTrackDecoder` + real coordinator + `RenderPumpSink`,
-no LibVLC, CI-runnable)
+no native decoder, CI-runnable)
 
 - Manual `Play(B)` while A still has buffered PCM: every byte A produced appears
   before B's first byte (proves 1.3).
@@ -396,7 +400,7 @@ no LibVLC, CI-runnable)
 - Deliberate starvation: the captured stream contains silence but never repeated
   or stale content.
 
-**Real-decode tests** (`RequiresLibVLC`, excluded from CI as today)
+**Real-decode tests** (`RequiresLibVLC` then, `RequiresFfmpeg` now — and no longer excluded from CI, which builds the façade on all three desktops and requires it via `FLOWER_REQUIRE_DECODERS`)
 
 - **Bit-exactness**: decode a `SyntheticWav` file end to end and assert the
   captured PCM is byte-identical to `SyntheticWav.Build(...)`'s data chunk, modulo
@@ -413,10 +417,14 @@ no LibVLC, CI-runnable)
 
 ### Out of scope this round
 
-**Hi-res/direct output.** The fixed session-rate path still receives S16 PCM
-from LibVLC's `amem` callback, so it cannot preserve a 24-bit source. The
-completed decoder/backend spike is recorded in `AUDIOPHILE-PLAN.md` §5: a
-narrow native FFmpeg façade is the selected route, with direct mode choosing a
+**Hi-res/direct output.** Written when the fixed session-rate path received S16
+PCM from LibVLC's `amem` callback and so could not preserve a 24-bit source.
+**That half is since built**: the FFmpeg façade shipped, the pipeline carries
+packed S24 end to end, and `MiniaudioSink` narrows back only if the device
+refuses `ma_format_s24`. What remains out of scope here is the rest of it — a
+per-track native format rather than one negotiated at startup. The
+decoder/backend spike is recorded in `AUDIOPHILE-PLAN.md` §5: a narrow native
+FFmpeg façade was the selected route, with direct mode choosing a
 track's native format only when the device accepts it. That is a separate
 format-aware pipeline, not an extension of this quality pass.
 
@@ -601,7 +609,8 @@ has no defect waiting on this. `Flower.Web` is out of scope permanently.
 Automated, and passing:
 
 - `dotnet test Flower.Tests/Flower.Tests.csproj --filter Category!=RequiresLibVLC`
-  — 1540 tests. The new ones were each checked against the pre-fix code: the
+  — 1540 tests. (That category is `RequiresFfmpeg` now; the run below is the
+  one that matters and is unchanged in spirit.) The new ones were each checked against the pre-fix code: the
   three `GaplessRingBufferTests` epoch tests and both
   `RenderStarvationTests` tail/seek tests fail without their fix and pass with
   it.

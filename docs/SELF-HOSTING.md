@@ -110,7 +110,7 @@ still win over both.
 
 The repository ships a `Dockerfile` and a `docker-compose.yml`. Nothing has to
 be installed on the host first — no .NET runtime, no SQLite, no ffmpeg. The
-server does not decode audio either (that is the client's job), so LibVLC is not
+server does not decode audio either (that is the client's job), so no decoder is
 involved on this side at all.
 
 Point the music path in `docker-compose.yml` at your library, then:
@@ -243,7 +243,7 @@ Two things this does *not* do, stated plainly:
   a browser a usable address. Tailscale, Cloudflare Tunnel and port forwarding
   are all still exactly as necessary as they were.
 - **Audio is encrypted but not authenticated.** Playback hands the stream URL to
-  the media stack (LibVLC), which does its own TLS and cannot be given Flower's
+  the media stack, which does its own TLS and cannot be given Flower's
   certificate check. Everything else — the catalog, admin, sync, cover art — is
   both encrypted and pinned. The gap costs a single track to an attacker already
   positioned on your network, because a stream URL is signed per request rather

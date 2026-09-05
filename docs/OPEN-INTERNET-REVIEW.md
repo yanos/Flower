@@ -386,14 +386,23 @@ possible without handing out plaintext credentials, provided the deployment has
 a certificate a third-party client will accept. That is a documented step
 (`SELF-HOSTING.md`, "Using a real certificate instead") rather than a code gap.
 
-One gap in the other direction, recorded here because it is the kind of thing
-that otherwise gets discovered later: **audio is encrypted but not
-authenticated** under a self-signed certificate. Playback hands the URL to
-LibVLC, whose TLS stack takes no validation callback, so the pin covers every
-request except the stream itself. The exposure is one track to an attacker
-already on the path, since the stream URL is signed rather than password-bearing
-— the very distinction this finding draws. See `VlcCertificateDialogs`, which
-carries the argument in full, and `REMOTE-TRANSPORT-PLAN.md` for the fix.
+One gap in the other direction was recorded here, and has since closed on its
+own: **audio was encrypted but not authenticated** under a self-signed
+certificate. Playback handed the URL to LibVLC, whose TLS stack takes no
+validation callback, so the pin covered every request except the stream itself —
+the exposure being one track to an attacker already on the path, since a stream
+URL is signed rather than password-bearing.
+
+It closed for a reason that had nothing to do with security. LibVLC's HTTP
+access module decided an unseekable MP4 was undemuxable and an entire AAC album
+played silence on a phone, so Flower took over the fetching: `SeekableHttpStream`
+does plain range requests and feeds them to FFmpeg's `AVIOContext`, and the
+client it does them with is `PeerHttpClient.CreateSigned()` — the same pinned,
+signing client as every other request. There is no second TLS stack in the
+process any more, so there is nothing left for the pin not to cover.
+`VlcCertificateDialogs`, which existed to paper over exactly this, is gone.
+Worth noticing as a pattern: owning a layer you were negotiating with tends to
+close the security gap at that seam as a side effect.
 
 ### 7. Bearer tokens in URLs, once URLs leave the house — **fixed**
 
@@ -586,6 +595,8 @@ already stores — verified by hand against a live server (both listeners answer
 the served certificate's public key is byte-identical to `device-key.json`'s;
 `curl` without `-k` refuses it) and pinned over a real handshake by
 `PinnedTlsHandshakeTests`. What is left of #6 is a deployment note for
-third-party clients rather than a fix, and one new gap recorded under it: audio
-is encrypted but not authenticated, because LibVLC does its own TLS. #8 is
-notes.
+third-party clients rather than a fix. The gap once recorded under it — audio
+encrypted but not authenticated, because LibVLC did its own TLS — is closed:
+streamed audio is fetched by `SeekableHttpStream` over
+`PeerHttpClient.CreateSigned()` and there is no second TLS stack left in the
+process. #8 is notes.

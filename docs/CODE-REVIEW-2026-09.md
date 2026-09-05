@@ -134,9 +134,11 @@ pause or a device loss inside the promotion — but "press stop during a track
 change" is not an exotic gesture, and the failure is a hung UI rather than a
 glitch.
 
-**Note this is the default decoder.** `TrackDecoder` (LibVLC) does its teardown
-entirely inside a `Task.Run` and never touches the writer gate on the caller's
-thread, so it is not exposed. `FfmpegTrackDecoder` is what ships.
+**Note this is the only decoder.** The note here originally said "the *default*
+decoder", because `TrackDecoder` (LibVLC) was not exposed — it did its teardown
+entirely inside a `Task.Run` and never touched the writer gate on the caller's
+thread. That is no longer a mitigation available to anyone: LibVLC is gone and
+`FfmpegTrackDecoder` is what every head runs.
 
 **Fix.** Two independent changes, and both are worth having:
 
@@ -518,8 +520,8 @@ private static int ThreadCount() => System.Threading.ThreadPool.ThreadCount + 1;
 This is my own code from the current uncommitted work, and it is the weakest part
 of it. `ThreadPool.ThreadCount` counts pool threads. The threads a decode leak
 would actually show up in — `FfmpegTrackDecoder`'s decode thread, `AudioFeeder`'s
-feeder thread, LibVLC's internal threads — are dedicated `Thread` objects and
-native threads, none of which are in the pool. The `+ 1` is a fudge for the main
+feeder thread, FFmpeg's own internal threads — are dedicated `Thread` objects
+and native threads, none of which are in the pool. The `+ 1` is a fudge for the main
 thread and does not change that.
 
 So the number is real but answers a narrower question than the label on it
@@ -536,26 +538,19 @@ decoders are alive" is the actual question.
 
 ## E. Dead code and organisation
 
-### E1. `LibVlcRawStreamSink` and `GaplessRingBufferStream` are 291 lines of unreachable code
+### E1. `LibVlcRawStreamSink` and `GaplessRingBufferStream` — **resolved**
 
-`Flower/Audio/LibVlcRawStreamSink.cs` (223 lines),
-`Flower/Audio/GaplessRingBufferStream.cs` (68 lines)
+Both files are deleted, along with the rest of LibVLC. The finding was that 291
+lines were unreachable and that `CLAUDE.md`'s *"kept unreferenced as a fallback
+for one release cycle"* was not a working fallback — no construction path, no
+configuration switch, and no test that would notice it failing to compile.
 
-Nothing constructs either. Every reference to `LibVlcRawStreamSink` in the
-codebase is a comment; `GaplessRingBufferStream` is referenced only from
-`LibVlcRawStreamSink` itself. Neither has a single test.
-
-`CLAUDE.md` records the intent — *"kept unreferenced as a fallback for one
-release cycle"* — so this is a decision, not an oversight. Two observations for
-when that cycle is judged to be over:
-
-- The fallback is not a working fallback. It has no construction path, no
-  configuration switch, and no test that would notice if it stopped compiling
-  correctly. Restoring it would be a code change either way, and `git` holds it
-  better than `Flower/Audio/` does.
-- The five comments that reference it are the useful part — the `amem` history,
-  the seek-freeze that motivated the move to miniaudio. Those are worth keeping
-  in `MiniaudioSink`'s own header when the file goes.
+Recorded rather than struck out because the argument generalises and will be
+needed again: a fallback with no way to reach it is not a fallback, and `git`
+holds unreachable code better than `Flower/Audio/` does. Its second half was
+acted on too — the comments were the valuable part, and the `amem` history and
+the seek-freeze that motivated the move to miniaudio now live in
+`MiniaudioSink`'s own header.
 
 ### E2. `GaplessFormat` is process-wide mutable static, and tests run in parallel
 
@@ -596,24 +591,19 @@ is the right shape. They are simply both large.
 Not urgent. Recorded because "Tier 4.2 — DONE" reads as though the shell-sized
 ViewModel problem was solved, and half of it was never in scope.
 
-### E4. `GaplessAudioManager`'s public constructor defaults to the wrong decoder
+### E4. `GaplessAudioManager`'s constructor defaulted to the wrong decoder — **resolved**
 
-`Flower/Audio/GaplessAudioManager.cs:58` and
-`Flower/Audio/GaplessCoordinator.cs:165` —
-`TrackDecoderKind decoderKind = TrackDecoderKind.LibVlc`
+`TrackDecoderKind` no longer exists. The finding was that both
+`GaplessAudioManager` and `GaplessCoordinator` took
+`TrackDecoderKind decoderKind = TrackDecoderKind.LibVlc`, silently contradicting
+the documented default, so any caller omitting it — a test, a device check, a
+future head — got a 16-bit ceiling with no warning anywhere. Removing the
+election removed the parameter and with it the trap.
 
-`CLAUDE.md` is emphatic that **FFmpeg is the default, on every head**, because
-LibVLC's `amem` truncates to 16 bits whatever is asked of it. The composition
-root passes the elected kind explicitly, so the app is fine. But the parameter
-default silently disagrees with the app's default, and a caller that omits it —
-a test, a device check, a future head — gets LibVLC and a 16-bit ceiling with no
-warning anywhere.
-
-`GaplessCoordinator`'s own constructor has the same default, at line 165.
-
-**Fix.** Make it required, or default it to `DecoderElection`'s answer. A default
-that contradicts the documented default is a trap regardless of which way it is
-resolved.
+Kept because the general form is the durable part: **a parameter default that
+contradicts the documented default is a trap regardless of which way it is
+resolved**, and the composition root passing the right value explicitly is what
+hides it rather than what fixes it.
 
 ### E5. `MiniaudioSink.Start` leaks a `GCHandle` if called more than once
 
@@ -690,8 +680,8 @@ and had nothing else left in it.
 
 ## F. Where more testing would have paid
 
-The suite is genuinely broad — 1685 fast tests, plus the `RequiresLibVLC`,
-`RequiresFfmpeg` and device-check tiers, and the patterns
+The suite is genuinely broad — 1685 fast tests, plus the `RequiresFfmpeg` and
+device-check tiers, and the patterns
 (`TestSupport/` fakes, synthetic WAV fixtures, `PlatformDataDirectory` pinning)
 are right. These are the specific gaps the findings above walked through.
 
@@ -805,12 +795,12 @@ review does not spend its time here.
    holds. Mechanical, and removes 60 MB of allocation per large request.
 5. **B2** + **C4** together — throttle the prune, bound the key lengths. Five
    lines each, copied from `RateLimiter`.
-6. **C3**, **E4**, **E5** — one-liners.
+6. **C3**, **E5** — one-liners. (**E4** resolved itself when `TrackDecoderKind` went.)
 7. **D1** — intrinsic-size-from-header, removing the double decode. The biggest
    single win in the cold-scroll path.
 8. **B3** — version the snapshot invalidation.
 9. **C2** — a per-device log quota.
-10. **B5**, **D3**, **D4**, **D5**, **E1**, **E6**, **E7**, **E8** — when
-    convenient.
+10. **B5**, **D3**, **D4**, **D5**, **E6**, **E7**, **E8** — when convenient.
+    (**E1** is resolved: both files are deleted.)
 11. **C1**, **E2**, **E3** — genuine design questions rather than fixes, and
     worth a decision recorded here rather than a patch.

@@ -1,17 +1,36 @@
 # Audiophile Playback Features Plan
 
-Five requested features: gapless playback, multi-channel/hi-res sample rate support (24-bit/192kHz+), DSD/APE format support, a low-latency playback engine, and EQ with true bypass. Output-device selection itself is `AIRPLAY-BLUETOOTH-PLAN.md` territory, referenced here only where a feature depends on it. **#1 (EQ) and #6 (true sample-accurate gapless) are done. #4 was superseded by #6 and will never be built. #2, #3 and #5 are open, and all three are scoped against a render path that no longer exists** — see the note below.
+Five requested features: gapless playback, multi-channel/hi-res sample rate support (24-bit/192kHz+), DSD/APE format support, a low-latency playback engine, and EQ with true bypass. Output-device selection itself is `AIRPLAY-BLUETOOTH-PLAN.md` territory, referenced here only where a feature depends on it.
+
+**#1 (EQ) and #6 (true sample-accurate gapless) are done. #4 was superseded by #6 and will never be built. #5 is largely done — the FFmpeg façade shipped on all five heads and the pipeline carries 24-bit end to end; what is left of it is per-track format election rather than one negotiated at startup. #2 and #3 are open and both need re-scoping first, because they were written against LibVLC** — see the note below, which says how much of each survives.
 
 ## A note on what is stale here
 
-Items #2 and #5 below are written against LibVLC as the *output* stage — its
-`aout` modules, its `file-caching`, its device selection. That stopped being
-true. LibVLC is decode-only now: every platform renders through `MiniaudioSink`
-pulling canonical S16/native-rate/stereo PCM out of `GaplessRingBuffer`. Neither item is
-wrong about *what the user wants*; both are wrong about where the knob lives, so
-each needs re-scoping against miniaudio before it is actionable. #1 already hit
-this and was re-scoped when it was built; #6 hit it and was built somewhere else
-entirely.
+**Read the sections below as history with live conclusions attached, not as
+current instructions.** This document was written when LibVLC did everything,
+and revised once when LibVLC became decode-only. It is now neither: LibVLC is
+gone entirely, `FfmpegTrackDecoder` is the only decoder, and every platform
+renders through `MiniaudioSink` pulling packed S24 at the negotiated device rate
+out of `GaplessRingBuffer`.
+
+That matters most for **#2**, which is stale outright — it proposes tuning
+`new LibVLC(options)` and `file-caching`, and neither exists. Its underlying
+question (what latency does the engine impose, and can it be lowered) is still
+worth asking; it just has to be asked of `FfmpegTrackDecoder`, `AudioFeeder` and
+`MiniaudioSink`'s period sizing instead, which is a different investigation
+rather than a re-worded one.
+
+**#3** is half stale: the tagging half is untouched and shippable today, and the
+playback half's two options have collapsed into one, because "build VLC demux
+plugins per platform" has no VLC to build them for. What is left is whether
+FFmpeg's own DSD and APE decoders are enabled in the façade's build — a question
+`native/ffmpeg/README.md` can answer and this document cannot.
+
+**#5** is the one that aged well, because most of it was built: its own
+narrative below is the FFmpeg migration, step by step.
+
+#1 hit this same problem and was re-scoped when it was built; #6 hit it and was
+built somewhere else entirely.
 
 ## Key findings
 
@@ -28,11 +47,13 @@ Fixed at 10 bands (31Hz–16kHz, ISO-ish spacing, `Q≈1.41`), ±12dB per band, 
 
 ## 2. Low-latency playback engine — Small effort, Low risk
 
-Pass a lean explicit option set into `new LibVLC(options)` (skip video/subpicture/OSD/stats subsystems this audio-only app never uses; exact flags need validating against LibVLC 3.x at implementation time). Lower `file-caching` from LibVLC's ~300ms default since Flower only plays local files. Everything else (no `Media.Parse()` blocking on play, single long-lived `LibVLC`/`MediaPlayer`) is already fine — verified, no change needed.
+**Superseded in its specifics; the question survives.** As written this was: pass a lean option set into `new LibVLC(options)`, skipping the video/subpicture/OSD/stats subsystems an audio-only app never uses, and lower `file-caching` from LibVLC's ~300ms default. None of those knobs exist any more.
+
+Re-scoped, the same question is about three places: `FfmpegTrackDecoder`'s open path (it already avoids blocking work on the play thread, and `StartDecoding` opens on its own decode thread), `AudioFeeder`'s fill policy, and `MiniaudioSink`'s period sizing — the last being the one that actually sets the floor on how quickly a press of play makes a sound. `AudioTimingSettings` is where the tunables already live. Worth measuring before assuming there is anything to win.
 
 ## 3. DSD (`.dsf`) + Monkey's Audio (`.ape`) — Small effort for tagging, Medium-Large + Medium-High risk for playback
 
-Add `.ape`/`.dsf` to `Importer._validExtensions` — tagging works today regardless of playback, so library browsing/sorting works immediately. Skip `.dff` until TagLib# supports it or a real library needs it. **Playback requires real engineering**, since no native plugins exist: either (a) build/source third-party VLC demux/decode plugins per platform, or (b) decode outside LibVLC (managed/native decoders feeding PCM via `SetAudioCallbacks`, same seam as gapless/AirPlay work). Until either lands, wrap `Play()` for these formats in a try/catch with a user-facing "unsupported format" message. Once playback exists, be clear in UI copy that DSD is decoded to PCM, not passed through natively.
+Add `.ape`/`.dsf` to `Importer._validExtensions` — tagging works today regardless of playback, so library browsing/sorting works immediately. Skip `.dff` until TagLib# supports it or a real library needs it. **Playback requires real engineering, but less than it did.** The finding was that mainline VLC ships no Monkey's Audio or DSD demux/decode plugins, leaving two options: build third-party VLC plugins per platform, or decode outside LibVLC. Option (a) is void — there is no VLC. Option (b) is what the whole pipeline now is, which turns the question into a build-configuration one: does `flower-ffmpeg` enable FFmpeg's `dsf`/`dsd_lsbf`/`ape` demuxers and decoders, and does adding them stay inside the LGPL-only constraint. See `native/ffmpeg/README.md`; the answer is not in this document. Until either lands, wrap `Play()` for these formats in a try/catch with a user-facing "unsupported format" message. Once playback exists, be clear in UI copy that DSD is decoded to PCM, not passed through natively.
 
 ## 4. Near-gapless playback (pragmatic step) — Superseded, never built
 
@@ -55,7 +76,7 @@ better outcome than one that ships and then has to be unpicked.
 
 ## 5. Multi-channel / hi-res passthrough — Medium effort, Medium risk
 
-**The bounded double-resample slice is done.** At sink initialization, `MiniaudioSink.OpenDevice` asks miniaudio for the endpoint's native rate, then configures `GaplessFormat` before either decoder is constructed. A 44.1kHz source on a 44.1kHz endpoint is consequently converted once by LibVLC, rather than first to fixed 48kHz and then again by miniaudio's linear resampler. The fallback remains 48kHz for headless/test sinks.
+**The bounded double-resample slice is done.** At sink initialization, `MiniaudioSink.OpenDevice` asks miniaudio for the endpoint's native rate, then configures `GaplessFormat` before either decoder is constructed. A 44.1kHz source on a 44.1kHz endpoint is consequently converted once by the decoder's own resampler (`swresample` now, LibVLC then), rather than first to fixed 48kHz and then again by miniaudio's linear resampler. The fallback remains 48kHz for headless/test sinks.
 
 The session rate is deliberately held across later output-device changes: changing it while a current or armed decoder exists would corrupt timing and playback speed. If the newly selected endpoint differs, miniaudio can resample for that switch. Full per-device native-rate renegotiation belongs with the wider format/passthrough redesign below.
 
@@ -864,22 +885,27 @@ underrun count when it was not.
 2. #6 True sample-accurate gapless — **done**, ahead of everything below it and
    in place of #4.
 3. #4 Near-gapless preload — **dropped**, superseded by #6.
-4. #2 Low-latency tuning — next up, but re-scope against `MiniaudioSink` first;
-   the LibVLC-option tuning it describes now applies only to the decode side.
+4. #2 Low-latency tuning — re-scope before starting: the LibVLC options it
+   describes are gone, and what is left is measuring `AudioTimingSettings`,
+   `AudioFeeder` and `MiniaudioSink`'s period sizing. Measure first; there may
+   be nothing here.
 5. #3 DSD/APE — ship tagging/import any time (`Importer._validExtensions` is
-   still `.mp3/.m4a/.wav/.flac/.alac`); playback is its own much larger effort,
-   and the decode-outside-LibVLC option it floats is more attractive now that
-   the pipeline already speaks raw PCM.
+   still `.mp3/.m4a/.wav/.flac/.alac`), which is cheap and independent.
+   Playback is now a question about the façade's FFmpeg build configuration
+   rather than about sourcing plugins, so it is smaller than it reads below —
+   but it is bounded by the LGPL-only constraint, not by effort.
 6. #5 Multi-channel/hi-res — after AirPlay/Bluetooth Phase 1 ships, and after
    the same re-scope as #2. The S16/native-session-rate format is a deliberate
    gapless requirement; the completed decoder spike defines the separate
    format-aware direct path needed for hi-res output and the controlled
    transitions it requires.
 
-   Its first two steps are **done**: Flower fetches its own audio (see #5's
-   "Step one, built"), and the `flower-ffmpeg` façade plus `FfmpegTrackDecoder`
-   exist and are proven on macOS to deliver a 24-bit source intact (see "Step
-   two, built"). What remains is the part that is not a decoder: the four
-   unbuilt platform artifacts, an LGPL-only FFmpeg to build them against, and
-   the direct-mode format policy below - device capability probing, the
-   controlled transitions, and the switch that actually elects this decoder.
+   **Most of it is now done.** Flower fetches its own audio (see "Step one,
+   built"); the `flower-ffmpeg` façade and `FfmpegTrackDecoder` exist, are
+   built for all five heads, and are the only decoder; the pipeline carries
+   packed S24 end to end; and `MiniaudioSink` narrows back only when a device
+   refuses `ma_format_s24`. What is genuinely left is the *direct-mode format
+   policy* — per-track native format rather than one negotiated once at
+   startup, which needs device capability probing the current name/id-only
+   device list cannot do, plus the controlled transitions that come with
+   changing format mid-session.

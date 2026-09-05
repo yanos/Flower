@@ -48,14 +48,15 @@ The shim should **not** expose a dialer. Eleven call sites build
 `$"http://{device.EndPoint}"` (`PeerOpenSubsonicClientFactory.cs:15`,
 `NetworkDiscoveryService.cs:400`, `LibrarySyncService.cs:130`,
 `PlaylistSyncService.cs:127`, `ICoverArtUrlResolver.cs:53` and the rest), and
-LibVLC takes a URL of its own in `TrackDecoder.EnsureMedia` — teaching all of
-them about a tunnel is twelve chances to miss one.
+the decoder takes a URL of its own — teaching all of them about a tunnel is
+twelve chances to miss one.
 
 Instead the shim starts `tsnet` **and a loopback reverse proxy**: listen on
 `127.0.0.1:PORT`, forward everything over the tunnel to the paired server. The
 tunnel then surfaces as an ordinary candidate address, `PairedServerReachability`
-ranks it with everything else, and LibVLC never learns anything changed. One new
-concept, zero call-site edits — which is the strongest argument this option has.
+ranks it with everything else, and the decoder never learns anything changed.
+One new concept, zero call-site edits — which is the strongest argument this
+option has.
 
 ### Why it still does not solve the problem
 
@@ -323,23 +324,26 @@ alongside the TLS one (`FlowerServerOptions.HttpsPort`, 4534) so third-party
 OpenSubsonic clients and old bookmarks are untouched, and `/info` reports both
 origins so a paired client moves itself over.
 
-The thing it did not buy is **audio**. `TrackDecoder` hands the stream URL to
-LibVLC, which opens it with its own TLS stack — one that knows nothing about
-`trusted-peers.json` and takes no validation callback. So the pin covers the
-catalog, admin, sync and cover art, and audio over a self-signed certificate is
-encrypted but not authenticated. `VlcCertificateDialogs` answers the certificate
-question LibVLC would otherwise stall on, and carries the full argument for why
-that is a tolerable place to stand: the origin was authenticated over the pinned
-client before the URL existed, and the URL is signed per request with a
-timestamp and nonce rather than carrying a reusable credential, so what an
-already-positioned attacker gets is one track.
+The thing it did not buy, and has since bought: **audio**. `TrackDecoder` handed
+the stream URL to LibVLC, which opened it with its own TLS stack — one that knew
+nothing about `trusted-peers.json` and took no validation callback. So the pin
+covered the catalog, admin, sync and cover art, and audio over a self-signed
+certificate was encrypted but not authenticated. That was judged tolerable, and
+the argument for it is worth keeping because it is the general one: the origin
+had been authenticated over the pinned client before the URL existed, and the
+URL is signed per request with a timestamp and nonce rather than carrying a
+reusable credential, so what an already-positioned attacker gets is one track.
 
-Closing it means taking the fetching away from LibVLC: read the stream with the
-pinned `HttpClient` and hand the decoder a `StreamMediaInput` over it, the way
-`LibVlcRawStreamSink` already does. That requires a seekable stream over HTTP
-range requests, which means owning seeking and duration — currently free from
-LibVLC — so it is deliberately deferred rather than done alongside. It is the
-one piece of the certificate story still outstanding.
+Closing it was written up here as deferred work — take the fetching away from
+LibVLC, read the stream with the pinned `HttpClient`, and accept that this means
+owning seeking and duration, which LibVLC was giving away free. **It is built,
+and not for this reason.** LibVLC's HTTP access module refused to demux an
+unseekable MP4 and an entire AAC album played silence on a phone, so
+`SeekableHttpStream` now does plain range requests and feeds FFmpeg's
+`AVIOContext` — over `PeerHttpClient.CreateSigned()`, the same pinned client as
+everything else. `VlcCertificateDialogs` is deleted. There is no second TLS
+stack left in the process, so the certificate story has nothing outstanding in
+it.
 
 ## Decision
 

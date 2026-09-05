@@ -646,10 +646,11 @@ namespace Flower.Audio.Ffmpeg
             };
         }
 
-        // Shared with TrackDecoder's own, and for the same reasons - see
-        // TrackDecoder.CreateAudioHttpClient. Both decoders exist at once
-        // during the migration, and a second client would double the socket
-        // pool for nothing.
+        // One client for the whole process. It used to be shared with
+        // TrackDecoder's, because both decoders existed at once during the
+        // FFmpeg migration and a second client would have doubled the socket
+        // pool for nothing; that decoder is gone and the reasoning still
+        // holds for the one that is left.
         private static readonly HttpClient AudioHttpClient = CreateAudioHttpClient();
 
         private static HttpClient CreateAudioHttpClient()

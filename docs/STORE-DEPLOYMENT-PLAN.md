@@ -10,7 +10,7 @@ Goal: get `Flower.iOS`/`Flower.Android` from runnable to submitted and approved.
 - **New personal Google Play accounts need a closed test first:** 12 actively-engaging testers for 14 continuous days — a real ~2-week lead time to plan around.
 - **Apple requires a Privacy Manifest** (`PrivacyInfo.xcprivacy`) for every .NET-for-iOS app, even one using no sensitive APIs directly (the BCL itself triggers "required reason" API categories). Missing it is an automatic rejection.
 - `UIBackgroundModes: audio` is already declared on iOS — background playback needs no new work there. **Android has no equivalent** (no foreground service/media-session notification) — playback likely doesn't survive backgrounding today.
-- **LibVLC LGPL compliance: done.** `LICENSE`/`NOTICE` are committed at the repo root, correctly naming LibVLCSharp/VideoLAN.LibVLC.* as LGPL with source links. VideoLAN's dynamically-linked iOS framework (which Flower already uses) is what makes this workable inside App Store rules.
+- **LGPL compliance: needs redoing, and it is not the same problem it was.** `LICENSE`/`NOTICE` at the repo root name LibVLCSharp/VideoLAN.LibVLC.* — components the app no longer ships. What it ships instead is FFmpeg, **statically linked** into `flower_ffmpeg.framework` (iOS) and `libflower_ffmpeg.so` (Android), which is a materially harder LGPL position than VideoLAN's dynamically-linked framework was: static linking obliges shipping whatever a user needs to relink the app against a modified FFmpeg. Read `native/ffmpeg/README.md` — it carries the LGPL-only build constraint (no `--enable-gpl`, no `--enable-nonfree`) — and settle this before either submission, not after.
 - Both stores need a privacy policy URL — trivial content given Flower's only network activity is local mDNS sync between a user's own devices.
 - **Completeness gaps (empty state, permission-retry, now-playing sheet, playlist management, search/filter, track-info page): all done** — see Phase 3, which also carries the two real-device verification items still outstanding.
 
@@ -27,7 +27,7 @@ Enroll in Apple Developer Program ($99/yr) + Google Play Console ($25 one-time).
 
 ## Phase 2: iOS Privacy Manifest — open
 
-Add `PrivacyInfo.xcprivacy` starting from Microsoft's published required-reason-API category list for .NET-for-iOS apps; check whether `LibVLCSharp`/`VideoLAN.LibVLC.iOS` already ship their own. Small effort, but skipping it is an automatic rejection.
+Add `PrivacyInfo.xcprivacy` starting from Microsoft's published required-reason-API category list for .NET-for-iOS apps; the vendored native frameworks (`flower_ffmpeg`, `miniaudio`) are built in-repo and ship none of their own, so everything the manifest declares is Flower's to declare. Small effort, but skipping it is an automatic rejection.
 
 ## Phase 3: Completeness gaps — done, bar two verification items
 
