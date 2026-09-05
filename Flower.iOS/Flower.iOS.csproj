@@ -49,8 +49,6 @@
 
   <ItemGroup>
     <PackageReference Include="Avalonia.iOS" Version="12.1.0" />
-    <PackageReference Include="VideoLAN.LibVLC.iOS" Version="3.6.1" />
-    <PackageReference Include="LibVLCSharp.Avalonia" Version="3.10.0" />
     <!-- SkiaSharp's own nuspec only declares its NativeAssets.iOS dependency
          under a net10.0-ios26.2 group - NuGet's platform-version compatibility
          check requires the group's version to be <= the project's own TFM
@@ -76,10 +74,9 @@
        .xcframework: confirmed via a real build that <NativeReference>
        pointing at a .xcframework silently resolves the MSBuild item but
        never actually embeds anything in the app bundle (no error, no
-       warning - just missing at runtime). Mirrors VideoLAN.LibVLC.iOS's
-       own proven ios-device/ios-simulator NativeReference pattern
-       (~/.nuget/packages/videolan.libvlc.ios/*/build/VideoLAN.LibVLC.iOS.targets)
-       instead, conditioned the same way. -->
+       warning - just missing at runtime). Two folders conditioned on the
+       target instead, which is the arrangement VideoLAN.LibVLC.iOS used for
+       its own natives back when this app still shipped LibVLC. -->
   <!-- flower_ffmpeg is the same arrangement for the same reasons
        (native/ffmpeg/ios/build.sh), with one difference worth knowing: FFmpeg
        itself is linked into it statically, because a phone has no package

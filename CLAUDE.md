@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#), running on Windows, macOS, Linux, iOS, and Android. Every feature must work across all platforms. Uses LibVLC for playback and TagLib# for metadata. Shared `Flower` library project + platform-specific entry points.
+Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#), running on Windows, macOS, Linux, iOS, and Android. Every feature must work across all platforms. Decodes with a small FFmpeg façade (`flower-ffmpeg`), renders with miniaudio, and reads metadata with TagLib#. Shared `Flower` library project + platform-specific entry points.
 
 ## How It Gets Used
 
@@ -81,8 +81,8 @@ yet, and their absence is not a problem to fix. See `docs/agents/domain.md`.
 ```bash
 dotnet build Flower.Desktop/Flower.Desktop.csproj                               # Windows/Linux head
 dotnet build Flower.MacOS/Flower.MacOS.csproj                                   # macOS head, needs `sudo dotnet workload install macos`
-dotnet test Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresLibVLC&Category!=RequiresFfmpeg'  # fast, day-to-day
-dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs a local VLC install
+dotnet test Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
+dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs flower-ffmpeg built
 dotnet run --project Flower.Server                                              # server + its browser UI
 ```
 
@@ -108,9 +108,9 @@ lsof -nP -iTCP -sTCP:LISTEN | grep -i flower   # expect no output
 Also pass `--Flower:DataDirectory=<scratch>` to anything throwaway, so a test
 instance never writes to `~/Library/Application Support/Flower/Server`.
 
-`Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `TrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no LibVLC), real-LibVLC decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresLibVLC`, need a local VLC install same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
+`Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `FfmpegTrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no native decoder), real-decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresFfmpeg`, need the façade built same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
 
-`GaplessCoordinator` gives the armed (decode-ahead) role its own independent LibVLC core, separate from current's — two `MediaPlayer`s sharing one core was silently dropping `OnDrain`/`EndReached` under real decode load. See its `_secondCore`/`_cores` remarks and `GaplessCoordinatorRealDecodeTests`' class comment for the full writeup, including a second bug that fix exposed (a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`).
+`GaplessCoordinator` used to give the armed (decode-ahead) role its own independent LibVLC core, because two `MediaPlayer`s sharing one core silently dropped `OnDrain`/`EndReached` under real decode load. That went out with LibVLC — two `FfmpegTrackDecoder`s share nothing to contend over. The bug that fix exposed did not: a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`, and still what `GaplessCoordinatorRealDecodeTests`' class comment is about.
 
 Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is driven off `GaplessCoordinator.CurrentTrackBytesProduced`, which is computed from the shared ring's actual bytes-*read* (real playback consumption), not a decoder's own `BytesProduced` (decode progress) — a decoder that finished decoding ahead before its track was promoted stops producing any new bytes at all, so a decode-side counter reads as permanently frozen at zero for that whole track. See `_currentTrackReadSplit`'s remarks on `GaplessCoordinator`.
 
@@ -180,18 +180,19 @@ docs/OPEN-INTERNET-REVIEW.md #2b for the whole chain and the three places it is
 fixed.
 
 The whole suite runs **once per decoder this platform has** (`DecoderUnderTest`,
-`AvailableDecoders`), not once. It was written against `TrackDecoder` by name,
-so electing `FfmpegTrackDecoder` moved the entire streaming path out from under
-every check here while all of them stayed green - and the first thing that
-happened was an album playing nothing on a phone. Each decoder is handed its own
-sample format rather than the run moving `GaplessFormat`'s process-wide one, so
-LibVLC's S16 and FFmpeg's S24 coexist without either reaching the rest of the
-test process.
+`AvailableDecoders`), and there is one of those now. The shape survives LibVLC
+because of what it is for: the suite was once written against `TrackDecoder` by
+name, so electing `FfmpegTrackDecoder` moved the entire streaming path out from
+under every check while all of them stayed green - and the first thing that
+happened was an album playing nothing on a phone. An unloadable façade yields an
+empty decoder list, which `FLOWER_REQUIRE_DECODERS` turns into a failure rather
+than a suite that silently checks nothing. Each decoder is handed its own sample
+format rather than the run moving `GaplessFormat`'s process-wide one, so a
+decoder's format never reaches the rest of the test process.
 
 Another is that a decoder must play when started the way pressing play starts
 one. `GaplessCoordinator.PrepareAsync` is called only on the decode-ahead path;
-`Play()` constructs a decoder and calls `StartDecoding()` on it directly, which
-`TrackDecoder` supports by doing its own open there. Every check here prepared
+`Play()` constructs a decoder and calls `StartDecoding()` on it directly. Every check here prepared
 first, so `FfmpegTrackDecoder` requiring a prepare faulted on every press of
 play - only tracks that happened to be armed ahead of time opened at all - and
 not one check noticed. `... plays the way pressing play plays it` is that shape,
@@ -200,18 +201,22 @@ decode thread when no prepare has happened.
 
 One of those checks is that the catalogued extension is not a fact about the
 bytes. `OriginFileExtension` is `Child.Suffix` - it describes a file on the
-server's disk, and what arrives is whatever that server chose to send. Both
-decoders take it as a demuxer hint, and forcing a demuxer discards the probe
+server's disk, and what arrives is whatever that server chose to send. The decoder
+takes it as a demuxer hint, and forcing a demuxer discards the probe
 entirely, so a suffix that disagrees with the bytes is not a slow open, it is a
 track that will not play at all. `FfmpegTrackDecoder.DemuxerHintFor` therefore
 names only the MP4 family (where a hint buys something a probe cannot: a moov
-atom at the end of an unseekable stream), exactly as `TrackDecoder.DemuxHintFor`
-already did, and `FfmpegDecoder.OpenStream` rewinds and probes when even that
-hint will not open the stream.
+atom at the end of an unseekable stream), and `FfmpegDecoder.OpenStream` rewinds
+and probes when even that hint will not open the stream.
 
-CI runs the same checks per-OS in the `decode-checks` job, which installs VLC
-for them. The two runs are meant to be comparable: when they disagree, the
-difference is the platform. Android has no head yet.
+CI runs the same checks per-OS inside the `test` job - they need nothing the
+fast suite does not already build - and on an iOS Simulator in
+`ios-device-checks`, which drives
+`scripts/ios-device-checks.sh`. The runs are meant to be comparable: when they
+disagree, the difference is the platform - and iOS is the platform where the
+answer has actually been no twice. Android has no head yet, which is the only
+thing keeping it to a build-only job: the x86_64 natives an emulator would need
+are already built and committed under `Flower.Android/libs/x86_64/`.
 
 ## Git Workflow
 
@@ -257,17 +262,15 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 
 **Persistence** (macOS: `~/Library/Application Support/Flower/`): `library.json`, `playlists.json` (track references only, resolved against the library), `config.json` (column state), `settings.json` (`AppSettings`).
 
-**VLC native libraries** (`VlcNativeSetup.Initialize()`): Windows and Android/iOS are self-contained via NuGet. macOS requires VLC.app installed (the official NuGet is abandoned) and Linux requires a system VLC install (no NuGet exists), with a `DllImportResolver` mapping `libvlc` → `libvlc.so.5`. A missing VLC on macOS/Linux still hard-crashes at startup — friendly UX for that is still open (`CROSS-PLATFORM-PLAN.md`).
-
-**Miniaudio native libraries** (`native/miniaudio/`): the `Miniaudio-CS` NuGet only ships desktop binaries, so Android (`android/build.sh`, NDK/CMake → `Flower.Android/libs/<abi>/libminiaudio.so`) and iOS (`ios/build.sh`, Xcode → `Flower.iOS/Frameworks/ios-{device,simulator}/miniaudio.framework`) are compiled and vendored directly in-repo instead — no NuGet package, see `native/miniaudio/README.md` to rebuild. Pinned to the exact miniaudio commit `Miniaudio-CS`'s own bindings were generated against (0.11.22), not the latest upstream release, to avoid an ABI mismatch. iOS additionally needs a `DllImportResolver` in `MiniaudioSink`'s static constructor — unlike Android, where naming the output `libminiaudio.so` alone is enough, .NET-for-iOS's default P/Invoke probing doesn't know to look inside an embedded framework's nested bundle path. `App.axaml.cs` now routes every platform, including Android/iOS, to `MiniaudioSink`; `LibVlcRawStreamSink` is kept unreferenced as a fallback for one release cycle (see its own remarks) rather than deleted outright.
+**Miniaudio native libraries** (`native/miniaudio/`): the `Miniaudio-CS` NuGet only ships desktop binaries, so Android (`android/build.sh`, NDK/CMake → `Flower.Android/libs/<abi>/libminiaudio.so`) and iOS (`ios/build.sh`, Xcode → `Flower.iOS/Frameworks/ios-{device,simulator}/miniaudio.framework`) are compiled and vendored directly in-repo instead — no NuGet package, see `native/miniaudio/README.md` to rebuild. Pinned to the exact miniaudio commit `Miniaudio-CS`'s own bindings were generated against (0.11.22), not the latest upstream release, to avoid an ABI mismatch. iOS additionally needs a `DllImportResolver` in `MiniaudioSink`'s static constructor — unlike Android, where naming the output `libminiaudio.so` alone is enough, .NET-for-iOS's default P/Invoke probing doesn't know to look inside an embedded framework's nested bundle path. `App.axaml.cs` routes every platform, including Android/iOS, to `MiniaudioSink`.
 
 **Album art is fetched in batches** (`CoverArtBatch`, `POST /api/flower/v1/cover-art/batch`): a grid asks for one cover per tile, and a library of 1400 albums is 1400 requests during one cold scroll - more than any per-source budget worth having, and when that budget ran out what got refused was playback. `AlbumArtLoader` coalesces a viewport's worth of misses over a 40ms debounce into one request of up to 32 ids; a peer that cannot answer one degrades to the old request-per-album path. Deliberately on Flower's own surface rather than `/rest`, which is a published protocol other clients implement. See `docs/OPEN-INTERNET-REVIEW.md` #2b.
 
-**FFmpeg façade** (`native/ffmpeg/`): `flower-ffmpeg`, an eight-function C façade over `avformat`/`avcodec`/`avutil`/`swresample`, plus `Flower/Audio/Ffmpeg/`'s `FfmpegDecoder` and `FfmpegTrackDecoder : ITrackDecoder`. It exists because LibVLC's `amem` seam truncates every track to 16 bits whatever format is requested — see `docs/AUDIOPHILE-PLAN.md`. Built, not restored: run `native/ffmpeg/macos/build.sh` (or `linux/build.sh`, or `windows/build.ps1`) before the `RequiresFfmpeg` tests, or filter them out — CI builds it on all three desktops and requires it, via `FLOWER_REQUIRE_DECODERS`, so a façade that stops building shows up as a failing check rather than a shorter suite. Windows downloads a pinned LGPL FFmpeg build rather than compiling one, having neither a package manager to ask nor a reason to cross-compile. Mobile is two scripts instead of one, per platform — `<ios|android>/build-ffmpeg.sh` cross-compiles FFmpeg itself, then `build.sh` links it statically into `flower_ffmpeg.framework` per slice or `libflower_ffmpeg.so` per ABI, checked in under `Flower.iOS/Frameworks/` and `Flower.Android/libs/` like miniaudio's. A phone has no package manager to find an FFmpeg in, which is also where the LGPL obligation stops being someone else's build to point at. Read `native/ffmpeg/README.md` before touching it: the per-platform status and the LGPL-only constraint on any shipping build are both there.
+**FFmpeg façade** (`native/ffmpeg/`): `flower-ffmpeg`, an eight-function C façade over `avformat`/`avcodec`/`avutil`/`swresample`, plus `Flower/Audio/Ffmpeg/`'s `FfmpegDecoder` and `FfmpegTrackDecoder : ITrackDecoder`. It began as the answer to LibVLC's `amem` seam truncating every track to 16 bits whatever format was requested (see `docs/AUDIOPHILE-PLAN.md`), and is now the only decoder. Built, not restored: run `native/ffmpeg/macos/build.sh` (or `linux/build.sh`, or `windows/build.ps1`) before the `RequiresFfmpeg` tests, or filter them out — CI builds it on all three desktops and requires it, via `FLOWER_REQUIRE_DECODERS`, so a façade that stops building shows up as a failing check rather than a shorter suite. Windows downloads a pinned LGPL FFmpeg build rather than compiling one, having neither a package manager to ask nor a reason to cross-compile. Mobile is two scripts instead of one, per platform — `<ios|android>/build-ffmpeg.sh` cross-compiles FFmpeg itself, then `build.sh` links it statically into `flower_ffmpeg.framework` per slice or `libflower_ffmpeg.so` per ABI, checked in under `Flower.iOS/Frameworks/` and `Flower.Android/libs/` like miniaudio's. A phone has no package manager to find an FFmpeg in, which is also where the LGPL obligation stops being someone else's build to point at. Read `native/ffmpeg/README.md` before touching it: the per-platform status and the LGPL-only constraint on any shipping build are both there.
 
-**The decoder is elected, and the election decides the bit depth** (`DecoderElection`, `GaplessFormat`, `PcmSampleFormat`): `AppSettings.AudioDecoder` names LibVLC or FFmpeg, `FLOWER_DECODER` overrides it per run, and asking for a decoder this platform has no artifact for falls back to LibVLC with a warning rather than throwing from a decode thread. **FFmpeg is the default**, on every head — LibVLC's `amem` truncates to 16 bits whatever is asked of it, so defaulting to it defaults to a ceiling nobody chose, and the fallback means a head without a loadable façade still plays. `FLOWER_DECODER=libvlc` is how a bad session is recovered without editing `settings.json` back, and the setting is written out on every save, so an existing `settings.json` keeps whatever it already says — a machine that has run the app before needs its `"AudioDecoder"` key changed by hand, not just a newer build.
+**One decoder, and it sets the bit depth** (`FfmpegTrackDecoder`, `GaplessFormat`, `PcmSampleFormat`): there used to be an election between LibVLC and FFmpeg, with `AppSettings.AudioDecoder`, a `FLOWER_DECODER` override and a fallback for a head with no built artifact. All five heads have an artifact, LibVLC was permanently 16-bit, and a fallback whose whole job is to play something at a ceiling nobody chose is not worth the second code path — so it is gone, along with ~1,500 lines and the coordinator's dual-core machinery. A façade that will not load now logs one critical line at startup instead of a per-track fault; the app still browses, edits and syncs, it just cannot decode.
 
-The canonical PCM format follows from that choice — LibVLC pins the pipeline to S16 because `amem` hardcodes S16N and ignores the requested fourcc, FFmpeg widens it to packed S24 — and `MiniaudioSink` gets a veto: a device that refuses `ma_format_s24` narrows it back and reopens. Negotiated once at startup and frozen, like the sample rate, because a decoder already open cannot change format. `PcmSampleFormat` stops at S24 deliberately: `OutputStage` works in float, whose mantissa is exactly 24 bits, so S32 would be a widening that quietly narrows again.
+The pipeline carries packed S24 because that is what the decoder delivers — and `MiniaudioSink` gets a veto: a device that refuses `ma_format_s24` narrows it back and reopens. Negotiated once at startup and frozen, like the sample rate, because a decoder already open cannot change format. `PcmSampleFormat` stops at S24 deliberately: `OutputStage` works in float, whose mantissa is exactly 24 bits, so S32 would be a widening that quietly narrows again.
 
 Two consequences worth knowing before touching the render path. `OutputStage`'s dither and clamp are the destination format's, not S16 constants. And `flower_audio_bridge`'s transport fade reads samples rather than bytes, so `flower_audio_bridge_create` is told the width (`bytesPerSample`, 2 or 3) and refuses any other - a format it cannot fade is one it must not render. It used to walk `int16_t*` unconditionally, which cost `MiniaudioSink` the whole native bridge at S24, i.e. cost electing FFmpeg on a phone the GC-pause resilience the bridge exists for. Changing that signature means rebuilding the vendored `libminiaudio.so`/`miniaudio.framework` binaries.
 
@@ -283,7 +286,7 @@ Column visibility/width/order persist via `ColumnManager` → `config.json`.
 
 - Compiled bindings are on by default; `MusicListView.axaml` opts out (code-behind assembled), `TrackRowControl.axaml` opts back in.
 - `Duration` column binds `Mode=OneWay` to avoid a `ConvertBack` error.
-- LibVLC callbacks arrive on background threads — marshal UI updates via `Dispatcher.UIThread.Post(...)`.
+- Decode callbacks arrive on background threads — marshal UI updates via `Dispatcher.UIThread.Post(...)`.
 
 ## Track List (`MusicListView`)
 

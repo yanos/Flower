@@ -7,19 +7,18 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Audio;
+using Flower.Audio.Ffmpeg;
 using Flower.Models;
 using Flower.Tests.TestSupport;
-
-using LibVLCSharp.Shared;
 
 using Xunit;
 
 namespace Flower.Tests;
 
-// A real TrackDecoder decoding a real HTTP stream, over a real socket.
+// A real decoder decoding a real HTTP stream, over a real socket.
 //
 // This is the layer SeekableHttpStreamTests cannot reach: that one proves the
-// stream behaves like a file, this one proves LibVLC is actually reading
+// stream behaves like a file, this one proves the decoder is actually reading
 // through it rather than opening the URL itself. The distinction is the whole
 // change - a streamed track used to be fetched by whichever HTTP access module
 // the platform had, which on iOS declared the stream unseekable and took an
@@ -28,11 +27,9 @@ namespace Flower.Tests;
 // Serving without range support is included deliberately: it is the shape that
 // reproduced the original bug, and the decoder is expected to keep playing
 // through it, because a forward-only read is all a WAV needs.
-[Trait("Category", "RequiresLibVLC")]
-[Collection("LibVLC")]
+[Trait("Category", "RequiresFfmpeg")]
 public class StreamedTrackDecodeTests : IDisposable
 {
-    private readonly LibVLC _libVLC;
     private readonly HttpListener _listener;
     private readonly string _prefix;
     private byte[] _content = [];
@@ -43,9 +40,8 @@ public class StreamedTrackDecodeTests : IDisposable
 
     public bool ServesRanges { get; set; } = true;
 
-    public StreamedTrackDecodeTests(LibVlcFixture fixture)
+    public StreamedTrackDecodeTests()
     {
-        _libVLC = fixture.LibVLC;
 
         // A port the OS picks, so concurrent test runs never collide.
         var port = FreePort();
@@ -153,7 +149,7 @@ public class StreamedTrackDecodeTests : IDisposable
     private long DecodeFully(Track track)
     {
         var ring = new GaplessRingBuffer(4 * 1024 * 1024);
-        using var decoder = new TrackDecoder(_libVLC, track, ring, NullLogger<TrackDecoder>.Instance);
+        using var decoder = new FfmpegTrackDecoder(track, ring, NullLogger<FfmpegTrackDecoder>.Instance);
 
         var drained = new ManualResetEventSlim();
         decoder.Drained += () => drained.Set();
@@ -204,7 +200,7 @@ public class StreamedTrackDecodeTests : IDisposable
     {
         var track = Serve(TimeSpan.FromSeconds(10), SyntheticWav.Ramp());
         var ring = new GaplessRingBuffer(4 * 1024 * 1024);
-        using var decoder = new TrackDecoder(_libVLC, track, ring, NullLogger<TrackDecoder>.Instance);
+        using var decoder = new FfmpegTrackDecoder(track, ring, NullLogger<FfmpegTrackDecoder>.Instance);
 
         var settled = new ManualResetEventSlim();
         var landedAt = -1L;
@@ -241,7 +237,7 @@ public class StreamedTrackDecodeTests : IDisposable
         };
 
         var ring = new GaplessRingBuffer(64 * 1024);
-        using var decoder = new TrackDecoder(_libVLC, track, ring, NullLogger<TrackDecoder>.Instance);
+        using var decoder = new FfmpegTrackDecoder(track, ring, NullLogger<FfmpegTrackDecoder>.Instance);
 
         var prepared = decoder.PrepareAsync().GetAwaiter().GetResult();
 
@@ -262,7 +258,7 @@ public class StreamedTrackDecodeTests : IDisposable
         _cutBodyAt = _content.Length / 4;
 
         var ring = new GaplessRingBuffer(8 * 1024 * 1024);
-        using var decoder = new TrackDecoder(_libVLC, track, ring, NullLogger<TrackDecoder>.Instance);
+        using var decoder = new FfmpegTrackDecoder(track, ring, NullLogger<FfmpegTrackDecoder>.Instance);
 
         var faulted = new ManualResetEventSlim();
         decoder.Faulted += () => faulted.Set();

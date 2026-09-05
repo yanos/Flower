@@ -7,7 +7,7 @@ namespace Flower.Tests;
 
 // Pure-logic coverage for the DSP core OutputStage runs inside
 // MiniaudioSink's render callback - no LibVLC/audio hardware involved, so none
-// of this needs RequiresLibVLC. GaplessAudioManagerTests covers the forwarding
+// of this needs a real decoder. GaplessAudioManagerTests covers the forwarding
 // plumbing (ApplyEqualizer reaching the sink); this file is only about
 // Equalizer's own signal math.
 //

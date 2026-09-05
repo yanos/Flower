@@ -10,7 +10,6 @@ using Flower.Audio.Ffmpeg;
 using Flower.Models;
 using Flower.Services;
 
-using LibVLCSharp.Shared;
 
 namespace Flower.DeviceChecks;
 
@@ -49,8 +48,8 @@ public static class DecodeChecks
     // before its shortfall is reported as one.
     private static readonly TimeSpan SettlePatience = TimeSpan.FromSeconds(5);
 
-    // LibVLC's own resampler can trim or pad the very edges of a track by a
-    // frame or two; a difference of more than this is a real one.
+    // A resampler can trim or pad the very edges of a track by a frame or
+    // two; a difference of more than this is a real one.
     private const int TailToleranceMs = 50;
 
     // MP3 and AAC both carry encoder delay and padding, and how much of it a
@@ -59,26 +58,25 @@ public static class DecodeChecks
     private const int LossyTailToleranceMs = 250;
 
     // One decoder, named, plus the canonical PCM format decoding through it
-    // pins the pipeline to. Both halves matter: LibVLC's amem seam cannot
-    // deliver more than 16 bits whatever it is asked for, and FFmpeg's
-    // widens the pipeline to packed 24 - so "does this platform decode a
-    // track" has a different answer per decoder, and asking it of one of
-    // them is not asking it of the other.
+    // pins the pipeline to.
+    //
+    // There is one entry in that list today, and the shape stays anyway. It is
+    // what makes "the façade did not load" a failing check instead of a
+    // shorter run - which is the failure this file exists because of, and the
+    // only reason it is per-decoder rather than a flat sequence of checks.
     public sealed record DecoderUnderTest(
         string Name,
         PcmSampleFormat Format,
         Func<Track, GaplessRingBuffer, ITrackDecoder> Create);
 
-    // Every decoder this platform can actually run. FFmpeg is absent from
-    // four of the five heads today (no built artifact), and a check suite
-    // that threw there rather than reporting what it could would be useless
-    // on exactly the platforms it exists for.
-    public static IReadOnlyList<DecoderUnderTest> AvailableDecoders(LibVLC libVlc)
+    // Every decoder this platform can actually run. An unloadable façade
+    // yields an empty list rather than an exception: what should be reported
+    // is a suite that could not check anything, which
+    // RequiredDecodersArePresent turns into a failure wherever a caller said
+    // it expected one.
+    public static IReadOnlyList<DecoderUnderTest> AvailableDecoders()
     {
-        var decoders = new List<DecoderUnderTest>
-        {
-            new("LibVLC", PcmSampleFormat.S16, (track, ring) => new TrackDecoder(libVlc, track, ring)),
-        };
+        var decoders = new List<DecoderUnderTest>();
 
         if (FfmpegDecoder.IsAvailable)
             decoders.Add(new("FFmpeg", PcmSampleFormat.S24,
@@ -89,18 +87,19 @@ public static class DecodeChecks
 
     public static IReadOnlyList<CheckResult> RunAll()
     {
-        VlcNativeSetup.Initialize();
-        using var libVlc = new LibVLC();
-
         var results = new List<CheckResult>();
 
-        // Once per decoder, rather than once. The whole suite was written
-        // against TrackDecoder by name, so electing FfmpegTrackDecoder moved
-        // the entire streaming path - open, probe, range requests, seek,
-        // fault - out from under every check here while all of them stayed
-        // green. A decoder nobody checks is a decoder nobody has checked, and
-        // the first thing that happened when one was elected is that an album
-        // played nothing on a phone.
+        // Once per decoder, rather than once. This whole loop was written when
+        // there were two, because the suite had been written against
+        // TrackDecoder by name and electing FfmpegTrackDecoder moved the
+        // entire streaming path - open, probe, range requests, seek, fault -
+        // out from under every check here while all of them stayed green. A
+        // decoder nobody checks is a decoder nobody has checked, and the first
+        // thing that happened when one was elected is that an album played
+        // nothing on a phone.
+        //
+        // LibVLC is gone and the loop is not, because the half of that lesson
+        // that still applies is about a decoder silently not being under test.
         //
         // Each decoder is told its own sample format rather than the run
         // setting the canonical one and putting it back. GaplessFormat is
@@ -108,7 +107,7 @@ public static class DecodeChecks
         // this process - and it did: two checks failed intermittently, in the
         // full suite only, for reasons that had nothing to do with what they
         // check.
-        var subjects = AvailableDecoders(libVlc);
+        var subjects = AvailableDecoders();
         results.AddRange(RequiredDecodersArePresent(subjects));
 
         foreach (var subject in subjects)
@@ -503,7 +502,7 @@ public static class DecodeChecks
             throw new CheckFailedException($"no audio at all came out before the cut ({decoder.BytesProduced} bytes decoded)");
 
         // What did arrive still has to be the real thing. A fabricated tail -
-        // LibVLC's own habit when it is handed a clean end of stream - reads
+        // what a decoder handed a clean end of stream tends to invent - reads
         // as silence or as a broken ramp.
         if (PcmOracle.IsSilent(partial))
             throw new CheckFailedException($"{partial.Length} bytes of silence before the cut");

@@ -30,8 +30,6 @@
   <ItemGroup>
     <PackageReference Include="Avalonia.Android" Version="12.1.0" />
     <PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.2.0.3" />
-    <PackageReference Include="LibVLCSharp.Avalonia" Version="3.10.0" />
-    <PackageReference Include="VideoLAN.LibVLC.Android" Version="3.6.5" />
 
     <!-- Xamarin.AndroidX.Core.SplashScreen and Avalonia.Android pull skewed
          transitive versions of Xamarin.AndroidX.Core (1.19.0.1) vs

@@ -4,6 +4,13 @@ on:
   push:
 
 jobs:
+  # Build, test and decode-check, once per desktop platform.
+  #
+  # The decode checks used to be a second job with the same three-OS matrix,
+  # duplicating this one's checkout, restore and flower-ffmpeg build, because
+  # they needed a VLC install that a package mirror could fail on its own. With
+  # LibVLC gone they are simply another filter of an assembly this job has
+  # already built, so the duplicate runner has no reason to exist.
   test:
     strategy:
       fail-fast: false
@@ -59,101 +66,39 @@ jobs:
         run: ./native/ffmpeg/windows/build.ps1
         shell: pwsh
 
-      # None of the hosted runner images ship VLC, so RequiresLibVLC-tagged
-      # tests (real-decode/native-audio coverage) don't run here - same
-      # "fast, day-to-day" filter as CLAUDE.md's local dev instructions.
+      # No filter. This used to exclude the RequiresLibVLC tests, because no
+      # hosted runner image ships VLC and installing it was flaky enough to be
+      # worth keeping out of the fast suite. There is no VLC any more: the one
+      # decoder is flower-ffmpeg, built two steps up, and everything that
+      # decodes for real needs only that.
+      #
+      # FLOWER_REQUIRE_DECODERS is what stops this going green having checked
+      # nothing. A facade that did not build, or built and would not load,
+      # otherwise just makes DecodeChecks report an empty decoder list and
+      # every check quietly not happen - which is the exact failure this whole
+      # area keeps hitting.
       - name: Run tests
-        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter "Category!=RequiresLibVLC"
-
-  decode-checks:
-    # Does each platform actually turn a track into the right audio? The rest
-    # of the suite answers that on whatever machine happens to run it; this
-    # job answers it per-OS, on the same checks Flower.DeviceChecks.iOS runs
-    # on a simulator - see Flower.DeviceChecks/DecodeChecks.cs.
-    #
-    # Its own job rather than a step in `test`, and installing VLC is why: the
-    # fast suite must not start failing because a package mirror had a bad
-    # morning.
-    name: Decode checks
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: |
-            Flower/Flower.csproj
-            Flower.Tests/Flower.Tests.csproj
-
-      # The checks decode for real, so they need the same VLC the app needs.
-      # None of the hosted images ship it.
-      #
-      # Windows is missing from this list on purpose: there is no install step
-      # that would help it. LibVLCSharp only ever looks beside the binary
-      # there, so a `choco install vlc` sat in C:\Program Files where nothing
-      # searched, and the checks failed with "Failed to load required native
-      # libraries" while VLC was installed. Windows takes its LibVLC from the
-      # VideoLAN.LibVLC.Windows package instead - see Flower.Tests.csproj -
-      # which is also how the shipping Windows app gets it.
-      - name: Install VLC (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y vlc libvlc-dev
-
-      - name: Install VLC (macOS)
-        if: runner.os == 'macOS'
-        run: brew install --cask vlc
-
-      # The checks run once per decoder this platform has, so a platform
-      # without a built façade checks LibVLC and nothing else. Building it
-      # here is what makes the FFmpeg half of the suite exist on CI at all -
-      # it is elected by real users on macOS today and had two outright
-      # playback bugs that no green run ever saw, because no green run was
-      # running it.
-      #
-      # A distro or Homebrew FFmpeg is GPL-enabled and fine here; it is not
-      # fine in anything that ships. See native/ffmpeg/README.md.
-      - name: Build flower-ffmpeg (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev libswresample-dev
-          native/ffmpeg/linux/build.sh
-
-      - name: Build flower-ffmpeg (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install ffmpeg
-          native/ffmpeg/macos/build.sh
-
-      # A downloaded LGPL build rather than a compiled one, for the reason the
-      # `test` job's copy of this step gives.
-      - name: Build flower-ffmpeg (Windows)
-        if: runner.os == 'Windows'
-        run: ./native/ffmpeg/windows/build.ps1
-        shell: pwsh
-
-      - name: Run the decode checks
-        # Named rather than left to whatever loaded, because the failure this
-        # guards against is a run that goes green having checked half of what
-        # it did yesterday: a façade that did not build, or built and would
-        # not load, otherwise just shortens the suite. All three desktops have
-        # a façade now, so all three are held to both decoders - and Windows
-        # is the one where "built and would not load" is a real possibility
-        # rather than a formality, since its FFmpeg is four DLLs beside the
-        # façade rather than a prefix the loader already knows.
         env:
-          FLOWER_REQUIRE_DECODERS: LibVLC,FFmpeg
-        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter FullyQualifiedName~DeviceChecksTests --logger "console;verbosity=detailed"
+          FLOWER_REQUIRE_DECODERS: FFmpeg
+        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release
+
+      # Flower.Desktop is the one project no test job reaches - the test jobs
+      # get to Flower/Flower.Core through Flower.Tests, and the server through
+      # its own tests - so without this nothing would ever compile it, and a
+      # project CI never compiles is a project that silently rots.
+      #
+      # It rides along in this job rather than owning one because everything
+      # it needs is already restored and built here by the time the tests have
+      # run; all that is left is the thin head itself. Linux only, and that is
+      # not a gap: Flower.Desktop targets plain net10.0, so the Windows and
+      # macOS compiles of it would be the same compile. Running it on all
+      # three would cost three times as much for no additional signal.
+      #
+      # After the tests rather than before, so a compile break in the head
+      # never delays the answer to the question this job is mostly asked.
+      - name: Build Flower.Desktop
+        if: runner.os == 'Linux'
+        run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
 
   server-test:
     runs-on: ubuntu-latest
@@ -185,33 +130,11 @@ jobs:
       - name: Run server tests
         run: dotnet test Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
 
-  # Flower.Desktop is the one project the jobs above never compile - the test
-  # jobs reach Flower/Flower.Core through Flower.Tests, and the server through
-  # its own tests. A build-only gate, deliberately: a project CI never compiles
-  # is a project that silently rots.
-  build-desktop:
-    runs-on: ubuntu-latest
-
-    steps:
-      # Full history, so MinVer sees the tags and commit height it versions
-      # these binaries from. actions/checkout defaults to depth 1, which
-      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: |
-            Flower/Flower.csproj
-            Flower.Desktop/Flower.Desktop.csproj
-
-      - name: Build Flower.Desktop
-        run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
-
-  build-ios:
+  # Both Apple heads in one job. They share a runner because the macOS
+  # runners are the scarce and expensive ones, and the second head is a few
+  # seconds of compile on top of a checkout, restore and workload install that
+  # have already been paid for.
+  build-apple:
     runs-on: macos-latest
 
     steps:
@@ -229,9 +152,10 @@ jobs:
           cache-dependency-path: |
             Flower/Flower.csproj
             Flower.iOS/Flower.iOS.csproj
+            Flower.MacOS/Flower.MacOS.csproj
 
-      - name: Install iOS workload
-        run: dotnet workload install ios
+      - name: Install iOS and macOS workloads
+        run: dotnet workload install ios macos
 
       # Build-only: Flower.Tests has no iOS-specific code, so there's nothing
       # for an on-simulator test run to exercise that this doesn't already
@@ -264,6 +188,86 @@ jobs:
       # in both directions.
       - name: Build for iOS simulator
         run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false
+
+      # Flower.MacOS is the only head that cannot be compiled anywhere but a
+      # mac, and until now nothing compiled it at all. Flower.Desktop still
+      # runs on macOS, but as plain net10.0 - which is exactly the point of
+      # this head: net10.0-macos is what puts AVKit/AppKit in reach, so every
+      # Apple-framework call in the app is code that only this build can check.
+      #
+      # No ValidateXcodeVersion=false here, deliberately, even though this head
+      # hits the same check. Flower.MacOS's TFM is unversioned (net10.0-macos),
+      # so it takes whatever macOS pack the SDK ships - 26.5 today - which wants
+      # Xcode 26.6. On iOS that check is a formality and turning it off costs
+      # nothing. Here it is load-bearing: with the check disabled the build gets
+      # as far as ILLink and fails with MM0179, needing the macOS 26.5 SDK
+      # headers for real. Disabling it would only trade a clear message for an
+      # obscure one.
+      #
+      # So this job is honest about the toolchain it needs, and if the runner's
+      # default Xcode is behind that pack it will say so out loud - which is
+      # true information, since a head that cannot be built is a head that
+      # cannot ship. It cannot be built on a developer mac one Xcode release
+      # behind either, which is how it went uncompiled long enough for CI never
+      # to have covered it.
+      - name: Build Flower.MacOS
+        run: dotnet build Flower.MacOS/Flower.MacOS.csproj --configuration Release
+
+  # The decode checks, on an actual iOS runtime.
+  #
+  # decode-checks answers "does this platform turn a track into the right
+  # audio" for the three desktops. This asks the same question of the one
+  # platform where the answer has twice been no: VLC's mp4 demuxer refusing an
+  # unseekable stream, then .NET's mobile HttpClientHandler having no
+  # synchronous path at all. Both were invisible to a green desktop suite and
+  # both were found by a person listening to a phone.
+  #
+  # Nothing here is new machinery - Flower.DeviceChecks.iOS and
+  # scripts/ios-device-checks.sh already existed and were already written to
+  # be driven by a script rather than read by a human: the app writes a
+  # transcript into its own Documents container, the script boots a simulator,
+  # installs it, waits up to 180s for a tally and turns that into an exit
+  # code. The simulator frameworks it links are committed under
+  # Flower.iOS/Frameworks/, so there is nothing for this job to install beyond
+  # the workload.
+  #
+  # It runs on every push rather than on master or a schedule. Work in this
+  # repo happens on master directly, so a branch gate would save nothing, and
+  # a check that only runs nightly finds a phone bug the morning after the
+  # commit that caused it has been built on top of.
+  ios-device-checks:
+    name: Decode checks (iOS Simulator)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower/Flower.csproj
+            Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj
+
+      - name: Install iOS workload
+        run: dotnet workload install ios
+
+      # Flower.DeviceChecks.iOS targets net10.0-ios26.0, same as Flower.iOS,
+      # so it hits the same _ValidateXcodeVersion equality check that
+      # build-apple disables - see the long note there. The script takes no
+      # build arguments, but MSBuild reads environment variables as
+      # properties, so this reaches its `dotnet build` unchanged.
+      #
+      # The script's `rm -rf obj bin` costs nothing on a fresh runner; it is
+      # there for a developer's incremental build, which reliably launches
+      # into a Mono AOT crash that reads exactly like a failing check.
+      - name: Run the decode checks on a simulator
+        env:
+          ValidateXcodeVersion: 'false'
+        run: scripts/ios-device-checks.sh
 
   build-android:
     runs-on: ubuntu-latest

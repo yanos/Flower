@@ -12,7 +12,6 @@ using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
-using LibVLCSharp.Shared;
 
 using Flower.Controls;
 using Flower.Logging;
@@ -61,7 +60,7 @@ public partial class App : Application
         // The level comes from settings.json via a deliberately minimal peek -
         // see AppSettingsStore.ReadLogFileMinimumLevel for why the full Load()
         // cannot run this early. Debug unless the user has opted into Verbose,
-        // which is what makes the per-tick Trace lines (discovery polls, LibVLC
+        // which is what makes the per-tick Trace lines (discovery polls, decoder
         // callback tracing) free rather than merely cheap.
         var logPath = AppLogging.Initialize(minimumLevel: AppSettingsStore.ReadLogFileMinimumLevel());
 
@@ -466,23 +465,15 @@ public partial class App : Application
 
     // The one platform fork the audio pipeline needs.
     //
-    // LibVLC is only needed for decode now (GaplessAudioManager's
-    // TrackDecoders) - the render sink on every platform is MiniaudioSink, a
-    // dedicated miniaudio playback device reading the shared ring buffer
-    // directly, replacing LibVlcRawStreamSink's synthetic-stream-through-
-    // LibVLC's-rawaud-demuxer approach after that proved to be the source of a
-    // real playback bug (a decode-side seek could freeze the render side solid
-    // for several seconds - see git history). Android/iOS use their vendored
-    // native miniaudio builds (native/miniaudio/android, native/miniaudio/ios)
-    // - see LibVlcRawStreamSink's own remarks for why it is kept around
-    // unreferenced rather than deleted yet.
+    // Decoding is flower-ffmpeg and rendering is MiniaudioSink, on every
+    // platform. Android and iOS use their vendored native miniaudio and
+    // flower_ffmpeg builds (native/miniaudio, native/ffmpeg); the desktops
+    // build the façade from source.
     //
-    // Neither LibVLC nor miniaudio ships a browser/WASM build (see
-    // SYNC-PLAN.md's Flower.Web section) - VlcNativeSetup.Initialize()/
-    // `new LibVLC()` would throw immediately there, so Flower.Web gets
-    // WebAudioManager instead, driving a browser <audio> element via [JSImport]
-    // rather than going through IAudioSink/GaplessCoordinator at all (see its
-    // own remarks for why).
+    // Neither of those ships a browser/WASM build (see SYNC-PLAN.md's
+    // Flower.Web section), so Flower.Web gets WebAudioManager instead, driving
+    // a browser <audio> element via [JSImport] rather than going through
+    // IAudioSink/GaplessCoordinator at all (see its own remarks for why).
     internal static void RegisterAudio(IServiceCollection services)
     {
         if (OperatingSystem.IsBrowser())
@@ -492,37 +483,28 @@ public partial class App : Application
         }
 
         services
-            .AddSingleton(sp =>
-            {
-                VlcNativeSetup.Initialize();
-                var libVLC = new LibVLC();
-                // Before anything opens a stream URL on it - see
-                // VlcCertificateDialogs for what this accepts and what it does
-                // not.
-                VlcCertificateDialogs.AnswerUnattended(libVLC);
-                VlcDiagnosticLog.Attach(libVLC, sp.GetRequiredService<ILogger<VlcDiagnosticLog>>());
-                return libVLC;
-            })
             .AddSingleton(sp => PlatformAudioManager.Current
                                 ?? new MiniaudioSink(sp.GetRequiredService<ILogger<MiniaudioSink>>()))
-            .AddSingleton<IAudioManager>(sp => new GaplessAudioManager(
-                sp.GetRequiredService<LibVLC>(),
-                sp.GetRequiredService<IAudioSink>(),
-                sp.GetRequiredService<ILogger<GaplessAudioManager>>(),
-                sp.GetRequiredService<ILogger<GaplessCoordinator>>(),
-                sp.GetRequiredService<ILogger<TrackDecoder>>(),
-                sp.GetRequiredService<ILogger<VlcDiagnosticLog>>(),
-                // Resolved here rather than persisted-and-trusted: the
-                // preference can name a decoder this platform has no artifact
-                // for, and the answer to that is LibVLC and a warning, not a
-                // silent failure to play anything. Everything that follows
-                // from the decision - the canonical sample format, the device
-                // open, which factory the coordinator uses - happens inside
-                // the constructor below, in that order.
-                DecoderElection.Resolve(
-                    sp.GetRequiredService<AppSettings>().AudioDecoder,
-                    sp.GetRequiredService<ILogger<GaplessAudioManager>>()),
-                sp.GetRequiredService<ILogger<FfmpegTrackDecoder>>()));
+            .AddSingleton<IAudioManager>(sp =>
+            {
+                // There is no second decoder to fall back to any more, so a
+                // façade that will not load is worth saying out loud once,
+                // here, rather than as an identical fault on every track. It
+                // is not fatal on purpose: browsing a library, editing tags
+                // and running a sync all still work, and refusing to start
+                // would take those away too.
+                if (!FfmpegDecoder.IsAvailable)
+                {
+                    sp.GetRequiredService<ILogger<GaplessAudioManager>>().LogCritical(
+                        "flower_ffmpeg is not loadable here, so nothing can be decoded. See native/ffmpeg/README.md");
+                }
+
+                return new GaplessAudioManager(
+                    sp.GetRequiredService<IAudioSink>(),
+                    sp.GetRequiredService<ILogger<GaplessAudioManager>>(),
+                    sp.GetRequiredService<ILogger<GaplessCoordinator>>(),
+                    sp.GetRequiredService<ILogger<FfmpegTrackDecoder>>());
+            });
     }
 
     // The composition root. Every service is registered by *type* (or by a
@@ -598,7 +580,7 @@ public partial class App : Application
         // having done this before it, not after.
         provider.GetRequiredService<SmartPlaylistRefresher>().Start();
 
-        // Resolving IAudioManager is what actually opens LibVLC/miniaudio (see
+        // Resolving IAudioManager is what actually opens the audio device (see
         // AddAudio), so it happens here rather than lazily under the first
         // ViewModel that happens to want it.
         var audioManager = provider.GetRequiredService<IAudioManager>();

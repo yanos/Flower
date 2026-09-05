@@ -281,7 +281,7 @@ public class CanonicalFormatTests
         Assert.Equal(ma_format.ma_format_s16, MiniaudioSink.MiniaudioFormatFor(PcmSampleFormat.S16));
         Assert.Equal(ma_format.ma_format_s24, MiniaudioSink.MiniaudioFormatFor(PcmSampleFormat.S24));
 
-        Assert.Equal(FfmpegSampleFormat.S16, DecoderElection.FfmpegFormatFor(PcmSampleFormat.S16));
-        Assert.Equal(FfmpegSampleFormat.S24, DecoderElection.FfmpegFormatFor(PcmSampleFormat.S24));
+        Assert.Equal(FfmpegSampleFormat.S16, FfmpegTrackDecoder.FormatFor(PcmSampleFormat.S16));
+        Assert.Equal(FfmpegSampleFormat.S24, FfmpegTrackDecoder.FormatFor(PcmSampleFormat.S24));
     }
 }

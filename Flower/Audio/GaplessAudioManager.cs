@@ -8,7 +8,6 @@ using Timer = System.Timers.Timer;
 
 using Microsoft.Extensions.Logging;
 
-using LibVLCSharp.Shared;
 
 using Flower.Audio.Ffmpeg;
 using Flower.Logging;
@@ -45,35 +44,23 @@ namespace Flower.Audio
         public event EventHandler? EndReached;
         public event EventHandler<TrackFailedEventArgs>? TrackFailed;
 
-        // libVLC is a dependency, not owned/created here, because a
-        // LibVlcRawStreamSink needs to share the exact same LibVLC core for
-        // its own render MediaPlayer - see App.axaml.cs's composition root.
         public GaplessAudioManager(
-            LibVLC libVLC,
             IAudioSink sink,
             ILogger<GaplessAudioManager> logger,
             ILogger<GaplessCoordinator>? coordinatorLogger = null,
-            ILogger<TrackDecoder>? trackDecoderLogger = null,
-            ILogger<VlcDiagnosticLog>? vlcLogger = null,
-            TrackDecoderKind decoderKind = TrackDecoderKind.LibVlc,
             ILogger<FfmpegTrackDecoder>? ffmpegDecoderLogger = null)
-            : this(StartSink(sink, decoderKind), libVLC, sink, logger, coordinatorLogger, trackDecoderLogger, vlcLogger, decoderKind, ffmpegDecoderLogger)
+            : this(StartSink(sink), sink, logger, coordinatorLogger, ffmpegDecoderLogger)
         {
         }
 
         private GaplessAudioManager(
             GaplessRingBuffer sharedRing,
-            LibVLC libVLC,
             IAudioSink sink,
             ILogger<GaplessAudioManager> logger,
             ILogger<GaplessCoordinator>? coordinatorLogger,
-            ILogger<TrackDecoder>? trackDecoderLogger,
-            ILogger<VlcDiagnosticLog>? vlcLogger,
-            TrackDecoderKind decoderKind,
             ILogger<FfmpegTrackDecoder>? ffmpegDecoderLogger)
             : this(sharedRing,
-                   new GaplessCoordinator(libVLC, sharedRing, coordinatorLogger, trackDecoderLogger, vlcLogger,
-                                          decoderKind: decoderKind, ffmpegDecoderLogger: ffmpegDecoderLogger),
+                   new GaplessCoordinator(sharedRing, coordinatorLogger, ffmpegDecoderLogger: ffmpegDecoderLogger),
                    sink, logger, sinkAlreadyStarted: true)
         {
         }
@@ -85,9 +72,16 @@ namespace Flower.Audio
         // sink's Start is also what settles the rate. Everything downstream -
         // the coordinator, its staging rings, every decoder - is built after
         // this returns.
-        private static GaplessRingBuffer StartSink(IAudioSink sink, TrackDecoderKind decoderKind)
+        private static GaplessRingBuffer StartSink(IAudioSink sink)
         {
-            GaplessFormat.ConfigureSampleFormat(DecoderElection.CanonicalFormatFor(decoderKind));
+            // S24 is simply what the decoder carries now. It used to be the
+            // result of an election - LibVLC pinned the pipeline to S16
+            // because amem hardcodes S16N and ignores the fourcc it is handed,
+            // so widening was only meaningful for the decoder that could fill
+            // the width. With one decoder left there is nothing to elect, and
+            // MiniaudioSink keeps the only vote that remains: a device that
+            // will not open at 24 bits narrows this back and reopens.
+            GaplessFormat.ConfigureSampleFormat(PcmSampleFormat.S24);
 
             // The device tells MiniaudioSink its native rate and settles the
             // sample format during Start, which is after this - so both are

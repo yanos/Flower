@@ -38,8 +38,8 @@ namespace Flower.Tests;
 // split-brain state bugs that no other test in this suite would see.
 //
 // The audio registrations are replaced with a FakeAudioManager throughout -
-// resolving the real IAudioManager calls VlcNativeSetup.Initialize() and opens
-// an actual miniaudio playback device on the test machine. Everything else,
+// resolving the real IAudioManager opens an actual miniaudio playback device
+// on the test machine. Everything else,
 // including the whole P2P sync stack, is the genuine registration: constructing
 // those services is inert, it is Start() that opens sockets and nothing here
 // calls it.

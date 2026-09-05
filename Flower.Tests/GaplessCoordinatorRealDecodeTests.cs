@@ -8,10 +8,9 @@ using System.Threading;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Audio;
+using Flower.Audio.Ffmpeg;
 using Flower.Models;
 using Flower.Tests.TestSupport;
-
-using LibVLCSharp.Shared;
 
 namespace Flower.Tests;
 
@@ -19,17 +18,15 @@ namespace Flower.Tests;
 // fixtures, captured through a FakeAudioSink - proves the actual splice at
 // a natural handover is clean (no gap, no repeated/rewound tail), which
 // GaplessCoordinatorTests (fake decoder) can't verify since it never
-// produces real PCM. Requires a real VLC install, same as TrackDecoderTests.
-[Trait("Category", "RequiresLibVLC")]
-[Collection("LibVLC")]
+// produces real PCM. Needs a built flower-ffmpeg, same as every other
+// RequiresFfmpeg test.
+[Trait("Category", "RequiresFfmpeg")]
 public class GaplessCoordinatorRealDecodeTests : IDisposable
 {
-    private readonly LibVLC _libVLC;
     private readonly string _tempDir;
 
-    public GaplessCoordinatorRealDecodeTests(LibVlcFixture fixture)
+    public GaplessCoordinatorRealDecodeTests()
     {
-        _libVLC = fixture.LibVLC;
         _tempDir = Directory.CreateTempSubdirectory("flower-coordinator-realdecode-tests-").FullName;
     }
 
@@ -39,17 +36,16 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         new() { Title = Path.GetFileName(path), Path = path, Duration = duration };
 
     // This used to be flaky/skipped, for two compounding reasons - both
-    // found and fixed via this test, not worked around here:
+    // found and fixed via this test, not worked around here. The first is now
+    // only history: two concurrent MediaPlayers on one shared LibVLC core made
+    // the current decoder's OnDrain fire only about one time in five, which was
+    // fixed by giving the armed role a second, independent core, and which
+    // stopped being anything at all when LibVLC was removed - an
+    // FfmpegTrackDecoder owns nothing another one can contend for.
     //
-    // 1. With one shared LibVLC core, two concurrent MediaPlayers (current
-    //    + armed, both SetAudioCallbacks-based) made the current decoder's
-    //    OnDrain - and even its higher-level EndReached - silently fail to
-    //    fire roughly 80% of the time. Fixed by giving the armed role its
-    //    own independent LibVLC core (see GaplessCoordinator's
-    //    _secondCore/_cores remarks) so there's no contention to lose
-    //    events over in the first place.
+    // The second outlived it, and is why this test still earns its keep:
     //
-    // 2. That fix then reliably exposed a second, genuine bug it had been
+    // 2. That fix reliably exposed a second, genuine bug it had been
     //    masking: a 1s armed track decodes fully in well under a
     //    millisecond once nothing throttles it (no real playback pacing on
     //    the decode-ahead side - see DefaultStagingCapacityBytes' remarks), so it
@@ -82,7 +78,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "b.wav", durationB, SyntheticWav.Marker(markerB)), durationB);
 
         var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
         sink.Resume();
@@ -164,10 +160,8 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var stagingCapacity = (int)GaplessFormat.SampleRate / 10 * GaplessFormat.BytesPerFrame;
         var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
         var coordinator = new GaplessCoordinator(
-            _libVLC,
             sharedRing,
             NullLogger<GaplessCoordinator>.Instance,
-            NullLogger<TrackDecoder>.Instance,
             stagingCapacityBytes: stagingCapacity);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
@@ -235,7 +229,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var track = MakeTrack(SyntheticWav.CreateFile(_tempDir, "exact.wav", duration, SyntheticWav.Ramp()), duration);
 
         var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
         sink.Resume();
@@ -276,7 +270,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "exact-b.wav", durationB, SyntheticWav.Marker(markerB)), durationB);
 
         var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
         sink.Resume();
@@ -335,7 +329,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "ramp-b.wav", duration, SyntheticWav.Ramp()), duration);
 
         var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
         sink.Resume();
@@ -372,9 +366,9 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
     }
 
     // Seek used to leave up to a full shared ring of pre-seek audio in front
-    // of the render callback, because the flush waited on LibVLC's own
-    // asynchronous OnFlush. RenderStarvationTests covers the mechanism without
-    // LibVLC; this proves the real decoder's flush and the coordinator's
+    // of the render callback, because the flush waited on the decoder's own
+    // asynchronous one. RenderStarvationTests covers the mechanism with a fake
+    // decoder; this proves the real decoder's flush and the coordinator's
     // synchronous one agree.
     [Fact]
     public void A_seek_lands_near_the_requested_offset_with_no_pre_seek_audio_after_it()
@@ -383,7 +377,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var track = MakeTrack(SyntheticWav.CreateFile(_tempDir, "seek.wav", duration, SyntheticWav.Ramp()), duration);
 
         var sharedRing = new GaplessRingBuffer(2 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
         sink.Resume();
@@ -404,10 +398,18 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // Half of four seconds is frame 96000, which the ramp renders as
         // 96000 - 65536 = 30464. The head of the track never reaches that
         // value, so its appearance is proof the seek actually landed.
+        // Captured bytes only. This used to also require
+        // CurrentTrackBytesProduced > 0 as a proxy for "the seek settled",
+        // which held only while decode was paced to real time: a decoder that
+        // finishes the whole remaining track in milliseconds drains, and the
+        // coordinator clears _current, so the counter reads 0 while the two
+        // seconds of post-seek audio it produced are still being played out.
+        // The seek having landed is proven below anyway, by the values in the
+        // ramp - which is a fact about the audio rather than about how far
+        // ahead the decoder happened to be.
         Assert.True(
             SpinWait.SpinUntil(
-                () => Math.Abs(coordinator.CurrentTrackBytesProduced) > 0
-                    && sink.CapturedCount > capturedAtSeek + (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame / 4,
+                () => sink.CapturedCount > capturedAtSeek + (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame / 4,
                 TimeSpan.FromSeconds(15)),
             "nothing played after the seek");
         sink.Pause();

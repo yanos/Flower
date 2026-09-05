@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Flower.Logging
 {
-    // A native crash (e.g. inside libvlc, loaded via VlcNativeSetup) bypasses
+    // A native crash (e.g. inside flower_ffmpeg or miniaudio) bypasses
     // AppDomain.UnhandledException entirely - it never becomes a managed
     // exception, so App.axaml.cs's existing hook never fires for it. Rather
     // than installing our own signal/SEH handlers (risking interference with

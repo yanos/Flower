@@ -15,8 +15,9 @@ namespace Flower.Logging
     // track, so that is what survives: host, path, and the `id` parameter.
     //
     // Namespace is Flower.Logging, not Flower.Core.Logging, matching the rest
-    // of this project: a Flower.Core namespace shadows LibVLCSharp's Core from
-    // inside Flower.* and breaks Core.Initialize at every call site.
+    // of this project. It originally had to be: a Flower.Core namespace
+    // shadowed LibVLCSharp's Core from inside Flower.* and broke
+    // Core.Initialize at every call site.
     public static class LogPath
     {
         public static string Short(string? path)

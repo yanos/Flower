@@ -15,8 +15,7 @@ namespace Flower.Tests;
 // streaming bug so far has been one that only the phone could see. Running
 // them here is what makes a disagreement mean "the platform", rather than
 // "nobody ran the same thing twice".
-[Trait("Category", "RequiresLibVLC")]
-[Collection("LibVLC")]
+[Trait("Category", "RequiresFfmpeg")]
 public class DeviceChecksTests
 {
     private readonly ITestOutputHelper _output;

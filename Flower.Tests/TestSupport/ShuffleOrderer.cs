@@ -23,7 +23,7 @@ namespace Flower.Tests.TestSupport;
 //
 //   for seed in 11 22 33 44 55 66 77 88 99; do
 //     FLOWER_TEST_SEED=$seed dotnet test Flower.Tests/Flower.Tests.csproj \
-//       --filter 'Category!=RequiresLibVLC'
+//       --filter 'Category!=RequiresFfmpeg'
 //   done
 //
 // Worth running after anything that touches shared test state. The first ten

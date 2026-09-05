@@ -4,8 +4,6 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
-using LibVLCSharp.Shared;
-
 using Flower.Audio.Ffmpeg;
 using Flower.Diagnostics;
 using Flower.Logging;
@@ -14,9 +12,9 @@ using Flower.Models;
 namespace Flower.Audio
 {
     // Owns the decode-ahead/handover state machine that makes track
-    // transitions sample-accurate: a "current" TrackDecoder writes directly
+    // transitions sample-accurate: a "current" decoder writes directly
     // into the shared ring buffer a render sink (IAudioSink) reads from; a
-    // "decode-ahead" TrackDecoder (armed via SetUpcoming) decodes the next
+    // "decode-ahead" decoder (armed via SetUpcoming) decodes the next
     // track into its own private staging ring the moment it's known, well
     // before it's needed. When the current decoder's drain callback fires
     // (its samples are exhausted), the armed decoder - if it's ready - is
@@ -35,8 +33,8 @@ namespace Flower.Audio
         // Generous cap so decode-ahead - which starts as soon as the current
         // track begins, not "a few seconds before it ends" - has room to run
         // well ahead of playback without unbounded memory growth. Doesn't
-        // rely on any assumption about how fast LibVLC's callback-mode
-        // decode paces itself relative to real time.
+        // rely on any assumption about how fast a decoder paces itself
+        // relative to real time.
         public static int DefaultStagingCapacityBytes =>
             60 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
 
@@ -51,27 +49,6 @@ namespace Flower.Audio
         private readonly Func<Track, GaplessRingBuffer, ITrackDecoder> _currentDecoderFactory;
         private readonly Func<Track, GaplessRingBuffer, ITrackDecoder> _armedDecoderFactory;
         private readonly object _gate = new();
-
-        // Second, independent LibVLC core used exclusively for the armed
-        // (decode-ahead) role - only non-null when constructed via the
-        // LibVLC-backed constructor below. GaplessCoordinatorRealDecodeTests
-        // proved that two MediaPlayers (current + armed, both
-        // SetAudioCallbacks-based) alive on one shared LibVLC core is enough
-        // to make the current decoder's OnDrain - and even its higher-level
-        // EndReached - silently fail to fire roughly 80% of the time, no
-        // matter how long it's given; adding diagnostic logging reliably
-        // masked the race every time, the signature of a genuine
-        // timing/scheduling issue inside LibVLC's own event dispatch under
-        // concurrent SetAudioCallbacks players, not an application-level
-        // bug. Giving the armed role a completely separate core removes that
-        // contention outright rather than trying to detect or paper over it
-        // with a coarser timeout. _currentCoreIndex/_cores below make
-        // current and armed always land on different cores even as their
-        // roles swap across repeated handovers (see Play/SetUpcoming/the
-        // promotion branch of HandleDrainedOrFaulted).
-        private readonly LibVLC? _secondCore;
-        private readonly LibVLC[]? _cores;
-        private int _currentCoreIndex;
 
         private ITrackDecoder? _current;
         private string? _currentPath;
@@ -155,45 +132,30 @@ namespace Flower.Audio
         // the armed track, or stop) is identical; only the reporting differs.
         public event Action<Track>? TrackFailed;
 
+        // Current and armed share one factory, and there is nothing to
+        // isolate them from: an FfmpegTrackDecoder owns a plain
+        // AVFormatContext and a decode thread of its own, so two of them alive
+        // at once share no state at all.
+        //
+        // This used to be two constructors and a second, independent LibVLC
+        // core, because two SetAudioCallbacks MediaPlayers on one core made
+        // the current decoder's OnDrain silently fail to fire about 80% of the
+        // time - and adding logging masked it every time, the signature of a
+        // race inside LibVLC's own event dispatch rather than an application
+        // bug. All of that machinery, and the core-index bookkeeping that kept
+        // current and armed on opposite cores across repeated handovers, went
+        // out with LibVLC itself.
         public GaplessCoordinator(
-            LibVLC libVLC,
             GaplessRingBuffer sharedRing,
             ILogger<GaplessCoordinator>? logger = null,
-            ILogger<TrackDecoder>? trackDecoderLogger = null,
-            ILogger<VlcDiagnosticLog>? vlcLogger = null,
             int stagingCapacityBytes = 0,
-            TrackDecoderKind decoderKind = TrackDecoderKind.LibVlc,
             ILogger<FfmpegTrackDecoder>? ffmpegDecoderLogger = null)
-            : this(sharedRing, (track, ring) => new TrackDecoder(libVLC, track, ring, trackDecoderLogger), logger, stagingCapacityBytes)
+            : this(sharedRing,
+                   (track, ring) => new FfmpegTrackDecoder(track, ring, ffmpegDecoderLogger),
+                   logger,
+                   stagingCapacityBytes)
         {
-            if (decoderKind == TrackDecoderKind.Ffmpeg)
-            {
-                // No second core, and none of what it is for. The contention
-                // documented in this class's remarks is between two
-                // SetAudioCallbacks MediaPlayers on one LibVLC core; an
-                // FfmpegTrackDecoder owns a plain AVFormatContext and a thread
-                // of its own, so current and armed share nothing at all and
-                // there is nothing to isolate them from. The LibVLC handed in
-                // is still the process's, still used by everything else that
-                // wants one - it simply does no decoding this session.
-                _currentDecoderFactory = (track, ring) => new FfmpegTrackDecoder(track, ring, ffmpegDecoderLogger);
-                _armedDecoderFactory = _currentDecoderFactory;
-                logger?.LogInformation("Decoding through flower-ffmpeg at {Format}", GaplessFormat.SampleFormat);
-                return;
-            }
-
-            _secondCore = new LibVLC();
-            // The armed role's core is a second, independent LibVLC (see this
-            // class's remarks), so it needs the dialog handlers set on it too -
-            // it is the one that opens the *next* track's URL, which is exactly
-            // where a certificate question would appear and stall a handover.
-            // Same for its log: a handover that fails to open the next track
-            // fails on this core, not the one App.axaml.cs attached.
-            VlcCertificateDialogs.AnswerUnattended(_secondCore);
-            VlcDiagnosticLog.Attach(_secondCore, vlcLogger);
-            _cores = [libVLC, _secondCore];
-            _currentDecoderFactory = (track, ring) => new TrackDecoder(_cores[_currentCoreIndex], track, ring, trackDecoderLogger);
-            _armedDecoderFactory = (track, ring) => new TrackDecoder(_cores[1 - _currentCoreIndex], track, ring, trackDecoderLogger);
+            logger?.LogInformation("Decoding through flower-ffmpeg at {Format}", GaplessFormat.SampleFormat);
         }
 
         // Lets tests substitute a fake ITrackDecoder to exercise this
@@ -417,11 +379,6 @@ namespace Flower.Audio
                 _current?.Retire();
                 if (!preserveTail)
                     _sharedRing.Reset();
-
-                // Hard reset always lands "current" back on core 0
-                // deterministically, matching a fresh Play() discarding
-                // everything armed - see the dual-core remarks above.
-                _currentCoreIndex = 0;
 
                 var decoder = _currentDecoderFactory(track, _sharedRing);
                 decoder.Drained += () => HandleDrainedOrFaulted(decoder, faulted: false);
@@ -799,13 +756,6 @@ namespace Flower.Audio
                     _currentTrackReadSplit = _sharedRing.TotalBytesWritten;
                     promotedAlreadyDrained = _armedAlreadyDrained;
 
-                    // The promoted decoder was created via
-                    // _armedDecoderFactory, which always targets the OTHER
-                    // core from whatever _currentCoreIndex was at the time -
-                    // flipping it here keeps that invariant true for
-                    // whatever gets armed next (see dual-core remarks above).
-                    _currentCoreIndex = 1 - _currentCoreIndex;
-
                     // Wired again here (harmless no-op if it never fires,
                     // e.g. when promotedAlreadyDrained is true below) for
                     // the normal case: a promoted decoder that's still
@@ -1002,8 +952,6 @@ namespace Flower.Audio
                 _current = null;
                 PublishCurrent();
             }
-
-            _secondCore?.Dispose();
         }
     }
 }

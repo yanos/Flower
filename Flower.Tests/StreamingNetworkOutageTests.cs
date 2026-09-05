@@ -8,35 +8,30 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Audio;
+using Flower.Audio.Ffmpeg;
 using Flower.Models;
 using Flower.Tests.TestSupport;
 
-using LibVLCSharp.Shared;
-
 namespace Flower.Tests;
 
-// Real TrackDecoder/GaplessCoordinator decoding audio served over an actual
+// A real decoder and GaplessCoordinator decoding audio served over an actual
 // HTTP connection (FakePeerHttpServer), rather than a local file - the same
-// "://" FromLocation path TrackDecoder.EnsureMedia takes for a synced peer's
-// stream URL (OpenSubsonicClient.GetStreamUrl) or a content:// Android URI.
-// TrackDecoderTests/GaplessCoordinatorRealDecodeTests already cover local-
-// file decode in depth; what's new here is real socket-level failure modes a
+// path a synced peer's stream URL (OpenSubsonicClient.GetStreamUrl) takes.
+// GaplessCoordinatorRealDecodeTests and FfmpegTrackDecoderTests already cover
+// local-file decode in depth; what's new here is real socket-level failure modes a
 // local file can never produce - a peer that's simply not there, and one
 // that drops the connection partway through - proving the gapless pipeline
 // settles (Faulted/Drained/EndReached) instead of hanging, and that
 // GaplessCoordinator still promotes whatever's armed next exactly as it does
-// for a track that ends normally. Requires a real VLC install, same as every
-// other RequiresLibVLC test.
-[Trait("Category", "RequiresLibVLC")]
-[Collection("LibVLC")]
+// for a track that ends normally. Needs a built flower-ffmpeg, same as every
+// other RequiresFfmpeg test.
+[Trait("Category", "RequiresFfmpeg")]
 public class StreamingNetworkOutageTests : IDisposable
 {
-    private readonly LibVLC _libVLC;
     private readonly string _tempDir;
 
-    public StreamingNetworkOutageTests(LibVlcFixture fixture)
+    public StreamingNetworkOutageTests()
     {
-        _libVLC = fixture.LibVLC;
         _tempDir = Directory.CreateTempSubdirectory("flower-streaming-outage-tests-").FullName;
     }
 
@@ -83,7 +78,7 @@ public class StreamingNetworkOutageTests : IDisposable
         var bytes = SyntheticWav.Build(duration, SyntheticWav.Marker(0x11));
         using var server = ServeWholeFile(bytes);
         var ring = new GaplessRingBuffer(BytesFor(duration) + 4096);
-        var decoder = new TrackDecoder(_libVLC, MakeTrack($"http://127.0.0.1:{server.Port}/track.wav", duration), ring);
+        var decoder = new FfmpegTrackDecoder(MakeTrack($"http://127.0.0.1:{server.Port}/track.wav", duration), ring);
 
         var drained = false;
         decoder.Drained += () => drained = true;
@@ -101,7 +96,7 @@ public class StreamingNetworkOutageTests : IDisposable
     {
         var unboundPort = FakePeerHttpServer.GetUnboundPort();
         var ring = new GaplessRingBuffer(65536);
-        var decoder = new TrackDecoder(_libVLC, MakeTrack($"http://127.0.0.1:{unboundPort}/track.wav", TimeSpan.FromSeconds(1)), ring);
+        var decoder = new FfmpegTrackDecoder(MakeTrack($"http://127.0.0.1:{unboundPort}/track.wav", TimeSpan.FromSeconds(1)), ring);
 
         var faulted = false;
         decoder.Faulted += () => faulted = true;
@@ -130,7 +125,7 @@ public class StreamingNetworkOutageTests : IDisposable
         var bytes = SyntheticWav.Build(duration, SyntheticWav.Marker(0x22));
         using var server = ServeThenDropConnection(bytes, fractionBeforeDrop: 0.3);
         var ring = new GaplessRingBuffer(BytesFor(duration) + 4096);
-        var decoder = new TrackDecoder(_libVLC, MakeTrack($"http://127.0.0.1:{server.Port}/track.wav", duration), ring);
+        var decoder = new FfmpegTrackDecoder(MakeTrack($"http://127.0.0.1:{server.Port}/track.wav", duration), ring);
 
         var settled = false;
         decoder.Drained += () => settled = true;
@@ -163,7 +158,7 @@ public class StreamingNetworkOutageTests : IDisposable
         var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "b.wav", durationB, SyntheticWav.Marker(0x44)), durationB);
 
         var sharedRing = new GaplessRingBuffer(8 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        var coordinator = new GaplessCoordinator(_libVLC, sharedRing, NullLogger<GaplessCoordinator>.Instance, NullLogger<TrackDecoder>.Instance);
+        var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
 
         // A queue of every settle event, not a "last track seen" field,
         // and both events rather than only EndReached. Two races made the

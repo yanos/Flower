@@ -229,6 +229,25 @@ namespace Flower.Audio
             }
         }
 
+        // Wakes a parked Write so it re-checks its abandoned predicate now
+        // rather than on its next 20ms turn, without touching what is
+        // buffered.
+        //
+        // The distinction from ResetTarget below is the whole point. A
+        // retiring decoder wants its own thread to stop; it does not want the
+        // audio it has already handed over to be thrown away, and when the
+        // target is the shared ring that audio is the part of the track the
+        // listener has not heard yet. Discarding a flush's worth of it is a
+        // decision only the coordinator is in a position to make, and it makes
+        // it directly - see the _sharedRing.Reset() calls in Play and Stop.
+        public void Wake()
+        {
+            lock (_gate)
+            {
+                Monitor.PulseAll(_gate);
+            }
+        }
+
         // Discards whatever is buffered in the current target - a flush or
         // seek, which also makes any parked Write drop the rest of its
         // pre-flush chunk (see Write).

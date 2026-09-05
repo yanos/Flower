@@ -167,7 +167,7 @@ namespace Flower.Persistence
 
         // The floor for what reaches the log at all, as opposed to LogMinimumLevel
         // above, which only filters what an already-written entry shows as. Debug
-        // by default: the per-tick lines (discovery polls every 5s, LibVLC
+        // by default: the per-tick lines (discovery polls every 5s, decoder
         // callback tracing) sit at Verbose so they are not written unless someone
         // is actually chasing a bug. Raising this to Verbose is the "turn the
         // noise on" switch; read at startup by App.axaml.cs, so it takes effect
@@ -193,29 +193,6 @@ namespace Flower.Persistence
         // be overridden by hand-editing settings.json. Applied at startup in
         // App.axaml.cs the same way the equalizer is.
         public AudioTimingSettings AudioTiming { get; set; } = new();
-
-        // Which decoder turns a file into PCM - see DecoderElection, and
-        // docs/AUDIOPHILE-PLAN.md for why there are two.
-        //
-        // FFmpeg by default, which is what carries more than 16 bits: LibVLC's
-        // amem seam truncates every track whatever format is asked of it, so
-        // defaulting to it means defaulting to a ceiling nobody chose. All
-        // five heads have a built artifact now (native/ffmpeg/README.md), and
-        // a head that turns out not to - or one whose façade will not load -
-        // is not a failure but a fallback: DecoderElection returns LibVlc and
-        // says so in the log.
-        //
-        // Still hand-edited rather than given a picker in Settings. The old
-        // reason was that the choice resolved one way everywhere but macOS,
-        // which is no longer true; the remaining one is that it is a question
-        // about decoders, and the listener this app is for has no way to
-        // answer it. FLOWER_DECODER overrides it per run for an A/B, and is
-        // also how a bad session is recovered without editing this file back.
-        //
-        // Read once, at startup: the format the whole pipeline carries follows
-        // from this, and nothing downstream of a running decoder can change
-        // format.
-        public TrackDecoderKind AudioDecoder { get; set; } = TrackDecoderKind.Ffmpeg;
     }
 
     public class ColumnState

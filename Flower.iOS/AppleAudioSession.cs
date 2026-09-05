@@ -49,8 +49,8 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
 
     // Injected, not fetched from AppLogging: this is an ordinary instance class
     // with a constructor, and AppLogging is the hatch for the cases that have
-    // nowhere to inject into - static classes (VlcNativeSetup) and
-    // UnmanagedCallersOnly callbacks (BonjourMdnsBackend). AppDelegate can't
+    // nowhere to inject into - UnmanagedCallersOnly callbacks
+    // (BonjourMdnsBackend). AppDelegate can't
     // supply a logger itself, since it runs before the container exists, so it
     // registers a PlatformAudioSession.Factory and the composition root calls
     // it once logging is up.

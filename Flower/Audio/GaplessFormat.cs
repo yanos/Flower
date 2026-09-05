@@ -13,12 +13,11 @@ namespace Flower.Audio
     // - The sample rate comes from the output device, so the endpoint's own
     //   rate is the pipeline's and nothing resamples on the way out.
     // - The sample format comes from the *decoder*, capped by what the device
-    //   would open with. That is the direction it has to run: LibVLC's amem
-    //   module hardcodes S16N and never reads back the requested fourcc at all
-    //   (the fix landed in the 4.0 line and was never backported to the 3.0.x
-    //   every VideoLAN.LibVLC.* package here bundles), so a pipeline carrying
-    //   24 bits over the LibVLC decoder would be carrying eight zeroes. See
-    //   DecoderElection, which is what picks both.
+    //   would open with. That is the direction it has to run, and it is the
+    //   whole reason flower-ffmpeg exists: LibVLC's amem module hardcodes S16N
+    //   and never reads back the requested fourcc at all, so a pipeline
+    //   carrying 24 bits over it would have been carrying eight zeroes and
+    //   calling it hi-res.
     //
     // Frozen rather than merely defaulted: a decoder already open cannot
     // change format, so a device change mid-session keeps the negotiated one.

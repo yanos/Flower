@@ -227,9 +227,8 @@ namespace Flower.Audio
         // miniaudio, visible via otool -L), yet the managed DllImport
         // still threw DllNotFoundException - .NET's iOS interpreter
         // resolves P/Invokes via its own dlopen-by-string lookup, which
-        // never tried this path. Mirrors VlcNativeSetup.cs's Linux
-        // DllImportResolver (libvlc -> libvlc.so.5) for exactly the same
-        // reason: the default probing doesn't know the real on-disk name.
+        // never tried this path. The default probing doesn't know the real
+        // on-disk name.
         static MiniaudioSink()
         {
             if (OperatingSystem.IsIOS())
@@ -605,11 +604,10 @@ namespace Flower.Audio
             var result = ma.device_init(_context, &config, device);
 
             // The one place the device gets a say in the sample format. It is
-            // asked for whatever the elected decoder can deliver (see
-            // DecoderElection), and a refusal here is what says the pipeline
-            // has to narrow back to S16 - which is a real answer rather than a
-            // failure, because every decoder can produce S16 and every device
-            // takes it.
+            // asked for the 24 bits the decoder carries, and a refusal here is
+            // what says the pipeline has to narrow back to S16 - which is a
+            // real answer rather than a failure, because the decoder can
+            // produce S16 and every device takes it.
             //
             // Only on the first open, and only downward. Later reopens keep
             // the negotiated format for the same reason they keep the

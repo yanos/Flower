@@ -28,10 +28,9 @@ namespace Flower.Audio.Ffmpeg
     // than performed on the caller's, because one FFmpeg decoder belongs to
     // one thread - but the correlation problem is gone, not merely handled.
     //
-    // Delivers GaplessFormat's canonical PCM, same as TrackDecoder, so it
-    // drops into the existing pipeline unchanged - but unlike TrackDecoder it
-    // can actually fill it: electing this decoder is what widens that format
-    // to 24 bits in the first place (see DecoderElection), and the request
+    // Delivers GaplessFormat's canonical PCM. That format is 24 bits because
+    // this decoder can fill it - the LibVLC decoder it replaced could not,
+    // whatever it was asked for, which is why it is gone - and the request
     // below is what asks the façade for them. Choosing the *source's* own rate
     // and channel layout as well - no resample at all - is direct mode's job
     // and needs the output device to have agreed to it first; see
@@ -168,7 +167,7 @@ namespace Flower.Audio.Ffmpeg
                 _remoteStream.ProbeAsync(cancellationToken).GetAwaiter().GetResult();
                 _decoder = FfmpegDecoder.OpenStream(
                     _remoteStream,
-                    DecoderElection.FfmpegFormatFor(_sampleFormat),
+                    FormatFor(_sampleFormat),
                     (int)GaplessFormat.SampleRate,
                     (int)GaplessFormat.Channels,
                     DemuxerHintFor(Track),
@@ -178,7 +177,7 @@ namespace Flower.Audio.Ffmpeg
             {
                 _decoder = FfmpegDecoder.OpenPath(
                     path,
-                    DecoderElection.FfmpegFormatFor(_sampleFormat),
+                    FormatFor(_sampleFormat),
                     (int)GaplessFormat.SampleRate,
                     (int)GaplessFormat.Channels);
             }
@@ -195,6 +194,13 @@ namespace Flower.Audio.Ffmpeg
         // So an unprepared start opens on the decode thread rather than here:
         // this runs under GaplessCoordinator's lock, and opening a remote
         // track is a network round trip.
+        // What the façade is asked to hand back for a given pipeline format.
+        // This used to live next to the decoder election, so the mapping
+        // between the pipeline's format and FFmpeg's own sat beside the choice
+        // that produced it; with one decoder left it belongs to the decoder.
+        public static FfmpegSampleFormat FormatFor(PcmSampleFormat format) =>
+            format == PcmSampleFormat.S24 ? FfmpegSampleFormat.S24 : FfmpegSampleFormat.S16;
+
         public void StartDecoding()
         {
             if (Interlocked.Exchange(ref _started, 1) == 1)
@@ -389,10 +395,23 @@ namespace Flower.Audio.Ffmpeg
 
             _logger?.LogTrace("Retire() for {Path}", LogPath.Short(Track.Path));
 
-            // Unblocks a decode thread parked on a full ring, which the
-            // retire predicate alone cannot do - it is only consulted between
-            // waits, and a wait it never leaves is never between them.
-            _writer.ResetTarget();
+            // Wakes a decode thread parked on a full ring so it notices the
+            // retirement now rather than up to 20ms from now.
+            //
+            // This used to call ResetTarget, which also emptied the ring - and
+            // when a track ends naturally that ring is the shared one, holding
+            // every sample decoded ahead of the render callback. So the tail
+            // of every track was discarded at the moment its decode finished:
+            // up to a full shared ring of audio, which is where the "decoder
+            // completed while N ms of PCM remains buffered" warning in
+            // GaplessCoordinator was pointing all along. A one-second fixture
+            // decodes in about 13ms, so it lost the entire track and rendered
+            // a single 4096-byte buffer.
+            //
+            // Nothing needed the reset even to unblock the thread: Write parks
+            // on Monitor.Wait(_gate, 20), so it re-checks the predicate every
+            // 20ms regardless.
+            _writer.Wake();
 
             var thread = _thread;
             var decoder = _decoder;

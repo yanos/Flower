@@ -63,8 +63,7 @@ namespace Flower.Audio.Ffmpeg
             // resolves a P/Invoke by dlopen-ing the DllImport string, which
             // matches nothing here even though the app's own load commands
             // name the framework. MiniaudioSink's static constructor says the
-            // same thing about the same failure, and VlcNativeSetup's Linux
-            // resolver about the same one again.
+            // same thing about the same failure.
             if (OperatingSystem.IsIOS())
             {
                 var framework = Path.Combine(AppContext.BaseDirectory, "Frameworks", "flower_ffmpeg.framework", "flower_ffmpeg");

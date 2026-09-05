@@ -20,8 +20,8 @@ namespace Flower.Tests;
 
 // Full pipeline, real orchestration end to end: PlaylistControlViewModel +
 // CurrentlyPlayingControlViewModel -> GaplessAudioManager -> GaplessCoordinator
-// -> ITrackDecoder -> IAudioSink. Uses FakeTrackDecoder (not real LibVLC
-// decode) rather than LibVlcFixture - GaplessCoordinatorRealDecodeTests
+// -> ITrackDecoder -> IAudioSink. Uses FakeTrackDecoder rather than real
+// decode - GaplessCoordinatorRealDecodeTests
 // already proved real PCM splices cleanly at the coordinator level when it
 // isn't hitting the real-decode concurrency race tracked separately (see
 // its Skip comment); this layer's job is to prove the ORCHESTRATION above
