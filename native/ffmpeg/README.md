@@ -84,6 +84,39 @@ The version floor is FFmpeg 5.1 - where `AVChannelLayout` and
 version of the one machine this was first built on, and it kept the Linux
 build from finding Ubuntu 24.04's FFmpeg 6 at all.
 
+## Building for Windows
+
+```
+native/ffmpeg/windows/build.ps1
+```
+
+Windows is the one platform with nothing to find: no distro package, no
+MacPorts, and no pkg-config to ask either. It is also the one platform where
+cross-compiling FFmpeg would buy nothing, because FFmpeg publishes Windows
+builds and the LGPL variant of them is already configured the way Flower needs
+- no `--enable-gpl`, no `--enable-nonfree` - and ships the libraries as
+separate DLLs, which is the same replaceable shape the licence obligation
+takes on macOS and Linux. So the script downloads one rather than building it:
+a pinned, checksummed BtbN autobuild, unpacked into `windows/ffmpeg/`, which
+`CMakeLists.txt` finds through `FLOWER_FFMPEG_PREFIX` instead of pkg-config -
+MSVC import libraries in `lib/`, headers in `include/`.
+
+Five DLLs come out rather than one. `flower_ffmpeg.dll` imports avformat,
+avcodec, avutil and swresample, so the script copies those four into
+`native/ffmpeg/artifacts/windows/` beside it; `FfmpegNative.Resolve` loads the
+façade by full path and Windows then searches that directory for its
+dependencies. avdevice, avfilter and swscale are in the download and are
+deliberately not linked.
+
+`-Prefix` takes an FFmpeg of your own instead, for a bisect against a
+differently-built one - the build-time counterpart to `FLOWER_FFMPEG`.
+
+Two things this does not do yet. Nothing copies those DLLs into a packaged
+Windows app, so a shipping build still has that step to grow. And the
+downloaded build is FFmpeg's full LGPL set - avcodec alone is 70MB - where the
+mobile builds are `--disable-everything` plus a list; trimming it is a
+packaging question, not a development one.
+
 ## Building for iOS
 
 ```
@@ -156,7 +189,7 @@ and waiting rather than shipped.
 
 ## Platform status
 
-Four of the five heads are built. The same source and the same `CMakeLists.txt`
+All five heads are built. The same source and the same `CMakeLists.txt`
 are meant to serve all of them, but "meant to" is not "does", and the plan doc
 is explicit that this decoder must not be described as cross-platform until
 each artifact is built, packaged and tested on real hardware:
@@ -165,20 +198,27 @@ each artifact is built, packaged and tested on real hardware:
 |---|---|---|
 | macOS | `libflower_ffmpeg.dylib` | Built and tested against MacPorts FFmpeg, and elected in real listening; built and checked on CI |
 | Linux | `libflower_ffmpeg.so` | `linux/build.sh` written and wired into CI; the first CI run is what proves it - it has never been built on a Linux machine here |
-| Windows | `flower_ffmpeg.dll` | Unbuilt; needs an FFmpeg build and an import-lib route |
+| Windows | `flower_ffmpeg.dll` | Built on CI against a pinned LGPL FFmpeg download, and required there; never built or listened to on a Windows machine here |
 | Android | `libflower_ffmpeg.so` per ABI | Built for arm64-v8a, armeabi-v7a and x86_64, and packaged into the APK. Never run on a device or emulator - Android has no device-checks head |
 | iOS | `flower_ffmpeg.framework` per slice | Built; all 70 FFmpeg decode checks pass on the simulator, and elected on a physical device via `FLOWER_DECODER=ffmpeg` |
 
 ## On CI
 
-Both the `test` and `decode-checks` jobs build the façade on Linux and macOS,
-so the FFmpeg decoder is exercised there rather than only on the one developer
-machine that happens to have built it. `decode-checks` additionally sets
-`FLOWER_REQUIRE_DECODERS=LibVLC,FFmpeg`, which turns a decoder the platform
-turns out not to have into a failing check rather than a shorter run - the
-checks loop over the decoders that loaded, so a façade that quietly stopped
-building would otherwise present as a green run that checked half as much.
-Windows requires only LibVLC, having no façade yet.
+Both the `test` and `decode-checks` jobs build the façade on all three
+desktops, so the FFmpeg decoder is exercised there rather than only on the one
+developer machine that happens to have built it. `decode-checks` additionally
+sets `FLOWER_REQUIRE_DECODERS=LibVLC,FFmpeg`, which turns a decoder the
+platform turns out not to have into a failing check rather than a shorter run
+- the checks loop over the decoders that loaded, so a façade that quietly
+stopped building would otherwise present as a green run that checked half as
+much.
+
+Windows is the interesting one of the three: it is the only platform whose
+FFmpeg is four loose DLLs next to the façade rather than a prefix the loader
+already knows about, so "built, and would not load" is a real outcome there
+rather than a formality, and requiring FFmpeg is what makes it a red run
+instead of half a suite. It is also the only desktop nobody here can build on,
+which makes CI not the confirmation but the first proof.
 
 Neither mobile head is on CI. Android and iOS follow `native/miniaudio/`'s
 precedent instead - build scripts here, binaries checked in beside the platform

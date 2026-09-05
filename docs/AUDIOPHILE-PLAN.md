@@ -506,7 +506,8 @@ being found and not.
 
 Both CI jobs now build the façade on Linux and macOS, so the `RequiresFfmpeg`
 tests and the FFmpeg decode checks run on two platforms per push instead of
-zero. Windows still has no façade and filters those tests out by name.
+zero. Windows still has no façade and filters those tests out by name - which
+stopped being true later, see "Windows, by not building FFmpeg at all".
 
 The guard matters as much as the build. The checks loop over the decoders that
 loaded, so a façade that stopped building would not fail - it would shorten the
@@ -656,6 +657,40 @@ FFmpeg build and an import-lib route, and neither mobile head has a decode
 check running on real hardware. Until then the decoder is macOS, Linux, iOS and
 Android, honestly labelled as such in `native/ffmpeg/README.md`'s table, and
 `TrackDecoder` remains the default.
+
+### Windows, by not building FFmpeg at all
+
+The fifth head took the opposite decision to the other four: it downloads its
+FFmpeg. Windows is the only platform with nothing to find - no distro package,
+no MacPorts, and no `pkg-config` to ask either - but it is also the only one
+where cross-compiling buys nothing, because FFmpeg publishes Windows builds and
+the **LGPL** variant of them is configured exactly as Flower needs (no
+`--enable-gpl`, no `--enable-nonfree`, verified in the configuration string
+baked into the DLLs) and ships the libraries as separate, replaceable DLLs -
+the same shape the obligation already takes on macOS and Linux. Spending tens
+of minutes of every CI run reproducing that would be ceremony, not rigour.
+`windows/build.ps1` therefore fetches a pinned, checksummed autobuild, and
+`CMakeLists.txt` grows an MSVC branch that takes a prefix through
+`FLOWER_FFMPEG_PREFIX` instead of asking pkg-config. The header already said
+`__declspec(dllexport)`, and the façade's C is portable enough that MSVC needed
+nothing else.
+
+Five DLLs come out rather than one - the façade plus the four it imports - and
+that is the interesting risk here. On every other desktop FFmpeg lives somewhere
+the loader already knows; on Windows it is four loose files next to the façade,
+resolved because `FfmpegNative.Resolve` loads by full path and Windows then
+searches that file's own directory. "Built, and would not load" is a real
+outcome rather than a formality, which is why `decode-checks` now requires
+`LibVLC,FFmpeg` on all three desktops: it makes that a red run instead of half
+a suite. The `test` job stops filtering `RequiresFfmpeg` out on Windows for the
+same reason.
+
+None of this has run on a Windows machine. There is no Windows machine here,
+so unlike every other platform in this document the first CI run is not the
+confirmation of a local build - it is the only evidence there has ever been.
+And a packaged Windows app still has nowhere to get those DLLs from: the build
+puts them in `native/ffmpeg/artifacts/windows/`, and copying them into a
+publish output is work nobody has done.
 
 ## 6. True sample-accurate gapless — Done
 

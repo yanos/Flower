@@ -33,8 +33,9 @@ jobs:
 
       # The RequiresFfmpeg tests fail rather than skip without the façade -
       # deliberately, since a decoder silently not under test is the failure
-      # mode this whole area keeps hitting - so the platforms that can build
-      # it build it, and the one that cannot filters those tests out by name.
+      # mode this whole area keeps hitting - so every platform builds it. That
+      # is new for Windows, which used to filter those tests out by name for
+      # want of a façade to run them against.
       - name: Build flower-ffmpeg (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -48,11 +49,21 @@ jobs:
           brew install ffmpeg
           native/ffmpeg/macos/build.sh
 
+      # Windows has neither an FFmpeg to find nor a pkg-config to ask, so its
+      # script downloads a published LGPL build instead of compiling one - see
+      # native/ffmpeg/windows/build.ps1. That is why this step is a one-liner
+      # where the mobile equivalents would be tens of minutes, and why the
+      # RequiresFfmpeg tests are no longer filtered out below.
+      - name: Build flower-ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: ./native/ffmpeg/windows/build.ps1
+        shell: pwsh
+
       # None of the hosted runner images ship VLC, so RequiresLibVLC-tagged
       # tests (real-decode/native-audio coverage) don't run here - same
       # "fast, day-to-day" filter as CLAUDE.md's local dev instructions.
       - name: Run tests
-        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter "${{ runner.os == 'Windows' && 'Category!=RequiresLibVLC&Category!=RequiresFfmpeg' || 'Category!=RequiresLibVLC' }}"
+        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter "Category!=RequiresLibVLC"
 
   decode-checks:
     # Does each platform actually turn a track into the right audio? The rest
@@ -124,14 +135,24 @@ jobs:
           brew install ffmpeg
           native/ffmpeg/macos/build.sh
 
+      # A downloaded LGPL build rather than a compiled one, for the reason the
+      # `test` job's copy of this step gives.
+      - name: Build flower-ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: ./native/ffmpeg/windows/build.ps1
+        shell: pwsh
+
       - name: Run the decode checks
         # Named rather than left to whatever loaded, because the failure this
         # guards against is a run that goes green having checked half of what
         # it did yesterday: a façade that did not build, or built and would
-        # not load, otherwise just shortens the suite. Windows has no façade
-        # yet, so it requires only LibVLC.
+        # not load, otherwise just shortens the suite. All three desktops have
+        # a façade now, so all three are held to both decoders - and Windows
+        # is the one where "built and would not load" is a real possibility
+        # rather than a formality, since its FFmpeg is four DLLs beside the
+        # façade rather than a prefix the loader already knows.
         env:
-          FLOWER_REQUIRE_DECODERS: ${{ runner.os == 'Windows' && 'LibVLC' || 'LibVLC,FFmpeg' }}
+          FLOWER_REQUIRE_DECODERS: LibVLC,FFmpeg
         run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release --filter FullyQualifiedName~DeviceChecksTests --logger "console;verbosity=detailed"
 
   server-test:

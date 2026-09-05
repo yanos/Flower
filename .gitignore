@@ -493,9 +493,11 @@ native/ffmpeg/*/build/
 native/ffmpeg/artifacts/
 
 # FFmpeg's own source and the static prefixes the mobile build-ffmpeg.sh
-# scripts cross-compile it into. Not checked in: it is 40MB of upstream tarball
-# and a build tree that the scripts reproduce from a version number, and the
-# thing worth committing - the binary it ends up inside - lives in
+# scripts cross-compile it into, and on Windows the published FFmpeg build
+# windows/build.ps1 downloads. Not checked in: tens of MB that a script
+# reproduces from a version number and a checksum, and the thing worth
+# committing - the binary it ends up inside, or beside - lives in
 # Flower.iOS/Frameworks/ and Flower.Android/libs/.
 native/ffmpeg/ios/ffmpeg/
 native/ffmpeg/android/ffmpeg/
+native/ffmpeg/windows/ffmpeg/

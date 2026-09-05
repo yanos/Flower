@@ -20,7 +20,7 @@ namespace Flower.Audio
         // flower-ffmpeg. Carries 24 bits, does its own demuxing, and answers a
         // seek with where it landed rather than making the caller correlate
         // callbacks after the fact - on every platform with a built artifact,
-        // which is now all of them but Windows (native/ffmpeg/README.md).
+        // which is now all five (native/ffmpeg/README.md).
         Ffmpeg,
     }
 
