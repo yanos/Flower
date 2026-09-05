@@ -614,11 +614,48 @@ phone through `Flower.iOS/deploy.sh` with `FLOWER_DECODER=ffmpeg`, and the app
 played through the FFmpeg decoder there. That is the run that matters, since
 the simulator shares this Mac's arm64 and its dynamic loader is not iOS's.
 
-What this does not do is make FFmpeg cross-platform. Windows needs an FFmpeg
-build and an import-lib route; Android needs the same cross-compile as iOS
-against the NDK. Until then the decoder is macOS, Linux and iOS, honestly
-labelled as such in `native/ffmpeg/README.md`'s table, and `TrackDecoder`
-remains the default.
+### Android, the same shape with a different compiler
+
+Android needed the identical two-step - `android/build-ffmpeg.sh` cross-compiles
+FFmpeg for `arm64-v8a`, `armeabi-v7a` and `x86_64` with the NDK's clang,
+`android/build.sh` links it into `libflower_ffmpeg.so` per ABI - and the same
+two things are load-bearing for the same reasons: an LGPL-only configure line,
+because an APK links FFmpeg in and has nothing to point at, and an export
+narrowing, spelled as an ELF version script here instead of an
+`-exported_symbols_list`. Both are derived from the header's `FLOWER_API`
+lines, so the eight-function ABI is described once and defended twice.
+
+Two things were easier than iOS and one was harder. Easier: no
+`DllImportResolver` branch, because Android's loader resolves
+`DllImport("flower_ffmpeg")` to `libflower_ffmpeg.so` in the APK unassisted -
+the same reason `libminiaudio.so` needs no help - and the `[ModuleInitializer]`
+fix iOS forced was already in place. Harder: the export check initially passed
+by reading nothing. `llvm-nm` on a stripped `.so` reports "no symbols", because
+the strip took the symtab and left only the dynamic table, so the check that
+exists to catch all of FFmpeg leaking would have waved anything through.
+`--dynamic` is what makes it a check.
+
+What is not proven is the part iOS could prove. There is no Android
+device-checks head, so nothing here decodes a fixture and compares samples on
+Android the way `scripts/ios-device-checks.sh` does - the evidence is that the
+libraries build, export eight symbols, and package into the APK. An Android
+head for `Flower.DeviceChecks` is the missing piece, and it is the same
+argument this whole directory was created by: both streaming bugs so far were
+found by a person listening to a phone.
+
+That also makes `MiniaudioSink`'s S24 bridge gate live rather than theoretical.
+`flower_audio_bridge_apply_envelope` walks its buffer as `int16_t*`, so
+electing FFmpeg on either phone now falls back to the managed render callback
+and gives up the GC-pause resilience the native bridge was built for. Correct,
+and audibly fine, but it is a real cost that arrived with these builds rather
+than a hypothetical one, and teaching the envelope its sample format is the
+outstanding work.
+
+What this does not do is make FFmpeg cross-platform. Windows still needs an
+FFmpeg build and an import-lib route, and neither mobile head has a decode
+check running on real hardware. Until then the decoder is macOS, Linux, iOS and
+Android, honestly labelled as such in `native/ffmpeg/README.md`'s table, and
+`TrackDecoder` remains the default.
 
 ## 6. True sample-accurate gapless — Done
 

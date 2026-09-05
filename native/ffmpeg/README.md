@@ -120,9 +120,43 @@ that got out.
 track arrives through the façade's own AVIO callbacks over `SeekableHttpStream`,
 which is what keeps authentication, range probing and 429 handling in one place.
 
+## Building for Android
+
+```
+ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/<version> native/ffmpeg/android/build-ffmpeg.sh
+ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/<version> native/ffmpeg/android/build.sh
+```
+
+The same two-step shape as iOS and for the same reason - there is no
+pkg-config to ask - with the NDK's clang in place of Xcode's. The first script
+cross-compiles FFmpeg for `arm64-v8a`, `armeabi-v7a` and `x86_64`; the second
+links it into `libflower_ffmpeg.so` per ABI, straight into
+`Flower.Android/libs/<abi>/` beside `libminiaudio.so`, which is where
+`native/miniaudio/android/build.sh` puts its own output and where the csproj's
+`AndroidNativeLibrary` items look. About 1.3-1.9MB per ABI.
+
+Both load-bearing details carry over from iOS. The configure line is where the
+LGPL obligation is met, an APK linking FFmpeg statically having no distro build
+to point at; `config.h` should say `CONFIG_GPL 0` after any change. And the
+export narrowing, spelled here as an ELF version script rather than an
+`-exported_symbols_list`, derived from the same `FLOWER_API` lines in the
+header so the ABI is described once. `build.sh` ends by listing the *dynamic*
+table - the strip step takes the symtab with it, so a plain `nm` reads "no
+symbols" and would pass anything.
+
+Unlike iOS, no `DllImportResolver` branch is needed: Android's loader finds
+`libflower_ffmpeg.so` in the APK from the `DllImport("flower_ffmpeg")` string
+alone, exactly as `libminiaudio.so` is found from `DllImport("miniaudio")`.
+
+`x86_64` is built `--disable-x86asm`, since FFmpeg's x86 assembly wants nasm
+that a Mac has no reason to have installed and the emulator ABI exists so the
+app runs, not so anyone listens on it. A debug build packages only the ABIs
+`AndroidSupportedAbis` names - arm64-v8a and x86_64 - so `armeabi-v7a` is built
+and waiting rather than shipped.
+
 ## Platform status
 
-Three of the five heads are built. The same source and the same `CMakeLists.txt`
+Four of the five heads are built. The same source and the same `CMakeLists.txt`
 are meant to serve all of them, but "meant to" is not "does", and the plan doc
 is explicit that this decoder must not be described as cross-platform until
 each artifact is built, packaged and tested on real hardware:
@@ -132,7 +166,7 @@ each artifact is built, packaged and tested on real hardware:
 | macOS | `libflower_ffmpeg.dylib` | Built and tested against MacPorts FFmpeg, and elected in real listening; built and checked on CI |
 | Linux | `libflower_ffmpeg.so` | `linux/build.sh` written and wired into CI; the first CI run is what proves it - it has never been built on a Linux machine here |
 | Windows | `flower_ffmpeg.dll` | Unbuilt; needs an FFmpeg build and an import-lib route |
-| Android | `libflower_ffmpeg.so` per ABI | Unbuilt; needs a static NDK FFmpeg (`FLOWER_FFMPEG_STATIC`) |
+| Android | `libflower_ffmpeg.so` per ABI | Built for arm64-v8a, armeabi-v7a and x86_64, and packaged into the APK. Never run on a device or emulator - Android has no device-checks head |
 | iOS | `flower_ffmpeg.framework` per slice | Built; all 70 FFmpeg decode checks pass on the simulator, and elected on a physical device via `FLOWER_DECODER=ffmpeg` |
 
 ## On CI
@@ -146,11 +180,10 @@ checks loop over the decoders that loaded, so a façade that quietly stopped
 building would otherwise present as a green run that checked half as much.
 Windows requires only LibVLC, having no façade yet.
 
-Android and iOS follow `native/miniaudio/`'s precedent - build scripts here,
-binaries checked in beside the platform head - with the difference that FFmpeg
-itself has to be cross-compiled first. Both should link FFmpeg statically into
-the façade (`-DFLOWER_FFMPEG_STATIC=ON`) so one binary per ABI ships instead of
-five.
+Neither mobile head is on CI. Android and iOS follow `native/miniaudio/`'s
+precedent instead - build scripts here, binaries checked in beside the platform
+head - with the difference that FFmpeg itself has to be cross-compiled first,
+which is tens of minutes a job that runs on every push should not spend.
 
 ## Debugging
 

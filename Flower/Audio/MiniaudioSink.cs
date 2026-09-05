@@ -523,16 +523,17 @@ namespace Flower.Audio
             // not merely skip the fade, it would rewrite every sample as
             // though three-byte frames were two-byte ones - noise, not audio.
             //
-            // Unreachable today, because the bridge exists only where Flower
-            // builds its own miniaudio (Android and iOS) and neither has a
-            // flower_ffmpeg artifact yet, so the election there always settles
-            // on LibVLC and S16. It is gated here rather than left to that
-            // coincidence, because the coincidence ends the moment the mobile
-            // FFmpeg cross-builds land - and the failure it would cause is a
-            // native one, on the platform hardest to debug on. Falling back to
-            // the managed callback costs the GC-pause resilience the bridge
-            // was built for; teaching the envelope about the sample format is
-            // the fix, and it belongs in the same change as those builds.
+            // Reachable as of the mobile FFmpeg cross-builds: the bridge
+            // exists only where Flower builds its own miniaudio (Android and
+            // iOS), and both now have a flower_ffmpeg artifact, so electing
+            // FFmpeg on a phone lands here rather than being kept away by a
+            // coincidence. This was gated ahead of that on purpose, because
+            // the failure it would otherwise cause is a native one on the
+            // platform hardest to debug on. What the fallback costs is real
+            // though - the GC-pause resilience the bridge was built for - so
+            // teaching flower_audio_bridge_apply_envelope the sample format is
+            // still owed, and is now the only thing standing between 24-bit
+            // playback on a phone and the render path it deserves.
             var canUseBridgeFormat = GaplessFormat.SampleFormat == PcmSampleFormat.S16;
             var useBridge = NativeAudioBridge.IsAvailable
                 && _outputStage.Timing.NativeBufferMs > 0

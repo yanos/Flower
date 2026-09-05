@@ -32,11 +32,17 @@ namespace Flower.Audio.Ffmpeg
         // with DllNotFoundException. The framework loaded fine when asked
         // directly; nothing was ever asking. Registering at module load has no
         // such ordering to get wrong.
+        // CA2255 says a module initializer belongs in an application rather
+        // than a library, whose author cannot know when it runs. Here that is
+        // the point: it must run before any P/Invoke in this assembly, and
+        // there is no earlier hook a library can offer.
+#pragma warning disable CA2255
         [System.Runtime.CompilerServices.ModuleInitializer]
         internal static void RegisterResolver()
         {
             NativeLibrary.SetDllImportResolver(typeof(FfmpegNative).Assembly, Resolve);
         }
+#pragma warning restore CA2255
 
         // The façade is not on a default search path in any of the three
         // situations that matter - a dev build reading it out of

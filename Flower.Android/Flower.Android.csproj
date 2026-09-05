@@ -87,4 +87,25 @@
       <Abi>armeabi-v7a</Abi>
     </AndroidNativeLibrary>
   </ItemGroup>
+
+  <!-- The FFmpeg decoder's facade, self-built the same way and for the same
+       reason (native/ffmpeg/android/build.sh). FFmpeg itself is linked in
+       statically rather than shipped as four more libraries per ABI, which is
+       also where the LGPL obligation lands for a phone build - there is no
+       distro FFmpeg here to point at or replace. See native/ffmpeg/README.md.
+
+       Without these the election falls back to LibVLC with a warning, so a
+       missing ABI is a quieter failure than a crash and a louder one than
+       silence. -->
+  <ItemGroup>
+    <AndroidNativeLibrary Include="libs\arm64-v8a\libflower_ffmpeg.so">
+      <Abi>arm64-v8a</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="libs\x86_64\libflower_ffmpeg.so">
+      <Abi>x86_64</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="libs\armeabi-v7a\libflower_ffmpeg.so">
+      <Abi>armeabi-v7a</Abi>
+    </AndroidNativeLibrary>
+  </ItemGroup>
 </Project>
