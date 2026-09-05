@@ -496,6 +496,27 @@ public class NetworkDiscoveryServiceTests : IDisposable
         Assert.Equal(1, _handler.RequestCount);
     }
 
+    // Multicast DNS authenticates nothing, so an announcement naming a public
+    // address is a thing anything on the segment can say - and taking it at
+    // its word would put a peer in the sidebar whose every request leaves the
+    // building in the clear. See CleartextOrigins.
+    [Fact]
+    public void OnInstanceFound_refuses_an_announcement_at_a_routable_address()
+    {
+        var offLink = new IPEndPoint(IPAddress.Parse("93.184.216.34"), 4533);
+        _handler.RespondWith(offLink.Port, """{"alias":"Impostor","fingerprint":"impostor-fp"}""");
+
+        _backend.RaiseInstanceFound(InstanceName("Impostor"), offLink);
+
+        Assert.Empty(_service.KnownDevices);
+    }
+
+    [Fact]
+    public void AddRememberedAsync_refuses_a_typed_cleartext_address_off_the_local_network()
+    {
+        Assert.Null(_service.AddRememberedAsync("http://93.184.216.34:4533").GetAwaiter().GetResult());
+    }
+
     [Fact]
     public void OnInstanceFound_ignores_a_link_local_address_when_a_routable_one_is_already_known()
     {

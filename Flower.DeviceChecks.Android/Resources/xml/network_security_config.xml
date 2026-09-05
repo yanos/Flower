@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The checks talk to one server and it is LoopbackMediaServer, at
+  http://127.0.0.1:<port> (UrlFor). So unlike the app - which dials LAN peers
+  at IP literals nothing can enumerate ahead of time - this runner can say
+  exactly which host it needs cleartext for, and everything else stays
+  refused.
+
+  This matters because API 28+ blocking cleartext is a real platform
+  difference the checks are here to notice: the first honest Android run was
+  14 passed / 57 failed, every local-file decode green and every streamed one
+  reporting "the track would not open". A runner that permitted cleartext
+  everywhere would still catch that, but it would also stop being able to say
+  anything about which hosts the app is entitled to reach.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

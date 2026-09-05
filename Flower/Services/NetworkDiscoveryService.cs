@@ -404,7 +404,21 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         // rediscover loop rather than a steady, bounded one. The periodic
         // poll already re-resolves every known peer on its own cadence, so
         // there is nothing useful left for a repeat announcement to do here.
+        // An mDNS sighting should be on-link by construction, so this refuses
+        // approximately nothing - which is the point of putting it here
+        // rather than trusting that. Multicast DNS has no authentication at
+        // all: anything on the segment can announce a Flower server at any
+        // address it likes, including a routable one, and the sidebar would
+        // then offer a peer whose every request left the building in the
+        // clear.
         var announced = HttpOrigin(found.EndPoint);
+        if (!CleartextOrigins.IsAllowed(announced, found.EndPoint.Address))
+        {
+            _logger.LogWarning("Ignoring announcement for {InstanceName} at {EndPoint} - not a private address, and this would be cleartext",
+                found.InstanceName, found.EndPoint);
+            return;
+        }
+
         if (existing != null && existing.BaseUri == announced)
         {
             _logger.LogTrace("Ignoring re-announcement for {InstanceName} - already have {EndPoint}, the periodic poll will re-resolve it",
@@ -979,13 +993,20 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             : uri;
 
         var host = uri.Host.Trim('[', ']');
+        // An address that resolves fine and is still refused: see
+        // CleartextOrigins. A typed "http://music.example.com" is a routable
+        // host over an unencrypted hop, and there is no version of that this
+        // app should dial - the same address over https is accepted here and
+        // then judged on its certificate by PeerHttpClient.
         if (IPAddress.TryParse(host, out var literal))
-            return (baseUri, literal);
+            return CleartextOrigins.IsAllowed(baseUri, literal) ? (baseUri, literal) : null;
 
         try
         {
             var resolved = await Dns.GetHostAddressesAsync(host, token);
-            return resolved.Length == 0 ? null : (baseUri, resolved[0]);
+            if (resolved.Length == 0)
+                return null;
+            return CleartextOrigins.IsAllowed(baseUri, resolved[0]) ? (baseUri, resolved[0]) : null;
         }
         catch (Exception ex) when (ex is SocketException or ArgumentException)
         {

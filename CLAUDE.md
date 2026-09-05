@@ -231,12 +231,30 @@ its tally is indistinguishable from a failing one.
 
 Which ABI an Android run exercises is a property of the host - arm64-v8a on a
 developer's Mac, x86_64 on a CI runner - and `Flower.Android/libs/` carries a
-built façade for both. Two Android-specific things are load-bearing and neither
+built façade for both. Three Android-specific things are load-bearing and none
 is obvious: `EmbedAssembliesIntoApk`, because Fast Deployment keeps the managed
 assemblies out of a Debug APK and pushes them over adb separately, so an APK
-installed by the script aborts at startup; and the `INTERNET` permission, which
+installed by the script aborts at startup; the `INTERNET` permission, which
 the loopback server needs even though both ends of the connection are the same
-process.
+process; and a network security config permitting cleartext, because API 28+
+blocks plain HTTP by default and the loopback server is plain HTTP - the first
+honest run was 14 passed / 57 failed, every local-file decode green and every
+streamed one reporting the track would not open. The runner's config names
+`127.0.0.1` and nothing else, since it knows the one host it dials.
+
+**Cleartext is a policy, not a flag** (`CleartextOrigins`,
+`Flower.Android/Resources/xml/network_security_config.xml`): the app cannot
+scope its config the way the checks runner can, because the addresses it needs
+are IP literals mDNS handed over a second ago and a network security config
+matches hostnames and suffixes with no CIDR form. So the manifest permits
+cleartext outright and the rule that manifest cannot state lives in managed
+code, on every platform rather than only this one: an `http://` origin is
+dialled only when its host is loopback, link-local, RFC1918 or a tailnet
+address. `NetworkDiscoveryService` applies it to both doors - a typed or
+remembered address, and an mDNS announcement, which is worth checking because
+multicast DNS authenticates nothing and anything on the segment can announce a
+server at a public address. `LanGuard` is the same predicate from the server's
+side.
 
 ## Git Workflow
 

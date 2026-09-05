@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android has blocked cleartext HTTP by default since API 28, and every LAN
+  server Flower can find is cleartext: an mDNS sighting is turned into
+  "http://<ip>:<port>" (NetworkDiscoveryService.HttpOrigin) because the peer
+  is on this link, has no name a certificate could be issued for, and pairing
+  happens over the same link anyway. Without this file the Android app
+  discovers servers in the sidebar and then fails every request to them - the
+  device checks found exactly that, with every local-file decode green and
+  every streamed one reporting "the track would not open".
+
+  What this file cannot do is say "only private ranges". A network security
+  config matches hostnames and DNS suffixes; there is no CIDR form, and the
+  addresses that need permitting are IP literals handed over by mDNS, so
+  there is nothing to enumerate. Permitting cleartext at the base config is
+  therefore Android's only answer here, and the private-range rule lives
+  where it can actually be written down instead: CleartextOrigins, which
+  refuses an http origin whose host is not loopback, link-local, RFC1918 or a
+  tailnet address. That check runs on every platform rather than only this
+  one, which is the better place for it regardless of what the manifest could
+  express.
+
+  Trust anchors are left at the platform default on purpose. Flower's extra
+  rule - a server certificate is acceptable if its public key is one this
+  device has paired with - is PeerHttpClient's, applied in managed code per
+  connection, and putting a second, coarser trust decision here would only
+  widen what the pin narrows.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
