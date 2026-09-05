@@ -364,7 +364,9 @@ loadable, which is the ordinary state on four of the five heads.
 
 Hand-edited rather than given a picker in Settings, and not only because no UI
 has been built: a picker would offer every listener a choice that resolves one
-way everywhere but macOS. It becomes a real setting when the artifacts exist.
+way everywhere but macOS. (That reason expired once all five heads had an
+artifact; the setting stayed hand-edited anyway, for the reason the last section
+here gives.)
 
 Verified end to end on macOS: a 24-bit/48kHz source decoded through
 `FfmpegTrackDecoder` reaches the shared ring bit-identically, with 95,624 of
@@ -372,7 +374,8 @@ Verified end to end on macOS: a 24-bit/48kHz source decoded through
 than zero-padded.
 
 `TrackDecoder` is still the default, and stays the default until FFmpeg has
-listening hours behind it.
+listening hours behind it. *(It has them now - see "FFmpeg becomes the
+default" at the end.)*
 
 ### What electing it broke, and what that says about the checks
 
@@ -654,7 +657,9 @@ What this does not do is make FFmpeg cross-platform. Windows still needs an
 FFmpeg build and an import-lib route, and neither mobile head has a decode
 check running on real hardware. Until then the decoder is macOS, Linux, iOS and
 Android, honestly labelled as such in `native/ffmpeg/README.md`'s table, and
-`TrackDecoder` remains the default.
+`TrackDecoder` remains the default. *(Windows has its build now, and the
+default has since moved - see the last section here, which is also honest about
+which of those checks still do not exist.)*
 
 ### Windows, by not building FFmpeg at all
 
@@ -722,6 +727,58 @@ Both vendored miniaudio binaries were rebuilt for the new signature:
 the ABI the managed `DllImport` talks to, so a rebuild is not optional
 housekeeping - a stale one would take the third argument as whatever happened
 to be in the register.
+
+### FFmpeg becomes the default
+
+`AppSettings.AudioDecoder` now starts at `Ffmpeg` rather than `LibVlc`, which is
+the point everything above was building toward. The argument for flipping it is
+not that FFmpeg is better in general - it is that the alternative truncates
+every track to 16 bits before Flower sees a byte, so a default of LibVLC is a
+default of a ceiling nobody chose and no setting most listeners will ever open
+removes. A decoder that is only reached by hand-editing a JSON file is a
+decoder nobody uses.
+
+Three things make that a change rather than a gamble.
+
+**The fallback is real.** `DecoderElection.Resolve` returns `LibVlc` with a
+logged warning when `flower_ffmpeg` will not load, so a head whose artifact is
+missing or broken plays anyway, one bit-depth poorer. Defaulting to FFmpeg
+cannot produce silence on a platform that has no façade; it produces the
+previous behaviour and a log line.
+
+**The escape hatch does not need an edit.** `FLOWER_DECODER=libvlc` overrides
+the setting for one run, which is how a bad session is recovered without
+touching `settings.json` - the reason that variable exists, and the reason a
+default flip is cheap to undo per-run.
+
+**The bridge no longer charges for it.** Until the previous section, electing
+FFmpeg on a phone traded the native render callback for 24 bits. Flipping the
+default while that gate stood would have made every phone pay a GC-pause cost
+for a bit depth it never asked for.
+
+What the flip does *not* do is invent evidence. Honestly, per head:
+
+| Head | What backs the default |
+|---|---|
+| macOS | Elected in real listening for weeks; all decode checks, both decoders |
+| iOS | 142 decode checks on the simulator, both decoders; elected on a physical device |
+| Linux | CI only - `decode-checks` runs it under `FLOWER_REQUIRE_DECODERS`. Never built or listened to on a Linux machine here |
+| Windows | CI only, same job. Never built or listened to on a Windows machine here |
+| Android | **Nothing.** The libraries build, export their eight symbols and package into the APK. No fixture has ever been decoded and compared |
+
+Android is the one that matters, and it is the one place the fallback does not
+help: `libflower_ffmpeg.so` loads, so the election succeeds, so a decoder nobody
+has heard is the one every Android launch now uses. That is a deliberate
+acceptance rather than an oversight - there are no released users, and
+`FLOWER_DECODER=libvlc` is one environment variable away - but it makes the
+Android `Flower.DeviceChecks` head go from "the missing piece" to the thing
+standing between this default and a phone playing nothing. It is the next piece
+of work in this initiative.
+
+One mechanical consequence worth knowing: `settings.json` is written whole on
+every save, so an existing file still says whatever it said. A machine that has
+run the app before keeps LibVLC until its `"AudioDecoder"` key is changed by
+hand. The default only reaches a fresh install.
 
 ## 6. True sample-accurate gapless — Done
 

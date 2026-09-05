@@ -105,10 +105,11 @@ public class DecoderElectionTests
         var read = JsonSerializer.Deserialize(written, FlowerJsonContext.Default.AppSettings)!;
         Assert.Equal(TrackDecoderKind.Ffmpeg, read.AudioDecoder);
 
-        // And an absent key is the safe default rather than whatever zero
-        // happens to mean today.
+        // And an absent key is the default rather than whatever zero happens
+        // to mean today - which matters more now that the default is the
+        // second enum member, so the two coincide nowhere.
         Assert.Equal(
-            TrackDecoderKind.LibVlc,
+            TrackDecoderKind.Ffmpeg,
             JsonSerializer.Deserialize("{}", FlowerJsonContext.Default.AppSettings)!.AudioDecoder);
     }
 

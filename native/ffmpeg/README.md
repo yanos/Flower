@@ -15,17 +15,29 @@ surviving one way and gone the other.
 
 ## Electing it
 
-`AppSettings.AudioDecoder` in `settings.json` chooses which decoder runs:
+It is elected by default. `AppSettings.AudioDecoder` in `settings.json` is what
+chooses, and it now starts at `Ffmpeg`:
 
 ```json
-{ "AudioDecoder": "Ffmpeg" }
+{ "AudioDecoder": "LibVlc" }
 ```
 
-`FLOWER_DECODER=ffmpeg` (or `libvlc`) overrides that for one run, so an A/B
-needs neither an edit nor a rebuild. Asking for FFmpeg where the façade is not
-loadable is not an error - `DecoderElection` falls back to LibVLC and says so
-in the log, which is the ordinary outcome on every platform in the table below
-except macOS.
+is the way back. That default is the whole point of the façade rather than a
+vote of confidence in it: LibVLC truncates every track to 16 bits, so leaving it
+as the default leaves a ceiling in place that nobody chose and no setting most
+listeners will ever open removes.
+
+Two things make defaulting to it safe rather than brave. Asking for FFmpeg where
+the façade is not loadable is not an error - `DecoderElection` falls back to
+LibVLC and says so in the log - so a head whose artifact is missing plays
+anyway, one bit-depth poorer. And `FLOWER_DECODER=ffmpeg` (or `libvlc`)
+overrides the setting for one run, so an A/B needs neither an edit nor a
+rebuild, and a session that goes wrong is recovered without editing
+`settings.json` back.
+
+Note that `settings.json` is written whole on every save, so changing this
+default does nothing for a machine that has already run the app: its file still
+says what it said. Edit the key, or delete the file.
 
 Electing it is also what widens the pipeline to 24 bits: the canonical PCM
 format follows the decoder, since LibVLC cannot fill anything wider. See
