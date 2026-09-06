@@ -116,8 +116,7 @@ public class NonAsciiAliasTests
     [Fact]
     public async Task The_stream_url_transport_carries_the_same_name()
     {
-        var client = new OpenSubsonicClient(
-            "http://server.local:4533", username: "", password: "", credentials: Credentials());
+        var client = new PeerMediaClient("http://server.local:4533", credentials: Credentials());
 
         var uri = new Uri(await client.GetStreamUrlAsync("sg-1"));
 

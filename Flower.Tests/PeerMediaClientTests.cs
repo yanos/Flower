@@ -14,7 +14,7 @@ using Flower.Tests.TestSupport;
 
 namespace Flower.Tests;
 
-public class OpenSubsonicClientTests
+public class PeerMediaClientTests
 {
     // Records the last requested URL (and every request's X-Flower-Nonce
     // header, for the peer-identity nonce-uniqueness test below) and replies
@@ -54,21 +54,12 @@ public class OpenSubsonicClientTests
             signingKey);
     }
 
-    private static OpenSubsonicClient MakeClient(string responseBody, out FakeHandler handler)
+    private static PeerMediaClient MakeClient(string responseBody, out FakeHandler handler)
     {
         handler = new FakeHandler(responseBody);
         var http = new HttpClient(handler);
-        var client = new OpenSubsonicClient("http://peer.local:4533", "alice", "hunter2", http);
+        var client = new PeerMediaClient("http://peer.local:4533", http);
         return client;
-    }
-
-    [Fact]
-    public void ComputeToken_is_deterministic_md5_of_password_plus_salt()
-    {
-        // Fixture from the Subsonic API docs' own worked example.
-        var token = OpenSubsonicClient.ComputeToken("sesame", "c19b2d");
-
-        Assert.Equal("26719a1196d2a940705a59634eb18eab", token);
     }
 
     // A non-2xx status (the trust gate rejecting us, or any other HTTP error)
@@ -80,7 +71,7 @@ public class OpenSubsonicClientTests
     {
         var handler = new FakeHandler("not json at all", HttpStatusCode.Forbidden);
         var http = new HttpClient(handler);
-        var client = new OpenSubsonicClient("http://peer.local:4533", "alice", "hunter2", http);
+        var client = new PeerMediaClient("http://peer.local:4533", http);
         var destination = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
 
         try
@@ -91,7 +82,7 @@ public class OpenSubsonicClientTests
         finally
         {
             File.Delete(destination);
-            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix);
         }
     }
 
@@ -104,7 +95,7 @@ public class OpenSubsonicClientTests
     public async Task Connection_refused_throws_HttpRequestException()
     {
         var unboundPort = FakePeerHttpServer.GetUnboundPort();
-        var client = new OpenSubsonicClient($"http://127.0.0.1:{unboundPort}", "alice", "hunter2");
+        var client = new PeerMediaClient($"http://127.0.0.1:{unboundPort}");
         var destination = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
 
         try
@@ -114,7 +105,7 @@ public class OpenSubsonicClientTests
         finally
         {
             File.Delete(destination);
-            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix);
         }
     }
 
@@ -137,7 +128,7 @@ public class OpenSubsonicClientTests
             await ctx.Response.OutputStream.FlushAsync();
             ctx.Response.Abort();
         });
-        var client = new OpenSubsonicClient($"http://127.0.0.1:{server.Port}", "alice", "hunter2");
+        var client = new PeerMediaClient($"http://127.0.0.1:{server.Port}");
         var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
 
         try
@@ -149,12 +140,12 @@ public class OpenSubsonicClientTests
             // playable download. The bytes that did arrive are kept beside it
             // instead, which is what the next attempt resumes from.
             Assert.False(File.Exists(destination));
-            Assert.True(new FileInfo(destination + OpenSubsonicClient.PartialSuffix).Length > 0);
+            Assert.True(new FileInfo(destination + PeerMediaClient.PartialSuffix).Length > 0);
         }
         finally
         {
             File.Delete(destination);
-            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix);
         }
     }
 
@@ -185,13 +176,13 @@ public class OpenSubsonicClientTests
             ctx.Response.ContentLength64 = fullPayload.Length - from;
             await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory(from));
         });
-        var client = new OpenSubsonicClient($"http://127.0.0.1:{server.Port}", "alice", "hunter2");
+        var client = new PeerMediaClient($"http://127.0.0.1:{server.Port}");
         var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
 
         try
         {
             await Assert.ThrowsAsync<HttpRequestException>(() => client.DownloadTrackAsync("sg-1", destination));
-            var partial = new FileInfo(destination + OpenSubsonicClient.PartialSuffix).Length;
+            var partial = new FileInfo(destination + PeerMediaClient.PartialSuffix).Length;
 
             await client.DownloadTrackAsync("sg-1", destination);
 
@@ -203,7 +194,7 @@ public class OpenSubsonicClientTests
         finally
         {
             File.Delete(destination);
-            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix);
         }
     }
 
@@ -231,9 +222,9 @@ public class OpenSubsonicClientTests
             ctx.Response.ContentLength64 = fullPayload.Length;
             await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory());
         });
-        var client = new OpenSubsonicClient($"http://127.0.0.1:{server.Port}", "alice", "hunter2");
+        var client = new PeerMediaClient($"http://127.0.0.1:{server.Port}");
         var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
-        File.WriteAllBytes(destination + OpenSubsonicClient.PartialSuffix, new byte[fullPayload.Length * 2]);
+        File.WriteAllBytes(destination + PeerMediaClient.PartialSuffix, new byte[fullPayload.Length * 2]);
 
         try
         {
@@ -245,7 +236,7 @@ public class OpenSubsonicClientTests
         finally
         {
             File.Delete(destination);
-            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix);
         }
     }
 
@@ -272,7 +263,7 @@ public class OpenSubsonicClientTests
             ctx.Response.ContentLength64 = fullPayload.Length;
             await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory());
         });
-        var client = new OpenSubsonicClient($"http://127.0.0.1:{server.Port}", "alice", "hunter2");
+        var client = new PeerMediaClient($"http://127.0.0.1:{server.Port}");
         var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
 
         try
@@ -286,22 +277,25 @@ public class OpenSubsonicClientTests
         finally
         {
             File.Delete(destination);
-            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix);
         }
     }
 
     [Fact]
     public async Task GetStreamUrl_builds_an_authed_url_without_making_a_request()
     {
-        var client = new OpenSubsonicClient("http://peer.local:4533", "alice", "hunter2", new HttpClient(new FakeHandler("")));
+        var client = new PeerMediaClient("http://peer.local:4533", new HttpClient(new FakeHandler("")));
 
         var streamUrl = await client.GetStreamUrlAsync("sg-1");
 
-        Assert.StartsWith("http://peer.local:4533/rest/stream?", streamUrl);
+        Assert.StartsWith("http://peer.local:4533/api/flower/v1/stream?", streamUrl);
         Assert.Contains("id=sg-1", streamUrl);
-        Assert.Contains("u=alice", streamUrl);
-        Assert.Contains("t=", streamUrl);
-        Assert.Contains("s=", streamUrl);
+
+        // The classic Subsonic credential set is gone with /rest. It was always
+        // a token over an empty password that no gate on either end read.
+        Assert.DoesNotContain("u=", streamUrl);
+        Assert.DoesNotContain("&t=", streamUrl);
+        Assert.DoesNotContain("&s=", streamUrl);
     }
 
     // Regression guard against reverting to a fixed, computed-once header
@@ -312,8 +306,8 @@ public class OpenSubsonicClientTests
     [Fact]
     public async Task Consecutive_peer_identity_calls_send_different_nonces()
     {
-        var client = new OpenSubsonicClient(
-            "http://peer.local:53317", "", "", new HttpClient(new FakeHandler("")),
+        var client = new PeerMediaClient(
+            "http://peer.local:53317", new HttpClient(new FakeHandler("")),
             credentials: MakePeerCredentials());
 
         var first = await client.GetStreamUrlAsync("sg-1");

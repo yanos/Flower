@@ -54,7 +54,7 @@ public class DiscoveredDevice
     public Uri Url(string pathAndQuery) => new(BaseUri, pathAndQuery);
 
     // The same thing as a string with no trailing slash, for the two consumers
-    // that take a base URL rather than build one (OpenSubsonicClient and
+    // that take a base URL rather than build one (PeerMediaClient and
     // RemoteLibraryImporter).
     public string Origin => BaseUri.GetLeftPart(UriPartial.Authority);
 

@@ -8,8 +8,8 @@ server half is in `SYNC-PLAN.md` and whose setup guide is `SELF-HOSTING.md`.
 
 The server side of remote access has been done for a while. `LanGuard` admits
 Tailscale's `100.64.0.0/10`, stream tickets are bound to a track and a
-fingerprint rather than to an IP, `/rest/stream` does range requests so seeking
-works over a tunnel, and `TrustedProxies` handles the loopback hop that
+fingerprint rather than to an IP, `/api/flower/v1/stream` does range requests so
+seeking works over a tunnel, and `TrustedProxies` handles the loopback hop that
 `tailscale serve` introduces. The audio path is ready too: `TrackDecoder.
 EnsureMedia` branched on `path.Contains("://")` and handed the decoder a network
 location, so a placeholder row streams on desktop and on a phone alike.

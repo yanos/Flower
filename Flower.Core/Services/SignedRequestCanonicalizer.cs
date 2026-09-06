@@ -18,13 +18,13 @@ public static class SignedRequestCanonicalizer
     // Every X-Flower-* transport parameter - the signature itself, and the
     // identity it is signed under - is excluded from the canonical query, so
     // the canonical form is identical whether those values travel as headers
-    // (OpenSubsonicClient.SendAsync, the sync services' own calls) or as
+    // (PeerMediaClient.SendAsync, the sync services' own calls) or as
     // query-string fallbacks alongside everything else in the URL (the
-    // LibVLC/OpenSubsonicClient.BuildUrl case - see SignedRequest.Identity).
+    // LibVLC/PeerMediaClient.BuildUrl case - see SignedRequest.Identity).
     //
     // Only the three signature params used to be excluded, which made the two
     // transports sign *different* strings: a caller signs its identity params
-    // (see PeerOpenSubsonicClientFactory) either way, but a server only sees
+    // (see PeerMediaClientFactory) either way, but a server only sees
     // them in the query when they were sent in the query, so every
     // header-authenticated peer call verified against a canonical query the
     // caller had never signed and was rejected. Nothing is weakened by

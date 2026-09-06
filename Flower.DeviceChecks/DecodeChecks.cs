@@ -228,7 +228,7 @@ public static class DecodeChecks
     private static void FixtureFromServer(DecoderUnderTest subject, Fixture fixture, bool servesRanges, bool answersHead)
     {
         using var server = new LoopbackMediaServer { ServesRanges = servesRanges, AnswersHead = answersHead };
-        var url = server.Serve(fixture.Bytes(), "rest/stream?id=" + fixture.Extension);
+        var url = server.Serve(fixture.Bytes(), "api/flower/v1/stream?id=" + fixture.Extension);
 
         AssertPlayable(fixture, DecodeFully(subject, TrackFor(fixture, url)));
     }
@@ -252,7 +252,7 @@ public static class DecodeChecks
     private static void FixtureStartedWithoutPrepare(DecoderUnderTest subject, Fixture fixture)
     {
         using var server = new LoopbackMediaServer();
-        var url = server.Serve(fixture.Bytes(), $"rest/stream?id={fixture.Extension}");
+        var url = server.Serve(fixture.Bytes(), $"api/flower/v1/stream?id={fixture.Extension}");
 
         AssertPlayable(fixture, DecodeFully(subject, TrackFor(fixture, url), prepare: false));
     }
@@ -260,7 +260,7 @@ public static class DecodeChecks
     private static void MislabelledFixtureStillDecodes(DecoderUnderTest subject, Fixture fixture)
     {
         using var server = new LoopbackMediaServer();
-        var url = server.Serve(fixture.Bytes(), "rest/stream?id=mislabelled");
+        var url = server.Serve(fixture.Bytes(), "api/flower/v1/stream?id=mislabelled");
 
         var track = TrackFor(fixture, url);
         track.OriginFileExtension = fixture.Extension == "mp3" ? "flac" : "mp3";
@@ -450,7 +450,7 @@ public static class DecodeChecks
     // coordinator responds to it differently from an unplayable file.
     private static void AbsentServerFailsPrepare(DecoderUnderTest subject)
     {
-        var url = $"http://127.0.0.1:{LoopbackMediaServer.ClosedPort()}/rest/stream?id=abc";
+        var url = $"http://127.0.0.1:{LoopbackMediaServer.ClosedPort()}/api/flower/v1/stream?id=abc";
         var ring = new GaplessRingBuffer(64 * 1024);
         using var decoder = subject.Create(TrackAt(url, ShortTrack), ring);
 
@@ -591,7 +591,7 @@ public static class DecodeChecks
         };
 
         var wav = SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp());
-        var url = server.Serve(wav, "rest/stream?id=throttled");
+        var url = server.Serve(wav, "api/flower/v1/stream?id=throttled");
 
         var decoded = DecodeFully(subject, new Track
         {
@@ -625,7 +625,7 @@ public static class DecodeChecks
         using var server = new LoopbackMediaServer { RequiresFreshNonce = true };
 
         var wav = SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp());
-        var url = server.Serve(wav, "rest/stream?id=replay-guarded");
+        var url = server.Serve(wav, "api/flower/v1/stream?id=replay-guarded");
 
         var decoded = WithSigningCredentials(new FreshNonceCredentials(), () => DecodeFully(subject, new Track
         {
@@ -649,7 +649,7 @@ public static class DecodeChecks
     private static void ProtocolErrorIsNotAudio(DecoderUnderTest subject)
     {
         using var server = new LoopbackMediaServer { RequiresFreshNonce = true };
-        var url = server.Serve(SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp()), "rest/stream?id=refused");
+        var url = server.Serve(SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp()), "api/flower/v1/stream?id=refused");
 
         var ring = new GaplessRingBuffer(64 * 1024);
         using var decoder = subject.Create(TrackAt(url, ShortTrack), ring);

@@ -29,7 +29,7 @@ public static class PeerHttpClient
     // A settable static rather than an injected dependency, because the
     // clients it has to reach are themselves static or self-constructed -
     // AlbumArtLoader holds one in a static field, NetworkDiscoveryService and
-    // OpenSubsonicClient each build their own when not handed one - and
+    // PeerMediaClient each build their own when not handed one - and
     // threading a service through all of them to answer one predicate would be
     // a larger change than the feature. Set once at startup from
     // TrustedPeerStore (see App.axaml.cs); read at callback time, so the order
@@ -80,7 +80,7 @@ public static class PeerHttpClient
     // what it cost.
     //
     // Not folded into Create: a caller that already signs per request
-    // (OpenSubsonicClient.SendAsync, the sync services) must not be given a
+    // (PeerMediaClient.SendAsync, the sync services) must not be given a
     // second set of credential headers, and most clients built here are talking
     // to a peer they authenticate some other way or not at all.
     public static HttpClient CreateSigned(TimeSpan? timeout = null)

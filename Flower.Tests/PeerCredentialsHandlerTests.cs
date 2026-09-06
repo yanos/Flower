@@ -52,7 +52,7 @@ public class PeerCredentialsHandlerTests
         }
     }
 
-    // What a URL built by OpenSubsonicClient.BuildUrlAsync signs with, and what
+    // What a URL built by PeerMediaClient.BuildUrlAsync signs with, and what
     // a caller that only ever signs once is stuck reusing.
     private sealed class OneShotCredentials : IPeerCredentials
     {
@@ -81,9 +81,11 @@ public class PeerCredentialsHandlerTests
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             // Ahead of the nonce check, and that ordering is load-bearing.
-            // Flower.Server maps /rest/stream with MapGet, so a HEAD is a
-            // routing 405 that never reaches the auth filter and therefore
-            // never spends a nonce. That is precisely why the field failure
+            // Flower.Server maps its stream routes with MapGet, so a HEAD
+            // matches no endpoint, is refused before the auth filter, and
+            // therefore never spends a nonce. (The real server answers 404
+            // rather than the 405 this fake sends - see MediaEndpoints - but
+            // what matters here is only that it fails.) That is precisely why the field failure
             // presented the way it did: the HEAD bounced, the bytes=0-0 probe
             // spent the URL's one nonce and succeeded, and the body GET that
             // followed was the first request to be refused - so the track had

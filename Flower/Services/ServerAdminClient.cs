@@ -129,7 +129,7 @@ public sealed class ServerAdminClient(
     public Task RevokeSubsonicCredentialAsync(string username, CancellationToken ct = default) =>
         SendAsync(HttpMethod.Delete, $"/api/admin/subsonic-credentials/{Uri.EscapeDataString(username)}", null, ct);
 
-    // Replaces the album art behind an id - the same id GET /rest/getCoverArt
+    // Replaces the album art behind an id - the same id GET /api/flower/v1/cover-art
     // reads at - by embedding the picture in the server's own files. The one
     // call here that sends something other than JSON, and the reason SendAsync
     // below takes a prepared payload: the signature covers a hash of the exact

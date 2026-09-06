@@ -64,8 +64,7 @@ public class StreamAuthEndToEndTests
         // header lookup below returns null for everything, which is what makes
         // this the honest reproduction of the playback path rather than a
         // friendlier one.
-        var client = new OpenSubsonicClient(
-            "http://server.local:4533", username: "", password: "", credentials: Credentials());
+        var client = new PeerMediaClient("http://server.local:4533", credentials: Credentials());
 
         var uri = new Uri(await client.GetStreamUrlAsync("sg-1"));
 
@@ -78,8 +77,7 @@ public class StreamAuthEndToEndTests
     {
         // The signature covers the query, so a URL captured for one track must
         // not become a key to the whole library.
-        var client = new OpenSubsonicClient(
-            "http://server.local:4533", username: "", password: "", credentials: Credentials());
+        var client = new PeerMediaClient("http://server.local:4533", credentials: Credentials());
 
         var uri = new Uri(await client.GetStreamUrlAsync("sg-1"));
         var tampered = ParseQuery(uri);

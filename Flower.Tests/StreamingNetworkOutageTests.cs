@@ -16,7 +16,7 @@ namespace Flower.Tests;
 
 // A real decoder and GaplessCoordinator decoding audio served over an actual
 // HTTP connection (FakePeerHttpServer), rather than a local file - the same
-// path a synced peer's stream URL (OpenSubsonicClient.GetStreamUrl) takes.
+// path a synced peer's stream URL (PeerMediaClient.GetStreamUrl) takes.
 // GaplessCoordinatorRealDecodeTests and FfmpegTrackDecoderTests already cover
 // local-file decode in depth; what's new here is real socket-level failure modes a
 // local file can never produce - a peer that's simply not there, and one

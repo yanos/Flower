@@ -132,8 +132,8 @@ encoder. 44.1kHz is not thoroughness: it is what a music library is actually
 made of, and it is the one rate the pipeline resamples, so a 48kHz-only
 fixture never touched the resampler. Each is decoded from disk, over the
 loopback server, from a server that refuses ranges, and from one that refuses
-HEAD - `Flower.Server` maps `/rest/stream` with `MapGet`, so a HEAD to it is a
-405 and every real stream reaches its length through the ranged-GET probe
+HEAD - `Flower.Server` maps its stream routes with `MapGet`, so a HEAD is refused
+(a 404 from the single-page fallback, not routing's 405) and every real stream reaches its length through the ranged-GET probe
 instead. `LoopbackMediaServer` honours the end of a range for the same reason:
 serving a whole file to a `bytes=0-0` probe is something no real server does,
 and a loopback that did it decoded a track the probe had already delivered.
@@ -298,6 +298,8 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 **Persistence** (macOS: `~/Library/Application Support/Flower/`): `library.json`, `playlists.json` (track references only, resolved against the library), `config.json` (column state), `settings.json` (`AppSettings`).
 
 **Miniaudio native libraries** (`native/miniaudio/`): the `Miniaudio-CS` NuGet only ships desktop binaries, so Android (`android/build.sh`, NDK/CMake → `Flower.Android/libs/<abi>/libminiaudio.so`) and iOS (`ios/build.sh`, Xcode → `Flower.iOS/Frameworks/ios-{device,simulator}/miniaudio.framework`) are compiled and vendored directly in-repo instead — no NuGet package, see `native/miniaudio/README.md` to rebuild. Pinned to the exact miniaudio commit `Miniaudio-CS`'s own bindings were generated against (0.11.22), not the latest upstream release, to avoid an ABI mismatch. iOS additionally needs a `DllImportResolver` in `MiniaudioSink`'s static constructor — unlike Android, where naming the output `libminiaudio.so` alone is enough, .NET-for-iOS's default P/Invoke probing doesn't know to look inside an embedded framework's nested bundle path. `App.axaml.cs` routes every platform, including Android/iOS, to `MiniaudioSink`.
+
+**Flower's clients speak Flower's protocol, and `/rest` is an adapter** (`MediaEndpoints`, `SubsonicEndpoints`, `SyncEndpoints`): the catalog is `GET /api/flower/v1/library`, playback is `/api/flower/v1/stream`, downloads `/download`, art `/cover-art` and `/cover-art/batch`. `/rest/*` maps the same handlers for third-party OpenSubsonic clients, which is the only thing it is for — no Flower head calls it. The gates differ rather than the bytes: the native one takes a device signature, or a stream ticket scoped to the two media routes (what the browser's `<audio>` element presents); `/rest` additionally takes a Subsonic password, the one guessable credential in the system. Each surface budgets bulk, art and media separately, because a cover-art burst sharing one budget with audio is how an album once stopped playing — see `docs/OPEN-INTERNET-REVIEW.md` #2b.
 
 **Album art is fetched in batches** (`CoverArtBatch`, `POST /api/flower/v1/cover-art/batch`): a grid asks for one cover per tile, and a library of 1400 albums is 1400 requests during one cold scroll - more than any per-source budget worth having, and when that budget ran out what got refused was playback. `AlbumArtLoader` coalesces a viewport's worth of misses over a 40ms debounce into one request of up to 32 ids; a peer that cannot answer one degrades to the old request-per-album path. Deliberately on Flower's own surface rather than `/rest`, which is a published protocol other clients implement. See `docs/OPEN-INTERNET-REVIEW.md` #2b.
 

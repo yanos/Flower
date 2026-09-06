@@ -55,7 +55,7 @@ public class SubsonicAuthTests : IDisposable
     [Fact]
     public void Accepts_a_correctly_salted_token()
     {
-        var token = OpenSubsonicClient.ComputeToken(_credential.Password, "somesalt");
+        var token = SubsonicAuth.ComputeToken(_credential.Password, "somesalt");
 
         Assert.Equal(_credential.Username, SubsonicAuth.Validate(
             Query(("u", _credential.Username), ("t", token), ("s", "somesalt")), _store));
@@ -64,7 +64,7 @@ public class SubsonicAuthTests : IDisposable
     [Fact]
     public void Accepts_a_token_in_either_case()
     {
-        var token = OpenSubsonicClient.ComputeToken(_credential.Password, "somesalt");
+        var token = SubsonicAuth.ComputeToken(_credential.Password, "somesalt");
 
         // Real Subsonic clients differ on hex casing - pin that both work.
         Assert.NotNull(SubsonicAuth.Validate(
@@ -90,7 +90,7 @@ public class SubsonicAuthTests : IDisposable
     [Fact]
     public void Rejects_a_token_computed_with_a_different_salt()
     {
-        var token = OpenSubsonicClient.ComputeToken(_credential.Password, "somesalt");
+        var token = SubsonicAuth.ComputeToken(_credential.Password, "somesalt");
 
         // The salt is the whole point of the scheme: a token replayed with a
         // different salt must not validate.
@@ -101,7 +101,7 @@ public class SubsonicAuthTests : IDisposable
     [Fact]
     public void Rejects_the_wrong_password()
     {
-        var token = OpenSubsonicClient.ComputeToken("not-the-password", "somesalt");
+        var token = SubsonicAuth.ComputeToken("not-the-password", "somesalt");
 
         Assert.Null(SubsonicAuth.Validate(
             Query(("u", _credential.Username), ("t", token), ("s", "somesalt")), _store));
@@ -110,7 +110,7 @@ public class SubsonicAuthTests : IDisposable
     [Fact]
     public void Rejects_an_unknown_username()
     {
-        var token = OpenSubsonicClient.ComputeToken(_credential.Password, "somesalt");
+        var token = SubsonicAuth.ComputeToken(_credential.Password, "somesalt");
 
         Assert.Null(SubsonicAuth.Validate(
             Query(("u", "someone-else"), ("t", token), ("s", "somesalt")), _store));
@@ -123,7 +123,7 @@ public class SubsonicAuthTests : IDisposable
         // its own identity, so revoking one leaves the other working and
         // neither can impersonate the other.
         var other = await _store.IssueAsync("Second client");
-        var token = OpenSubsonicClient.ComputeToken(_credential.Password, "somesalt");
+        var token = SubsonicAuth.ComputeToken(_credential.Password, "somesalt");
 
         Assert.Null(SubsonicAuth.Validate(
             Query(("u", other.Username), ("t", token), ("s", "somesalt")), _store));
@@ -132,7 +132,7 @@ public class SubsonicAuthTests : IDisposable
     [Fact]
     public async Task A_revoked_credential_stops_authenticating()
     {
-        var token = OpenSubsonicClient.ComputeToken(_credential.Password, "somesalt");
+        var token = SubsonicAuth.ComputeToken(_credential.Password, "somesalt");
         Assert.NotNull(SubsonicAuth.Validate(
             Query(("u", _credential.Username), ("t", token), ("s", "somesalt")), _store));
 
@@ -148,7 +148,7 @@ public class SubsonicAuthTests : IDisposable
     [InlineData("s")]
     public void Rejects_a_request_missing_any_required_parameter(string omit)
     {
-        var token = OpenSubsonicClient.ComputeToken(_credential.Password, "somesalt");
+        var token = SubsonicAuth.ComputeToken(_credential.Password, "somesalt");
 
         var pairs = new List<(string, string)>
         {

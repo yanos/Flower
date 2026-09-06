@@ -9,7 +9,7 @@ namespace Flower.Services;
 // Signs every request an HttpClient makes, freshly, one signature per request.
 //
 // The audio pipeline is why this exists. A streamed track's URL is built once
-// - PeerStreamUrlResolver asks OpenSubsonicClient.BuildUrlAsync for a URL with
+// - PeerStreamUrlResolver asks PeerMediaClient.BuildUrlAsync for a URL with
 // the whole signed credential set baked into its query string - and then
 // handed onward as a plain string in Track.Path. SeekableHttpStream reuses
 // that one string for every request it makes: the HEAD probe, the bytes=0-0
@@ -20,7 +20,7 @@ namespace Flower.Services;
 // first request on that URL was accepted and every later one was rejected as a
 // replay - the exact case SignatureVerifier's own comment says cannot happen,
 // because "a legitimate caller always generates a fresh nonce per attempt".
-// That is true of OpenSubsonicClient.SendAsync, which signs per call. It was
+// That is true of PeerMediaClient.SendAsync, which signs per call. It was
 // never true of a URL handed to something else to fetch repeatedly.
 //
 // What made it invisible was the order. The bytes=0-0 probe went first, so it

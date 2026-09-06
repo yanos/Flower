@@ -45,7 +45,7 @@ public class SignatureVerifierTests
 
     // The regression behind "Could not reach <server>: Wrong username or
     // password": a caller signs its identity params (see
-    // PeerOpenSubsonicClientFactory) regardless of how they travel, but a
+    // PeerMediaClientFactory) regardless of how they travel, but a
     // server only sees them in the query when the caller put them there
     // (BuildUrl's LibVLC case) - never when they went out as headers
     // (SendAsync). So the canonical query must ignore X-Flower-* entirely,

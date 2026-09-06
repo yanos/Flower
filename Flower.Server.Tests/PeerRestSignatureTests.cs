@@ -10,11 +10,17 @@ using Flower.Services;
 
 namespace Flower.Server.Tests;
 
-// Path A over /rest: a paired Flower client browses this server with a device
-// signature and no username/password at all (see PeerOpenSubsonicClientFactory,
-// which sends empty u/p on purpose). Without this the pairing flow completed
-// and then every browse came back "Wrong username or password", because the
-// /rest filter only knew about path-B credentials and stream tickets.
+// Path A over /rest: a device signature, and no username or password at all.
+// Without it the pairing flow completed and then every browse came back "Wrong
+// username or password", because the /rest filter only knew about path-B
+// credentials and stream tickets.
+//
+// No Flower client goes through this door any more - the catalog moved to
+// /api/flower/v1/library and playback to /api/flower/v1/stream, so what the app
+// sends is nothing like the empty-credential query below. It stays because the
+// signature is still accepted here and an accepted credential deserves a test:
+// a paired device that wants an OpenSubsonic browse can have one without also
+// being issued a password.
 public class PeerRestSignatureTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
 {
     private static DeviceSigningKey NewDevice()
@@ -26,7 +32,7 @@ public class PeerRestSignatureTests(SubsonicServerFixture server) : IClassFixtur
         return new DeviceSigningKey(ecdsa, publicKeyRaw);
     }
 
-    // The same headers PeerOpenSubsonicClientFactory builds, over the same
+    // The same headers PeerMediaClientFactory builds, over the same
     // empty-credential query - if these two ever disagree on what is signed,
     // the real client stops being able to reach the real server.
     private async Task<(HttpStatusCode Status, string Body)> SendSignedAsync(

@@ -47,7 +47,7 @@ public interface ICoverArtUrlResolver
 }
 
 // The app's implementation: whichever peer currently holds the track, asked
-// over the OpenSubsonic surface every other peer call goes through.
+// over Flower's own surface like every other call this app makes.
 public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver) : ICoverArtUrlResolver
 {
     public bool ClosesConnection => true;
@@ -64,16 +64,16 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
             return null;
 
         var albumId = CatalogIdentity.AlbumIdFor(track);
-        return peer.Url($"/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}").ToString();
+        return peer.Url($"/api/flower/v1/cover-art?id={Uri.EscapeDataString(albumId)}").ToString();
     }
 
-    // Flower's own surface rather than /rest, even though the single-art call
-    // above uses /rest. A batch is not an OpenSubsonic idea and /rest is a
-    // published protocol other clients implement, so inventing a route there
-    // would be putting a private extension on a shared surface. The paired
-    // peer is a Flower.Server (PeerTrackResolver enforces "only the currently
-    // paired Server"), and the same device signature opens both doors - so
-    // this costs nothing and keeps the extension where extensions belong.
+    // The batch form of the call above, and on the same surface. A batch is not
+    // an OpenSubsonic idea, and /rest is a published protocol other clients
+    // implement, so inventing a route there would have been a private extension
+    // on a shared surface - which is what first put this one route on Flower's
+    // own. The single-art call has since followed it, along with playback: this
+    // app speaks its own protocol to its own server, and /rest exists for
+    // clients that speak nothing else.
     public (string Endpoint, string Id)? ResolveBatch(Track track)
     {
         var peer = peerTrackResolver.Resolve(track);

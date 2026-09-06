@@ -23,7 +23,7 @@ namespace Flower.Tests;
 // download succeeding, a peer that's flat-out unreachable, and a peer that
 // drops the connection mid-transfer (a network outage during download) -
 // runs against a real local HTTP server (FakePeerHttpServer) rather than a
-// mocked HttpClient, since PeerOpenSubsonicClientFactory.Create always builds
+// mocked HttpClient, since PeerMediaClientFactory.Create always builds
 // its own real HttpClient pointed at the peer's endpoint with no seam to
 // substitute a fake handler.
 //

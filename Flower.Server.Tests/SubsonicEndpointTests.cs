@@ -181,7 +181,7 @@ public sealed class SubsonicServerFixture : WebApplicationFactory<Program>, IAsy
     public static string AuthAs(string username, string password)
     {
         const string salt = "testsalt";
-        var token = OpenSubsonicClient.ComputeToken(password, salt);
+        var token = SubsonicAuth.ComputeToken(password, salt);
         return $"?u={Uri.EscapeDataString(username)}&t={token}&s={salt}&f=json&v=1.16.1&c=tests";
     }
 
@@ -590,7 +590,7 @@ public class SubsonicRateLimitTests(SubsonicServerFixture server) : IClassFixtur
         return new DeviceSigningKey(ecdsa, publicKeyRaw);
     }
 
-    // The same shape PeerOpenSubsonicClientFactory sends: empty u/t/s, identity
+    // The same shape PeerMediaClientFactory sends: empty u/t/s, identity
     // and signature in headers.
     private async Task<(HttpStatusCode Status, string Body)> SendSignedAsync(
         DeviceSigningKey device, string path, string remoteIp)

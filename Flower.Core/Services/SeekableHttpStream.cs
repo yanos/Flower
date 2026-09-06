@@ -279,7 +279,7 @@ public sealed class SeekableHttpStream : Stream
     //
     // Keyed on the content type rather than on parsing the body, because the
     // rule is broader than Subsonic and does not depend on a shape: a success
-    // on /rest/stream is audio bytes, so any textual body under a 2xx is an
+    // on a stream route is audio bytes, so any textual body under a 2xx is an
     // error being mistaken for one - a proxy's HTML sign-in page and a
     // captive portal land here too, and used to be decoded just as eagerly.
     private static async Task<string?> ProtocolErrorFor(

@@ -128,10 +128,12 @@ request time — turning "your rate limits are pooled" into "your server is down
 on a signal any caller can produce by sending a header.
 
 *The lockout is now a throttle on guessing rather than on the surface.*
-`FailedAuthLimiter` gates only the password path, and only after signatures and
-stream tickets have had their turn — neither can be guessed, so nothing is
-bought by refusing one because somebody sharing the address got a password
-wrong. A paired Flower device is therefore unaffected by a guesser behind the
+`FailedAuthLimiter` gates only the password path, and only after a signature has
+had its turn — a signature cannot be guessed, so nothing is bought by refusing
+one because somebody sharing the address got a password wrong. (A stream ticket
+was the third credential here when this was written; it has since moved off
+`/rest` entirely with the browser player, and `SyncEndpoints` scopes it to the
+two media routes.) A paired Flower device is therefore unaffected by a guesser behind the
 same NAT, which was the sharp consequence above.
 
 The guessing bound is preserved where it matters: an over-budget attempt is
@@ -406,8 +408,8 @@ close the security gap at that seam as a side effect.
 
 ### 7. Bearer tokens in URLs, once URLs leave the house — **fixed**
 
-Two tokens travelled in URLs: stream tickets (`/rest/stream?...&ticket=`, 15
-minutes, bound to one track id) and the admin session token (URL fragment, 60
+Two tokens travelled in URLs: stream tickets (`/api/flower/v1/stream?...&ticket=`
+— `/rest/stream` when this was written — 15 minutes, bound to one track id) and the admin session token (URL fragment, 60
 minutes, full admin). Both were narrow by design and the reasoning in
 `StreamTicketService` and `AdminSessionService` was sound for a LAN.
 
@@ -515,7 +517,9 @@ whole path end to end, in the thing it was written for.
   a limiter by. See `SYNC-PLAN.md`, "Peer-to-peer, built and removed".
 - Track and cover-art ids resolve through `Library.Find` and the album grouping,
   never through a caller-supplied path, so there is no traversal surface on
-  `/rest/stream`, `/download` or `/getCoverArt`. Checked; nothing to do.
+  `/rest/stream`, `/download` or `/getCoverArt` — nor on their
+  `/api/flower/v1/` counterparts, which run the same handlers behind a different
+  gate (`MediaEndpoints`). Checked; nothing to do.
 - `Program.cs`'s `ForwardLimit` is sized from the count of configured proxy
   *networks* rather than hops. The middleware re-checks each popped address, so
   this is a ceiling and not a grant, but the two numbers are unrelated and

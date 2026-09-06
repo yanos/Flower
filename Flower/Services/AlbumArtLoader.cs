@@ -264,8 +264,8 @@ public class AlbumArtLoader
 
     // Raw art bytes for a track this device actually has a file for - see
     // LocalAlbumArtReader, which is the one implementation of the embedded-
-    // tag-then-cover-file lookup and is shared with Flower.Server (serving
-    // /rest/getCoverArt).
+    // tag-then-cover-file lookup and is shared with Flower.Server, which serves
+    // the same bytes at /api/flower/v1/cover-art and /rest/getCoverArt.
     // Callers that also need to know what to serve the bytes *as* should use
     // LocalAlbumArtReader.ForFile directly rather than sniff.
     public static byte[]? TryGetLocalArtBytes(Track track) =>
@@ -623,18 +623,20 @@ public class AlbumArtLoader
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            // Signed, like every other call into a peer's /rest surface. This
+            // Signed, like every other call this app makes into a peer. This
             // used to send a bare fingerprint and alias with no signature at
             // all, which the app's own listener tolerated but Flower.Server
-            // does not - and its refusal is a *Subsonic* refusal, so it comes
-            // back as HTTP 200 carrying an error envelope. Two things followed
-            // from that, both of them bad: the JSON error body was written
-            // straight into the art cache as if it were an image (see
-            // LoadRemoteAsync's decode-before-cache rule), and each refusal
-            // charged the server's FailedAuthLimiter, so ten album tiles were
-            // enough to 429 the entire /rest surface for a minute - including
-            // /rest/stream, which is why playback of server-hosted tracks died
-            // wholesale.
+            // does not - and back when art was fetched over /rest, its refusal
+            // was a *Subsonic* refusal, so it came back as HTTP 200 carrying an
+            // error envelope. Two things followed from that, both of them bad:
+            // the JSON error body was written straight into the art cache as if
+            // it were an image (see LoadRemoteAsync's decode-before-cache rule),
+            // and each refusal charged the server's FailedAuthLimiter, so ten
+            // album tiles were enough to 429 the whole of /rest for a minute -
+            // including /rest/stream, which is why playback of server-hosted
+            // tracks died wholesale. Art and playback have both since moved to
+            // Flower's own surface, where they are separately budgeted (see
+            // SyncEndpoints' three limiters) and a refusal is a status code.
             await request.AddPeerCredentialsAsync(_credentials!);
             if (_artUrls!.ClosesConnection)
                 request.Headers.ConnectionClose = true;

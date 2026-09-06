@@ -89,7 +89,7 @@ public sealed class PeerStreamUrlResolver(
 
         try
         {
-            var url = await PeerOpenSubsonicClientFactory
+            var url = await PeerMediaClientFactory
                 .Create(peer, deviceIdentity, appSettings, signingKey)
                 .GetStreamUrlAsync(track.OriginTrackId);
             logger.LogInformation("Streaming {Title} from {Alias} ({EndPoint})", track.Title, peer.Alias, peer.BaseUri);

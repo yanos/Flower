@@ -47,7 +47,7 @@ public class StreamTicketUrlResolverTests
         var id = context.Request.QueryString["id"];
         var body = Encoding.UTF8.GetBytes(
             $$"""
-              {"ticket":"{{ticket}}","expiresAt":"{{expiresAt:o}}","url":"/rest/stream?id={{id}}&ticket={{ticket}}"}
+              {"ticket":"{{ticket}}","expiresAt":"{{expiresAt:o}}","url":"/api/flower/v1/stream?id={{id}}&ticket={{ticket}}"}
               """);
         context.Response.ContentType = "application/json";
         context.Response.ContentLength64 = body.Length;
@@ -72,7 +72,7 @@ public class StreamTicketUrlResolverTests
 
         // Absolute, because what comes back is handed to an <audio> element and
         // not to the HttpClient that has the base address.
-        Assert.Equal($"http://127.0.0.1:{server.Port}/rest/stream?id=sg-1&ticket=tk-abc", url);
+        Assert.Equal($"http://127.0.0.1:{server.Port}/api/flower/v1/stream?id=sg-1&ticket=tk-abc", url);
         var (path, id, credential) = Assert.Single(requests);
         Assert.Equal("/api/flower/v1/stream-tickets", path);
         Assert.Equal("sg-1", id);

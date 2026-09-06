@@ -13,7 +13,7 @@ namespace Flower.Services;
 //
 // Emits the same four identity params on every call, which the five call sites
 // this replaced did not: the sync services sent Fingerprint/Alias/Role,
-// PeerOpenSubsonicClientFactory sent those plus PublicKey, and
+// PeerMediaClientFactory sent those plus PublicKey, and
 // ServerAdminClient.SignWith sent Fingerprint/Alias/PublicKey but no Role. The
 // differences were accidental rather than meaningful, and unifying them is
 // provably inert in both directions:

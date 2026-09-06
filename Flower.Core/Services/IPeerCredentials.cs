@@ -10,7 +10,7 @@ namespace Flower.Services;
 //
 // This used to be five hand-rolled copies of the same identity block:
 // LibrarySyncService's two calls, PlaylistSyncService.AddSignedIdentityHeaders,
-// PeerOpenSubsonicClientFactory's PeerIdentityParamsBuilder delegate, and
+// PeerMediaClientFactory's PeerIdentityParamsBuilder delegate, and
 // ServerAdminClient.SignWith - all building the same X-Flower-* params from the
 // same DeviceIdentity/DeviceSigningKey pair, and each having drifted into a
 // slightly different subset of them (see SignedDeviceCredentials on why the
@@ -39,7 +39,7 @@ public interface IPeerCredentials
     // Returned as key/value pairs rather than written onto anything, because
     // both transports are real: headers for an ordinary HttpClient call, query
     // params for a URL handed to something else to fetch that cannot carry
-    // headers (LibVLC playing a stream URL - see OpenSubsonicClient.BuildUrlAsync).
+    // headers (LibVLC playing a stream URL - see PeerMediaClient.BuildUrlAsync).
     Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body);
 }
@@ -61,7 +61,7 @@ public static class PeerCredentialsExtensions
     // Values are percent-encoded on the way onto the request, because this is
     // the header transport and a header is ASCII - see IdentityHeaderEncoding,
     // and SignedRequest.Identity which decodes them again. The query transport
-    // (OpenSubsonicClient.BuildUrlAsync) escapes for itself and must not be
+    // (PeerMediaClient.BuildUrlAsync) escapes for itself and must not be
     // encoded here as well.
     public static async Task AddPeerCredentialsAsync(
         this HttpRequestMessage request, IPeerCredentials credentials, byte[]? body = null)

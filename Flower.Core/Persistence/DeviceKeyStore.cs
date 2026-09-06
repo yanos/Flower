@@ -81,7 +81,7 @@ namespace Flower.Persistence
         // ExportSubjectPublicKeyInfo()'s DER wrapper (65 bytes vs. ~91) and
         // trivially reconstructible (see SignatureVerifier.TryParsePublicKey),
         // which matters since this value has to travel in URLs (stream/
-        // cover-art requests handed to LibVLC/OpenSubsonicClient.BuildUrl,
+        // cover-art requests handed to LibVLC/PeerMediaClient.BuildUrl,
         // which can't carry custom headers) as well as request headers.
         private static byte[] PublicKeyRaw(ECDsa ecdsa)
         {

@@ -39,10 +39,12 @@ public sealed class LoopbackMediaServer : IDisposable
 
     public bool ServesRanges { get; set; } = true;
 
-    // Flower.Server maps /rest/stream with MapGet, so a HEAD to it is a 405
-    // and every real stream reaches the length through the ranged-GET probe
-    // instead. A loopback that answers HEAD takes that whole path out of the
-    // check, which is how it stayed untested while it was the one being used.
+    // Flower.Server maps its stream routes with MapGet, so a HEAD reaches no
+    // endpoint and is refused - a 404 from the single-page fallback rather than
+    // routing's own 405, though every caller only asks whether it succeeded.
+    // Either way the length comes from the ranged-GET probe, and a loopback that
+    // answers HEAD takes that whole path out of the check, which is how it
+    // stayed untested while it was the one being used.
     public bool AnswersHead { get; set; } = true;
 
     // Cuts every response body short at this offset, standing in for a
@@ -93,7 +95,7 @@ public sealed class LoopbackMediaServer : IDisposable
 
     public string UrlFor(string path) => $"http://127.0.0.1:{Port}/{path}";
 
-    public string Serve(byte[] content, string path = "rest/stream?id=abc")
+    public string Serve(byte[] content, string path = "api/flower/v1/stream?id=abc")
     {
         _content = content;
         _refusalsLeft = RefuseBodiesWith429;

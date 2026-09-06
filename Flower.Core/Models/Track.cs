@@ -180,7 +180,8 @@ namespace Flower.Models
         // this track in its own catalog - the TrackDto.Id this track was built
         // from, kept verbatim, because OpenSubsonic ids are opaque to a client
         // by specification: the only correct thing to do with one is hand it
-        // back. It is what /rest/stream and /rest/download are asked for (see
+        // back. It is what /api/flower/v1/stream and /download are asked for -
+        // and what /rest/stream is asked for by a third-party client (see
         // LibraryDownloadService, MainViewModel.GetStreamUrl).
         //
         // This used to be re-derived on demand as this device's own SyncKey

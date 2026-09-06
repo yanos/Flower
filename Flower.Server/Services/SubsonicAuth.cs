@@ -58,7 +58,7 @@ public static class SubsonicAuth
         if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(salt))
             return null;
 
-        var expected = OpenSubsonicClient.ComputeToken(credential.Password, salt);
+        var expected = ComputeToken(credential.Password, salt);
         // md5-of-a-known-salt is not a secret worth constant-time comparison in
         // the way the raw password is, but the cost is nil and it keeps the two
         // branches here from having visibly different timing shapes.
@@ -68,4 +68,17 @@ public static class SubsonicAuth
             ? credential.Username
             : null;
     }
+
+    // MD5 is mandated by the Subsonic auth scheme itself (token =
+    // md5(password + salt)), not a security choice of ours - see SYNC-PLAN.md's
+    // auth note. Fine over HTTPS, which any real deployment terminates in front
+    // of this server.
+    //
+    // It lived on the client, back when Flower's own client authenticated this
+    // way. It never did against Flower.Server - a paired device signs - and the
+    // client stopped speaking /rest at all when playback moved to
+    // /api/flower/v1/stream, so the last thing computing a Subsonic token is
+    // the thing that verifies one.
+    public static string ComputeToken(string password, string salt) =>
+        Convert.ToHexStringLower(MD5.HashData(Encoding.UTF8.GetBytes(password + salt)));
 }

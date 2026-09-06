@@ -32,6 +32,8 @@ namespace Flower.Server.Endpoints;
 //                           configured, as its own current values
 //   POST /log/report      - the caller's own recent log lines, for the owner
 //                           to read back through the admin API
+//   GET  /stream          - a track's bytes, ranged
+//   GET  /download        - the same bytes, as a named file
 //
 // Not here, and not accidentally omitted: pair-request (this server pairs by
 // code instead - see PairingEndpoints) and unpair-notify (nothing server-side
@@ -52,6 +54,15 @@ public static class SyncEndpoints
     // same kind of traffic.
     private static readonly RateLimiter ArtLimiter = new(max: 600, TimeSpan.FromSeconds(60));
 
+    // Playback is the third plane, and it is here for the same reason art is:
+    // a bulk budget of twenty per minute is nothing like what streaming a track
+    // costs. One track is a probe plus a body GET plus a reopen or two on a
+    // phone changing networks, and decode-ahead has two tracks in flight at
+    // once - so playing an album would spend the sync budget several times
+    // over, and the 429 would land on whichever request came next. Same ceiling
+    // /rest gives the same traffic, because it is the same traffic.
+    private static readonly RateLimiter MediaLimiter = new(max: 240, TimeSpan.FromSeconds(60));
+
     // Composed from the same two pieces the route is mapped from, so renaming
     // it can't silently drop cover art back onto BulkLimiter - the filter sees
     // a whole path, MapGet sees a suffix, and they cannot disagree.
@@ -60,6 +71,10 @@ public static class SyncEndpoints
     private const string CoverArtPath = GroupPrefix + CoverArtRoute;
     private const string CoverArtBatchRoute = "/cover-art/batch";
     private const string CoverArtBatchPath = GroupPrefix + CoverArtBatchRoute;
+    private const string StreamRoute = "/stream";
+    private const string StreamPath = GroupPrefix + StreamRoute;
+    private const string DownloadRoute = "/download";
+    private const string DownloadPath = GroupPrefix + DownloadRoute;
 
     // A playlist manifest for a large library, with a wide margin - the same
     // ceiling Kestrel is capped at process-wide (see Program.cs), applied here
@@ -89,7 +104,7 @@ public static class SyncEndpoints
             var http = context.HttpContext;
             var services = http.RequestServices;
             var key = RateLimiter.KeyFor(http.Connection.RemoteIpAddress);
-            var limiter = IsCoverArt(http.Request.Path) ? ArtLimiter : BulkLimiter;
+            var limiter = LimiterFor(http.Request.Path);
             var now = DateTimeOffset.UtcNow;
             if (!limiter.TryAcquire(key, now))
             {
@@ -125,6 +140,26 @@ public static class SyncEndpoints
                 await http.Request.Body.CopyToAsync(buffer, http.RequestAborted);
                 body = buffer.ToArray();
                 http.Request.Body.Position = 0;
+            }
+
+            // A stream ticket, for the media routes and nothing else. The
+            // browser head signs every other request in this group with a
+            // WebCrypto key (BrowserPeerCredentials), but the thing that opens
+            // a stream URL is an <audio> element, which presents no headers of
+            // its own - so the tab signs a request for a ticket and hands the
+            // element a URL carrying it. See StreamTicketService.
+            //
+            // Tried before the signature so a ticketed request never reaches
+            // the signature path at all, and scoped by IsMedia so a ticket
+            // cannot be spent on the catalog, the playlists or the log.
+            if (IsMedia(http.Request.Path))
+            {
+                var tickets = services.GetRequiredService<StreamTicketService>();
+                if (tickets.TryRedeem(http.Request.Query["ticket"].ToString(),
+                                      http.Request.Query["id"].ToString(), now))
+                {
+                    return await next(context);
+                }
             }
 
             var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
@@ -201,14 +236,37 @@ public static class SyncEndpoints
         // album ids do not belong in a query string, and this group signs
         // bodies already.
         sync.MapPost(CoverArtBatchRoute, (HttpContext context, Library library) => GetCoverArtBatch(context, library));
+
+        // The bytes themselves, on Flower's own surface. /rest serves the same
+        // two handlers behind the adapter's gate (see MediaEndpoints); this is
+        // the door every Flower client uses, and the only one a stream ticket
+        // opens.
+        sync.MapGet(StreamRoute, MediaEndpoints.Stream);
+        sync.MapGet(DownloadRoute, MediaEndpoints.Download);
     }
 
-    // Both cover-art routes share ArtLimiter. The batch one especially: it is
-    // the route that exists so art stops competing with playback, and putting
-    // it back in the general budget would undo exactly that.
-    private static bool IsCoverArt(PathString path) =>
-        path.Equals(CoverArtPath, StringComparison.OrdinalIgnoreCase) ||
-        path.Equals(CoverArtBatchPath, StringComparison.OrdinalIgnoreCase);
+    // Three planes, and the split is the point rather than the ceilings: art
+    // and playback each got their own budget precisely so that spending one
+    // cannot spend another. Both cover-art routes share ArtLimiter - the batch
+    // one especially, since it exists so art stops competing with playback and
+    // putting it back in the general budget would undo exactly that.
+    private static RateLimiter LimiterFor(PathString path)
+    {
+        if (path.Equals(CoverArtPath, StringComparison.OrdinalIgnoreCase) ||
+            path.Equals(CoverArtBatchPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return ArtLimiter;
+        }
+
+        return IsMedia(path) ? MediaLimiter : BulkLimiter;
+    }
+
+    // The two routes a stream ticket may open, and the only ones. A ticket is
+    // issued for one track id and authenticates nothing else on this group -
+    // see StreamTicketService, and the gate above where this is applied.
+    private static bool IsMedia(PathString path) =>
+        path.Equals(StreamPath, StringComparison.OrdinalIgnoreCase) ||
+        path.Equals(DownloadPath, StringComparison.OrdinalIgnoreCase);
 
     // Deliberately built on SubsonicEndpoints.CoverArtCandidates, the same
     // "which files is this id's art in" rule the single-id route and the admin

@@ -44,7 +44,7 @@ public class LibraryDownloadService
         if (peer == null)
             return TrackDownloadResult.PeerUnavailable;
         // See Track.OriginTrackId - the peer's own id for this track, which is
-        // the only thing /rest/download will match. A placeholder always has
+        // the only thing /api/flower/v1/download will match. A placeholder has
         // one (LibrarySyncMapper.ToPlaceholderTrack); a track that never came
         // from a peer isn't downloadable by definition.
         if (track.OriginTrackId is not { } originTrackId)
@@ -55,7 +55,7 @@ public class LibraryDownloadService
 
         try
         {
-            var client = PeerOpenSubsonicClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey);
+            var client = PeerMediaClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey);
 
             var folder = ResolveDownloadFolder();
             var destination = ResolveDestination(track, folder);
@@ -98,7 +98,7 @@ public class LibraryDownloadService
     //
     // Deterministic per track, which the id-based name got right and this has
     // to keep: an interrupted download leaves a "<destination>.part" beside it,
-    // and OpenSubsonicClient.DownloadTrackAsync can only resume from that if
+    // and PeerMediaClient.DownloadTrackAsync can only resume from that if
     // the next attempt picks the same name.
     //
     // Falls back to the old id-based name whenever the origin sent no relative

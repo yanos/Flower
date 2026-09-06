@@ -9,7 +9,7 @@ namespace Flower.Tests.TestSupport;
 // (LibraryDownloadServiceTests, LibrarySyncConditionalPullTests) or a plain
 // network audio stream (StreamingNetworkOutageTests). Exists because those tests need real
 // socket-level failure modes - a connection that's flat-out refused, or one
-// that opens and then drops mid-response - which OpenSubsonicClientTests'
+// that opens and then drops mid-response - which PeerMediaClientTests'
 // fake HttpMessageHandler can't produce, since that never touches a real
 // socket at all.
 //

@@ -10,8 +10,8 @@ using Flower.Services;
 
 namespace Flower.Server.Endpoints;
 
-// The OpenSubsonic REST surface Flower.Core's OpenSubsonicClient actually
-// calls (see SYNC-PLAN.md's client doc comment on OpenSubsonicClient for the
+// The OpenSubsonic REST surface Flower.Core's PeerMediaClient actually
+// calls (see SYNC-PLAN.md's client doc comment on PeerMediaClient for the
 // exact list) - browsing, stream/download, playlist CRUD, star, scrobble,
 // cover art. Only f=json is supported (Flower's own client, and every
 // third-party client worth testing against, defaults to it); a real
@@ -101,33 +101,33 @@ public static class SubsonicEndpoints
             if (!LimiterFor(context.HttpContext.Request.Path).TryAcquire(key, now))
                 return RateLimited(context.HttpContext);
 
-            // Three ways in, deliberately unequal in power. A path-A device
+            // Two ways in, deliberately unequal in power. A path-A device
             // signature authenticates the whole /rest surface for a paired
             // Flower device, which never holds a username/password at all. A
             // path-B credential (SubsonicCredentialStore) does the same for a
-            // third-party Subsonic client, which cannot sign. A stream ticket
-            // authenticates one track, because that is all an <audio>
-            // element's unsignable request should ever be able to reach - see
-            // StreamTicketService.
+            // third-party Subsonic client, which cannot sign.
             //
-            // The two unguessable ones are tried first, so a caller holding one
-            // never touches the failed-auth budget in either direction.
+            // A stream ticket used to be a third way in here, because the
+            // browser player's <audio> element was pointed at /rest/stream. It
+            // is pointed at /api/flower/v1/stream now and the ticket went with
+            // it - see SyncEndpoints' own gate, where it is additionally scoped
+            // to the two media routes. A credential good for one track had no
+            // business on a surface whose other routes are the whole catalog.
+            //
+            // The unguessable one is tried first, so a caller holding it never
+            // touches the failed-auth budget in either direction.
 
             // Path A: a paired Flower device browsing/streaming this server
             // with its device signature rather than a username and password.
             // Without it, pairing
             // succeeded (TrustedPeerStore) but every /rest call the client made
             // afterwards came back "Wrong username or password", because
-            // PeerOpenSubsonicClientFactory deliberately sends empty u/p and
+            // PeerMediaClientFactory deliberately sends empty u/p and
             // signs instead. GETs only here, so the signed body is always
             // empty.
             var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
             var replayGuard = services.GetRequiredService<NonceReplayGuard>();
             if (DeviceSignatureAuth.VerifyTrustedPeer(context.HttpContext.Request, [], trustedPeers, replayGuard) != null)
-                return await next(context);
-
-            var tickets = services.GetRequiredService<StreamTicketService>();
-            if (tickets.TryRedeem(query["ticket"].ToString(), query["id"].ToString(), now))
                 return await next(context);
 
             // Path B, and the only guessable credential on this surface - hence
@@ -176,8 +176,11 @@ public static class SubsonicEndpoints
         Map("/updatePlaylist", UpdatePlaylist);
         Map("/deletePlaylist", DeletePlaylist);
         Map("/scrobble", Scrobble);
-        Map("/stream", Stream);
-        Map("/download", Download);
+        // The same two handlers /api/flower/v1/stream and /download are mapped
+        // to - see MediaEndpoints. What differs is the gate above, which on
+        // this surface also admits a Subsonic password.
+        Map("/stream", MediaEndpoints.Stream);
+        Map("/download", MediaEndpoints.Download);
         Map("/getCoverArt", GetCoverArt);
 
         Map("/star", (HttpRequest r, Library l) => SetStarred(true, r, l));
@@ -555,104 +558,6 @@ public static class SubsonicEndpoints
             library.RecordPlay(id);
 
         return SubsonicResults.Ok();
-    }
-
-    // The one route on this surface that carries the music, and until now the
-    // one route that left no trace of having been asked.
-    //
-    // That mattered the first time a client reported that streaming had
-    // stopped working: ninety-two tracks skipped in one afternoon on a phone,
-    // every one of them remote, every one of them decoding to zero bytes -
-    // and nothing at all on the server to say whether the requests had even
-    // arrived. The catalog routes were answering fine the whole time, so
-    // "reachable" was never the question; "reachable for the bytes" was, and
-    // it was unanswerable.
-    //
-    // Logged in two halves, because the interesting failures are not in the
-    // first one. Starting a stream is a synchronous decision - the track is
-    // known, or it is not - while everything that goes wrong afterwards
-    // happens while ASP.NET Core is writing the file, long after this method
-    // has returned its IResult. So the response's completion carries the other
-    // half: how much actually went out, and whether the client was still there
-    // at the end of it.
-    private static IResult Stream(string? id, Library library, HttpContext context, ILoggerFactory loggerFactory)
-    {
-        var logger = loggerFactory.CreateLogger(StreamLogCategory);
-        var track = FindPlayable(id, library);
-        if (track is null)
-        {
-            logger.LogWarning(
-                "Refusing to stream {Id} to {Peer}: no playable track with that id (unknown, or its file is gone)",
-                id, StreamPeer(context));
-            return Results.NotFound();
-        }
-
-        var range = context.Request.Headers.Range.ToString();
-        logger.LogInformation(
-            "Streaming \"{Title}\" ({Id}) to {Peer}{Range}",
-            track.Title, id, StreamPeer(context), range.Length > 0 ? $" for range {range}" : "");
-
-        var startedAt = DateTimeOffset.UtcNow;
-        context.Response.OnCompleted(() =>
-        {
-            var elapsed = DateTimeOffset.UtcNow - startedAt;
-            var sent = context.Response.ContentLength;
-
-            if (context.RequestAborted.IsCancellationRequested)
-            {
-                // Not necessarily trouble - a skip, a seek and closing the app
-                // all abort a stream mid-flight. It is trouble when it happens
-                // to every track in a row, which is what this exists to show.
-                logger.LogInformation(
-                    "Stream of \"{Title}\" ({Id}) to {Peer} was cut off after {ElapsedMs:F0}ms",
-                    track.Title, id, StreamPeer(context), elapsed.TotalMilliseconds);
-                return Task.CompletedTask;
-            }
-
-            logger.LogInformation(
-                "Finished streaming \"{Title}\" ({Id}) to {Peer}: {Status}, {Bytes} byte(s) in {ElapsedMs:F0}ms",
-                track.Title, id, StreamPeer(context), context.Response.StatusCode, sent, elapsed.TotalMilliseconds);
-            return Task.CompletedTask;
-        });
-
-        return Results.File(track.Path!, LibraryDtoMapper.ContentTypeOf(track), enableRangeProcessing: true);
-    }
-
-    // Named rather than typed: ILogger<T> needs a T, and this class is static.
-    private const string StreamLogCategory = "Flower.Server.Subsonic.Stream";
-
-    // Who asked, in whichever of the three currencies this surface accepts: a
-    // paired device's fingerprint, a Subsonic username, or - for a stream
-    // ticket, which names nobody - the address alone.
-    private static string StreamPeer(HttpContext context)
-    {
-        var address = context.Connection.RemoteIpAddress?.ToString() ?? "an unknown address";
-
-        if (DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Fingerprint") is { Length: > 0 } fingerprint)
-            return $"{fingerprint} at {address}";
-
-        if (context.Request.Query["u"].ToString() is { Length: > 0 } username)
-            return $"{username} at {address}";
-
-        return address;
-    }
-
-    private static IResult Download(string? id, Library library)
-    {
-        var track = FindPlayable(id, library);
-        return track is null
-            ? Results.NotFound()
-            : Results.File(track.Path!, LibraryDtoMapper.ContentTypeOf(track),
-                fileDownloadName: Path.GetFileName(track.Path!), enableRangeProcessing: true);
-    }
-
-    private static Track? FindPlayable(string? id, Library library)
-    {
-        if (string.IsNullOrEmpty(id))
-            return null;
-
-        var track = library.Find(id);
-        return track?.Path is not null && File.Exists(track.Path) ? track : null;
     }
 
     // Internal rather than private: SyncEndpoints serves the same bytes at
