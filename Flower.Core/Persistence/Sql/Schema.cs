@@ -222,5 +222,26 @@ namespace Flower.Persistence.Sql
         public const string V6 = """
             ALTER TABLE playlists ADD COLUMN rules TEXT;
             """;
+
+        // origin_album_art_hash became origin_album_art_id. The rename was made
+        // in V1 above, where every schema change so far has been made - but a
+        // rename is the one edit that cannot be folded in, because folding it
+        // only changes what a *fresh* database is created with. An existing one
+        // is stamped at 6 and never re-runs V1, so it kept the old column name
+        // while every query started asking for the new one, and the server died
+        // on the first read: "SQLite Error 1: no such column:
+        // origin_album_art_id".
+        //
+        // A column being added is invisible to an old database until the step
+        // runs; a column being renamed is a lie the old database is already
+        // telling. Which is the rule to take from this: fold in an addition,
+        // append a step for a rename, a drop or a retype.
+        //
+        // Guarded like V5, and for the same reason: V1 already creates the
+        // column under its new name, so on a fresh database this step would be
+        // renaming something that does not exist.
+        public const string V7 = """
+            ALTER TABLE tracks RENAME COLUMN origin_album_art_hash TO origin_album_art_id;
+            """;
     }
 }

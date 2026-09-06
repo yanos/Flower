@@ -25,6 +25,12 @@ namespace Flower.Persistence.Sql
     // and rescan. Append a script only when that delete-and-rescan would lose
     // something a rescan cannot reproduce - play counts, starred flags,
     // playlists - which is what V2 is doing here.
+    //
+    // With one exception, which cost a running server: that default holds only
+    // for *adding* a column. Folding an addition into V1 leaves an existing
+    // database merely missing something. Folding in a rename, a drop or a
+    // retype leaves it holding a shape the code no longer asks for, and the
+    // next read throws - see Schema.V7, which is that mistake corrected.
     public static class SqliteMigrations
     {
         // Index + 1 is the schema version a script brings the database to, so
@@ -39,6 +45,7 @@ namespace Flower.Persistence.Sql
             new Migration(Schema.V4),
             new Migration(Schema.V5, connection => HasColumn(connection, "tracks", "encoder_profile")),
             new Migration(Schema.V6),
+            new Migration(Schema.V7, connection => HasColumn(connection, "tracks", "origin_album_art_id")),
         ];
 
         public static int LatestVersion => Scripts.Count;
