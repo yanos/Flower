@@ -105,7 +105,7 @@ namespace Flower.Models
         // track in the compilation still resolves to the same grouping key; then
         // falls back to the per-track Artists for an ordinary single-artist
         // album with neither tag populated. See RecentlyAddedAlbumsBuilder/
-        // AlbumGridBuilder/LibraryOpenSubsonicMapper, which all group or label
+        // AlbumGridBuilder/SubsonicMapper, which all group or label
         // albums by this rather than by Artists directly - otherwise a various-
         // artists compilation (same Album, differing per-track Artists) would
         // fragment into one tile/entry per distinct track artist.
@@ -195,7 +195,7 @@ namespace Flower.Models
         public string? OriginTrackId { get; set; }
 
         // The origin peer's file extension (no leading dot - see
-        // LibraryOpenSubsonicMapper.ToChild's Suffix field), needed at download
+        // SubsonicMapper.ToChild's Suffix field), needed at download
         // time to give the saved file a real extension since Path is null until
         // then. Same lifetime/meaning as OriginDeviceFingerprint.
         public string? OriginFileExtension { get; set; }
@@ -211,13 +211,22 @@ namespace Flower.Models
         // OriginDeviceFingerprint.
         public string? OriginRelativePath { get; set; }
 
-        // SHA256 hash (hex) of the origin peer's album art bytes at last sync -
-        // see LibraryOpenSubsonicMapper's CoverArt field and AlbumArtLoader's
-        // remote-fetch path. Used as the local disk cache key for synced art, so
-        // a changed hash (art replaced on the origin device) naturally produces a
-        // cache miss and re-fetch instead of needing separate invalidation logic.
-        // Null if the peer's album currently has no art. Same lifetime as
-        // OriginDeviceFingerprint.
+        // The origin's own id for this track's album art - Child.CoverArt as it
+        // arrived at last sync, which Flower.Server fills with the album id
+        // (SubsonicMapper.ToChild). Used as the local disk cache key for synced
+        // art; see AlbumArtLoader's remote-fetch path.
+        //
+        // It identifies the album, deliberately, and not the bytes. The app's own
+        // embedded host - since removed - used to stamp a SHA256 of the art here
+        // instead, so that replacing a cover produced a new key and re-fetched on
+        // its own. That is the wrong trade at this end: it keeps one cached file
+        // per version of every cover the library has ever had, and it can only
+        // ever ask for a version some earlier sync happened to name. One key per
+        // album is bounded and always addresses the current art. Noticing that
+        // the current art has changed is revalidation's job, not the key's.
+        //
+        // The name is a leftover from the hash and no longer describes what is in
+        // it. Same lifetime as OriginDeviceFingerprint.
         public string? OriginAlbumArtHash { get; set; }
 
         // True when *this* device fetched this file from a peer and put it
@@ -316,7 +325,7 @@ namespace Flower.Models
         public DateTimeOffset? StarredAt { get; set; }
 
         // Latest known play count reported by each OTHER device, keyed by
-        // DeviceIdentity.Fingerprint - see LibraryOpenSubsonicMapper.ToChild's
+        // DeviceIdentity.Fingerprint - see SubsonicMapper.ToChild's
         // PlayCounts field and Library.MergeSyncedTracks. Never contains this
         // device's own fingerprint: this device's own contribution always lives
         // in PlayCount/ImportedPlayCount above, live-incremented locally, never
@@ -378,7 +387,7 @@ namespace Flower.Models
 
         // The ONE place "seconds, rounded to the nearest whole one" gets computed -
         // every other spot that needs a duration as a bare int for identity
-        // purposes (LibraryOpenSubsonicMapper.ToChild's Duration field,
+        // purposes (SubsonicMapper.ToChild's Duration field,
         // PlaylistSyncMapper.ToDto, ITunesPlayCountImporter/ITunesDateAddedImporter)
         // calls this rather than re-deriving Math.Round(...) inline - a second,
         // independently-written copy of the same rounding rule is exactly how a

@@ -63,7 +63,7 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
         if (peer == null)
             return null;
 
-        var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
+        var albumId = SubsonicIdentity.AlbumIdFor(track);
         return peer.Url($"/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}").ToString();
     }
 
@@ -80,7 +80,7 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
         if (peer == null)
             return null;
 
-        return (peer.Url("/api/flower/v1/cover-art/batch").ToString(), LibraryOpenSubsonicMapper.AlbumIdFor(track));
+        return (peer.Url("/api/flower/v1/cover-art/batch").ToString(), SubsonicIdentity.AlbumIdFor(track));
     }
 }
 
@@ -105,7 +105,7 @@ public sealed class OriginCoverArtUrlResolver(Uri baseAddress) : ICoverArtUrlRes
         if (string.IsNullOrEmpty(track.Album) && string.IsNullOrEmpty(track.EffectiveAlbumArtist))
             return null;
 
-        var albumId = LibraryOpenSubsonicMapper.AlbumIdFor(track);
+        var albumId = SubsonicIdentity.AlbumIdFor(track);
         return new Uri(baseAddress, $"/api/flower/v1/cover-art?id={Uri.EscapeDataString(albumId)}").ToString();
     }
 
@@ -114,6 +114,6 @@ public sealed class OriginCoverArtUrlResolver(Uri baseAddress) : ICoverArtUrlRes
         if (string.IsNullOrEmpty(track.Album) && string.IsNullOrEmpty(track.EffectiveAlbumArtist))
             return null;
 
-        return (new Uri(baseAddress, "/api/flower/v1/cover-art/batch").ToString(), LibraryOpenSubsonicMapper.AlbumIdFor(track));
+        return (new Uri(baseAddress, "/api/flower/v1/cover-art/batch").ToString(), SubsonicIdentity.AlbumIdFor(track));
     }
 }

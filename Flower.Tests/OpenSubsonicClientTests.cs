@@ -71,61 +71,28 @@ public class OpenSubsonicClientTests
         Assert.Equal("26719a1196d2a940705a59634eb18eab", token);
     }
 
+    // A non-2xx status (the trust gate rejecting us, or any other HTTP error)
+    // must surface as a plain HttpRequestException from EnsureSuccessStatusCode
+    // rather than be written to disk as if it were audio - a 403 saved under
+    // the track's own name is a file that plays nothing and looks downloaded.
     [Fact]
-    public async Task PingAsync_sends_auth_params_and_succeeds_on_ok_status()
-    {
-        const string body = """{"subsonic-response":{"status":"ok","version":"1.16.1"}}""";
-        var client = MakeClient(body, out var handler);
-
-        await client.PingAsync();
-
-        Assert.NotNull(handler.LastRequestUri);
-        var query = handler.LastRequestUri!.Query;
-        Assert.Contains("u=alice", query);
-        Assert.Contains("f=json", query);
-        Assert.Contains("t=", query);
-        Assert.Contains("s=", query);
-        Assert.StartsWith("http://peer.local:4533/rest/ping", handler.LastRequestUri.GetLeftPart(UriPartial.Path));
-    }
-
-    [Fact]
-    public async Task Failed_status_throws_with_server_error_code_and_message()
-    {
-        const string body = """{"subsonic-response":{"status":"failed","version":"1.16.1","error":{"code":40,"message":"Wrong username or password."}}}""";
-        var client = MakeClient(body, out _);
-
-        var ex = await Assert.ThrowsAsync<SubsonicException>(() => client.PingAsync());
-
-        Assert.Equal(40, ex.Code);
-        Assert.Equal("Wrong username or password.", ex.Message);
-    }
-
-    // No "subsonic-response" wrapper at all - distinct from the "failed"
-    // status case above (a well-formed error the server deliberately sent):
-    // this is what a byte-for-byte truncated/corrupted response, or a
-    // non-Subsonic server answering on the same port, looks like.
-    [Fact]
-    public async Task Malformed_envelope_throws_SubsonicException()
-    {
-        var client = MakeClient("{}", out _);
-
-        var ex = await Assert.ThrowsAsync<SubsonicException>(() => client.PingAsync());
-
-        Assert.Equal("Empty or malformed subsonic-response envelope.", ex.Message);
-    }
-
-    // A non-2xx status (peer's trust gate rejecting us, or any other HTTP
-    // error) must surface as a plain HttpRequestException from
-    // EnsureSuccessStatusCode - not get swallowed or misread as valid JSON -
-    // see SendAsync's own comment on this.
-    [Fact]
-    public async Task Non_success_status_throws_HttpRequestException_before_attempting_to_parse_the_body()
+    public async Task Non_success_status_throws_HttpRequestException_rather_than_saving_the_body()
     {
         var handler = new FakeHandler("not json at all", HttpStatusCode.Forbidden);
         var http = new HttpClient(handler);
         var client = new OpenSubsonicClient("http://peer.local:4533", "alice", "hunter2", http);
+        var destination = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => client.PingAsync());
+        try
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(() => client.DownloadTrackAsync("sg-1", destination));
+            Assert.False(File.Exists(destination));
+        }
+        finally
+        {
+            File.Delete(destination);
+            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+        }
     }
 
     // Real socket-level connection failure (nothing listening on the port at
@@ -138,8 +105,17 @@ public class OpenSubsonicClientTests
     {
         var unboundPort = FakePeerHttpServer.GetUnboundPort();
         var client = new OpenSubsonicClient($"http://127.0.0.1:{unboundPort}", "alice", "hunter2");
+        var destination = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => client.PingAsync());
+        try
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(() => client.DownloadTrackAsync("sg-1", destination));
+        }
+        finally
+        {
+            File.Delete(destination);
+            File.Delete(destination + OpenSubsonicClient.PartialSuffix);
+        }
     }
 
     // Simulates a network outage partway through a stream/download: the
@@ -315,89 +291,17 @@ public class OpenSubsonicClientTests
     }
 
     [Fact]
-    public async Task GetArtistsAsync_parses_indexed_artist_list()
-    {
-        const string body = """
-            {"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"index":[
-                {"name":"B","artist":[{"id":"ar-1","name":"Beatles","coverArt":null,"albumCount":3}]}
-            ]}}}
-            """;
-        var client = MakeClient(body, out _);
-
-        var index = await client.GetArtistsAsync();
-
-        var group = Assert.Single(index);
-        Assert.Equal("B", group.Name);
-        var artist = Assert.Single(group.Artist);
-        Assert.Equal("Beatles", artist.Name);
-        Assert.Equal(3, artist.AlbumCount);
-    }
-
-    [Fact]
-    public async Task GetAlbumAsync_parses_album_with_songs()
-    {
-        const string body = """
-            {"subsonic-response":{"status":"ok","version":"1.16.1","album":{
-                "id":"al-1","name":"Abbey Road","artist":"Beatles","artistId":"ar-1",
-                "coverArt":"al-1","songCount":2,"duration":3000,"year":1969,"genre":"Rock",
-                "song":[
-                    {"id":"sg-1","title":"Come Together","album":"Abbey Road","artist":"Beatles","duration":259,"track":1},
-                    {"id":"sg-2","title":"Something","album":"Abbey Road","artist":"Beatles","duration":183,"track":2}
-                ]
-            }}}
-            """;
-        var client = MakeClient(body, out _);
-
-        var album = await client.GetAlbumAsync("al-1");
-
-        Assert.Equal("Abbey Road", album.Name);
-        Assert.Equal(2, album.Song?.Count);
-        Assert.Equal("Come Together", album.Song![0].Title);
-    }
-
-    [Fact]
-    public async Task GetPlaylistsAsync_parses_playlist_list()
-    {
-        const string body = """
-            {"subsonic-response":{"status":"ok","version":"1.16.1","playlists":{"playlist":[
-                {"id":"pl-1","name":"Road Trip","songCount":5,"duration":1200,"owner":"alice","public":false}
-            ]}}}
-            """;
-        var client = MakeClient(body, out _);
-
-        var playlists = await client.GetPlaylistsAsync();
-
-        var playlist = Assert.Single(playlists);
-        Assert.Equal("Road Trip", playlist.Name);
-        Assert.Equal(5, playlist.SongCount);
-    }
-
-    [Fact]
-    public async Task CreatePlaylistAsync_sends_repeated_songId_params()
-    {
-        const string body = """{"subsonic-response":{"status":"ok","version":"1.16.1","playlist":{"id":"pl-2","name":"New","songCount":2,"duration":0,"owner":"alice","public":false}}}""";
-        var client = MakeClient(body, out var handler);
-
-        var created = await client.CreatePlaylistAsync("New", ["sg-1", "sg-2"]);
-
-        Assert.NotNull(created);
-        Assert.Equal("pl-2", created!.Id);
-        var query = handler.LastRequestUri!.Query;
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(query, "songId=").Count);
-    }
-
-    [Fact]
-    public async Task GetStreamUrl_and_GetCoverArtUrl_build_authed_urls_without_a_request()
+    public async Task GetStreamUrl_builds_an_authed_url_without_making_a_request()
     {
         var client = new OpenSubsonicClient("http://peer.local:4533", "alice", "hunter2", new HttpClient(new FakeHandler("")));
 
         var streamUrl = await client.GetStreamUrlAsync("sg-1");
-        var coverUrl = await client.GetCoverArtUrlAsync("al-1", size: 300);
 
         Assert.StartsWith("http://peer.local:4533/rest/stream?", streamUrl);
         Assert.Contains("id=sg-1", streamUrl);
-        Assert.StartsWith("http://peer.local:4533/rest/getCoverArt?", coverUrl);
-        Assert.Contains("size=300", coverUrl);
+        Assert.Contains("u=alice", streamUrl);
+        Assert.Contains("t=", streamUrl);
+        Assert.Contains("s=", streamUrl);
     }
 
     // Regression guard against reverting to a fixed, computed-once header
@@ -408,16 +312,23 @@ public class OpenSubsonicClientTests
     [Fact]
     public async Task Consecutive_peer_identity_calls_send_different_nonces()
     {
-        const string body = """{"subsonic-response":{"status":"ok","version":"1.16.1"}}""";
-        var handler = new FakeHandler(body);
-        var http = new HttpClient(handler);
-        var client = new OpenSubsonicClient("http://peer.local:53317", "", "", http, credentials: MakePeerCredentials());
+        var client = new OpenSubsonicClient(
+            "http://peer.local:53317", "", "", new HttpClient(new FakeHandler("")),
+            credentials: MakePeerCredentials());
 
-        await client.PingAsync();
-        await client.PingAsync();
+        var first = await client.GetStreamUrlAsync("sg-1");
+        var second = await client.GetStreamUrlAsync("sg-1");
 
-        Assert.Equal(2, handler.NonceHeaders.Count);
-        Assert.All(handler.NonceHeaders, n => Assert.False(string.IsNullOrEmpty(n)));
-        Assert.NotEqual(handler.NonceHeaders[0], handler.NonceHeaders[1]);
+        Assert.NotEqual(first, second);
+        Assert.Contains("X-Flower-Nonce", first);
+        Assert.NotEqual(NonceIn(first), NonceIn(second));
     }
+
+    private static string NonceIn(string url) =>
+        new Uri(url).Query.TrimStart('?').Split('&')
+            .Select(pair => pair.Split('=', 2))
+            .Where(pair => pair.Length == 2 && Uri.UnescapeDataString(pair[0]) == "X-Flower-Nonce")
+            .Select(pair => Uri.UnescapeDataString(pair[1]))
+            .DefaultIfEmpty("")
+            .First();
 }

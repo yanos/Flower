@@ -159,7 +159,7 @@ public class LibrarySyncMapperTests
         var placeholder = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
 
         // The wire "id" (song.Id - the peer's own Track.Id, see
-        // LibraryOpenSubsonicMapper.ToChild) is what the track is *addressed*
+        // SubsonicMapper.ToChild) is what the track is *addressed*
         // by, and is kept as OriginTrackId - but it is deliberately not the
         // cross-device *matching* identity (see SYNC-PLAN.md Phase 3), since
         // two devices that each imported the same song separately have no

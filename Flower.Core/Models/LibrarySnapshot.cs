@@ -26,7 +26,7 @@ public enum StarTarget
 // because the two hosts that then existed were doing the same grouping per
 // request - the server as an aggregate SQL query, the client as a LINQ GroupBy
 // over the whole library
-// (LibraryOpenSubsonicMapper.FindAlbum grouped 16k tracks to pull out one
+// (the app's own mapper, since deleted, grouped 16k tracks to pull out one
 // album) - which meant the "what is an album" rule had two implementations
 // that only tests held to the same answer.
 //

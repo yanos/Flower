@@ -9,11 +9,13 @@ namespace Flower.Server.Tests;
 // (differing by a punctuation character and an argument order) and to round
 // durations two different ways, with nothing enforcing either agreement.
 // These pin the single shared implementation from the server's side; the
-// client's half is in Flower.Tests' LibraryOpenSubsonicMapperTests (AlbumIdFor
-// is SubsonicIdentity.AlbumId over EffectiveAlbumArtist). The two projects
-// meet at Flower.Core's SubsonicIdentity rather than at each other, which is
-// the point - the embedded host lives in the Avalonia-referencing Flower
-// project this one deliberately does not depend on.
+// client's half is in Flower.Tests' SubsonicIdentityTests (AlbumIdFor is
+// SubsonicIdentity.AlbumId over EffectiveAlbumArtist). The two projects meet
+// at Flower.Core's SubsonicIdentity rather than at each other, which is the
+// point - the client lives in the Avalonia-referencing Flower project this one
+// deliberately does not depend on. The embedded host that was the other half
+// of this parity is gone; what the parity now protects is a client asking for
+// an id the server publishes.
 public class IdentityParityTests
 {
     // Flower.Core's Track, not a server-private entity: the server now maps

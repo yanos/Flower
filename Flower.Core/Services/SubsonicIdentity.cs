@@ -7,8 +7,8 @@ using Flower.Models;
 namespace Flower.Services;
 
 // The one and only (artist, album) -> id function in the codebase, shared by
-// the embedded peer-to-peer host (LibraryOpenSubsonicMapper) and the
-// standalone server (LibraryImportService/SubsonicEndpoints).
+// the server that publishes an album id (SubsonicMapper/SubsonicEndpoints) and
+// every client that asks for one back (the cover-art resolvers, TrackInfoWindow).
 //
 // There used to be two, differing by a punctuation character and an argument
 // order: the client built "al:{album}|{artist}" from raw strings while the
@@ -36,9 +36,9 @@ public static class SubsonicIdentity
     // The grouping key for one track, in one place. An album is identified by
     // its *album* artist, never the per-track Artists - getting that wrong
     // silently 404'd cover art for every compilation (ARCHITECTURE-REVIEW Tier
-    // 2.1). Every caller that groups tracks into albums goes through this:
-    // the client's own embedded sync server (LibraryOpenSubsonicMapper) and
-    // the standalone server's resident snapshot (LibrarySnapshot.Build).
+    // 2.1). Every caller that groups tracks into albums goes through this: the
+    // server's resident snapshot (LibrarySnapshot.Build), and the client side
+    // that addresses art by album (ICoverArtUrlResolver).
     public static string AlbumIdFor(Track track) => AlbumId(track.EffectiveAlbumArtist, track.Album);
 
     private static string Normalize(string? value) => value?.Trim().ToLowerInvariant() ?? "";

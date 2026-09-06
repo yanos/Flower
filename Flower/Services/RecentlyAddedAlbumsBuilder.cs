@@ -10,7 +10,8 @@ namespace Flower.Services;
 // mobile's default "Recently Added" album grid (see MobileMainViewModel).
 // Grouped by (Album, EffectiveAlbumArtist), not Album alone, so two different
 // artists' same-named album ("Greatest Hits") do not collide into one tile -
-// same reasoning as LibraryOpenSubsonicMapper's server-side grouping.
+// same reasoning as LibrarySnapshot's own grouping, which the server
+// answers every album request out of.
 // EffectiveAlbumArtist (rather than raw per-track Artists) keeps a various-
 // artists compilation - same Album, differing per-track Artists, but a
 // consistent (or absent) AlbumArtists tag - as a single tile instead of

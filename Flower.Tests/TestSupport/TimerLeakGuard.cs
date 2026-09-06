@@ -54,7 +54,7 @@ namespace Flower.Tests.TestSupport;
 //     which is exactly what a live MainViewModel elsewhere looks like, since
 //     PeerSyncCoordinator's log-push timer runs for that view model's whole
 //     lifetime. Observed on CI as SearchTextTests, TaskExtensionsTests and
-//     LibraryOpenSubsonicMapperTests each blaming one of their own fast cases
+//     other fast collections each blaming one of their own cases
 //     for a PeerSyncCoordinator none of them constructs. So a timer first seen
 //     while another collection had a test in flight is tagged ambiguous: kept
 //     for the end-of-run backstop, never used to fail a test.

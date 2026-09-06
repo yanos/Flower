@@ -3,10 +3,13 @@ using Flower.Services;
 
 namespace Flower.Server.Services;
 
-// Track / pre-aggregated album row -> the OpenSubsonic wire DTOs from
-// Flower.Core's OpenSubsonicContracts.cs (see SYNC-PLAN.md's "Reuse boundary":
-// these are the same shapes OpenSubsonicClient parses, reused directly rather
-// than defining a server-side duplicate of the same fields).
+// Track / pre-aggregated album row -> the wire DTOs from Flower.Core's
+// OpenSubsonicContracts.cs (see SYNC-PLAN.md's "Reuse boundary": one set of
+// shapes rather than a server-side duplicate of the same fields).
+//
+// Child is the shape of Flower's own bulk sync manifest as much as it is
+// OpenSubsonic's song - most of its fields are marked Flower-specific, and
+// GET /api/flower/v1/library returns a list of them.
 //
 // The input is Flower.Core's Track now, not a server-private TrackEntity - see
 // Library.Snapshot for why that seam went away.
@@ -75,10 +78,9 @@ public static class SubsonicMapper
             CoverArt: SubsonicIdentity.AlbumId(albumArtist, track.Album),
             Starred: track.Starred,
             DateAdded: track.DateAdded,
-            // The same snapshot the app's own LibraryOpenSubsonicMapper.ToChild
-            // sends, and deliberately the same expression: this server's own
-            // tally under its own name, plus every other device's count it has
-            // learned. It sent none at all until now, which meant a browser tab
+            // This server's own tally under its own name, plus every other
+            // device's count it has learned. It sent none at all until a
+            // browser tab
             // could report a play here (see IPlayReporter) and then never see
             // it again - the count was stored and never served, so the next tab
             // showed an empty Plays column for a track it had just played.
@@ -102,11 +104,10 @@ public static class SubsonicMapper
             BitDepth: track.BitsPerSample > 0 ? track.BitsPerSample : null,
             Codec: track.Codec,
             RelativePath: RelativePathOf(track, libraryRoots),
-            // See Child.SortTitle/RememberPlaybackPosition - the same two
-            // groups the app's own LibraryOpenSubsonicMapper.ToChild sends, and
-            // deliberately the same expressions: a client pulling its catalog
-            // from this server must not get a thinner track than one pulling it
-            // from a desktop head.
+            // See Child.SortTitle/RememberPlaybackPosition. These reach
+            // another device only here: they are not in the file, so a client
+            // that holds the catalog but not the bytes has no other way to
+            // learn them.
             SortTitle: track.TitleSort,
             SortArtist: track.ArtistsSort,
             SortAlbum: track.AlbumSort,

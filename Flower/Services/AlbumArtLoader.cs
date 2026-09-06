@@ -74,10 +74,11 @@ public class AlbumArtLoader
         _logger = logger;
     }
 
-    // Disk cache for art fetched from a peer, content-addressed by
-    // Track.OriginAlbumArtHash - see HandleGetCoverArtAsync/LibraryOpenSubsonicMapper
-    // for where that hash comes from. Local (Path != null) tracks never use this;
-    // reading straight off the file is already cheap and always current.
+    // Disk cache for art fetched from a peer, keyed by Track.OriginAlbumArtHash
+    // - the origin's album id, one entry per album rather than one per version
+    // of its cover; see that field's own comment for why it identifies the album
+    // and not the bytes. Local (Path != null) tracks never use this; reading
+    // straight off the file is already cheap and always current.
     private static string CacheDirectory => Path.Combine(AppDataDirectory.Path, "AlbumArtCache");
 
     // Key: directory path for a local track, or "remote:{hash}" for a synced one.
@@ -263,8 +264,8 @@ public class AlbumArtLoader
 
     // Raw art bytes for a track this device actually has a file for - see
     // LocalAlbumArtReader, which is the one implementation of the embedded-
-    // tag-then-cover-file lookup and is shared with LibraryOpenSubsonicMapper
-    // (hashing for CoverArt) and Flower.Server (serving /rest/getCoverArt).
+    // tag-then-cover-file lookup and is shared with Flower.Server (serving
+    // /rest/getCoverArt).
     // Callers that also need to know what to serve the bytes *as* should use
     // LocalAlbumArtReader.ForFile directly rather than sniff.
     public static byte[]? TryGetLocalArtBytes(Track track) =>
@@ -702,9 +703,4 @@ public class AlbumArtLoader
             return null;
         }
     }
-
-    // Shared with LibraryOpenSubsonicMapper, which stamps this same hash onto
-    // CoverArt server-side - one hashing implementation, not two that could drift.
-    public static string ComputeArtHash(byte[] bytes) =>
-        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 }
