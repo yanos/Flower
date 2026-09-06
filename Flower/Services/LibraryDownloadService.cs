@@ -165,7 +165,7 @@ public class LibraryDownloadService
     // no folder scan is ever going to visit this path and fill these in.
     //
     // Before this, a downloaded track kept whatever the sync manifest carried,
-    // and until Child grew the technical fields that was nothing at all: an
+    // and until TrackDto grew the technical fields that was nothing at all: an
     // all-"-" Technical tab on a track whose file was sitting right there.
     // Duration is deliberately not re-read - it is part of Track.SyncKey, and a
     // second reading that rounded differently would fragment the track in every

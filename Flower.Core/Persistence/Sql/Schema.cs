@@ -35,7 +35,7 @@ namespace Flower.Persistence.Sql
                 -- effective value is a three-way fallback through the
                 -- compilation flag to the track artist. Reproducing that
                 -- expression in SQL is exactly the kind of second copy
-                -- SubsonicIdentity's own comment records going wrong, and it
+                -- CatalogIdentity's own comment records going wrong, and it
                 -- has to agree with artist_id/album_id below, which are
                 -- computed from it. Written by the same code, at the same time.
                 album_artist              TEXT    NOT NULL DEFAULT '',
@@ -82,7 +82,7 @@ namespace Flower.Persistence.Sql
                 date_added                INTEGER NOT NULL,
 
                 -- Stored, not computed on read, even though both are a pure
-                -- function of album_artist/album via SubsonicIdentity. The
+                -- function of album_artist/album via CatalogIdentity. The
                 -- server looks tracks up *by* them - getArtist, getAlbum,
                 -- getCoverArt and star are all "WHERE artist_id = ?" - and a
                 -- hash computed in C# is not something SQLite can index or

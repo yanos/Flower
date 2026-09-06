@@ -177,7 +177,7 @@ namespace Flower.Models
         public string? OriginDeviceFingerprint { get; set; }
 
         // The id the origin peer (or a third-party OpenSubsonic server) gave
-        // this track in its own catalog - the Child.Id this track was built
+        // this track in its own catalog - the TrackDto.Id this track was built
         // from, kept verbatim, because OpenSubsonic ids are opaque to a client
         // by specification: the only correct thing to do with one is hand it
         // back. It is what /rest/stream and /rest/download are asked for (see
@@ -188,20 +188,20 @@ namespace Flower.Models
         // same string from the same tags. Two ways that was wrong: a tag edit
         // on the serving device changes its SyncKey, so every reference a peer
         // was still holding silently 404'd; and a standalone Flower.Server
-        // (whose ids are database row ids - see SubsonicMapper.ToChild) never
+        // (whose ids are database row ids - see LibraryDtoMapper.ToTrackDto) never
         // computed a SyncKey for anything, so it could not have matched one at
         // all. Storing what the peer actually said removes the guess. Same
         // lifetime/meaning as OriginDeviceFingerprint.
         public string? OriginTrackId { get; set; }
 
         // The origin peer's file extension (no leading dot - see
-        // SubsonicMapper.ToChild's Suffix field), needed at download
+        // LibraryDtoMapper.ToTrackDto's Suffix field), needed at download
         // time to give the saved file a real extension since Path is null until
         // then. Same lifetime/meaning as OriginDeviceFingerprint.
         public string? OriginFileExtension { get; set; }
 
         // The origin peer's path for this file, relative to whichever library
-        // folder it sits under and separated by '/' - see Child.RelativePath,
+        // folder it sits under and separated by '/' - see TrackDto.RelativePath,
         // which is where it comes from and why only that part of the path
         // travels. What a download names the file it saves, so a downloaded
         // track lands at "<downloads>/Angine de Poitrine/Vol.II/01 Fabienk.mp3"
@@ -211,9 +211,9 @@ namespace Flower.Models
         // OriginDeviceFingerprint.
         public string? OriginRelativePath { get; set; }
 
-        // The origin's own id for this track's album art - Child.CoverArt as it
+        // The origin's own id for this track's album art - TrackDto.CoverArt as it
         // arrived at last sync, which Flower.Server fills with the album id
-        // (SubsonicMapper.ToChild). Used as the local disk cache key for synced
+        // (LibraryDtoMapper.ToTrackDto). Used as the local disk cache key for synced
         // art; see AlbumArtLoader's remote-fetch path.
         //
         // It identifies the album, deliberately, and not the bytes. The app's own
@@ -324,7 +324,7 @@ namespace Flower.Models
         public DateTimeOffset? StarredAt { get; set; }
 
         // Latest known play count reported by each OTHER device, keyed by
-        // DeviceIdentity.Fingerprint - see SubsonicMapper.ToChild's
+        // DeviceIdentity.Fingerprint - see LibraryDtoMapper.ToTrackDto's
         // PlayCounts field and Library.MergeSyncedTracks. Never contains this
         // device's own fingerprint: this device's own contribution always lives
         // in PlayCount/ImportedPlayCount above, live-incremented locally, never
@@ -386,7 +386,7 @@ namespace Flower.Models
 
         // The ONE place "seconds, rounded to the nearest whole one" gets computed -
         // every other spot that needs a duration as a bare int for identity
-        // purposes (SubsonicMapper.ToChild's Duration field,
+        // purposes (LibraryDtoMapper.ToTrackDto's Duration field,
         // PlaylistSyncMapper.ToDto, ITunesPlayCountImporter/ITunesDateAddedImporter)
         // calls this rather than re-deriving Math.Round(...) inline - a second,
         // independently-written copy of the same rounding rule is exactly how a

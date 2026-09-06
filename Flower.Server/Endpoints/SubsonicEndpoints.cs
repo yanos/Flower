@@ -292,13 +292,13 @@ public static class SubsonicEndpoints
 
         var summary = album.Summary;
         var dto = new AlbumWithSongsID3(
-            // id is already an "al-..." SubsonicIdentity.AlbumId value (see
+            // id is already an "al-..." CatalogIdentity.AlbumId value (see
             // GetCoverArt's own "al-" prefix check below) - not re-prefixed here.
             id, summary.Album ?? "Unknown Album", summary.AlbumArtist,
             summary.ArtistId ?? "",
             id, summary.SongCount, (long)summary.TotalDuration.TotalSeconds,
             summary.Year, summary.Genre,
-            album.Tracks.Select(t => SubsonicMapper.ToChild(t, libraryRoots: options.CurrentValue.LibraryPaths)).ToList());
+            album.Tracks.Select(t => LibraryDtoMapper.ToTrackDto(t, libraryRoots: options.CurrentValue.LibraryPaths)).ToList());
 
         return SubsonicResults.Ok(album: dto);
     }
@@ -338,7 +338,7 @@ public static class SubsonicEndpoints
         if (track is null)
             return SubsonicResults.Failed(70, "Song not found.");
 
-        return SubsonicResults.Ok(song: SubsonicMapper.ToChild(track, libraryRoots: options.CurrentValue.LibraryPaths));
+        return SubsonicResults.Ok(song: LibraryDtoMapper.ToTrackDto(track, libraryRoots: options.CurrentValue.LibraryPaths));
     }
 
     private static IResult Search3(
@@ -359,7 +359,7 @@ public static class SubsonicEndpoints
         var songs = snapshot.Tracks
             .Where(t => Matches(t.Title, query))
             .Take(songCount)
-            .Select(t => SubsonicMapper.ToChild(t, libraryRoots: options.CurrentValue.LibraryPaths))
+            .Select(t => LibraryDtoMapper.ToTrackDto(t, libraryRoots: options.CurrentValue.LibraryPaths))
             .ToList();
 
         var albums = snapshot.Albums
@@ -386,7 +386,7 @@ public static class SubsonicEndpoints
     private static IResult GetPlaylists(Library library)
     {
         var dtos = library.Playlists.Select(ToDto).ToList();
-        return SubsonicResults.Ok(playlists: new Flower.Services.Playlists(dtos));
+        return SubsonicResults.Ok(playlists: new SubsonicPlaylists(dtos));
     }
 
     // Membership is already resolved to live Tracks by the time it is resident
@@ -413,7 +413,7 @@ public static class SubsonicEndpoints
         if (library.FindPlaylist(id) is not { } playlist)
             return SubsonicResults.Failed(70, "Playlist not found.");
 
-        var entries = playlist.Tracks.Select(t => SubsonicMapper.ToChild(t, libraryRoots: options.CurrentValue.LibraryPaths)).ToList();
+        var entries = playlist.Tracks.Select(t => LibraryDtoMapper.ToTrackDto(t, libraryRoots: options.CurrentValue.LibraryPaths)).ToList();
         var summary = ToDto(playlist);
 
         var dto = new PlaylistWithSongsDto(
@@ -615,7 +615,7 @@ public static class SubsonicEndpoints
             return Task.CompletedTask;
         });
 
-        return Results.File(track.Path!, SubsonicMapper.ContentTypeOf(track), enableRangeProcessing: true);
+        return Results.File(track.Path!, LibraryDtoMapper.ContentTypeOf(track), enableRangeProcessing: true);
     }
 
     // Named rather than typed: ILogger<T> needs a T, and this class is static.
@@ -642,7 +642,7 @@ public static class SubsonicEndpoints
         var track = FindPlayable(id, library);
         return track is null
             ? Results.NotFound()
-            : Results.File(track.Path!, SubsonicMapper.ContentTypeOf(track),
+            : Results.File(track.Path!, LibraryDtoMapper.ContentTypeOf(track),
                 fileDownloadName: Path.GetFileName(track.Path!), enableRangeProcessing: true);
     }
 

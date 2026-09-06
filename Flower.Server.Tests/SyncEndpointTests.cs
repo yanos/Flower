@@ -329,7 +329,7 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
     // The return leg. A play reported here is stored on this server and has to
     // come back out in the manifest, or a tab counts a play and then never sees
     // it again - the count was kept and never served, which is how this looked
-    // in a real tab before SubsonicMapper.ToChild filled these two fields.
+    // in a real tab before LibraryDtoMapper.ToTrackDto filled these two fields.
     [Fact]
     public async Task The_manifest_carries_this_servers_own_counts_and_last_played_back()
     {

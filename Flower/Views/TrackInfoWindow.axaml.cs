@@ -716,7 +716,7 @@ public partial class TrackInfoWindow : Window
         if (Ioc.Default.GetService<IPeerCredentials>() == null)
             return [];
 
-        return [.. _editTracks.Select(SubsonicIdentity.AlbumIdFor).Distinct(StringComparer.Ordinal)];
+        return [.. _editTracks.Select(CatalogIdentity.AlbumIdFor).Distinct(StringComparer.Ordinal)];
     }
 
     // Runs one admin call per album the selection covers, and reports how many

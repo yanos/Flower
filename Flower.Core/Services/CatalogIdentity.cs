@@ -6,9 +6,14 @@ using Flower.Models;
 
 namespace Flower.Services;
 
-// The one and only (artist, album) -> id function in the codebase, shared by
-// the server that publishes an album id (SubsonicMapper/SubsonicEndpoints) and
-// every client that asks for one back (the cover-art resolvers, TrackInfoWindow).
+// How Flower names an album and an artist: the one and only (artist, album) ->
+// id function in the codebase, shared by the server that publishes an id
+// (LibraryDtoMapper, and the Subsonic adapter over it) and every client that
+// asks for one back (the cover-art resolvers, TrackInfoWindow).
+//
+// Flower's own scheme, not a borrowed one. It is what /api/flower/v1/cover-art
+// is addressed by and what the sync manifest carries; that /rest publishes the
+// same ids is the adapter agreeing with the catalog, not the other way round.
 //
 // There used to be two, differing by a punctuation character and an argument
 // order: the client built "al:{album}|{artist}" from raw strings while the
@@ -25,7 +30,7 @@ namespace Flower.Services;
 // grouped id unreachable. That mismatch was a live bug on the cover-art path
 // - art requests for any album with an AlbumArtists tag asked for an id the
 // serving side had never handed out, and quietly 404'd.
-public static class SubsonicIdentity
+public static class CatalogIdentity
 {
     public static string ArtistId(string? albumArtist) =>
         "ar-" + Hash(Normalize(albumArtist));

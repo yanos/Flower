@@ -63,7 +63,7 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
         if (peer == null)
             return null;
 
-        var albumId = SubsonicIdentity.AlbumIdFor(track);
+        var albumId = CatalogIdentity.AlbumIdFor(track);
         return peer.Url($"/rest/getCoverArt?id={Uri.EscapeDataString(albumId)}").ToString();
     }
 
@@ -80,7 +80,7 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
         if (peer == null)
             return null;
 
-        return (peer.Url("/api/flower/v1/cover-art/batch").ToString(), SubsonicIdentity.AlbumIdFor(track));
+        return (peer.Url("/api/flower/v1/cover-art/batch").ToString(), CatalogIdentity.AlbumIdFor(track));
     }
 }
 
@@ -95,7 +95,7 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
 //
 // Addressed by the album id recomputed from this track's own tags rather than
 // by the CoverArt value the manifest carried. The two agree today (see
-// SubsonicIdentity.AlbumIdFor, which is what both sides compute), and deriving
+// CatalogIdentity.AlbumIdFor, which is what both sides compute), and deriving
 // it keeps this resolver symmetric with the peer one above instead of quietly
 // depending on what a particular server chose to put in that field.
 public sealed class OriginCoverArtUrlResolver(Uri baseAddress) : ICoverArtUrlResolver
@@ -105,7 +105,7 @@ public sealed class OriginCoverArtUrlResolver(Uri baseAddress) : ICoverArtUrlRes
         if (string.IsNullOrEmpty(track.Album) && string.IsNullOrEmpty(track.EffectiveAlbumArtist))
             return null;
 
-        var albumId = SubsonicIdentity.AlbumIdFor(track);
+        var albumId = CatalogIdentity.AlbumIdFor(track);
         return new Uri(baseAddress, $"/api/flower/v1/cover-art?id={Uri.EscapeDataString(albumId)}").ToString();
     }
 
@@ -114,6 +114,6 @@ public sealed class OriginCoverArtUrlResolver(Uri baseAddress) : ICoverArtUrlRes
         if (string.IsNullOrEmpty(track.Album) && string.IsNullOrEmpty(track.EffectiveAlbumArtist))
             return null;
 
-        return (new Uri(baseAddress, "/api/flower/v1/cover-art/batch").ToString(), SubsonicIdentity.AlbumIdFor(track));
+        return (new Uri(baseAddress, "/api/flower/v1/cover-art/batch").ToString(), CatalogIdentity.AlbumIdFor(track));
     }
 }

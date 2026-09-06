@@ -198,7 +198,7 @@ public class BrowserDeviceAccessTests(SubsonicServerFixture server) : IClassFixt
 
         try
         {
-            var albumId = SubsonicIdentity.AlbumId("Aurora", "Alpha Album");
+            var albumId = CatalogIdentity.AlbumId("Aurora", "Alpha Album");
             var query = $"?id={Uri.EscapeDataString(albumId)}";
 
             var (signed, _) = await AsBrowserAsync(device, "GET", "/api/flower/v1/cover-art", "10.0.9.6", query);

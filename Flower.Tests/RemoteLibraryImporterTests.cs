@@ -37,7 +37,7 @@ public class RemoteLibraryImporterTests
     private const string OriginFingerprint = "server-fingerprint";
     private const string OwnFingerprint = "our-fingerprint";
 
-    private static Child RemoteSong(string title, Dictionary<string, int>? playCounts = null) => new(
+    private static TrackDto RemoteSong(string title, Dictionary<string, int>? playCounts = null) => new(
         Id: "sync:" + title,
         Title: title,
         Album: "Remote Album",
@@ -52,7 +52,7 @@ public class RemoteLibraryImporterTests
             OriginFingerprint, ownFingerprint, NullLogger<RemoteLibraryImporter>.Instance);
 
     private static FakePeerHttpServer ServingManifest(
-        List<Child> songs, string? etag = null, Action<HttpListenerContext>? inspect = null) =>
+        List<TrackDto> songs, string? etag = null, Action<HttpListenerContext>? inspect = null) =>
         new(async context =>
         {
             inspect?.Invoke(context);

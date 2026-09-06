@@ -305,9 +305,9 @@ public static class SyncEndpoints
                 // Under this server's own fingerprint, so a client merging
                 // this manifest files the counts as *this device's* rather
                 // than its own - see Track.RemotePlayCounts, and
-                // SubsonicMapper.ToChild for why the /rest browse endpoints
+                // LibraryDtoMapper.ToTrackDto for why the /rest browse endpoints
                 // deliberately do not pass one.
-                .Select(track => SubsonicMapper.ToChild(track, signingKey.Fingerprint, options.CurrentValue.LibraryPaths))
+                .Select(track => LibraryDtoMapper.ToTrackDto(track, signingKey.Fingerprint, options.CurrentValue.LibraryPaths))
                 .ToList();
             return JsonSerializer.Serialize(new LibrarySyncManifestDto(signingKey.Fingerprint, songs), JsonOptions);
         });

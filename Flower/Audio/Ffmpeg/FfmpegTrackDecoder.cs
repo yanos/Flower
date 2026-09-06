@@ -702,7 +702,7 @@ namespace Flower.Audio.Ffmpeg
         //
         // This used to list mp3, flac and wav as well, on the reasoning that
         // skipping the probe saves a round trip on a remote track. It cost an
-        // album instead. The extension is the *catalog's* (Child.Suffix, kept
+        // album instead. The extension is the *catalog's* (TrackDto.Suffix, kept
         // as OriginFileExtension), and the catalog describes the file on the
         // server's disk - not necessarily the bytes on the wire, which a
         // server is free to transcode, and not necessarily right in the first

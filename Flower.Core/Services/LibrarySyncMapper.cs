@@ -6,7 +6,7 @@ using Flower.Models;
 
 namespace Flower.Services;
 
-// Maps an OpenSubsonic Child (a peer's song, fetched by RemoteLibraryImporter)
+// Maps an OpenSubsonic TrackDto (a peer's song, fetched by RemoteLibraryImporter)
 // into a Flower placeholder Track - see SYNC-PLAN.md Phase 3's data model. Path
 // stays null (this device doesn't have the file yet); OriginDeviceFingerprint
 // records which peer answered, so a later download request goes to the right
@@ -22,7 +22,7 @@ public static class LibrarySyncMapper
     // it previously learned about us; our own play count is always authoritative
     // locally (Track.PlayCount, live-incremented) and must never be overwritten
     // by something arriving over sync.
-    public static Track ToPlaceholderTrack(Child song, string originDeviceFingerprint, string ownFingerprint) => new Track
+    public static Track ToPlaceholderTrack(TrackDto song, string originDeviceFingerprint, string ownFingerprint) => new Track
     {
         Title = song.Title,
         Artists = song.Artist,
@@ -30,7 +30,7 @@ public static class LibrarySyncMapper
         // otherwise recompute from two fields that never crossed the wire and so
         // always fell through to the per-track Artists - shattering every
         // various-artists compilation into one album tile per contributor. See
-        // Child.DisplayAlbumArtist.
+        // TrackDto.DisplayAlbumArtist.
         //
         // Only stored when it actually differs from this song's own artist. The
         // sender's fallback ends at Artists for an ordinary single-artist album,
@@ -58,7 +58,7 @@ public static class LibrarySyncMapper
         OriginTrackId = song.Id,
         OriginFileExtension = song.Suffix,
         // The origin's own path below its library folder, which is what the
-        // download names the saved file after - see Child.RelativePath. Null
+        // download names the saved file after - see TrackDto.RelativePath. Null
         // from a third-party server, which sends no such field; the download
         // then falls back to the track id plus Suffix above, exactly as every
         // download did before this existed.
@@ -69,7 +69,7 @@ public static class LibrarySyncMapper
             .ToDictionary(kv => kv.Key, kv => kv.Value),
         // Falls back to the Track record's own "now" default (see Track.DateAdded)
         // when talking to a third-party server that doesn't send this - see
-        // Child.DateAdded's own doc comment for why this matters for Recently
+        // TrackDto.DateAdded's own doc comment for why this matters for Recently
         // Added parity between a Client and its paired Server.
         DateAdded = song.DateAdded ?? DateTimeOffset.UtcNow,
         // Null from a third-party server, and null for a track nobody has
@@ -77,17 +77,17 @@ public static class LibrarySyncMapper
         // LastPlayedAt already means.
         LastPlayedAt = song.LastPlayed,
         // Part of the real OpenSubsonic spec, unlike the two above, and served
-        // by this project's own server all along (SubsonicMapper.ToChild) - it
+        // by this project's own server all along (LibraryDtoMapper.ToTrackDto) - it
         // was simply never read here, so a star set on the server or from any
         // third-party client was invisible to every Flower client. There is no
-        // StarredAt on the wire: `starred` is a bare flag in Child, and the
+        // StarredAt on the wire: `starred` is a bare flag in TrackDto, and the
         // timestamp is local bookkeeping for ordering a liked-songs view.
         Starred = song.Starred,
         // What Track Info's Technical tab reads. A placeholder has no file to
         // scan, so these can only ever be what the origin's own scan found;
         // without them a library made entirely of synced placeholders showed an
         // all-"-" Technical tab. BitRate crossed the wire all along and was
-        // simply not read here - the other three are new (see Child).
+        // simply not read here - the other three are new (see TrackDto).
         Bitrate = song.BitRate ?? 0,
         SampleRate = song.SamplingRate ?? 0,
         Channels = song.ChannelCount ?? 0,
@@ -97,19 +97,19 @@ public static class LibrarySyncMapper
         Codec = song.Codec,
         // The origin's "sort as" tags. A placeholder has no file to read them
         // off, so without these it would sort under its display text while the
-        // origin sorted it somewhere else entirely - see Child.SortTitle.
+        // origin sorted it somewhere else entirely - see TrackDto.SortTitle.
         TitleSort = song.SortTitle,
         ArtistsSort = song.SortArtist,
         AlbumSort = song.SortAlbum,
         ComposersSort = song.SortComposer,
-        // Flower's own per-track options - see Child.RememberPlaybackPosition.
+        // Flower's own per-track options - see TrackDto.RememberPlaybackPosition.
         // All four default to "off"/zero from a third-party server, which is
         // also what a track nobody has configured looks like.
         RememberPlaybackPosition = song.RememberPlaybackPosition,
         ResumePosition = song.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
         IgnoreWhenShuffling = song.IgnoreWhenShuffling,
         VolumeAdjustment = song.VolumeAdjustment,
-        // See Child.EncoderProfile - a placeholder has no file to parse it out of.
+        // See TrackDto.EncoderProfile - a placeholder has no file to parse it out of.
         EncoderProfile = song.EncoderProfile,
     };
 }

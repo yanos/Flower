@@ -6,19 +6,16 @@ using Flower.Services;
 namespace Flower.Server.Services;
 
 // Builds the "subsonic-response" envelope every /rest/* call replies with,
-// using Flower.Core's own OpenSubsonicContracts types - the same shapes
-// OpenSubsonicClient parses on the way in, reused directly on the way out
-// rather than a server-side duplicate of the same wire fields.
+// over the shapes in SubsonicContracts.cs beside it. Part of the adapter, not
+// the catalog: nothing outside /rest constructs one of these.
 public static class SubsonicResults
 {
     private const string ApiVersion = "1.16.1";
 
     // Reflection-based (not source-generated) - unlike the mobile/desktop
     // client, Flower.Server isn't trimmed/AOT, so the extra startup cost of
-    // reflection is a non-issue and this avoids a third JsonSerializerContext
-    // duplicating the same SubsonicEnvelope shape (see OpenSubsonicJsonContext's
-    // and ExternalProtocolJsonContext's own doc comments on why they're already
-    // two, not one).
+    // reflection is a non-issue and there is no JsonSerializerContext here to
+    // keep in step with the shapes next door.
     public static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -30,9 +27,9 @@ public static class SubsonicResults
         ArtistWithAlbumsID3? artist = null,
         AlbumWithSongsID3? album = null,
         AlbumList2? albumList2 = null,
-        Child? song = null,
+        TrackDto? song = null,
         SearchResult3? searchResult3 = null,
-        Flower.Services.Playlists? playlists = null,
+        SubsonicPlaylists? playlists = null,
         PlaylistWithSongsDto? playlist = null)
     {
         var envelope = new SubsonicEnvelope

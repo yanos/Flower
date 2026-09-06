@@ -58,12 +58,12 @@ public sealed class LibrarySnapshot
 
     public static LibrarySnapshot Build(IReadOnlyList<Track> tracks)
     {
-        // SubsonicIdentity.AlbumIdFor: the one expression of "an album is
+        // CatalogIdentity.AlbumIdFor: the one expression of "an album is
         // (effective album artist, album)". Getting that wrong - grouping on
         // the per-track artist - silently 404'd cover art for every
         // compilation.
         var albums = tracks
-            .GroupBy(SubsonicIdentity.AlbumIdFor)
+            .GroupBy(CatalogIdentity.AlbumIdFor)
             .Select(AlbumEntry.From)
             .ToList();
 
@@ -78,7 +78,7 @@ public sealed class LibrarySnapshot
             Albums = albums,
             AlbumsById = albums.ToDictionary(a => a.Id),
             TracksByArtistId = tracks
-                .GroupBy(t => SubsonicIdentity.ArtistId(t.EffectiveAlbumArtist))
+                .GroupBy(t => CatalogIdentity.ArtistId(t.EffectiveAlbumArtist))
                 .ToDictionary(g => g.Key, g => g.ToImmutableArray()),
         };
     }
@@ -113,7 +113,7 @@ public sealed class AlbumEntry
                 AlbumId: group.Key,
                 Album: first.Album,
                 AlbumArtist: albumArtist,
-                ArtistId: SubsonicIdentity.ArtistId(albumArtist),
+                ArtistId: CatalogIdentity.ArtistId(albumArtist),
                 SongCount: tracks.Length,
                 TotalDuration: TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks)),
                 Year: int.TryParse(first.Year, out var year) ? year : null,

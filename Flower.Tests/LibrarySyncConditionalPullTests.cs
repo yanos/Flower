@@ -61,7 +61,7 @@ public class LibrarySyncConditionalPullTests : IDisposable
 
     private const string LibraryPath = "/api/flower/v1/library";
 
-    private static Child RemoteSong(string title) => new(
+    private static TrackDto RemoteSong(string title) => new(
         Id: "sync:" + title,
         Title: title,
         Album: "Remote Album",

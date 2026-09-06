@@ -39,7 +39,7 @@ public class OriginLibraryImporterTests
         new(Http, $"http://127.0.0.1:{server.Port}", new NoCredentials(),
             NullLogger<RemoteLibraryImporter>.Instance, NullLogger<OriginLibraryImporter>.Instance);
 
-    private static Child Song(string title) => new(
+    private static TrackDto Song(string title) => new(
         Id: "sync:" + title,
         Title: title,
         Album: "Remote Album",
@@ -51,7 +51,7 @@ public class OriginLibraryImporterTests
     // Both routes a browser's library needs, on one host: the identity handshake
     // and the bulk manifest.
     private static FakePeerHttpServer Server(
-        List<Child> songs, string? fingerprint = ServerFingerprint, List<string>? requested = null) =>
+        List<TrackDto> songs, string? fingerprint = ServerFingerprint, List<string>? requested = null) =>
         new(async context =>
         {
             var path = context.Request.Url!.AbsolutePath;

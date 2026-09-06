@@ -426,8 +426,8 @@ namespace Flower.Persistence.Sql
             // means they cannot go stale against a retagged album.
             var albumArtist = track.EffectiveAlbumArtist;
             p["$album_artist"].Value = albumArtist;
-            p["$artist_id"].Value = SubsonicIdentity.ArtistId(albumArtist);
-            p["$album_id"].Value = SubsonicIdentity.AlbumId(albumArtist, track.Album);
+            p["$artist_id"].Value = CatalogIdentity.ArtistId(albumArtist);
+            p["$album_id"].Value = CatalogIdentity.AlbumId(albumArtist, track.Album);
             p["$starred"].Value = track.Starred ? 1 : 0;
             p["$starred_at"].Value = (object?)track.StarredAt?.UtcTicks ?? DBNull.Value;
             p["$is_locally_downloaded"].Value = track.IsLocallyDownloaded ? 1 : 0;
@@ -488,7 +488,7 @@ namespace Flower.Persistence.Sql
             DateAdded = new DateTimeOffset(reader.GetInt64(40), TimeSpan.Zero),
             // 41 (album_artist), 42 (artist_id) and 43 (album_id) are
             // deliberately not read back: all three are derived from the tag
-            // columns on write (Track.EffectiveAlbumArtist and SubsonicIdentity)
+            // columns on write (Track.EffectiveAlbumArtist and CatalogIdentity)
             // and exist only so the server can group, index and filter on them.
             // See Schema.V1.
             Starred = reader.GetInt64(44) != 0,

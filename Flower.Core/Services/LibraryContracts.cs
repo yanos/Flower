@@ -1,85 +1,25 @@
+using System;
 using System.Collections.Generic;
-using System.Text.Json.Serialization;
 
 namespace Flower.Services;
 
-// Wire shapes for the OpenSubsonic/Subsonic REST API (see SYNC-PLAN.md, "The
-// unifying decision"). Every response is JSON-wrapped in a "subsonic-response"
-// envelope; only the fields Flower's client actually reads are modeled here
-// (browse, stream/download, playlist CRUD, search, cover art, star, scrobble) -
-// this is not a complete mirror of the spec (no bookmarks, internet radio,
-// shares, chat, podcasts, etc).
-
-public sealed class SubsonicEnvelope
-{
-    [JsonPropertyName("subsonic-response")]
-    public SubsonicResponse? Response { get; init; }
-}
-
-public sealed class SubsonicResponse
-{
-    public string Status { get; init; } = "";
-    public string Version { get; init; } = "";
-    public SubsonicError? Error { get; init; }
-
-    public ArtistsID3? Artists { get; init; }
-    public ArtistWithAlbumsID3? Artist { get; init; }
-    public AlbumWithSongsID3? Album { get; init; }
-    public AlbumList2? AlbumList2 { get; init; }
-    public Child? Song { get; init; }
-    public SearchResult3? SearchResult3 { get; init; }
-    public Playlists? Playlists { get; init; }
-    public PlaylistWithSongsDto? Playlist { get; init; }
-}
-
-public sealed record SubsonicError(int Code, string Message);
-
-public sealed record ArtistsID3(List<IndexID3> Index);
-
-public sealed record IndexID3(string Name, List<ArtistID3> Artist);
-
-public sealed record ArtistID3(
-    string Id,
-    string Name,
-    string? CoverArt,
-    int AlbumCount);
-
-public sealed record ArtistWithAlbumsID3(
-    string Id,
-    string Name,
-    string? CoverArt,
-    int AlbumCount,
-    List<AlbumID3>? Album);
-
-public sealed record AlbumID3(
-    string Id,
-    string Name,
-    string? Artist,
-    string? ArtistId,
-    string? CoverArt,
-    int SongCount,
-    long Duration,
-    int? Year,
-    string? Genre);
-
-public sealed record AlbumWithSongsID3(
-    string Id,
-    string Name,
-    string? Artist,
-    string? ArtistId,
-    string? CoverArt,
-    int SongCount,
-    long Duration,
-    int? Year,
-    string? Genre,
-    List<Child>? Song);
-
-public sealed record AlbumList2(List<AlbumID3> Album);
-
-// A song, in Subsonic's terminology ("Child" is the spec's own name for this
-// shape - it's shared with directory entries in the pre-ID3 browsing API,
-// which Flower's client doesn't use).
-public sealed record Child(
+// Flower's own wire shape for one track in a catalog, and the payload of every
+// route that carries a library: GET /api/flower/v1/library (see
+// LibrarySyncContracts), the placeholder a client rebuilds from it (see
+// LibrarySyncMapper), and what the /rest adapter reshapes on its way out.
+//
+// It was called Child, after the OpenSubsonic element it started as, back when
+// browsing a peer meant speaking that protocol to it. Most of what it carries
+// now is Flower's own and is annotated as such below - play counts per device,
+// the sort tags, the per-track playback options, the encoder profile - and the
+// spec has no field for any of it. Naming it after the protocol had it the
+// wrong way round: the catalog is the thing, and OpenSubsonic is one way of
+// publishing it.
+//
+// The fields that ARE in the spec keep their spec spelling and semantics, so
+// the adapter is a reshaping and never a translation, and a third-party client
+// browsing a Flower host gets real values in real field names.
+public sealed record TrackDto(
     string Id,
     string Title,
     string? Album,
@@ -99,7 +39,7 @@ public sealed record Child(
     // Not part of the real OpenSubsonic spec - Flower-specific, ignored by any
     // third-party server/client that doesn't know about it. Every device's
     // latest known play count for this song, keyed by DeviceIdentity.Fingerprint
-    // - see SubsonicMapper.ToChild and Track.RemotePlayCounts for how
+    // - see LibraryDtoMapper.ToTrackDto and Track.RemotePlayCounts for how
     // this propagates play counts between devices without a central server.
     Dictionary<string, int>? PlayCounts = null,
     // Also Flower-specific, same reasoning as PlayCounts above. The sending
@@ -156,7 +96,7 @@ public sealed record Child(
     string? Codec = null,
     // The file's path relative to the library folder it was found under -
     // "Angine de Poitrine/Vol.II/01 Fabienk.mp3", never the absolute path and
-    // never the root itself. This is the spec's own Child.path in everything but
+    // never the root itself. This is the spec's own TrackDto.path in everything but
     // name; it is sent as "relativePath" rather than "path" because "path" on a
     // Flower Track means the absolute local one, and one field meaning both
     // things is the kind of confusion the rest of this file exists to avoid.
@@ -205,29 +145,3 @@ public sealed record Child(
     // like the other technical fields above it is the only way a device that
     // has the catalog but not the file can show it at all.
     string? EncoderProfile = null);
-
-public sealed record SearchResult3(
-    List<ArtistID3>? Artist,
-    List<AlbumID3>? Album,
-    List<Child>? Song);
-
-public sealed record Playlists(List<PlaylistDto> Playlist);
-
-public sealed record PlaylistDto(
-    string Id,
-    string Name,
-    string? Comment,
-    int SongCount,
-    long Duration,
-    string? Owner,
-    bool Public);
-
-public sealed record PlaylistWithSongsDto(
-    string Id,
-    string Name,
-    string? Comment,
-    int SongCount,
-    long Duration,
-    string? Owner,
-    bool Public,
-    List<Child>? Entry);

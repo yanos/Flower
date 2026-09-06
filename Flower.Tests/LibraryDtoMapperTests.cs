@@ -1,17 +1,19 @@
 using Flower.Models;
-using Flower.Server.Services;
+using Flower.Services;
 
-namespace Flower.Server.Tests;
+using Xunit;
+
+namespace Flower.Tests;
 
 // What a served song carries, per field that a receiving device cannot
 // reconstruct for itself.
 //
 // These used to be written against the app's own embedded host and its twin
-// mapper, which is gone; SubsonicMapper.ToChild is the only implementation
+// mapper, which is gone; LibraryDtoMapper.ToTrackDto is the only implementation
 // left, and it fills GET /api/flower/v1/library as well as the /rest browse
 // endpoints - so a field missing here is a field missing from every synced
 // placeholder on every client.
-public class SubsonicMapperTests
+public class LibraryDtoMapperTests
 {
     private static Track RealTrack(string title, string artist, string album, int durationSeconds = 200) =>
         new()
@@ -36,7 +38,7 @@ public class SubsonicMapperTests
         };
         Assert.EndsWith("|370", track.SyncKey); // Sanity check on the premise itself.
 
-        Assert.Equal(370, SubsonicMapper.ToChild(track).Duration);
+        Assert.Equal(370, LibraryDtoMapper.ToTrackDto(track).Duration);
     }
 
     // The serving half of what Flower.Tests' LibrarySyncMapperTests reads back.
@@ -56,7 +58,7 @@ public class SubsonicMapperTests
             EncoderProfile = "LAME 3.100, VBR (V0)",
         };
 
-        var song = SubsonicMapper.ToChild(track);
+        var song = LibraryDtoMapper.ToTrackDto(track);
 
         Assert.Equal("Come Together", song.SortTitle);
         Assert.Equal("Beatles, The", song.SortArtist);
@@ -77,7 +79,7 @@ public class SubsonicMapperTests
         var track = RealTrack("Come Together", "Beatles", "Abbey Road");
         track.Path = "/music/Come Together.MP3";
 
-        Assert.Equal("mp3", SubsonicMapper.ToChild(track).Suffix);
+        Assert.Equal("mp3", LibraryDtoMapper.ToTrackDto(track).Suffix);
     }
 
     [Fact]
@@ -85,7 +87,7 @@ public class SubsonicMapperTests
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road", durationSeconds: 259);
 
-        var song = SubsonicMapper.ToChild(track);
+        var song = LibraryDtoMapper.ToTrackDto(track);
 
         Assert.Equal(track.Id.ToKey(), song.Id);
         Assert.NotEqual(track.SyncKey, song.Id);
@@ -99,10 +101,10 @@ public class SubsonicMapperTests
     public void The_song_id_survives_a_tag_edit_on_the_serving_device()
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road", durationSeconds: 259);
-        var before = SubsonicMapper.ToChild(track).Id;
+        var before = LibraryDtoMapper.ToTrackDto(track).Id;
 
         track.Title = "Come Together (Remastered)";
-        var after = SubsonicMapper.ToChild(track).Id;
+        var after = LibraryDtoMapper.ToTrackDto(track).Id;
 
         Assert.Equal(before, after);
         Assert.NotEqual(track.SyncKey, after); // Sanity check on the premise: SyncKey did move.
@@ -115,7 +117,7 @@ public class SubsonicMapperTests
         track.PlayCount = 3;
         track.ImportedPlayCount = 4;
 
-        Assert.Equal(7, SubsonicMapper.ToChild(track, "self-1").PlayCounts!["self-1"]);
+        Assert.Equal(7, LibraryDtoMapper.ToTrackDto(track, "self-1").PlayCounts!["self-1"]);
     }
 
     [Fact]
@@ -124,7 +126,7 @@ public class SubsonicMapperTests
         var track = RealTrack("Come Together", "Beatles", "Abbey Road");
         track.RemotePlayCounts = new Dictionary<string, int> { ["peer-2"] = 12 };
 
-        Assert.Equal(12, SubsonicMapper.ToChild(track, "self-1").PlayCounts!["peer-2"]);
+        Assert.Equal(12, LibraryDtoMapper.ToTrackDto(track, "self-1").PlayCounts!["peer-2"]);
     }
 
     // Without a fingerprint to name the tally, no counts are sent at all - what
@@ -135,7 +137,7 @@ public class SubsonicMapperTests
         var track = RealTrack("Come Together", "Beatles", "Abbey Road");
         track.PlayCount = 3;
 
-        Assert.Null(SubsonicMapper.ToChild(track).PlayCounts);
+        Assert.Null(LibraryDtoMapper.ToTrackDto(track).PlayCounts);
     }
 
     // A song's artist id has to point at an artist the album listing mentions,
@@ -149,10 +151,10 @@ public class SubsonicMapperTests
             Album = "Compilation", Path = "/music/one.mp3",
         };
 
-        var song = SubsonicMapper.ToChild(track);
+        var song = LibraryDtoMapper.ToTrackDto(track);
 
-        Assert.Equal(Flower.Services.SubsonicIdentity.AlbumId("Various Artists", "Compilation"), song.AlbumId);
-        Assert.Equal(Flower.Services.SubsonicIdentity.ArtistId("Various Artists"), song.ArtistId);
+        Assert.Equal(CatalogIdentity.AlbumId("Various Artists", "Compilation"), song.AlbumId);
+        Assert.Equal(CatalogIdentity.ArtistId("Various Artists"), song.ArtistId);
         Assert.Equal("Various Artists", song.DisplayAlbumArtist);
     }
 }

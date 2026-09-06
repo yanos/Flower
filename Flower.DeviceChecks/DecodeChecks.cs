@@ -235,7 +235,7 @@ public static class DecodeChecks
 
     // The catalogued extension is not a fact about the bytes.
     //
-    // OriginFileExtension comes from the server's catalog (Child.Suffix), and
+    // OriginFileExtension comes from the server's catalog (TrackDto.Suffix), and
     // it describes a file on the server's disk: what arrives on the wire is
     // whatever that server chose to send, which for anything that transcodes
     // is a different container entirely - and a catalog can simply be wrong

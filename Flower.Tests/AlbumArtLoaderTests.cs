@@ -337,7 +337,7 @@ public class AlbumArtLoaderTests : IDisposable
         // Identified to the peer as us, and asking for this track's album by
         // the same id the server side maps albums under.
         Assert.Equal(SigningKey.Fingerprint, requestedFingerprint);
-        Assert.Contains(Uri.EscapeDataString(SubsonicIdentity.AlbumIdFor(track)), requestedPath);
+        Assert.Contains(Uri.EscapeDataString(CatalogIdentity.AlbumIdFor(track)), requestedPath);
         // Content-addressed on disk, so the next run (or a restart) needs no
         // peer at all - see the cached-file test above.
         Assert.Equal(art, await File.ReadAllBytesAsync(
@@ -473,7 +473,7 @@ public class AlbumArtLoaderTests : IDisposable
         Assert.NotNull(await loader.LoadAsync(track));
 
         Assert.StartsWith("/api/flower/v1/cover-art", requestedPath);
-        Assert.Contains(Uri.EscapeDataString(SubsonicIdentity.AlbumIdFor(track)), requestedPath);
+        Assert.Contains(Uri.EscapeDataString(CatalogIdentity.AlbumIdFor(track)), requestedPath);
         Assert.Equal("browser-credential", sessionHeader);
         // Connection reuse is the fetch stack's to manage in a browser, unlike
         // against a peer's HttpListener - see ICoverArtUrlResolver.ClosesConnection.

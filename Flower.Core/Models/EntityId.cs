@@ -23,7 +23,7 @@ namespace Flower.Models;
 // crossing into storage goes through ToKey, never through a caller's spelling.
 //
 // Album and artist ids are NOT Guids - they are content hashes with a single
-// spelling (see SubsonicIdentity) and need no conversion at all.
+// spelling (see CatalogIdentity) and need no conversion at all.
 public static class EntityId
 {
     // Guid -> stored/published id. The only formatting of an id in the codebase.

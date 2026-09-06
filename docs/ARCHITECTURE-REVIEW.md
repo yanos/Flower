@@ -8,6 +8,20 @@ is the live list. It stays because roughly a hundred source comments across
 ninety-odd files cite these tier numbers as the reasoning behind the code they
 sit on; deleting the file would leave every one of them pointing at nothing.
 
+**Names it cites that no longer exist.** The September 2026 protocol split
+renamed and moved most of what Tier 2.1 and Tier 4.1 are about. The prose below
+is left as written, because it is a record of what happened rather than a
+description of the code as it stands; read it through this table.
+
+| Below | Today |
+|---|---|
+| `SubsonicIdentity` | `CatalogIdentity` (`Flower.Core/Services/`) |
+| `Child` | `TrackDto` (`Flower.Core/Services/LibraryContracts.cs`) |
+| `SubsonicMapper.ToChild` | `LibraryDtoMapper.ToTrackDto` (`Flower.Core/Services/`) |
+| `LibraryOpenSubsonicMapper` (and its tests) | deleted — it had outlived the embedded host and had no callers |
+| `OpenSubsonicContracts.cs` | split: `LibraryContracts.cs` (Flower.Core) + `SubsonicContracts.cs` (Flower.Server) |
+| `OpenSubsonicClient`'s browse half | deleted — the catalog moved to `GET /api/flower/v1/library` |
+
 **What it never looked at.** It is accurate about its subject and silent about
 everything younger than it, which by now is a large fraction of the codebase.
 The reader most at risk is the one who takes "every tier DONE" to mean the

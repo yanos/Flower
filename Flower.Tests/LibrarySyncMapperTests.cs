@@ -10,7 +10,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_maps_metadata_and_leaves_Path_null()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);
@@ -32,12 +32,12 @@ public class LibrarySyncMapperTests
 
     // The Technical tab of Track Info reads these five, and a library made
     // entirely of synced placeholders had none of them: the manifest carried
-    // BitRate alone, and the mapper did not read even that. See Child's own
+    // BitRate alone, and the mapper did not read even that. See TrackDto's own
     // comment on SamplingRate.
     [Fact]
     public void ToPlaceholderTrack_carries_the_technical_fields_the_origin_scanned()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: "flac", Duration: 259, BitRate: 990, CoverArt: null,
@@ -59,7 +59,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_leaves_absent_technical_fields_unset()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);
@@ -74,12 +74,12 @@ public class LibrarySyncMapperTests
     }
 
     // What the download names the saved file after, so a downloaded library is
-    // browsable outside Flower - see Child.RelativePath and
+    // browsable outside Flower - see TrackDto.RelativePath and
     // LibraryDownloadService.ResolveDestination.
     [Fact]
     public void ToPlaceholderTrack_keeps_the_origins_relative_path_for_the_download_to_name_the_file_after()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Fabienk", Album: "Vol.II", Artist: "Angine de Poitrine",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: null, Genre: null,
             Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null,
@@ -95,7 +95,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_leaves_the_relative_path_unset_when_the_server_sends_none()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Fabienk", Album: "Vol.II", Artist: "Angine de Poitrine",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: null, Genre: null,
             Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);
@@ -111,7 +111,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_keeps_the_peers_own_id_verbatim_and_does_not_adopt_it_as_its_own()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "row-42-on-the-server", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: null, ArtistId: null, Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: null, Duration: 259, BitRate: null, CoverArt: null);
@@ -125,7 +125,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_carries_the_origin_peers_album_art_hash()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: "abc123");
@@ -138,7 +138,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_defaults_TrackNumber_to_zero_when_absent()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "id", Title: "Untitled", Album: null, Artist: null,
             AlbumId: null, ArtistId: null, Track: null, Year: null, Genre: null,
             Size: null, ContentType: null, Suffix: null, Duration: 100, BitRate: null, CoverArt: null);
@@ -151,7 +151,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_SyncKey_matches_what_the_server_side_mapper_would_compute_for_the_same_track()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: null, ArtistId: null, Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: null, Duration: 259, BitRate: null, CoverArt: null);
@@ -159,7 +159,7 @@ public class LibrarySyncMapperTests
         var placeholder = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
 
         // The wire "id" (song.Id - the peer's own Track.Id, see
-        // SubsonicMapper.ToChild) is what the track is *addressed*
+        // LibraryDtoMapper.ToTrackDto) is what the track is *addressed*
         // by, and is kept as OriginTrackId - but it is deliberately not the
         // cross-device *matching* identity (see SYNC-PLAN.md Phase 3), since
         // two devices that each imported the same song separately have no
@@ -172,7 +172,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_carries_the_incoming_play_counts_into_RemotePlayCounts()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: null, ArtistId: null, Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: null, Duration: 259, BitRate: null, CoverArt: null,
@@ -191,7 +191,7 @@ public class LibrarySyncMapperTests
         // play count via an earlier sync and be echoing it straight back - our
         // own count must stay authoritative locally (Track.PlayCount), never
         // overwritten by something arriving over the wire.
-        var song = new Child(
+        var song = new TrackDto(
             Id: "id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: null, ArtistId: null, Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: null, Duration: 259, BitRate: null, CoverArt: null,
@@ -204,7 +204,7 @@ public class LibrarySyncMapperTests
     }
 
     // The regression these three cover: AlbumArtists and IsCompilation had no
-    // field on Child at all, so a synced placeholder recomputed
+    // field on TrackDto at all, so a synced placeholder recomputed
     // EffectiveAlbumArtist from two empty fields and always landed on the
     // per-track Artists. Every various-artists compilation therefore fragmented
     // into one album tile per contributing artist on the receiving side, while
@@ -217,7 +217,7 @@ public class LibrarySyncMapperTests
     {
         // A blank AlbumArtists tag plus the compilation flag - the sender's
         // EffectiveAlbumArtist resolved this to "Various Artists".
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Sinnerman", Album: "Kill Bill Volume 1", Artist: "Nina Simone",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 3, Year: 2003, Genre: null,
             Size: null, ContentType: null, Suffix: "mp3", Duration: 120, BitRate: null, CoverArt: null,
@@ -233,7 +233,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_restores_an_explicit_album_artist_tag()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Blue In Green", Album: "Kind Of Blue", Artist: "Miles Davis & Bill Evans",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 3, Year: 1959, Genre: null,
             Size: null, ContentType: null, Suffix: "mp3", Duration: 337, BitRate: null, CoverArt: null,
@@ -252,7 +252,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_stores_no_album_artist_when_it_only_repeats_the_track_artist()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null,
@@ -270,7 +270,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_tolerates_a_server_that_sends_no_album_artist_at_all()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);
@@ -290,7 +290,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_carries_the_sort_tags_and_the_playback_options()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "The Beatles",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null,
@@ -321,7 +321,7 @@ public class LibrarySyncMapperTests
     [Fact]
     public void ToPlaceholderTrack_leaves_the_options_at_their_defaults_when_the_server_sends_none()
     {
-        var song = new Child(
+        var song = new TrackDto(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "The Beatles",
             AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
             Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null);

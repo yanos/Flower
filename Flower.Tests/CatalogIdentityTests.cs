@@ -13,7 +13,7 @@ namespace Flower.Tests;
 // was written for the app's own embedded host and outlived it with no callers
 // left. What the app still asks of this is the album id it addresses cover art
 // by - see ICoverArtUrlResolver - so that is what is pinned here.
-public class SubsonicIdentityTests
+public class CatalogIdentityTests
 {
     // A compilation: one album artist, many track artists. Deriving the id from
     // Artists fragments the album into one id per track, and the grouped id is
@@ -33,8 +33,8 @@ public class SubsonicIdentityTests
             Album = "Compilation", Path = "/music/two.mp3",
         };
 
-        Assert.Equal(SubsonicIdentity.AlbumIdFor(first), SubsonicIdentity.AlbumIdFor(second));
-        Assert.Equal(SubsonicIdentity.AlbumId("Various Artists", "Compilation"), SubsonicIdentity.AlbumIdFor(first));
+        Assert.Equal(CatalogIdentity.AlbumIdFor(first), CatalogIdentity.AlbumIdFor(second));
+        Assert.Equal(CatalogIdentity.AlbumId("Various Artists", "Compilation"), CatalogIdentity.AlbumIdFor(first));
     }
 
     // The other branch of EffectiveAlbumArtist: flagged a compilation with the
@@ -53,7 +53,7 @@ public class SubsonicIdentityTests
             Album = "Compilation", Path = "/music/two.mp3",
         };
 
-        Assert.Equal(SubsonicIdentity.AlbumIdFor(first), SubsonicIdentity.AlbumIdFor(second));
+        Assert.Equal(CatalogIdentity.AlbumIdFor(first), CatalogIdentity.AlbumIdFor(second));
     }
 
     [Theory]
@@ -62,12 +62,12 @@ public class SubsonicIdentityTests
     [InlineData("A|B", "C")] // The old plain-text form embedded this separator into the id itself.
     public void Ids_are_opaque_and_normalized(string artist, string album)
     {
-        var id = SubsonicIdentity.AlbumId(artist, album);
+        var id = CatalogIdentity.AlbumId(artist, album);
 
-        Assert.Equal(SubsonicIdentity.AlbumId(artist.Trim().ToUpperInvariant(), album.ToUpperInvariant()), id);
+        Assert.Equal(CatalogIdentity.AlbumId(artist.Trim().ToUpperInvariant(), album.ToUpperInvariant()), id);
         Assert.StartsWith("al-", id);
         Assert.DoesNotContain(artist.Trim().ToLowerInvariant(), id);
-        Assert.NotEqual(SubsonicIdentity.AlbumId(album, artist), id); // Argument order is meaningful.
+        Assert.NotEqual(CatalogIdentity.AlbumId(album, artist), id); // Argument order is meaningful.
     }
 
     // A song's artist id has to point at an artist the album listing mentions,
@@ -82,7 +82,7 @@ public class SubsonicIdentityTests
         };
 
         Assert.Equal(
-            SubsonicIdentity.ArtistId("Various Artists"),
-            SubsonicIdentity.ArtistId(track.EffectiveAlbumArtist));
+            CatalogIdentity.ArtistId("Various Artists"),
+            CatalogIdentity.ArtistId(track.EffectiveAlbumArtist));
     }
 }

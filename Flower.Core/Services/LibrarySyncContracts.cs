@@ -16,4 +16,4 @@ namespace Flower.Services;
 // In Flower.Core, not the app project, because it is the shape a client sends
 // and a server answers: Flower.Server's SyncEndpoints serves it, and a paired
 // client pulls its whole catalog through exactly this shape.
-public sealed record LibrarySyncManifestDto(string DeviceFingerprint, List<Child> Songs);
+public sealed record LibrarySyncManifestDto(string DeviceFingerprint, List<TrackDto> Songs);

@@ -1,20 +1,22 @@
 using Flower.Models;
-using Flower.Server.Services;
+using Flower.Services;
 
-namespace Flower.Server.Tests;
+using Xunit;
 
-// Child.RelativePath is the one part of a served file's path that crosses the
+namespace Flower.Tests;
+
+// TrackDto.RelativePath is the one part of a served file's path that crosses the
 // wire (SYNC-PLAN.md's Path-can't-cross-the-wire rule covers the rest), and a
 // client names its downloaded copy after it - see LibraryDownloadService. So
 // what matters here is as much what it leaves out as what it includes.
-public class SubsonicMapperRelativePathTests
+public class LibraryDtoMapperRelativePathTests
 {
     private static Track At(string path) => new() { Title = "Fabienk", Path = path };
 
     [Fact]
     public void The_configured_root_is_stripped_and_the_rest_is_kept()
     {
-        var relative = SubsonicMapper.RelativePathOf(
+        var relative = LibraryDtoMapper.RelativePathOf(
             At("/srv/music/Angine de Poitrine/Vol.II/01 Fabienk.mp3"),
             ["/srv/music"]);
 
@@ -24,7 +26,7 @@ public class SubsonicMapperRelativePathTests
     [Fact]
     public void A_trailing_separator_on_the_configured_root_makes_no_difference()
     {
-        var relative = SubsonicMapper.RelativePathOf(
+        var relative = LibraryDtoMapper.RelativePathOf(
             At("/srv/music/Artist/Album/Song.mp3"),
             ["/srv/music/"]);
 
@@ -36,7 +38,7 @@ public class SubsonicMapperRelativePathTests
     [Fact]
     public void The_longest_matching_root_wins_for_nested_folders()
     {
-        var relative = SubsonicMapper.RelativePathOf(
+        var relative = LibraryDtoMapper.RelativePathOf(
             At("/srv/music/lossless/Artist/Song.flac"),
             ["/srv/music", "/srv/music/lossless"]);
 
@@ -49,7 +51,7 @@ public class SubsonicMapperRelativePathTests
     [Fact]
     public void A_file_under_no_configured_root_sends_its_name_and_nothing_else()
     {
-        var relative = SubsonicMapper.RelativePathOf(
+        var relative = LibraryDtoMapper.RelativePathOf(
             At("/Users/someone/Music/Media.localized/Music/Artist/Album/01 Song.mp3"),
             ["/srv/music"]);
 
@@ -59,12 +61,12 @@ public class SubsonicMapperRelativePathTests
     [Fact]
     public void A_placeholder_has_no_file_and_so_no_relative_path()
     {
-        Assert.Null(SubsonicMapper.RelativePathOf(new Track { Title = "Fabienk" }, ["/srv/music"]));
+        Assert.Null(LibraryDtoMapper.RelativePathOf(new Track { Title = "Fabienk" }, ["/srv/music"]));
     }
 
     [Fact]
     public void No_configured_roots_at_all_still_sends_the_name()
     {
-        Assert.Equal("01 Song.mp3", SubsonicMapper.RelativePathOf(At("/srv/music/01 Song.mp3"), null));
+        Assert.Equal("01 Song.mp3", LibraryDtoMapper.RelativePathOf(At("/srv/music/01 Song.mp3"), null));
     }
 }

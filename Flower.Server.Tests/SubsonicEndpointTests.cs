@@ -407,7 +407,7 @@ public class SubsonicEndpointTests(SubsonicServerFixture server) : IClassFixture
     [Fact]
     public async Task getAlbum_returns_its_songs_in_disc_and_track_order()
     {
-        var albumId = SubsonicIdentity.AlbumId("Aurora", "Alpha Album");
+        var albumId = CatalogIdentity.AlbumId("Aurora", "Alpha Album");
 
         var response = await server.GetAsync($"/rest/getAlbum{server.AuthQuery}&id={Uri.EscapeDataString(albumId)}");
 
@@ -964,7 +964,7 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
     [Fact]
     public async Task Starring_an_album_stars_every_track_on_it_and_unstarring_clears_them()
     {
-        var albumId = SubsonicIdentity.AlbumId("Aurora", "Alpha Album");
+        var albumId = CatalogIdentity.AlbumId("Aurora", "Alpha Album");
 
         await server.GetAsync($"/rest/star{server.AuthQuery}&albumId={Uri.EscapeDataString(albumId)}");
         var starred = await server.GetAsync($"/rest/getAlbum{server.AuthQuery}&id={Uri.EscapeDataString(albumId)}");
@@ -986,12 +986,12 @@ public class SubsonicWriteEndpointTests(SubsonicServerFixture server) : IClassFi
         // production path that writes the tags (TrackRepository, via
         // Track.EffectiveAlbumArtist) - a row seeded past that would have an
         // empty artist_id and match nothing.
-        var artistId = SubsonicIdentity.ArtistId("Aurora");
+        var artistId = CatalogIdentity.ArtistId("Aurora");
 
         await server.GetAsync($"/rest/star{server.AuthQuery}&artistId={Uri.EscapeDataString(artistId)}");
 
         var beta = await server.GetAsync(
-            $"/rest/getAlbum{server.AuthQuery}&id={Uri.EscapeDataString(SubsonicIdentity.AlbumId("Aurora", "Beta Album"))}");
+            $"/rest/getAlbum{server.AuthQuery}&id={Uri.EscapeDataString(CatalogIdentity.AlbumId("Aurora", "Beta Album"))}");
         Assert.True(beta.GetProperty("album").GetProperty("song")
             .EnumerateArray().Single().GetProperty("starred").GetBoolean());
 

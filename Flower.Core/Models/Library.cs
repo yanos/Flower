@@ -681,7 +681,7 @@ namespace Flower.Models
         // permanently, no matter what the origin said later.
         //
         // That is what made carrying AlbumArtists/IsCompilation over the wire
-        // (see Child.DisplayAlbumArtist) look like it had no effect: every
+        // (see TrackDto.DisplayAlbumArtist) look like it had no effect: every
         // already-synced track matched by key, so the newly-populated fields
         // arrived and were dropped on the floor. It also means a retag on the
         // origin device never propagated at all.
@@ -693,7 +693,7 @@ namespace Flower.Models
         // such authority: the origin device is the only source its metadata can
         // possibly come from.
         //
-        // Restricted to the fields Child actually carries (see
+        // Restricted to the fields TrackDto actually carries (see
         // LibrarySyncMapper.ToPlaceholderTrack) rather than every tag on Track -
         // copying a field the wire never filled would blank out good data with a
         // default. The four in the SyncKey itself are excluded as well, since a
@@ -1061,7 +1061,7 @@ namespace Flower.Models
                     // So the next GET /library is not answered 304 with a
                     // catalog that no longer matches what is stored here - all
                     // of this is part of what that manifest serves (see
-                    // SubsonicMapper.ToChild).
+                    // LibraryDtoMapper.ToTrackDto).
                     BumpChangeToken();
                 }
             }
