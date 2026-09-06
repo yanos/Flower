@@ -771,6 +771,51 @@ are right. These are the specific gaps the findings above walked through.
 
 ---
 
+## G. Inherited from the August architecture review
+
+Three items `ARCHITECTURE-REVIEW.md` left open under "Other notes worth folding
+into future work". That document is a finished reference now, so they live here
+instead — an open finding in an all-done file is a finding nothing tracks.
+
+### G1. `Flower.Tests` has two independent flakes, and both are harness-level
+
+A full run fails 0-2 tests, and a *different* test each time. Two distinct
+causes, neither in the tests they land on:
+
+**The headless teardown race.** The failure is not an assertion: it is
+`[Test Case Cleanup Failure] ... The calling thread cannot access this object
+because a different thread owns it`, out of `Avalonia.Threading.Dispatcher.VerifyAccess`
+during teardown. Eight victim names observed so far - `MusicListPanelTests`,
+`CurrentlyPlayingControlViewModelTests`, `PlaylistPlaybackIntegrationTests`,
+`MainViewModelDeviceSidebarTests`, `OpenSubsonicClientTests`,
+`AlbumGridViewRebuildTests`, `MusicListViewGestureTests`, and
+`AlbumArtLoaderTests` (September 2026) - each passing when its class runs alone.
+The bug is in how the headless session's UI thread is shared across test
+classes, which is why chasing the named victim has never led anywhere.
+
+**The socket race.** `RemoteLibraryImporterTests` and `OpenSubsonicClientTests`
+intermittently fail with `HttpRequestException : Connection refused` against
+their own `FakePeerHttpServer`'s port - the fake server is not listening yet, or
+its port was taken, when the test dials it. Measured at 3 failing runs in 6 on a
+clean tree in August 2026, so it is the likelier reason a given red run is red.
+The fix is for the fake to publish the port it actually bound and be awaited
+before the first request, rather than being raced.
+
+Worth fixing at the harness level before it trains anyone to ignore a red run,
+which is the real cost of a flake and the reason this is not merely cosmetic.
+
+### G2. `IAudioManager` is silently partial on WASM
+
+`Flower/Audio/WebAudioManager.cs`
+
+`SetUpcoming` and `ApplyEqualizer` are no-ops, with no compile-time or runtime
+signal that a platform drops those features. So gapless handover and the
+equalizer are simply absent in the browser, and nothing says so - a caller
+cannot ask, and a user is not told. Worth a capability flag on `IAudioManager`
+before `Flower.Web` grows any feature that assumes an answer.
+
+---
+
 ## Checked and sound
 
 Things that look like defects on a first read and are not. Recorded so the next

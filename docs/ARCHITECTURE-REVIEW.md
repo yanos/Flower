@@ -2,7 +2,40 @@
 
 Whole-codebase review (August 2026) of structure, class design, data structures, algorithms, performance, latent bugs, duplicated sources of truth, and test coverage — read against the roadmap in the other `docs/*.md` files and `todo.txt`.
 
-**Status: Tier 0 implemented. Tier 1 implemented, 1.5 included. Tier 2 implemented, including 2.3's two deferred halves (the settings-tab views' service location, and unsubscription across the rest of the ViewModel layer). Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented. Tier 4.1 implemented, client and server (raw Microsoft.Data.Sqlite, not EF Core — see the item for why EF cannot run on iOS). EF Core is gone from the repository entirely.** Unlike the other plan docs, this one is a standing backlog rather than a single initiative — each tier below records its own state, and items should be struck off here as they land rather than moved elsewhere.
+**What this document is now.** A reference, not a backlog. Every tier below is
+done, so nothing here tells you what to work on next — `CODE-REVIEW-2026-09.md`
+is the live list. It stays because roughly a hundred source comments across
+ninety-odd files cite these tier numbers as the reasoning behind the code they
+sit on; deleting the file would leave every one of them pointing at nothing.
+
+**What it never looked at.** It is accurate about its subject and silent about
+everything younger than it, which by now is a large fraction of the codebase.
+The reader most at risk is the one who takes "every tier DONE" to mean the
+architecture has been reviewed. Not in scope, then or since:
+
+- **The audio pipeline.** `AudioFeeder`, `MiniaudioSink`, `OutputStage`,
+  `NativeAudioBridge`, `GaplessFormat` appear nowhere below. The only audio item
+  is §0.7, about LibVLC handles, and its subject has since been deleted from the
+  repo. `AUDIO-QUALITY-PLAN.md` and `AUDIOPHILE-PLAN.md` carry that ground, but
+  as design records rather than as a structural review — in particular nothing
+  states which of the four threads owns which state, or where the handoffs are.
+- **Native code.** `native/` is not mentioned once. Three vendored artifacts
+  (`flower-ffmpeg`, `miniaudio`, `flower_audio_bridge`) across five platforms,
+  built by their own scripts and committed as binaries, with an ABI pin, an
+  LGPL constraint, and a cross-language signature that only a comment enforces.
+- **Steady-state cost.** Tier 1 measures what an operation costs against a 16k
+  library, which was the right question. It has no way to ask what the app costs
+  while the user does nothing — which is what both of the September idle-CPU
+  defects were (see `CODE-REVIEW-2026-09.md` D6 and the `UnderrunCount` note in
+  its "Checked and sound").
+- **The logging and diagnostics subsystem**, most of which postdates this.
+- **The mobile heads' lifecycle** — suspension, resume, the multicast lock,
+  per-platform P/Invoke and packaging — and `Flower.DeviceChecks`, the whole
+  verification tier that has grown up beside Tier 5's answer to test coverage.
+- **The trust boundary as it now stands.** Tier 3 is a LAN-only security model.
+  `OPEN-INTERNET-REVIEW.md` supersedes it and should be read instead.
+
+**Status: Tier 0 implemented. Tier 1 implemented, 1.5 included. Tier 2 implemented, including 2.3's two deferred halves (the settings-tab views' service location, and unsubscription across the rest of the ViewModel layer). Tier 3 implemented. Tier 4.2, 4.3 and 4.4 implemented. Tier 5 implemented. Tier 4.1 implemented, client and server (raw Microsoft.Data.Sqlite, not EF Core — see the item for why EF cannot run on iOS). EF Core is gone from the repository entirely.** It was a standing backlog while it had open items; it has none left, and the two that outlived their tiers now sit in `CODE-REVIEW-2026-09.md` §G. See the scope note above for what that means for reading it.
 
 ## Scale reality check
 
@@ -10,11 +43,13 @@ Measured against the real 16k-track development library, not estimated:
 
 | Fact | Value |
 |---|---|
-| `library.json` | **17.9 MB**, 16,116 tracks, `WriteIndented = true` — since Tier 1.1, unindented and null-omitting |
+| `library.json` | **17.9 MB**, 16,116 tracks, `WriteIndented = true` — since Tier 1.1, unindented and null-omitting; the file itself is gone since Tier 4.1 moved the client to SQLite |
 | Rewritten in full | was on **every track start** and **every track end**; since Tier 1.1, coalesced behind a 3s debounce |
 | `Flower.Server` test coverage | was zero; 70 tests as of Tier 2.1 |
 | Event unsubscriptions (`-=`) in `Flower/ViewModels` + `Flower/Services` | 0 |
 | Tests at review time | 1027 — 938 in `Flower.Tests` (fast filter), 89 in `Flower.Server.Tests` (1024 before Tier 4.1's resident-library follow-up, 1006 before Tier 4.1's server half, 924 before its client half; net zero across 0.2's duplicate-queue-entry follow-up: 7 new queue-position tests in, 7 tests of the deleted `Playlist.GetNextTrack`/`GetPreviousTrack` out; 905 before 905 before 2.3/4.2's last two halves, 902 before 4.2's parked mobile work, 890 before Tier 5.6 was finished, 848 before Tier 2.6's guard, 844 before Tier 2.3 was finished, 823 before Tier 1.5 was finished, 795 before Tier 4.3, 629 before Tier 5 was finished; 393 before Tier 1, 461 before Tier 3, 478 before Tier 5.2, 500 before Tier 1.4, 510 before Tier 2.1, 524 before Tier 4.4, 545 before Tier 2.2, 568 before Tier 2.4, 579 before Tier 5.3) |
+
+| Tests today (September 2026) | **1968** — 1701 in `Flower.Tests` (fast filter), 267 in `Flower.Server.Tests`; the row above is the August figure the findings below were written against, kept for the ledger |
 
 These numbers matter because most findings below are invisible at the ~100-track scale a synthetic test library operates at.
 
@@ -575,13 +610,13 @@ Highest-value additions, roughly in priority order:
 - ~~**`async void` on non-event-handler paths**~~ — **DONE.** `PeerSyncCoordinator.ForceSyncNow` (formerly `MainViewModel.ForceSyncNow`), `LibraryBrowserViewModel.ScheduleFilter` and the seven `MobileMainViewModel` methods (`SelectAlbumOrArtist`, `SelectArtistAlbum`, `SelectRecentlyAddedAlbum`, `SelectPlaylist`, `SwipeBack`, `SwipeForward`, `ReorderCurrentPlaylistTrack`) are now synchronous shims over awaitable bodies, launched through `Forget(ILogger, string)` (`Flower/Services/TaskExtensions.cs`), which observes the returned task's fault instead of leaving it to surface later as an unobserved task exception, and logs it at `Error`. `Meziantou.Framework.Threading`'s `Forget()` was tried first and dropped: it observes *silently*, so a failed sync or drill-in would have left no trace at all. `OperationCanceledException` is still dropped without noise — it is the expected outcome of a restarted debounce or a screen navigating away. `LibraryBrowserViewModel` and `MobileMainViewModel` gained constructor-injected loggers to have something to log against.
 
   Deliberately left as `async void`: the `*_Click`/`*_Changed` handlers in the `Views` code-behind. Those are genuine event handlers — the signature is imposed by the framework, and Avalonia's dispatcher already routes their exceptions.
-- **`IAudioManager` is silently partial on WASM**: `WebAudioManager` no-ops `SetUpcoming` and `ApplyEqualizer` with no compile-time or runtime signal that a platform drops those features. Worth a capability flag before `Flower.Web` grows.
+- ~~**`IAudioManager` is silently partial on WASM**~~ — **moved** to `CODE-REVIEW-2026-09.md` §G2, which is the live backlog. Still open, just tracked somewhere that is not a finished document.
 - ~~**Seek drift**~~ — **DONE.** `GaplessCoordinator.Seek` still pre-negates the read split by the *requested* target, because that is the only value available synchronously, but the target is now provisional rather than final. `ITrackDecoder` gained a `SeekSettled` event carrying the byte offset decode genuinely resumed from; the decoder resolves it at the first sample decoded after the seek's flush, which is the earliest moment it can say where it actually landed. (Written against `TrackDecoder`, whose `MediaPlayer.Position` was set asynchronously so reading it back inside `Seek()` just returned the request. `FfmpegTrackDecoder` raises the same event for a different reason — `av_seek_frame` lands on a keyframe, not on the requested timestamp.) `GaplessCoordinator.HandleSeekSettled` re-anchors `_currentTrackReadSplit` onto that, ignoring a settle from a decoder that is no longer current (a `Play()` or a handover in between has already set its own split).
 
   The split is re-anchored to a flat `-landedBytes`, *not* rebaselined against the ring's current `TotalBytesRead`: the flush that resets the ring generation is the same boundary `landedBytes` is measured from, so anything the sink has already drained by the time the settle arrives is real playback past the landing point and must keep counting. The first draft got this wrong in the direction of silently discarding it, and the test written for that case is what caught it.
 
   Three tests in `GaplessCoordinatorTests`, driven through `FakeTrackDecoder.RaiseSeekSettled`. Confirmed to have teeth by mutation: ignoring the settle outright fails two, dropping the stale-decoder guard fails one.
-- **`Flower.Tests` has an order-dependent flake in its `Avalonia.Headless` tests.** A full run fails 0–2 tests, and a *different* test each time — seven distinct names observed so far (`MusicListPanelTests`, `CurrentlyPlayingControlViewModelTests`, `PlaylistPlaybackIntegrationTests`, `MainViewModelDeviceSidebarTests`, `OpenSubsonicClientTests`, `AlbumGridViewRebuildTests`, `MusicListViewGestureTests`), each passing when its class is run alone. The failure is not an assertion: it is `[Test Case Cleanup Failure] … The calling thread cannot access this object because a different thread owns it`, thrown out of `Avalonia.Threading.Dispatcher.VerifyAccess` during teardown. **There is a second, distinct flake alongside it**, in the socket-backed tests: `RemoteLibraryImporterTests` and `OpenSubsonicClientTests` intermittently fail with `HttpRequestException : Connection refused` against their own `FakePeerHttpServer`'s port, i.e. the fake server is not listening yet (or its port was taken) when the test dials it. Measured at 3 failing runs out of 6 on a clean tree in August 2026, so it is the more frequent of the two and the likelier reason a given red run is red. Different cause, different fix: the fake server needs to publish the port it actually bound and be awaited before the first request, rather than being raced. So the bug is in how the headless session's UI thread is shared across test classes, not in any of the tests it lands on — which is why chasing the named victim has never led anywhere. Worth fixing at the harness level before it trains anyone to ignore a red run.
+- ~~**`Flower.Tests` has an order-dependent flake in its `Avalonia.Headless` tests**, and a second, distinct socket-race flake alongside it~~ — **moved** to `CODE-REVIEW-2026-09.md` §G1, with an eighth victim name observed since. Both still open.
 - **The test suite wrote over the developer's real `settings.json`. Fixed; recorded because the shape recurs.** `PlatformDataDirectory.Current` is a process-global that defaults to *the real Application Support directory*, and `PinnedDataDirectory` only redirects it for the lifetime of one test class. Everything writing outside that window therefore hit real user data. Two things did: `TestIoc`'s `ColumnManager` — a process-wide singleton, since `Ioc.Default` can be configured once — schedules a fire-and-forget save 500ms after any column `PropertyChanged` (a width change during a resize gesture is enough), landing wherever the global points by then; and `ViewModelDisposalTests` derived from `PinnedDataDirectory` without `[Collection("PlatformDataDirectory")]`, so it pinned the global while other collections ran in parallel and deleted its temp directory out from under them. The result was a *default* `AppSettings` written over `settings.json`: library folders gone, iTunes integration back on, paired server forgotten — and since `AtomicJsonFile` keeps one generation of backup, the second such write took `settings.json.bak` too and left nothing to recover from. Reproduced at roughly 1 full run in 4. The fix is a floor rather than a rule: a `[ModuleInitializer]` in each test assembly pins a temp directory for the whole run, and the teardowns that restored `null` restore that instead, so no path resolves to a real one whatever races. `TestDataDirectoryIsolationTests` guards both halves, including a reflection check that every `PinnedDataDirectory` subclass carries the collection attribute. The general lesson: a safety mechanism whose failure mode is *silent damage to something outside the test run* has to fail closed.
 - **No connection reuse in the sync path** — `ConnectionClose = true` on every request, a documented workaround for `HttpListener`/iOS-backgrounding quirks. Even a three-request sync session pays three full handshakes. A permanent cost of the current transport, not a bug to fix in place.
 
