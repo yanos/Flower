@@ -1316,7 +1316,7 @@ public class StoreRoundTripTests : IDisposable
             Channels = 2, BitsPerSample = 16, Codec = "flac", EncoderProfile = "LAME 3.100, VBR (V0)",
             Path = "/music/a.flac",
             OriginDeviceFingerprint = "fp", OriginTrackId = "otid",
-            OriginFileExtension = "flac", OriginAlbumArtHash = "hash",
+            OriginFileExtension = "flac", OriginAlbumArtId = "al-art",
             PlayCount = 4, ImportedPlayCount = 7,
             LastPlayedAt = new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero),
             DateAdded = new DateTimeOffset(2025, 1, 2, 3, 4, 5, TimeSpan.Zero),
@@ -1371,7 +1371,7 @@ public class StoreRoundTripTests : IDisposable
         Assert.Equal("fp", reloaded.OriginDeviceFingerprint);
         Assert.Equal("otid", reloaded.OriginTrackId);
         Assert.Equal("flac", reloaded.OriginFileExtension);
-        Assert.Equal("hash", reloaded.OriginAlbumArtHash);
+        Assert.Equal("al-art", reloaded.OriginAlbumArtId);
         Assert.Equal(4, reloaded.PlayCount);
         Assert.Equal(7, reloaded.ImportedPlayCount);
         Assert.Equal(track.LastPlayedAt, reloaded.LastPlayedAt);

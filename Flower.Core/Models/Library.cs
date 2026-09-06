@@ -466,7 +466,7 @@ namespace Flower.Models
                     track.OriginTrackId = null;
                     track.OriginFileExtension = null;
                     track.OriginRelativePath = null;
-                    track.OriginAlbumArtHash = null;
+                    track.OriginAlbumArtId = null;
                     kept.Add(track);
                 }
 
@@ -552,7 +552,7 @@ namespace Flower.Models
             track.OriginTrackId           = previous.OriginTrackId;
             track.OriginFileExtension     = previous.OriginFileExtension;
             track.OriginRelativePath      = previous.OriginRelativePath;
-            track.OriginAlbumArtHash      = previous.OriginAlbumArtHash;
+            track.OriginAlbumArtId      = previous.OriginAlbumArtId;
             // Carried forward even though a rescan finding the file means it was
             // under a scanned folder after all: the flag also answers "is
             // deleting this file reversible" for the mobile download UI, and that
@@ -573,7 +573,7 @@ namespace Flower.Models
         // it already has a placeholder OR a real, Path-backed copy for the same
         // track - just updates which peer currently holds a copy
         // (OriginDeviceFingerprint) and its latest known album art
-        // (OriginAlbumArtHash). Every other device's play count
+        // (OriginAlbumArtId). Every other device's play count
         // (RemotePlayCounts) is merged in either way, real file or placeholder -
         // see MergeRemotePlayCounts. Never replaces (or removes) a track this
         // device already has a real, Path-backed copy of - a peer's manifest
@@ -593,7 +593,7 @@ namespace Flower.Models
         // server - this method's caller only ever syncs one peer at a time,
         // see SyncRolePolicy - is never swept up by an unrelated sync.
         //
-        // OriginDeviceFingerprint/OriginFileExtension/OriginAlbumArtHash and
+        // OriginDeviceFingerprint/OriginFileExtension/OriginAlbumArtId and
         // DateAdded are the exceptions to "never touches an already-known
         // track": this method's only caller (LibrarySyncService, per
         // SyncRolePolicy) is always a Client pulling from its one paired
@@ -639,7 +639,7 @@ namespace Flower.Models
                         existing.OriginTrackId = remote.OriginTrackId;
                         existing.OriginFileExtension = remote.OriginFileExtension;
                         existing.OriginRelativePath = remote.OriginRelativePath;
-                        existing.OriginAlbumArtHash = remote.OriginAlbumArtHash;
+                        existing.OriginAlbumArtId = remote.OriginAlbumArtId;
                         existing.DateAdded = remote.DateAdded;
                         MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
                         RefreshPlaceholderMetadata(existing, remote);

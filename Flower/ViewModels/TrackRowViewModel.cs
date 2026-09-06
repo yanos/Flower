@@ -113,7 +113,7 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     internal static bool ArtSourceMatches(Track a, Track b) =>
         a.Album == b.Album &&
         a.Path == b.Path &&
-        a.OriginAlbumArtHash == b.OriginAlbumArtHash &&
+        a.OriginAlbumArtId == b.OriginAlbumArtId &&
         a.OriginDeviceFingerprint == b.OriginDeviceFingerprint;
 
     // Height of the album art image — capped at ArtMaxSize so it never bleeds into the next group.

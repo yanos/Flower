@@ -24,7 +24,7 @@ namespace Flower.Persistence.Sql
             genre, beats_per_minute, initial_key, grouping, publisher, isrc,
             comment, description, copyright, lyrics,
             duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
-            origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_hash,
+            origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_id,
             play_count, imported_play_count, last_played_at, date_added,
             album_artist, artist_id, album_id, starred, starred_at,
             is_locally_downloaded, origin_relative_path,
@@ -267,7 +267,7 @@ namespace Flower.Persistence.Sql
                 genre, beats_per_minute, initial_key, grouping, publisher, isrc,
                 comment, description, copyright, lyrics,
                 duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
-                origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_hash,
+                origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_id,
                 play_count, imported_play_count, last_played_at, date_added,
                 album_artist, artist_id, album_id, starred, starred_at,
                 is_locally_downloaded, origin_relative_path,
@@ -281,7 +281,7 @@ namespace Flower.Persistence.Sql
                 $genre, $beats_per_minute, $initial_key, $grouping, $publisher, $isrc,
                 $comment, $description, $copyright, $lyrics,
                 $duration_ticks, $bitrate, $sample_rate, $channels, $bits_per_sample, $codec,
-                $origin_device_fingerprint, $origin_track_id, $origin_file_extension, $origin_album_art_hash,
+                $origin_device_fingerprint, $origin_track_id, $origin_file_extension, $origin_album_art_id,
                 $play_count, $imported_play_count, $last_played_at, $date_added,
                 $album_artist, $artist_id, $album_id, $starred, $starred_at,
                 $is_locally_downloaded, $origin_relative_path,
@@ -325,7 +325,7 @@ namespace Flower.Persistence.Sql
                 origin_device_fingerprint = excluded.origin_device_fingerprint,
                 origin_track_id = excluded.origin_track_id,
                 origin_file_extension = excluded.origin_file_extension,
-                origin_album_art_hash = excluded.origin_album_art_hash,
+                origin_album_art_id = excluded.origin_album_art_id,
                 play_count = excluded.play_count,
                 imported_play_count = excluded.imported_play_count,
                 last_played_at = excluded.last_played_at,
@@ -355,7 +355,7 @@ namespace Flower.Persistence.Sql
             "$genre", "$beats_per_minute", "$initial_key", "$grouping", "$publisher", "$isrc",
             "$comment", "$description", "$copyright", "$lyrics",
             "$duration_ticks", "$bitrate", "$sample_rate", "$channels", "$bits_per_sample", "$codec",
-            "$origin_device_fingerprint", "$origin_track_id", "$origin_file_extension", "$origin_album_art_hash",
+            "$origin_device_fingerprint", "$origin_track_id", "$origin_file_extension", "$origin_album_art_id",
             "$play_count", "$imported_play_count", "$last_played_at", "$date_added",
             "$album_artist", "$artist_id", "$album_id", "$starred", "$starred_at",
             "$is_locally_downloaded", "$origin_relative_path",
@@ -415,7 +415,7 @@ namespace Flower.Persistence.Sql
             p["$origin_device_fingerprint"].Value = Nullable(track.OriginDeviceFingerprint);
             p["$origin_track_id"].Value = Nullable(track.OriginTrackId);
             p["$origin_file_extension"].Value = Nullable(track.OriginFileExtension);
-            p["$origin_album_art_hash"].Value = Nullable(track.OriginAlbumArtHash);
+            p["$origin_album_art_id"].Value = Nullable(track.OriginAlbumArtId);
             p["$play_count"].Value = track.PlayCount;
             p["$imported_play_count"].Value = track.ImportedPlayCount;
             p["$last_played_at"].Value = (object?)track.LastPlayedAt?.UtcTicks ?? DBNull.Value;
@@ -481,7 +481,7 @@ namespace Flower.Persistence.Sql
             OriginDeviceFingerprint = Text(reader, 33),
             OriginTrackId = Text(reader, 34),
             OriginFileExtension = Text(reader, 35),
-            OriginAlbumArtHash = Text(reader, 36),
+            OriginAlbumArtId = Text(reader, 36),
             PlayCount = (int)reader.GetInt64(37),
             ImportedPlayCount = (int)reader.GetInt64(38),
             LastPlayedAt = reader.IsDBNull(39) ? null : new DateTimeOffset(reader.GetInt64(39), TimeSpan.Zero),

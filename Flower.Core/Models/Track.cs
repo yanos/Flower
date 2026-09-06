@@ -223,11 +223,10 @@ namespace Flower.Models
         // per version of every cover the library has ever had, and it can only
         // ever ask for a version some earlier sync happened to name. One key per
         // album is bounded and always addresses the current art. Noticing that
-        // the current art has changed is revalidation's job, not the key's.
-        //
-        // The name is a leftover from the hash and no longer describes what is in
-        // it. Same lifetime as OriginDeviceFingerprint.
-        public string? OriginAlbumArtHash { get; set; }
+        // the current art has changed is revalidation's job, not the key's, and
+        // AlbumArtLoader.Invalidate is what drops an entry when something does
+        // notice. Same lifetime as OriginDeviceFingerprint.
+        public string? OriginAlbumArtId { get; set; }
 
         // True when *this* device fetched this file from a peer and put it
         // where it now sits (see LibraryDownloadService) - as opposed to a file

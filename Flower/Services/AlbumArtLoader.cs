@@ -74,14 +74,14 @@ public class AlbumArtLoader
         _logger = logger;
     }
 
-    // Disk cache for art fetched from a peer, keyed by Track.OriginAlbumArtHash
+    // Disk cache for art fetched from a peer, keyed by Track.OriginAlbumArtId
     // - the origin's album id, one entry per album rather than one per version
     // of its cover; see that field's own comment for why it identifies the album
     // and not the bytes. Local (Path != null) tracks never use this; reading
     // straight off the file is already cheap and always current.
     private static string CacheDirectory => Path.Combine(AppDataDirectory.Path, "AlbumArtCache");
 
-    // Key: directory path for a local track, or "remote:{hash}" for a synced one.
+    // Key: directory path for a local track, or "remote:{albumId}" for a synced one.
     // WeakReference so GC can reclaim bitmaps under memory pressure.
     private static readonly ConcurrentDictionary<string, WeakReference<Bitmap>> Cache = new();
 
@@ -275,20 +275,20 @@ public class AlbumArtLoader
     // Info's Artwork tab reports the real dimensions of and opens at full size,
     // as opposed to the MaxArtPixels bitmap LoadAsync hands back for display. A
     // placeholder track's answer is whatever LoadRemoteAsync already wrote into
-    // the content-addressed disk cache, so this never issues a fetch of its
-    // own: no cached copy means no bytes, which is the same "nothing to show"
-    // the caller handles anyway. That path also has no MIME type to report -
-    // the cache is keyed by content hash and stores bytes alone - hence the
-    // empty string rather than a guess sniffed back out of the bytes.
+    // the disk cache, so this never issues a fetch of its own: no cached copy
+    // means no bytes, which is the same "nothing to show" the caller handles
+    // anyway. That path also has no MIME type to report - the cache is keyed by
+    // album id and stores bytes alone - hence the empty string rather than a
+    // guess sniffed back out of the bytes.
     public static LocalAlbumArt? TryGetArt(Track track)
     {
         if (IsLocalFile(track))
             return LocalAlbumArtReader.ForFile(track.Path, StaticLogger);
 
-        if (track.OriginAlbumArtHash is not { Length: > 0 } hash)
+        if (track.OriginAlbumArtId is not { Length: > 0 } artId)
             return null;
 
-        var cachePath = Path.Combine(CacheDirectory, $"{hash}.art");
+        var cachePath = Path.Combine(CacheDirectory, $"{artId}.art");
         try
         {
             if (!File.Exists(cachePath))
@@ -326,11 +326,10 @@ public class AlbumArtLoader
     //
     // The remote half is not symmetric with the local one, and has to do more.
     // A local file is re-read on the next miss and is current by definition,
-    // but synced art is content-addressed on disk by OriginAlbumArtHash - and
-    // against Flower.Server that "hash" is the album id (SubsonicMapper's
-    // CoverArt field), which does not change when the art behind it does. So
-    // the cache file has to be deleted outright; leaving it would mean the next
-    // load finds the old picture under the same key and never asks the server.
+    // but synced art is cached on disk under the origin's album id, which does
+    // not change when the art behind it does. So the cache file has to be
+    // deleted outright; leaving it would mean the next load finds the old
+    // picture under the same key and never asks the server.
     //
     // The evicted Bitmap is deliberately not disposed: rows and tiles currently
     // on screen may still be painting it, exactly as in Retain's own eviction.
@@ -340,10 +339,10 @@ public class AlbumArtLoader
 
         Forget(LocalCacheKey(track));
 
-        if (track.OriginAlbumArtHash is { Length: > 0 } hash)
+        if (track.OriginAlbumArtId is { Length: > 0 } artId)
         {
-            Forget($"remote:{hash}");
-            var cachePath = Path.Combine(CacheDirectory, $"{hash}.art");
+            Forget($"remote:{artId}");
+            var cachePath = Path.Combine(CacheDirectory, $"{artId}.art");
             try
             {
                 File.Delete(cachePath);
@@ -376,22 +375,22 @@ public class AlbumArtLoader
         }
     }
 
-    // Fetches a placeholder track's album art from its origin peer, content-
-    // addressed on disk by OriginAlbumArtHash so a restart (or the peer going
-    // offline) doesn't mean re-fetching - and so an album's art changing on the
-    // origin device is picked up automatically (new hash -> cache miss -> re-fetch)
-    // without any separate invalidation logic.
+    // Fetches a placeholder track's album art from its origin peer and keeps it
+    // on disk under the origin's album id, so a restart (or the peer going
+    // offline) does not mean re-fetching. The key names the album and not the
+    // bytes - see Track.OriginAlbumArtId - so art replaced on the origin is not
+    // noticed here on its own; Invalidate above is what drops a stale entry.
     private async Task<Bitmap?> LoadRemoteAsync(Track track)
     {
-        var hash = track.OriginAlbumArtHash;
-        if (string.IsNullOrEmpty(hash) || string.IsNullOrEmpty(track.OriginDeviceFingerprint))
+        var artId = track.OriginAlbumArtId;
+        if (string.IsNullOrEmpty(artId) || string.IsNullOrEmpty(track.OriginDeviceFingerprint))
             return null;
 
-        var cacheKey = $"remote:{hash}";
+        var cacheKey = $"remote:{artId}";
         if (TryGetCached(cacheKey, out var cached))
             return cached;
 
-        var cachePath = Path.Combine(CacheDirectory, $"{hash}.art");
+        var cachePath = Path.Combine(CacheDirectory, $"{artId}.art");
         if (File.Exists(cachePath))
         {
             var bmp = await Task.Run(() => TryDecodeFile(cachePath));
@@ -401,7 +400,7 @@ public class AlbumArtLoader
                 return bmp;
             }
 
-            // Nothing on disk under this hash is ever going to become decodable
+            // Nothing on disk under this id is ever going to become decodable
             // - the file is truncated, or it predates the decode-first rule
             // below and is actually a Subsonic error envelope. Drop it so the
             // fetch beneath re-fills it, instead of warning about the same

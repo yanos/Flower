@@ -769,7 +769,7 @@ public class LibraryTests
         {
             Title = "Downloaded Song", Path = "/private/downloads/abc.mp3",
             OriginDeviceFingerprint = "server-1", OriginTrackId = "peer-track-id",
-            OriginFileExtension = "mp3", OriginAlbumArtHash = "art-hash",
+            OriginFileExtension = "mp3", OriginAlbumArtId = "al-art",
             IsLocallyDownloaded = true,
         };
         var library = new Library(new List<Track> { downloaded });
@@ -782,7 +782,7 @@ public class LibraryTests
         Assert.Null(kept.OriginDeviceFingerprint);
         Assert.Null(kept.OriginTrackId);
         Assert.Null(kept.OriginFileExtension);
-        Assert.Null(kept.OriginAlbumArtHash);
+        Assert.Null(kept.OriginAlbumArtId);
     }
 
     [Fact]
@@ -846,15 +846,15 @@ public class LibraryTests
     }
 
     [Fact]
-    public void MergeSyncedTracks_updates_OriginAlbumArtHash_for_an_existing_placeholder()
+    public void MergeSyncedTracks_updates_OriginAlbumArtId_for_an_existing_placeholder()
     {
-        var placeholder = new Track { Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200), OriginDeviceFingerprint = "peer-1", OriginAlbumArtHash = "old-hash" };
+        var placeholder = new Track { Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200), OriginDeviceFingerprint = "peer-1", OriginAlbumArtId = "al-old" };
         var library = new Library(new List<Track> { placeholder });
-        var remoteAgain = new Track { Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200), OriginDeviceFingerprint = "peer-1", OriginAlbumArtHash = "new-hash" };
+        var remoteAgain = new Track { Title = "Remote", Artists = "B", Album = "Bl", Duration = TimeSpan.FromSeconds(200), OriginDeviceFingerprint = "peer-1", OriginAlbumArtId = "al-new" };
 
         library.MergeSyncedTracks("peer-1", new List<Track> { remoteAgain });
 
-        Assert.Equal("new-hash", library.Tracks.Single().OriginAlbumArtHash);
+        Assert.Equal("al-new", library.Tracks.Single().OriginAlbumArtId);
     }
 
     [Fact]

@@ -74,7 +74,7 @@ namespace Flower.Persistence.Sql
                 origin_device_fingerprint TEXT,
                 origin_track_id           TEXT,
                 origin_file_extension     TEXT,
-                origin_album_art_hash     TEXT,
+                origin_album_art_id       TEXT,
 
                 play_count                INTEGER NOT NULL DEFAULT 0,
                 imported_play_count       INTEGER NOT NULL DEFAULT 0,

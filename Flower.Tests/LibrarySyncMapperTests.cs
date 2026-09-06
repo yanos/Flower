@@ -132,7 +132,7 @@ public class LibrarySyncMapperTests
 
         var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
 
-        Assert.Equal("abc123", track.OriginAlbumArtHash);
+        Assert.Equal("abc123", track.OriginAlbumArtId);
     }
 
     [Fact]

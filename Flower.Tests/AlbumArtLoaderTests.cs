@@ -215,7 +215,7 @@ public class AlbumArtLoaderTests : IDisposable
     {
         Path = null,
         Album = Unique("Remote"),
-        OriginAlbumArtHash = hash,
+        OriginAlbumArtId = hash,
         OriginDeviceFingerprint = fingerprint,
     };
 

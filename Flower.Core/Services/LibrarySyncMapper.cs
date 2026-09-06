@@ -63,7 +63,7 @@ public static class LibrarySyncMapper
         // then falls back to the track id plus Suffix above, exactly as every
         // download did before this existed.
         OriginRelativePath = song.RelativePath,
-        OriginAlbumArtHash = song.CoverArt,
+        OriginAlbumArtId = song.CoverArt,
         RemotePlayCounts = (song.PlayCounts ?? new Dictionary<string, int>())
             .Where(kv => kv.Key != ownFingerprint)
             .ToDictionary(kv => kv.Key, kv => kv.Value),
