@@ -667,4 +667,135 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         Assert.Equal(ranked.BaseUri, _service.EndpointFor("multi-fp")!.BaseUri);
     }
+
+    // ── Backing off a remembered address that cannot work from here ──────
+    //
+    // A remembered peer is deliberately never pruned (see
+    // DiscoveredDevice.IsRemembered), so unlike a discovered one it keeps being
+    // polled after it stops answering - forever, on the fixed cadence, with a
+    // DNS lookup and a TLS handshake apiece. A tailnet address dialled from off
+    // the tailnet does not even fail quickly: it spends the whole HTTP timeout,
+    // which at three seconds against a five-second poll leaves the socket open
+    // more of the time than not. That was the largest single share of an idle
+    // Flower's own CPU. See PeerRetrySchedule.
+
+    // The poll loop's own body, run the number of times the real loop would run
+    // it - the backoff counts rounds rather than seconds precisely so that a
+    // test can drive it without a clock or a five-second wait. Each round's
+    // polls are awaited so the failures they record have landed before the next
+    // round asks whether the peer is due.
+    private async Task<int> PollRounds(int rounds)
+    {
+        var dialled = 0;
+        for (var round = 0; round < rounds; round++)
+        {
+            foreach (var poll in _service.PollOnce(TestContext.Current.CancellationToken))
+            {
+                dialled++;
+                await poll;
+            }
+        }
+
+        return dialled;
+    }
+
+    // Ten minutes of them, at the poll's five-second cadence.
+    private const int TenMinutesOfRounds = 120;
+
+    [Fact]
+    public async Task A_remembered_address_that_never_answers_is_dialled_less_and_less()
+    {
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+
+        await PollRounds(TenMinutesOfRounds);
+
+        // Ten minutes on the fixed cadence would be 120 dials plus the first.
+        // What it costs instead is the free misses, a few doublings, and then
+        // one a minute.
+        Assert.Equal(15, _handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task A_remembered_address_that_answers_is_polled_on_the_ordinary_cadence()
+    {
+        _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+
+        await PollRounds(12);
+
+        // Nothing is backed off, so this is every round plus the first dial.
+        Assert.Equal(13, _handler.RequestCount);
+    }
+
+    // The backoff is evidence about a network the client may have just left.
+    [Fact]
+    public async Task Returning_to_the_foreground_dials_a_backed_off_address_at_once()
+    {
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+        await PollRounds(TenMinutesOfRounds);
+        var backedOff = _handler.RequestCount;
+
+        // The very next round would otherwise be refused - the address is most
+        // of a minute from being due.
+        _service.Restart();
+        await PollRounds(1);
+
+        Assert.Equal(backedOff + 1, _handler.RequestCount);
+    }
+
+    // A peer appearing on this link says the same thing: whatever the backed-off
+    // addresses failed on, it is not necessarily where we are now.
+    [Fact]
+    public async Task A_peer_appearing_on_the_lan_dials_a_backed_off_address_at_once()
+    {
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+        await PollRounds(TenMinutesOfRounds);
+        var backedOff = _handler.RequestCount;
+
+        _handler.RespondWith(4599, """{"alias":"Basement","fingerprint":"server-fp"}""");
+        _backend.RaiseInstanceFound(InstanceName("basement"), Routable(50, 4599));
+        WaitUntil(() => _handler.RequestedPorts.Contains(4599), "the new peer should be resolved");
+        var afterSighting = _handler.RequestCount;
+
+        await PollRounds(1);
+
+        // The remembered address, and the newly-seen peer that is polled every
+        // round anyway.
+        Assert.Equal(afterSighting + 2, _handler.RequestCount);
+    }
+
+    // Every caller but the poll loop itself is a user or the paired server
+    // handing us an address, which is a reason to try it now rather than
+    // whenever the old backoff says.
+    [Fact]
+    public async Task Being_handed_the_address_again_dials_it_at_once()
+    {
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+        await PollRounds(TenMinutesOfRounds);
+        var backedOff = _handler.RequestCount;
+
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+
+        Assert.Equal(backedOff + 1, _handler.RequestCount);
+    }
+
+    // The one invariant this must not disturb: a discovered peer is pruned
+    // after three misses, which is a promise about how long a peer that has
+    // gone away stays in the sidebar. Backing one off would stretch it.
+    [Fact]
+    public async Task A_discovered_peer_is_still_pruned_after_three_misses()
+    {
+        var lost = new List<string>();
+        _service.DeviceLost += (_, name) => lost.Add(name);
+
+        _backend.RaiseInstanceFound(InstanceName("basement"), Routable(40));
+        WaitUntil(() => _handler.RequestCount >= 1, "the peer should be resolved once on discovery");
+
+        // Two more misses, which with the one the sighting itself earned is the
+        // three MaxConsecutiveResolveFailures allows.
+        await PollRounds(2);
+
+        Assert.Single(lost);
+        Assert.Empty(_service.KnownDevices);
+    }
 }

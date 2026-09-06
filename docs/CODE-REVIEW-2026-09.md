@@ -536,6 +536,52 @@ decoders are alive" is the actual question.
 
 ---
 
+### D6. The discovery poll dials unreachable remembered addresses forever — **resolved**
+
+`Flower/Services/NetworkDiscoveryService.cs`, `PollOnce`
+
+Found while working out where an idle desktop's CPU actually goes (the honest
+answer for the app the user was watching turned out to be "it is a Debug build":
+9.58s of CPU over 62 idle seconds against 0.28s for Release of the same commit).
+Of what remains under Release, the largest Flower-owned share was this.
+
+The poll ran one fixed 5s cadence over every known peer. That is right for a peer
+that answers, and right for a *discovered* peer that stops — it is pruned after
+`MaxConsecutiveResolveFailures` and stops being polled by ceasing to exist. It is
+wrong for a *remembered* peer, which is deliberately never pruned, because
+pruning one destroys the only record of how to reach a server the user is not
+near. So a remembered address that cannot work from where the user is standing
+was re-resolved and re-dialled every five seconds for the life of the process — a
+DNS lookup, a TCP connect, a TLS handshake and an Ed25519 signature apiece. An
+address that times out rather than refusing (a tailnet address dialled from off
+the tailnet, the ordinary case) spends the whole 3s `PeerHttpClient` timeout doing
+it, so against a 5s cadence the socket is open more of the time than not. The
+observed set was four such addresses: an IPv6 tailnet one timing out, an https
+one failing certificate validation, and two refused.
+
+**Fixed** by `PeerRetrySchedule`, consulted for remembered peers only so
+`MaxConsecutiveResolveFailures`' timing is untouched. Three free misses at the
+base cadence, then doubling, capped at one dial a minute — and never "never",
+because the address is dead from here rather than dead. Every signal that the
+reason for the failures may no longer hold throws the backoff away: a successful
+handshake, a return to the foreground (`Restart`), a peer appearing or moving on
+the LAN, and any address a user or the paired server hands us. Counted in poll
+rounds rather than seconds, since the poll loop is already the clock and giving
+the schedule its own would only be a second opinion about what time it is.
+
+Not done, and the obvious next one: `NetworkChange.NetworkAddressChanged` as a
+further reset. It is the honest "you have moved" signal — nothing in the repo
+subscribes to it today — and it would make the one-minute cap almost never the
+thing actually waited on. It behaves differently across the five heads, so it
+wants its own change and its own device check.
+
+Separately noticed and *not* fixed: a sync that changes nothing still repopulates
+the whole track list. Every sync session logs `merged catalog, 0 new
+placeholder(s) added, 0 stale placeholder(s) pruned (16115 -> 16115)` followed by
+five `Library view repopulated: 16115 track(s)`, ~2s apart — 25 such bursts over
+two days on the machine looked at. Both merge paths fire `Library.TracksUpdated`
+unconditionally.
+
 ## E. Dead code and organisation
 
 ### E1. `LibVlcRawStreamSink` and `GaplessRingBufferStream` — **resolved**

@@ -208,6 +208,12 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     private const int MaxConsecutiveResolveFailures = 3;
     private readonly ConcurrentDictionary<string, int> _consecutiveResolveFailures = new();
 
+    // How often a peer that keeps missing is dialled again. Consulted for
+    // remembered peers only: they are the ones never pruned, so they are the
+    // ones whose failures repeat forever - see PeerRetrySchedule, which is
+    // that argument in full.
+    private readonly PeerRetrySchedule _retries = new();
+
     public event EventHandler<DiscoveredDevice>? DeviceDiscovered;
     public event EventHandler<string>? DeviceLost;
 
@@ -250,6 +256,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                 return;
 
             _knownDevices.TryRemove(name, out DiscoveredDevice? _);
+            _retries.Forget(name);
             _logger.LogInformation("Peer {InstanceName} went away", name);
             DeviceLost?.Invoke(this, name);
         };
@@ -280,6 +287,12 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     public void Restart()
     {
         _logger.LogInformation("Re-browsing for peers");
+
+        // Coming back to the foreground is the one moment a client is most
+        // likely to be somewhere else than it was, so every remembered peer
+        // that had backed off gets dialled on the very next poll rather than
+        // whenever its own interval happens to come round.
+        _retries.ResetAll();
         _backend.Browse(ServiceType);
     }
 
@@ -293,33 +306,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             while (true)
             {
                 await Task.Delay(AliasPollInterval, token);
-                // Excludes devices currently stuck on a link-local address -
-                // see ResolveAliasAsync's own comment on why polling those on
-                // a fixed timer is pointless noise rather than useful retry:
-                // a link-local endpoint doesn't get more reachable by trying
-                // it again a few seconds later, only by a fresh mDNS
-                // announcement (handled by OnInstanceFound instead) actually
-                // replacing it with something routable.
-                var devices = _knownDevices.Values.Where(d => d.Ip?.IsIPv6LinkLocal != true).ToList();
-                _logger.LogTrace("Polling /info for {Count} known device(s)", devices.Count);
-                foreach (var device in devices)
-                {
-                    // A remembered peer that is not answering gets its address
-                    // resolved again rather than merely retried, because the
-                    // name may now point somewhere else - a server that moved
-                    // on its LAN, or one whose tailnet address changed. Retrying
-                    // the resolved IP alone would keep dialling an address the
-                    // name no longer means, forever. Only when it is already
-                    // failing: a working peer needs no lookup.
-                    if (device is { IsRemembered: true, IsResponding: false }
-                        && RememberedAddressOf(device) is { } address)
-                    {
-                        _ = AddRememberedAsync(address, token);
-                        continue;
-                    }
-
-                    _ = ResolveAliasAsync(device);
-                }
+                PollOnce(token);
 
                 // See RebrowseInterval for why this re-query exists alongside
                 // the one-shot Browse() call in Start().
@@ -335,6 +322,60 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         {
             // Stop() was called.
         }
+    }
+
+    // One round of the loop above, taken out of it so a test can drive the
+    // rounds directly - the backoff is counted in rounds precisely so that
+    // driving them is all a test needs to do (see PeerRetrySchedule).
+    //
+    // Returns the polls it started rather than awaiting them, because these are
+    // deliberately concurrent - a peer that answers must not wait behind one
+    // sitting out the HTTP timeout, and the next round is due a fixed interval
+    // from this one, not a fixed interval after the slowest peer gives up.
+    internal IReadOnlyList<Task> PollOnce(CancellationToken token)
+    {
+        // Excludes devices currently stuck on a link-local address -
+        // see ResolveAliasAsync's own comment on why polling those on
+        // a fixed timer is pointless noise rather than useful retry:
+        // a link-local endpoint doesn't get more reachable by trying
+        // it again a few seconds later, only by a fresh mDNS
+        // announcement (handled by OnInstanceFound instead) actually
+        // replacing it with something routable.
+        var devices = _knownDevices.Values.Where(d => d.Ip?.IsIPv6LinkLocal != true).ToList();
+        var started = new List<Task>();
+        _logger.LogTrace("Polling /info for {Count} known device(s)", devices.Count);
+        foreach (var device in devices)
+        {
+            // Only remembered peers back off. A discovered one that stops
+            // answering is pruned within three misses and stops being polled by
+            // ceasing to exist, so it can never be the peer PeerRetrySchedule
+            // exists for - and leaving it on the fixed cadence keeps
+            // MaxConsecutiveResolveFailures' timing exactly what its own doc
+            // comment says it is.
+            if (device.IsRemembered && !_retries.DueThisRound(device.InstanceName))
+                continue;
+
+            // A remembered peer that is not answering gets its address
+            // resolved again rather than merely retried, because the
+            // name may now point somewhere else - a server that moved
+            // on its LAN, or one whose tailnet address changed. Retrying
+            // the resolved IP alone would keep dialling an address the
+            // name no longer means, forever. Only when it is already
+            // failing: a working peer needs no lookup.
+            if (device is { IsRemembered: true, IsResponding: false }
+                && RememberedAddressOf(device) is { } address)
+            {
+                // The core, not the public entry point: that one treats being
+                // called as a reason to clear the backoff, which is right for
+                // every caller except this one.
+                started.Add(AddRememberedCoreAsync(address, token));
+                continue;
+            }
+
+            started.Add(ResolveAliasAsync(device));
+        }
+
+        return started;
     }
 
     private void OnInstanceFound(object? sender, MdnsInstanceFound found)
@@ -434,6 +475,13 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             Alias = InstanceLabel(found.InstanceName),
         };
         _knownDevices[found.InstanceName] = device;
+
+        // A peer appearing, or moving to a new address, means this link is not
+        // the one the backed-off peers failed on. Safe to put every one of them
+        // back on the base cadence here precisely because the early returns
+        // above have already refused a mere re-announcement of something we
+        // already have - only a genuinely new sighting reaches this far.
+        _retries.ResetAll();
         _logger.LogInformation("Discovered peer {InstanceName} at {EndPoint}", found.InstanceName, found.EndPoint);
         DeviceDiscovered?.Invoke(this, device);
 
@@ -499,6 +547,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         try
         {
             _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
+            _retries.RecordSuccess(device.InstanceName);
             using var doc = JsonDocument.Parse(json);
             var changed = false;
             if (doc.RootElement.TryGetProperty("alias", out var aliasProp) &&
@@ -695,6 +744,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         // there wrote one line per AliasPollInterval for as long as the app ran
         // - the exact flood the Trace branch below exists to prevent.
         var failures = _consecutiveResolveFailures.AddOrUpdate(device.InstanceName, 1, (_, count) => count + 1);
+        _retries.RecordFailure(device.InstanceName);
         if (failures == 1 && !IsRoutineUnreachable(ex))
             _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.BaseUri);
         else if (failures == 1)
@@ -737,6 +787,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         if (failures >= MaxConsecutiveResolveFailures && _knownDevices.TryRemove(device.InstanceName, out _))
         {
             _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
+            _retries.Forget(device.InstanceName);
             _logger.LogInformation("Peer {InstanceName} unreachable after {Failures} consecutive /info attempts - treating as gone",
                 device.InstanceName, failures);
             DeviceLost?.Invoke(this, device.InstanceName);
@@ -862,7 +913,18 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     // the UI. Null only when the address cannot be parsed or resolved at all -
     // a resolvable address that does not answer still yields an entry, since
     // "my server, currently unreachable" is a state worth holding on to.
-    public async Task<DiscoveredDevice?> AddRememberedAsync(string address, CancellationToken token = default)
+    public Task<DiscoveredDevice?> AddRememberedAsync(string address, CancellationToken token = default)
+    {
+        // Being asked from outside the poll loop is itself the signal: a user
+        // typed this address, or the paired server just reported it, or the app
+        // is restoring them at startup. Whatever backoff the address had
+        // accumulated is answering a question nobody is asking any more, so it
+        // goes, and this attempt happens now.
+        _retries.Forget(RememberedInstancePrefix + address);
+        return AddRememberedCoreAsync(address, token);
+    }
+
+    private async Task<DiscoveredDevice?> AddRememberedCoreAsync(string address, CancellationToken token)
     {
         var route = await ResolveOriginAsync(address, token);
         if (route == null)
@@ -942,6 +1004,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         // that is forgotten and later added back should get its one Debug line
         // again rather than inheriting the old entry's silence.
         _consecutiveResolveFailures.TryRemove(instanceName, out _);
+        _retries.Forget(instanceName);
         if (_knownDevices.TryRemove(instanceName, out _))
             DeviceLost?.Invoke(this, instanceName);
     }
