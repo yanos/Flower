@@ -11,6 +11,8 @@ using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
 
+using Flower.Server.Subsonic;
+
 namespace Flower.Server.Tests;
 
 // Flower's own /api/flower/v1/* sync protocol, which this server answered with

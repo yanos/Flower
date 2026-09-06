@@ -5,22 +5,48 @@ using Flower.Models;
 using Flower.Persistence;
 using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
+using Flower.Server.Endpoints;
 using Flower.Server.Services;
 using Flower.Services;
 
-namespace Flower.Server.Endpoints;
+namespace Flower.Server.Subsonic;
 
-// The OpenSubsonic REST surface Flower.Core's PeerMediaClient actually
-// calls (see SYNC-PLAN.md's client doc comment on PeerMediaClient for the
-// exact list) - browsing, stream/download, playlist CRUD, star, scrobble,
-// cover art. Only f=json is supported (Flower's own client, and every
-// third-party client worth testing against, defaults to it); a real
+// The OpenSubsonic REST surface: browsing, playlist CRUD, star, scrobble, and
+// mirrors of the three media routes. Only f=json is supported (every
+// third-party client worth testing against defaults to it); a real
 // multi-client Subsonic server would also need XML - deliberately deferred,
 // same "known v1 simplification" spirit as GET-only (no POST) routes below.
 //
-// Track reads come from the resident Flower.Core Library the client also runs
-// on - the same LibrarySnapshot its own embedded sync server reads through -
-// and writes go through the same Library, which mutates it and persists the
+// No Flower client speaks any of this. The catalog is GET
+// /api/flower/v1/library, playback is /api/flower/v1/stream, art is
+// /cover-art; this exists so that a listener with a phone Flower does not
+// build for can point Symfonium or play:Sub at the same library. That is a
+// real feature and the reason the surface is worth its keep - see the
+// deployment note in CLAUDE.md - but it is a feature, and the folder around
+// this file is shaped so it can stop being one.
+//
+// ── Dropping OpenSubsonic support ──────────────────────────────────────────
+//
+// Delete Flower.Server/Subsonic/, then:
+//
+//   Program.cs                app.AddSubsonicAdapter() and app.MapSubsonicEndpoints()
+//   AdminEndpoints.cs         authenticated.MapSubsonicCredentialEndpoints(...)
+//   Flower.Server.Tests/      SubsonicEndpointTests, PeerRestSignatureTests,
+//                             the credential half of AuthServiceTests
+//   Flower/                   the "Subsonic clients" block in SettingsPanel.axaml,
+//                             SubsonicCredentialRow, and the three
+//                             ServerAdminClient/ISettingsBackend members it drives
+//
+// and nothing else moves. Every route here that a Flower client needs is
+// served on Flower's own surface by MediaEndpoints or SyncEndpoints, the id
+// scheme is CatalogIdentity's rather than this file's, and the track shape is
+// LibraryContracts' TrackDto. What would go with it is the password: this is
+// the only surface on the server that accepts one, and SubsonicCredentialStore
+// holds the only guessable credential the system has.
+//
+// Track reads come from the resident Flower.Core Library the app also runs
+// on - the same LibrarySnapshot Flower's own surface reads through - and
+// writes go through the same Library, which mutates it and persists the
 // change in the same call. Playlists are the same story one level down: these
 // handlers edit the library's own resident Playlist objects - the very objects
 // the client's sidebar edits - and Library turns that into the write. There is
@@ -89,6 +115,12 @@ public static class SubsonicEndpoints
     // that needs more than two of these a second is looping.
     private static readonly RateLimiter BrowseLimiter = new(max: 120, TimeSpan.FromSeconds(60));
 
+    // The adapter's own services, so that turning it off is one line here and
+    // one line at the mapping below rather than a hunt through Program.cs for
+    // registrations only this folder uses.
+    public static void AddSubsonicAdapter(this IServiceCollection services) =>
+        services.AddSingleton<SubsonicCredentialStore>();
+
     public static void MapSubsonicEndpoints(this WebApplication app)
     {
         var rest = app.MapGroup("/rest").AddEndpointFilter(async (context, next) =>
@@ -99,7 +131,7 @@ public static class SubsonicEndpoints
             var now = DateTimeOffset.UtcNow;
 
             if (!LimiterFor(context.HttpContext.Request.Path).TryAcquire(key, now))
-                return RateLimited(context.HttpContext);
+                return RateLimitResponse.TooManyRequests(context.HttpContext);
 
             // Two ways in, deliberately unequal in power. A path-A device
             // signature authenticates the whole /rest surface for a paired
@@ -137,7 +169,7 @@ public static class SubsonicEndpoints
             var attempted = query["u"].ToString();
             var failedAuthKey = $"{key}|{attempted}";
             if (!FailedAuthLimiter.WouldAllow(failedAuthKey, now))
-                return RateLimited(context.HttpContext);
+                return RateLimitResponse.TooManyRequests(context.HttpContext);
 
             var credentials = services.GetRequiredService<SubsonicCredentialStore>();
             var username = SubsonicAuth.Validate(query, credentials);
@@ -181,7 +213,7 @@ public static class SubsonicEndpoints
         // this surface also admits a Subsonic password.
         Map("/stream", MediaEndpoints.Stream);
         Map("/download", MediaEndpoints.Download);
-        Map("/getCoverArt", GetCoverArt);
+        Map("/getCoverArt", MediaEndpoints.GetCoverArt);
 
         Map("/star", (HttpRequest r, Library l) => SetStarred(true, r, l));
         Map("/unstar", (HttpRequest r, Library l) => SetStarred(false, r, l));
@@ -215,22 +247,6 @@ public static class SubsonicEndpoints
 
         return route.EndsWith("/getCoverArt", StringComparison.OrdinalIgnoreCase) ? ArtLimiter : BrowseLimiter;
     }
-
-    // A 429 with nothing else on it tells a client only that it lost; it has
-    // to guess how long to wait, and the guess a decoder makes under pressure
-    // is "immediately, three times". Retry-After turns the refusal into an
-    // instruction - SeekableHttpStream believes it, waits, and keeps the track
-    // rather than declaring it dead.
-    internal static IResult RateLimited(HttpContext context)
-    {
-        context.Response.Headers.RetryAfter = RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
-        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-    }
-
-    // One window, rounded up. Anything shorter invites a client to spend the
-    // budget it does not have yet; anything longer stalls a listener over a
-    // burst that has already passed.
-    internal const int RetryAfterSeconds = 60;
 
     private static IResult GetArtists(Library library)
     {
@@ -559,40 +575,4 @@ public static class SubsonicEndpoints
 
         return SubsonicResults.Ok();
     }
-
-    // Internal rather than private: SyncEndpoints serves the same bytes at
-    // GET /api/flower/v1/cover-art for callers that authenticate with a session
-    // token instead of a Subsonic credential or a signature - the browser head,
-    // in practice. One handler, so the two doors cannot drift about what an
-    // album's art is.
-    internal static IResult GetCoverArt(string? id, Library library)
-    {
-        if (string.IsNullOrEmpty(id))
-            return Results.NotFound();
-
-        foreach (var candidate in CoverArtCandidates(id, library))
-        {
-            // Shared with the client - see LocalAlbumArtReader, which this used
-            // to be a private copy of.
-            var art = LocalAlbumArtReader.ForFile(candidate.Path);
-            if (art is not null)
-                return Results.Bytes(art.Bytes, art.MimeType);
-        }
-
-        return Results.NotFound();
-    }
-
-    // Which files an art request for this id is about: every track on an album
-    // for an album id, or the one track for a song id. Shared with the admin
-    // cover-art route (AdminEndpoints), which writes into exactly the files this
-    // would have read from - so "the art you can see at this id" and "the art
-    // you can replace at this id" cannot come apart.
-    internal static IReadOnlyList<Track> CoverArtCandidates(string id, Library library)
-    {
-        if (id.StartsWith("al-", StringComparison.Ordinal))
-            return library.Snapshot.AlbumTracks(id);
-
-        return library.Find(id) is { } track ? [track] : [];
-    }
-
 }

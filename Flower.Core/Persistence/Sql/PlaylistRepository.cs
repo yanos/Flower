@@ -55,7 +55,7 @@ namespace Flower.Persistence.Sql
                     // An entry whose id doesn't resolve is dropped - by then the
                     // track really is gone from the library. Same rule the JSON
                     // store applied, and the same one Flower.Server's
-                    // SubsonicMapper applies to its own playlist entries.
+                    // LibraryDtoMapper applies to its own playlist entries.
                     if (!byId.TryGetValue(EntityId.FromKey(reader.GetString(1)), out var track))
                         continue;
 

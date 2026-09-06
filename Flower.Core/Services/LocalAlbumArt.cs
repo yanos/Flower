@@ -19,7 +19,7 @@ public sealed record LocalAlbumArt(byte[] Bytes, string MimeType);
 // the embedded tag picture first, then a cover.*/folder.* image beside the
 // track. This existed three times - AlbumArtLoader (Bitmap decoding and the
 // CoverArt hash), the app listener's own cover-art handler, and a private copy
-// in Flower.Server's SubsonicEndpoints - which is three places to edit when
+// in Flower.Server's MediaEndpoints - which is three places to edit when
 // someone adds a format, and they had already drifted: the server's copy
 // accepted only .jpg/.jpeg/.png as a cover file, so an album with a
 // cover.webp served art in the app and 404'd from a self-hosted server for

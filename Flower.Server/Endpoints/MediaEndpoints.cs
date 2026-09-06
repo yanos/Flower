@@ -12,10 +12,15 @@ namespace Flower.Server.Endpoints;
 //   GET /rest/stream             - the OpenSubsonic adapter, for third-party
 //                                  clients that speak nothing else
 //
-// and the same pair for /download. Only the gate in front differs, which is the
-// whole reason this is its own file: the native route admits a device signature
-// or a stream ticket, the adapter route additionally admits a Subsonic password,
-// and neither gate belongs to the thing that reads a file off disk.
+// and the same for /download and for cover art (/api/flower/v1/cover-art and
+// /rest/getCoverArt). Only the gate in front differs, which is the whole reason
+// this is its own file: the native route admits a device signature or a stream
+// ticket, the adapter route additionally admits a Subsonic password, and
+// neither gate belongs to the thing that reads a file off disk.
+//
+// It is also what keeps the adapter droppable. Every one of these routes is
+// served on Flower's own surface as well, so Flower.Server/Subsonic/ can be
+// deleted whole without taking a byte of media serving with it.
 //
 // Deliberately GET-mapped, on both, so a HEAD reaches no endpoint and every
 // client finds a track's length through the ranged-GET probe instead. That is
@@ -126,5 +131,41 @@ public static class MediaEndpoints
 
         var track = library.Find(id);
         return track?.Path is not null && File.Exists(track.Path) ? track : null;
+    }
+
+    // Album art, at GET /api/flower/v1/cover-art and GET /rest/getCoverArt.
+    // One handler behind both, so the two doors cannot drift about what an
+    // album's art even is - and, like the two routes above, it lives out here
+    // rather than in the adapter so that deleting the adapter takes nothing
+    // with it that Flower's own surface is still serving.
+    internal static IResult GetCoverArt(string? id, Library library)
+    {
+        if (string.IsNullOrEmpty(id))
+            return Results.NotFound();
+
+        foreach (var candidate in CoverArtCandidates(id, library))
+        {
+            // Shared with the client - see LocalAlbumArtReader, which this used
+            // to be a private copy of.
+            var art = LocalAlbumArtReader.ForFile(candidate.Path);
+            if (art is not null)
+                return Results.Bytes(art.Bytes, art.MimeType);
+        }
+
+        return Results.NotFound();
+    }
+
+    // Which files an art request for this id is about: every track on an album
+    // for an album id, or the one track for a song id. Shared with the batch
+    // route (SyncEndpoints) and the admin cover-art route (AdminEndpoints),
+    // which writes into exactly the files this reads from - so "the art you can
+    // see at this id" and "the art you can replace at this id" cannot come
+    // apart.
+    internal static IReadOnlyList<Track> CoverArtCandidates(string id, Library library)
+    {
+        if (id.StartsWith("al-", StringComparison.Ordinal))
+            return library.Snapshot.AlbumTracks(id);
+
+        return library.Find(id) is { } track ? [track] : [];
     }
 }

@@ -447,7 +447,7 @@ public class LibrarySyncService
             if (track.OriginTrackId is not { Length: > 0 } originTrackId)
                 continue;
 
-            // The same sum SubsonicMapper sends as
+            // The same sum LibraryDtoMapper sends as
             // this device's own tally - a play imported from iTunes is still a
             // play this device is the record of.
             var total = track.PlayCount + track.ImportedPlayCount;

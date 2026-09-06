@@ -12,6 +12,8 @@ using Flower.Server.Endpoints;
 using Flower.Server.Services;
 using Flower.Services;
 
+using Flower.Server.Subsonic;
+
 namespace Flower.Server.Tests;
 
 // The browser head, on the routes it lives on: GET /api/flower/v1/library,

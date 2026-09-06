@@ -15,6 +15,7 @@ using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
 using Flower.Server.Endpoints;
 using Flower.Server.Services;
+using Flower.Server.Subsonic;
 using Flower.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -215,7 +216,7 @@ builder.Services.AddSingleton<StreamTicketService>();
 builder.Services.AddSingleton<LibraryRescanCoordinator>();
 builder.Services.AddSingleton<NonceReplayGuard>();
 builder.Services.AddSingleton<TrustedPeerStore>();
-builder.Services.AddSingleton<SubsonicCredentialStore>();
+builder.Services.AddSubsonicAdapter();
 builder.Services.AddSingleton<LibraryManifestCache>();
 builder.Services.AddSingleton<PlayReportService>();
 // Where a paired device's pushed log snapshot lands (SyncEndpoints'
@@ -499,6 +500,8 @@ using (var scope = app.Services.CreateScope())
 // raises TracksUpdated, which this subscribes to.
 app.Services.GetRequiredService<SmartPlaylistRefresher>().Start();
 
+// The OpenSubsonic adapter, for third-party clients. Two lines and a
+// folder - see Flower.Server/Subsonic/SubsonicEndpoints.cs.
 app.MapSubsonicEndpoints();
 app.MapAdminEndpoints();
 app.MapPairingEndpoints();

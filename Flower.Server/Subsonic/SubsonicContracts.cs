@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 using Flower.Services;
 
-namespace Flower.Server.Services;
+namespace Flower.Server.Subsonic;
 
 // Wire shapes for the OpenSubsonic/Subsonic REST API, and nothing else: every
 // type here exists because the spec says so, and every one of them is reachable

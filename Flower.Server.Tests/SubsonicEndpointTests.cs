@@ -17,6 +17,8 @@ using Flower.Persistence.Sql;
 using Flower.Server.Services;
 using Flower.Services;
 
+using Flower.Server.Subsonic;
+
 namespace Flower.Server.Tests;
 
 // Boots the real server in-process against a throwaway SQLite file and an

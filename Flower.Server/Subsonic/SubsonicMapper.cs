@@ -1,7 +1,7 @@
 using Flower.Models;
 using Flower.Services;
 
-namespace Flower.Server.Services;
+namespace Flower.Server.Subsonic;
 
 // The album and artist rows of the OpenSubsonic browse endpoints, and only
 // those: the ID3 shapes in SubsonicContracts.cs, built from Flower's own

@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Flower.Persistence;
 using Flower.Services;
 
-namespace Flower.Server.Services;
+namespace Flower.Server.Subsonic;
 
 // Path B of SYNC-PLAN.md's "Passwordless by design": third-party Subsonic
 // clients (DSub, substreamer, Symfonium) implement a published protocol and

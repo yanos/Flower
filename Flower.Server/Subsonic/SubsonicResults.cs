@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 using Flower.Services;
 
-namespace Flower.Server.Services;
+namespace Flower.Server.Subsonic;
 
 // Builds the "subsonic-response" envelope every /rest/* call replies with,
 // over the shapes in SubsonicContracts.cs beside it. Part of the adapter, not

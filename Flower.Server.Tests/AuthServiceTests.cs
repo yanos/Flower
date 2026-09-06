@@ -5,6 +5,8 @@ using Flower.Persistence;
 using Flower.Server.Services;
 using Flower.Services;
 
+using Flower.Server.Subsonic;
+
 namespace Flower.Server.Tests;
 
 // The security-critical services had no coverage at all before this project

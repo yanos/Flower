@@ -14,12 +14,12 @@ using Flower.Server.Configuration;
 using Flower.Server.Services;
 using Flower.Services;
 
+using Flower.Server.Subsonic;
+
 namespace Flower.Server.Endpoints;
 
 public sealed record PairingCodeResponse(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
 public sealed record TrustedDeviceResponse(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin);
-public sealed record SubsonicCredentialResponse(
-    string Username, string Label, DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt, string? Password);
 public sealed record CoverArtWriteResponse(int Written, int Total);
 public sealed record LibraryStatusResponse(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
 public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
@@ -213,49 +213,11 @@ public static class AdminEndpoints
             return Results.NoContent();
         });
 
-        // Path B (SYNC-PLAN.md): third-party Subsonic clients can't hold a
-        // keypair, so they get a generated credential from the same admin
-        // surface instead - one issuer, one list, one revoke button.
-        authenticated.MapPost("/subsonic-credentials", async (
-            HttpContext context, SubsonicCredentialStore store, string? label) =>
-        {
-            var credential = await store.IssueAsync(label ?? "Subsonic client");
-
-            // Username and label only. The password is in the response body and
-            // nowhere else by design (see below), and writing it here would
-            // undo that.
-            logger.LogInformation(
-                "{Fingerprint} issued Subsonic credential {Username} ({Label}).",
-                context.Items[AdminFingerprintKey], credential.Username, credential.Label);
-            // The only response that ever carries the password: it is not
-            // retrievable afterwards through /subsonic-credentials below, so
-            // the admin UI has to show it now or the user re-issues.
-            return Results.Json(
-                new SubsonicCredentialResponse(
-                    credential.Username, credential.Label, credential.CreatedAt, credential.LastSeenAt, credential.Password),
-                jsonOptions);
-        });
-
-        authenticated.MapGet("/subsonic-credentials", (SubsonicCredentialStore store) =>
-        {
-            var credentials = store.Load()
-                .Select(c => new SubsonicCredentialResponse(c.Username, c.Label, c.CreatedAt, c.LastSeenAt, Password: null))
-                .ToList();
-            return Results.Json(credentials, jsonOptions);
-        });
-
-        authenticated.MapDelete("/subsonic-credentials/{username}", async (
-            string username, HttpContext context, SubsonicCredentialStore store) =>
-        {
-            if (!await store.RevokeAsync(username))
-                return Results.NotFound();
-
-            logger.LogInformation(
-                "{Fingerprint} revoked Subsonic credential {Username}.",
-                context.Items[AdminFingerprintKey], username);
-
-            return Results.NoContent();
-        });
+        // The three routes that manage OpenSubsonic client credentials, in
+        // the adapter's own folder because they go when it does. They hang off
+        // this group rather than their own so that "admin" keeps meaning one
+        // gate and one budget - see Flower.Server/Subsonic/.
+        authenticated.MapSubsonicCredentialEndpoints(logger, jsonOptions);
 
         authenticated.MapGet("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IServer boundServer,
@@ -435,9 +397,9 @@ public static class AdminEndpoints
         //
         // Addressed by the same id GET /rest/getCoverArt reads at - an album id
         // or a song id - and it writes into exactly the files that read would
-        // have consulted (SubsonicEndpoints.CoverArtCandidates). That symmetry
+        // have consulted (MediaEndpoints.CoverArtCandidates). That symmetry
         // is the whole point: art is addressed per album on the way out (see
-        // SubsonicMapper's CoverArt field), so writing it into one track of an
+        // LibraryDtoMapper's CoverArt field), so writing it into one track of an
         // album would leave the album still serving whichever other file the
         // read path happened to reach first, and look to the caller like the
         // change had been silently dropped.
@@ -531,7 +493,7 @@ public static class AdminEndpoints
     private static IResult WriteCoverArt(
         string id, Library library, ILogger logger, JsonSerializerOptions jsonOptions, Func<string, bool> write)
     {
-        var candidates = SubsonicEndpoints.CoverArtCandidates(id, library);
+        var candidates = MediaEndpoints.CoverArtCandidates(id, library);
         if (candidates.Count == 0)
             return Results.NotFound(new { error = "No track on this server has that id." });
 

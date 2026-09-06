@@ -698,7 +698,7 @@ public partial class TrackInfoWindow : Window
     // not a Subsonic one.
     //
     // Addressed by album id, not by track: art is served per album on the way
-    // out (SubsonicMapper's CoverArt field, and PeerCoverArtUrlResolver asks
+    // out (LibraryDtoMapper's CoverArt field, and PeerCoverArtUrlResolver asks
     // for exactly this id), so writing into one track's file would leave the
     // album still serving whichever other file the read path reached first.
     // Distinct, because a batch selection can span albums.

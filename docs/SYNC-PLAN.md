@@ -477,6 +477,14 @@ New `net10.0` `Microsoft.NET.Sdk.Web` project (`Flower.Server/`), referencing `F
 
 - **Schema — as built, then superseded.** Originally EF Core/SQLite in `Flower.Server/Data/`: a `TrackEntity` restating `Track`'s fields, `PlaylistEntity`/`PlaylistTrackEntity`, `FlowerDbContext` with `PRAGMA journal_mode=WAL` and `Default Timeout=30`, `IDbContextFactory<FlowerDbContext>` per request, `EnsureCreatedAsync()` instead of formal migrations. **That whole layer is gone** — `Flower.Server/Data/` is empty and the server shares `Flower.Core`'s schema, migration runner, row mapper and write path with the client, running on the same resident `Library`. See the Tier 4.1 note above for the full account. The one design decision that survived the move intact: no separate Artist/Album tables — artist and album ids are deterministic hashes of the normalized name (`SubsonicIdentity`, same normalize-then-hash shape as `Track.SyncKey`), so browsing groups rows by these instead of needing an upsert-reconciled Artist/Album table just to hand out stable ids.
 - **Importer wiring (`LibraryImportService`):** runs once at startup, reusing `Flower.Core`'s own `Importer.ImportAsync` unchanged (per the "Reuse boundary" note) against `Flower:LibraryPaths` from config, upserting `TrackEntity` rows matched by `Path` and removing rows for files no longer present - same carry-forward shape as `Library.UpdateTracks`, just against SQLite instead of an in-memory list. No rescan-on-demand endpoint yet (deferred - step 3's admin UI is the natural place to trigger one).
+> **The adapter is one folder.** Everything below that is specifically
+> OpenSubsonic — the endpoints, the auth, the envelope, the ID3 shapes, the
+> credential store and its admin routes — lives in `Flower.Server/Subsonic/`,
+> reached through `AddSubsonicAdapter()` and `MapSubsonicEndpoints()`. Deleting
+> the folder and four call sites leaves a server that still builds and still
+> serves every Flower client; the file header in `SubsonicEndpoints.cs` lists
+> them.
+>
 > **The media routes are shared now, not owned here.** `stream`, `download` and
 > `getCoverArt` are still mapped under `/rest`, but the handlers moved to
 > `MediaEndpoints`/`SyncEndpoints` and are mapped under `/api/flower/v1` too.

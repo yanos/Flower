@@ -49,9 +49,10 @@ public static class SyncEndpoints
     // the budget above: it is one small request per album tile, so a browser
     // head painting an album grid spends twenty in the time it takes to scroll
     // a screen - and then the 429 lands on GET /library, which is the one route
-    // in here that actually matters. The art throttled the sync. Same ceiling
-    // /rest browsing gets (SubsonicEndpoints.RequestLimiter), because it is the
-    // same kind of traffic.
+    // in here that actually matters. The art throttled the sync. Generous
+    // because it has to be: a third-party client on /rest has no batch route
+    // and asks one tile at a time, and this head's grid can too when a batch
+    // request fails.
     private static readonly RateLimiter ArtLimiter = new(max: 600, TimeSpan.FromSeconds(60));
 
     // Playback is the third plane, and it is here for the same reason art is:
@@ -123,7 +124,7 @@ public static class SyncEndpoints
                         suppressed == 0 ? "" : $" ({suppressed} more since the last one.)");
                 }
 
-                return SubsonicEndpoints.RateLimited(http);
+                return RateLimitResponse.TooManyRequests(http);
             }
 
             if (http.Request.ContentLength > MaxBodyBytes)
@@ -219,7 +220,7 @@ public static class SyncEndpoints
         // AlbumArtLoader fetches it with an HttpClient that can send the header
         // (an <audio> element is what cannot). Deliberately the existing
         // handler rather than a second implementation of "an album's art".
-        sync.MapGet(CoverArtRoute, SubsonicEndpoints.GetCoverArt);
+        sync.MapGet(CoverArtRoute, MediaEndpoints.GetCoverArt);
 
         // The same art, for up to CoverArtBatch.MaxIds albums at once.
         //
@@ -268,7 +269,7 @@ public static class SyncEndpoints
         path.Equals(StreamPath, StringComparison.OrdinalIgnoreCase) ||
         path.Equals(DownloadPath, StringComparison.OrdinalIgnoreCase);
 
-    // Deliberately built on SubsonicEndpoints.CoverArtCandidates, the same
+    // Deliberately built on MediaEndpoints.CoverArtCandidates, the same
     // "which files is this id's art in" rule the single-id route and the admin
     // replace route both use. A second answer to that question is how a batch
     // starts returning different pictures from the endpoint it is meant to
@@ -285,7 +286,7 @@ public static class SyncEndpoints
         foreach (var id in ids)
         {
             byte[] bytes = [];
-            foreach (var candidate in SubsonicEndpoints.CoverArtCandidates(id, library))
+            foreach (var candidate in MediaEndpoints.CoverArtCandidates(id, library))
             {
                 if (LocalAlbumArtReader.ForFile(candidate.Path) is { } art)
                 {

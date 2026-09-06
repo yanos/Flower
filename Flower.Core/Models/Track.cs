@@ -105,7 +105,7 @@ namespace Flower.Models
         // track in the compilation still resolves to the same grouping key; then
         // falls back to the per-track Artists for an ordinary single-artist
         // album with neither tag populated. See RecentlyAddedAlbumsBuilder/
-        // AlbumGridBuilder/SubsonicMapper, which all group or label
+        // AlbumGridBuilder/LibraryDtoMapper, which all group or label
         // albums by this rather than by Artists directly - otherwise a various-
         // artists compilation (same Album, differing per-track Artists) would
         // fragment into one tile/entry per distinct track artist.

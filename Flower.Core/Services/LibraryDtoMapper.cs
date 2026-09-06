@@ -12,7 +12,7 @@ namespace Flower.Services;
 // It lived in Flower.Server as LibraryDtoMapper.ToTrackDto, which put Flower's own
 // catalog mapping inside the OpenSubsonic adapter and made the sync manifest
 // look like a by-product of a protocol it does not speak. The direction is the
-// other way round: this produces the catalog, and SubsonicMapper reshapes what
+// other way round: this produces the catalog, and the adapter reshapes what
 // this produced. In Flower.Core so the server and the browser head reach the
 // same one - the app already shares Track, LibrarySnapshot and CatalogIdentity
 // with it, and this is the last piece of that path that was stranded.
