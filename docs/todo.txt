@@ -15,7 +15,6 @@ external services
  lyric service
  
 short term
- intelligent playlist like favorite songs, recently played, etc.
  pulling down the view in mobile should reveal a filter field
  push library sync events instead of polling
  a way to only see downloaded music
