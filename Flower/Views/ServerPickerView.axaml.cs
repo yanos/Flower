@@ -87,6 +87,11 @@ public sealed class ServerRow : ViewModelBase
         IsTrustConfirmed ? "Unpair" :
         "Waiting for server...";
     public bool IsAwaitingApproval => IsPaired && !IsTrustConfirmed;
+
+    // Waiting for approval and syncing are one state to the status glyph, which
+    // shows a single icon - see ConnectionStatusIcon, which exists because this
+    // row used to show a lit check and a spinner side by side.
+    public bool IsBusy => IsAwaitingApproval || IsSyncing;
     public bool IsActionEnabled => IsPaired || BlockedByAlias == null;
     public string? HintText => !IsPaired && BlockedByAlias != null ? $"Unpair from {BlockedByAlias} first" : null;
 }

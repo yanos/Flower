@@ -586,6 +586,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool IsSelectedDeviceTrustConfirmed => IsSelectedDevicePaired && IsPairedServerTrustConfirmed;
     public bool IsPairAwaitingApproval => IsSelectedDevicePaired && IsPairedServerAwaitingApproval;
 
+    // The two ways the paired server can be mid-conversation, as the one thing
+    // a reader sees: ConnectionStatusIcon shows a single glyph, so waiting for
+    // approval and syncing have to arrive as one state rather than two that
+    // could both be true. See that control's remarks - it was a lit check with
+    // a spinner beside it that prompted the whole thing.
+    public bool IsSelectedDeviceBusy => IsPairAwaitingApproval || (IsSelectedDevicePaired && IsSyncing);
+    public bool IsPairedServerBusy => IsPairedServerAwaitingApproval || IsSyncing;
+
     // Mirrors ServerRow's ActionLabel/IsActionEnabled/HintText
     // (ServerPickerView, Settings' Devices tab) - same states, surfaced
     // inline in the device-detail header so pairing doesn't need a trip to
@@ -1018,6 +1026,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsPairedServerAwaitingApproval));
         OnPropertyChanged(nameof(IsSelectedDeviceTrustConfirmed));
         OnPropertyChanged(nameof(IsPairAwaitingApproval));
+        OnPropertyChanged(nameof(IsSelectedDeviceBusy));
+        OnPropertyChanged(nameof(IsPairedServerBusy));
         OnPropertyChanged(nameof(PairActionLabel));
         OnPropertyChanged(nameof(IsPairActionEnabled));
         OnPropertyChanged(nameof(PairActionHint));
@@ -1204,6 +1214,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             {
                 case nameof(PeerSyncCoordinator.IsSyncing):
                     OnPropertyChanged(nameof(IsSyncing));
+                    OnPropertyChanged(nameof(IsSelectedDeviceBusy));
+                    OnPropertyChanged(nameof(IsPairedServerBusy));
                     _deviceSidebar.SetPairedServerSyncing(Sync.IsSyncing);
                     break;
                 case nameof(PeerSyncCoordinator.LastForceSyncResult):

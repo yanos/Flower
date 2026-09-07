@@ -20,24 +20,6 @@
       <Setter Property="HorizontalContentAlignment" Value="Left" />
       <Setter Property="Padding" Value="20,14" />
     </Style>
-    <!-- Continuous rotation while Main.IsSyncing is true - see the spinner
-         next to PairedServerAlias below. Same visual as desktop's
-         ServerPickerView spinner, done declaratively for the same reason. -->
-    <Style Selector="materialIcons|MaterialIcon.spinning">
-      <Setter Property="RenderTransform" Value="rotate(0deg)"/>
-    </Style>
-    <Style Selector="materialIcons|MaterialIcon.spinning">
-      <Style.Animations>
-        <Animation Duration="0:0:1" IterationCount="INFINITE">
-          <KeyFrame Cue="0%">
-            <Setter Property="RotateTransform.Angle" Value="0"/>
-          </KeyFrame>
-          <KeyFrame Cue="100%">
-            <Setter Property="RotateTransform.Angle" Value="360"/>
-          </KeyFrame>
-        </Animation>
-      </Style.Animations>
-    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*">
@@ -93,30 +75,23 @@
                  device (see MainViewModel.IsPairedServerTrustConfirmed) -
                  not just pointed at, which is PairedServerAlias alone (see
                  the "waiting" spinner below). -->
-            <materialIcons:MaterialIcon Kind="CheckCircle"
-                                         Width="14" Height="14"
-                                         Foreground="#4CAF50"
-                                         VerticalAlignment="Center"
-                                         IsVisible="{Binding Main.IsPairedServerTrustConfirmed}"/>
+            <!-- Desktop's sidebar carries the same three states in the same
+                 glyph; here the unreachable one keeps its explanatory line
+                 below as well, since a phone off the network is the common
+                 case and a bare icon would not say why. -->
+            <controls:ConnectionStatusIcon
+                IsConnected="{Binding Main.IsPairedServerTrustConfirmed}"
+                IsBusy="{Binding Main.IsPairedServerBusy}"
+                IsUnreachable="{Binding Main.ShowPairedServerUnreachableWarning}"
+                IconSize="16"
+                VerticalAlignment="Center"/>
             <TextBlock Text="{Binding Main.PairedServerAlias}" VerticalAlignment="Center" FontWeight="Medium"/>
-            <materialIcons:MaterialIcon Kind="Sync"
-                                         Classes="spinning"
-                                         Width="14" Height="14"
-                                         Opacity="0.6"
-                                         VerticalAlignment="Center"
-                                         IsVisible="{Binding Main.IsSyncing}"/>
             <!-- Pairing requested but not yet approved by the server - see
                  MainViewModel.IsPairedServerAwaitingApproval. -->
             <TextBlock Text="Waiting for server..."
                        Opacity="0.6" FontSize="12"
                        VerticalAlignment="Center"
                        IsVisible="{Binding Main.IsPairedServerAwaitingApproval}"/>
-            <materialIcons:MaterialIcon Kind="Sync"
-                                         Classes="spinning"
-                                         Width="14" Height="14"
-                                         Opacity="0.6"
-                                         VerticalAlignment="Center"
-                                         IsVisible="{Binding Main.IsPairedServerAwaitingApproval}"/>
           </StackPanel>
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
             <Button Content="Sync Now" Command="{Binding ForceSyncCommand}" IsEnabled="{Binding Main.CanForceSync}"/>

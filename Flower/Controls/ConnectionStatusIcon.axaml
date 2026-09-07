@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="Flower.Controls.ConnectionStatusIcon"
+             x:CompileBindings="True"
+             VerticalAlignment="Center">
+
+  <!-- One paired server's standing, in one glyph: connected, working on it, or
+       out of reach. See this class's remarks for why it is a control rather
+       than the four hand-assembled copies it replaces.
+
+       All three icons live in the same Grid cell and are sized identically, so
+       whichever one is showing occupies exactly the same space as the others.
+       That is what makes a state change a swap rather than a reflow of
+       everything to the right of it. -->
+  <Grid>
+    <materialIcons:MaterialIcon x:Name="ConnectedIcon"
+                                Kind="CheckCircle"
+                                Foreground="{DynamicResource AppSuccessBrush}"
+                                VerticalAlignment="Center"
+                                IsVisible="False"/>
+
+    <!-- Deliberately not tinted: busy is a transient state on the way to one
+         of the other two, and colouring it would have it read as an outcome. -->
+    <materialIcons:MaterialIcon x:Name="BusyIcon"
+                                Kind="Sync"
+                                Classes="spinning"
+                                Opacity="0.6"
+                                VerticalAlignment="Center"
+                                IsVisible="False"/>
+
+    <materialIcons:MaterialIcon x:Name="UnreachableIcon"
+                                Kind="AlertCircle"
+                                Foreground="{DynamicResource AppWarningBrush}"
+                                VerticalAlignment="Center"
+                                IsVisible="False"/>
+  </Grid>
+
+  <UserControl.Styles>
+    <!-- The spin, previously declared once per host file (MainView,
+         ServerPickerView, mobile SettingsView) because a sidebar row is a
+         bound ItemTemplate instance rather than a named element some
+         DispatcherTimer could reach. It travels with the icon now. -->
+    <Style Selector="materialIcons|MaterialIcon.spinning">
+      <Setter Property="RenderTransform" Value="rotate(0deg)"/>
+    </Style>
+    <Style Selector="materialIcons|MaterialIcon.spinning">
+      <Style.Animations>
+        <Animation Duration="0:0:1" IterationCount="INFINITE">
+          <KeyFrame Cue="0%">
+            <Setter Property="RotateTransform.Angle" Value="0"/>
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="RotateTransform.Angle" Value="360"/>
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+  </UserControl.Styles>
+</UserControl>

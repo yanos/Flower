@@ -15,30 +15,6 @@
     <vm:MainViewModel />
   </Design.DataContext>
 
-  <UserControl.Styles>
-    <!-- Continuous rotation while a sidebar Device row's IsSyncing is true -
-         see SidebarItem.IsSyncing. Same "MaterialIcon Kind=Sync, spinning"
-         visual as the status-bar busy spinner and ServerPickerView/mobile
-         SettingsView's own sync spinners, done declaratively here since
-         sidebar rows are ordinary bound ItemTemplate instances, not stable
-         named elements a DispatcherTimer could target. -->
-    <Style Selector="materialIcons|MaterialIcon.spinning">
-      <Setter Property="RenderTransform" Value="rotate(0deg)"/>
-    </Style>
-    <Style Selector="materialIcons|MaterialIcon.spinning">
-      <Style.Animations>
-        <Animation Duration="0:0:1" IterationCount="INFINITE">
-          <KeyFrame Cue="0%">
-            <Setter Property="RotateTransform.Angle" Value="0"/>
-          </KeyFrame>
-          <KeyFrame Cue="100%">
-            <Setter Property="RotateTransform.Angle" Value="360"/>
-          </KeyFrame>
-        </Animation>
-      </Style.Animations>
-    </Style>
-  </UserControl.Styles>
-
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -188,28 +164,19 @@
                     <StackPanel VerticalAlignment="Center" Spacing="1">
                       <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding !IsEditing}">
                         <TextBlock Text="{Binding Name}"/>
-                        <materialIcons:MaterialIcon Kind="Sync"
-                                                     Classes="spinning"
-                                                     Width="11" Height="11"
-                                                     Opacity="0.55"
-                                                     VerticalAlignment="Center"
-                                                     IsVisible="{Binding IsSyncing}"/>
-                        <!-- Paired-server reachability - see SidebarItem.
+                        <!-- Paired-server standing - see SidebarItem.
                              ShowReachableIcon/ShowUnreachableIcon. Only ever
                              set on the one Device row for MainViewModel's
                              paired Server, which (unlike an ordinary
                              Devices/Server row) stays in the sidebar even
-                             while unreachable. -->
-                        <materialIcons:MaterialIcon Kind="CheckCircle"
-                                                     Width="11" Height="11"
-                                                     Foreground="{DynamicResource AppSuccessBrush}"
-                                                     VerticalAlignment="Center"
-                                                     IsVisible="{Binding ShowReachableIcon}"/>
-                        <materialIcons:MaterialIcon Kind="AlertCircle"
-                                                     Width="11" Height="11"
-                                                     Foreground="{DynamicResource AppWarningBrush}"
-                                                     VerticalAlignment="Center"
-                                                     IsVisible="{Binding ShowUnreachableIcon}"/>
+                             while unreachable. IsSyncing used to be a spinner
+                             of its own, sitting beside the check rather than
+                             instead of it; see ConnectionStatusIcon. -->
+                        <controls:ConnectionStatusIcon
+                            IsConnected="{Binding ShowReachableIcon}"
+                            IsUnreachable="{Binding ShowUnreachableIcon}"
+                            IsBusy="{Binding IsSyncing}"
+                            VerticalAlignment="Center"/>
                       </StackPanel>
                       <TextBox Text="{Binding Name, Mode=TwoWay}"
                                IsVisible="{Binding IsEditing}"
@@ -357,12 +324,15 @@
                      device (see MainViewModel.IsSelectedDeviceTrustConfirmed)
                      - not just requested, which is IsSelectedDevicePaired
                      alone (see PairActionLabel's "Waiting for server..."
-                     state below). -->
-                <materialIcons:MaterialIcon Kind="CheckCircle"
-                                             Width="16" Height="16"
-                                             Foreground="#4CAF50"
-                                             VerticalAlignment="Center"
-                                             IsVisible="{Binding IsSelectedDeviceTrustConfirmed}"/>
+                     state below). While it is still requested, or a sync is
+                     running, the same glyph spins instead - which is why the
+                     pairing row further down no longer carries a spinner of
+                     its own. -->
+                <controls:ConnectionStatusIcon
+                    IsConnected="{Binding IsSelectedDeviceTrustConfirmed}"
+                    IsBusy="{Binding IsSelectedDeviceBusy}"
+                    IconSize="18"
+                    VerticalAlignment="Center"/>
                 <!-- SelectedSidebarItem.Name, not SelectedDevice.Alias - the sidebar
                      row already resolves a local nickname override (DeviceNicknameStore)
                      over the peer's raw self-reported alias and keeps it live-updated
@@ -396,16 +366,6 @@
                        IsVisible="{Binding PairingCodeError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                        Foreground="#E57373" FontSize="12"
                        VerticalAlignment="Center" Margin="8,0,0,0"/>
-            <!-- Spinner while a pairing request has been sent but the server
-                 hasn't approved it yet - see MainViewModel.IsPairAwaitingApproval.
-                 Same "MaterialIcon Kind=Sync, spinning" visual as the sidebar's
-                 own IsSyncing spinner (see this file's Styles block). -->
-            <materialIcons:MaterialIcon Kind="Sync"
-                                         Classes="spinning"
-                                         Width="14" Height="14"
-                                         Opacity="0.55"
-                                         VerticalAlignment="Center"
-                                         IsVisible="{Binding IsPairAwaitingApproval}"/>
             <TextBlock Text="{Binding PairActionHint}"
                        IsVisible="{Binding PairActionHint, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                        Opacity="0.5" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"/>
