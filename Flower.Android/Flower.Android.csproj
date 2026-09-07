@@ -61,8 +61,8 @@
        (confirmed via a genuine on-device dlopen failure: "library
        libc.so.6 not found" - not an Android binary at all). The
        PackageReference Update below excludes Miniaudio-CS's native assets
-       for this project specifically, so our own explicit
-       AndroidNativeLibrary items below are the only source. -->
+       for this project specifically, so the .so files checked in under libs/
+       are the only source. -->
   <!-- PackageReference Update didn't work here - there's no Miniaudio-CS
        Include item in this project to update, since it only flows in
        transitively via the Flower.csproj ProjectReference (PackageReference
@@ -74,36 +74,21 @@
     <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
   </ItemGroup>
 
-  <ItemGroup>
-    <AndroidNativeLibrary Include="libs\arm64-v8a\libminiaudio.so">
-      <Abi>arm64-v8a</Abi>
-    </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="libs\x86_64\libminiaudio.so">
-      <Abi>x86_64</Abi>
-    </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="libs\armeabi-v7a\libminiaudio.so">
-      <Abi>armeabi-v7a</Abi>
-    </AndroidNativeLibrary>
-  </ItemGroup>
+  <!-- libs/<abi>/libflower_ffmpeg.so is the FFmpeg decoder's facade, self-built
+       the same way and for the same reason (native/ffmpeg/android/build.sh).
+       FFmpeg itself is linked in statically rather than shipped as four more
+       libraries per ABI, which is also where the LGPL obligation lands for a
+       phone build - there is no distro FFmpeg here to point at or replace. See
+       native/ffmpeg/README.md.
 
-  <!-- The FFmpeg decoder's facade, self-built the same way and for the same
-       reason (native/ffmpeg/android/build.sh). FFmpeg itself is linked in
-       statically rather than shipped as four more libraries per ABI, which is
-       also where the LGPL obligation lands for a phone build - there is no
-       distro FFmpeg here to point at or replace. See native/ffmpeg/README.md.
+       Without it there is no decoder at all on that ABI: App.axaml.cs logs one
+       critical line at startup and the app browses, edits and syncs without
+       being able to play anything.
 
-       Without these there is no decoder at all on that ABI: App.axaml.cs logs
-       one critical line at startup and the app browses, edits and syncs
-       without being able to play anything. -->
-  <ItemGroup>
-    <AndroidNativeLibrary Include="libs\arm64-v8a\libflower_ffmpeg.so">
-      <Abi>arm64-v8a</Abi>
-    </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="libs\x86_64\libflower_ffmpeg.so">
-      <Abi>x86_64</Abi>
-    </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="libs\armeabi-v7a\libflower_ffmpeg.so">
-      <Abi>armeabi-v7a</Abi>
-    </AndroidNativeLibrary>
-  </ItemGroup>
+       Neither it nor libminiaudio.so is listed as an AndroidNativeLibrary item.
+       The Android SDK already globs libs/<abi>/*.so and reads the ABI off the
+       directory name, so naming them again packaged each one twice (XA4301,
+       "APK already contains the item ... ignoring"). Dropping the items changed
+       nothing about what ships - the APK carries the same libraries at the same
+       sizes - only how many times the build is asked to add them. -->
 </Project>

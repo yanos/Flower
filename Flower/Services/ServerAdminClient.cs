@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -83,6 +84,17 @@ public sealed class ServerAdminClient(
     private static readonly JsonSerializerOptions Json =
         new(JsonSerializerDefaults.Web) { TypeInfoResolver = FlowerJsonContext.Default };
 
+    // Every serializer call below goes through a JsonTypeInfo rather than through
+    // the options directly. The options-shaped overloads are marked
+    // RequiresUnreferencedCode whatever resolver they are handed - the trimmer
+    // cannot see that this one is source-generated - so on the browser head they
+    // are a warning the whole way up. Resolving the metadata out of Json first
+    // says the same thing in a shape the trimmer can check, and resolving it out
+    // of *Json* specifically rather than off FlowerJsonContext.Default is what
+    // keeps the wire camelCase: that policy is one of the Web defaults on these
+    // options, and the context itself serves PascalCase local files too.
+    private static JsonTypeInfo<T> TypeInfo<T>() => (JsonTypeInfo<T>)Json.GetTypeInfo(typeof(T));
+
     public Uri BaseAddress { get; } = baseAddress;
 
     public Task<ServerSettingsDto> GetSettingsAsync(CancellationToken ct = default) =>
@@ -140,7 +152,7 @@ public sealed class ServerAdminClient(
     {
         var response = await SendAsync(
             HttpMethod.Put, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}", bytes, mimeType, ct);
-        return await response.Content.ReadFromJsonAsync<CoverArtWriteDto>(Json, ct)
+        return await response.Content.ReadFromJsonAsync(TypeInfo<CoverArtWriteDto>(), ct)
                ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
     }
 
@@ -148,14 +160,14 @@ public sealed class ServerAdminClient(
     {
         var response = await SendAsync(
             HttpMethod.Delete, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}", [], null, ct);
-        return await response.Content.ReadFromJsonAsync<CoverArtWriteDto>(Json, ct)
+        return await response.Content.ReadFromJsonAsync(TypeInfo<CoverArtWriteDto>(), ct)
                ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
     }
 
     private async Task<T> SendAsync<T>(HttpMethod method, string pathAndQuery, object? body, CancellationToken ct)
     {
         var response = await SendAsync(method, pathAndQuery, body, ct);
-        return await response.Content.ReadFromJsonAsync<T>(Json, ct)
+        return await response.Content.ReadFromJsonAsync(TypeInfo<T>(), ct)
                ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
     }
 
@@ -164,7 +176,7 @@ public sealed class ServerAdminClient(
         // Serialized up front rather than left to HttpContent: the signature
         // covers a hash of the exact bytes sent, so the authorizer has to see
         // them before the request goes out.
-        var payload = body == null ? [] : JsonSerializer.SerializeToUtf8Bytes(body, Json);
+        var payload = body == null ? [] : JsonSerializer.SerializeToUtf8Bytes(body, Json.GetTypeInfo(body.GetType()));
         return SendAsync(method, pathAndQuery, payload, body == null ? null : "application/json", ct);
     }
 

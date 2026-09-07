@@ -100,6 +100,12 @@ public partial class TrackRowControl : UserControl
     // paired server, for a library synced from one.
     private readonly List<IDisposable> _artBindings = new();
 
+    // The two paths below are string paths into TrackRowViewModel, which the
+    // trimmer cannot follow - but they are the same public properties
+    // CellBindingPathFor's DynamicDependency already roots, so there is nothing
+    // here for it to drop. See that attribute for the whole argument.
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "Bound paths are public properties of TrackRowViewModel, rooted by CellBindingPathFor's DynamicDependency.")]
     private void ApplyArtWell()
     {
         foreach (var binding in _artBindings)
@@ -135,6 +141,8 @@ public partial class TrackRowControl : UserControl
     // genuinely CellBindingPathFor's below: it is what turns a column id into a
     // property name, and a root declared anywhere else would be a fact about
     // that switch stored away from it.
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "Bound paths come from CellBindingPathFor, whose DynamicDependency roots every property they can name.")]
     private Control BuildCellContent(MusicColumnDefinition col)
     {
         if (col.Id == "Title")

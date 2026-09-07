@@ -47,6 +47,13 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(LogWatermarkDto))]
     [JsonSerializable(typeof(StreamTicketDto))]
 
+    // The cover-art batch body (AlbumArtLoader.SendBatchAsync). It travels
+    // in this context's own PascalCase rather than through the web-defaults
+    // options the admin client uses, which is what SyncEndpoints reads it as
+    // - it deserializes case-insensitively, so both spellings arrive, but
+    // this is the one that has always been on the wire.
+    [JsonSerializable(typeof(AlbumArtLoader.CoverArtBatchRequest))]
+
     // The server's /api/admin surface (see ServerAdminClient). Registered here
     // for the same reason as the sync DTOs above - Flower writes both ends of
     // it - but load-bearing rather than cosmetic on one head in particular:

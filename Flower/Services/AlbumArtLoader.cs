@@ -556,8 +556,13 @@ public class AlbumArtLoader
     {
         try
         {
+            // Source-generated metadata rather than reflection: on Flower.Web this
+            // is the difference between a batch request and a NotSupportedException,
+            // and the shape it writes is the context's own PascalCase, which is
+            // what SyncEndpoints has always been reading.
             var payload = JsonSerializer.SerializeToUtf8Bytes(
-                new CoverArtBatchRequest { Ids = batch.Select(entry => entry.Id).ToList() });
+                new CoverArtBatchRequest { Ids = batch.Select(entry => entry.Id).ToList() },
+                FlowerJsonContext.Default.CoverArtBatchRequest);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, batch[0].Endpoint)
             {
@@ -656,8 +661,11 @@ public class AlbumArtLoader
 
     // The request shape SyncEndpoints reads. Declared here rather than shared
     // with the server's own copy because it is two lines and a shared DTO
-    // would drag the whole sync JSON context across for them.
-    private sealed class CoverArtBatchRequest
+    // would drag the whole sync JSON context across for them. Internal rather
+    // than private only so FlowerJsonContext can name it - this is one of the
+    // shapes the browser head puts on the wire, and a trimmed head has no
+    // reflection to fall back on.
+    internal sealed class CoverArtBatchRequest
     {
         public List<string> Ids { get; set; } = [];
     }

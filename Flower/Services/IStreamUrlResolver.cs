@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -177,8 +178,12 @@ public sealed class StreamTicketUrlResolver(
             using var response = await http.SendAsync(request);
             response.EnsureSuccessStatusCode();
 
-            var ticket = JsonSerializer.Deserialize<StreamTicketDto>(
-                await response.Content.ReadAsStringAsync(), Json);
+            // Through the metadata rather than the options, so the browser head's
+            // trimmer can see what this deserializes - see ServerAdminClient.TypeInfo,
+            // which is the same move for the same reason.
+            var ticket = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                (JsonTypeInfo<StreamTicketDto>)Json.GetTypeInfo(typeof(StreamTicketDto)));
             if (ticket == null)
             {
                 logger.LogWarning("Cannot stream {Title}: the server returned an empty stream ticket", track.Title);
