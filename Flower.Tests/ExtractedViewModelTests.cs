@@ -766,4 +766,45 @@ public class DeviceSidebarSectionTests
         // or re-created mid-sync has to carry the current state forward.
         Assert.True(items.Single(i => i.Kind == SidebarItemKind.Device).IsSyncing);
     }
+
+    // The pinned row exists before the peer has been discovered, and for a
+    // server reached over a tailnet it may never be discovered at all - so it
+    // has no Device to match a fingerprint against. This used to look the row
+    // up by Device?.Fingerprint and therefore find nothing, leaving the
+    // sidebar showing its green check for the whole of a sync while the device
+    // pane and the settings picker, which read MainViewModel directly, spun
+    // beside it: one server, two answers, on screen at once.
+    [Fact]
+    public void The_pinned_row_spins_during_a_sync_even_before_its_peer_is_discovered()
+    {
+        var (section, items, host) = Make();
+        host.PairedServerFingerprint = "fp-nas";
+        items.Add(new SidebarItem(SidebarItemKind.Header, "Servers"));
+        items.Add(new SidebarItem(SidebarItemKind.Device, "NAS") { IsPairedServer = true });
+
+        section.SetPairedServerSyncing(true);
+
+        Assert.True(items.Single(i => i.Kind == SidebarItemKind.Device).IsSyncing);
+
+        section.SetPairedServerSyncing(false);
+
+        Assert.False(items.Single(i => i.Kind == SidebarItemKind.Device).IsSyncing);
+    }
+
+    // Only the paired server's row, not every server the network happens to
+    // be advertising.
+    [Fact]
+    public void A_sync_spins_only_the_paired_servers_row()
+    {
+        var (section, items, host) = Make();
+        host.PairedServerFingerprint = "fp-nas";
+        section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
+        section.AddOrUpdate(Device("other", "fp-other", "Other"));
+        section.PinPairedServerRow("fp-nas");
+
+        section.SetPairedServerSyncing(true);
+
+        Assert.True(items.Single(i => i.Name == "NAS").IsSyncing);
+        Assert.False(items.Single(i => i.Name == "Other").IsSyncing);
+    }
 }

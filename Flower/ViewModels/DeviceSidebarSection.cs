@@ -192,12 +192,18 @@ public sealed class DeviceSidebarSection
     // Pushes the current sync state onto whichever row represents the paired
     // Server, for that row's own spinner (see SidebarItem.IsSyncing,
     // MainView.axaml's Device row template).
+    //
+    // Found by IsPairedServer, exactly like SyncPairedServerRow above and for
+    // the same reason: the pinned row has no live Device until mDNS discovers
+    // the peer, and a server reached over a tailnet may never be discovered at
+    // all. Matching on Device?.Fingerprint therefore found nothing in the
+    // common case, so the sidebar row sat on its green check for the whole of
+    // a sync while the device pane and the settings picker - which read
+    // MainViewModel directly - spun beside it. One server, two answers, on
+    // screen at the same time.
     public void SetPairedServerSyncing(bool isSyncing)
     {
-        var pairedFingerprint = _host.PairedServerFingerprint;
-        if (pairedFingerprint == null)
-            return;
-        var item = _items.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == pairedFingerprint);
+        var item = _items.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.IsPairedServer);
         if (item != null)
             item.IsSyncing = isSyncing;
     }
