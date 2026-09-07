@@ -29,7 +29,7 @@
             Classes.dense="{Binding !$parent[views:ITrackRowHost].ShowsRowArtist}"
             Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).PlayTrackCommand}"
             CommandParameter="{Binding}">
-      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+      <Grid ColumnDefinitions="Auto,Auto,14,*,Auto,Auto">
         <!-- Pointer wiring for drag-to-reorder is NOT attached here as XAML
              event attributes - this file is a class-less ResourceDictionary
              (no x:Class), so the XAML compiler has no code-behind type to
@@ -69,7 +69,77 @@
                                 IsVisible="{Binding !$parent[views:ITrackRowHost].IsAlbumMode}"
                                 Width="40" Height="40"
                                 Margin="0,0,10,0" />
-        <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+        <!-- The leading edge, not the trailing one where this used to sit
+             beside the "..." menu: it is the row's own answer to "is this
+             on the phone?", and reads as one down the left margin the way
+             the art and the title do. The well is a fixed width and is
+             reserved on every row, downloaded or not - an Auto column
+             would collapse on each row with nothing to fetch, and in a
+             part-synced library every second title would step in and out
+             down the screen. Same trade the desktop row makes for the
+             same reason (TrackRowControl.BuildCellContent).
+
+             Sized to the glyph and nothing more, and then pulled left out
+             of the row's own padding by exactly that padding (the -8
+             Margin below matches Button.trackRow in MobileMainView.axaml,
+             and the dense override in TrackListScreenView.axaml - change
+             it there and this follows): inside an album this icon is the
+             first thing on the row, and the inset that suits a title
+             reads as a gap in front of a 16px glyph. Everything else on
+             the row keeps the inset, which is why this is a negative
+             margin on the button rather than a smaller padding on the
+             row. Only the icon moves; the well's own width still decides
+             where the title starts. That does make it a small target -
+             the vertical padding is what keeps it tappable at all, so
+             trim that last.
+
+             Tapping the row itself (PlayTrackCommand, above) is a no-op
+             for a placeholder track, so this is the only thing on that
+             row that acts on the music rather than on the catalog entry
+             (the "..." menu does the latter). Three mutually
+             exclusive icon states (idle / in-flight /
+             just-failed-or-unavailable) - see
+             TrackRowViewModel.IsDownloadIdle. The Sync icon's own spin
+             is driven by SpinAngle, a plain bindable double owned by the
+             row's own ViewModel - see TrackRowViewModel.IsDownloading's
+             own doc comment for why this isn't a View-side animation
+             (TrackListBox's virtualization made an earlier attempt at
+             that unreliable during a multi-row batch download). -->
+        <Button Grid.Column="2"
+                IsVisible="{Binding IsDownloadable}"
+                Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).DownloadTrackCommand}"
+                CommandParameter="{Binding}"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="0,4"
+                Width="18"
+                Margin="-8,0,0,0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Center">
+          <Panel>
+            <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="16" Height="16" Opacity="0.7"
+                                         IsVisible="{Binding IsDownloadIdle}"
+                                         ToolTip.Tip="Download" />
+            <!-- Rotation directly on the icon, matching MainView.axaml's
+                 own status-bar spinner exactly (same Sync icon, same
+                 centred origin, same RotateTransform) - an earlier attempt
+                 wrapped this in a sized Border instead, which was the
+                 wrong fix. The origin is left unset for the reason
+                 TrackDownloadButton.axaml spells out: "0.5,0.5" is half a
+                 pixel, not half the icon. -->
+            <materialIcons:MaterialIcon Kind="Sync" Width="16" Height="16" Opacity="0.7"
+                                         IsVisible="{Binding IsDownloading}">
+              <materialIcons:MaterialIcon.RenderTransform>
+                <RotateTransform Angle="{Binding SpinAngle}" />
+              </materialIcons:MaterialIcon.RenderTransform>
+            </materialIcons:MaterialIcon>
+            <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="16" Height="16" Opacity="0.7"
+                                         IsVisible="{Binding IsDownloadUnavailable}"
+                                         ToolTip.Tip="Device unavailable - try again later" />
+          </Panel>
+        </Button>
+
+        <StackPanel Grid.Column="3" Spacing="2" VerticalAlignment="Center">
           <TextBlock Text="{Binding Track.Title}"
                      FontSize="16"
                      TextTrimming="CharacterEllipsis" />
@@ -89,10 +159,11 @@
              knows its own length (Track.Duration comes from the peer's
              catalog, not from reading a local file - see
              LibrarySyncMapper.ToPlaceholderTrack), there's no reason to
-             hide it just because the file isn't local yet. The same now goes
-             for the "..." menu below; only the download button is about
-             having the file. -->
-        <StackPanel Grid.Column="3" Grid.ColumnSpan="2"
+             hide it just because the file isn't local yet. The same goes
+             for the "..." menu below - the download button, which is the
+             one thing here that did need the file, has moved to the
+             leading edge of the row. -->
+        <StackPanel Grid.Column="4" Grid.ColumnSpan="2"
                     Orientation="Horizontal" Spacing="0">
           <TextBlock Text="{Binding DurationDisplay}"
                      FontSize="13"
@@ -117,49 +188,6 @@
                   Margin="4,0,0,0"
                   VerticalAlignment="Center">
             <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
-          </Button>
-
-          <!-- tapping the row itself (PlayTrackCommand, above) is a no-op
-               for a placeholder track, so this is the only thing on that
-               row that acts on the music rather than on the catalog entry
-               (the "..." menu above does the latter). Three mutually
-               exclusive icon states (idle / in-flight /
-               just-failed-or-unavailable) - see
-               TrackRowViewModel.IsDownloadIdle. The Sync icon's own spin
-               is driven by SpinAngle, a plain bindable double owned by the
-               row's own ViewModel - see TrackRowViewModel.IsDownloading's
-               own doc comment for why this isn't a View-side animation
-               (TrackListBox's virtualization made an earlier attempt at
-               that unreliable during a multi-row batch download). -->
-          <Button IsVisible="{Binding IsDownloadable}"
-                  Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).DownloadTrackCommand}"
-                  CommandParameter="{Binding}"
-                  Background="Transparent"
-                  BorderThickness="0"
-                  Padding="4"
-                  Margin="4,0,0,0"
-                  VerticalAlignment="Center">
-            <Panel>
-              <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7"
-                                           IsVisible="{Binding IsDownloadIdle}"
-                                           ToolTip.Tip="Download" />
-              <!-- Rotation directly on the icon, matching MainView.axaml's
-                   own status-bar spinner exactly (same Sync icon, same
-                   centred origin, same RotateTransform) - an earlier attempt
-                   wrapped this in a sized Border instead, which was the
-                   wrong fix. The origin is left unset for the reason
-                   TrackDownloadButton.axaml spells out: "0.5,0.5" is half a
-                   pixel, not half the icon. -->
-              <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7"
-                                           IsVisible="{Binding IsDownloading}">
-                <materialIcons:MaterialIcon.RenderTransform>
-                  <RotateTransform Angle="{Binding SpinAngle}" />
-                </materialIcons:MaterialIcon.RenderTransform>
-              </materialIcons:MaterialIcon>
-              <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="22" Height="22" Opacity="0.7"
-                                           IsVisible="{Binding IsDownloadUnavailable}"
-                                           ToolTip.Tip="Device unavailable - try again later" />
-            </Panel>
           </Button>
         </StackPanel>
       </Grid>

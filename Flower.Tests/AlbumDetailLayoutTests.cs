@@ -84,15 +84,21 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
 
     // The app's own mobile styles are declared inline in MobileMainView.axaml,
     // so there is nothing to StyleInclude here - a track row falls back to
-    // FluentTheme's 8px Button padding instead of the 16 it has on a device,
+    // FluentTheme's own Button padding instead of the 8 it has on a device,
     // and the alignment test would be measuring the wrong inset. This restates
     // just that one setter. It has to stay in step with
     // MobileMainView.axaml's "Button.pickerRow, Button.trackRow" style, which
     // is the number the album text's own margin is chosen to match.
+    //
+    // The rows measured by the alignment test below don't actually reach it:
+    // an album's rows are "dense" (no artist line), and TrackListScreenView
+    // declares that style itself, so it comes along with the view. This is the
+    // fallback any non-dense row would take, and it is here so a row that
+    // stops being dense doesn't start measuring FluentTheme's padding instead.
     private static Style TrackRowPadding()
     {
         var style = new Style(x => x.OfType<Button>().Class("trackRow"));
-        style.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(16, 5)));
+        style.Setters.Add(new Setter(TemplatedControl.PaddingProperty, new Thickness(8, 5)));
         style.Setters.Add(new Setter(TemplatedControl.BorderThicknessProperty, new Thickness(0)));
         return style;
     }

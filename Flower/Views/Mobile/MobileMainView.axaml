@@ -80,12 +80,33 @@
                      Button.trackRow:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
+    <!-- Narrower left/right inset than the picker rows above (16): a song row
+         carries art, a download well, a title, a duration and a menu across
+         one phone width, and the 8px on each side buys the title more of it
+         than the margin was doing. The download button cancels it outright with
+         a matching negative margin (see TrackRowTemplate.axaml), so inside an
+         album the icon sits a pixel off the screen edge while everything else
+         on the row keeps this inset - change this number and change that one
+         with it. The vertical half is untouched - it is what
+         makes the row a comfortable tap. TrackListScreenView's album header
+         adds this number to the download well's width to line its text up with
+         the titles, so changing it here moves that too (see the margin on
+         ContentControl.albumText.beside). -->
     <Style Selector="Button.trackRow">
-      <Setter Property="Padding" Value="16,5" />
+      <Setter Property="Padding" Value="8,5" />
     </Style>
+    <!-- The currently playing song, said the one way it is said on every
+         list on every platform: weight, and nothing else. Desktop marks its
+         own rows the same (TrackRowControl's .playing style, and
+         AlbumGridRowControl's .playingTrack for an expanded album), which it
+         did not before - it drew a small "▶" in a column of its own while
+         this went bold and accent-coloured, so the two heads disagreed about
+         what "playing" even looks like. The accent Foreground went with the
+         arrow: it was the half of this that had no counterpart over there,
+         and colour is already spoken for on a row (0.5 opacity means the
+         song is not here yet - see Button.trackRow.placeholder below). -->
     <Style Selector="Button.trackRow.playing TextBlock">
       <Setter Property="FontWeight" Value="Bold" />
-      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
     </Style>
     <!-- Not-yet-downloaded track that can't currently be streamed/downloaded
          (see TrackRowViewModel.IsUnavailable/IsAvailable) - dimmed like

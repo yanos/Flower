@@ -54,8 +54,24 @@
     <Style Selector="ContentControl.albumText TextBlock">
       <Setter Property="TextAlignment" Value="Center" />
     </Style>
+    <!-- Centred under the art, the words answer to the screen, so they are
+         inset evenly. Ranged left beside it they answer to the song titles
+         below instead, and take their left inset from the row: 8 of
+         Button.trackRow's own horizontal Padding (see MobileMainView.axaml)
+         plus the 14px download well every row reserves ahead of its title
+         (see TrackRowTemplate.axaml). Change either number there and this one
+         follows - AlbumDetailLayoutTests.The_album_name_lines_up_with_the_
+         song_titles measures the two against each other. Both live here
+         rather than on the use site because a local Margin would outrank
+         them. -->
+    <Style Selector="ContentControl.albumText">
+      <Setter Property="Margin" Value="16,4,16,16" />
+    </Style>
     <Style Selector="ContentControl.albumText.beside TextBlock">
       <Setter Property="TextAlignment" Value="Left" />
+    </Style>
+    <Style Selector="ContentControl.albumText.beside">
+      <Setter Property="Margin" Value="22,4,16,16" />
     </Style>
 
     <!-- A row with no artist line under the title is a single line of text,
@@ -71,9 +87,13 @@
          Here rather than in MobileMainView.axaml's own trackRow styles
          because "dense" is set from ITrackRowHost.ShowsRowArtist, which is
          this screen's question to answer - and being the nearer StyleHost,
-         these win over that file's Padding for the rows it applies to. -->
+         these win over that file's Padding for the rows it applies to. Only
+         the vertical half is this style's own business: the 8 has to stay
+         equal to the horizontal padding over there, since it is what the
+         album text's margin above is measured against, and a dense row is
+         still a row in the same list as a tall one. -->
     <Style Selector="Button.trackRow.dense">
-      <Setter Property="Padding" Value="16,3" />
+      <Setter Property="Padding" Value="8,3" />
     </Style>
   </UserControl.Styles>
 
@@ -145,16 +165,13 @@
                           ContentTemplate="{StaticResource AlbumArtTemplate}"
                           Width="240" Margin="24,4,24,12"
                           HorizontalAlignment="Center" />
-          <!-- 16 to the left and right, not the art's 24: that is
-               Button.trackRow's own horizontal Padding (see
-               MobileMainView.axaml), so the album name starts on the same
-               vertical as the song titles underneath it rather than 8px
-               inside them. -->
+          <!-- Inset by the .albumText styles above, which is where the two
+               layouts differ - the ranged-left one has to line its first
+               character up with the song titles below it. -->
           <ContentControl Classes="albumText"
                           Classes.beside="{Binding #Root.IsWideAlbumLayout}"
                           Content="{Binding #Root.DisplayHeader}"
-                          ContentTemplate="{StaticResource AlbumTextTemplate}"
-                          Margin="16,4,16,16" />
+                          ContentTemplate="{StaticResource AlbumTextTemplate}" />
           <ItemsControl ItemsSource="{Binding #Root.DisplayRows}" ItemTemplate="{StaticResource TrackRowTemplate}" />
         </StackPanel>
       </ScrollViewer>
