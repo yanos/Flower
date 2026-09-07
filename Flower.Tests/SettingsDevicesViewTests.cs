@@ -312,4 +312,61 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
 
         Assert.True(settings.CanManageLibrary);
     }
+
+    // A row is a live object, updated in place, rather than a snapshot replaced
+    // on every change - so the control bound to it is the same instance from one
+    // Refresh to the next. ConnectionStatusIcon holds a short sync's spinner on
+    // the instance that raised it, and a replaced row throws that holder away.
+    // What that needs from the row itself is that the properties a sync moves
+    // are settable and say so.
+    [Fact]
+    public void A_row_told_a_sync_started_reports_itself_busy()
+    {
+        var row = new ServerRow
+        {
+            Fingerprint = "fp-nas",
+            Alias = "NAS",
+            IsPaired = true,
+            IsSyncing = false,
+            IsTrustConfirmed = true,
+            CanForceSync = true,
+            BlockedByAlias = null,
+        };
+
+        var changed = new List<string?>();
+        row.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        row.IsSyncing = true;
+
+        Assert.True(row.IsBusy);
+        Assert.Contains(nameof(ServerRow.IsBusy), changed);
+
+        row.CanForceSync = false;
+
+        Assert.Contains(nameof(ServerRow.CanForceSync), changed);
+    }
+
+    // And the half the row alone cannot promise: that a Refresh - which runs off
+    // mDNS discovery, the peer poll and every sync edge, several times a minute -
+    // keeps the row it already had. This is what the settings list was missing
+    // while the sidebar had it: a sync ends by setting LastSyncedAt, so the
+    // rebuild that discarded the spinner's holder arrived on the very edge that
+    // had started it, and only in here.
+    [AvaloniaFact]
+    public async Task A_refresh_keeps_the_row_a_server_already_had()
+    {
+        using var parts = BuildClient();
+        var view = new ServerPickerView(parts.Main);
+        var window = Show(view);
+
+        DiscoverTheServer(parts);
+        var before = Rows(view).Single();
+
+        await parts.NetworkDiscovery.AddRememberedAsync($"http://{ServerEndPoint.Address}:{ServerEndPoint.Port}");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(before, Rows(view).Single());
+
+        window.Close();
+    }
 }

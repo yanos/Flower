@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -23,11 +24,43 @@ namespace Flower.Views;
 // (disabled, with a hint to unpair first - decision: switching requires an
 // explicit unpair-first step, no direct one-click switch), or nothing is
 // paired yet ("Ask to pair").
+//
+// A live object keyed by Fingerprint rather than a snapshot rebuilt on every
+// change, which is what it used to be. Refresh() runs off mDNS discovery, the
+// ~5s peer poll and every sync edge, so a snapshot row was replaced several
+// times a minute - and replacing the row replaces the controls bound to it.
+// That cost two things that live on a control instance rather than in the
+// ViewModel: a half-typed pairing code, which Refresh had to carry across by
+// hand, and ConnectionStatusIcon's minimum-length spinner hold, which it could
+// not. A sync short enough to need the hold ends by setting LastSyncedAt, so
+// the rebuild that discarded the holder arrived on the same edge that started
+// it, and the spinner blinked out in the settings list while the sidebar - whose
+// rows are not rebuilt - held it for the full second. One server, two answers.
 public sealed class ServerRow : ViewModelBase
 {
+    // The identity. Everything else about a row is a fact that can change
+    // under it while it stays the same row.
     public required string Fingerprint { get; init; }
-    public required string Alias { get; init; }
-    public required bool IsPaired { get; init; }
+
+    public required string Alias
+    {
+        get => _alias;
+        set => SetProperty(ref _alias, value);
+    }
+    private string _alias = "";
+
+    public required bool IsPaired
+    {
+        get => _isPaired;
+        set
+        {
+            if (!SetProperty(ref _isPaired, value))
+                return;
+            OnPropertyChanged(nameof(IsPairingCodeRequired));
+            NotifyActionState();
+        }
+    }
+    private bool _isPaired;
 
     // What the user typed into this row's code box. Per-row rather than
     // per-view: the list can show several servers, and a code is only valid
@@ -35,44 +68,75 @@ public sealed class ServerRow : ViewModelBase
     public string PairingCode
     {
         get => _pairingCode;
-        set
-        {
-            if (_pairingCode == value)
-                return;
-            _pairingCode = value;
-            OnPropertyChanged();
-        }
+        set => SetProperty(ref _pairingCode, value);
     }
     private string _pairingCode = "";
 
     public bool IsPairingCodeRequired => !IsPaired;
 
-    // True only for the paired row while MainViewModel.IsSyncing is set - see
-    // ServerPickerView's PropertyChanged subscription, which re-runs Refresh()
-    // (rebuilding this snapshot) on every IsSyncing edge.
-    public required bool IsSyncing { get; init; }
+    // True only for the paired row while MainViewModel.IsSyncing is set.
+    public required bool IsSyncing
+    {
+        get => _isSyncing;
+        set
+        {
+            if (SetProperty(ref _isSyncing, value))
+                OnPropertyChanged(nameof(IsBusy));
+        }
+    }
+    private bool _isSyncing;
 
     // True only for the paired row, once it has actually approved this
     // device - see MainViewModel.IsPairedServerTrustConfirmed. Meaningless
     // (always false) for any other row.
-    public required bool IsTrustConfirmed { get; init; }
+    public required bool IsTrustConfirmed
+    {
+        get => _isTrustConfirmed;
+        set
+        {
+            if (SetProperty(ref _isTrustConfirmed, value))
+                NotifyActionState();
+        }
+    }
+    private bool _isTrustConfirmed;
 
     // "Sync Now" is only ever shown on the paired row, and only enabled while
     // that server is actually currently discovered - see
     // MainViewModel.CanForceSync/ForceSyncNow.
-    public required bool CanForceSync { get; init; }
+    public required bool CanForceSync
+    {
+        get => _canForceSync;
+        set => SetProperty(ref _canForceSync, value);
+    }
+    private bool _canForceSync;
 
     // Set to the currently-paired server's alias only when a DIFFERENT
     // server is paired - null otherwise (nothing paired, or this row itself
     // is the paired one).
-    public required string? BlockedByAlias { get; init; }
+    public required string? BlockedByAlias
+    {
+        get => _blockedByAlias;
+        set
+        {
+            if (!SetProperty(ref _blockedByAlias, value))
+                return;
+            OnPropertyChanged(nameof(IsActionEnabled));
+            OnPropertyChanged(nameof(HintText));
+        }
+    }
+    private string? _blockedByAlias;
 
     // Shown under the name only when the name alone does not identify the
     // row: two servers calling themselves the same thing. A row is otherwise
     // deliberately just a name - an origin is how this device happens to be
     // reaching the server right now, which is both changeable and none of the
     // user's business when there is nothing to tell apart. See Refresh.
-    public string? Detail { get; init; }
+    public string? Detail
+    {
+        get => _detail;
+        set => SetProperty(ref _detail, value);
+    }
+    private string? _detail;
 
     // When this device last successfully pulled from this server, already
     // phrased - see MainViewModel.LastSyncedDisplay, which mobile's settings
@@ -80,7 +144,12 @@ public sealed class ServerRow : ViewModelBase
     // have synced with any other. Null until the first sync of a pairing
     // completes, which is exactly the window in which the row is still saying
     // "Waiting for server...".
-    public string? LastSyncedDisplay { get; init; }
+    public string? LastSyncedDisplay
+    {
+        get => _lastSyncedDisplay;
+        set => SetProperty(ref _lastSyncedDisplay, value);
+    }
+    private string? _lastSyncedDisplay;
 
     public string ActionLabel =>
         !IsPaired ? "Pair" :
@@ -94,6 +163,15 @@ public sealed class ServerRow : ViewModelBase
     public bool IsBusy => IsAwaitingApproval || IsSyncing;
     public bool IsActionEnabled => IsPaired || BlockedByAlias == null;
     public string? HintText => !IsPaired && BlockedByAlias != null ? $"Unpair from {BlockedByAlias} first" : null;
+
+    private void NotifyActionState()
+    {
+        OnPropertyChanged(nameof(ActionLabel));
+        OnPropertyChanged(nameof(IsAwaitingApproval));
+        OnPropertyChanged(nameof(IsBusy));
+        OnPropertyChanged(nameof(IsActionEnabled));
+        OnPropertyChanged(nameof(HintText));
+    }
 }
 
 // Client-side counterpart to TrustedDevicesView (shown instead of it on
@@ -128,6 +206,7 @@ public partial class ServerPickerView : UserControl
         InitializeComponent();
         _mainViewModel    = mainViewModel;
         _networkDiscovery = mainViewModel.NetworkDiscovery;
+        ServersList.ItemsSource = _rows;
         Refresh();
     }
 
@@ -152,7 +231,9 @@ public partial class ServerPickerView : UserControl
             if (args.PropertyName == nameof(MainViewModel.IsSyncing)
                 || args.PropertyName == nameof(MainViewModel.IsPairedServerTrustConfirmed)
                 || args.PropertyName == nameof(MainViewModel.LastSyncedAt))
+            {
                 Dispatcher.UIThread.Post(Refresh);
+            }
             if (args.PropertyName == nameof(MainViewModel.LastForceSyncResult))
                 Dispatcher.UIThread.Post(RefreshSyncResultText);
         },
@@ -175,19 +256,15 @@ public partial class ServerPickerView : UserControl
         SyncResultText.IsVisible = !string.IsNullOrEmpty(_mainViewModel.LastForceSyncResult);
     }
 
+    // The rows on screen, kept and updated rather than replaced - see
+    // ServerRow's own remarks for what a replacement costs. Handed to the
+    // ListBox once, so a Refresh never swaps the ItemsSource out from under it.
+    private readonly ObservableCollection<ServerRow> _rows = new();
+
     private void Refresh()
     {
         var pairedFingerprint = _mainViewModel.PairedServerFingerprint;
         var pairedAlias = _mainViewModel.PairedServerAlias;
-
-        // Refresh() rebuilds every row from scratch and runs off the ~5s peer
-        // poll, so a half-typed pairing code would be wiped out from under the
-        // user mid-keystroke. Carry it across by fingerprint - the row objects
-        // are snapshots, but what the user typed into one is not.
-        var typedCodes = (ServersList.ItemsSource as IEnumerable<ServerRow>)?
-            .Where(r => !string.IsNullOrEmpty(r.PairingCode))
-            .ToDictionary(r => r.Fingerprint, r => r.PairingCode)
-            ?? [];
 
         // One row per server, named. AvailableServers is already one entry per
         // identified server - deduped by fingerprint, with the addresses that
@@ -207,42 +284,66 @@ public partial class ServerPickerView : UserControl
             .Select(g => g.Key)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var rows = servers
-            .Select(d => new ServerRow
-            {
-                Fingerprint = d.Fingerprint,
-                Alias = string.IsNullOrWhiteSpace(d.Alias) ? d.Origin : d.Alias,
-                Detail = duplicateAliases.Contains(d.Alias) ? d.Origin : null,
-                IsPaired = d.Fingerprint == pairedFingerprint,
-                IsSyncing = d.Fingerprint == pairedFingerprint && _mainViewModel.IsSyncing,
-                IsTrustConfirmed = d.Fingerprint == pairedFingerprint && _mainViewModel.IsPairedServerTrustConfirmed,
-                CanForceSync = d.Fingerprint == pairedFingerprint && _mainViewModel.CanForceSync,
-                BlockedByAlias = pairedFingerprint != null && d.Fingerprint != pairedFingerprint ? pairedAlias : null,
-                LastSyncedDisplay = d.Fingerprint == pairedFingerprint ? _mainViewModel.LastSyncedDisplay : null,
-                PairingCode = typedCodes.GetValueOrDefault(d.Fingerprint, ""),
-            })
+        var wanted = servers
+            .Select(d => (
+                Fingerprint: d.Fingerprint,
+                Alias: string.IsNullOrWhiteSpace(d.Alias) ? d.Origin : d.Alias,
+                Detail: duplicateAliases.Contains(d.Alias) ? d.Origin : null))
             .ToList();
 
         // Pin the currently-paired server at the top even if it isn't
         // currently discovered (e.g. temporarily offline) - the display-only
         // cache on MainViewModel.PairedServerAlias exists for exactly this.
-        if (pairedFingerprint != null && rows.All(r => r.Fingerprint != pairedFingerprint))
+        if (pairedFingerprint != null && wanted.All(r => r.Fingerprint != pairedFingerprint))
         {
-            rows.Insert(0, new ServerRow
-            {
-                Fingerprint = pairedFingerprint,
-                Alias = pairedAlias ?? pairedFingerprint,
-                IsPaired = true,
-                IsSyncing = _mainViewModel.IsSyncing,
-                IsTrustConfirmed = _mainViewModel.IsPairedServerTrustConfirmed,
-                CanForceSync = _mainViewModel.CanForceSync,
-                BlockedByAlias = null,
-                LastSyncedDisplay = _mainViewModel.LastSyncedDisplay,
-            });
+            wanted.Insert(0, (
+                Fingerprint: pairedFingerprint,
+                Alias: pairedAlias ?? pairedFingerprint,
+                Detail: (string?)null));
         }
 
-        ServersList.ItemsSource = rows;
-        EmptyStateText.IsVisible = rows.Count == 0;
+        // Reconcile by fingerprint: a server that was already listed keeps the
+        // row object it had, and with it the control instances bound to it.
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            var want = wanted[i];
+            var existing = _rows.FirstOrDefault(r => r.Fingerprint == want.Fingerprint);
+            if (existing == null)
+            {
+                existing = new ServerRow
+                {
+                    Fingerprint = want.Fingerprint,
+                    Alias = want.Alias,
+                    IsPaired = false,
+                    IsSyncing = false,
+                    IsTrustConfirmed = false,
+                    CanForceSync = false,
+                    BlockedByAlias = null,
+                };
+                _rows.Insert(Math.Min(i, _rows.Count), existing);
+            }
+            else if (_rows.IndexOf(existing) != i)
+            {
+                _rows.Move(_rows.IndexOf(existing), i);
+            }
+
+            var isPaired = want.Fingerprint == pairedFingerprint;
+            existing.Alias = want.Alias;
+            existing.Detail = want.Detail;
+            existing.IsPaired = isPaired;
+            existing.IsSyncing = isPaired && _mainViewModel.IsSyncing;
+            existing.IsTrustConfirmed = isPaired && _mainViewModel.IsPairedServerTrustConfirmed;
+            existing.CanForceSync = isPaired && _mainViewModel.CanForceSync;
+            existing.BlockedByAlias = !isPaired && pairedFingerprint != null ? pairedAlias : null;
+            existing.LastSyncedDisplay = isPaired ? _mainViewModel.LastSyncedDisplay : null;
+        }
+
+        for (var i = _rows.Count - 1; i >= wanted.Count; i--)
+        {
+            _rows.RemoveAt(i);
+        }
+
+        EmptyStateText.IsVisible = _rows.Count == 0;
     }
 
     private async void ActionButton_Click(object? sender, RoutedEventArgs e)
