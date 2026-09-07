@@ -1,8 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
 
 using Flower.Controls;
 
@@ -114,6 +117,107 @@ public class ConnectionStatusIconTests
             Assert.Equal(18, child.Width);
             Assert.Equal(18, child.Height);
         }
+    }
+
+    // A sync of a library nothing has changed is over in milliseconds, so the
+    // spinner it raises would otherwise appear and vanish inside a frame or
+    // two. That does not read as work happening; it reads as the display
+    // glitching. The state is held for a minimum length instead.
+    [AvaloniaFact]
+    public void A_sync_shorter_than_the_hold_still_shows_its_spinner()
+    {
+        var releases = new List<Action>();
+        var icon = new ConnectionStatusIcon
+        {
+            IsConnected = true,
+            ScheduleBusyRelease = (_, release) => releases.Add(release),
+        };
+
+        icon.IsBusy = true;
+        icon.IsBusy = false;
+
+        Assert.Equal(State.Busy, icon.State);
+
+        releases.Single()();
+
+        Assert.Equal(State.Connected, icon.State);
+    }
+
+    // The hold is a floor, not a ceiling: a sync still running when it expires
+    // keeps the spinner, because IsBusy is still true.
+    [AvaloniaFact]
+    public void A_sync_still_running_when_the_hold_expires_keeps_its_spinner()
+    {
+        var releases = new List<Action>();
+        var icon = new ConnectionStatusIcon
+        {
+            IsConnected = true,
+            ScheduleBusyRelease = (_, release) => releases.Add(release),
+        };
+
+        icon.IsBusy = true;
+        releases.Single()();
+
+        Assert.Equal(State.Busy, icon.State);
+    }
+
+    // Two syncs in quick succession are two holds. The first one's release is
+    // still pending when the second begins, and must not end it early -
+    // periodic syncs land close enough together for this to be the ordinary
+    // case rather than a corner of one.
+    [AvaloniaFact]
+    public void A_second_sync_is_not_cut_short_by_the_first_holds_release()
+    {
+        var releases = new List<Action>();
+        var icon = new ConnectionStatusIcon
+        {
+            IsConnected = true,
+            ScheduleBusyRelease = (_, release) => releases.Add(release),
+        };
+
+        icon.IsBusy = true;
+        icon.IsBusy = false;
+        icon.IsBusy = true;
+        icon.IsBusy = false;
+
+        releases[0]();
+
+        Assert.Equal(State.Busy, icon.State);
+
+        releases[1]();
+
+        Assert.Equal(State.Connected, icon.State);
+    }
+
+    // The other three drive the hold through an injected scheduler, which
+    // proves the rule but not the wiring. This one uses the control's own
+    // timer, on a control that is actually on screen - which is also the only
+    // condition under which it starts one.
+    [AvaloniaFact]
+    public void An_on_screen_icon_releases_its_own_hold()
+    {
+        var icon = new ConnectionStatusIcon
+        {
+            IsConnected = true,
+            MinimumBusyDuration = TimeSpan.FromMilliseconds(50),
+        };
+        var window = new Window { Content = icon };
+        window.Show();
+
+        icon.IsBusy = true;
+        icon.IsBusy = false;
+
+        Assert.Equal(State.Busy, icon.State);
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (icon.State == State.Busy && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(10);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        Assert.Equal(State.Connected, icon.State);
+        window.Close();
     }
 
     private static IEnumerable<Control> IconsOf(ConnectionStatusIcon icon) =>

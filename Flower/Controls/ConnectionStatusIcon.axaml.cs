@@ -1,5 +1,8 @@
+using System;
+
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
 
 namespace Flower.Controls;
 
@@ -25,6 +28,13 @@ namespace Flower.Controls;
 // leads because it is the only state that is about right now - the other two
 // describe what was last found to be true, and a server being polled has
 // already superseded them.
+//
+// Busy is also held for a minimum length once shown (MinimumBusyDuration). A
+// sync of a library that has not changed finishes in well under the frame or
+// two it takes to notice a glyph, so without the hold the spinner is a flicker
+// in the corner of the eye - and a flicker reads as a fault, not as work
+// happening. The hold costs a second of staleness on a state that is about to
+// be superseded anyway.
 public partial class ConnectionStatusIcon : UserControl
 {
     public enum ConnectionState
@@ -91,8 +101,30 @@ public partial class ConnectionStatusIcon : UserControl
         : connected ? ConnectionState.Connected
         : ConnectionState.None;
 
-    // What is actually shown.
-    public ConnectionState State => Resolve(IsConnected, IsBusy, IsUnreachable);
+    // Long enough to register as a thing that happened. Below about half a
+    // second a spinner that appears and vanishes is indistinguishable from a
+    // rendering glitch; a whole second also gives the rotation time to travel
+    // far enough to read as a rotation.
+    public static readonly TimeSpan DefaultMinimumBusyDuration = TimeSpan.FromSeconds(1);
+
+    // Instance rather than a constant so a test can shorten it, and so a call
+    // site with a genuinely different rhythm could too. Nothing does yet.
+    public TimeSpan MinimumBusyDuration { get; set; } = DefaultMinimumBusyDuration;
+
+    // How the hold is released. Swapped in tests, which then release it by
+    // hand rather than waiting out a real second per case.
+    internal Action<TimeSpan, Action>? ScheduleBusyRelease { get; set; }
+
+    private bool _busyHeld;
+
+    // Which hold the pending release belongs to. Busy going true again while
+    // a release is in flight starts a fresh hold, and the older release must
+    // not then cut it short.
+    private int _busyGeneration;
+
+    // What is actually shown: the state the caller reports, plus a busy that
+    // has not yet been on screen long enough to have been seen.
+    public ConnectionState State => Resolve(IsConnected, IsBusy || _busyHeld, IsUnreachable);
 
     public ConnectionStatusIcon()
     {
@@ -104,6 +136,9 @@ public partial class ConnectionStatusIcon : UserControl
     {
         base.OnPropertyChanged(change);
 
+        if (change.Property == IsBusyProperty && change.GetNewValue<bool>())
+            BeginBusyHold();
+
         if (change.Property == IsConnectedProperty
             || change.Property == IsBusyProperty
             || change.Property == IsUnreachableProperty
@@ -111,6 +146,47 @@ public partial class ConnectionStatusIcon : UserControl
         {
             Apply();
         }
+    }
+
+    private void BeginBusyHold()
+    {
+        if (MinimumBusyDuration <= TimeSpan.Zero)
+            return;
+
+        _busyHeld = true;
+        var generation = ++_busyGeneration;
+
+        Schedule(MinimumBusyDuration, () =>
+        {
+            if (generation != _busyGeneration)
+                return;
+
+            _busyHeld = false;
+            Apply();
+        });
+    }
+
+    private void Schedule(TimeSpan delay, Action release)
+    {
+        if (ScheduleBusyRelease is { } scheduler)
+        {
+            scheduler(delay, release);
+            return;
+        }
+
+        // A control that is not on screen has nothing to hold: the hold exists
+        // so a state can be *seen*, and there is nobody to see this one. Worth
+        // stating rather than starting the timer anyway, because a timer
+        // outliving what started it is a real cost here - a sidebar row is a
+        // recycled template instance, and Flower.Tests' TimerLeakGuard fails
+        // any test that leaves one ticking on the shared dispatcher.
+        if (TopLevel.GetTopLevel(this) == null)
+        {
+            release();
+            return;
+        }
+
+        DispatcherTimer.RunOnce(release, delay);
     }
 
     private void Apply()
