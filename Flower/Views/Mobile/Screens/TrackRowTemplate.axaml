@@ -89,9 +89,9 @@
              knows its own length (Track.Duration comes from the peer's
              catalog, not from reading a local file - see
              LibrarySyncMapper.ToPlaceholderTrack), there's no reason to
-             hide it just because the file isn't local yet. Only the
-             trailing action (the "..." menu, or the download button) still
-             depends on IsPlaceholder. -->
+             hide it just because the file isn't local yet. The same now goes
+             for the "..." menu below; only the download button is about
+             having the file. -->
         <StackPanel Grid.Column="3" Grid.ColumnSpan="2"
                     Orientation="Horizontal" Spacing="0">
           <TextBlock Text="{Binding DurationDisplay}"
@@ -99,8 +99,17 @@
                      Opacity="0.65"
                      VerticalAlignment="Center"
                      Margin="8,0,0,0" />
-          <Button IsVisible="{Binding !IsPlaceholder}"
-                  Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
+          <!-- Shown on every row, placeholder or not. It used to hide on
+               IsPlaceholder, which read as "actions need the file" - but
+               only one of the actions behind it does. Viewing a track's
+               info and adding it to a playlist are both about the catalog
+               entry, which a placeholder fully is, and the playlist stores
+               a track reference rather than a path (see playlists.json).
+               Deleting the downloaded file is the file-dependent one, and
+               it gates itself on having a Path - see
+               MobileMainViewModel.CanDeleteDownloadedFile - so an
+               undownloaded track opens this sheet without it. -->
+          <Button Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
                   CommandParameter="{Binding Track}"
                   Background="Transparent"
                   BorderThickness="0"
@@ -111,9 +120,11 @@
           </Button>
 
           <!-- tapping the row itself (PlayTrackCommand, above) is a no-op
-               for a placeholder track, so this is the only actionable
-               thing on that row. Three mutually exclusive icon states
-               (idle / in-flight / just-failed-or-unavailable) - see
+               for a placeholder track, so this is the only thing on that
+               row that acts on the music rather than on the catalog entry
+               (the "..." menu above does the latter). Three mutually
+               exclusive icon states (idle / in-flight /
+               just-failed-or-unavailable) - see
                TrackRowViewModel.IsDownloadIdle. The Sync icon's own spin
                is driven by SpinAngle, a plain bindable double owned by the
                row's own ViewModel - see TrackRowViewModel.IsDownloading's
