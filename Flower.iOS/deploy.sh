@@ -11,17 +11,30 @@
 # that fixes this without a clean; doing it here, always, removes the class
 # of bug entirely instead of relying on remembering to do it by hand.
 #
+# The build is Release (the app needs to run without a debugger attached), but
+# with LLVM off - the .NET-for-iOS SDK turns MtouchUseLlvm on for every iOS
+# Release build, which sends all ~107 trimmed assemblies through opt+llc and is
+# where essentially the whole build goes: measured here, 4m25s total with it
+# and 46s without, of which _AOTCompile was 244s and 24s. Nothing else in the
+# build is close (ILLink, the next largest, is ~12s either way). The trimming,
+# the AOT and every code path are the same; the native code is just optimized
+# less well, which is a trade worth making for a build whose whole purpose is
+# to be looked at on a device in a minute rather than five. Pass --optimized
+# for the slow one when what you are measuring IS the performance, or when you
+# want the artifact Apple would actually receive.
+#
 # --no-build skips both the clean and the build and deploys whatever is
 # already in bin/. That is for reinstalling or relaunching the app you just
 # built - a crash to look at again, a device that was unplugged - not for
 # picking up a source change, which is exactly the case the clean above
 # exists for.
 #
-# Usage: deploy.sh [--no-build] [device-id]
+# Usage: deploy.sh [--no-build] [--optimized] [device-id]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BUILD=1
+LLVM=0
 DEVICE_ID=""
 
 while [ $# -gt 0 ]; do
@@ -29,13 +42,16 @@ while [ $# -gt 0 ]; do
     --no-build)
       BUILD=0
       ;;
+    --optimized)
+      LLVM=1
+      ;;
     -h|--help)
-      echo "Usage: $(basename "$0") [--no-build] [device-id]"
+      echo "Usage: $(basename "$0") [--no-build] [--optimized] [device-id]"
       exit 0
       ;;
     -*)
       echo "Unknown option: $1" >&2
-      echo "Usage: $(basename "$0") [--no-build] [device-id]" >&2
+      echo "Usage: $(basename "$0") [--no-build] [--optimized] [device-id]" >&2
       exit 1
       ;;
     *)
@@ -53,8 +69,13 @@ if [ "$BUILD" -eq 1 ]; then
   echo "==> Cleaning obj/bin (see this script's header comment for why)"
   rm -rf Flower.iOS/obj Flower.iOS/bin Flower/obj Flower/bin
 
-  echo "==> Building"
-  DEVELOPER_DIR=/Applications/Xcode_26.0.app dotnet build Flower.iOS/Flower.iOS.csproj -c Release
+  if [ "$LLVM" -eq 1 ]; then
+    echo "==> Building Release, LLVM on (several minutes - see the header)"
+  else
+    echo "==> Building Release, LLVM off (--optimized for the shipping one)"
+  fi
+  DEVELOPER_DIR=/Applications/Xcode_26.0.app dotnet build Flower.iOS/Flower.iOS.csproj \
+    -c Release -p:MtouchUseLlvm=$([ "$LLVM" -eq 1 ] && echo true || echo false)
 else
   echo "==> Skipping clean and build (--no-build)"
   if [ ! -d "$APP_PATH" ]; then
