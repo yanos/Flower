@@ -110,7 +110,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
             new HttpClient(handler),
             new SignedDeviceCredentials(identity, signingKey));
 
-        await service.AddRememberedAsync("192.168.1.40:4533");
+        await service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         Assert.NotNull(handler.LastHeaders);
         Assert.True(handler.LastHeaders!.Contains("X-Flower-Signature"));
@@ -127,7 +127,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
     {
         _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true,"deviceType":"server"}""");
 
-        var device = await _service.AddRememberedAsync("192.168.1.40:4533");
+        var device = await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         Assert.Equal("server-fp", device!.Fingerprint);
         Assert.False(_handler.LastHeaders!.Contains("X-Flower-Signature"));
@@ -146,7 +146,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
     {
         _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true,"deviceType":"server"}""");
 
-        var device = await _service.AddRememberedAsync("192.168.1.40:4533");
+        var device = await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         Assert.NotNull(device);
         Assert.Equal("server-fp", device!.Fingerprint);
@@ -163,7 +163,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
         // to survive anyway - "my server, currently unreachable" is the state
         // a phone away from home is in whenever the server is asleep, and
         // forgetting the address would make it unrecoverable.
-        var device = await _service.AddRememberedAsync("192.168.1.41:4533");
+        var device = await _service.AddRememberedAsync("192.168.1.41:4533", TestContext.Current.CancellationToken);
 
         Assert.NotNull(device);
         Assert.False(device!.IsResponding);
@@ -173,8 +173,8 @@ public class NetworkDiscoveryServiceTests : IDisposable
     [Fact]
     public async Task An_unresolvable_address_is_rejected_rather_than_stored()
     {
-        Assert.Null(await _service.AddRememberedAsync("not a host name at all"));
-        Assert.Null(await _service.AddRememberedAsync("192.168.1.40:not-a-port"));
+        Assert.Null(await _service.AddRememberedAsync("not a host name at all", TestContext.Current.CancellationToken));
+        Assert.Null(await _service.AddRememberedAsync("192.168.1.40:not-a-port", TestContext.Current.CancellationToken));
         Assert.Empty(_service.KnownDevices);
     }
 
@@ -186,12 +186,12 @@ public class NetworkDiscoveryServiceTests : IDisposable
         // announcement brings it back; a remembered one has no announcement to
         // come back on, so pruning it destroys the only route to it.
         _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
-        var device = await _service.AddRememberedAsync("192.168.1.40:4533");
+        var device = await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
         Assert.True(device!.IsResponding);
 
         _handler.StopResponding(4533);
         for (var attempt = 0; attempt < 6; attempt++)
-            await _service.AddRememberedAsync("192.168.1.40:4533");
+            await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         Assert.Single(_service.KnownDevices);
         Assert.False(device.IsResponding);
@@ -199,7 +199,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
         // And it comes back on its own once the address works again, without
         // anything having to re-add it.
         _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
-        await _service.AddRememberedAsync("192.168.1.40:4533");
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
         Assert.True(device.IsResponding);
     }
 
@@ -228,7 +228,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
             logger, new FakeMdnsBackend(), new HttpClient(handler));
 
         for (var attempt = 0; attempt < 6; attempt++)
-            await service.AddRememberedAsync("192.168.1.40:4533");
+            await service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         Assert.Equal(1, logger.CountAt(LogLevel.Debug, "Could not resolve /info"));
         Assert.Equal(5, logger.CountAt(LogLevel.Trace, "Still could not resolve /info"));
@@ -247,10 +247,10 @@ public class NetworkDiscoveryServiceTests : IDisposable
             new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" },
             logger, new FakeMdnsBackend(), new HttpClient(handler));
 
-        await service.AddRememberedAsync("192.168.1.40:4533");
-        await service.AddRememberedAsync("192.168.1.40:4533");
+        await service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+        await service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
         service.RemoveRemembered("192.168.1.40:4533");
-        await service.AddRememberedAsync("192.168.1.40:4533");
+        await service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         Assert.Equal(2, logger.CountAt(LogLevel.Debug, "Could not resolve /info"));
     }
@@ -267,13 +267,13 @@ public class NetworkDiscoveryServiceTests : IDisposable
             new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" },
             logger, new FakeMdnsBackend(), new HttpClient(handler));
 
-        await service.AddRememberedAsync("192.168.1.40:4533");
-        await service.AddRememberedAsync("192.168.1.40:4533");
+        await service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+        await service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
-        await service.AddRememberedAsync("192.168.1.40:4533");
+        await service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
         handler.StopResponding(4533);
-        await service.AddRememberedAsync("192.168.1.40:4533");
+        await service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         Assert.Equal(2, logger.CountAt(LogLevel.Debug, "Could not resolve /info"));
     }
@@ -286,7 +286,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
              "addresses":["192.168.1.40:4533","100.101.102.103:4533"]}
             """);
 
-        var device = await _service.AddRememberedAsync("192.168.1.40:4533");
+        var device = await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         Assert.Equal(["192.168.1.40:4533", "100.101.102.103:4533"], device!.Addresses);
     }
@@ -305,7 +305,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
         _backend.RaiseInstanceFound(InstanceName("Basement"), Routable(40));
         WaitUntil(() => _service.KnownDevices.Count == 1, "the discovered peer should resolve");
 
-        await _service.AddRememberedAsync("100.101.102.103:4534");
+        await _service.AddRememberedAsync("100.101.102.103:4534", TestContext.Current.CancellationToken);
 
         var device = Assert.Single(_service.KnownDevices);
         Assert.False(device.IsRemembered);
@@ -322,8 +322,8 @@ public class NetworkDiscoveryServiceTests : IDisposable
         _handler.RespondWith(4533, info);
         _handler.RespondWith(4534, info);
 
-        await _service.AddRememberedAsync("192.168.1.40:4533");
-        await _service.AddRememberedAsync("100.101.102.103:4534");
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+        await _service.AddRememberedAsync("100.101.102.103:4534", TestContext.Current.CancellationToken);
 
         var atHome = Assert.Single(_service.KnownDevices);
         Assert.Equal(1, NetworkDiscoveryService.ReachRank(atHome));
@@ -331,7 +331,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         // The LAN address stops answering - the phone has left the building.
         _handler.StopResponding(4533);
-        await _service.AddRememberedAsync("192.168.1.40:4533");
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         var away = Assert.Single(_service.KnownDevices);
         Assert.Equal(2, NetworkDiscoveryService.ReachRank(away));
@@ -343,7 +343,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
     public async Task A_remembered_peer_can_be_removed()
     {
         _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
-        await _service.AddRememberedAsync("192.168.1.40:4533");
+        await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         _service.RemoveRemembered("192.168.1.40:4533");
 
@@ -512,9 +512,9 @@ public class NetworkDiscoveryServiceTests : IDisposable
     }
 
     [Fact]
-    public void AddRememberedAsync_refuses_a_typed_cleartext_address_off_the_local_network()
+    public async Task AddRememberedAsync_refuses_a_typed_cleartext_address_off_the_local_network()
     {
-        Assert.Null(_service.AddRememberedAsync("http://93.184.216.34:4533").GetAwaiter().GetResult());
+        Assert.Null(await _service.AddRememberedAsync("http://93.184.216.34:4533", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -643,7 +643,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
     // first. It used to be a plain FirstOrDefault, so a server on both the LAN
     // and a public address answered differently depending on the door taken.
     [Fact]
-    public void EndpointFor_agrees_with_KnownDevices_when_a_peer_is_known_at_several_addresses()
+    public async Task EndpointFor_agrees_with_KnownDevices_when_a_peer_is_known_at_several_addresses()
     {
         var lan = Routable(41);
         _handler.RespondWith(lan.Port, """{"alias":"Server","fingerprint":"multi-fp"}""");
@@ -654,8 +654,8 @@ public class NetworkDiscoveryServiceTests : IDisposable
         // exactly the shape PairedServerReachability registers from /info.
         var alternate = Routable(42);
         _handler.RespondWith(alternate.Port, """{"alias":"Server","fingerprint":"multi-fp"}""");
-        var remembered = _service.AddRememberedAsync(NetworkDiscoveryService.HttpOrigin(alternate).ToString())
-            .GetAwaiter().GetResult();
+        var remembered = await _service.AddRememberedAsync(
+            NetworkDiscoveryService.HttpOrigin(alternate).ToString(), TestContext.Current.CancellationToken);
 
         // Guards the test itself: if the second address never registered there
         // would be only one candidate and the assertion below would hold

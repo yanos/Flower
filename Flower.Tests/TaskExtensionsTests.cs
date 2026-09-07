@@ -41,7 +41,7 @@ public class TaskExtensionsTests
 
         Failing().Forget(logger, "Something");
 
-        await failed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await failed.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         // The logging happens in Forget's continuation, just after the body
         // above completes the TCS - so give that continuation a turn to run.
         await WaitUntil(() => logger.Entries.Count > 0);
@@ -80,7 +80,7 @@ public class TaskExtensionsTests
         var logger = new RecordingLogger();
 
         Task.CompletedTask.Forget(logger, "Something");
-        await Task.Delay(20);
+        await Task.Delay(20, TestContext.Current.CancellationToken);
 
         Assert.Empty(logger.Entries);
     }

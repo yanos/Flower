@@ -131,12 +131,12 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
             .ToList();
 
     private static ContentControl VisibleArt(Window window) =>
-        Assert.Single(Headers(window).Where(h =>
-            h.IsVisible && h.GetVisualDescendants().OfType<SquareAlbumArtView>().Any()));
+        Assert.Single(Headers(window), h =>
+            h.IsVisible && h.GetVisualDescendants().OfType<SquareAlbumArtView>().Any());
 
     private static ContentControl AlbumText(Window window) =>
-        Assert.Single(Headers(window).Where(h =>
-            h.IsVisible && !h.GetVisualDescendants().OfType<SquareAlbumArtView>().Any()));
+        Assert.Single(Headers(window), h =>
+            h.IsVisible && !h.GetVisualDescendants().OfType<SquareAlbumArtView>().Any());
 
     [AvaloniaFact]
     public void A_narrow_screen_stacks_the_header_above_the_tracks()
@@ -196,8 +196,8 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
         // 40% of 2000 the width cap would allow.
         Assert.Equal(668, Math.Round(view.PinnedArtSize));
 
-        var art = Assert.Single(window.GetVisualDescendants().OfType<SquareAlbumArtView>()
-            .Where(a => a.IsVisible && a.FindAncestorOfType<ScrollViewer>() == null));
+        var art = Assert.Single(window.GetVisualDescendants().OfType<SquareAlbumArtView>(),
+            a => a.IsVisible && a.FindAncestorOfType<ScrollViewer>() == null);
         Assert.Equal(668, Math.Round(art.Bounds.Width));
         Assert.Equal(668, Math.Round(art.Bounds.Height));
 

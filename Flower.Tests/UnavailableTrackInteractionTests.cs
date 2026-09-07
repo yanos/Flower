@@ -98,7 +98,7 @@ public class UnavailableTrackInteractionTests
         var vm = Playback([track], out var audio, new FaultingResolver());
 
         var ex = Record.Exception(() => vm.Play(track, 0));
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         Assert.Null(ex);
         Assert.Null(audio.LastPlayed);

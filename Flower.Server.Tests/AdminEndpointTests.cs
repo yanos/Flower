@@ -197,7 +197,7 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             Assert.Equal(HttpStatusCode.OK, await UnsignedInfoAsync("203.0.113.11"));
 
             var written = await File.ReadAllTextAsync(
-                Path.Combine(opened.DataDirectory, ServerDataDirectory.SettingsFileName));
+                Path.Combine(opened.DataDirectory, ServerDataDirectory.SettingsFileName), TestContext.Current.CancellationToken);
             Assert.Contains("AllowPublicAccess", written);
 
             var shut = await ReadAsync<ServerSettingsDto>(await SignedAsync(
@@ -251,7 +251,7 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             Assert.Contains(nameof(FlowerServerOptions.AdvertiseOnLan), settings.RestartRequired!);
 
             var written = await File.ReadAllTextAsync(
-                Path.Combine(settings.DataDirectory, ServerDataDirectory.SettingsFileName));
+                Path.Combine(settings.DataDirectory, ServerDataDirectory.SettingsFileName), TestContext.Current.CancellationToken);
             Assert.Contains("Basement NAS", written);
             Assert.Contains("10.8.0.0/24", written);
 
@@ -302,7 +302,7 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             c.Request.Path = "/api/admin/settings";
             c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.51");
             c.Request.Headers["X-Flower-Admin-Session"] = token;
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(StatusCodes.Status401Unauthorized, refused.Response.StatusCode);
 
@@ -414,7 +414,7 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             c.Request.Method = "GET";
             c.Request.Path = "/api/admin/settings";
             c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.52");
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
     }
@@ -432,7 +432,7 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             c.Request.Method = "GET";
             c.Request.Path = "/";
             c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.53");
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
         Assert.Contains("wasm-tools", await BodyAsync(context));
@@ -448,7 +448,7 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
             c.Request.Method = "GET";
             c.Request.Path = "/rest/nothingHere";
             c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.54");
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
     }

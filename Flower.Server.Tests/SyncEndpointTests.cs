@@ -224,7 +224,7 @@ public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<Sub
                 c.Request.Headers["X-Flower-Signature"] = signature;
                 c.Request.Headers["X-Flower-Timestamp"] = timestamp;
                 c.Request.Headers["X-Flower-Nonce"] = nonce;
-            });
+            }, TestContext.Current.CancellationToken);
 
             Assert.Equal(HttpStatusCode.Unauthorized, (HttpStatusCode)context.Response.StatusCode);
         }

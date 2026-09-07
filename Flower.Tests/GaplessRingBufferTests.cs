@@ -232,7 +232,7 @@ public class GaplessRingBufferTests
                 if (ring.Generation != generation)
                     continue;
             }
-        });
+        }, TestContext.Current.CancellationToken);
 
         var flusher = Task.Run(() =>
         {
@@ -241,7 +241,7 @@ public class GaplessRingBufferTests
                 Thread.Sleep(1);
                 ring.Reset();
             }
-        });
+        }, TestContext.Current.CancellationToken);
 
         var buffer = new byte[63];
         var reads = 0;
@@ -289,7 +289,8 @@ public class GaplessRingBufferTests
         ring.TryWrite([1, 2, 3, 4, 5, 6, 7, 8]);
 
         var writer = Task.Run(() => ring.Write([9, 9, 9, 9]), TestContext.Current.CancellationToken);
-        Assert.False(writer.Wait(TimeSpan.FromMilliseconds(100)), "the write should be parked on a full ring");
+        await Task.Delay(TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken);
+        Assert.False(writer.IsCompleted, "the write should be parked on a full ring");
 
         Assert.Equal(8, ring.Read(new byte[8]));
 

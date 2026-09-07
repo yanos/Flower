@@ -1305,7 +1305,7 @@ public class LibraryTests
     // plain List<Playlist> mutated in place, this threw
     // InvalidOperationException ("Collection was modified").
     [Fact]
-    public void Enumerating_Playlists_is_unaffected_by_a_concurrent_mutation()
+    public async Task Enumerating_Playlists_is_unaffected_by_a_concurrent_mutation()
     {
         var library = new Library(new List<Track>());
         for (var i = 0; i < 50; i++)
@@ -1320,7 +1320,7 @@ public class LibraryTests
                 library.AddPlaylist(extra);
                 library.RemovePlaylist(extra);
             }
-        });
+        }, TestContext.Current.CancellationToken);
 
         try
         {
@@ -1333,7 +1333,7 @@ public class LibraryTests
         finally
         {
             Volatile.Write(ref stop, true);
-            writer.Wait();
+            await writer;
         }
     }
 

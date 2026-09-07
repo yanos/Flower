@@ -136,7 +136,7 @@ public class BrowserDeviceAccessTests(SubsonicServerFixture server) : IClassFixt
                 c.Request.Headers["X-Flower-Signature"] = signature;
                 c.Request.Headers["X-Flower-Timestamp"] = timestamp;
                 c.Request.Headers["X-Flower-Nonce"] = nonce;
-            });
+            }, TestContext.Current.CancellationToken);
             Assert.Equal(StatusCodes.Status200OK, redeemed.Response.StatusCode);
 
             // ...and afterwards it is a device, on its own key, with no
@@ -291,7 +291,7 @@ public class BrowserDeviceAccessTests(SubsonicServerFixture server) : IClassFixt
             c.Request.Path = "/api/flower/v1/library";
             c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.9.4");
             c.Request.Headers["X-Flower-Admin-Session"] = token;
-        });
+        }, TestContext.Current.CancellationToken);
         var ticket = await server.Server.SendAsync(c =>
         {
             c.Request.Method = "POST";
@@ -299,7 +299,7 @@ public class BrowserDeviceAccessTests(SubsonicServerFixture server) : IClassFixt
             c.Request.QueryString = new QueryString("?id=sg-7");
             c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.9.4");
             c.Request.Headers["X-Flower-Admin-Session"] = token;
-        });
+        }, TestContext.Current.CancellationToken);
 
         // 403 on the sync route because the caller presented no fingerprint this
         // server has a key for, which is the same answer an unknown signer gets.

@@ -276,7 +276,7 @@ public class SmartPlaylistRefresherTests
         library.PlaylistsChanged += (_, _) => passes++;
 
         using var refresher = Started(library);
-        await Task.Delay(Cooldown * 6);
+        await Task.Delay(Cooldown * 6, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, passes);
     }

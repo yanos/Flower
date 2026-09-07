@@ -770,7 +770,7 @@ public class BootstrapPairingCodeTests
     }
 
     [Fact]
-    public void A_server_that_already_has_an_admin_does_not_print_one()
+    public async Task A_server_that_already_has_an_admin_does_not_print_one()
     {
         // Otherwise every restart would broadcast a live admin-granting
         // credential to the logs of an already-configured server.
@@ -780,9 +780,8 @@ public class BootstrapPairingCodeTests
         {
             PlatformDataDirectory.Current = factory.DataDirectory;
             Directory.CreateDirectory(factory.DataDirectory);
-            new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance)
-                .ApproveAsync("fingerprint", "Existing admin", "public-key", isAdmin: true)
-                .GetAwaiter().GetResult();
+            await new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance)
+                .ApproveAsync("fingerprint", "Existing admin", "public-key", isAdmin: true);
         }
         finally
         {

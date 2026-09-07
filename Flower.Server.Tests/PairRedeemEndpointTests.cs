@@ -217,7 +217,7 @@ public class PairRedeemEndpointTests(SubsonicServerFixture server) : IClassFixtu
             c.Request.Headers["X-Flower-Signature"] = Convert.ToBase64String(new byte[64]);
             c.Request.Headers["X-Flower-Timestamp"] = timestamp;
             c.Request.Headers["X-Flower-Nonce"] = nonce;
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, (HttpStatusCode)context.Response.StatusCode);
         Assert.False(trustedPeers.IsTrusted(device.Fingerprint));

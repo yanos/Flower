@@ -196,7 +196,7 @@ public class StreamedTrackDecodeTests : IDisposable
     // demuxer needs to move around - which is what took the AAC album off the
     // air. Scrubbing has to work on a remote track exactly as on a local one.
     [Fact]
-    public void A_streamed_track_can_be_seeked_mid_decode()
+    public async Task A_streamed_track_can_be_seeked_mid_decode()
     {
         var track = Serve(TimeSpan.FromSeconds(10), SyntheticWav.Ramp());
         var ring = new GaplessRingBuffer(4 * 1024 * 1024);
@@ -210,7 +210,7 @@ public class StreamedTrackDecodeTests : IDisposable
             settled.Set();
         };
 
-        Assert.Equal(DecodePrepareResult.Ready, decoder.PrepareAsync().GetAwaiter().GetResult());
+        Assert.Equal(DecodePrepareResult.Ready, await decoder.PrepareAsync(TestContext.Current.CancellationToken));
         decoder.StartDecoding();
 
         // Let some of the front of the track decode, so the seek is a real
@@ -227,7 +227,7 @@ public class StreamedTrackDecodeTests : IDisposable
     // coordinator responds to it differently from an unplayable file - that is
     // what DecodePrepareResult exists for.
     [Fact]
-    public void A_server_that_is_not_there_reports_a_failed_prepare()
+    public async Task A_server_that_is_not_there_reports_a_failed_prepare()
     {
         var track = new Track
         {
@@ -239,7 +239,7 @@ public class StreamedTrackDecodeTests : IDisposable
         var ring = new GaplessRingBuffer(64 * 1024);
         using var decoder = new FfmpegTrackDecoder(track, ring, NullLogger<FfmpegTrackDecoder>.Instance);
 
-        var prepared = decoder.PrepareAsync().GetAwaiter().GetResult();
+        var prepared = await decoder.PrepareAsync(TestContext.Current.CancellationToken);
 
         Assert.Contains(prepared, new[] { DecodePrepareResult.Failed, DecodePrepareResult.TimedOut });
     }

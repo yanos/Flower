@@ -639,7 +639,7 @@ public class DeviceSidebarSectionTests
         section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
         section.AddOrUpdate(Device("nas-2", "fp-nas", "NAS"));
 
-        var row = Assert.Single(items.Where(i => i.Kind == SidebarItemKind.Device));
+        var row = Assert.Single(items, i => i.Kind == SidebarItemKind.Device);
         Assert.Equal("nas-2", row.Device!.InstanceName);
         // The surviving row is the same still-present device, so its once-per-
         // session sync dedup must NOT be cleared.
@@ -704,7 +704,7 @@ public class DeviceSidebarSectionTests
         section.Remove("nas");
 
         // Pinned in place rather than disappearing - it just goes unreachable.
-        var row = Assert.Single(items.Where(i => i.Kind == SidebarItemKind.Device));
+        var row = Assert.Single(items, i => i.Kind == SidebarItemKind.Device);
         Assert.True(row.IsPairedServer);
         Assert.False(row.IsReachable);
     }
@@ -734,7 +734,7 @@ public class DeviceSidebarSectionTests
         host.PairedServerFingerprint = null;
         section.UnpinPairedServerRow();
 
-        var row = Assert.Single(items.Where(i => i.Kind == SidebarItemKind.Device));
+        var row = Assert.Single(items, i => i.Kind == SidebarItemKind.Device);
         Assert.False(row.IsPairedServer);
     }
 
@@ -748,7 +748,7 @@ public class DeviceSidebarSectionTests
 
         section.AddOrUpdate(Device("nas", "fp-nas", "NAS"));
 
-        var row = Assert.Single(items.Where(i => i.Kind == SidebarItemKind.Device));
+        var row = Assert.Single(items, i => i.Kind == SidebarItemKind.Device);
         Assert.NotNull(row.Device);
         Assert.True(row.IsPairedServer);
     }

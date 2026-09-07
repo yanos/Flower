@@ -1091,7 +1091,7 @@ public class StoreRoundTripTests : IDisposable
         await new AppSettingsStore(NullLogger<AppSettingsStore>.Instance)
             .SaveAsync(new AppSettings { SortColumn = "Album" });
 
-        var text = await File.ReadAllTextAsync(AppSettingsStore.StorePath);
+        var text = await File.ReadAllTextAsync(AppSettingsStore.StorePath, TestContext.Current.CancellationToken);
 
         Assert.Contains("\n  \"", text);
         Assert.DoesNotContain("\":\"", text);

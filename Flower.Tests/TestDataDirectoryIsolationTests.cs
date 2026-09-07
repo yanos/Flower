@@ -75,7 +75,7 @@ public class TestDataDirectoryIsolationTests
 
         // Longer than ColumnManager's own 500ms debounce, so the save it
         // scheduled has actually run rather than merely been queued.
-        await Task.Delay(1500);
+        await Task.Delay(1500, TestContext.Current.CancellationToken);
 
         Assert.True(File.Exists(written),
             $"the debounced column save did not land in {written} - check where it went instead");

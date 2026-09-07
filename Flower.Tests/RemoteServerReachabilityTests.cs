@@ -85,7 +85,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
     {
         _handler.RespondWith(4533, ServerInfo);
 
-        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         // This is what "pair once at home and it follows you" rests on: the
         // tailnet address is now stored without the user ever typing it.
@@ -106,7 +106,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
              "addresses":["203.0.113.9:4533"]}
             """);
 
-        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         Assert.Empty(_appSettings.PairedServerAddresses);
         Assert.False(_reachability.IsReachable);
@@ -138,13 +138,13 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
         // Out of the house: the LAN address stops answering, and the tailnet
         // one carries it without the server ever becoming unreachable.
         _handler.StopResponding(4533);
-        await _discovery.AddRememberedAsync("http://192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("http://192.168.1.40:4533", TestContext.Current.CancellationToken);
         Assert.True(_reachability.IsReachable);
         Assert.Equal(ServerRoute.Tailnet, _reachability.Route);
 
         // And back in again.
         _handler.RespondWith(4533, ServerInfo);
-        await _discovery.AddRememberedAsync("http://192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("http://192.168.1.40:4533", TestContext.Current.CancellationToken);
         Assert.True(_reachability.IsReachable);
         Assert.Equal(ServerRoute.LocalNetwork, _reachability.Route);
     }
@@ -169,7 +169,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
     public async Task An_address_the_server_stops_reporting_stops_being_remembered()
     {
         _handler.RespondWith(4533, ServerInfo);
-        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
         WaitUntil(() => _appSettings.PairedServerAddresses.Count == 2, "both addresses should be remembered first");
         WaitUntil(() => _discovery.KnownDevices.Any(d => d.BaseUri.Host == "100.101.102.103"),
             "the reported address should have been registered as a peer first");
@@ -180,7 +180,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
             {"alias":"Basement","fingerprint":"server-fp","isServer":true,
              "addresses":["192.168.1.40:4533"]}
             """);
-        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
 
         WaitUntil(() => _appSettings.PairedServerAddresses.Count == 1, "the dropped address should not be kept");
         Assert.Equal(["192.168.1.40:4533"], _appSettings.PairedServerAddresses);
@@ -203,14 +203,14 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
     {
         _appSettings.ManualServerAddresses.Add("http://100.101.102.103:4534");
         _handler.RespondWith(4533, ServerInfo);
-        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
         WaitUntil(() => _appSettings.PairedServerAddresses.Count == 2, "both addresses should be remembered first");
 
         _handler.RespondWith(4533, """
             {"alias":"Basement","fingerprint":"server-fp","isServer":true,
              "addresses":["192.168.1.40:4533"]}
             """);
-        await _discovery.AddRememberedAsync("192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
         WaitUntil(() => _appSettings.PairedServerAddresses.Count == 1, "the dropped address should not be kept");
 
         Assert.Contains(_discovery.KnownDevices, d => d.BaseUri.Host == "100.101.102.103");
@@ -224,7 +224,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
     {
         _handler.RespondWith(443, ServerInfo);
 
-        var device = await _discovery.AddRememberedAsync("https://localhost");
+        var device = await _discovery.AddRememberedAsync("https://localhost", TestContext.Current.CancellationToken);
 
         Assert.NotNull(device);
         Assert.Equal("https", device.BaseUri.Scheme);
@@ -239,8 +239,8 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
         _handler.RespondWith(443, ServerInfo);
         _handler.RespondWith(4533, ServerInfo);
 
-        var named = await _discovery.AddRememberedAsync("https://localhost");
-        var bare = await _discovery.AddRememberedAsync("192.168.1.40");
+        var named = await _discovery.AddRememberedAsync("https://localhost", TestContext.Current.CancellationToken);
+        var bare = await _discovery.AddRememberedAsync("192.168.1.40", TestContext.Current.CancellationToken);
 
         Assert.Equal(443, named!.BaseUri.Port);
         Assert.Equal(4533, bare!.BaseUri.Port);
@@ -254,7 +254,7 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
     {
         _handler.RespondWith(4533, ServerInfo);
 
-        var device = await _discovery.AddRememberedAsync("localhost:4533");
+        var device = await _discovery.AddRememberedAsync("localhost:4533", TestContext.Current.CancellationToken);
 
         Assert.NotNull(device);
         Assert.Equal("localhost", device.BaseUri.Host);

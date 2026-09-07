@@ -32,16 +32,16 @@ public class AdminJsonContractTests
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .SelectMany(method => method.GetParameters()
                 .Select(parameter => parameter.ParameterType)
-                .Append(Payload(method.ReturnType)))
+                .Concat(Payload(method.ReturnType)))
             .Where(IsSerialized)
             .Distinct()
             .Select(type => new object[] { type });
 
     // Task<T> carries the response body; a bare Task means the call has none.
-    private static Type? Payload(Type returnType) =>
+    private static IEnumerable<Type> Payload(Type returnType) =>
         returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>)
-            ? returnType.GetGenericArguments()[0]
-            : null;
+            ? [returnType.GetGenericArguments()[0]]
+            : [];
 
     // The DTOs, and only those: the rest of what these signatures mention is
     // cancellation tokens and the odd bool/string/int that travels in the query
@@ -49,8 +49,8 @@ public class AdminJsonContractTests
     // exception - SetCoverArtAsync sends an image as the body itself, which is
     // the whole reason it takes bytes rather than a DTO wrapping them, so
     // there is no metadata for it to need.
-    private static bool IsSerialized(Type? type) =>
-        type != null && type != typeof(CancellationToken) && !type.IsPrimitive
+    private static bool IsSerialized(Type type) =>
+        type != typeof(CancellationToken) && !type.IsPrimitive
         && type != typeof(string) && type != typeof(byte[]);
 
     [Theory]

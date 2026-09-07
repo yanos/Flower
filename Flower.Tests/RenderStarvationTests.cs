@@ -65,7 +65,8 @@ public class RenderStarvationTests
         private Func<int, short>? _postSeekValue;
 
         public event Action? Drained;
-        public event Action? Faulted;
+        // Generated PCM has nothing to fault on; the interface still asks.
+        public event Action? Faulted { add { } remove { } }
         public event Action<long>? SeekSettled;
 
         public Task<DecodePrepareResult> PrepareAsync(CancellationToken cancellationToken = default) => Task.FromResult(DecodePrepareResult.Ready);
@@ -196,7 +197,7 @@ public class RenderStarvationTests
         harness.Coordinator.Play(a);
         harness.Sink.Resume();
 
-        Assert.True(drained.Wait(TimeSpan.FromSeconds(10)), "A never finished decoding");
+        Assert.True(drained.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken), "A never finished decoding");
 
         // The queue advancing, not the user skipping.
         harness.Coordinator.Play(b, immediate: false);
@@ -245,7 +246,7 @@ public class RenderStarvationTests
 
         harness.Coordinator.Play(a);
         harness.Sink.Resume();
-        Assert.True(drained.Wait(TimeSpan.FromSeconds(10)), "A never finished decoding");
+        Assert.True(drained.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken), "A never finished decoding");
 
         harness.Coordinator.Play(b, immediate: true);
 

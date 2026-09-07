@@ -126,7 +126,7 @@ public class FfmpegTrackDecoderTests : IDisposable
         while (decoder.BytesProduced == 0 && started.Elapsed < Patience)
         {
             ring.Read(buffer);
-            await Task.Delay(2);
+            await Task.Delay(2, TestContext.Current.CancellationToken);
         }
         Assert.True(decoder.BytesProduced > 0, "decode never started");
 
@@ -210,7 +210,7 @@ public class FfmpegTrackDecoderTests : IDisposable
 
         var started = Stopwatch.StartNew();
         while (decoder.BytesProduced == 0 && started.Elapsed < Patience)
-            await Task.Delay(2);
+            await Task.Delay(2, TestContext.Current.CancellationToken);
 
         // Deliberately without draining the ring: this retires a decoder that
         // is parked on backpressure, which is the case a retire flag alone
@@ -244,7 +244,7 @@ public class FfmpegTrackDecoderTests : IDisposable
 
         var started = Stopwatch.StartNew();
         while (decoder.BytesProduced == 0 && !faulted && started.Elapsed < Patience)
-            await Task.Delay(2);
+            await Task.Delay(2, TestContext.Current.CancellationToken);
 
         Assert.False(faulted, "an unprepared start is the normal way to start");
         Assert.True(decoder.BytesProduced > 0, "no audio came out of an unprepared start");

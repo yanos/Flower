@@ -66,7 +66,7 @@ public class MusicListPanelTests : PinnedDataDirectory
 
         panel.SetItems([]);
 
-        Assert.Empty(panel.Children.Where(c => c.IsVisible));
+        Assert.DoesNotContain(panel.Children, c => c.IsVisible);
     }
 
     [AvaloniaFact]

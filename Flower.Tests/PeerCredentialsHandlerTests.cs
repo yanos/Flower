@@ -165,7 +165,8 @@ public class PeerCredentialsHandlerTests
         var server = new ReplayGuardedServer(content);
         var stream = await SeekableHttpStream.OpenAsync(
             Signed(server, new FreshNonceCredentials()),
-            new Uri("https://server/rest/stream?id=abc"));
+            new Uri("https://server/rest/stream?id=abc"),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var read = new byte[content.Length];
         stream.ReadExactly(read);
@@ -186,7 +187,8 @@ public class PeerCredentialsHandlerTests
         var server = new ReplayGuardedServer(content);
         var stream = await SeekableHttpStream.OpenAsync(
             Signed(server, new OneShotCredentials()),
-            new Uri("https://server/rest/stream?id=abc"));
+            new Uri("https://server/rest/stream?id=abc"),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // The probe went through, so the length is right and the track looks
         // perfectly healthy at this point. That is the trap.
@@ -203,7 +205,8 @@ public class PeerCredentialsHandlerTests
         var credentials = new FreshNonceCredentials();
         var stream = await SeekableHttpStream.OpenAsync(
             Signed(new ReplayGuardedServer(content), credentials),
-            new Uri("https://server/rest/stream?id=abc"));
+            new Uri("https://server/rest/stream?id=abc"),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         stream.ReadExactly(new byte[content.Length]);
 
@@ -249,7 +252,7 @@ public class PeerCredentialsHandlerTests
         using var client = new HttpClient(
             new PeerCredentialsHandler(() => null, new ReplayGuardedServer(content)));
 
-        var response = await client.GetAsync("https://server/rest/stream?id=abc&X-Flower-Nonce=ticketish");
+        var response = await client.GetAsync("https://server/rest/stream?id=abc&X-Flower-Nonce=ticketish", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }

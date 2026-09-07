@@ -80,7 +80,7 @@ public class SettingsRosterlessLoadTests
     {
         var viewModel = new SettingsViewModel(new RosterlessBackend());
 
-        await viewModel.LoadAsync();
+        await viewModel.LoadAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(viewModel.ErrorMessage);
         Assert.True(viewModel.IsLoaded);

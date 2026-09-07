@@ -391,7 +391,7 @@ public class SettingsLogTabTests
         // A second screen over the same settings - the same thing reopening the
         // panel does, since it is built fresh each time.
         var reopened = new SettingsViewModel(_backend, _appSettings);
-        await reopened.RefreshDevicesAsync();
+        await reopened.RefreshDevicesAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal("fp-2", reopened.SelectedLogSource?.Fingerprint);
     }
@@ -406,7 +406,7 @@ public class SettingsLogTabTests
 
         _backend.Devices.RemoveAll(d => d.Fingerprint == "fp-2");
         var reopened = new SettingsViewModel(_backend, _appSettings);
-        await reopened.RefreshDevicesAsync();
+        await reopened.RefreshDevicesAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(reopened.SelectedLogSource?.Fingerprint);
     }
@@ -421,7 +421,7 @@ public class SettingsLogTabTests
         await SelectAsync("fp-1");
 
         panel.SelectedLogSource = null;
-        await panel.RefreshDevicesAsync();
+        await panel.RefreshDevicesAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal("fp-1", panel.SelectedLogSource?.Fingerprint);
     }
@@ -439,7 +439,7 @@ public class SettingsLogTabTests
 
         var resets = 0;
         panel.LogViewer.LinesReset += (_, _) => resets++;
-        await panel.RefreshDevicesAsync();
+        await panel.RefreshDevicesAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(0, resets);
         Assert.Equal("fp-1", panel.SelectedLogSource?.Fingerprint);

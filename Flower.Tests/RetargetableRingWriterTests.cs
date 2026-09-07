@@ -28,6 +28,16 @@ public class RetargetableRingWriterTests
         Assert.True(task.Wait(TimeSpan.FromSeconds(5)), because);
     }
 
+    // The other half of the same rule, for a write the test started itself:
+    // a parked write is asserted on by waiting a bounded time for it, never
+    // by reading a flag, so the assertion says what the writer did rather
+    // than what it happened to have got round to.
+    private static void AssertStillParked(Task write, string because = "expected the write to still be parked on the full ring") =>
+        Assert.False(write.Wait(TimeSpan.FromMilliseconds(200)), because);
+
+    private static void AssertResumed(Task write, string because = "the parked write never resumed") =>
+        Assert.True(write.Wait(TimeSpan.FromSeconds(5)), because);
+
     private static byte[] Ramp(int count, int start = 0) =>
         Enumerable.Range(start, count).Select(i => (byte)(i % 251)).ToArray();
 
@@ -63,11 +73,11 @@ public class RetargetableRingWriterTests
         var shared = new GaplessRingBuffer(1024);
         var writer = new RetargetableRingWriter(staging);
 
-        var parked = Task.Run(() => writer.Write(Ramp(64)));
-        Assert.False(parked.Wait(TimeSpan.FromMilliseconds(200)), "expected the write to still be parked on the full staging ring");
+        var parked = Task.Run(() => writer.Write(Ramp(64)), TestContext.Current.CancellationToken);
+        AssertStillParked(parked, "expected the write to still be parked on the full staging ring");
 
         AssertCompletes(() => writer.PromoteTarget(shared), "PromoteTarget deadlocked behind the parked write");
-        Assert.True(parked.Wait(TimeSpan.FromSeconds(5)), "the parked write never resumed against the new target");
+        AssertResumed(parked, "the parked write never resumed against the new target");
     }
 
     [Fact]
@@ -80,11 +90,11 @@ public class RetargetableRingWriterTests
         var shared = new GaplessRingBuffer(1024);
         var writer = new RetargetableRingWriter(staging);
 
-        var parked = Task.Run(() => writer.Write(Ramp(64)));
-        Assert.False(parked.Wait(TimeSpan.FromMilliseconds(200)));
+        var parked = Task.Run(() => writer.Write(Ramp(64)), TestContext.Current.CancellationToken);
+        AssertStillParked(parked);
 
         AssertCompletes(() => writer.PromoteTarget(shared), "PromoteTarget deadlocked behind the parked write");
-        Assert.True(parked.Wait(TimeSpan.FromSeconds(5)));
+        AssertResumed(parked);
 
         // Whatever fit in staging first, then the rest, in one unbroken
         // sequence - and all 64 bytes, none dropped for want of room.
@@ -115,12 +125,12 @@ public class RetargetableRingWriterTests
         var abandoned = false;
         var writer = new RetargetableRingWriter(staging);
 
-        var parked = Task.Run(() => writer.Write(Ramp(64), () => Volatile.Read(ref abandoned)));
-        Assert.False(parked.Wait(TimeSpan.FromMilliseconds(200)));
+        var parked = Task.Run(() => writer.Write(Ramp(64), () => Volatile.Read(ref abandoned)), TestContext.Current.CancellationToken);
+        AssertStillParked(parked);
 
         Volatile.Write(ref abandoned, true);
 
-        Assert.True(parked.Wait(TimeSpan.FromSeconds(5)), "the parked write ignored its abandonment check");
+        AssertResumed(parked, "the parked write ignored its abandonment check");
     }
 
     [Fact]
@@ -133,12 +143,12 @@ public class RetargetableRingWriterTests
         var staging = new GaplessRingBuffer(32);
         var writer = new RetargetableRingWriter(staging);
 
-        var parked = Task.Run(() => writer.Write(Ramp(64)));
-        Assert.False(parked.Wait(TimeSpan.FromMilliseconds(200)));
+        var parked = Task.Run(() => writer.Write(Ramp(64)), TestContext.Current.CancellationToken);
+        AssertStillParked(parked);
 
         AssertCompletes(() => writer.ResetTarget(), "the flush deadlocked behind the parked write");
 
-        Assert.True(parked.Wait(TimeSpan.FromSeconds(5)), "the parked write kept waiting through a flush");
+        AssertResumed(parked, "the parked write kept waiting through a flush");
 
         // Nothing at all survives the flush: Reset() discards what was
         // buffered, and the remaining 32 bytes of the parked chunk must not
@@ -230,7 +240,7 @@ public class RetargetableRingWriterTests
         // More than the ring holds, so the write cannot finish until
         // something reads - it has to park at least once.
         var abandon = false;
-        var write = Task.Run(() => writer.Write(Ramp(8192), () => Volatile.Read(ref abandon)));
+        var write = Task.Run(() => writer.Write(Ramp(8192), () => Volatile.Read(ref abandon)), TestContext.Current.CancellationToken);
 
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (writer.BackpressureWaits == 0 && DateTime.UtcNow < deadline)
@@ -239,7 +249,7 @@ public class RetargetableRingWriterTests
         Assert.True(writer.BackpressureWaits > 0, "a write that could not fit never registered as parked");
 
         Volatile.Write(ref abandon, true);
-        Assert.True(write.Wait(TimeSpan.FromSeconds(5)), "the abandoned write never returned");
+        AssertResumed(write, "the abandoned write never returned");
     }
 
     [Fact]
