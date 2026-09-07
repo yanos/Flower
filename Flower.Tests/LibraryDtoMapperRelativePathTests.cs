@@ -58,6 +58,21 @@ public class LibraryDtoMapperRelativePathTests
         Assert.Equal("01 Song.mp3", relative);
     }
 
+    // The separators are the server's, not the running platform's: these tests
+    // once passed everywhere except the Windows runner, because the match was
+    // written against Path.DirectorySeparatorChar and so recognized no root at
+    // all under a '\\' - every track on a Windows server would have shipped its
+    // bare file name. Both shapes are now checked from every platform.
+    [Fact]
+    public void A_Windows_root_and_path_are_stripped_and_joined_with_forward_slashes()
+    {
+        var relative = LibraryDtoMapper.RelativePathOf(
+            At(@"D:\Music\Angine de Poitrine\Vol.II\01 Fabienk.mp3"),
+            [@"D:\Music\"]);
+
+        Assert.Equal("Angine de Poitrine/Vol.II/01 Fabienk.mp3", relative);
+    }
+
     [Fact]
     public void A_placeholder_has_no_file_and_so_no_relative_path()
     {
