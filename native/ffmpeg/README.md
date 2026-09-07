@@ -29,6 +29,30 @@ The cost of being the only one is that a façade which will not load is no
 longer a quieter kind of playback. `App.axaml.cs` logs one critical line at
 startup and the app browses, edits and syncs; it just cannot decode anything.
 
+## Building all of them
+
+```
+native/ffmpeg/build-all.sh              # everything this host can build
+native/ffmpeg/build-all.sh macos ios    # just these
+```
+
+Runs every per-platform script below that this machine can actually run, and
+says what it skipped and why. It is not a cross-compiler: a façade needs an
+FFmpeg for its target, and where that comes from differs per platform, so a Mac
+gets macOS, iOS and - with `ANDROID_NDK_HOME` set - Android; a Linux box gets
+Linux and Android; Windows is PowerShell and MSVC and is not reachable from a
+shell here at all. Getting all five means running it on more than one machine,
+which is what CI does.
+
+A skip is not a failure, and everything asked for is attempted even if an
+earlier one broke - a missing NDK must not hide that macOS built fine. The exit
+code covers what was attempted, plus the one case worth flagging: a run that
+built nothing at all.
+
+The mobile targets cross-compile FFmpeg itself first, which is tens of minutes
+the first time and nothing on every run after - both `build-ffmpeg.sh` scripts
+leave an existing prefix alone unless `FLOWER_FFMPEG_REBUILD` is set.
+
 ## Building for development (macOS)
 
 ```
