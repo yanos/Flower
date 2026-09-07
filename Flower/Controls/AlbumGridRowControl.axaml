@@ -23,6 +23,13 @@
     <Style Selector="Grid.dimmedTrack">
       <Setter Property="Opacity" Value="0.5"/>
     </Style>
+    <!-- The song this album is currently playing. Weight only - the rows are
+         laid out at a fixed 34px apiece (AlbumGridRowControl.axaml.cs's
+         TrackRowHeight, which is what the expansion's animated height is
+         computed from), so nothing here may change how tall a row measures. -->
+    <Style Selector="Grid.playingTrack TextBlock">
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
   </UserControl.Styles>
 
   <StackPanel Margin="0,0,0,16">
@@ -97,27 +104,32 @@
                             CornerRadius="5"/>
                     <!-- Margin here is what actually makes the highlight box
                          larger than the text (see the outer Border's comment).
-                         Column 0 mirrors TrackRowControl's own "now playing"
-                         arrow (TrackRowViewModel.IsCurrentlyPlaying) - same
-                         glyph, same size, same dedicated 14px column ahead of
-                         the title, just wired through AlbumGridRowViewModel.
-                         CurrentlyPlayingTrackId instead (see ExpandedTrackRow
-                         ViewModel.IsCurrentlyPlaying's own comment). -->
-                    <Grid ColumnDefinitions="14,*,Auto,Auto" Margin="8,6"
-                          Classes.dimmedTrack="{Binding IsUnavailable}">
-                      <TextBlock Grid.Column="0" Text="▶" FontSize="8"
-                                 VerticalAlignment="Center" HorizontalAlignment="Center"
-                                 IsVisible="{Binding IsCurrentlyPlaying}"/>
+                         The currently-playing song is bold, the way the main
+                         track list marks it (TrackRowControl's own .playing
+                         style) and mobile always has - here wired through
+                         AlbumGridRowViewModel.CurrentlyPlayingTrackId (see
+                         ExpandedTrackRowViewModel.IsCurrentlyPlaying's own
+                         comment). It was a "▶" in a 14px column ahead of the
+                         title until that column was spent on one row in ten
+                         albums; weight marks the same row and takes none. -->
+                    <Grid ColumnDefinitions="20,*,Auto" Margin="8,6"
+                          Classes.dimmedTrack="{Binding IsUnavailable}"
+                          Classes.playingTrack="{Binding IsCurrentlyPlaying}">
+                      <!-- Ahead of the title, beside the play marker, the same
+                           way the main track list orders them (see
+                           TrackRowControl.BuildCellContent) - it answers "is
+                           this on this machine?", which belongs with the other
+                           mark about the row rather than at the far edge past
+                           the duration. A fixed well rather than Auto for the
+                           same reason it is fixed there: on the trailing edge
+                           an empty one cost nothing, but ahead of the title a
+                           collapsing column moves the title itself on every
+                           row that has nothing to fetch. -->
+                      <controls:TrackDownloadButton Grid.Column="0" Margin="0,0,4,0"
+                                                    DownloadRequested="TrackRow_DownloadRequested"/>
                       <TextBlock Grid.Column="1" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
                       <TextBlock Grid.Column="2" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
                                  FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
-                      <!-- Last column, so the icons line up down the far edge
-                           of the row rather than stepping in and out behind
-                           each song's own duration. Auto, so a row with
-                           nothing to fetch (IsDownloadable false - the common
-                           case) costs no width at all. -->
-                      <controls:TrackDownloadButton Grid.Column="3" Margin="8,0,0,0"
-                                                    DownloadRequested="TrackRow_DownloadRequested"/>
                     </Grid>
                   </Panel>
                 </Border>
@@ -162,27 +174,32 @@
                             CornerRadius="5"/>
                     <!-- Margin here is what actually makes the highlight box
                          larger than the text (see the outer Border's comment).
-                         Column 0 mirrors TrackRowControl's own "now playing"
-                         arrow (TrackRowViewModel.IsCurrentlyPlaying) - same
-                         glyph, same size, same dedicated 14px column ahead of
-                         the title, just wired through AlbumGridRowViewModel.
-                         CurrentlyPlayingTrackId instead (see ExpandedTrackRow
-                         ViewModel.IsCurrentlyPlaying's own comment). -->
-                    <Grid ColumnDefinitions="14,*,Auto,Auto" Margin="8,6"
-                          Classes.dimmedTrack="{Binding IsUnavailable}">
-                      <TextBlock Grid.Column="0" Text="▶" FontSize="8"
-                                 VerticalAlignment="Center" HorizontalAlignment="Center"
-                                 IsVisible="{Binding IsCurrentlyPlaying}"/>
+                         The currently-playing song is bold, the way the main
+                         track list marks it (TrackRowControl's own .playing
+                         style) and mobile always has - here wired through
+                         AlbumGridRowViewModel.CurrentlyPlayingTrackId (see
+                         ExpandedTrackRowViewModel.IsCurrentlyPlaying's own
+                         comment). It was a "▶" in a 14px column ahead of the
+                         title until that column was spent on one row in ten
+                         albums; weight marks the same row and takes none. -->
+                    <Grid ColumnDefinitions="20,*,Auto" Margin="8,6"
+                          Classes.dimmedTrack="{Binding IsUnavailable}"
+                          Classes.playingTrack="{Binding IsCurrentlyPlaying}">
+                      <!-- Ahead of the title, beside the play marker, the same
+                           way the main track list orders them (see
+                           TrackRowControl.BuildCellContent) - it answers "is
+                           this on this machine?", which belongs with the other
+                           mark about the row rather than at the far edge past
+                           the duration. A fixed well rather than Auto for the
+                           same reason it is fixed there: on the trailing edge
+                           an empty one cost nothing, but ahead of the title a
+                           collapsing column moves the title itself on every
+                           row that has nothing to fetch. -->
+                      <controls:TrackDownloadButton Grid.Column="0" Margin="0,0,4,0"
+                                                    DownloadRequested="TrackRow_DownloadRequested"/>
                       <TextBlock Grid.Column="1" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
                       <TextBlock Grid.Column="2" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
                                  FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
-                      <!-- Last column, so the icons line up down the far edge
-                           of the row rather than stepping in and out behind
-                           each song's own duration. Auto, so a row with
-                           nothing to fetch (IsDownloadable false - the common
-                           case) costs no width at all. -->
-                      <controls:TrackDownloadButton Grid.Column="3" Margin="8,0,0,0"
-                                                    DownloadRequested="TrackRow_DownloadRequested"/>
                     </Grid>
                   </Panel>
                 </Border>

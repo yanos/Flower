@@ -7,11 +7,17 @@
              x:CompileBindings="True"
              Background="Transparent"
              ClipToBounds="False"
+             Classes.playing="{Binding IsCurrentlyPlaying}"
              Height="28">
 
   <UserControl.Styles>
+    <!-- ":is(UserControl)", not "UserControl", in every selector here: a bare
+         type selector matches that exact type and nothing derived from it, and
+         the root of this file is a TrackRowControl. Written the plain way, both
+         of the styles below silently matched nothing - the hover highlight
+         never appeared, and neither did the bolding when it was added. -->
     <!-- Hover highlight restricted to the data columns — art column is excluded -->
-    <Style Selector="UserControl:pointerover Border#HoverBorder">
+    <Style Selector=":is(UserControl):pointerover Border#HoverBorder">
       <Setter Property="IsVisible" Value="True"/>
     </Style>
     <!-- Dimmed: a not-yet-downloaded track with nobody to stream it from
@@ -23,6 +29,20 @@
          selection/hover backgrounds behind it stay at full strength. -->
     <Style Selector="StackPanel#CellsPanel.dimmed, Panel#ArtCell.dimmed">
       <Setter Property="Opacity" Value="0.5"/>
+    </Style>
+    <!-- The currently playing song. This was a "▶" glyph in a 14px well ahead
+         of the title, which cost every row that width to mark one of them, and
+         put the mark in the Title column - out of sight for anyone who scrolls
+         it away. Weight is the whole row and costs no layout: the row's height
+         is fixed (28 above) and the cells are ColumnManager's own widths, so
+         bold text reflows nothing, it only inks the same boxes darker. Matches
+         mobile, which has said "playing" this way all along (see
+         MobileMainView.axaml's Button.trackRow.playing). Held down by
+         TrackRowPlayingTests, which reads the rendered weight rather than the
+         class: the class was set correctly the whole time this style was not
+         matching anything. -->
+    <Style Selector=":is(UserControl).playing StackPanel#CellsPanel TextBlock">
+      <Setter Property="FontWeight" Value="Bold"/>
     </Style>
   </UserControl.Styles>
 

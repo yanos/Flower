@@ -12,7 +12,11 @@
        lives one level up, in AlbumGridPanel (mirrors MusicListPanel /
        MusicListView.axaml.cs's Panel_PointerPressed), not here. -->
   <UserControl.Styles>
-    <Style Selector="UserControl:pointerover Border#HoverBorder">
+    <!-- ":is(UserControl)" because a bare type selector is an exact-type match
+         and this file's root is an AlbumTileControl - see the same note in
+         TrackRowControl.axaml, where written the plain way it matched nothing
+         and the hover highlight simply never showed. -->
+    <Style Selector=":is(UserControl):pointerover Border#HoverBorder">
       <Setter Property="IsVisible" Value="True"/>
     </Style>
     <!-- Greyed-out album: nothing in it can be played right now (see

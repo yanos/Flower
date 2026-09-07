@@ -47,8 +47,8 @@ public sealed class ExpandedTrackRowViewModel : DownloadIndicatorViewModel
         set { if (_isHovered != value) { _isHovered = value; OnPropertyChanged(); } }
     }
 
-    // Drives the little "now playing" arrow - see AlbumGridRowControl.axaml,
-    // same "▶" indicator TrackRowControl already shows for its own rows
+    // Bolds the row - see AlbumGridRowControl.axaml's Grid.playingTrack style,
+    // the same mark TrackRowControl puts on its own playing row
     // (TrackRowViewModel.IsCurrentlyPlaying), just wired through
     // AlbumGridRowViewModel.CurrentlyPlayingTrackId instead since this row has
     // no equivalent of TrackListBuilder.BuildRows to compute it centrally.

@@ -140,42 +140,40 @@ public partial class TrackRowControl : UserControl
         if (col.Id == "Title")
         {
             var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition(14, GridUnitType.Pixel));
+            // A fixed well rather than Auto: the download button only exists
+            // for a placeholder the paired server can serve right now (see
+            // TrackDownloadButton), so an Auto column would be zero-wide on
+            // every row that has nothing to fetch - and now that the button
+            // leads the cell rather than trailing it, that means the title
+            // itself stepping in and out down a part-synced library. The
+            // width is spent in every library, including one with no server
+            // paired; the alignment is worth more than 20px of the widest
+            // column.
+            grid.ColumnDefinitions.Add(new ColumnDefinition(20, GridUnitType.Pixel));
             grid.ColumnDefinitions.Add(new ColumnDefinition(1,  GridUnitType.Star));
-            // Auto, not a fixed well: the download button only exists for a
-            // placeholder the paired server can serve right now (see
-            // TrackDownloadButton), so a library with nothing to download -
-            // every library with no server paired - costs no width at all.
-            grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-
-            var indicator = new TextBlock
-            {
-                Text                = "▶",
-                FontSize            = 8,
-                VerticalAlignment   = VerticalAlignment.Center,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-            };
-            indicator.Bind(IsVisibleProperty, new Binding(nameof(TrackRowViewModel.IsCurrentlyPlaying)));
-            Grid.SetColumn(indicator, 0);
 
             var text = MakeText();
             text.Bind(TextBlock.TextProperty, new Binding("Track.Title"));
             Grid.SetColumn(text, 1);
 
-            // Pinned to the far right of the Title cell rather than sitting
-            // against the end of the title itself, so the icons line up down
-            // the column instead of stepping in and out with each song's name.
-            var download = new TrackDownloadButton { Margin = new Thickness(4, 0, 0, 0) };
+            // Ahead of the title, in its own well, rather than pinned to the
+            // far right of the cell: it says whether the song is on this
+            // machine, and reads down the left edge as a column of its own.
+            // Either position lines the icons up - what the right-hand one
+            // could not do is be seen without reading to the end of the name.
+            // It leads the cell outright now: the 14px "▶" well that used to
+            // sit ahead of it is gone, the currently-playing row being bold
+            // instead (see this control's own .playing style).
+            var download = new TrackDownloadButton { Margin = new Thickness(0, 0, 4, 0) };
             download.DownloadRequested += (_, clicked) =>
             {
                 if (clicked is TrackRowViewModel row)
                     DownloadRequested?.Invoke(this, row);
             };
-            Grid.SetColumn(download, 2);
+            Grid.SetColumn(download, 0);
 
-            grid.Children.Add(indicator);
-            grid.Children.Add(text);
             grid.Children.Add(download);
+            grid.Children.Add(text);
             return grid;
         }
 
