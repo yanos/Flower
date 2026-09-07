@@ -39,7 +39,7 @@
               Background="Transparent"
               BorderThickness="0"
               Padding="10">
-        <materialIcons:MaterialIcon Kind="ChevronDown" Width="26" Height="26" />
+        <materialIcons:MaterialIcon Kind="ArrowLeft" Width="24" Height="24" />
       </Button>
 
       <!-- Apple's own AirPlay/Bluetooth route button, hosted natively - and

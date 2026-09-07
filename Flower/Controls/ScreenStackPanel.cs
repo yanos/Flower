@@ -88,6 +88,13 @@ public sealed class ScreenStackPanel : Panel
     private SwipeDirection _interactiveDirection = SwipeDirection.None;
     private IDisposable? _easing;
 
+    // Jumps whatever easing is in flight straight to its end (and runs its
+    // completion, if any) - see EaseTransform. A finger landing on a screen
+    // that is still sliding in or out has to find it settled, since the
+    // gesture code below drives the very same TranslateTransform and would
+    // otherwise fight the easing for it frame by frame.
+    private Action? _finishEasing;
+
     public ScreenStackPanel()
     {
         AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -128,15 +135,25 @@ public sealed class ScreenStackPanel : Panel
 
         var backFrame = vm.PeekOneBack;
         var forwardFrame = vm.PeekOneForward;
-        var backInner = backFrame != null ? PrepareInert(backFrame, vm) : null;
-        var forwardInner = forwardFrame != null ? PrepareInert(forwardFrame, vm) : null;
+        // A frame sharing the current screen's ScopeKey gets the same control
+        // instance back from the factory, and a Control can only ever have one
+        // visual parent: wrapping it in a second slot reparents it out of the
+        // current one, which is then left hosting nothing. That is a screen
+        // showing its header and an empty body - the title and the back arrow
+        // live on the slot, not on the screen - and it is reachable in ordinary
+        // use, not only in theory: tapping the Now Playing sheet's album art
+        // while already on that album's track list pushes a history entry for
+        // the screen being landed on, and going back from there hands the same
+        // duplicate to the forward stack. So current always wins, and a role
+        // that would collide with it simply goes unmaterialized - there is
+        // nothing to reveal underneath a screen that IS the destination.
+        var backInner = PrepareInert(backFrame, vm, currentInner);
+        var forwardInner = PrepareInert(forwardFrame, vm, currentInner);
 
-        // Extremely rare coincidence (the back and forward frames happen to
-        // share a ScopeKey - e.g. the same album reachable both ways), where
-        // the factory's cache would hand back the SAME control instance for
-        // both roles. A Control can only ever have one visual parent, so
-        // keep it in just one role rather than wrapping it in two slots and
-        // fighting over which one actually hosts it.
+        // Same collision between the two inert roles (the back and forward
+        // frames happen to share a ScopeKey - e.g. the same album reachable
+        // both ways); back wins, being the one a swipe is far likelier to
+        // reveal.
         if (forwardInner != null && ReferenceEquals(forwardInner, backInner))
             forwardInner = null;
 
@@ -173,6 +190,19 @@ public sealed class ScreenStackPanel : Panel
             forward.RenderTransform = null;
         }
 
+        // A forward navigation (a tab tap, a picker tile, a drill-in) has an
+        // outgoing screen that stays put and an incoming one that arrives over
+        // it - the mirror image of a swipe-back, which slides the outgoing one
+        // off a stationary destination. So the entrance is animated here, on
+        // the freshly-current slot, starting off-screen on whichever side the
+        // ViewModel says this navigation came from and easing to 0 with the
+        // same duration/easing a committed swipe uses. Back/Forward report
+        // None (their outgoing screen is animated off by CommitInteractive
+        // instead), and so does the very first sync, which has no outgoing
+        // screen to arrive over - both cut straight to X=0 as before.
+        var transition = vm.ConsumePendingTransition();
+        var entranceWidth = Bounds.Width;
+
         bool unchanged = ReferenceEquals(_current, current) && ReferenceEquals(_oneBack, back) && ReferenceEquals(_oneForward, forward);
 
         _current = current;
@@ -197,6 +227,15 @@ public sealed class ScreenStackPanel : Panel
         if (forward != null)
             Children.Add(forward);
         Children.Add(current);
+
+        if (transition != MobileNavigationTransition.None
+            && back != null
+            && entranceWidth > 0
+            && current.RenderTransform is TranslateTransform entrance)
+        {
+            entrance.X = transition == MobileNavigationTransition.FromRight ? entranceWidth : -entranceWidth;
+            EaseTransform(entrance, 0, null);
+        }
     }
 
     // Reuses the existing slot for a role if it's still wrapping the exact
@@ -220,9 +259,18 @@ public sealed class ScreenStackPanel : Panel
     // or forward) slot - always visible (so it can be uncovered) but never
     // hit-testable (it's a preview, not an interactive screen, even
     // mid-gesture).
-    private Control PrepareInert(MobileNavigationFrame frame, MobileMainViewModel vm)
+    private Control? PrepareInert(MobileNavigationFrame? frame, MobileMainViewModel vm, Control currentInner)
     {
+        if (frame == null)
+            return null;
         var control = _factory.GetOrCreate(frame);
+        // Never the current screen's own control - see SyncToCurrentFrame's own
+        // comment on the collision. Bailing out before the Freeze below matters
+        // as much as before the reparenting does: freezing the live screen
+        // would detach it from the ViewModel and pin it to whatever rows the
+        // history entry captured.
+        if (ReferenceEquals(control, currentInner))
+            return null;
         control.DataContext = vm;
         if (control is TrackListScreenView trackList)
             trackList.Freeze(frame);
@@ -248,12 +296,26 @@ public sealed class ScreenStackPanel : Panel
     // finger let go.
     public void AnimateGoBack()
     {
-        if (DataContext is MobileMainViewModel { CanGoBack: true } vm)
-            CommitInteractive(vm, SwipeDirection.Back);
+        if (DataContext is not MobileMainViewModel { CanGoBack: true } vm)
+            return;
+        // A destination that carries a sheet animates itself: the sheet is
+        // full-bleed and arrives from the left over whatever is underneath, so
+        // sliding the screen off first would spend 280ms uncovering a
+        // destination the sheet is about to cover again anyway - two beats for
+        // one back step. See MobileNavigationFrame.Sheet. A swipe is different
+        // and keeps its slide: there the screen is moving because a finger
+        // moved it.
+        if (vm.PeekOneBack?.Sheet is not (null or MobileSheet.None))
+        {
+            vm.BackCommand.Execute(null);
+            return;
+        }
+        CommitInteractive(vm, SwipeDirection.Back);
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        _finishEasing?.Invoke();
         _swipeStart = e.GetPosition(this);
         _capturedForSwipe = false;
         _interactiveDirection = SwipeDirection.None;
@@ -407,26 +469,38 @@ public sealed class ScreenStackPanel : Panel
     private void EaseTransform(TranslateTransform transform, double target, Action? onFinished)
     {
         _easing?.Dispose();
+        _finishEasing = null;
 
         var from = transform.X;
         var duration = TimeSpan.FromMilliseconds(EasingDurationMs);
         // Shared 60Hz clock rather than a timer per easing - see AnimationClock.
         IDisposable? easing = null;
+        // The last frame's work, named so a pointer press can run it early
+        // (see _finishEasing) rather than leaving a half-slid screen behind.
+        // Idempotent: whichever of the two paths gets there first clears the
+        // field the other would have read.
+        void Finish()
+        {
+            if (_finishEasing == null)
+                return;
+            _finishEasing = null;
+            transform.X = target;
+            easing!.Dispose();
+            if (ReferenceEquals(_easing, easing))
+                _easing = null;
+            onFinished?.Invoke();
+        }
+
         easing = AnimationClock.Current.Subscribe(elapsed =>
         {
             var t = Math.Min(1.0, elapsed.TotalMilliseconds / duration.TotalMilliseconds);
             transform.X = from + (target - from) * EaseOut(t);
 
             if (t >= 1.0)
-            {
-                transform.X = target;
-                easing!.Dispose();
-                if (ReferenceEquals(_easing, easing))
-                    _easing = null;
-                onFinished?.Invoke();
-            }
+                Finish();
         });
         _easing = easing;
+        _finishEasing = Finish;
     }
 
     private static double EaseOut(double t) => 1 - Math.Pow(1 - t, 3);

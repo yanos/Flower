@@ -20,7 +20,7 @@ public class MobileNavigationFrameTests
         MobileTab tab, bool hasDrilledIn = false, string? artistName = null, bool hasDrilledIntoArtistAlbum = false,
         SidebarItem? sidebarItem = null, string? subItem = null, string? searchQuery = null,
         IReadOnlyList<TrackRowViewModel>? frozenRows = null)
-        => new(tab, hasDrilledIn, artistName, hasDrilledIntoArtistAlbum, sidebarItem, subItem, searchQuery, frozenRows, null);
+        => new(tab, hasDrilledIn, artistName, hasDrilledIntoArtistAlbum, sidebarItem, subItem, searchQuery, frozenRows, null, MobileSheet.None);
 
     // Mirrors MobileMainViewModel's IsShowingAlbumGrid/IsShowingArtistPicker/
     // IsShowingArtistAlbumGrid/IsShowingPlaylistPicker/IsShowingRecentlyAddedAlbums/

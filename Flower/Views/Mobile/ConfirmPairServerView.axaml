@@ -30,6 +30,7 @@
          where this sheet sits - and the code box is the first thing it covers.
          See Flower.Controls.SoftKeyboard. -->
     <Border VerticalAlignment="Bottom"
+            controls:SlidingSheet.IsCard="True"
             controls:SoftKeyboard.AvoidOcclusion="True"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             CornerRadius="12,12,0,0"

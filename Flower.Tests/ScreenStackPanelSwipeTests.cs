@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Threading;
 
@@ -15,6 +16,7 @@ using Flower.Controls;
 using Flower.Models;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels.Mobile;
+using Flower.Views.Mobile.Screens;
 
 using Xunit;
 
@@ -143,11 +145,63 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         // navigation callback.
         public void LetEasingFinish() => Pump(600);
 
+        // The track list actually hosted by the topmost (current) slot, or
+        // null if that slot is hosting nothing - which is what an emptied
+        // screen looks like, its header being the slot's own.
+        public TrackListScreenView? CurrentTrackList() =>
+            Panel.Children.LastOrDefault()?.GetLogicalDescendants().OfType<TrackListScreenView>().FirstOrDefault();
+
         public void Dispose()
         {
             Window.Close();
             _vm.Dispose();
         }
+    }
+
+    // ── Slot roles ────────────────────────────────────────────────────────────
+
+    // A history entry naming the screen just landed on resolves, through
+    // ScreenControlFactory's per-ScopeKey cache, to the very control that
+    // screen is already using - and a Control has one visual parent, so
+    // wrapping it as "one back" pulls it out of the current slot, which is
+    // then left hosting nothing at all. The header survives (it belongs to the
+    // slot), so what the user sees is a title and a back arrow over an empty
+    // screen. Reached in ordinary use by tapping the Now Playing sheet's album
+    // art while already on that album - and again on the way back out, the
+    // duplicate having moved to the forward stack.
+    [AvaloniaFact]
+    public void A_history_entry_for_the_current_screen_does_not_empty_it()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+        Assert.NotNull(h.CurrentTrackList());
+
+        // Drilling into the album already being shown - the shape of the
+        // duplicate, without depending on which caller produced it.
+        h.Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
+        Harness.Pump();
+
+        var trackList = h.CurrentTrackList();
+        Assert.NotNull(trackList);
+        Assert.NotEmpty(trackList!.DisplayRows);
+    }
+
+    // The same duplicate on the forward stack, which is where going back puts
+    // it.
+    [AvaloniaFact]
+    public void Going_back_past_a_duplicate_leaves_the_destination_intact()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+        h.Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
+        Harness.Pump();
+
+        h.Vm.BackCommand.Execute(null);
+        Harness.Pump();
+
+        var trackList = h.CurrentTrackList();
+        Assert.NotNull(trackList);
+        Assert.NotEmpty(trackList!.DisplayRows);
     }
 
     // ── Direction detection ───────────────────────────────────────────────────
@@ -391,6 +445,61 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
 
         Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
         Assert.True(h.Vm.CanGoForward);
+    }
+
+    // ── Forward entrance ──────────────────────────────────────────────────────
+
+    // The mirror image of a swipe-back: nothing slides off, the incoming
+    // screen arrives over a stationary outgoing one - starting a full panel
+    // width off the right edge and easing home. Asserted before the dispatcher
+    // is pumped at all, so the very first frame is the one under test.
+    [AvaloniaFact]
+    public void A_forward_navigation_slides_the_new_screen_in_from_the_right()
+    {
+        using var h = new Harness();
+
+        // Albums is to the right of RecentlyAdded, the default tab.
+        h.Vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+
+        Assert.Equal(PanelWidth, h.CurrentSlotOffset());
+
+        h.LetEasingFinish();
+        Assert.Equal(0, h.CurrentSlotOffset());
+    }
+
+    // A tab to the LEFT of the current one arrives from the left, the same way
+    // the swipe that pages to it would - see MobileMainViewModel's own
+    // SelectedTab setter.
+    [AvaloniaFact]
+    public void Paging_to_an_earlier_tab_slides_in_from_the_left()
+    {
+        using var h = new Harness();
+        h.SelectTab(MobileTab.Search);
+        h.LetEasingFinish();
+
+        h.Vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+
+        Assert.Equal(-PanelWidth, h.CurrentSlotOffset());
+    }
+
+    // Back reveals a screen already sitting underneath at rest - if it also
+    // played an entrance, the destination would slide in over the screen the
+    // user was just leaving, on top of that screen's own slide-off.
+    [AvaloniaFact]
+    public void Going_back_plays_no_entrance()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+        h.LetEasingFinish();
+
+        h.Panel.AnimateGoBack();
+        h.LetEasingFinish();
+
+        Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
+        Assert.Equal(0, h.CurrentSlotOffset());
+        // The commit's own easing is what moved the outgoing screen; nothing
+        // was left pending for the destination.
+        Assert.Equal(MobileNavigationTransition.None, h.Vm.ConsumePendingTransition());
     }
 
     [AvaloniaFact]

@@ -306,22 +306,65 @@
       </Button>
     </Grid>
 
-    <!-- Now-playing sheet: full-screen overlay above everything else -->
-    <views:NowPlayingView Grid.Row="0" Grid.RowSpan="3"
-                           IsVisible="{Binding IsShowingNowPlaying}" />
+    <!-- Every sheet slides rather than blinking in and out - see SlidingSheet,
+         which is why these take IsOpen instead of an IsVisible binding (the
+         closing slide has to outlive ActiveSheet going back to None). They
+         come up from the bottom, the direction each one's own ChevronDown
+         dismiss or bottom-anchored card already promises; now-playing and
+         settings are the exceptions, arriving from the right like a pushed
+         screen and dismissing with that screen's back arrow.
+         The four drawn as a card over a dimmed backdrop mark that card with
+         SlidingSheet.IsCard, so the card slides while the dimming fades in
+         behind it rather than sweeping up the screen with it. -->
+
+    <!-- Now-playing sheet: full-screen overlay above everything else. Arrives
+         from the right, like Settings below and for the same reason - it is a
+         whole screen reached from a persistent bar, not something raised over
+         the list you were reading. Leaves the same way, except when the
+         dismissal is itself a push - tapping the album art - and it is shoved
+         off to the left by the album coming in behind it. -->
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            IsOpen="{Binding IsShowingNowPlaying}"
+                            ExitsForward="{Binding NowPlayingExitsForward}"
+                            EntersBackward="{Binding NowPlayingEntersBackward}">
+      <views:NowPlayingView />
+    </controls:SlidingSheet>
 
     <!-- Track actions (row "..." menu) and Track Info sheets -->
-    <views:TrackActionsView Grid.Row="0" Grid.RowSpan="3"
-                             IsVisible="{Binding IsShowingTrackActions}" />
-    <views:TrackInfoView Grid.Row="0" Grid.RowSpan="3"
-                          IsVisible="{Binding IsShowingTrackInfo}" />
-    <views:AddToPlaylistView Grid.Row="0" Grid.RowSpan="3"
-                              IsVisible="{Binding IsShowingAddToPlaylist}" />
-    <views:SettingsView Grid.Row="0" Grid.RowSpan="3"
-                         IsVisible="{Binding IsShowingSettings}" />
-    <views:ConfirmPairServerView Grid.Row="0" Grid.RowSpan="3"
-                                  IsVisible="{Binding IsShowingConfirmPairServer}" />
-    <views:ConfirmDeleteFileView Grid.Row="0" Grid.RowSpan="3"
-                                  IsVisible="{Binding IsShowingConfirmDeleteFile}" />
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingTrackActions}">
+      <views:TrackActionsView />
+    </controls:SlidingSheet>
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingTrackInfo}">
+      <views:TrackInfoView />
+    </controls:SlidingSheet>
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingAddToPlaylist}">
+      <views:AddToPlaylistView />
+    </controls:SlidingSheet>
+    <!-- The other sheet that arrives from the right, like a pushed screen -
+         it is reached from a gear pinned beside the screen title rather than
+         from a row's own menu, and reads as going somewhere rather than
+         raising something over what is already there. Its dismiss is the back
+         arrow the rest of the app pushes screens with, not the ChevronDown the
+         sheets that rise from the bottom use - see SettingsView. -->
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            IsOpen="{Binding IsShowingSettings}">
+      <views:SettingsView />
+    </controls:SlidingSheet>
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingConfirmPairServer}">
+      <views:ConfirmPairServerView />
+    </controls:SlidingSheet>
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingConfirmDeleteFile}">
+      <views:ConfirmDeleteFileView />
+    </controls:SlidingSheet>
   </Grid>
 </UserControl>

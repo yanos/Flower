@@ -28,6 +28,14 @@ namespace Flower.ViewModels.Mobile;
 // sidebar section is already selected) - see IsShowingSearchPrompt.
 public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists, Search }
 
+// Which way a newly-navigated-to screen should arrive on screen. Read (and
+// cleared) by ScreenStackPanel on every navigation - see
+// MobileMainViewModel.ConsumePendingTransition. None means nothing slides in:
+// either there is no outgoing screen to slide over (the very first screen), or
+// the transition is a Back/Forward, which animates the outgoing screen off
+// instead.
+public enum MobileNavigationTransition { None, FromRight, FromLeft }
+
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
 public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings, ConfirmPairServer, ConfirmDeleteFile }
@@ -206,7 +214,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // one-back TrackListScreenView needs these instead of the live,
         // wholesale-replaced Main.Rows/CurrentAlbumHeader.
         IsShowingTrackList ? Main.Rows.ToList() : null,
-        IsShowingAlbumTrackList ? CurrentAlbumHeader : null);
+        IsShowingAlbumTrackList ? CurrentAlbumHeader : null,
+        // Almost always None - the one sheet that is up while a navigation is
+        // pushed is Now Playing, whose album art is a drill-in. See
+        // MobileNavigationFrame.Sheet.
+        ActiveSheet);
 
     // Called BEFORE any state field mutates, both here and in GoBack - not
     // just before RaiseNavigationChanged's much-later resync. The gap
@@ -225,12 +237,31 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // ScreenStackPanel's own subscription to this event.
     public event EventHandler<MobileNavigationFrame>? NavigationLeaving;
 
-    private void PushHistory()
+    private void PushHistory(MobileNavigationTransition transition = MobileNavigationTransition.FromRight)
     {
         var frame = BuildLeavingFrame();
         NavigationLeaving?.Invoke(this, frame);
         _navigationHistory.Push(frame);
         _forwardHistory.Clear();
+        _pendingTransition = transition;
+    }
+
+    // How the screen this navigation lands on should arrive - the forward
+    // counterpart to the swipe gesture's own live drag, which ScreenStackPanel
+    // already animates from the View side. Only PushHistory sets it (a genuine
+    // forward navigation: a tab tap, a picker tile, a drill-in); Back/Forward
+    // clear it, because their outgoing screen is animated off by
+    // ScreenStackPanel itself rather than the incoming one sliding on top.
+    // Consumed rather than merely read, so a NavigationChanged raised for some
+    // other reason (a library rescan, a search refresh) after the one this was
+    // set for can never replay the same entrance a second time.
+    private MobileNavigationTransition _pendingTransition;
+
+    public MobileNavigationTransition ConsumePendingTransition()
+    {
+        var transition = _pendingTransition;
+        _pendingTransition = MobileNavigationTransition.None;
+        return transition;
     }
 
     // The live screen, expressed as the same MobileNavigationFrame shape
@@ -251,7 +282,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         Main.SelectedSubItem,
         _searchQuery,
         null,
-        null);
+        null,
+        ActiveSheet);
 
     // What ScreenStackPanel should keep materialized underneath the current
     // screen, ready to reveal - null if there's nowhere to go back to.
@@ -276,7 +308,15 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         {
             if (_selectedTab == value)
                 return;
-            PushHistory();
+            // The tab bar is a left-to-right strip the swipe gesture pages
+            // through (see SwipeBack/SwipeForward), so a tap has a direction
+            // too: a tab to the right of this one arrives from the right, one
+            // to the left from the left - the same way the swipe that reaches
+            // it would. Drill-ins below have no such spatial ordering and all
+            // use the default, arriving from the right like a pushed screen.
+            PushHistory(value > _selectedTab
+                ? MobileNavigationTransition.FromRight
+                : MobileNavigationTransition.FromLeft);
             SetSelectedTabCore(value);
         }
     }
@@ -285,7 +325,15 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // compound jumps (SelectSearchAlbumCommand/SelectSearchArtistCommand)
     // can push exactly one history entry for the whole jump rather than one
     // for the tab switch and a second for the drill-in.
-    private void SetSelectedTabCore(MobileTab value)
+    //
+    // raiseNavigationChanged is the same argument one level down: a compound
+    // jump is one navigation, so it must also be one NavigationChanged. Two
+    // meant the tab's own picker screen was synced first and consumed the
+    // pending entrance (ScreenStackPanel.ConsumePendingTransition), leaving
+    // the drill-in that actually landed - the album the user tapped - to cut
+    // in with nothing pending. The picker's slide-in was over in the same
+    // frame it started, so what the user saw was no animation at all.
+    private void SetSelectedTabCore(MobileTab value, bool raiseNavigationChanged = true)
     {
         _selectedTab = value;
         _hasDrilledIn = false;
@@ -297,7 +345,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // and its results should still be there whenever the user comes back
         // to Search, whether via the tab bar or Back/swipe-back, not reset to
         // a blank prompt every time.
-        RaiseNavigationChanged();
+        if (raiseNavigationChanged)
+            RaiseNavigationChanged();
     }
 
     // Whether the user has tapped into a specific album/artist/playlist from the
@@ -477,6 +526,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             _activeSheet = value;
             if (value == MobileSheet.None)
                 ActionTarget = null;
+            if (value == MobileSheet.NowPlaying)
+                NowPlayingExitsForward = false;
+            else
+                // Whatever direction the last Now Playing arrived from, it is
+                // over now - the next one is an ordinary raise from the right
+                // unless ApplyFrame says otherwise, which it does immediately
+                // before assigning this property.
+                NowPlayingEntersBackward = false;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsShowingNowPlaying));
             OnPropertyChanged(nameof(IsShowingTrackActions));
@@ -502,6 +559,46 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ResourceUsageViewModel Resources { get; } = new();
 
     public bool IsShowingNowPlaying => ActiveSheet == MobileSheet.NowPlaying;
+
+    // Which edge the Now Playing sheet leaves by - see SlidingSheet.ExitsForward,
+    // which this is bound to in MobileMainView.axaml. False for every ordinary
+    // dismissal (the back arrow, a swipe): the sheet retreats the way it came.
+    // True for the one dismissal that is a forward navigation, tapping the album
+    // art, where the sheet is pushed off to the left by the album arriving from
+    // the right. Reset whenever the sheet is shown again, so one forward exit
+    // never colours the next plain dismissal.
+    private bool _nowPlayingExitsForward;
+    public bool NowPlayingExitsForward
+    {
+        get => _nowPlayingExitsForward;
+        private set
+        {
+            if (_nowPlayingExitsForward == value)
+                return;
+            _nowPlayingExitsForward = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // The mirror of NowPlayingExitsForward, for the way back: a sheet that was
+    // pushed off to the left by an album arriving from the right has to return
+    // from that same left edge when the album is popped, or going back would
+    // play as a forward push. Set only by ApplyFrame, and only when the frame
+    // being restored is one Back is walking to; cleared the moment any other
+    // sheet state takes over, so an ordinary reopen still arrives from the
+    // right. See SlidingSheet.EntersBackward.
+    private bool _nowPlayingEntersBackward;
+    public bool NowPlayingEntersBackward
+    {
+        get => _nowPlayingEntersBackward;
+        private set
+        {
+            if (_nowPlayingEntersBackward == value)
+                return;
+            _nowPlayingEntersBackward = value;
+            OnPropertyChanged();
+        }
+    }
     public bool IsShowingTrackActions => ActiveSheet == MobileSheet.TrackActions;
     public bool IsShowingTrackInfo => ActiveSheet == MobileSheet.TrackInfo;
     public bool IsShowingAddToPlaylist => ActiveSheet == MobileSheet.AddToPlaylist;
@@ -838,7 +935,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (name == null)
                 return;
             PushHistory();
-            SetSelectedTabCore(MobileTab.Albums);
+            SetSelectedTabCore(MobileTab.Albums, raiseNavigationChanged: false);
             await SelectAlbumOrArtistCore(name);
         });
         SelectSearchArtistCommand = new RelayCommand<string>(name =>
@@ -846,7 +943,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (name == null)
                 return;
             PushHistory();
-            SetSelectedTabCore(MobileTab.Artists);
+            SetSelectedTabCore(MobileTab.Artists, raiseNavigationChanged: false);
             SelectArtistCore(name);
         });
         SelectArtistAlbumCommand = new RelayCommand<string>(SelectArtistAlbum);
@@ -895,18 +992,44 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (PlaylistControl.CurrentlyPlayingTrack != null)
                 ActiveSheet = MobileSheet.NowPlaying;
         });
-        // Tapping the Now Playing sheet's album art - closes the sheet and
-        // drills into that track's album, same tab-switch-plus-drill-in-as-
+        // Tapping the Now Playing sheet's album art - drills into that track's
+        // album and then closes the sheet, same tab-switch-plus-drill-in-as-
         // one-history-entry shape as SelectSearchAlbumCommand.
+        //
+        // This is a push, so the album arrives from the right like every other
+        // one, and the sheet is pushed off to the left ahead of it
+        // (NowPlayingExitsForward - see SlidingSheet.ExitsForward). The two
+        // slides are the same length and start together, so the sheet's
+        // trailing edge and the album's leading edge stay flush and the pair
+        // travels as one screen. Dismissing the sheet the ordinary way instead
+        // uncovers the album from the left, which is what going back looks
+        // like - and doing it before the drill-in had landed hid the album's
+        // own entrance behind the sheet for its whole length.
         GoToCurrentlyPlayingAlbumCommand = new RelayCommand(async () =>
         {
             var album = PlaylistControl.CurrentlyPlayingTrack?.Album;
             if (album == null)
                 return;
-            ActiveSheet = MobileSheet.None;
+            if (IsShowingAlbumTrackList && Main.SelectedSubItem == album)
+            {
+                // Already there: the sheet was raised over that very album, so
+                // there is nothing to push and nothing to slide in. Pushing
+                // anyway put a history entry for the screen being landed on
+                // into the stack, which is a back step that goes nowhere - and
+                // ScreenStackPanel would be handed the same screen twice, one
+                // control for two slots (see its own note on the collision).
+                // A plain dismissal instead, retreating the way it arrived.
+                ActiveSheet = MobileSheet.None;
+                return;
+            }
             PushHistory();
-            SetSelectedTabCore(MobileTab.Albums);
+            SetSelectedTabCore(MobileTab.Albums, raiseNavigationChanged: false);
             await SelectAlbumOrArtistCore(album);
+            // Only now, with the album actually built and its own entrance
+            // already running: the sheet and that entrance are one push, so
+            // they have to start together.
+            NowPlayingExitsForward = true;
+            ActiveSheet = MobileSheet.None;
         });
         ToggleRepeatCommand = new RelayCommand(CurrentlyPlaying.ToggleRepeat);
         ToggleShuffleCommand = new RelayCommand(CurrentlyPlaying.ToggleShuffle);
@@ -1441,7 +1564,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         NavigationLeaving?.Invoke(this, leaving);
         _forwardHistory.Push(leaving);
 
-        await ApplyFrame(frame);
+        await ApplyFrame(frame, goingBack: true);
     }
 
     // Symmetric to GoBack - pops the redo stack and restores it, pushing the
@@ -1458,14 +1581,19 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         NavigationLeaving?.Invoke(this, leaving);
         _navigationHistory.Push(leaving);
 
-        await ApplyFrame(frame);
+        await ApplyFrame(frame, goingBack: false);
     }
 
     // Restores a popped frame's state and rebuilds whatever needs it -
     // shared by GoBack and GoForward, which differ only in which stack they
     // pop from/push the outgoing screen onto (see both above).
-    private async Task ApplyFrame(MobileNavigationFrame frame)
+    private async Task ApplyFrame(MobileNavigationFrame frame, bool goingBack)
     {
+        // Back/Forward animate the OUTGOING screen off (ScreenStackPanel's own
+        // easing, whether from a swipe or the back button), revealing the one
+        // already sitting underneath - nothing slides in on top, so no
+        // entrance transition is pending for the frame being restored.
+        _pendingTransition = MobileNavigationTransition.None;
         _selectedTab = frame.Tab;
         _hasDrilledIn = frame.HasDrilledIn;
         _selectedArtistName = frame.SelectedArtistName;
@@ -1508,6 +1636,27 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         if (frame.ScreenKind == MobileScreenKind.TrackList)
             await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false);
         RaiseNavigationChanged();
+        // Last, over a destination that is fully built: a sheet is raised on
+        // top of a screen, so opening it before that screen is ready would
+        // animate it over the outgoing one.
+        ApplySheet(frame.Sheet, goingBack);
+    }
+
+    // Restores the sheet half of a frame, moving in whichever direction the
+    // navigation itself is going. Back returns the sheet by the edge it was
+    // pushed out of and, when it is instead the sheet being left behind,
+    // retreats it the ordinary way; Forward is the exact mirror, which is what
+    // makes a redo look like the push it is replaying rather than another back
+    // step. See SlidingSheet.EntersBackward/ExitsForward.
+    private void ApplySheet(MobileSheet sheet, bool goingBack)
+    {
+        if (sheet == ActiveSheet)
+            return;
+        if (sheet == MobileSheet.NowPlaying)
+            NowPlayingEntersBackward = goingBack;
+        else if (ActiveSheet == MobileSheet.NowPlaying)
+            NowPlayingExitsForward = !goingBack;
+        ActiveSheet = sheet;
     }
 
     // First and last MobileTab in bottom-bar order (see the enum's own

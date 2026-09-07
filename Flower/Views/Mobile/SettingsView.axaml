@@ -28,7 +28,7 @@
       <Button Grid.Column="0"
               Command="{Binding CloseSheetCommand}"
               Background="Transparent" BorderThickness="0" Padding="10">
-        <materialIcons:MaterialIcon Kind="ChevronDown" Width="26" Height="26" />
+        <materialIcons:MaterialIcon Kind="ArrowLeft" Width="24" Height="24" />
       </Button>
       <TextBlock Grid.Column="1"
                  Text="Settings"
