@@ -47,6 +47,16 @@ public sealed class ScreenControlFactory
         return control;
     }
 
+    // A screen instance for a frame that must NOT share the cached control for
+    // its scope - the caller already handed that one to another role, and a
+    // Control has exactly one visual parent, so reusing it would empty the slot
+    // it is really in. Deliberately outside the cache: this is a throwaway
+    // preview belonging to one inert slot, and letting it into the cache would
+    // let it be handed out later as the live screen for that scope, which is
+    // exactly the recycling the cache's one-control-per-scope rule exists to
+    // prevent. See ScreenStackPanel.PrepareInert.
+    public static Control CreateDetached(MobileScreenKind kind) => Create(kind);
+
     private static Control Create(MobileScreenKind kind) => kind switch
     {
         MobileScreenKind.RecentlyAdded => new RecentlyAddedScreenView(),

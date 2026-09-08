@@ -30,9 +30,12 @@ namespace Flower.Controls;
 // in an earlier stage - the natural home now that this panel owns the
 // content actually being dragged). Every screen paints its own opaque
 // background (AppBackgroundBrush - see each ScreenView's own root element)
-// so one back/one forward can sit there fully rendered at rest without
-// showing through gaps in current, and only becomes visible where current's
-// own RenderTransform has slid out of the way.
+// so the revealed one can sit there fully rendered at rest without showing
+// through gaps in current, and only becomes visible where current's own
+// RenderTransform has slid out of the way. Which is also why exactly one of
+// one-back/one-forward is ever IsVisible at a time (see Reveal): they are both
+// full-bleed and opaque, so with both showing, the one that happens to be on
+// top is what a gesture uncovers regardless of the direction it is going.
 //
 // Each of the 3 live slots is a ScreenSlot (not the raw screen Control
 // itself) - a small wrapper pairing the screen's content with its own
@@ -144,18 +147,16 @@ public sealed class ScreenStackPanel : Panel
         // use, not only in theory: tapping the Now Playing sheet's album art
         // while already on that album's track list pushes a history entry for
         // the screen being landed on, and going back from there hands the same
-        // duplicate to the forward stack. So current always wins, and a role
-        // that would collide with it simply goes unmaterialized - there is
-        // nothing to reveal underneath a screen that IS the destination.
+        // duplicate to the forward stack. So current keeps the cached instance
+        // and the colliding role gets a private, uncached one of its own
+        // (PrepareInert) rather than going unmaterialized: a slot that renders
+        // nothing is a hole a swipe uncovers, which reads as the wrong screen
+        // just as much as showing the wrong one does.
+        // Forward additionally yields to back, for the same reason: the two
+        // inert frames can share a ScopeKey too (the same album reachable both
+        // ways), and back is the role a gesture is far likelier to want.
         var backInner = PrepareInert(backFrame, vm, currentInner);
-        var forwardInner = PrepareInert(forwardFrame, vm, currentInner);
-
-        // Same collision between the two inert roles (the back and forward
-        // frames happen to share a ScopeKey - e.g. the same album reachable
-        // both ways); back wins, being the one a swipe is far likelier to
-        // reveal.
-        if (forwardInner != null && ReferenceEquals(forwardInner, backInner))
-            forwardInner = null;
+        var forwardInner = PrepareInert(forwardFrame, vm, currentInner, backInner);
 
         var current = WrapSlot(_current, _currentInner, currentInner, vm);
         var back = backInner != null ? WrapSlot(_oneBack, _oneBackInner, backInner, vm) : null;
@@ -175,6 +176,16 @@ public sealed class ScreenStackPanel : Panel
         if (currentFrame.IsSearchScreen)
             current.FocusSearchBox();
 
+        // Both inert slots are full-bleed and opaque, and only ONE of them can
+        // be the screen a given motion uncovers - so exactly one is visible at
+        // a time, chosen by the direction in flight (see Reveal). Z-order alone
+        // cannot decide it: whichever is added last wins everywhere they
+        // overlap, which is everywhere, so with both visible a swipe-back
+        // uncovered the FORWARD screen and only snapped to the right one once
+        // the commit resync ran - "the wrong view underneath, correct as soon
+        // as the transition finished". Back is the resting default because it
+        // is what the entrance animation below uncovers, and what the far more
+        // common gesture asks for.
         if (back != null)
         {
             back.Frame = backFrame;
@@ -185,7 +196,7 @@ public sealed class ScreenStackPanel : Panel
         if (forward != null)
         {
             forward.Frame = forwardFrame;
-            forward.IsVisible = true;
+            forward.IsVisible = false;
             forward.IsHitTestVisible = false;
             forward.RenderTransform = null;
         }
@@ -215,12 +226,12 @@ public sealed class ScreenStackPanel : Panel
         if (unchanged)
             return;
 
-        // Both "underneath" slots first (render order doesn't matter between
-        // the two of them - only one is ever actually uncovered at a time,
-        // depending on which direction is being dragged), current last (on
-        // top) - a plain Panel stacks children full-bleed in collection
-        // order, same as ContentGrid's own default Z-order before this
-        // container existed.
+        // Both "underneath" slots first, current last (on top) - a plain Panel
+        // stacks children full-bleed in collection order, same as ContentGrid's
+        // own default Z-order before this container existed. Which of the two
+        // sits above the other is deliberately NOT what decides the one a
+        // gesture uncovers; IsVisible above does, since only one of them is
+        // ever the right answer and both cover the whole panel.
         Children.Clear();
         if (back != null)
             Children.Add(back);
@@ -256,21 +267,24 @@ public sealed class ScreenStackPanel : Panel
     }
 
     // Materializes/refreshes the raw screen control for a non-current (back
-    // or forward) slot - always visible (so it can be uncovered) but never
-    // hit-testable (it's a preview, not an interactive screen, even
-    // mid-gesture).
-    private Control? PrepareInert(MobileNavigationFrame? frame, MobileMainViewModel vm, Control currentInner)
+    // or forward) slot - never hit-testable (it's a preview, not an
+    // interactive screen, even mid-gesture), and shown only while a motion is
+    // actually uncovering it (see Reveal).
+    //
+    // `taken` is whatever other roles have already claimed this sync. A control
+    // handed out twice is a control with one visual parent and two slots
+    // wanting it, so a role that would collide gets a private instance of the
+    // same screen instead. Substituting before the Freeze below matters as much
+    // as before the reparenting does: freezing a control another role is using
+    // live would detach it from the ViewModel and pin it to whatever rows this
+    // history entry captured.
+    private Control? PrepareInert(MobileNavigationFrame? frame, MobileMainViewModel vm, params Control?[] taken)
     {
         if (frame == null)
             return null;
         var control = _factory.GetOrCreate(frame);
-        // Never the current screen's own control - see SyncToCurrentFrame's own
-        // comment on the collision. Bailing out before the Freeze below matters
-        // as much as before the reparenting does: freezing the live screen
-        // would detach it from the ViewModel and pin it to whatever rows the
-        // history entry captured.
-        if (ReferenceEquals(control, currentInner))
-            return null;
+        if (Array.Exists(taken, t => ReferenceEquals(t, control)))
+            control = ScreenControlFactory.CreateDetached(frame.ScreenKind);
         control.DataContext = vm;
         if (control is TrackListScreenView trackList)
             trackList.Freeze(frame);
@@ -353,6 +367,7 @@ public sealed class ScreenStackPanel : Panel
                     _interactiveDirection = SwipeDirection.Back;
                 else if (dx < 0 && vm.CanGoForward)
                     _interactiveDirection = SwipeDirection.Forward;
+                Reveal(_interactiveDirection);
             }
             e.Handled = true;
         }
@@ -404,7 +419,10 @@ public sealed class ScreenStackPanel : Panel
             if (committed)
                 CommitInteractive(vm, direction);
             else
+            {
                 CancelInteractive();
+                Reveal(SwipeDirection.None);
+            }
             e.Handled = true;
             return;
         }
@@ -430,6 +448,7 @@ public sealed class ScreenStackPanel : Panel
         {
             _interactiveDirection = SwipeDirection.None;
             CancelInteractive();
+            Reveal(SwipeDirection.None);
         }
     }
 
@@ -447,6 +466,10 @@ public sealed class ScreenStackPanel : Panel
     {
         if (_current?.RenderTransform is not TranslateTransform transform)
             return;
+        // AnimateGoBack reaches here without any pointer having moved, so this
+        // is the only thing that picks the revealed slot on the back-button
+        // path.
+        Reveal(direction);
         var width = Math.Max(1, Bounds.Width);
         var target = direction == SwipeDirection.Back ? width : -width;
         EaseTransform(transform, target, () =>
@@ -464,6 +487,19 @@ public sealed class ScreenStackPanel : Panel
     {
         if (_current?.RenderTransform is TranslateTransform transform)
             EaseTransform(transform, 0, null);
+    }
+
+    // Uncovers the one inert slot this motion is actually revealing and hides
+    // the other, so a gesture can never expose the screen belonging to the
+    // opposite direction. None restores the resting arrangement (back showing,
+    // forward hidden) - covered by current either way, and already correct for
+    // the next entrance animation.
+    private void Reveal(SwipeDirection direction)
+    {
+        if (_oneBack != null)
+            _oneBack.IsVisible = direction != SwipeDirection.Forward;
+        if (_oneForward != null)
+            _oneForward.IsVisible = direction == SwipeDirection.Forward;
     }
 
     private void EaseTransform(TranslateTransform transform, double target, Action? onFinished)
