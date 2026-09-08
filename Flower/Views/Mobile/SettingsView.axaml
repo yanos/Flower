@@ -13,12 +13,15 @@
              Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
 
   <UserControl.Styles>
-    <Style Selector="Button.action">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="Padding" Value="20,14" />
+    <Style Selector="StackPanel.section">
+      <Setter Property="Margin" Value="20,4,20,20" />
+      <Setter Property="Spacing" Value="6" />
+    </Style>
+    <Style Selector="TextBlock.section-header">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Opacity" Value="0.6" />
+      <Setter Property="Margin" Value="0,0,0,2" />
     </Style>
   </UserControl.Styles>
 
@@ -41,32 +44,46 @@
     <!-- Scrolls because the content is now taller than a small phone. The
          diagnostics block below is the last thing on the screen and would
          otherwise simply be unreachable on a 13 mini. -->
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+    <ScrollViewer x:Name="ContentScroller" Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                  controls:SoftKeyboard.AvoidOcclusion="True">
     <StackPanel Margin="0,8,0,0">
 
-      <StackPanel Margin="20,4,20,16" Spacing="6">
+      <!-- Four headed sections rather than one flat run of blocks: the sheet
+           grew past a phone's height, and "which of these is about the server I
+           am on, and which is about adding another one" is not answerable from
+           spacing alone. -->
+      <StackPanel Classes="section">
+        <TextBlock Classes="section-header" Text="General"/>
+
         <TextBlock Text="Device Name" FontSize="13" Opacity="0.6"/>
         <TextBox Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"
                  controls:SoftKeyboard.ReopenOnTap="True"/>
         <TextBlock Text="Shown on the server this device syncs with"
                    FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+
+        <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Margin="0,10,0,0" Spacing="8">
+          <StackPanel IsVisible="{Binding !HasMediaPermission}" Spacing="8">
+            <TextBlock Text="Music access permission was denied, so Flower cannot see your library."
+                       FontSize="14"
+                       Opacity="0.7"
+                       TextWrapping="Wrap" />
+            <Button Command="{Binding OpenAppSettingsCommand}" HorizontalAlignment="Left">
+              <TextBlock Text="Open App Settings" FontSize="14" />
+            </Button>
+          </StackPanel>
+          <TextBlock IsVisible="{Binding HasMediaPermission}"
+                     Text="Music access permission is granted."
+                     FontSize="14"
+                     Opacity="0.5" />
+        </StackPanel>
       </StackPanel>
 
-      <!-- On by default, same as desktop: whoever runs the server is the one
-           who ends up diagnosing a phone, and a phone's owner cannot be asked
-           to find a log file. See AppSettings.ShareLogsWithPairedServer. -->
-      <StackPanel Margin="20,4,20,16" Spacing="6">
-        <CheckBox Content="Send logs to paired server" IsChecked="{Binding Main.ShareLogsWithPairedServer}"/>
-        <TextBlock Text="Lets whoever runs the server read this device's error log when something breaks. It contains file names from this device."
-                   FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
-      </StackPanel>
-
-      <!-- Pick/see the one server this device syncs with - desktop's
-           equivalent is ServerPickerView, embedded in Settings' Devices tab;
-           mobile has no separate tab surface, so this is just another block in
-           the same flat sheet. -->
-      <StackPanel Margin="20,4,20,16" Spacing="6">
-        <TextBlock Text="Server" FontSize="13" Opacity="0.6"/>
+      <!-- The one server this device syncs with - desktop's equivalent is
+           ServerPickerView, embedded in Settings' Devices tab. Everything here
+           is about that server; reaching a different one is the next section
+           down. -->
+      <StackPanel Classes="section">
+        <TextBlock Classes="section-header" Text="Paired server"/>
 
         <Grid IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
               ColumnDefinitions="*,Auto">
@@ -85,7 +102,16 @@
                 IsUnreachable="{Binding Main.ShowPairedServerUnreachableWarning}"
                 IconSize="16"
                 VerticalAlignment="Center"/>
-            <TextBlock Text="{Binding Main.PairedServerAlias}" VerticalAlignment="Center" FontWeight="Medium"/>
+            <!-- How fresh the synced library is sits directly under the name it
+                 is about (see MainViewModel.LastSyncedDisplay); several lines
+                 further down it read as a fact about the section rather than
+                 about this server. Desktop's picker stacks the same two. -->
+            <StackPanel VerticalAlignment="Center">
+              <TextBlock Text="{Binding Main.PairedServerAlias}" FontWeight="Medium"/>
+              <TextBlock IsVisible="{Binding Main.LastSyncedDisplay, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                         Text="{Binding Main.LastSyncedDisplay}"
+                         Opacity="0.6" FontSize="12" Margin="0,1,0,0"/>
+            </StackPanel>
             <!-- Pairing requested but not yet approved by the server - see
                  MainViewModel.IsPairedServerAwaitingApproval. -->
             <TextBlock Text="Waiting for server..."
@@ -105,11 +131,6 @@
                    Text="Server not reachable"
                    Foreground="{DynamicResource AppWarningBrush}"
                    FontSize="12" Margin="0,2,0,0"/>
-        <!-- How fresh the synced library is - see MainViewModel.LastSyncedDisplay.
-             Desktop shows the same line under the server's name in its picker. -->
-        <TextBlock IsVisible="{Binding Main.LastSyncedDisplay, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                   Text="{Binding Main.LastSyncedDisplay}"
-                   Opacity="0.6" FontSize="12" Margin="0,2,0,0"/>
         <TextBlock IsVisible="{Binding Main.LastForceSyncResult, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                    Text="{Binding Main.LastForceSyncResult}"
                    Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
@@ -124,6 +145,15 @@
                    Text="{Binding Main.PairedServerRouteDescription}"
                    Opacity="0.6" FontSize="12" Margin="0,2,0,0"/>
 
+        <!-- On by default, same as desktop: whoever runs the server is the one
+             who ends up diagnosing a phone, and a phone's owner cannot be asked
+             to find a log file. Directly under the server it names, since that
+             is the server the logs go to. See
+             AppSettings.ShareLogsWithPairedServer. -->
+        <CheckBox Content="Send logs to paired server"
+                  IsChecked="{Binding Main.ShareLogsWithPairedServer}"
+                  Margin="0,6,0,0"/>
+
         <!-- Adding another phone or laptop to this server, without needing a
              desktop or a browser to do it - shown only if this device is
              paired with a Flower.Server that is reachable right now *and* that
@@ -132,22 +162,48 @@
              sees nothing here rather than a button the server can only
              refuse. -->
         <StackPanel IsVisible="{Binding Main.CanInviteDeviceToPairedServer}" Spacing="6" Margin="0,12,0,0">
-          <Button Content="Generate Pairing Code"
-                  Command="{Binding InviteDeviceCommand}"
-                  IsEnabled="{Binding !Main.IsIssuingPairingCode}"
-                  HorizontalAlignment="Left"/>
+          <!-- The checkbox rides alongside the button rather than under it:
+               it is what the button is about to issue, not a separate setting,
+               and a phone's width has room for both. More than one device may
+               be an administrator - an owner's own desktop and their own phone
+               both being one is the expected shape. See
+               MainViewModel.PairingCodeGrantsAdmin. -->
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button Content="Generate Pairing Code"
+                    Command="{Binding InviteDeviceCommand}"
+                    IsEnabled="{Binding !Main.IsIssuingPairingCode}"/>
+            <CheckBox Content="Administrator"
+                      IsChecked="{Binding Main.PairingCodeGrantsAdmin}"
+                      VerticalAlignment="Center"/>
+          </StackPanel>
           <TextBlock Text="Type this code on the new device. It works once, and only for a few minutes."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
-          <!-- More than one device may be an administrator - an owner's own
-               desktop and their own phone both being one is the expected
-               shape. See MainViewModel.PairingCodeGrantsAdmin. -->
-          <CheckBox Content="Administrator" IsChecked="{Binding Main.PairingCodeGrantsAdmin}"/>
           <TextBlock IsVisible="{Binding Main.PairingCodeGrantsAdmin}"
                      Text="Administrators can also change these settings and add devices themselves."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
-          <SelectableTextBlock Text="{Binding Main.IssuedPairingCode}"
-                               IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                               FontFamily="monospace" FontSize="20" FontWeight="SemiBold"/>
+          <!-- Copying is the actual gesture on a phone - the code goes into a
+               message to whoever is holding the other device, and a selection
+               drag on a 20pt monospace string is not how anyone does that. The
+               button shares the code's own visibility so the two appear
+               together.
+               A Grid rather than a horizontal StackPanel because the two have
+               to share a centre line: the code's box is taller than the
+               button's and centring each within its own is what left them
+               looking offset from one another. -->
+          <Grid ColumnDefinitions="Auto,Auto"
+                IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
+            <Border Grid.Column="0"
+                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                    CornerRadius="6" Padding="10,4" Margin="0,0,12,0"
+                    VerticalAlignment="Stretch">
+              <SelectableTextBlock Text="{Binding Main.IssuedPairingCode}"
+                                   FontFamily="monospace" FontSize="20" FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+            </Border>
+            <Button Grid.Column="1" Content="Copy"
+                    Click="CopyPairingCodeButton_Click"
+                    VerticalAlignment="Stretch" VerticalContentAlignment="Center"/>
+          </Grid>
           <TextBlock IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                      Text="Enter this code on the device you are adding. It works once."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
@@ -162,12 +218,16 @@
                      Foreground="{DynamicResource AppWarningBrush}"
                      FontSize="12" TextWrapping="Wrap"/>
         </StackPanel>
+      </StackPanel>
+
+      <StackPanel Classes="section">
+        <TextBlock Classes="section-header" Text="Add new server"/>
 
         <!-- Bootstrap only: a server this phone has never shared a network
              with, and so could never discover. A server paired with at home
              reports its own addresses and keeps working away from home without
              anything being typed - see docs/REMOTE-ACCESS-PLAN.md. -->
-        <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,0">
+        <Grid ColumnDefinitions="*,Auto">
           <TextBox Grid.Column="0" Text="{Binding ManualServerAddress}"
                    PlaceholderText="my-server.tail1234.ts.net:4533"
                    controls:SoftKeyboard.ReopenOnTap="True"
@@ -223,37 +283,18 @@
         </StackPanel>
       </StackPanel>
 
-      <Button Classes="action" Command="{Binding RescanCommand}">
-        <StackPanel Orientation="Horizontal" Spacing="14">
-          <materialIcons:MaterialIcon Kind="Autorenew" Width="22" Height="22" />
-          <TextBlock Text="Rescan Library" FontSize="16" VerticalAlignment="Center" />
-        </StackPanel>
-      </Button>
+      <!-- Which build this is, and what the process is costing: the two things
+           asked of a phone that is misbehaving, and neither is a setting.
+           The figures are polled once a second and only while this screen is
+           open (MobileMainViewModel.ActiveSheet starts/stops it) - a hot phone
+           and a stuttering track is a question about CPU and memory, and until
+           this existed there was no way to ask it from the device. -->
+      <StackPanel Classes="section" Margin="20,4,20,24">
+        <TextBlock Classes="section-header" Text="Additional information"/>
 
-      <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Margin="20,16,20,0" Spacing="8">
-        <StackPanel IsVisible="{Binding !HasMediaPermission}" Spacing="8">
-          <TextBlock Text="Music access permission was denied, so Flower cannot see your library."
-                     FontSize="14"
-                     Opacity="0.7"
-                     TextWrapping="Wrap" />
-          <Button Command="{Binding OpenAppSettingsCommand}" HorizontalAlignment="Left">
-            <TextBlock Text="Open App Settings" FontSize="14" />
-          </Button>
-        </StackPanel>
-        <TextBlock IsVisible="{Binding HasMediaPermission}"
-                    Text="Music access permission is granted."
-                    FontSize="14"
-                    Opacity="0.5" />
-      </StackPanel>
+        <TextBlock x:Name="VersionTextBlock" FontSize="12" Opacity="0.5"/>
 
-      <!-- Live process cost, polled once a second and only while this screen
-           is open (MobileMainViewModel.ActiveSheet starts/stops it). Here for
-           debugging rather than for listeners: a hot phone and a stuttering
-           track is a question about CPU and memory, and until this existed
-           there was no way to ask it from the device. -->
-      <StackPanel Margin="20,24,20,24" Spacing="6">
-        <TextBlock Text="Diagnostics" FontSize="13" Opacity="0.6" />
-        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" >
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,4,0,0">
           <TextBlock Grid.Row="0" Grid.Column="0" Text="CPU" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
           <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resources.CpuText}"
                      FontSize="14" FontFamily="monospace" Margin="0,2" />

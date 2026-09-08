@@ -148,7 +148,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand AddTrackToPlaylistCommand { get; }
     public ICommand CreatePlaylistCommand { get; }
     public ICommand OpenSettingsCommand { get; }
-    public ICommand RescanCommand { get; }
     public ICommand OpenAppSettingsCommand { get; }
     public ICommand DownloadTrackCommand { get; }
     public ICommand DeleteDownloadedFileCommand { get; }
@@ -1072,7 +1071,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(HasMediaPermission));
             ActiveSheet = MobileSheet.Settings;
         });
-        RescanCommand = new RelayCommand(async () => await Main.RescanLibraryAsync());
         OpenAppSettingsCommand = new RelayCommand(() => PlatformPermissions.Current?.OpenAppSettings());
         DownloadTrackCommand = new RelayCommand<TrackRowViewModel>(async row =>
         {

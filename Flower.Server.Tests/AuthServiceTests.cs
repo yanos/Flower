@@ -359,7 +359,7 @@ public class PairingCodeServiceTests
         for (var i = 0; i < 200; i++)
         {
             var (code, _) = service.GenerateCode();
-            Assert.Equal(8, code.Length);
+            Assert.Equal(5, code.Length);
             Assert.DoesNotContain(code, c => c is '0' or 'O' or '1' or 'I');
             Assert.All(code, c => Assert.True(char.IsAsciiLetterOrDigit(c)));
         }

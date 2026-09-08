@@ -20,7 +20,14 @@ namespace Flower.Server.Services;
 public sealed class PairingCodeService
 {
     private const string Alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I - avoids operator transcription errors
-    private const int CodeLength = 8;
+    // Five characters over the alphabet above is ~33.5 million codes, and a
+    // code lives ten minutes. That keyspace is not what makes guessing
+    // hopeless - PairingEndpoints' five-attempts-a-minute per-IP cap is (50
+    // tries inside a code's whole lifetime is a one-in-670,000 shot at one
+    // outstanding code). What five buys is the thing a code is actually for:
+    // being read aloud down a phone line and typed by someone holding a
+    // handset, in one breath and without a grouping separator.
+    private const int CodeLength = 5;
     private static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(10);
 
     private readonly ConcurrentDictionary<string, Entry> _codes = new();

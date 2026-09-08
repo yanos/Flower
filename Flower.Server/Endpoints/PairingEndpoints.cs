@@ -14,8 +14,9 @@ public static class PairingEndpoints
 {
     // Deliberately tight: a code is only valid for ~10 minutes total, so a hard
     // per-IP cap here is
-    // most of what stands between "brute-forceable 8-char code" and not - see
-    // PairingCodeService's alphabet/length for the resulting keyspace.
+    // most of what stands between "brute-forceable 5-char code" and not - see
+    // PairingCodeService's alphabet/length for the resulting keyspace, which is
+    // small enough that this limiter is load-bearing rather than belt-and-braces.
     private static readonly RateLimiter RedeemRateLimiter = new(max: 5, TimeSpan.FromSeconds(60));
 
     // Largest legitimate body here is empty - the redeem request carries

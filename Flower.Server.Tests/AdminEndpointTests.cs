@@ -482,6 +482,32 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, last.Response.StatusCode);
     }
+
+    // The group filter refuses every /api/admin route to a non-admin, and one
+    // route is worth pinning on its own: this is the one that mints a
+    // credential. A listener's phone that reached the button anyway - a stale
+    // WeAreAdmin, a hand-rolled request - must not be able to hand out access
+    // to the library it was merely lent.
+    [Fact]
+    public async Task A_paired_device_that_is_not_an_admin_cannot_issue_a_pairing_code()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Guest phone", device.PublicKeyBase64);
+
+        try
+        {
+            var context = await SignedAsync(
+                device, "POST", "/api/admin/pairing-codes", query: "grantsAdmin=true");
+
+            Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // The link a client's "Server Settings..." button opens, and the one thing
     // about it that is not obvious: which origin it names.
     //
