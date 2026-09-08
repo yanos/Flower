@@ -29,11 +29,20 @@
     </Style>
   </UserControl.Styles>
 
-  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="24,8,24,24">
+  <!-- No horizontal padding on the root: the top bar has to line up with the
+       fixed back/settings overlay in MobileMainView, which sits flush against
+       the window edge, so the 24px inset belongs to the rows below it rather
+       than to the whole sheet. -->
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="0,0,0,24">
 
     <!-- Top bar: collapse only - no "Now Playing" label, the sheet's own
-         content already makes that obvious. -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Height="52">
+         content already makes that obvious. Margin and button padding mirror
+         MobileMainView's back/settings overlay exactly (4 + Padding 10 -> the
+         back icon at x=14; 16 + Padding 10 -> the trailing control 26 in from
+         the right), and Height="52" starting at y=0 puts both icons on the
+         same 26px centre line, so the arrow doesn't jump when the sheet
+         opens. -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Height="52" Margin="4,0,16,0">
       <Button Grid.Column="0"
               Command="{Binding CloseSheetCommand}"
               Background="Transparent"
@@ -54,7 +63,7 @@
     </Grid>
 
     <!-- Album art + track info -->
-    <StackPanel Grid.Row="1" VerticalAlignment="Center" Spacing="24">
+    <StackPanel Grid.Row="1" VerticalAlignment="Center" Spacing="24" Margin="24,0">
       <!-- Tapping the art jumps to that track's album (closing this sheet) -
            see GoToCurrentlyPlayingAlbumCommand. -->
       <Button Command="{Binding GoToCurrentlyPlayingAlbumCommand}"
@@ -89,7 +98,7 @@
 
     <!-- Seek slider + times, flanked by shuffle/repeat toggles (same
          placement convention as desktop's CurrentlyPlayingControl). -->
-    <StackPanel Grid.Row="2" Margin="0,8,0,0">
+    <StackPanel Grid.Row="2" Margin="24,8,24,0">
       <Slider Minimum="0" Maximum="1"
               Value="{Binding CurrentlyPlaying.SeekPosition}" />
       <Grid ColumnDefinitions="Auto,*,*,Auto">
@@ -113,7 +122,7 @@
     </StackPanel>
 
     <!-- Transport controls -->
-    <Grid Grid.Row="3" ColumnDefinitions="*,*,*" Margin="0,20,0,0">
+    <Grid Grid.Row="3" ColumnDefinitions="*,*,*" Margin="24,20,24,0">
       <Button Grid.Column="0"
               Command="{Binding PreviousTrackCommand}"
               Background="Transparent" BorderThickness="0"

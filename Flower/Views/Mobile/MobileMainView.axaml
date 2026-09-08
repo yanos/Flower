@@ -175,8 +175,9 @@
            (Avalonia doesn't hit-test an unpainted Panel/Grid's empty area -
            same technique AlbumArtView/AlbumGridRowControl already rely on).
            Margin/button sizing here must stay in sync with ScreenSlot.axaml's
-           own header Margin="60,4,60,4" - see that file's comment for the
-           pixel math (back button: Padding 10 + 24px icon = 44px wide, at
+           own header Margin="60,4,60,4" and with NowPlayingView's top bar,
+           which draws its own back arrow over this one - see those files'
+           comments for the pixel math (back button: Padding 10 + 24px icon = 44px wide, at
            outer margin 4 -> right edge 48, +12px gap -> 60; settings button:
            Padding 10 + 22px icon = 42px wide, at outer margin 16 -> 60
            clearance).
