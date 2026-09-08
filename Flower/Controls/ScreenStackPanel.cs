@@ -244,6 +244,27 @@ public sealed class ScreenStackPanel : Panel
             && entranceWidth > 0
             && current.RenderTransform is TranslateTransform entrance)
         {
+            // Lay the incoming screen out where it will come to REST before
+            // shoving it off-screen to start from, or it does its first (and,
+            // for a virtualized list, its only) measure with a viewport that
+            // is entirely outside the window.
+            //
+            // A virtualizing panel realizes as many items as its effective
+            // viewport asks for, and the effective viewport is computed
+            // through the render transforms above it - so a screen measured
+            // at X=width has an empty one and realizes a single row. Sliding
+            // it back to 0 is a RenderTransform change, which repaints
+            // without invalidating any layout, so nothing ever asks that
+            // panel for the other rows again: the screen arrives holding one
+            // or two entries and stays that way until some later navigation
+            // happens to re-measure it. That is the "a view comes up nearly
+            // empty until I switch away and back" bug, and it is a property
+            // of the entrance animation rather than of any one screen - the
+            // Songs list, the album grids and the artist picker all virtualize.
+            //
+            // Synchronous, so no frame is ever rendered with the screen at 0:
+            // the transform below is set before this dispatcher job returns.
+            UpdateLayout();
             entrance.X = transition == MobileNavigationTransition.FromRight ? entranceWidth : -entranceWidth;
             EaseTransform(entrance, 0, null);
         }
