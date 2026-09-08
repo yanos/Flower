@@ -47,6 +47,23 @@ details:
   
   The short version: right now the client refuses to listen to the server about stars and last-played, because listening would sometimes eat your own change before it got out the door.
 
+Alice in chains
+Nirvana
+Peal Jam
+Oasis
+Green Day
+Radiohead 
+The Breeders
+Smashing Pumpkins
+NIN
+Soundgarden
+STP
+Cranberries
+RHCP
+?
+Counting Crows
+Korn
+
 ----
 1. The identity guard — and a second copy of it
 
