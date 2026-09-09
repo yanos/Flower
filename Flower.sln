@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks.iOS", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks.Android", "Flower.DeviceChecks.Android\Flower.DeviceChecks.Android.csproj", "{1563D7EF-3DFA-4B56-BD5A-A133F2C7C7EA}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE1}") = "Tests", "Tests", "{E6B9C0AA-B8A0-49AF-929B-75FB39DF04FA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -198,6 +200,13 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{515D402C-228F-46E9-B014-99EA9F4460E0} = {E6B9C0AA-B8A0-49AF-929B-75FB39DF04FA}
+		{2209AF84-651B-43A9-BCC9-27FB1B64B108} = {E6B9C0AA-B8A0-49AF-929B-75FB39DF04FA}
+		{6ECA890F-834D-4FA3-881C-97334D977176} = {E6B9C0AA-B8A0-49AF-929B-75FB39DF04FA}
+		{E6915A17-2368-45B1-AB42-EAD733852069} = {E6B9C0AA-B8A0-49AF-929B-75FB39DF04FA}
+		{1563D7EF-3DFA-4B56-BD5A-A133F2C7C7EA} = {E6B9C0AA-B8A0-49AF-929B-75FB39DF04FA}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {9FE20B88-9024-4850-9110-752D9E5F6EEB}
