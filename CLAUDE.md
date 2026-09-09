@@ -77,10 +77,30 @@ yet, and their absence is not a problem to fix. See `docs/agents/domain.md`.
 ```bash
 dotnet build Flower.Desktop/Flower.Desktop.csproj                               # Windows/Linux head
 dotnet build Flower.MacOS/Flower.MacOS.csproj                                   # macOS head, needs `sudo dotnet workload install macos`
+dotnet run --project Flower.MacOS/Flower.MacOS.csproj                           # launches it — or just hit Run in the IDE, see below
 dotnet test Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
 dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs flower-ffmpeg built
 dotnet run --project Flower.Server                                              # server + its browser UI
 ```
+
+**Every head runs from a clean clone with no setup — `dotnet run`, or the Run
+button in Rider or Visual Studio.** That is a property worth keeping, and the
+one thing that has broken it is bundle naming on the macOS head, which pins
+`_AppBundleName` to `$(AssemblyName)` to hold the line: .NET 10 started naming a
+desktop bundle after `ApplicationTitle`, while both IDEs still expect the older
+`$(AssemblyName).app`, so the head built fine and then failed to launch with
+`Flower.MacOS.app/Contents/MacOS/Flower.MacOS doesn't exist`. Pinned, the SDK
+and the IDEs agree on `Flower.MacOS.app`; `Info.plist` keeps the visible name
+`Flower`. The comment on that property in `Flower.MacOS.csproj` has the detail.
+No IDE run configuration is checked in, and none should need to be — if one
+does, the project file is the thing to fix, since `.idea/` and `.vscode/` are
+both gitignored and a config in them does not survive a clone.
+
+Decoding is the one thing a fresh clone does not get for free, on any head:
+`native/ffmpeg/artifacts/` is gitignored because the façade is built rather than
+restored, so until `native/ffmpeg/build-all.sh` has been run once the app
+launches, browses and syncs but logs `flower_ffmpeg is not loadable here` and
+plays nothing.
 
 The browser UI (`Flower.Web`) has no run configuration of its own — building
 `Flower.Server` publishes it and drops it in beside the binary, so running the
