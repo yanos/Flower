@@ -89,6 +89,116 @@ public class FfmpegDecoderTests : IDisposable
         Assert.True(differing < Frames / 100, $"{differing} of {Frames} frames did not match a 16-bit truncation");
     }
 
+    // The four formats below are in the ABI and in FfmpegSampleFormat, and
+    // until these tests two of them were called for by nothing at all - no
+    // caller, no test, no device check. That is the same state every defect in
+    // docs/AUDIO-QUALITY-PLAN.md was in before someone listened to a phone, so
+    // these make "the facade delivers four formats" a fact rather than a
+    // declaration. It is also the floor under docs/DECODER-LIBRARY-PLAN.md: a
+    // consumer that is not Flower will ask for S32 or F32 on its first day.
+
+    // The premise pack_s24 rests on, asserted rather than inferred from the
+    // packing appearing to work. FFmpeg has no 24-bit sample format at all, so
+    // a 24-bit source is decoded into S32 left-aligned - the three high bytes
+    // are the whole sample and the low byte is padding. Were that ever not
+    // true, S24 would go quietly wrong rather than fail.
+    [Fact]
+    public void An_S32_delivery_of_a_24_bit_source_leaves_the_low_byte_empty()
+    {
+        using var decoder = FfmpegDecoder.OpenPath(HiResFixture(), FfmpegSampleFormat.S32);
+        var pcm = DecodeAll(decoder);
+
+        Assert.Equal(Frames * 8, pcm.Length);
+
+        var occupied = 0;
+        for (var offset = 0; offset < pcm.Length; offset += 4)
+        {
+            if (pcm[offset] != 0)
+                occupied++;
+        }
+
+        Assert.Equal(0, occupied);
+    }
+
+    // And so the packing is a bandwidth decision rather than a lossy one: the
+    // same source asked for both ways carries the same bits, and S24 is S32
+    // with the padding dropped. This is the sentence pack_s24's comment makes
+    // and nothing checked.
+    [Fact]
+    public void S24_is_S32_with_the_padding_dropped()
+    {
+        var path = HiResFixture();
+
+        using var packed = FfmpegDecoder.OpenPath(path, FfmpegSampleFormat.S24);
+        var s24 = DecodeAll(packed);
+
+        using var wide = FfmpegDecoder.OpenPath(path, FfmpegSampleFormat.S32);
+        var s32 = DecodeAll(wide);
+
+        Assert.Equal(s24.Length / 3, s32.Length / 4);
+
+        var dropped = new byte[s24.Length];
+        for (int source = 0, destination = 0; source < s32.Length; source += 4, destination += 3)
+        {
+            dropped[destination] = s32[source + 1];
+            dropped[destination + 1] = s32[source + 2];
+            dropped[destination + 2] = s32[source + 3];
+        }
+
+        Assert.Equal(s24, dropped);
+    }
+
+    // A float significand holds 24 bits exactly, which is both why
+    // PcmSampleFormat stops at S24 and why F32 is worth exposing to someone
+    // whose own pipeline is float: a 24-bit source survives it with no
+    // rounding whatsoever. Exact equality rather than a tolerance, and that is
+    // the claim - v/2^23 is a division by a power of two on a value that fits
+    // the significand, so every step of it is exact.
+    [Fact]
+    public void F32_carries_a_24_bit_source_with_no_rounding_at_all()
+    {
+        using var decoder = FfmpegDecoder.OpenPath(HiResFixture(), FfmpegSampleFormat.F32);
+        var pcm = DecodeAll(decoder);
+
+        Assert.Equal(Frames * 8, pcm.Length);
+
+        var expected = SyntheticHiResWav.Ramp24();
+        var differing = 0;
+        for (var frame = 0; frame < Frames; frame++)
+        {
+            for (var channel = 0; channel < 2; channel++)
+            {
+                var delivered = BitConverter.ToSingle(pcm, frame * 8 + channel * 4);
+                if (delivered != expected(frame) / 8388608f)
+                    differing++;
+            }
+        }
+
+        Assert.Equal(0, differing);
+    }
+
+    // BytesPerFrame is what every caller sizes its buffers and its ring by, so
+    // a format whose advertised width disagreed with what flower_decoder_read
+    // actually writes would surface as a buffer bug in the caller rather than
+    // as a failure here. Four formats, one piece of arithmetic, no resampling
+    // asked for - so the frame count is exact rather than swresample's tail
+    // either side of it.
+    [Theory]
+    [InlineData(FfmpegSampleFormat.S16, 2)]
+    [InlineData(FfmpegSampleFormat.S24, 3)]
+    [InlineData(FfmpegSampleFormat.S32, 4)]
+    [InlineData(FfmpegSampleFormat.F32, 4)]
+    public void Every_format_delivers_the_width_it_advertises(FfmpegSampleFormat format, int bytesPerSample)
+    {
+        using var decoder = FfmpegDecoder.OpenPath(HiResFixture(), format);
+        var pcm = DecodeAll(decoder);
+
+        Assert.Equal(format, decoder.Format.SampleFormat);
+        Assert.Equal(2, decoder.Format.Channels);
+        Assert.Equal(bytesPerSample * 2, decoder.Format.BytesPerFrame);
+        Assert.Equal(Frames * decoder.Format.BytesPerFrame, pcm.Length);
+    }
+
     [Fact]
     public void The_source_format_is_reported_separately_from_the_delivered_one()
     {

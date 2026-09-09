@@ -52,6 +52,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server (same OpenSubsonic client protocol).
 - `AIRPLAY-BLUETOOTH-PLAN.md` — Bluetooth device picker + AirPlay output routing.
 - `AUDIOPHILE-PLAN.md` — EQ, gapless playback, DSD/APE, hi-res passthrough.
+- `DECODER-LIBRARY-PLAN.md` — extracting `native/ffmpeg/` into a general-purpose, audio-only decode library of its own: separate repo, NuGet with static natives, all four sample formats exposed. Flower stays on S24 throughout.
 - `AUDIO-QUALITY-PLAN.md` — render-path defect audit (clicks, looped fragments, truncated tails) and the PCM-level test suite that should prove them fixed.
 - `MEDIA-KEYS-PLAN.md` — hardware media keys + OS now-playing integration.
 - `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack, and the versioning (MinVer, git tags) it consumes. Cutting the first `v*` tag is Phase 1's one remaining task and gates the rest.
