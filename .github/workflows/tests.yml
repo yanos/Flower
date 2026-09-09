@@ -165,12 +165,12 @@ jobs:
       # minutes instead of fifteen, and the chain behind it is worth writing
       # down because none of it is visible from here.
       #
-      # Flower.iOS targets net10.0-ios26.0, which selects the
-      # Microsoft.iOS.Sdk.net10.0_26.0 pack, whose _RecommendedXcodeVersion is
-      # 26.0. Xamarin.Shared.Sdk.targets' _ValidateXcodeVersion compares
-      # major.minor for *equality*, not "at least" - so the build refused
-      # anything but Xcode 26.0.x, which is older than the runner image's
-      # default. This job used to pin it, and then had to spend ~10-15 minutes
+      # Flower.iOS targets net10.0-ios26.5, which selects the
+      # Microsoft.iOS.Sdk.net10.0_26.5 pack, whose _RecommendedXcodeVersion is
+      # 26.6. Xamarin.Shared.Sdk.targets' _ValidateXcodeVersion compares
+      # major.minor for *equality*, not "at least" - so the build accepts
+      # Xcode 26.6.x and nothing else, whichever side of the runner image's
+      # default that lands on. This job used to pin it, and then had to spend ~10-15 minutes
       # on `xcodebuild -downloadPlatform iOS` for every single push, because
       # the image's preinstalled simulator runtimes are matched to its newer
       # default Xcodes and actool will not compile an asset catalog without a
@@ -183,9 +183,10 @@ jobs:
       # What it gives up is the guarantee that the Xcode underneath is the one
       # Microsoft blessed for this pack - acceptable for a gate that exists to
       # catch compile breaks, and not something to carry into a build that
-      # ships. Bumping the TFM instead would fix it only until GitHub next
-      # moves the image's default Xcode, since the check wants exact equality
-      # in both directions.
+      # ships. The TFM has since moved (26.0 -> 26.5, to match the Xcode a
+      # developer mac actually has), which changes nothing here: the check
+      # wants exact equality in both directions, so any TFM is one image
+      # update away from disagreeing with the runner's default Xcode again.
       - name: Build for iOS simulator
         run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false
 
@@ -255,7 +256,7 @@ jobs:
       - name: Install iOS workload
         run: dotnet workload install ios
 
-      # Flower.DeviceChecks.iOS targets net10.0-ios26.0, same as Flower.iOS,
+      # Flower.DeviceChecks.iOS targets net10.0-ios26.5, same as Flower.iOS,
       # so it hits the same _ValidateXcodeVersion equality check that
       # build-apple disables - see the long note there. The script takes no
       # build arguments, but MSBuild reads environment variables as

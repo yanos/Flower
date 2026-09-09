@@ -25,7 +25,7 @@ cd "$(dirname "$0")/.."
 
 PROJECT="Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj"
 BUNDLE_ID="com.yanos.flower.devicechecks"
-APP="Flower.DeviceChecks.iOS/bin/Debug/net10.0-ios26.0/iossimulator-arm64/Flower.DeviceChecks.iOS.app"
+APP="Flower.DeviceChecks.iOS/bin/Debug/net10.0-ios26.5/iossimulator-arm64/Flower.DeviceChecks.iOS.app"
 TRANSCRIPT="flower-checks.log"
 TIMEOUT_SECONDS=180
 DEVICE="${1:-}"
