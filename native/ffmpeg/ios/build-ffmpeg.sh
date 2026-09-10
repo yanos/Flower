@@ -26,7 +26,10 @@ deployment_target=12.2
 # What a music library is made of, plus the containers a server might hand over
 # on a stream. Anything not listed here does not decode on a phone - which is
 # the point of listing it rather than a limitation to be sorry about.
-decoders="mp3,mp3float,aac,aac_latm,alac,flac,vorbis,opus,wavpack,ape,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_u8,pcm_f32le,pcm_f64le"
+# The dsd_* decoders are here because the dsf demuxer below is: a .dsf that
+# demuxes and then finds no decoder fails later and worse than one that was
+# never claimed at all, which is what this list did until now.
+decoders="mp3,mp3float,aac,aac_latm,alac,flac,vorbis,opus,wavpack,ape,dsd_lsbf,dsd_msbf,dsd_lsbf_planar,dsd_msbf_planar,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_u8,pcm_f32le,pcm_f64le"
 demuxers="mov,mp3,flac,wav,w64,ogg,matroska,aac,ape,wv,aiff,dsf"
 parsers="mpegaudio,aac,aac_latm,flac,vorbis,opus"
 
