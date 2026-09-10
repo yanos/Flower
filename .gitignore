@@ -501,3 +501,8 @@ native/ffmpeg/artifacts/
 native/ffmpeg/ios/ffmpeg/
 native/ffmpeg/android/ffmpeg/
 native/ffmpeg/windows/ffmpeg/
+
+# The FFAudio.NET package switch, written by scripts/use-ffaudio-package.sh so
+# Flower can be built against a CI-built package instead of its own copy of the
+# façade. A local testing state, not a fact about the repo.
+FFAudioPackage.props
