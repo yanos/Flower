@@ -11,6 +11,24 @@ namespace Flower.Audio;
 // Other platforms have no corresponding work, so they leave Current null.
 public interface IPlatformAudioSession
 {
+    // Make the platform's audio output real enough to be asked its rate, before
+    // anything opens a device on it. GaplessFormat freezes the pipeline's sample
+    // rate from the first device the sink opens and never revisits it, so a
+    // platform that answers that question with a placeholder poisons every track
+    // for the life of the process - and does it silently, because a resampled
+    // track is the right length, in tune, and merely dull.
+    //
+    // That is not hypothetical: an iOS session that has never been made active
+    // reports its RemoteIO unit at 8000Hz, and Flower rendered a whole library
+    // through 4kHz of bandwidth without a single check noticing. The fixtures
+    // are 440Hz sine waves, which survive the trip perfectly.
+    //
+    // Called once, before IAudioSink.Start. Implementations must not claim the
+    // hardware away from another app to answer it - see AppleAudioSession, which
+    // activates the deliberately mixable launch category rather than the
+    // exclusive one ActivateForPlayback later takes.
+    void PrepareForOutput();
+
     void ActivateForPlayback();
     void DeactivateAfterPlayback();
 

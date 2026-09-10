@@ -655,6 +655,33 @@ namespace Flower.Audio
                 else
                     GaplessFormat.ConfigureSampleRate(nativeSampleRate);
 
+                // Said out loud because the failure it guards against is
+                // otherwise completely silent. This value is frozen here and
+                // never revisited, so a device that was not ready to be asked
+                // costs every track for the rest of the process - and the
+                // symptom is not a crash or a glitch but merely dull audio,
+                // which no automated check in this repo can fail: the fixtures
+                // are 440Hz sine waves and a 440Hz sine survives any amount of
+                // low-passing intact. An iOS session that had never been
+                // activated reported 8000Hz and the whole library played back
+                // through 4kHz of bandwidth.
+                //
+                // A warning rather than a refusal: no ordinary playback device
+                // runs below 32kHz, but "ordinary" is not something this layer
+                // can rule on, and a phone routed somewhere strange is still
+                // owed its audio. The platform's own fix is
+                // IPlatformAudioSession.PrepareForOutput, which runs before
+                // this; this is the tripwire for the next platform that needs
+                // one and does not have one yet.
+                if (nativeSampleRate is > 0 and < 32000)
+                {
+                    _logger.LogWarning(
+                        "The output device reports {SampleRate}Hz, which is below any ordinary playback rate. "
+                        + "The pipeline is now frozen there and every track will be resampled down to it. "
+                        + "This usually means the device was opened before the platform's audio session was ready",
+                        nativeSampleRate);
+                }
+
                 // Rebuilt only when it would actually be a different stage.
                 // Replacing it drops the EQ curve, the timing and the gain the
                 // caller set on it, which are re-applied right after

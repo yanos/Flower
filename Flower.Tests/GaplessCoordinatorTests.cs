@@ -10,6 +10,7 @@ namespace Flower.Tests;
 // Exercises GaplessCoordinator's handover/idempotency/generation state
 // machine against a fake ITrackDecoder, so these tests never touch real
 // LibVLC decode.
+[Collection("GaplessFormat")]
 public class GaplessCoordinatorTests
 {
     private sealed class Harness

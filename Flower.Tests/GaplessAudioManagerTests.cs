@@ -16,6 +16,7 @@ namespace Flower.Tests;
 // decode. GaplessCoordinator's own handover/idempotency/generation state
 // machine is already covered in GaplessCoordinatorTests.cs and isn't
 // re-tested here.
+[Collection("GaplessFormat")]
 public class GaplessAudioManagerTests
 {
     private static Track T(string title, TimeSpan duration) =>
@@ -459,15 +460,70 @@ public class GaplessAudioManagerTests
         Assert.Equal(0, paused);
     }
 
+    // The pipeline's sample rate is read off the device the sink opens and then
+    // frozen for the life of the process, so a platform that needs to make its
+    // output real before being asked has exactly one chance to do it: before
+    // Start. iOS is that platform - an AVAudioSession that has never been
+    // activated reports 8000Hz - and the cost of getting this ordering wrong is
+    // a whole library resampled down to telephone bandwidth, which is in tune,
+    // the right length, and therefore invisible to every other check here.
+    //
+    // Goes through the production constructor deliberately: the ordering under
+    // test lives in StartSink, which the test-seam constructor skips.
+    [Fact]
+    public void The_platform_session_is_prepared_before_the_sink_opens_a_device()
+    {
+        var previousSession = PlatformAudioSession.Current;
+
+        // The production constructor settles the canonical format as a side
+        // effect - that is the whole of what StartSink is for - and both of
+        // those are process-wide. Left set, S24 changes BytesPerFrame for every
+        // test that runs afterwards, which is how this test first announced
+        // itself: as an unrelated failure in GaplessCoordinatorTests.
+        var previousFormat = GaplessFormat.SampleFormat;
+        var previousRate = GaplessFormat.SampleRate;
+
+        var sink = new FakeAudioSink();
+        var session = new RecordingPlatformAudioSession();
+        var sinkWasStartedFirst = true;
+        session.OnPrepareForOutput = () => sinkWasStartedFirst = sink.IsStarted;
+
+        try
+        {
+            PlatformAudioSession.Current = session;
+            using var manager = new GaplessAudioManager(sink, NullLogger<GaplessAudioManager>.Instance);
+
+            Assert.Equal(1, session.PrepareForOutputCount);
+            Assert.False(sinkWasStartedFirst);
+            Assert.True(sink.IsStarted);
+        }
+        finally
+        {
+            PlatformAudioSession.Current = previousSession;
+            GaplessFormat.ConfigureSampleFormat(previousFormat);
+            GaplessFormat.ConfigureSampleRate(previousRate);
+        }
+    }
+
     private sealed class RecordingPlatformAudioSession : IPlatformAudioSession
     {
         public int ActivationCount { get; private set; }
         public int DeactivationCount { get; private set; }
+        public int PrepareForOutputCount { get; private set; }
 
         public event EventHandler? OutputDeviceLost;
         public event EventHandler? PlaybackInterrupted;
         public event EventHandler<PlaybackInterruptionEndedEventArgs>? PlaybackInterruptionEnded;
 
+        // Lets a test observe the world at the moment PrepareForOutput runs,
+        // which is the only thing that makes it worth calling at all.
+        public Action? OnPrepareForOutput { get; set; }
+
+        public void PrepareForOutput()
+        {
+            PrepareForOutputCount++;
+            OnPrepareForOutput?.Invoke();
+        }
         public void ActivateForPlayback() => ActivationCount++;
         public void DeactivateAfterPlayback() => DeactivationCount++;
 

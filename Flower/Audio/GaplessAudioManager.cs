@@ -83,6 +83,19 @@ namespace Flower.Audio
             // will not open at 24 bits narrows this back and reopens.
             GaplessFormat.ConfigureSampleFormat(PcmSampleFormat.S24);
 
+            // Before the open, because the open is what freezes the rate. A
+            // platform whose output is not ready yet answers "what rate are
+            // you?" with a placeholder, and that placeholder is then the
+            // pipeline's rate forever - see IPlatformAudioSession.
+            //
+            // Read off the static seam rather than taken as an argument because
+            // this runs from a constructor initialiser, which is the same
+            // reason the instance field below defaults to it. Null on every
+            // platform that has no session work to do, which is every platform
+            // but iOS - so this is one unconditional line here rather than a
+            // platform test.
+            PlatformAudioSession.Current?.PrepareForOutput();
+
             // The device tells MiniaudioSink its native rate and settles the
             // sample format during Start, which is after this - so both are
             // sized for the worst case rather than for what is configured

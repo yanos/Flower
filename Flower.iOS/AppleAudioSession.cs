@@ -100,6 +100,33 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
         _mediaServicesResetObserver = AVAudioSession.Notifications.ObserveMediaServicesWereReset(OnMediaServicesWereReset);
     }
 
+    public void PrepareForOutput()
+    {
+        // An AVAudioSession that has never been made active does not yet have
+        // real hardware behind it, and reports its RemoteIO unit at 8000Hz.
+        // MiniaudioSink is about to open a device and hand that number to
+        // GaplessFormat, which freezes it for the life of the process - so
+        // every track would be resampled to 8kHz and play back with 4kHz of
+        // bandwidth. In tune, right length, and unlistenable.
+        //
+        // Activating here is safe precisely because of the decision the
+        // constructor already made: the launch shape is Playback with
+        // MixWithOthers, and a mixable session takes nobody's audio away. The
+        // exclusive claim is still ActivateForPlayback's to make, and still
+        // deferred to the first press of play.
+        //
+        // Failure is logged and not thrown. A session that would not activate
+        // leaves the rate wherever it was, which is the behaviour that existed
+        // before this method - bad audio rather than no audio.
+        ConfigureCategory(SessionShape.Silent);
+
+        if (!_session.SetActive(true, out var activationError))
+            _logger.LogWarning("Could not activate the iOS audio session before opening the output device; "
+                + "the pipeline may settle on a placeholder sample rate: {Error}", activationError);
+
+        LogSessionState("prepared for output");
+    }
+
     public void ActivateForPlayback()
     {
         // Set again rather than assumed to still hold: the category is

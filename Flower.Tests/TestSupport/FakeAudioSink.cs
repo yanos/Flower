@@ -58,7 +58,17 @@ public sealed class FakeAudioSink : IAudioSink
 
     public Equalizer? AppliedEqualizer { get; private set; }
 
-    public void Start(GaplessRingBuffer ringBuffer) => _ring = ringBuffer;
+    // Whether Start has been called, for the one test that cares about what
+    // happened before the device was opened rather than after - the pipeline's
+    // sample rate is frozen by that open, so anything that has to influence it
+    // has to have run already. See GaplessAudioManager.StartSink.
+    public bool IsStarted { get; private set; }
+
+    public void Start(GaplessRingBuffer ringBuffer)
+    {
+        _ring = ringBuffer;
+        IsStarted = true;
+    }
 
     public void ApplyEqualizer(Equalizer? equalizer) => AppliedEqualizer = equalizer;
 
