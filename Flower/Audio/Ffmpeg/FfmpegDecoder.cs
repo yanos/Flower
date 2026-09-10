@@ -89,7 +89,7 @@ namespace Flower.Audio.Ffmpeg
         }
 
         // Whether this build can decode through the façade at all - i.e.
-        // whether flower_ffmpeg is present, loadable, and the ABI this
+        // whether ffaudio is present, loadable, and the ABI this
         // assembly was compiled against.
         //
         // A question worth asking rather than assuming, because the answer is
@@ -135,7 +135,7 @@ namespace Flower.Audio.Ffmpeg
             var actual = FfmpegNative.AbiVersion();
             if (actual != FfmpegNative.ExpectedAbiVersion)
                 throw new FfmpegDecodeException(
-                    $"flower_ffmpeg reports ABI {actual}, this build expects {FfmpegNative.ExpectedAbiVersion}",
+                    $"ffaudio reports ABI {actual}, this build expects {FfmpegNative.ExpectedAbiVersion}",
                     FfmpegNative.Ok);
         }
 

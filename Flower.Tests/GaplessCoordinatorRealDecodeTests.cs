@@ -18,7 +18,7 @@ namespace Flower.Tests;
 // fixtures, captured through a FakeAudioSink - proves the actual splice at
 // a natural handover is clean (no gap, no repeated/rewound tail), which
 // GaplessCoordinatorTests (fake decoder) can't verify since it never
-// produces real PCM. Needs a built flower-ffmpeg, same as every other
+// produces real PCM. Needs a built ffaudio, same as every other
 // RequiresFfmpeg test.
 [Trait("Category", "RequiresFfmpeg")]
 public class GaplessCoordinatorRealDecodeTests : IDisposable

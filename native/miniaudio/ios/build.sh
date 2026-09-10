@@ -108,7 +108,7 @@ build_slice iphonesimulator "arm64-apple-ios${DEPLOYMENT_TARGET}-simulator" ios-
 FRAMEWORKS_OUT="$REPO_ROOT/Flower.iOS/Frameworks"
 # Only this framework, not the slice directories that hold it. They used to be
 # removed wholesale, which was harmless while miniaudio was the only thing in
-# them and silently deleted flower_ffmpeg.framework the first time it was not.
+# them and silently deleted ffaudio.framework the first time it was not.
 for slice in ios-device ios-simulator; do
     mkdir -p "$FRAMEWORKS_OUT/$slice"
     rm -rf "$FRAMEWORKS_OUT/$slice/$FRAMEWORK_NAME.framework"

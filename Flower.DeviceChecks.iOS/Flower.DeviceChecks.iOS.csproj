@@ -50,12 +50,12 @@
 
        No miniaudio here: this runner decodes and never plays. -->
   <ItemGroup Condition="('$(Platform)' == 'iPhoneSimulator') OR $(RuntimeIdentifier.StartsWith('iossimulator'))">
-    <NativeReference Include="..\Flower.iOS\Frameworks\ios-simulator\flower_ffmpeg.framework">
+    <NativeReference Include="..\Flower.iOS\Frameworks\ios-simulator\ffaudio.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>
   <ItemGroup Condition="('$(Platform)' == 'iPhone') OR ('$(RuntimeIdentifier)' == 'ios') OR $(RuntimeIdentifier.StartsWith('ios-')) OR $(RuntimeIdentifier.StartsWith('ios.'))">
-    <NativeReference Include="..\Flower.iOS\Frameworks\ios-device\flower_ffmpeg.framework">
+    <NativeReference Include="..\Flower.iOS\Frameworks\ios-device\ffaudio.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>

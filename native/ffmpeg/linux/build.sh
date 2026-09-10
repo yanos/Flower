@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds libflower_ffmpeg.so for Linux against whatever FFmpeg pkg-config
+# Builds libffaudio.so for Linux against whatever FFmpeg pkg-config
 # finds, which on a development machine and on CI alike is the distro's own:
 #
 #     sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev \
@@ -21,11 +21,11 @@ cmake --build "$build" --config Release -j
 
 out="$root/native/ffmpeg/artifacts/linux"
 mkdir -p "$out"
-cp "$build/libflower_ffmpeg.so" "$out/"
-echo "built $out/libflower_ffmpeg.so"
+cp "$build/libffaudio.so" "$out/"
+echo "built $out/libffaudio.so"
 
 # The same sanity check the macOS script ends on: eight exported symbols and
 # no more, because a façade that exported FFmpeg's own would be a second way
 # to reach it. Nothing loads the library here - that is FfmpegDecoder's
 # IsAvailable probe, which the decode checks run for real.
-nm -D --defined-only "$out/libflower_ffmpeg.so" | grep flower_ || true
+nm -D --defined-only "$out/libffaudio.so" | grep ffaudio_ || true

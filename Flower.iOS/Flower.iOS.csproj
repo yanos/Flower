@@ -79,7 +79,7 @@
        warning - just missing at runtime). Two folders conditioned on the
        target instead, which is the arrangement VideoLAN.LibVLC.iOS used for
        its own natives back when this app still shipped LibVLC. -->
-  <!-- flower_ffmpeg is the same arrangement for the same reasons
+  <!-- ffaudio is the same arrangement for the same reasons
        (native/ffmpeg/ios/build.sh), with one difference worth knowing: FFmpeg
        itself is linked into it statically, because a phone has no package
        manager to find one and shipping four more libraries per slice to reach
@@ -89,7 +89,7 @@
     <NativeReference Include="Frameworks\ios-simulator\miniaudio.framework">
       <Kind>Framework</Kind>
     </NativeReference>
-    <NativeReference Include="Frameworks\ios-simulator\flower_ffmpeg.framework">
+    <NativeReference Include="Frameworks\ios-simulator\ffaudio.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>
@@ -97,7 +97,7 @@
     <NativeReference Include="Frameworks\ios-device\miniaudio.framework">
       <Kind>Framework</Kind>
     </NativeReference>
-    <NativeReference Include="Frameworks\ios-device\flower_ffmpeg.framework">
+    <NativeReference Include="Frameworks\ios-device\ffaudio.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>

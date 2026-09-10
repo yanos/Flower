@@ -5,15 +5,15 @@ using System.Runtime.InteropServices;
 
 namespace Flower.Audio.Ffmpeg
 {
-    // P/Invoke for native/ffmpeg/flower_ffmpeg.h. Nothing above this file
+    // P/Invoke for native/ffmpeg/ffaudio.h. Nothing above this file
     // knows FFmpeg exists; nothing in it knows anything about FFmpeg either,
     // because the façade's whole purpose is that its ABI is eight functions
     // over ints and byte buffers. See that header for why.
     internal static class FfmpegNative
     {
-        internal const string Library = "flower_ffmpeg";
+        internal const string Library = "ffaudio";
 
-        // Must match FLOWER_FFMPEG_ABI_VERSION. Checked once at load, because
+        // Must match FFAUDIO_ABI_VERSION. Checked once at load, because
         // the failure mode of a mismatched library is a struct read at the
         // wrong offsets rather than an error.
         internal const int ExpectedAbiVersion = 1;
@@ -47,14 +47,14 @@ namespace Flower.Audio.Ffmpeg
         // The façade is not on a default search path in any of the three
         // situations that matter - a dev build reading it out of
         // native/ffmpeg/artifacts, a test run, and a packaged app - so each is
-        // named rather than left to the loader. FLOWER_FFMPEG is first so a
+        // named rather than left to the loader. FFAUDIO_LIBRARY is first so a
         // bisect against a differently-built FFmpeg needs no rebuild.
         private static IntPtr Resolve(string name, Assembly assembly, DllImportSearchPath? path)
         {
             if (name != Library)
                 return IntPtr.Zero;
 
-            if (Environment.GetEnvironmentVariable("FLOWER_FFMPEG") is { Length: > 0 } explicitPath
+            if (Environment.GetEnvironmentVariable("FFAUDIO_LIBRARY") is { Length: > 0 } explicitPath
                 && NativeLibrary.TryLoad(explicitPath, out var fromEnvironment))
                 return fromEnvironment;
 
@@ -66,7 +66,7 @@ namespace Flower.Audio.Ffmpeg
             // same thing about the same failure.
             if (OperatingSystem.IsIOS())
             {
-                var framework = Path.Combine(AppContext.BaseDirectory, "Frameworks", "flower_ffmpeg.framework", "flower_ffmpeg");
+                var framework = Path.Combine(AppContext.BaseDirectory, "Frameworks", "ffaudio.framework", "ffaudio");
                 return NativeLibrary.TryLoad(framework, out var embedded) ? embedded : IntPtr.Zero;
             }
 
@@ -81,9 +81,9 @@ namespace Flower.Audio.Ffmpeg
 
         private static string[] Candidates()
         {
-            var file = OperatingSystem.IsWindows() ? "flower_ffmpeg.dll"
-                : OperatingSystem.IsMacOS() ? "libflower_ffmpeg.dylib"
-                : "libflower_ffmpeg.so";
+            var file = OperatingSystem.IsWindows() ? "ffaudio.dll"
+                : OperatingSystem.IsMacOS() ? "libffaudio.dylib"
+                : "libffaudio.so";
 
             var baseDirectory = AppContext.BaseDirectory;
             var platform = OperatingSystem.IsWindows() ? "windows"
@@ -120,15 +120,15 @@ namespace Flower.Audio.Ffmpeg
             public long DurationMs;
         }
 
-        [DllImport(Library, EntryPoint = "flower_abi_version", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(Library, EntryPoint = "ffaudio_abi_version", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int AbiVersion();
 
-        [DllImport(Library, EntryPoint = "flower_decoder_open_path", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        [DllImport(Library, EntryPoint = "ffaudio_decoder_open_path", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
         internal static extern int OpenPath([MarshalAs(UnmanagedType.LPUTF8Str)] string path,
                                             int requestedFormat, int requestedSampleRate, int requestedChannels,
                                             out IntPtr decoder);
 
-        [DllImport(Library, EntryPoint = "flower_decoder_open_io", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        [DllImport(Library, EntryPoint = "ffaudio_decoder_open_io", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
         internal static extern int OpenIo(IntPtr opaque,
                                           IntPtr read, IntPtr seek,
                                           long size, int seekable,
@@ -136,19 +136,19 @@ namespace Flower.Audio.Ffmpeg
                                           int requestedFormat, int requestedSampleRate, int requestedChannels,
                                           out IntPtr decoder);
 
-        [DllImport(Library, EntryPoint = "flower_decoder_get_format", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(Library, EntryPoint = "ffaudio_decoder_get_format", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int GetFormat(IntPtr decoder, out DecoderFormat format);
 
-        [DllImport(Library, EntryPoint = "flower_decoder_read", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(Library, EntryPoint = "ffaudio_decoder_read", CallingConvention = CallingConvention.Cdecl)]
         internal static extern unsafe int Read(IntPtr decoder, byte* buffer, int bufferBytes, out int bytesWritten);
 
-        [DllImport(Library, EntryPoint = "flower_decoder_seek", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(Library, EntryPoint = "ffaudio_decoder_seek", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int Seek(IntPtr decoder, long positionMs, out long landedMs);
 
-        [DllImport(Library, EntryPoint = "flower_decoder_close", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(Library, EntryPoint = "ffaudio_decoder_close", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void Close(IntPtr decoder);
 
-        [DllImport(Library, EntryPoint = "flower_error_string", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(Library, EntryPoint = "ffaudio_error_string", CallingConvention = CallingConvention.Cdecl)]
         internal static extern unsafe void ErrorString(int code, byte* buffer, int bufferBytes);
 
         internal static unsafe string Describe(int code)

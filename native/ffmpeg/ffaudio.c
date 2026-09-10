@@ -1,4 +1,4 @@
-#include "flower_ffmpeg.h"
+#include "ffaudio.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -13,9 +13,9 @@
 // 32KB is FFmpeg's own default for a custom AVIOContext. Bigger buffers do
 // not help a decoder that is already reading ahead; smaller ones turn one
 // range request into several.
-#define FLOWER_IO_BUFFER_BYTES 32768
+#define FFAUDIO_IO_BUFFER_BYTES 32768
 
-struct flower_decoder {
+struct ffaudio_decoder {
     AVFormatContext *fmt;
     AVIOContext     *avio;
     AVCodecContext  *codec;
@@ -24,7 +24,7 @@ struct flower_decoder {
     AVFrame         *frame;
     int              stream_index;
 
-    flower_decoder_format format;
+    ffaudio_decoder_format format;
 
     // What swresample is asked to produce, which is not always what the
     // caller gets: packed 24-bit is not one of swresample's formats, so S24
@@ -44,8 +44,8 @@ struct flower_decoder {
     int      finished;         // the codec has been fully flushed
 
     void           *io_opaque;
-    flower_read_fn  io_read;
-    flower_seek_fn  io_seek;
+    ffaudio_read_fn  io_read;
+    ffaudio_seek_fn  io_seek;
     int             seekable;
 
     int64_t last_frame_ms;
@@ -63,7 +63,7 @@ struct flower_decoder {
 // has to happen here or a finished track never finishes.
 static int io_read_packet(void *opaque, uint8_t *buffer, int buf_size)
 {
-    flower_decoder *dec = (flower_decoder *)opaque;
+    ffaudio_decoder *dec = (ffaudio_decoder *)opaque;
     int read = dec->io_read(dec->io_opaque, buffer, buf_size);
     if (read == 0)
         return AVERROR_EOF;
@@ -74,13 +74,13 @@ static int io_read_packet(void *opaque, uint8_t *buffer, int buf_size)
 
 static int64_t io_seek(void *opaque, int64_t offset, int whence)
 {
-    flower_decoder *dec = (flower_decoder *)opaque;
+    ffaudio_decoder *dec = (ffaudio_decoder *)opaque;
     // AVSEEK_FORCE only asks the access layer to try harder; it says nothing
     // this façade can act on, and left in place it would turn a plain
     // SEEK_SET into an unrecognised whence.
     int base = whence & ~AVSEEK_FORCE;
     if (base == AVSEEK_SIZE)
-        base = FLOWER_SEEK_SIZE;
+        base = FFAUDIO_SEEK_SIZE;
     return dec->io_seek(dec->io_opaque, offset, base);
 }
 
@@ -89,17 +89,17 @@ static int64_t io_seek(void *opaque, int64_t offset, int whence)
 static enum AVSampleFormat swr_format_for(int32_t requested)
 {
     switch (requested) {
-        case FLOWER_SAMPLE_S16: return AV_SAMPLE_FMT_S16;
-        case FLOWER_SAMPLE_S24: return AV_SAMPLE_FMT_S32;
-        case FLOWER_SAMPLE_S32: return AV_SAMPLE_FMT_S32;
-        case FLOWER_SAMPLE_F32: return AV_SAMPLE_FMT_FLT;
+        case FFAUDIO_SAMPLE_S16: return AV_SAMPLE_FMT_S16;
+        case FFAUDIO_SAMPLE_S24: return AV_SAMPLE_FMT_S32;
+        case FFAUDIO_SAMPLE_S32: return AV_SAMPLE_FMT_S32;
+        case FFAUDIO_SAMPLE_F32: return AV_SAMPLE_FMT_FLT;
         default:                return AV_SAMPLE_FMT_NONE;
     }
 }
 
 static int delivered_bytes_per_sample(int32_t requested)
 {
-    return requested == FLOWER_SAMPLE_S16 ? 2 : requested == FLOWER_SAMPLE_S24 ? 3 : 4;
+    return requested == FFAUDIO_SAMPLE_S16 ? 2 : requested == FFAUDIO_SAMPLE_S24 ? 3 : 4;
 }
 
 // FFmpeg carries 24-bit PCM left-aligned in a 32-bit container, so the three
@@ -118,39 +118,39 @@ static void pack_s24(const uint8_t *src, uint8_t *dst, int samples)
     }
 }
 
-static int ensure_buffers(flower_decoder *dec, int frames)
+static int ensure_buffers(ffaudio_decoder *dec, int frames)
 {
     if (frames <= dec->scratch_frames)
-        return FLOWER_OK;
+        return FFAUDIO_OK;
 
     int scratch_bytes = frames * dec->swr_bytes_per_frame;
     int pending_bytes = frames * dec->out_bytes_per_frame;
 
     uint8_t *scratch = (uint8_t *)av_realloc(dec->scratch, (size_t)scratch_bytes);
     if (!scratch)
-        return FLOWER_ERR_NO_MEMORY;
+        return FFAUDIO_ERR_NO_MEMORY;
     dec->scratch = scratch;
 
     uint8_t *pending = (uint8_t *)av_realloc(dec->pending, (size_t)pending_bytes);
     if (!pending)
-        return FLOWER_ERR_NO_MEMORY;
+        return FFAUDIO_ERR_NO_MEMORY;
     dec->pending = pending;
 
     dec->scratch_frames = frames;
     dec->pending_capacity = pending_bytes;
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 }
 
 // Converts one decoded AVFrame into dec->pending, replacing whatever was
 // there. Callers only ever call this with pending already consumed.
-static int stage_frame(flower_decoder *dec)
+static int stage_frame(ffaudio_decoder *dec)
 {
     int max_out = (int)swr_get_out_samples(dec->swr, dec->frame->nb_samples);
     if (max_out < 0)
         return max_out;
 
     int rc = ensure_buffers(dec, max_out);
-    if (rc != FLOWER_OK)
+    if (rc != FFAUDIO_OK)
         return rc;
 
     uint8_t *out[1] = { dec->scratch };
@@ -160,7 +160,7 @@ static int stage_frame(flower_decoder *dec)
     if (converted < 0)
         return converted;
 
-    if (dec->requested_format == FLOWER_SAMPLE_S24)
+    if (dec->requested_format == FFAUDIO_SAMPLE_S24)
         pack_s24(dec->scratch, dec->pending, converted * dec->format.channels);
     else
         memcpy(dec->pending, dec->scratch, (size_t)converted * dec->out_bytes_per_frame);
@@ -172,20 +172,20 @@ static int stage_frame(flower_decoder *dec)
         AVRational tb = dec->fmt->streams[dec->stream_index]->time_base;
         dec->last_frame_ms = av_rescale_q(dec->frame->pts, tb, (AVRational){ 1, 1000 });
     }
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 }
 
 // Drains swresample's own held samples once the codec has nothing left. Its
 // resampler keeps a tail; without this the last few milliseconds of every
 // track are dropped, which across an album is an audible gap at each seam.
-static int stage_swr_tail(flower_decoder *dec)
+static int stage_swr_tail(ffaudio_decoder *dec)
 {
     int remaining = (int)swr_get_out_samples(dec->swr, 0);
     if (remaining <= 0)
-        return FLOWER_EOF;
+        return FFAUDIO_EOF;
 
     int rc = ensure_buffers(dec, remaining);
-    if (rc != FLOWER_OK)
+    if (rc != FFAUDIO_OK)
         return rc;
 
     uint8_t *out[1] = { dec->scratch };
@@ -193,24 +193,24 @@ static int stage_swr_tail(flower_decoder *dec)
     if (converted < 0)
         return converted;
     if (converted == 0)
-        return FLOWER_EOF;
+        return FFAUDIO_EOF;
 
-    if (dec->requested_format == FLOWER_SAMPLE_S24)
+    if (dec->requested_format == FFAUDIO_SAMPLE_S24)
         pack_s24(dec->scratch, dec->pending, converted * dec->format.channels);
     else
         memcpy(dec->pending, dec->scratch, (size_t)converted * dec->out_bytes_per_frame);
 
     dec->pending_bytes = converted * dec->out_bytes_per_frame;
     dec->pending_offset = 0;
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 }
 
 // One turn of the decode loop: pull a frame out of the codec, feeding it
 // packets until it has one. Leaves the result in dec->pending.
-static int stage_next(flower_decoder *dec)
+static int stage_next(ffaudio_decoder *dec)
 {
     if (dec->finished)
-        return FLOWER_EOF;
+        return FFAUDIO_EOF;
 
     for (;;) {
         int rc = avcodec_receive_frame(dec->codec, dec->frame);
@@ -256,21 +256,21 @@ static int stage_next(flower_decoder *dec)
 
 // --------------------------------------------------------------------- open
 
-static int finish_open(flower_decoder *dec)
+static int finish_open(ffaudio_decoder *dec)
 {
     int stream = av_find_best_stream(dec->fmt, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
     if (stream < 0)
-        return FLOWER_ERR_NO_AUDIO;
+        return FFAUDIO_ERR_NO_AUDIO;
     dec->stream_index = stream;
 
     AVCodecParameters *par = dec->fmt->streams[stream]->codecpar;
     const AVCodec *codec = avcodec_find_decoder(par->codec_id);
     if (!codec)
-        return FLOWER_ERR_NO_AUDIO;
+        return FFAUDIO_ERR_NO_AUDIO;
 
     dec->codec = avcodec_alloc_context3(codec);
     if (!dec->codec)
-        return FLOWER_ERR_NO_MEMORY;
+        return FFAUDIO_ERR_NO_MEMORY;
 
     int rc = avcodec_parameters_to_context(dec->codec, par);
     if (rc < 0)
@@ -324,27 +324,27 @@ static int finish_open(flower_decoder *dec)
     dec->packet = av_packet_alloc();
     dec->frame = av_frame_alloc();
     if (!dec->packet || !dec->frame)
-        return FLOWER_ERR_NO_MEMORY;
+        return FFAUDIO_ERR_NO_MEMORY;
 
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 }
 
 static int alloc_decoder(int32_t requested_format,
                          int32_t requested_rate,
                          int32_t requested_channels,
-                         flower_decoder **out_decoder)
+                         ffaudio_decoder **out_decoder)
 {
     if (!out_decoder)
-        return FLOWER_ERR_ARGUMENT;
+        return FFAUDIO_ERR_ARGUMENT;
     *out_decoder = NULL;
 
     enum AVSampleFormat swr_format = swr_format_for(requested_format);
     if (swr_format == AV_SAMPLE_FMT_NONE || requested_rate < 0 || requested_channels < 0)
-        return FLOWER_ERR_ARGUMENT;
+        return FFAUDIO_ERR_ARGUMENT;
 
-    flower_decoder *dec = (flower_decoder *)av_mallocz(sizeof(flower_decoder));
+    ffaudio_decoder *dec = (ffaudio_decoder *)av_mallocz(sizeof(ffaudio_decoder));
     if (!dec)
-        return FLOWER_ERR_NO_MEMORY;
+        return FFAUDIO_ERR_NO_MEMORY;
 
     dec->stream_index = -1;
     dec->last_frame_ms = 0;
@@ -354,21 +354,21 @@ static int alloc_decoder(int32_t requested_format,
     dec->requested_channels = requested_channels;
 
     *out_decoder = dec;
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 }
 
-FLOWER_API int flower_decoder_open_path(const char *path,
+FFAUDIO_API int ffaudio_decoder_open_path(const char *path,
                                         int32_t requested_format,
                                         int32_t requested_sample_rate,
                                         int32_t requested_channels,
-                                        flower_decoder **out_decoder)
+                                        ffaudio_decoder **out_decoder)
 {
     if (!path)
-        return FLOWER_ERR_ARGUMENT;
+        return FFAUDIO_ERR_ARGUMENT;
 
-    flower_decoder *dec = NULL;
+    ffaudio_decoder *dec = NULL;
     int rc = alloc_decoder(requested_format, requested_sample_rate, requested_channels, &dec);
-    if (rc != FLOWER_OK)
+    if (rc != FFAUDIO_OK)
         return rc;
 
     dec->seekable = 1;
@@ -381,35 +381,35 @@ FLOWER_API int flower_decoder_open_path(const char *path,
         goto fail;
 
     rc = finish_open(dec);
-    if (rc != FLOWER_OK)
+    if (rc != FFAUDIO_OK)
         goto fail;
 
     *out_decoder = dec;
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 
 fail:
-    flower_decoder_close(dec);
+    ffaudio_decoder_close(dec);
     *out_decoder = NULL;
     return rc;
 }
 
-FLOWER_API int flower_decoder_open_io(void *opaque,
-                                      flower_read_fn read,
-                                      flower_seek_fn seek,
+FFAUDIO_API int ffaudio_decoder_open_io(void *opaque,
+                                      ffaudio_read_fn read,
+                                      ffaudio_seek_fn seek,
                                       int64_t size,
                                       int32_t seekable,
                                       const char *format_hint,
                                       int32_t requested_format,
                                       int32_t requested_sample_rate,
                                       int32_t requested_channels,
-                                      flower_decoder **out_decoder)
+                                      ffaudio_decoder **out_decoder)
 {
     if (!read)
-        return FLOWER_ERR_ARGUMENT;
+        return FFAUDIO_ERR_ARGUMENT;
 
-    flower_decoder *dec = NULL;
+    ffaudio_decoder *dec = NULL;
     int rc = alloc_decoder(requested_format, requested_sample_rate, requested_channels, &dec);
-    if (rc != FLOWER_OK)
+    if (rc != FFAUDIO_OK)
         return rc;
 
     dec->io_opaque = opaque;
@@ -417,18 +417,18 @@ FLOWER_API int flower_decoder_open_io(void *opaque,
     dec->io_seek = seek;
     dec->seekable = seek != NULL && seekable != 0;
 
-    uint8_t *io_buffer = (uint8_t *)av_malloc(FLOWER_IO_BUFFER_BYTES);
+    uint8_t *io_buffer = (uint8_t *)av_malloc(FFAUDIO_IO_BUFFER_BYTES);
     if (!io_buffer) {
-        rc = FLOWER_ERR_NO_MEMORY;
+        rc = FFAUDIO_ERR_NO_MEMORY;
         goto fail;
     }
 
-    dec->avio = avio_alloc_context(io_buffer, FLOWER_IO_BUFFER_BYTES, 0, dec,
+    dec->avio = avio_alloc_context(io_buffer, FFAUDIO_IO_BUFFER_BYTES, 0, dec,
                                    io_read_packet, NULL,
                                    dec->seekable ? io_seek : NULL);
     if (!dec->avio) {
         av_free(io_buffer);
-        rc = FLOWER_ERR_NO_MEMORY;
+        rc = FFAUDIO_ERR_NO_MEMORY;
         goto fail;
     }
     // Without this an mp4 whose moov atom sits at the end is unplayable over
@@ -437,7 +437,7 @@ FLOWER_API int flower_decoder_open_io(void *opaque,
 
     dec->fmt = avformat_alloc_context();
     if (!dec->fmt) {
-        rc = FLOWER_ERR_NO_MEMORY;
+        rc = FFAUDIO_ERR_NO_MEMORY;
         goto fail;
     }
     dec->fmt->pb = dec->avio;
@@ -456,36 +456,36 @@ FLOWER_API int flower_decoder_open_io(void *opaque,
         goto fail;
 
     rc = finish_open(dec);
-    if (rc != FLOWER_OK)
+    if (rc != FFAUDIO_OK)
         goto fail;
 
     (void)size;
     *out_decoder = dec;
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 
 fail:
-    flower_decoder_close(dec);
+    ffaudio_decoder_close(dec);
     *out_decoder = NULL;
     return rc;
 }
 
 // --------------------------------------------------------------------- read
 
-FLOWER_API int flower_decoder_get_format(flower_decoder *decoder, flower_decoder_format *out_format)
+FFAUDIO_API int ffaudio_decoder_get_format(ffaudio_decoder *decoder, ffaudio_decoder_format *out_format)
 {
     if (!decoder || !out_format)
-        return FLOWER_ERR_ARGUMENT;
+        return FFAUDIO_ERR_ARGUMENT;
     *out_format = decoder->format;
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 }
 
-FLOWER_API int flower_decoder_read(flower_decoder *decoder,
+FFAUDIO_API int ffaudio_decoder_read(ffaudio_decoder *decoder,
                                    uint8_t *buffer,
                                    int32_t buffer_bytes,
                                    int32_t *out_bytes)
 {
     if (!decoder || !buffer || buffer_bytes < 0 || !out_bytes)
-        return FLOWER_ERR_ARGUMENT;
+        return FFAUDIO_ERR_ARGUMENT;
 
     *out_bytes = 0;
     int written = 0;
@@ -503,32 +503,32 @@ FLOWER_API int flower_decoder_read(flower_decoder *decoder,
         }
 
         int rc = stage_next(decoder);
-        if (rc == FLOWER_EOF) {
+        if (rc == FFAUDIO_EOF) {
             *out_bytes = written;
-            return written > 0 ? FLOWER_OK : FLOWER_EOF;
+            return written > 0 ? FFAUDIO_OK : FFAUDIO_EOF;
         }
-        if (rc != FLOWER_OK) {
+        if (rc != FFAUDIO_OK) {
             // Bytes already decoded are still good audio; report them and let
             // the next call surface the error rather than throwing away a
             // buffer the caller could have played.
             if (written > 0) {
                 *out_bytes = written;
-                return FLOWER_OK;
+                return FFAUDIO_OK;
             }
             return rc;
         }
     }
 
     *out_bytes = written;
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 }
 
-FLOWER_API int flower_decoder_seek(flower_decoder *decoder, int64_t position_ms, int64_t *out_landed_ms)
+FFAUDIO_API int ffaudio_decoder_seek(ffaudio_decoder *decoder, int64_t position_ms, int64_t *out_landed_ms)
 {
     if (!decoder || position_ms < 0)
-        return FLOWER_ERR_ARGUMENT;
+        return FFAUDIO_ERR_ARGUMENT;
     if (!decoder->seekable)
-        return FLOWER_ERR_IO;
+        return FFAUDIO_ERR_IO;
 
     AVRational tb = decoder->fmt->streams[decoder->stream_index]->time_base;
     int64_t ts = av_rescale_q(position_ms, (AVRational){ 1, 1000 }, tb);
@@ -567,15 +567,15 @@ FLOWER_API int flower_decoder_seek(flower_decoder *decoder, int64_t position_ms,
     // scrubber told the request rather than the landing stays permanently
     // offset from the audio. Same reason ITrackDecoder.SeekSettled exists.
     rc = stage_next(decoder);
-    if (rc != FLOWER_OK && rc != FLOWER_EOF)
+    if (rc != FFAUDIO_OK && rc != FFAUDIO_EOF)
         return rc;
 
     if (out_landed_ms)
         *out_landed_ms = decoder->last_frame_ms;
-    return FLOWER_OK;
+    return FFAUDIO_OK;
 }
 
-FLOWER_API void flower_decoder_close(flower_decoder *decoder)
+FFAUDIO_API void ffaudio_decoder_close(ffaudio_decoder *decoder)
 {
     if (!decoder)
         return;
@@ -601,20 +601,20 @@ FLOWER_API void flower_decoder_close(flower_decoder *decoder)
     av_free(decoder);
 }
 
-FLOWER_API void flower_error_string(int code, char *buffer, int32_t buffer_bytes)
+FFAUDIO_API void ffaudio_error_string(int code, char *buffer, int32_t buffer_bytes)
 {
     if (!buffer || buffer_bytes <= 0)
         return;
 
     const char *own = NULL;
     switch (code) {
-        case FLOWER_OK:            own = "ok"; break;
-        case FLOWER_EOF:           own = "end of stream"; break;
-        case FLOWER_ERR_ARGUMENT:  own = "invalid argument"; break;
-        case FLOWER_ERR_NO_AUDIO:  own = "no decodable audio stream"; break;
-        case FLOWER_ERR_NO_MEMORY: own = "out of memory"; break;
-        case FLOWER_ERR_ABI:       own = "abi version mismatch"; break;
-        case FLOWER_ERR_IO:        own = "stream does not support seeking"; break;
+        case FFAUDIO_OK:            own = "ok"; break;
+        case FFAUDIO_EOF:           own = "end of stream"; break;
+        case FFAUDIO_ERR_ARGUMENT:  own = "invalid argument"; break;
+        case FFAUDIO_ERR_NO_AUDIO:  own = "no decodable audio stream"; break;
+        case FFAUDIO_ERR_NO_MEMORY: own = "out of memory"; break;
+        case FFAUDIO_ERR_ABI:       own = "abi version mismatch"; break;
+        case FFAUDIO_ERR_IO:        own = "stream does not support seeking"; break;
         default: break;
     }
 
@@ -626,7 +626,7 @@ FLOWER_API void flower_error_string(int code, char *buffer, int32_t buffer_bytes
         snprintf(buffer, (size_t)buffer_bytes, "ffmpeg error %d", code);
 }
 
-FLOWER_API int32_t flower_abi_version(void)
+FFAUDIO_API int32_t ffaudio_abi_version(void)
 {
-    return FLOWER_FFMPEG_ABI_VERSION;
+    return FFAUDIO_ABI_VERSION;
 }

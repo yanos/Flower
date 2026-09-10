@@ -9,14 +9,14 @@
 # and no --enable-nonfree, ever; see ../README.md.
 #
 # Slow - tens of minutes across three ABIs - and idempotent: a prefix that
-# already has a libavformat.a is left alone unless FLOWER_FFMPEG_REBUILD is set.
+# already has a libavformat.a is left alone unless FFAUDIO_REBUILD_FFMPEG is set.
 set -euo pipefail
 
 : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME to an installed NDK, e.g. ~/Library/Android/sdk/ndk/28.2.13676358}"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 work="$here/ffmpeg"
-version="${FLOWER_FFMPEG_VERSION:-7.1.1}"
+version="${FFAUDIO_FFMPEG_VERSION:-7.1.1}"
 
 # 21 rather than the csproj's minSdk of 23, to match native/miniaudio/android's
 # API level exactly: two native libraries in one APK disagreeing about their
@@ -55,8 +55,8 @@ build_abi() {
     local extra=("$@")
 
     local prefix="$work/prefix/$abi"
-    if [ -f "$prefix/lib/libavformat.a" ] && [ -z "${FLOWER_FFMPEG_REBUILD:-}" ]; then
-        echo "=== $abi already built ($prefix) - set FLOWER_FFMPEG_REBUILD=1 to redo ==="
+    if [ -f "$prefix/lib/libavformat.a" ] && [ -z "${FFAUDIO_REBUILD_FFMPEG:-}" ]; then
+        echo "=== $abi already built ($prefix) - set FFAUDIO_REBUILD_FFMPEG=1 to redo ==="
         return
     fi
 
@@ -108,4 +108,4 @@ build_abi arm64-v8a   aarch64 aarch64-linux-android
 build_abi armeabi-v7a arm     armv7a-linux-androideabi --cpu=armv7-a --enable-thumb
 build_abi x86_64      x86_64  x86_64-linux-android     --disable-x86asm
 
-echo "Done. Now run native/ffmpeg/android/build.sh to link these into libflower_ffmpeg.so."
+echo "Done. Now run native/ffmpeg/android/build.sh to link these into libffaudio.so."

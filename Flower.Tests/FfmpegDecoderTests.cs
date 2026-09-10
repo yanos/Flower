@@ -9,7 +9,7 @@ using Xunit;
 
 namespace Flower.Tests;
 
-// Exercises the flower-ffmpeg façade end to end, against real FFmpeg
+// Exercises the ffaudio façade end to end, against real FFmpeg
 // libraries. Tagged like the LibVLC tests are: they need a native component
 // that is built rather than restored (native/ffmpeg/macos/build.sh), so a
 // machine without it filters them out instead of failing them.
@@ -22,7 +22,7 @@ public class FfmpegDecoderTests : IDisposable
     private const int HiResRate = 96000;
     private const int Frames = 24000; // a quarter second at 96kHz
 
-    private readonly string _directory = Directory.CreateTempSubdirectory("flower-ffmpeg").FullName;
+    private readonly string _directory = Directory.CreateTempSubdirectory("ffaudio").FullName;
 
     public void Dispose() => TempDirectory.DeleteWhenReleased(_directory);
 
@@ -178,7 +178,7 @@ public class FfmpegDecoderTests : IDisposable
     }
 
     // BytesPerFrame is what every caller sizes its buffers and its ring by, so
-    // a format whose advertised width disagreed with what flower_decoder_read
+    // a format whose advertised width disagreed with what ffaudio_decoder_read
     // actually writes would surface as a buffer bug in the caller rather than
     // as a failure here. Four formats, one piece of arithmetic, no resampling
     // asked for - so the frame count is exact rather than swresample's tail
@@ -317,7 +317,7 @@ public class FfmpegDecoderTests : IDisposable
             () => FfmpegDecoder.OpenPath(Path.Combine(_directory, "absent.wav"), FfmpegSampleFormat.S16));
 
         // FFmpeg's own diagnosis, not a flattened "could not open" - the
-        // reason flower_error_string passes AVERROR codes through untouched.
+        // reason ffaudio_error_string passes AVERROR codes through untouched.
         Assert.Contains("No such file", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 

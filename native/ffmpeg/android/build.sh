@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Links the façade against the static FFmpeg from build-ffmpeg.sh into
-# libflower_ffmpeg.so per ABI, straight into Flower.Android/libs/<abi>/ - the
+# libffaudio.so per ABI, straight into Flower.Android/libs/<abi>/ - the
 # same shape and the same place as native/miniaudio/android/build.sh's output.
 # Run build-ffmpeg.sh first.
 #
@@ -20,10 +20,10 @@ prefixes="$here/ffmpeg/prefix"
 api=21
 
 # Must match FfmpegNative.Library, which is the literal DllImport string. Named
-# libflower_ffmpeg.so so Android's own loader finds it in the APK with no
+# libffaudio.so so Android's own loader finds it in the APK with no
 # DllImportResolver help - unlike iOS, where an embedded framework's nested
 # path has to be named explicitly.
-library=libflower_ffmpeg.so
+library=libffaudio.so
 
 case "$(uname -s)" in
     Darwin) host_tag=darwin-x86_64 ;;
@@ -45,18 +45,18 @@ mkdir -p "$build"
 # to FFmpeg the façade exists in order not to have. macOS and Linux get the
 # same result from CMAKE_C_VISIBILITY_PRESET, which cannot reach into an
 # archive; iOS gets it from an -exported_symbols_list. This is the ELF spelling
-# of that, derived the same way - from the header's own FLOWER_API lines, so
+# of that, derived the same way - from the header's own FFAUDIO_API lines, so
 # the ABI has one definition rather than two.
-version_script="$build/flower_ffmpeg.map"
+version_script="$build/ffaudio.map"
 {
-    echo "FLOWER_1 {"
+    echo "FFAUDIO_1 {"
     echo "  global:"
-    grep 'FLOWER_API' "$native/flower_ffmpeg.h" |
-        sed -n 's/.*[ *]\(flower_[a-z_]*\)(.*/    \1;/p' | sort -u
+    grep 'FFAUDIO_API' "$native/ffaudio.h" |
+        sed -n 's/.*[ *]\(ffaudio_[a-z_]*\)(.*/    \1;/p' | sort -u
     echo "  local: *;"
     echo "};"
 } > "$version_script"
-echo "=== Exporting $(grep -c '^    flower_' "$version_script" | tr -d ' ') symbols ==="
+echo "=== Exporting $(grep -c '^    ffaudio_' "$version_script" | tr -d ' ') symbols ==="
 
 build_abi() {
     local abi="$1"    # arm64-v8a | armeabi-v7a | x86_64
@@ -77,7 +77,7 @@ build_abi() {
         -Wl,--version-script,"$version_script" \
         -Wl,-soname,"$library" \
         -o "$out/$library" \
-        "$native/flower_ffmpeg.c" \
+        "$native/ffaudio.c" \
         "$prefix/lib/libavformat.a" \
         "$prefix/lib/libavcodec.a" \
         "$prefix/lib/libswresample.a" \
@@ -95,7 +95,7 @@ build_abi() {
     # loader - and anyone linking against this - actually sees; without it the
     # check reads "no symbols" and passes whatever it was handed.
     "$toolchain/llvm-nm" --dynamic --defined-only --extern-only "$dest/$library" |
-        grep -v ' flower_' && echo "!! unexpected exports above" >&2 || true
+        grep -v ' ffaudio_' && echo "!! unexpected exports above" >&2 || true
 }
 
 build_abi arm64-v8a   aarch64-linux-android

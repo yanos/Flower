@@ -53,7 +53,7 @@ Re-scoped, the same question is about three places: `FfmpegTrackDecoder`'s open 
 
 ## 3. DSD (`.dsf`) + Monkey's Audio (`.ape`) — Small effort for tagging, Medium-Large + Medium-High risk for playback
 
-Add `.ape`/`.dsf` to `Importer._validExtensions` — tagging works today regardless of playback, so library browsing/sorting works immediately. Skip `.dff` until TagLib# supports it or a real library needs it. **Playback requires real engineering, but less than it did.** The finding was that mainline VLC ships no Monkey's Audio or DSD demux/decode plugins, leaving two options: build third-party VLC plugins per platform, or decode outside LibVLC. Option (a) is void — there is no VLC. Option (b) is what the whole pipeline now is, which turns the question into a build-configuration one: does `flower-ffmpeg` enable FFmpeg's `dsf`/`dsd_lsbf`/`ape` demuxers and decoders, and does adding them stay inside the LGPL-only constraint. See `native/ffmpeg/README.md`; the answer is not in this document. Until either lands, wrap `Play()` for these formats in a try/catch with a user-facing "unsupported format" message. Once playback exists, be clear in UI copy that DSD is decoded to PCM, not passed through natively.
+Add `.ape`/`.dsf` to `Importer._validExtensions` — tagging works today regardless of playback, so library browsing/sorting works immediately. Skip `.dff` until TagLib# supports it or a real library needs it. **Playback requires real engineering, but less than it did.** The finding was that mainline VLC ships no Monkey's Audio or DSD demux/decode plugins, leaving two options: build third-party VLC plugins per platform, or decode outside LibVLC. Option (a) is void — there is no VLC. Option (b) is what the whole pipeline now is, which turns the question into a build-configuration one: does `ffaudio` enable FFmpeg's `dsf`/`dsd_lsbf`/`ape` demuxers and decoders, and does adding them stay inside the LGPL-only constraint. See `native/ffmpeg/README.md`; the answer is not in this document. Until either lands, wrap `Play()` for these formats in a try/catch with a user-facing "unsupported format" message. Once playback exists, be clear in UI copy that DSD is decoded to PCM, not passed through natively.
 
 ## 4. Near-gapless playback (pragmatic step) — Superseded, never built
 
@@ -96,7 +96,7 @@ real: FFmpeg reports the file as `pcm_s24le`, `sample_fmt=s32`,
 PCM in a 32-bit integer container, with the eight low bits empty; packing that
 to miniaudio's tightly-packed `ma_format_s24` preserves every source value.
 
-**Decision:** add a small, owned `flower-ffmpeg` native façade, linked only to
+**Decision:** add a small, owned `ffaudio` native façade, linked only to
 FFmpeg's `avformat`, `avcodec`, `avutil`, and `swresample` libraries. It will
 open one file/stream, expose its decoded PCM format, read interleaved frames,
 seek, and close. Keep its ABI deliberately small and consume it with ordinary
@@ -276,7 +276,7 @@ streamed m4a is confirmed playing and scrubbing on iOS through the stream path.
 
 ### Step two, built: the decoder that is not LibVLC
 
-Done, on macOS. `native/ffmpeg/` holds `flower-ffmpeg`, an eight-function C
+Done, on macOS. `native/ffmpeg/` holds `ffaudio`, an eight-function C
 façade over `avformat`/`avcodec`/`avutil`/`swresample`, and
 `Flower/Audio/Ffmpeg/` holds the two managed layers over it: `FfmpegDecoder`
 (one decode of one source, over a path or a `Stream`) and `FfmpegTrackDecoder`
@@ -339,7 +339,7 @@ The canonical format is now negotiated once at startup and frozen for the
 session, the same way the sample rate already was:
 
 - **The decoder chooses it.** `DecoderElection.CanonicalFormatFor` maps LibVLC
-  to S16 and flower-ffmpeg to S24. That direction is forced rather than
+  to S16 and ffaudio to S24. That direction is forced rather than
   preferred: amem hardcodes S16N and never reads back the fourcc it was asked
   for, so a pipeline carrying 24 bits over the LibVLC decoder would be carrying
   eight zeroes and calling it hi-res.
@@ -371,7 +371,7 @@ could not render packed 24-bit PCM: it would rewrite every sample as though
 three-byte frames were two-byte ones. `MiniaudioSink` therefore refused the
 bridge at S24 and fell back to the managed render callback. Unreachable when
 written, because the bridge exists only on Android and iOS and neither had a
-flower_ffmpeg artifact; gated anyway, because that coincidence would end the
+ffaudio artifact; gated anyway, because that coincidence would end the
 moment the mobile cross-builds landed and the failure would be a native one on
 the platforms hardest to debug on. It did end, and the envelope has since
 learned the width - see "The bridge learns the sample format" below.
@@ -380,7 +380,7 @@ learned the width - see "The bridge learns the sample format" below.
 
 `AppSettings.AudioDecoder` picks it, `FLOWER_DECODER` overrides that per run,
 and `DecoderElection.Resolve` turns either into the decoder that will actually
-run - falling back to LibVLC with a warning when `flower_ffmpeg` is not
+run - falling back to LibVLC with a warning when `ffaudio` is not
 loadable, which is the ordinary state on four of the five heads.
 
 Hand-edited rather than given a picker in Settings, and not only because no UI
@@ -512,7 +512,7 @@ question.
 ### Linux, and taking CI out of the same blind spot
 
 Both of those bugs happened on the one platform where the façade is built, and
-were caught by a person listening. That is not a coincidence: `flower_ffmpeg`
+were caught by a person listening. That is not a coincidence: `ffaudio`
 was built on macOS only, so `DecoderElection` fell back to LibVLC everywhere
 else, `FfmpegDecoder.IsAvailable` was false on every CI runner, and the FFmpeg
 half of the checks did not exist on CI at all. The decoder with two outright
@@ -523,7 +523,7 @@ same `CMakeLists.txt`, FFmpeg found through `pkg-config`. Written but not yet
 run on a Linux machine: there is no Linux here and no container runtime, so
 CI's first run is the thing that proves it rather than a local build. The one thing in the
 way was a version floor of FFmpeg 7 that nothing needed: the newest APIs
-`flower_ffmpeg.c` uses are `AVChannelLayout` and `swr_alloc_set_opts2`, both
+`ffaudio.c` uses are `AVChannelLayout` and `swr_alloc_set_opts2`, both
 5.1, and 7 was simply the version of the machine it was first built on. Ubuntu
 24.04 ships 6, so that accident was the difference between a distro FFmpeg
 being found and not.
@@ -595,7 +595,7 @@ The difference between this and the desktop builds is that there is nothing to
 find. macOS and Linux ask `pkg-config` for an FFmpeg somebody else installed; a
 phone has no package manager, so `native/ffmpeg/ios/build-ffmpeg.sh`
 cross-compiles FFmpeg itself for device arm64 and Apple Silicon simulator
-arm64, and `ios/build.sh` links it into `flower_ffmpeg.framework` - one
+arm64, and `ios/build.sh` links it into `ffaudio.framework` - one
 framework per slice, checked in beside the platform head exactly as
 `native/miniaudio/` does. About 1.9MB a slice, which is what
 `--disable-everything` plus the decoders and demuxers a music library is
@@ -612,11 +612,11 @@ The narrow ABI needed defending in a way it did not on desktop.
 `CMAKE_C_VISIBILITY_PRESET hidden` cannot reach inside a static archive, so a
 framework built the obvious way re-exports all of FFmpeg - the second route to
 FFmpeg that this façade exists in order not to have. The build derives an
-export list from the `FLOWER_API` lines in the header and ends by printing
+export list from the `FFAUDIO_API` lines in the header and ends by printing
 anything else that escaped.
 
 **The bug this found is the one worth writing down.** With the framework
-embedded, signed, loadable and exporting `flower_abi_version`, the first
+embedded, signed, loadable and exporting `ffaudio_abi_version`, the first
 simulator run reported 70 passed, 0 failed - LibVLC only, with no FFmpeg checks
 in it at all and nothing saying so. `FfmpegNative` registered its
 `DllImportResolver` in its own static constructor, which works on every desktop
@@ -643,16 +643,16 @@ the simulator shares this Mac's arm64 and its dynamic loader is not iOS's.
 
 Android needed the identical two-step - `android/build-ffmpeg.sh` cross-compiles
 FFmpeg for `arm64-v8a`, `armeabi-v7a` and `x86_64` with the NDK's clang,
-`android/build.sh` links it into `libflower_ffmpeg.so` per ABI - and the same
+`android/build.sh` links it into `libffaudio.so` per ABI - and the same
 two things are load-bearing for the same reasons: an LGPL-only configure line,
 because an APK links FFmpeg in and has nothing to point at, and an export
 narrowing, spelled as an ELF version script here instead of an
-`-exported_symbols_list`. Both are derived from the header's `FLOWER_API`
+`-exported_symbols_list`. Both are derived from the header's `FFAUDIO_API`
 lines, so the eight-function ABI is described once and defended twice.
 
 Two things were easier than iOS and one was harder. Easier: no
 `DllImportResolver` branch, because Android's loader resolves
-`DllImport("flower_ffmpeg")` to `libflower_ffmpeg.so` in the APK unassisted -
+`DllImport("ffaudio")` to `libffaudio.so` in the APK unassisted -
 the same reason `libminiaudio.so` needs no help - and the `[ModuleInitializer]`
 fix iOS forced was already in place. Harder: the export check initially passed
 by reading nothing. `llvm-nm` on a stripped `.so` reports "no symbols", because
@@ -695,7 +695,7 @@ the same shape the obligation already takes on macOS and Linux. Spending tens
 of minutes of every CI run reproducing that would be ceremony, not rigour.
 `windows/build.ps1` therefore fetches a pinned, checksummed autobuild, and
 `CMakeLists.txt` grows an MSVC branch that takes a prefix through
-`FLOWER_FFMPEG_PREFIX` instead of asking pkg-config. The header already said
+`FFAUDIO_PREFIX` instead of asking pkg-config. The header already said
 `__declspec(dllexport)`, and the façade's C is portable enough that MSVC needed
 nothing else.
 
@@ -762,7 +762,7 @@ decoder nobody uses.
 Three things make that a change rather than a gamble.
 
 **The fallback is real.** `DecoderElection.Resolve` returns `LibVlc` with a
-logged warning when `flower_ffmpeg` will not load, so a head whose artifact is
+logged warning when `ffaudio` will not load, so a head whose artifact is
 missing or broken plays anyway, one bit-depth poorer. Defaulting to FFmpeg
 cannot produce silence on a platform that has no façade; it produces the
 previous behaviour and a log line.
@@ -788,7 +788,7 @@ What the flip does *not* do is invent evidence. Honestly, per head:
 | Android | **Nothing.** The libraries build, export their eight symbols and package into the APK. No fixture has ever been decoded and compared |
 
 Android is the one that matters, and it is the one place the fallback does not
-help: `libflower_ffmpeg.so` loads, so the election succeeds, so a decoder nobody
+help: `libffaudio.so` loads, so the election succeeds, so a decoder nobody
 has heard is the one every Android launch now uses. That is a deliberate
 acceptance rather than an oversight - there are no released users, and
 `FLOWER_DECODER=libvlc` is one environment variable away - but it makes the
@@ -901,7 +901,7 @@ underrun count when it was not.
    transitions it requires.
 
    **Most of it is now done.** Flower fetches its own audio (see "Step one,
-   built"); the `flower-ffmpeg` façade and `FfmpegTrackDecoder` exist, are
+   built"); the `ffaudio` façade and `FfmpegTrackDecoder` exist, are
    built for all five heads, and are the only decoder; the pipeline carries
    packed S24 end to end; and `MiniaudioSink` narrows back only when a device
    refuses `ma_format_s24`. What is genuinely left is the *direct-mode format

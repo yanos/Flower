@@ -14,7 +14,7 @@ namespace Flower.Audio
     //   rate is the pipeline's and nothing resamples on the way out.
     // - The sample format comes from the *decoder*, capped by what the device
     //   would open with. That is the direction it has to run, and it is the
-    //   whole reason flower-ffmpeg exists: LibVLC's amem module hardcodes S16N
+    //   whole reason ffaudio exists: LibVLC's amem module hardcodes S16N
     //   and never reads back the requested fourcc at all, so a pipeline
     //   carrying 24 bits over it would have been carrying eight zeroes and
     //   calling it hi-res.

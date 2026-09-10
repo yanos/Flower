@@ -717,7 +717,7 @@ namespace Flower.Audio
 
         // The canonical format in miniaudio's own terms. ma_format_s24 is
         // packed three-byte little-endian, the same layout PcmSampleFormat.S24
-        // names and flower-ffmpeg's pack_s24 writes, so nothing converts
+        // names and ffaudio's pack_s24 writes, so nothing converts
         // between the ring and the device buffer.
         internal static ma_format MiniaudioFormatFor(PcmSampleFormat format) =>
             format == PcmSampleFormat.S24 ? ma_format.ma_format_s24 : ma_format.ma_format_s16;

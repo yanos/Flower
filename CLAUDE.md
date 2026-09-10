@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#), running on Windows, macOS, Linux, iOS, and Android. Every feature must work across all platforms. Decodes with a small FFmpeg façade (`flower-ffmpeg`), renders with miniaudio, and reads metadata with TagLib#. Shared `Flower` library project + platform-specific entry points.
+Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#), running on Windows, macOS, Linux, iOS, and Android. Every feature must work across all platforms. Decodes with a small FFmpeg façade (`ffaudio`), renders with miniaudio, and reads metadata with TagLib#. Shared `Flower` library project + platform-specific entry points.
 
 ## How It Gets Used
 
@@ -80,7 +80,7 @@ dotnet build Flower.Desktop/Flower.Desktop.csproj                               
 dotnet build Flower.MacOS/Flower.MacOS.csproj                                   # macOS head, needs `sudo dotnet workload install macos`
 dotnet run --project Flower.MacOS/Flower.MacOS.csproj                           # launches it — or just hit Run in the IDE, see below
 dotnet test Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
-dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs flower-ffmpeg built
+dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs ffaudio built
 dotnet run --project Flower.Server                                              # server + its browser UI
 ```
 
@@ -100,7 +100,7 @@ both gitignored and a config in them does not survive a clone.
 Decoding is the one thing a fresh clone does not get for free, on any head:
 `native/ffmpeg/artifacts/` is gitignored because the façade is built rather than
 restored, so until `native/ffmpeg/build-all.sh` has been run once the app
-launches, browses and syncs but logs `flower_ffmpeg is not loadable here` and
+launches, browses and syncs but logs `ffaudio is not loadable here` and
 plays nothing.
 
 The browser UI (`Flower.Web`) has no run configuration of its own — building
@@ -324,7 +324,7 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 
 **Album art is fetched in batches** (`CoverArtBatch`, `POST /api/flower/v1/cover-art/batch`): a grid asks for one cover per tile, and a library of 1400 albums is 1400 requests during one cold scroll - more than any per-source budget worth having, and when that budget ran out what got refused was playback. `AlbumArtLoader` coalesces a viewport's worth of misses over a 40ms debounce into one request of up to 32 ids; a peer that cannot answer one degrades to the old request-per-album path. Deliberately on Flower's own surface rather than `/rest`, which is a published protocol other clients implement. See `docs/OPEN-INTERNET-REVIEW.md` #2b.
 
-**FFmpeg façade** (`native/ffmpeg/`): `flower-ffmpeg`, an eight-function C façade over `avformat`/`avcodec`/`avutil`/`swresample`, plus `Flower/Audio/Ffmpeg/`'s `FfmpegDecoder` and `FfmpegTrackDecoder : ITrackDecoder`. It began as the answer to LibVLC's `amem` seam truncating every track to 16 bits whatever format was requested (see `docs/AUDIOPHILE-PLAN.md`), and is now the only decoder. Built, not restored, and never by `dotnet build` — run `native/ffmpeg/build-all.sh` (everything this host can build; `macos/build.sh`, `linux/build.sh` or `windows/build.ps1` for one) before the `RequiresFfmpeg` tests, or filter them out — CI builds it on all three desktops and requires it, via `FLOWER_REQUIRE_DECODERS`, so a façade that stops building shows up as a failing check rather than a shorter suite. Windows downloads a pinned LGPL FFmpeg build rather than compiling one, having neither a package manager to ask nor a reason to cross-compile. Mobile is two scripts instead of one, per platform — `<ios|android>/build-ffmpeg.sh` cross-compiles FFmpeg itself, then `build.sh` links it statically into `flower_ffmpeg.framework` per slice or `libflower_ffmpeg.so` per ABI, checked in under `Flower.iOS/Frameworks/` and `Flower.Android/libs/` like miniaudio's. A phone has no package manager to find an FFmpeg in, which is also where the LGPL obligation stops being someone else's build to point at. Read `native/ffmpeg/README.md` before touching it: the per-platform status and the LGPL-only constraint on any shipping build are both there.
+**FFmpeg façade** (`native/ffmpeg/`): `ffaudio`, an eight-function C façade over `avformat`/`avcodec`/`avutil`/`swresample`, plus `Flower/Audio/Ffmpeg/`'s `FfmpegDecoder` and `FfmpegTrackDecoder : ITrackDecoder`. It began as the answer to LibVLC's `amem` seam truncating every track to 16 bits whatever format was requested (see `docs/AUDIOPHILE-PLAN.md`), and is now the only decoder. Built, not restored, and never by `dotnet build` — run `native/ffmpeg/build-all.sh` (everything this host can build; `macos/build.sh`, `linux/build.sh` or `windows/build.ps1` for one) before the `RequiresFfmpeg` tests, or filter them out — CI builds it on all three desktops and requires it, via `FLOWER_REQUIRE_DECODERS`, so a façade that stops building shows up as a failing check rather than a shorter suite. Windows downloads a pinned LGPL FFmpeg build rather than compiling one, having neither a package manager to ask nor a reason to cross-compile. Mobile is two scripts instead of one, per platform — `<ios|android>/build-ffmpeg.sh` cross-compiles FFmpeg itself, then `build.sh` links it statically into `ffaudio.framework` per slice or `libffaudio.so` per ABI, checked in under `Flower.iOS/Frameworks/` and `Flower.Android/libs/` like miniaudio's. A phone has no package manager to find an FFmpeg in, which is also where the LGPL obligation stops being someone else's build to point at. Read `native/ffmpeg/README.md` before touching it: the per-platform status and the LGPL-only constraint on any shipping build are both there.
 
 **One decoder, and it sets the bit depth** (`FfmpegTrackDecoder`, `GaplessFormat`, `PcmSampleFormat`): there used to be an election between LibVLC and FFmpeg, with `AppSettings.AudioDecoder`, a `FLOWER_DECODER` override and a fallback for a head with no built artifact. All five heads have an artifact, LibVLC was permanently 16-bit, and a fallback whose whole job is to play something at a ceiling nobody chose is not worth the second code path — so it is gone, along with ~1,500 lines and the coordinator's dual-core machinery. A façade that will not load now logs one critical line at startup instead of a per-track fault; the app still browses, edits and syncs, it just cannot decode.
 

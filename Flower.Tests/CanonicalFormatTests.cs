@@ -12,7 +12,7 @@ namespace Flower.Tests;
 //
 // LibVLC's amem seam truncates every track to 16 bits before Flower sees a
 // byte of it (docs/AUDIOPHILE-PLAN.md, "The 16-bit ceiling, measured"), and
-// flower-ffmpeg exists to get past that. But moving the ceiling out of LibVLC
+// ffaudio exists to get past that. But moving the ceiling out of LibVLC
 // is not the same as removing it: GaplessFormat.BytesPerSample was a const 2,
 // and every stage between the decoder and the sound card was built on it, so a
 // 24-bit decode would have been narrowed one stage later by the pipeline

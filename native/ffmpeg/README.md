@@ -1,7 +1,7 @@
-# flower-ffmpeg
+# ffaudio
 
 A small native façade over FFmpeg's decode libraries, and the only
-implementation behind `ITrackDecoder`. `flower_ffmpeg.h` is the whole
+implementation behind `ITrackDecoder`. `ffaudio.h` is the whole
 interface: eight functions over ints and byte buffers. Read its header comment
 first - it says why this exists rather than `FFmpeg.AutoGen`, and why the ABI
 is deliberately this narrow.
@@ -51,7 +51,7 @@ built nothing at all.
 
 The mobile targets cross-compile FFmpeg itself first, which is tens of minutes
 the first time and nothing on every run after - both `build-ffmpeg.sh` scripts
-leave an existing prefix alone unless `FLOWER_FFMPEG_REBUILD` is set.
+leave an existing prefix alone unless `FFAUDIO_REBUILD_FFMPEG` is set.
 
 ## Building for development (macOS)
 
@@ -59,10 +59,10 @@ leave an existing prefix alone unless `FLOWER_FFMPEG_REBUILD` is set.
 native/ffmpeg/macos/build.sh
 ```
 
-Finds FFmpeg through `pkg-config`, builds `libflower_ffmpeg.dylib`, and drops
+Finds FFmpeg through `pkg-config`, builds `libffaudio.dylib`, and drops
 it in `native/ffmpeg/artifacts/macos/`. Nothing copies it anywhere: the
 managed side finds it by walking up from the test/app output directory, or
-from `FLOWER_FFMPEG` if that names a file. Both are in
+from `FFAUDIO_LIBRARY` if that names a file. Both are in
 `FfmpegNative.Resolve`.
 
 Without it, the `RequiresFfmpeg` tests fail rather than skip - filter them out
@@ -102,7 +102,7 @@ so is a development build only, exactly as MacPorts' is.
 
 The version floor is FFmpeg 5.1 - where `AVChannelLayout` and
 `swr_alloc_set_opts2` arrived, which are the newest APIs in
-`flower_ffmpeg.c`. It was briefly 7.x, which was not a requirement but the
+`ffaudio.c`. It was briefly 7.x, which was not a requirement but the
 version of the one machine this was first built on, and it kept the Linux
 build from finding Ubuntu 24.04's FFmpeg 6 at all.
 
@@ -120,10 +120,10 @@ builds and the LGPL variant of them is already configured the way Flower needs
 separate DLLs, which is the same replaceable shape the licence obligation
 takes on macOS and Linux. So the script downloads one rather than building it:
 a pinned, checksummed BtbN autobuild, unpacked into `windows/ffmpeg/`, which
-`CMakeLists.txt` finds through `FLOWER_FFMPEG_PREFIX` instead of pkg-config -
+`CMakeLists.txt` finds through `FFAUDIO_PREFIX` instead of pkg-config -
 MSVC import libraries in `lib/`, headers in `include/`.
 
-Five DLLs come out rather than one. `flower_ffmpeg.dll` imports avformat,
+Five DLLs come out rather than one. `ffaudio.dll` imports avformat,
 avcodec, avutil and swresample, so the script copies those four into
 `native/ffmpeg/artifacts/windows/` beside it; `FfmpegNative.Resolve` loads the
 façade by full path and Windows then searches that directory for its
@@ -131,7 +131,7 @@ dependencies. avdevice, avfilter and swscale are in the download and are
 deliberately not linked.
 
 `-Prefix` takes an FFmpeg of your own instead, for a bisect against a
-differently-built one - the build-time counterpart to `FLOWER_FFMPEG`.
+differently-built one - the build-time counterpart to `FFAUDIO_LIBRARY`.
 
 Two things this does not do yet. Nothing copies those DLLs into a packaged
 Windows app, so a shipping build still has that step to grow. And the
@@ -143,14 +143,14 @@ packaging question, not a development one.
 
 ```
 native/ffmpeg/ios/build-ffmpeg.sh   # slow: cross-compiles FFmpeg itself, both slices
-native/ffmpeg/ios/build.sh          # wraps it in flower_ffmpeg.framework
+native/ffmpeg/ios/build.sh          # wraps it in ffaudio.framework
 ```
 
 Unlike macOS and Linux there is nothing for `pkg-config` to find, so the first
 script builds FFmpeg from the release tarball for device arm64 and Apple
 Silicon simulator arm64, and the second links it *into* the façade: one
 framework per slice rather than five libraries, which is what
-`-DFLOWER_FFMPEG_STATIC` means for mobile. The frameworks land in
+`-DFFAUDIO_STATIC` means for mobile. The frameworks land in
 `Flower.iOS/Frameworks/ios-{device,simulator}/` and are checked in, the same
 arrangement `native/miniaudio/` uses and for the same reason - a phone has no
 package manager. They are about 1.9MB each.
@@ -168,7 +168,7 @@ And the export list. `CMAKE_C_VISIBILITY_PRESET hidden` cannot reach inside a
 static archive, so without `-exported_symbols_list` the framework would
 re-export FFmpeg's entire ABI - which is precisely the second route to FFmpeg
 that this façade exists in order not to have. `ios/build.sh` derives the list
-from the `FLOWER_API` lines in the header and ends by printing anything else
+from the `FFAUDIO_API` lines in the header and ends by printing anything else
 that got out.
 
 `--disable-network`, because Flower never lets FFmpeg open a URL: a streamed
@@ -185,7 +185,7 @@ ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/<version> native/ffmpeg/android/build
 The same two-step shape as iOS and for the same reason - there is no
 pkg-config to ask - with the NDK's clang in place of Xcode's. The first script
 cross-compiles FFmpeg for `arm64-v8a`, `armeabi-v7a` and `x86_64`; the second
-links it into `libflower_ffmpeg.so` per ABI, straight into
+links it into `libffaudio.so` per ABI, straight into
 `Flower.Android/libs/<abi>/` beside `libminiaudio.so`, which is where
 `native/miniaudio/android/build.sh` puts its own output and where the csproj's
 `AndroidNativeLibrary` items look. About 1.3-1.9MB per ABI.
@@ -194,13 +194,13 @@ Both load-bearing details carry over from iOS. The configure line is where the
 LGPL obligation is met, an APK linking FFmpeg statically having no distro build
 to point at; `config.h` should say `CONFIG_GPL 0` after any change. And the
 export narrowing, spelled here as an ELF version script rather than an
-`-exported_symbols_list`, derived from the same `FLOWER_API` lines in the
+`-exported_symbols_list`, derived from the same `FFAUDIO_API` lines in the
 header so the ABI is described once. `build.sh` ends by listing the *dynamic*
 table - the strip step takes the symtab with it, so a plain `nm` reads "no
 symbols" and would pass anything.
 
 Unlike iOS, no `DllImportResolver` branch is needed: Android's loader finds
-`libflower_ffmpeg.so` in the APK from the `DllImport("flower_ffmpeg")` string
+`libffaudio.so` in the APK from the `DllImport("ffaudio")` string
 alone, exactly as `libminiaudio.so` is found from `DllImport("miniaudio")`.
 
 `x86_64` is built `--disable-x86asm`, since FFmpeg's x86 assembly wants nasm
@@ -218,11 +218,11 @@ each artifact is built, packaged and tested on real hardware:
 
 | Platform | Artifact | Status |
 |---|---|---|
-| macOS | `libflower_ffmpeg.dylib` | Built and tested against MacPorts FFmpeg, and elected in real listening; built and checked on CI |
-| Linux | `libflower_ffmpeg.so` | `linux/build.sh` written and wired into CI; the first CI run is what proves it - it has never been built on a Linux machine here |
-| Windows | `flower_ffmpeg.dll` | Built on CI against a pinned LGPL FFmpeg download, and required there; never built or listened to on a Windows machine here |
-| Android | `libflower_ffmpeg.so` per ABI | Built for arm64-v8a, armeabi-v7a and x86_64, and packaged into the APK. Never run on a device or emulator - Android has no device-checks head |
-| iOS | `flower_ffmpeg.framework` per slice | Built; the decode checks pass on the simulator and on a physical device |
+| macOS | `libffaudio.dylib` | Built and tested against MacPorts FFmpeg, and elected in real listening; built and checked on CI |
+| Linux | `libffaudio.so` | `linux/build.sh` written and wired into CI; the first CI run is what proves it - it has never been built on a Linux machine here |
+| Windows | `ffaudio.dll` | Built on CI against a pinned LGPL FFmpeg download, and required there; never built or listened to on a Windows machine here |
+| Android | `libffaudio.so` per ABI | Built for arm64-v8a, armeabi-v7a and x86_64, and packaged into the APK. Never run on a device or emulator - Android has no device-checks head |
+| iOS | `ffaudio.framework` per slice | Built; the decode checks pass on the simulator and on a physical device |
 
 ## On CI
 
@@ -252,7 +252,7 @@ which is tens of minutes a job that runs on every push should not spend.
 
 ## Debugging
 
-`-DFLOWER_FFMPEG_ASAN=ON` builds with AddressSanitizer, which is worth doing
-after any change to the buffer management in `flower_decoder_read` - the
+`-DFFAUDIO_ASAN=ON` builds with AddressSanitizer, which is worth doing
+after any change to the buffer management in `ffaudio_decoder_read` - the
 scratch/pending pair and the S24 packing are where a mistake would corrupt the
 heap rather than fail a test.

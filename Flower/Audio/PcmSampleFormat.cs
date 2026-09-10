@@ -6,7 +6,7 @@ namespace Flower.Audio
     // S16 is what LibVLC's amem seam delivers and the only thing it can
     // deliver - see GaplessFormat.LibVlcFourCc. S24 is packed three-byte
     // little-endian, which is what miniaudio's ma_format_s24 takes and what
-    // flower-ffmpeg's pack_s24 produces, and it is the real ceiling of every
+    // ffaudio's pack_s24 produces, and it is the real ceiling of every
     // hi-res release and every DAC that plays one.
     //
     // S32 and F32 are deliberately not here. A 32-bit integer source cannot

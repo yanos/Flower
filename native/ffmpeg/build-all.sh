@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Builds every flower-ffmpeg façade this machine is able to build, and says
+# Builds every ffaudio façade this machine is able to build, and says
 # plainly what it skipped and why.
 #
 # It exists because nothing else builds the façade. `dotnet build` compiles the
-# managed bindings in Flower/Audio/Ffmpeg/ and never touches flower_ffmpeg.c -
+# managed bindings in Flower/Audio/Ffmpeg/ and never touches ffaudio.c -
 # the desktop artifact is found at runtime by FfmpegNative.Resolve, and the
 # mobile ones are checked-in binaries the heads merely package. So editing the
 # C changes nothing at all until the right per-platform script is re-run by
@@ -25,11 +25,11 @@
 #
 #     native/ffmpeg/build-all.sh                 # everything this host can do
 #     native/ffmpeg/build-all.sh macos ios       # just these
-#     FLOWER_FFMPEG_REBUILD=1 …/build-all.sh     # rebuild the mobile FFmpeg too
+#     FFAUDIO_REBUILD_FFMPEG=1 …/build-all.sh     # rebuild the mobile FFmpeg too
 #
 # The mobile targets each cross-compile FFmpeg itself first (build-ffmpeg.sh),
 # which is tens of minutes the first time. Both of those are idempotent - an
-# existing prefix is left alone unless FLOWER_FFMPEG_REBUILD is set - so the
+# existing prefix is left alone unless FFAUDIO_REBUILD_FFMPEG is set - so the
 # ordinary run after that is just the façade, which is one translation unit.
 set -uo pipefail
 

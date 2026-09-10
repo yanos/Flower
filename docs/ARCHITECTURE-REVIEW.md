@@ -34,7 +34,7 @@ architecture has been reviewed. Not in scope, then or since:
   as design records rather than as a structural review — in particular nothing
   states which of the four threads owns which state, or where the handoffs are.
 - **Native code.** `native/` is not mentioned once. Three vendored artifacts
-  (`flower-ffmpeg`, `miniaudio`, `flower_audio_bridge`) across five platforms,
+  (`ffaudio`, `miniaudio`, `flower_audio_bridge`) across five platforms,
   built by their own scripts and committed as binaries, with an ABI pin, an
   LGPL constraint, and a cross-language signature that only a comment enforces.
 - **Steady-state cost.** Tier 1 measures what an operation costs against a 16k

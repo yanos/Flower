@@ -23,7 +23,7 @@ namespace Flower.Tests;
 // that drops the connection partway through - proving the gapless pipeline
 // settles (Faulted/Drained/EndReached) instead of hanging, and that
 // GaplessCoordinator still promotes whatever's armed next exactly as it does
-// for a track that ends normally. Needs a built flower-ffmpeg, same as every
+// for a track that ends normally. Needs a built ffaudio, same as every
 // other RequiresFfmpeg test.
 [Trait("Category", "RequiresFfmpeg")]
 public class StreamingNetworkOutageTests : IDisposable

@@ -1,4 +1,4 @@
-# Builds flower_ffmpeg.dll for Windows, and puts the FFmpeg DLLs it needs
+# Builds ffaudio.dll for Windows, and puts the FFmpeg DLLs it needs
 # beside it.
 #
 # Unlike macOS and Linux there is no FFmpeg on this machine to find and no
@@ -24,7 +24,7 @@
 param(
     # An FFmpeg prefix to build against - include/, lib/ and bin/ - instead of
     # the pinned download. For bisecting against a differently-built FFmpeg,
-    # the way FLOWER_FFMPEG does at run time.
+    # the way FFAUDIO_LIBRARY does at run time.
     [string]$Prefix,
     [string]$Configuration = "Release"
 )
@@ -84,7 +84,7 @@ if (-not (Test-Path (Join-Path $Prefix "include/libavformat/avformat.h"))) {
 }
 
 Write-Host "==> Building the façade against $Prefix"
-cmake -S (Join-Path $here "..") -B $build -A x64 "-DFLOWER_FFMPEG_PREFIX=$((Resolve-Path $Prefix).Path -replace '\\', '/')"
+cmake -S (Join-Path $here "..") -B $build -A x64 "-DFFAUDIO_PREFIX=$((Resolve-Path $Prefix).Path -replace '\\', '/')"
 if ($LASTEXITCODE -ne 0) {
     throw "cmake configure failed"
 }
@@ -95,18 +95,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 New-Item -ItemType Directory -Force -Path $out | Out-Null
-Copy-Item (Join-Path $build "$Configuration/flower_ffmpeg.dll") $out -Force
+Copy-Item (Join-Path $build "$Configuration/ffaudio.dll") $out -Force
 
 # The four the façade imports, and only those - the prefix also holds
 # avdevice, avfilter and swscale, which nothing here calls. They go beside the
 # façade rather than anywhere on PATH because that is where its own loader
-# finds them: FfmpegNative.Resolve loads flower_ffmpeg.dll by full path, and
+# finds them: FfmpegNative.Resolve loads ffaudio.dll by full path, and
 # Windows then searches the directory it came out of for its dependencies.
 foreach ($component in @("avformat", "avcodec", "avutil", "swresample")) {
     Get-ChildItem -Path (Join-Path $Prefix "bin/$component-*.dll") | Copy-Item -Destination $out -Force
 }
 
-Write-Host "built $out\flower_ffmpeg.dll"
+Write-Host "built $out\ffaudio.dll"
 Get-ChildItem $out | ForEach-Object { Write-Host ("  " + $_.Name) }
 
 # The same sanity check the macOS and Linux scripts end on: eight exported
@@ -115,7 +115,7 @@ Get-ChildItem $out | ForEach-Object { Write-Host ("  " + $_.Name) }
 # developer prompt, so this reports rather than fails when it is missing.
 $dumpbin = Get-Command dumpbin -ErrorAction SilentlyContinue
 if ($dumpbin) {
-    & $dumpbin.Path /exports (Join-Path $out "flower_ffmpeg.dll") | Select-String "flower_"
+    & $dumpbin.Path /exports (Join-Path $out "ffaudio.dll") | Select-String "ffaudio_"
 }
 else {
     Write-Host "(dumpbin not on PATH - exports unchecked)"

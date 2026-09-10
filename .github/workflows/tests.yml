@@ -7,7 +7,7 @@ jobs:
   # Build, test and decode-check, once per desktop platform.
   #
   # The decode checks used to be a second job with the same three-OS matrix,
-  # duplicating this one's checkout, restore and flower-ffmpeg build, because
+  # duplicating this one's checkout, restore and ffaudio build, because
   # they needed a VLC install that a package mirror could fail on its own. With
   # LibVLC gone they are simply another filter of an assembly this job has
   # already built, so the duplicate runner has no reason to exist.
@@ -43,14 +43,14 @@ jobs:
       # mode this whole area keeps hitting - so every platform builds it. That
       # is new for Windows, which used to filter those tests out by name for
       # want of a façade to run them against.
-      - name: Build flower-ffmpeg (Linux)
+      - name: Build ffaudio (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev libswresample-dev
           native/ffmpeg/linux/build.sh
 
-      - name: Build flower-ffmpeg (macOS)
+      - name: Build ffaudio (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install ffmpeg
@@ -61,7 +61,7 @@ jobs:
       # native/ffmpeg/windows/build.ps1. That is why this step is a one-liner
       # where the mobile equivalents would be tens of minutes, and why the
       # RequiresFfmpeg tests are no longer filtered out below.
-      - name: Build flower-ffmpeg (Windows)
+      - name: Build ffaudio (Windows)
         if: runner.os == 'Windows'
         run: ./native/ffmpeg/windows/build.ps1
         shell: pwsh
@@ -69,7 +69,7 @@ jobs:
       # No filter. This used to exclude the RequiresLibVLC tests, because no
       # hosted runner image ships VLC and installing it was flaky enough to be
       # worth keeping out of the fast suite. There is no VLC any more: the one
-      # decoder is flower-ffmpeg, built two steps up, and everything that
+      # decoder is ffaudio, built two steps up, and everything that
       # decodes for real needs only that.
       #
       # FLOWER_REQUIRE_DECODERS is what stops this going green having checked

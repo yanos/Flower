@@ -23,7 +23,7 @@ public class FfmpegTrackDecoderTests : IDisposable
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
 
-    private readonly string _directory = Directory.CreateTempSubdirectory("flower-ffmpeg-decoder").FullName;
+    private readonly string _directory = Directory.CreateTempSubdirectory("ffaudio-decoder").FullName;
 
     public void Dispose() => TempDirectory.DeleteWhenReleased(_directory);
 

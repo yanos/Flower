@@ -155,7 +155,7 @@ namespace Flower.Audio
                    logger,
                    stagingCapacityBytes)
         {
-            logger?.LogInformation("Decoding through flower-ffmpeg at {Format}", GaplessFormat.SampleFormat);
+            logger?.LogInformation("Decoding through ffaudio at {Format}", GaplessFormat.SampleFormat);
         }
 
         // Lets tests substitute a fake ITrackDecoder to exercise this

@@ -11,7 +11,7 @@ using Flower.Services;
 
 namespace Flower.Audio.Ffmpeg
 {
-    // ITrackDecoder over the flower-ffmpeg façade - the second implementation
+    // ITrackDecoder over the ffaudio façade - the second implementation
     // GaplessCoordinator can drive, alongside the LibVLC-based TrackDecoder it
     // was written for. Everything above ITrackDecoder is unchanged: the
     // decode-ahead role, the staging ring, the retarget at handover.

@@ -15,12 +15,12 @@
 # statement of what the phone can play.
 #
 # Slow - tens of minutes for both slices - and idempotent: an existing prefix
-# with a libavformat.a in it is left alone unless FLOWER_FFMPEG_REBUILD is set.
+# with a libavformat.a in it is left alone unless FFAUDIO_REBUILD_FFMPEG is set.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 work="$here/ffmpeg"
-version="${FLOWER_FFMPEG_VERSION:-7.1.1}"
+version="${FFAUDIO_FFMPEG_VERSION:-7.1.1}"
 deployment_target=12.2
 
 # What a music library is made of, plus the containers a server might hand over
@@ -44,8 +44,8 @@ build_slice() {
     local slice="$3"  # ios-device | ios-simulator
 
     local prefix="$work/prefix/$slice"
-    if [ -f "$prefix/lib/libavformat.a" ] && [ -z "${FLOWER_FFMPEG_REBUILD:-}" ]; then
-        echo "=== $slice already built ($prefix) - set FLOWER_FFMPEG_REBUILD=1 to redo ==="
+    if [ -f "$prefix/lib/libavformat.a" ] && [ -z "${FFAUDIO_REBUILD_FFMPEG:-}" ]; then
+        echo "=== $slice already built ($prefix) - set FFAUDIO_REBUILD_FFMPEG=1 to redo ==="
         return
     fi
 
@@ -97,4 +97,4 @@ build_slice() {
 build_slice iphoneos "arm64-apple-ios${deployment_target}" ios-device
 build_slice iphonesimulator "arm64-apple-ios${deployment_target}-simulator" ios-simulator
 
-echo "Done. Now run native/ffmpeg/ios/build.sh to wrap these in flower_ffmpeg.framework."
+echo "Done. Now run native/ffmpeg/ios/build.sh to wrap these in ffaudio.framework."

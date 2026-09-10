@@ -74,7 +74,7 @@
     <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
   </ItemGroup>
 
-  <!-- libs/<abi>/libflower_ffmpeg.so is the FFmpeg decoder's facade, self-built
+  <!-- libs/<abi>/libffaudio.so is the FFmpeg decoder's facade, self-built
        the same way and for the same reason (native/ffmpeg/android/build.sh).
        FFmpeg itself is linked in statically rather than shipped as four more
        libraries per ABI, which is also where the LGPL obligation lands for a

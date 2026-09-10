@@ -465,9 +465,9 @@ public partial class App : Application
 
     // The one platform fork the audio pipeline needs.
     //
-    // Decoding is flower-ffmpeg and rendering is MiniaudioSink, on every
+    // Decoding is ffaudio and rendering is MiniaudioSink, on every
     // platform. Android and iOS use their vendored native miniaudio and
-    // flower_ffmpeg builds (native/miniaudio, native/ffmpeg); the desktops
+    // ffaudio builds (native/miniaudio, native/ffmpeg); the desktops
     // build the façade from source.
     //
     // Neither of those ships a browser/WASM build (see SYNC-PLAN.md's
@@ -496,7 +496,7 @@ public partial class App : Application
                 if (!FfmpegDecoder.IsAvailable)
                 {
                     sp.GetRequiredService<ILogger<GaplessAudioManager>>().LogCritical(
-                        "flower_ffmpeg is not loadable here, so nothing can be decoded. See native/ffmpeg/README.md");
+                        "ffaudio is not loadable here, so nothing can be decoded. See native/ffmpeg/README.md");
                 }
 
                 return new GaplessAudioManager(
