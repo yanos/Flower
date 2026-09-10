@@ -11,6 +11,7 @@
 #
 #     scripts/use-ffaudio-package.sh              # latest green CI build of master
 #     scripts/use-ffaudio-package.sh --run 1234   # one specific run
+#     scripts/use-ffaudio-package.sh --local      # pack ../FFAudio.NET as it stands
 #     scripts/use-ffaudio-package.sh --status     # what is in force right now
 #     scripts/use-ffaudio-package.sh --off        # back to the in-tree façade
 #
@@ -22,32 +23,67 @@
 # `git status` stays clean: everything this writes goes into FFAudioPackage.props,
 # which is gitignored and which Directory.Build.props imports only if it exists.
 #
-# The native library is deliberately NOT taken from the package. FFAudio.NET
-# ships the managed binding alone today (its per-platform native packages are
-# its own Phase 6), so what loads is still the ffaudio that
-# native/ffmpeg/build-all.sh built in this repo - copied beside each test and
-# app binary, which is the first place FFAudio's resolver looks. That is the
-# right thing to be testing anyway: the question here is whether the package's
-# managed layer works, not whose copy of one C file is on disk.
+# The native library does not come from the package either, because FFAudio.NET
+# ships the managed binding alone until its own Phase 6. It comes from the
+# FFAudio.NET checkout next door, copied beside each test and app binary, which
+# is the first place FFAudio's resolver looks.
+#
+# Its own and not Flower's, which is a correction rather than a preference. The
+# two façades were the same C file when this script was written, so either
+# would do; Phase 3 added tags, cover art, channel layout and codec names to
+# one of them, and the managed side now calls two of those from the Decoder
+# constructor. Against Flower's older library every open would fail with
+# EntryPointNotFoundException - not an ABI mismatch, because nothing changed
+# shape and the version is still 1, but a missing symbol. Pairing the package
+# with the tree it was built from is the only arrangement that stays honest as
+# the library moves ahead of what Flower vendors.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 props="$repo_root/FFAudioPackage.props"
 feed="${FFAUDIO_FEED:-$HOME/.nuget/local-feeds/ffaudio}"
 source_repo="${FFAUDIO_REPO:-yanos/FFAudio.NET}"
+# The checkout next door, which is where the façade to pair with the package
+# comes from. Overridable for a clone that lives somewhere else.
+source_dir="${FFAUDIO_SOURCE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/FFAudio.NET}"
 
 mode=on
 run_id=""
+local_pack=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --off)    mode=off ;;
         --status) mode=status ;;
         --run)    run_id="${2:?--run needs a run id}"; shift ;;
+        --local)  local_pack=1 ;;
         -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument '$1'. Try --help." >&2; exit 1 ;;
     esac
     shift
 done
+
+
+# Copies made by a previous toggle, removed on every switch in either
+# direction. CopyToOutputDirectory is PreserveNewest, and the façade this
+# script installs is by definition newer than Flower's vendored one - so
+# switching off and rebuilding would leave the package's library sitting in an
+# already-built output, and the head would keep running against it while every
+# file on disk said otherwise. Only build output is touched; the checked-in
+# mobile binaries under Flower.iOS/Frameworks and Flower.Android/libs are not
+# under bin/ or obj/ and are left alone.
+#
+# obj/ as well as bin/, which is not belt and braces: the macOS head stages
+# native libraries through obj/<rid>/nativelibraries/ and an incremental build
+# re-bundles whatever is sitting there, so sweeping only bin/ left the head
+# running the package's façade while every file on disk said it was switched
+# off.
+sweep_stale_copies() {
+    find "$repo_root" \
+        -type f \
+        \( -name libffaudio.dylib -o -name libffaudio.so -o -name ffaudio.dll \) \
+        \( -path '*/bin/*' -o -path '*/obj/*' \) \
+        -delete 2>/dev/null || true
+}
 
 current_version() {
     [ -f "$props" ] || return 1
@@ -65,6 +101,11 @@ if [ "$mode" = status ]; then
 fi
 
 if [ "$mode" = off ]; then
+    # Unconditionally, not only when a props file was there to remove: a
+    # half-undone switch - props already gone, copies still staged - is
+    # exactly the state that needs sweeping, and the state a plain `rm` of
+    # the props file leaves behind.
+    sweep_stale_copies
     if version="$(current_version)"; then
         rm -f "$props"
         echo "Removed $props - Flower is back on its in-tree façade (was FFAudio.NET $version)."
@@ -75,30 +116,39 @@ if [ "$mode" = off ]; then
     exit 0
 fi
 
-command -v gh >/dev/null || { echo "This needs the gh CLI." >&2; exit 1; }
-
-# The default branch rather than a hardcoded name: this repo says master and
-# the habit of typing main is exactly how you end up testing nothing.
-if [ -z "$run_id" ]; then
-    branch="$(gh api "repos/$source_repo" --jq .default_branch)"
-    echo "Looking for the newest green CI run on $source_repo@$branch ..."
-    run_id="$(gh run list --repo "$source_repo" --branch "$branch" \
-                --workflow CI --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
-    [ -n "$run_id" ] && [ "$run_id" != null ] \
-        || { echo "No successful CI run on $branch to take a package from." >&2; exit 1; }
-fi
-
-gh run view --repo "$source_repo" "$run_id" \
-    --json displayTitle,headSha,createdAt \
-    --jq '"run \(env.RUN_ID // "")  \(.displayTitle)  \(.headSha[0:8])  \(.createdAt)"' RUN_ID="$run_id" 2>/dev/null \
-  || gh run view --repo "$source_repo" "$run_id" --json displayTitle,headSha --jq '"\(.displayTitle)  \(.headSha[0:8])"'
+[ -d "$source_dir" ] || { echo "No FFAudio.NET checkout at $source_dir - set FFAUDIO_SOURCE_DIR." >&2; exit 1; }
 
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
-gh run download "$run_id" --repo "$source_repo" --name nupkg --dir "$staging"
+
+if [ "$local_pack" -eq 1 ]; then
+    # The working tree as it stands, which is the loop you want while actually
+    # writing the library: pack, switch, run Flower's suite, repeat, with no
+    # commit and no CI round trip in between.
+    echo "Packing $source_dir as it stands ..."
+    dotnet pack "$source_dir/src/FFAudio.NET/FFAudio.NET.csproj" \
+        --configuration Release --output "$staging" --nologo -v quiet
+else
+    command -v gh >/dev/null || { echo "This needs the gh CLI." >&2; exit 1; }
+
+    # The default branch rather than a hardcoded name: this repo says master and
+    # the habit of typing main is exactly how you end up testing nothing.
+    if [ -z "$run_id" ]; then
+        branch="$(gh api "repos/$source_repo" --jq .default_branch)"
+        echo "Looking for the newest green CI run on $source_repo@$branch ..."
+        run_id="$(gh run list --repo "$source_repo" --branch "$branch" \
+                    --workflow CI --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+        [ -n "$run_id" ] && [ "$run_id" != null ] \
+            || { echo "No successful CI run on $branch to take a package from." >&2; exit 1; }
+    fi
+
+    gh run view --repo "$source_repo" "$run_id" --json displayTitle,headSha \
+        --jq '"\(.displayTitle)  \(.headSha[0:8])"'
+    gh run download "$run_id" --repo "$source_repo" --name nupkg --dir "$staging"
+fi
 
 package="$(find "$staging" -name 'FFAudio.NET.*.nupkg' -not -name '*.snupkg' | head -1)"
-[ -n "$package" ] || { echo "That run's nupkg artifact holds no FFAudio.NET package." >&2; exit 1; }
+[ -n "$package" ] || { echo "No FFAudio.NET package was produced." >&2; exit 1; }
 
 file="$(basename "$package")"
 version="${file#FFAudio.NET.}"
@@ -117,17 +167,29 @@ if [ -d "$extracted" ]; then
     rm -rf "$extracted"
 fi
 
-# The façade this repo built, named for this host. Copied beside each binary
-# because FFAudio's resolver looks at AppContext.BaseDirectory first, and its
-# repo-relative fallback walks native/artifacts/ - FFAudio.NET's own layout,
-# not Flower's native/ffmpeg/artifacts/.
+# The façade to pair the package with, named for this host. Copied into the
+# feed rather than referenced where it lies, so that switching off and
+# rebuilding FFAudio.NET cannot change what Flower is currently testing
+# against.
 case "$(uname -s)" in
-    Darwin) native="native/ffmpeg/artifacts/macos/libffaudio.dylib" ;;
-    Linux)  native="native/ffmpeg/artifacts/linux/libffaudio.so" ;;
-    *)      native="native/ffmpeg/artifacts/windows/ffaudio.dll" ;;
+    Darwin) platform=macos;   libname=libffaudio.dylib ;;
+    Linux)  platform=linux;   libname=libffaudio.so ;;
+    *)      platform=windows; libname=ffaudio.dll ;;
 esac
-[ -f "$repo_root/$native" ] \
-    || echo "Note: $native is not built yet - run native/ffmpeg/build-all.sh, or nothing will decode."
+
+built="$source_dir/native/artifacts/$platform/$libname"
+if [ ! -f "$built" ]; then
+    echo
+    echo "$source_dir has no built façade at native/artifacts/$platform/." >&2
+    echo "Build it there first - native/build-all.sh $platform - because the package's" >&2
+    echo "managed side calls symbols Flower's own vendored façade does not have." >&2
+    exit 1
+fi
+
+sweep_stale_copies
+mkdir -p "$feed/native"
+cp "$built" "$feed/native/$libname"
+native="$feed/native/$libname"
 
 cat > "$props" <<PROPS
 <Project>
@@ -162,11 +224,21 @@ cat > "$props" <<PROPS
     <DefaultItemExcludes>\$(DefaultItemExcludes);Audio/Ffmpeg/FfmpegDecoder.cs;Audio/Ffmpeg/FfmpegNative.cs</DefaultItemExcludes>
   </PropertyGroup>
 
-  <!-- Flower.MacOS already copies this for itself, and its TFM is net10.0-macos,
-       so the condition leaves it alone rather than fighting it over one file. -->
-  <ItemGroup Condition="'\$(TargetFramework)' == 'net10.0' And Exists('\$(MSBuildThisFileDirectory)$native')">
-    <None Include="\$(MSBuildThisFileDirectory)$native">
-      <Link>$(basename "$native")</Link>
+  <!-- Named hosts rather than a TargetFramework condition, because a
+       CopyToOutputDirectory item flows through a ProjectReference into
+       everything downstream. On the Flower library that put the dylib into
+       every consumer's output, including the macOS head - which copies one
+       itself, under the same name, from a different path - and two sources for
+       one bundle file is an install_name_tool failure with a missing .tmp
+       rather than a duplicate-item error. It would also have pushed a desktop
+       dylib into the iOS and Android app bundles, where it is at best dead
+       weight.
+
+       So only the three projects that are actually launched, and none of the
+       libraries beneath them. -->
+  <ItemGroup Condition="('\$(MSBuildProjectName)' == 'Flower.Tests' Or '\$(MSBuildProjectName)' == 'Flower.Desktop' Or '\$(MSBuildProjectName)' == 'Flower.MacOS') And Exists('$native')">
+    <None Include="$native">
+      <Link>$libname</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
@@ -177,6 +249,14 @@ echo
 echo "Flower is now building against FFAudio.NET $version"
 echo "  package : $feed/$file"
 echo "  switch  : $props  (gitignored; delete it or run --off to undo)"
+echo
+# The phones load the façade out of Flower.iOS/Frameworks and
+# Flower.Android/libs, which are checked-in binaries of Flower's own vendored
+# source. Nothing here redirects those, so a mobile head built while this
+# switch is on pairs new managed code with an older library.
+echo "Note: this switch reaches the desktop heads and the test suite only."
+echo "      Flower.iOS and Flower.Android still load their checked-in façade, which"
+echo "      predates the package's metadata calls - run those switched off."
 echo
 echo "Try it:"
 echo "  dotnet test Flower.Tests/Flower.Tests.csproj --filter Category=RequiresFfmpeg"

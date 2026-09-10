@@ -79,10 +79,15 @@
        (native/ffmpeg/build-all.sh) and no CI job that compiles this head
        builds it - see native/ffmpeg/README.md. A missing dylib is a head that
        cannot decode, which the startup line already says clearly; it is not a
-       build failure. -->
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\native\ffmpeg\artifacts\macos\libflower_ffmpeg.dylib')">
-    <None Include="..\native\ffmpeg\artifacts\macos\libflower_ffmpeg.dylib">
-      <Link>libflower_ffmpeg.dylib</Link>
+       build failure.
+
+       Stands down when scripts/use-ffaudio-package.sh is in force: that switch
+       supplies the facade from the FFAudio.NET checkout instead, and two items
+       copying different files to the same name in one bundle is an
+       install_name_tool failure rather than a duplicate-item error. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\native\ffmpeg\artifacts\macos\libffaudio.dylib') And '$(FFAudioPackageVersion)' == ''">
+    <None Include="..\native\ffmpeg\artifacts\macos\libffaudio.dylib">
+      <Link>libffaudio.dylib</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
