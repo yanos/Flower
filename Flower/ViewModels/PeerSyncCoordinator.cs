@@ -578,7 +578,51 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             ConfirmServerTrust(device.Fingerprint);
             RecordSyncedNow(device.Fingerprint);
         }
+
+        NoteThrottling(device, result);
     }
+
+    // How long to leave a peer alone after it says 429. One second longer than
+    // the server's own window (SyncEndpoints.BulkLimiter is sixty requests a
+    // minute) so that a retry lands after the budget has actually rolled over
+    // rather than on the last moment of the window that refused it.
+    private static readonly TimeSpan ThrottleCoolOff = TimeSpan.FromSeconds(61);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _throttledUntil = new();
+
+    // A 429 is the one failure that is made worse by trying again, and this
+    // client was doing exactly that: the log of a single launch shows two full
+    // sync sessions five seconds apart and a third from the Sync Now button,
+    // each spending budget it did not have and each refused. A sync session is
+    // several bulk requests, so a client that restarts a few times - a phone
+    // being backgrounded, or an afternoon of debugging - can hold itself out of
+    // its own server indefinitely without a single thing being wrong.
+    //
+    // Only automatic syncs are held off. See ForceSyncNowAsync, where the
+    // user's own button says what it is waiting for instead of spending a
+    // request to be told again.
+    private void NoteThrottling(DiscoveredDevice device, LibrarySyncResult result)
+    {
+        if (string.IsNullOrEmpty(device.Fingerprint))
+            return;
+
+        if (result.Failure == SyncFailure.Throttled)
+        {
+            _throttledUntil[device.Fingerprint] = DateTimeOffset.UtcNow + ThrottleCoolOff;
+            _logger.LogInformation(
+                "{Alias} ({Fingerprint}) is rate limiting this device; not syncing automatically for {CoolOff}",
+                device.Alias, device.Fingerprint, ThrottleCoolOff);
+        }
+        else if (result.Success)
+        {
+            _throttledUntil.TryRemove(device.Fingerprint, out _);
+        }
+    }
+
+    private bool IsCoolingOff(string? fingerprint) =>
+        !string.IsNullOrEmpty(fingerprint)
+        && _throttledUntil.TryGetValue(fingerprint, out var until)
+        && DateTimeOffset.UtcNow < until;
 
     // ServerPickerView's "Unpair" action - must be called before pairing
     // with a different server (switching requires an explicit unpair-first
@@ -755,6 +799,18 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             return;
         }
 
+        // The button still answers while the cool-off runs, it just answers
+        // without spending a request that is certain to be refused - and a
+        // refused one costs the same budget as a useful one, so pressing it
+        // repeatedly is how a minute's wait becomes several.
+        if (IsCoolingOff(pairedFingerprint))
+        {
+            _logger.LogInformation("Force sync requested with {Alias} ({Fingerprint}) while it is rate limiting this device; not sending",
+                device.Alias, device.Fingerprint);
+            LastForceSyncResult = DescribeFailure(SyncFailure.Throttled, device.Alias);
+            return;
+        }
+
         _logger.LogInformation("Force sync requested with {Alias} ({Fingerprint})", device.Alias, device.Fingerprint);
         LastForceSyncResult = null;
 
@@ -772,8 +828,10 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
                 ConfirmServerTrust(device.Fingerprint);
                 RecordSyncedNow(device.Fingerprint);
             }
+            NoteThrottling(device, libraryResult);
+
             LastForceSyncResult = !libraryResult.Success
-                ? $"Could not reach {device.Alias} - check it's still on the network and paired"
+                ? DescribeFailure(libraryResult.Failure, device.Alias)
                 // Unchanged means the server answered 304 - its catalog is
                 // exactly what was merged last time, so there is no fetched
                 // count to report (see LibrarySyncResult).
@@ -790,6 +848,29 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
                 NotifyIsSyncingChanged();
         }
     }
+
+    // What to tell the user, in terms of what they should do next. This used to
+    // be one sentence for every failure - "could not reach X, check it's still
+    // on the network and paired" - which was actively misleading for three of
+    // the four cases: the server was reached, the connection icon beside this
+    // line was correctly showing it as reachable, and the advice was to go and
+    // check a network that was fine.
+    //
+    // Throttled is the one worth naming most precisely. The budget rolls over
+    // by itself (see SyncEndpoints.BulkLimiter), so the whole of the required
+    // action is to wait, and saying so stops the next instinct - unpair and
+    // pair again - which spends more of the same budget.
+    private static string DescribeFailure(SyncFailure failure, string alias) => failure switch
+    {
+        SyncFailure.Throttled =>
+            $"{alias} is asking for fewer requests just now - it should catch up on its own in a minute",
+        SyncFailure.NotTrusted =>
+            $"{alias} refused this device - it may need pairing again",
+        SyncFailure.Refused =>
+            $"{alias} answered, but not with a catalog - see the log for what it said",
+        _ =>
+            $"Could not reach {alias} - check it's still on the network and paired",
+    };
 
     // ── Discovery-driven sync triggers ────────────────────────────────────
 
@@ -845,6 +926,18 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             _logger.LogDebug(
                 "{Alias} ({Fingerprint}) reports a changed library ({Previous} -> {Current}), but it is this device's own track-state report coming back; not syncing",
                 device.Alias, device.Fingerprint, previousToken, device.LibraryToken);
+            return;
+        }
+
+        // A changed token is still news after a 429; it is just news this
+        // device is not allowed to act on yet. The token is already recorded
+        // above, so nothing is lost by skipping - the next poll after the
+        // cool-off compares against it and syncs then.
+        if (IsCoolingOff(device.Fingerprint))
+        {
+            _logger.LogDebug(
+                "{Alias} ({Fingerprint}) reports a changed library, but it is rate limiting this device; waiting",
+                device.Alias, device.Fingerprint);
             return;
         }
 

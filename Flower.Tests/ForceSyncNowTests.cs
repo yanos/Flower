@@ -140,6 +140,41 @@ public class ForceSyncNowTests : PinnedDataDirectory
             parts.Main.LastForceSyncResult);
     }
 
+    // A server that answered, promptly, with 429. The old message sent the user
+    // to go and check a network that was working, next to a connection icon
+    // that was correctly showing the server as reachable - and the natural next
+    // move, unpair and pair again, spends more of the very budget that ran out.
+    // See SyncEndpoints.BulkLimiter: sixty bulk requests a minute, and a
+    // handful of app restarts while debugging is enough to exhaust it.
+    [AvaloniaFact]
+    public async Task A_throttled_sync_says_to_wait_rather_than_to_check_the_network()
+    {
+        using var parts = PairedWithADiscoveredServer();
+        parts.StubLibrarySync!.Result = new LibrarySyncResult(
+            Success: false, FetchedCount: 0, AddedCount: 0, Failure: SyncFailure.Throttled);
+
+        await parts.Main.Sync.ForceSyncNowAsync();
+
+        Assert.Equal("Living Room is asking for fewer requests just now - it should catch up on its own in a minute",
+            parts.Main.LastForceSyncResult);
+    }
+
+    // Reached and refused. The action is to pair again, which is the one case
+    // where the old message's "and paired" half was pointing somewhere useful -
+    // buried in a sentence that was mostly about the network.
+    [AvaloniaFact]
+    public async Task A_refused_sync_says_the_pairing_is_what_is_wrong()
+    {
+        using var parts = PairedWithADiscoveredServer();
+        parts.StubLibrarySync!.Result = new LibrarySyncResult(
+            Success: false, FetchedCount: 0, AddedCount: 0, Failure: SyncFailure.NotTrusted);
+
+        await parts.Main.Sync.ForceSyncNowAsync();
+
+        Assert.Equal("Living Room refused this device - it may need pairing again",
+            parts.Main.LastForceSyncResult);
+    }
+
     // Force sync is the user saying "sync with this one, now": it deliberately
     // bypasses the initiator election every automatic playlist sync goes
     // through, so a Client can pull from a Server that would otherwise have

@@ -43,7 +43,28 @@ public static class SyncEndpoints
 {
     // These are a handful of large requests per sync session, not a stream of
     // small ones, so the budget is small and the window is long.
-    private static readonly RateLimiter BulkLimiter = new(max: 20, TimeSpan.FromSeconds(60));
+    //
+    // Sixty rather than the twenty this started at, because twenty turned out
+    // to be about four sync sessions and a session is not a rare event. One
+    // costs roughly five requests - the catalog, a playlist exchange, a
+    // track-state report, a log push - and a client opens one at launch, on
+    // every change to the server's library token, and whenever the user presses
+    // Sync Now. Restart the app a few times, which is a phone being
+    // backgrounded or an afternoon of debugging, and a client locks itself out
+    // of its own server while nothing at all is wrong; the client then reported
+    // that as "could not reach" and sent its owner to go and check the network.
+    // Keying is per source address, so this is a ceiling for one device rather
+    // than for the household.
+    //
+    // Still a ceiling worth having, and still far below what the art and media
+    // planes get: the point of this budget was never to make a legitimate sync
+    // ration itself, it was to stop an unauthenticated flood from costing the
+    // owner a catalog serialisation per request. Sixty a minute does that just
+    // as well as twenty. The client also now backs off for a full window when
+    // it is refused, instead of retrying into the refusal - see
+    // PeerSyncCoordinator.NoteThrottling, which is the half of this that
+    // actually stopped the loop.
+    private static readonly RateLimiter BulkLimiter = new(max: 60, TimeSpan.FromSeconds(60));
 
     // Cover art is the exception in this group, and it must not be charged to
     // the budget above: it is one small request per album tile, so a browser
@@ -56,7 +77,7 @@ public static class SyncEndpoints
     private static readonly RateLimiter ArtLimiter = new(max: 600, TimeSpan.FromSeconds(60));
 
     // Playback is the third plane, and it is here for the same reason art is:
-    // a bulk budget of twenty per minute is nothing like what streaming a track
+    // a bulk budget of sixty per minute is nothing like what streaming a track
     // costs. One track is a probe plus a body GET plus a reopen or two on a
     // phone changing networks, and decode-ahead has two tracks in flight at
     // once - so playing an album would spend the sync budget several times

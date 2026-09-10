@@ -27,7 +27,44 @@ namespace Flower.Services;
 // already merged, so nothing was fetched and nothing needed merging. That is
 // a success, not a failure - distinguished only so a user-initiated sync can
 // say "already up to date" rather than implying it re-pulled everything.
-public readonly record struct LibrarySyncResult(bool Success, int FetchedCount, int AddedCount, bool Unchanged = false);
+//
+// Failure says which kind of "no" this was, and exists because the distinction
+// the comment above draws for success was never drawn for failure: every way a
+// sync can fail returned the same bare false, so the one sentence the user got
+// was "could not reach it - check it's still on the network and paired". A
+// server that was reached, answered promptly, and said 429 was reported as a
+// server that was not there, next to a connection icon correctly showing it
+// was - and the advice was to go and check the network, which was fine.
+public readonly record struct LibrarySyncResult(
+    bool Success,
+    int FetchedCount,
+    int AddedCount,
+    bool Unchanged = false,
+    SyncFailure Failure = SyncFailure.None);
+
+// Why a sync did not happen, in the terms the user's next action depends on:
+// wait, re-pair, or go and look at the network.
+public enum SyncFailure
+{
+    None,
+
+    // Nothing answered - refused connection, timeout, no route. The only one of
+    // these that is actually about the network.
+    Unreachable,
+
+    // 429. The peer is right there and asked us to slow down; the budget rolls
+    // over on its own, so the answer is to wait rather than to change anything.
+    Throttled,
+
+    // 403. Reached, and refused: this device is not (or no longer) trusted by
+    // that server. See PeerTrustRejected, raised alongside.
+    NotTrusted,
+
+    // Reached, and answered with something else that was not a success - a 500,
+    // a malformed catalog, an endpoint that isn't there. Nothing the user can
+    // act on beyond looking at the log, which is what the message says.
+    Refused,
+}
 
 // Pulls a peer's full track catalog in one request (GET /api/flower/v1/library
 // - see LibrarySyncContracts) and merges anything this device doesn't already
@@ -175,7 +212,7 @@ public class LibrarySyncService
             if (ex is HttpRequestException { StatusCode: HttpStatusCode.Forbidden })
                 PeerTrustRejected?.Invoke(this, new PeerTrustRejectedEventArgs { Fingerprint = device.Fingerprint, Alias = device.Alias });
 
-            return new LibrarySyncResult(false, 0, 0);
+            return new LibrarySyncResult(false, 0, 0, Failure: Classify(ex));
         }
 
         _logger.LogInformation("Library sync with {Alias}: fetched {SongCount} song(s) from their catalog", device.Alias, fetchedCount);
@@ -331,7 +368,7 @@ public class LibrarySyncService
     // new log lines appear at roughly the same cadence as its timer, so a tick
     // that ran a whole SyncWithAsync spent a GET /library (plus its playlist
     // twin) every five seconds to deliver a payload that is usually a handful
-    // of lines - four bulk-group requests a tick against a budget of twenty a
+    // of lines - four bulk-group requests a tick against a budget of sixty a
     // minute, which the server answers with 429s that are themselves logged,
     // which arms the next tick. The catalog has its own trigger for the only
     // thing that should move it: an actual local change (ScheduleContentSync).
@@ -640,4 +677,20 @@ public class LibrarySyncService
             return null;
         }
     }
+
+    // An HttpRequestException carrying no StatusCode never reached a server at
+    // all - the transport failed, which is the only case that means what the
+    // one old message said. One that carries a status *was* answered, and the
+    // status is the answer: 429 is a peer that is right there and busy, 403 is
+    // one that is right there and refusing us. A cancellation is a timeout
+    // rather than a user gesture, because nothing passes a token into this path.
+    private static SyncFailure Classify(Exception ex) => ex switch
+    {
+        HttpRequestException { StatusCode: HttpStatusCode.TooManyRequests } => SyncFailure.Throttled,
+        HttpRequestException { StatusCode: HttpStatusCode.Forbidden } => SyncFailure.NotTrusted,
+        HttpRequestException { StatusCode: not null } => SyncFailure.Refused,
+        HttpRequestException => SyncFailure.Unreachable,
+        TaskCanceledException => SyncFailure.Unreachable,
+        _ => SyncFailure.Refused,
+    };
 }

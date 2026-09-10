@@ -186,7 +186,7 @@ public class MediaEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
         Assert.Equal(HttpStatusCode.NotFound, status);
     }
 
-    // The plane split, from the side that motivated it. Sync is twenty requests
+    // The plane split, from the side that motivated it. Sync is sixty requests
     // a minute, which is the right budget for a handful of large manifests and
     // nothing like what an album costs: a probe, a body GET and a reopen per
     // track, doubled by decode-ahead. Sharing one budget means playing music
@@ -199,13 +199,18 @@ public class MediaEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
 
         await WithAPairedDeviceAsync(async device =>
         {
-            for (var request = 0; request < 25; request++)
+            // Has to stay above BulkLimiter's ceiling to demonstrate anything:
+            // the whole claim is that these did not come out of the bulk
+            // budget, and a loop shorter than that budget would pass whether
+            // they did or not. Raised with it from twenty-five when the ceiling
+            // went from twenty to sixty.
+            for (var request = 0; request < 65; request++)
             {
                 var status = await SignedGetAsync(device, "/api/flower/v1/stream", ASeededSongId, ip);
                 Assert.Equal(HttpStatusCode.NotFound, status);
             }
 
-            // Well past BulkLimiter's twenty, and the catalog is still reachable.
+            // Well past BulkLimiter's sixty, and the catalog is still reachable.
             Assert.NotEqual(
                 HttpStatusCode.TooManyRequests,
                 await SignedGetAsync(device, "/api/flower/v1/library", ASeededSongId, ip));
