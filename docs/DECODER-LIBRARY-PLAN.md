@@ -282,52 +282,78 @@ Resisted, and still worth resisting: encoding, filtering, video, resampling as
 a standalone service. The value of this header is that you can read all of it
 in one sitting, and that is a property that only gets spent.
 
-## Phase 4 — The decoder set — Small effort, Medium risk
+## Phase 4 — The decoder set — **Done**
 
 The mobile builds are `--disable-everything` plus an explicit list, which is
-what keeps an iOS slice at 1.9MB and an Android ABI at 1.3MB. That list is
-Flower's:
+what keeps an iOS slice at 1.9MB and an Android ABI at 1.3MB. That list was
+Flower's, written out twice — once in `ios/build-ffmpeg.sh`, once in
+`android/build-ffmpeg.sh` — with a comment in each saying it had to match the
+other. It now lives once, in FFAudio.NET's `native/codec-set.sh`, which both
+scripts source, and `FFAUDIO_VARIANT` picks between two sets:
 
-```
-decoders="mp3,mp3float,aac,aac_latm,alac,flac,vorbis,opus,wavpack,ape,pcm_*"
-demuxers="mov,mp3,flac,wav,w64,ogg,matroska,aac,ape,wv,aiff,dsf"
-```
+- **`slim`** (the default) — the music-library list, unchanged in shape, plus
+  the DSD fix below. 22 decoders, 12 demuxers. Flower takes this and its size
+  does not move.
+- **`full`** — every audio decoder FFmpeg has and every demuxer it has: 201
+  and 350. Not "drop `--disable-everything`", which would enable the whole
+  video decoder set for a façade that hands back PCM and cannot express a
+  frame. It is the audio half of FFmpeg's own list, read out of the source
+  tree about to be configured: `libavcodec/allcodecs.c` groups its
+  declarations under `/* audio codecs */`, `/* PCM codecs */`, `/* DPCM
+  codecs */` and `/* ADPCM codecs */`, and everything before `/* subtitles */`
+  is what produces samples. Markers that disappear in a future FFmpeg fail the
+  build with an empty list rather than configuring no decoders at all.
 
-A general library cannot ship only that, and cannot ship all of FFmpeg either —
-the Windows download is already 70MB of avcodec for a façade that calls four
-functions. So: **two build variants from one configure line**, a `slim` whose
-list is the one above and a `full` that drops `--disable-everything` for the
-audio family, published as two packages or one package with a runtime
-selection. Flower takes `slim` and its size does not move.
+Two variants, one artifact path: they build to the same name in the same
+place, and the tree carries a `VARIANT` file saying which one it holds. Their
+FFmpeg prefixes are separate (`ffmpeg/prefix/<variant>/`), so switching is a
+relink rather than another forty minutes.
 
-One real gap found while reading this list, worth fixing regardless of which
-variant it lands in: **`dsf` is in the demuxers and no `dsd_*` decoder is in
-the decoders.** A `.dsf` file will demux and then fail to find a decoder, which
-is a worse failure than not supporting it, and `AUDIOPHILE-PLAN.md` §3 is
-written as though the build-configuration question is still open when it is
-half-answered in the wrong direction.
+**The gap this phase was really about is closed**: `dsf` was in the demuxer
+list with no `dsd_*` decoder behind it, so a `.dsf` demuxed and then failed to
+find a decoder — a worse failure than not claiming the format at all. The four
+`dsd_*` decoders are in `slim` now, in FFAudio.NET and in Flower's own copy of
+the scripts, which is what phone builds still come from until Phase 7.
+`AUDIOPHILE-PLAN.md` §3 is still written as though the build-configuration
+question were open; it is not, and that document needs the correction.
 
-## Phase 5 — Static natives and the LGPL route — Medium effort, **High risk**
+What is verified and what is not: the configure lines were run against FFmpeg
+7.1.1 on macOS, both variants, which is what says 22/12 and 201/350 and that
+`CONFIG_GPL` and `CONFIG_NONFREE` both come back 0. No slice or ABI has been
+linked from either — `full` has never been built for a phone, and neither has
+a `slim` with DSD in it. Phase 5's licence assertion arrived early because it
+belongs to the file that generates the configure line: `ffaudio_assert_lgpl`
+reads the generated `config.h` after configure and stops the build rather than
+leaving the check to be remembered.
+
+## Phase 5 — Static natives and the LGPL route — **Mostly done**, **High risk**
 
 The riskiest phase and the one that gates publishing anything at all. The
 constraint is already stated in `native/ffmpeg/README.md`: FFmpeg may be linked
 only under the LGPL, which means no `--enable-gpl`, no `--enable-nonfree`, and
 the libraries must stay replaceable.
 
-Dynamic linking satisfies "replaceable" directly, which is why desktop has been
-fine. **A static NuGet does not**, and the package is the point at which Flower
+Dynamic linking satisfies "replaceable" directly, which is why desktop *looked*
+fine — and it was not, for a reason that has nothing to do with licensing: a
+dynamically linked façade records where it found FFmpeg, and a package is a
+binary that gets restored somewhere else. See "Where dynamic actually broke"
+below. **A static NuGet does not satisfy "replaceable" either**, and the package is the point at which Flower
 stops being able to point at a distro build as someone else's problem. Meeting
 §6 for a statically linked artifact means shipping the corresponding source and
 a genuine relink route — the exact FFmpeg version, the exact configure line,
 the build scripts, and object files or a documented reproducible rebuild that
 actually produces the shipped binary.
 
-`FFAUDIO_STATIC` already exists in `CMakeLists.txt` and already works for
-every pkg-config platform, so iOS and Android are already most of the way there. **Windows is
-the genuinely unscoped one**: the MSVC branch fatally requires
-`FFAUDIO_PREFIX` and links import libraries with no static path at all,
-and a static Windows FFmpeg means either mingw `.a` files that MSVC will not
-consume or building FFmpeg under MSVC, neither of which anyone here has done.
+`FFAUDIO_STATIC` already exists in `CMakeLists.txt`, and macOS and Linux now
+use it. **Windows turns out not to need it at all**: its payload package
+already carries the four LGPL FFmpeg DLLs beside `ffaudio.dll`, in
+`runtimes/win-x64/native/`, and Windows resolves a DLL's imports from the
+directory it was loaded out of. So that payload is already self-contained
+*and* already keeps the libraries separate and replaceable, which is the
+easier half of the licence obligation rather than the harder one. Building a
+static MSVC FFmpeg — mingw `.a` files MSVC will not consume, or FFmpeg under
+MSVC, neither of which anyone here has done — would be a worse answer to a
+question Windows does not have. "Unscoped" was the wrong word for it.
 
 Two things this phase must not skip. The GPL check is mechanical — the
 generated `config.h` says `CONFIG_GPL 0` — and should be asserted by the build
@@ -340,10 +366,107 @@ derived from the `FFAUDIO_API` lines in the header, and that derivation is what
 must keep working — it is why the export macro is on the functions and on
 nothing else.
 
-**Do not publish before a licence read that is not this document.** Everything
-above is the constraint as the repo already understands it, not advice.
+### What is done
 
-## Phase 6 — Packaging and CI — Medium effort, Low risk
+The provable half. A build can now be asked what it is, from both sides:
+
+- `ffaudio_assert_lgpl` (Phase 4's, in `codec-set.sh`) reads the generated
+  `config.h` after configure and stops a mobile build whose `CONFIG_GPL` or
+  `CONFIG_NONFREE` came back set.
+- `FFmpegBuild.License` / `.Configuration` / `.Version` / `.IsRedistributable`
+  ask the *binary*, through three new C functions over `avutil_license()`,
+  `avutil_configuration()` and `av_version_info()`. A configure line lives in
+  a script and an environment variable; neither travels with a dylib that has
+  been copied into a NuGet and embedded in an app bundle. avutil does.
+
+They fail at different times, which is why both: one when the FFmpeg is built,
+one when a binary that already exists is asked. And the second is what the
+LGPL's relink route actually needs — the exact arguments that produced what is
+inside this artifact, from the artifact.
+
+`FFAUDIO_REQUIRE_LGPL` turns the second into a gate. It is off by default
+because a developer's machine is expected to fail it, and this one does: the
+MacPorts FFmpeg here reports `GPL version 2 or later`, configured with
+`--enable-gpl --enable-libx264 --enable-libx265 --enable-libvidstab
+--enable-libxvid`. CI sets it on Windows alone, where the FFmpeg is a pinned
+LGPL asset this repo chose, so the gate doubles as a check that the pin is
+still what its name says.
+
+Additive again — three functions, nothing moved — so the ABI stays 1. Unlike
+Phase 3's metadata calls, none of these is on a decode path, so an older
+façade paired with this binding fails only if something asks.
+
+### Where dynamic actually broke
+
+Predicted as a licensing problem, arrived as a loading one, and the two are
+independent.
+
+The first real consumer of `FFAudio.NET.macOS` was Flower itself, switched on
+by `scripts/use-ffaudio-package.sh` against the CI-built 0.1.0-alpha.0.10.
+`RequiresFfmpeg` came back **39 failed / 53**. Not a binding mismatch and not
+a missing payload — the dylib was restored to exactly the right place. `otool
+-L` on it:
+
+```
+/opt/homebrew/opt/ffmpeg/lib/libavformat.63.dylib
+/opt/homebrew/opt/ffmpeg/lib/libavcodec.63.dylib
+/opt/homebrew/opt/ffmpeg/lib/libavutil.61.dylib
+/opt/homebrew/opt/ffmpeg/lib/libswresample.6.dylib
+```
+
+CI does `brew install ffmpeg`, so the façade recorded Homebrew's absolute
+paths. This machine's FFmpeg is MacPorts', and `/opt/homebrew` does not exist
+on it. The same package would fail on any machine without that exact Homebrew
+install, which is most of them; Linux was in the same shape one soname away.
+There is no link error and no warning, which is what made this worth writing
+down — the failure is invisible until it is somebody else's.
+
+### The static desktop build
+
+Both desktops now build the way the phones do, under `FFAUDIO_STATIC=1`:
+
+- `native/host-ffmpeg.sh` — new, the desktop twin of the two
+  `build-ffmpeg.sh` scripts. A `--disable-everything` LGPL FFmpeg for the host,
+  from `codec-set.sh`'s shared list, so what a track decodes into no longer
+  depends on which platform is asking. `--disable-autodetect`, so configure
+  cannot link whatever dev packages the build machine happens to have — each
+  one is another absolute path, and turning them off also makes the build
+  reproducible, which is what the relink route needs.
+- **Export narrowing, in `CMakeLists.txt`** — the thing the phase said must
+  not be skipped. Derived from the header's own `FFAUDIO_API` lines, exactly as
+  `ios/build.sh` and `android/build.sh` derive theirs, and it fails the build
+  if the derivation ever comes back empty.
+- Both build scripts end by asserting what the binary asks the OS for, and
+  fail on anything beyond libSystem or libc — a stray dependency is precisely
+  the failure above, and it should not be able to reach a package twice.
+- CI builds **both** ways: the system-FFmpeg build still runs and is still
+  tested (it is the path every developer uses), and then the static one is
+  built, run through the decode checks again, and uploaded as the artifact
+  that gets packed. A binary that ships should be one that decoded something.
+- `FFAUDIO_REQUIRE_LGPL` is now on for macOS and Linux too. It could not be
+  before — apt's and brew's FFmpeg are GPL-enabled, which is why only Windows
+  was ever held to it. A build the repo configured itself has no such excuse.
+
+Proven rather than asserted: the static macOS payload is 1.9MB, exports 16
+symbols and no more, links only `libSystem`, `libz` and three system
+frameworks, and reports `LGPL version 2.1 or later` through
+`FFmpegBuild.License` on a machine whose own FFmpeg reports GPL. Packed
+locally and switched on, Flower's `RequiresFfmpeg` suite goes **53 passed / 0
+failed** — the same suite that was 39/53 against the Homebrew-linked package.
+
+### What is not
+
+Shipping the corresponding source alongside a static artifact — the scripts
+are the relink route and `FFmpegBuild.Configuration` reads the configure line
+back out of the artifact, but nothing assembles or attaches a source archive.
+And the licence read itself.
+
+**Do not publish before a licence read that is not this document.** Everything
+above is the constraint as the repo already understands it, not advice. What
+changed is that a binary can now be asked whether it satisfies it, which is a
+different thing from having decided that it does.
+
+## Phase 6 — Packaging and CI — **Done for the desktops, packed but unproven on the phones**
 
 `runtimes/<rid>/native/` for the desktop three, plus `buildTransitive/<tfm>/`
 targets injecting `NativeReference` for iOS and `AndroidNativeLibrary` for
@@ -356,6 +479,35 @@ spend, but a tagged release should.
 
 Version the package independently. Flower pins a version like any other
 dependency, which is the first time the façade has had a version at all.
+
+### What was built
+
+Five payload projects under `packaging/`, plus the binding, all six packed by
+CI's `pack` job out of the natives the test and checks jobs built — not a
+rebuild, which is the same argument the publish job already makes for pushing
+pack's exact bytes.
+
+`osx-arm64`, `linux-x64` and `win-x64` are plain `runtimes/<rid>/native/`
+payloads. The mobile two are `buildTransitive/` targets instead, for the
+reason above, and their TFM folders name a platform version (`net10.0-ios12.2`,
+`net10.0-android21.0`) because NuGet refuses a bare `net10.0-ios`. Each RID is
+the one the runner that built it actually is; osx-x64 and arm64 Linux are
+absent rather than claimed, because no machine here can make them.
+
+Nothing depends on anything else: the binding does not drag a native in, since
+which native an app wants is the app's decision.
+
+The failure this phase invites is a payload package that packs nothing and
+publishes anyway, so each project names one file that must exist and
+`EnsurePayloadExists` stops the pack if it does not. Verified by watching it
+fire.
+
+Proven end to end on macOS only: a scratch console app referencing
+`FFAudio.NET` and `FFAudio.NET.macOS` from a folder feed, and nothing else,
+decodes a FLAC — 44100Hz mono, 264600 bytes, the dylib resolved out of
+`runtimes/` with no `FFAUDIO_LIBRARY` and no copy step. The mobile packages
+have been packed and their layout inspected; no phone project has consumed
+one yet, and that is the next thing to do.
 
 ## Phase 7 — Flower consumes it — Small effort, Low risk
 
@@ -381,7 +533,7 @@ library nothing consumes proves nothing. Then 3 and 4. Phase 5 last and
 deliberately, since it is the only one where being wrong is a licence problem
 rather than a bug.
 
-**Phases 0, 1 and 3 are done** and **Phase 2 is half done**: the library has its
+**Phases 0, 1, 3, 4 and 6 are done**; **2 and 5 are half done**: the library has its
 own repository at `../FFAudio.NET` and passes its own suite there, while Flower
 still builds against the folder. The removal is gated on Phases 5 and 6, for the
 reasons Phase 2 records.

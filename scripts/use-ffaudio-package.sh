@@ -31,6 +31,16 @@
 # help from anyone, so the copy step is gone and this switch is a pair of
 # PackageReferences and nothing else.
 #
+# On a Mac the switch reaches the iOS heads as well, through a third package.
+# It has to be a different mechanism rather than a fourth RID folder: .NET for
+# iOS does not resolve a native out of runtimes/, and a framework is a
+# directory rather than a file, so FFAudio.NET.iOS ships a .targets file that
+# declares the <NativeReference> in whatever project references it. Flower.iOS
+# and Flower.DeviceChecks.iOS declare their own, out of Flower.iOS/Frameworks,
+# so this switch suppresses those - two ffaudio.frameworks in one app is either
+# a duplicate-symbol failure or, worse, the wrong one silently winning, and the
+# checked-in one is the one that predates the metadata calls.
+#
 # That is worth more than the tidiness. The copy proved the managed side; it
 # could not prove the packaging, which is the half nobody had exercised - and
 # a payload that fails to resolve is exactly what a consumer would hit first.
@@ -56,10 +66,14 @@ source_dir="${FFAUDIO_SOURCE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." &&
 # One payload package per desktop, named for the host. There is no cross-
 # platform one and there should not be: a Windows FFmpeg is seventy megabytes
 # where a macOS dylib is a few, and an app has no use for the other two.
+#
+# iOS is a second payload rather than a different one, and only on a Mac -
+# nowhere else can build an iOS head at all, so asking for the package there
+# would be downloading a framework to ignore it.
 case "$(uname -s)" in
-    Darwin) platform=macos;   payload=FFAudio.NET.macOS ;;
-    Linux)  platform=linux;   payload=FFAudio.NET.Linux ;;
-    *)      platform=windows; payload=FFAudio.NET.Windows ;;
+    Darwin) platform=macos;   payload=FFAudio.NET.macOS;   ios_payload=FFAudio.NET.iOS ;;
+    Linux)  platform=linux;   payload=FFAudio.NET.Linux;   ios_payload= ;;
+    *)      platform=windows; payload=FFAudio.NET.Windows; ios_payload= ;;
 esac
 
 mode=on
@@ -98,6 +112,15 @@ sweep_stale_copies() {
         \( -name libffaudio.dylib -o -name libffaudio.so -o -name ffaudio.dll \) \
         \( -path '*/bin/*' -o -path '*/obj/*' \) \
         -delete 2>/dev/null || true
+
+    # Frameworks are directories, so the file sweep above does not see them,
+    # and an iOS build embeds one into the .app rather than beside a binary.
+    # Same failure either way: whichever ffaudio was staged last keeps running
+    # while every file on disk says otherwise.
+    find "$repo_root" \
+        -type d -name ffaudio.framework \
+        \( -path '*/bin/*' -o -path '*/obj/*' \) \
+        -exec rm -rf {} + 2>/dev/null || true
 }
 
 current_version() {
@@ -153,6 +176,21 @@ if [ "$local_pack" -eq 1 ]; then
         --configuration Release --output "$staging" --nologo -v quiet
     dotnet pack "$source_dir/packaging/$payload/$payload.csproj" \
         --configuration Release --output "$staging" --nologo -v quiet
+
+    # iOS only if a framework has actually been cross-compiled next door.
+    # Skipping is the right default rather than a failure: building it is tens
+    # of minutes and an Xcode away, and the loop this flag exists for - edit
+    # the library, pack, run Flower's suite - is a desktop loop.
+    if [ -n "$ios_payload" ]; then
+        if [ -d "$source_dir/native/artifacts/ios/ios-device/ffaudio.framework" ]; then
+            dotnet pack "$source_dir/packaging/$ios_payload/$ios_payload.csproj" \
+                --configuration Release --output "$staging" --nologo -v quiet
+        else
+            echo "No iOS framework in $source_dir/native/artifacts/ios - skipping $ios_payload."
+            echo "Build one with $source_dir/native/build-all.sh ios, or drop --local to take CI's."
+            ios_payload=""
+        fi
+    fi
 else
     command -v gh >/dev/null || { echo "This needs the gh CLI." >&2; exit 1; }
 
@@ -194,6 +232,18 @@ if [ -z "$payload_package" ]; then
     exit 1
 fi
 
+# The iOS payload, on a Mac. A CI build carries all five, so its absence there
+# means the run predates them rather than that this host cannot use it.
+ios_package=""
+if [ -n "$ios_payload" ]; then
+    ios_package="$(find "$staging" -name "$ios_payload.[0-9]*.nupkg" -not -name '*.snupkg' | head -1)"
+    if [ -z "$ios_package" ]; then
+        echo
+        echo "That build has no $ios_payload package - take a newer run." >&2
+        exit 1
+    fi
+fi
+
 mkdir -p "$feed"
 cp "$staging"/*.nupkg "$staging"/*.snupkg "$feed/" 2>/dev/null || cp "$staging"/*.nupkg "$feed/"
 
@@ -202,7 +252,7 @@ cp "$staging"/*.nupkg "$staging"/*.snupkg "$feed/" 2>/dev/null || cp "$staging"/
 # restore as whatever was there before. Re-running the same CI commit is the
 # ordinary way to hit that.
 cache="${NUGET_PACKAGES:-$HOME/.nuget/packages}"
-for id in ffaudio.net "$(echo "$payload" | tr '[:upper:]' '[:lower:]')"; do
+for id in ffaudio.net $(echo "$payload $ios_payload" | tr '[:upper:]' '[:lower:]'); do
     if [ -d "$cache/$id/$version" ]; then
         echo "Evicting the already-extracted $id $version from the global cache."
         rm -rf "$cache/$id/$version"
@@ -210,6 +260,21 @@ for id in ffaudio.net "$(echo "$payload" | tr '[:upper:]' '[:lower:]')"; do
 done
 
 sweep_stale_copies
+
+# Scoped to the two iOS heads rather than to Flower, which is where the desktop
+# payload goes. A payload is a thing an app ships, and Flower is a library that
+# five heads reference - handing it an iOS framework would mean restoring one
+# for a Linux build to ignore. The package's own targets file picks the device
+# or simulator slice off the RuntimeIdentifier, which is exactly what the lines
+# it replaces did by hand.
+ios_block=""
+if [ -n "$ios_payload" ]; then
+    ios_block="
+  <ItemGroup Condition=\"'\$(MSBuildProjectName)' == 'Flower.iOS' Or '\$(MSBuildProjectName)' == 'Flower.DeviceChecks.iOS'\">
+    <PackageReference Include=\"$ios_payload\" Version=\"$version\" />
+  </ItemGroup>
+"
+fi
 
 cat > "$props" <<PROPS
 <Project>
@@ -251,7 +316,7 @@ cat > "$props" <<PROPS
   <PropertyGroup Condition="'\$(MSBuildProjectName)' == 'Flower'">
     <DefaultItemExcludes>\$(DefaultItemExcludes);Audio/Ffmpeg/FfmpegDecoder.cs;Audio/Ffmpeg/FfmpegNative.cs</DefaultItemExcludes>
   </PropertyGroup>
-
+$ios_block
 </Project>
 PROPS
 
@@ -259,16 +324,22 @@ echo
 echo "Flower is now building against FFAudio.NET $version"
 echo "  binding : $feed/$file"
 echo "  façade  : $feed/$(basename "$payload_package")"
+if [ -n "$ios_package" ]; then
+    echo "  iOS     : $feed/$(basename "$ios_package")"
+fi
 echo "  switch  : $props  (gitignored; delete it or run --off to undo)"
 echo
-# The phones load the façade out of Flower.iOS/Frameworks and
-# Flower.Android/libs, which are checked-in binaries of Flower's own vendored
-# source. Nothing here redirects those, so a mobile head built while this
-# switch is on pairs new managed code with an older library.
-echo "Note: this switch reaches the desktop heads and the test suite only."
-echo "      Flower.iOS and Flower.Android still load their checked-in façade, which"
-echo "      predates the package's metadata calls - run those switched off."
+# Android still loads libs/<abi>/libffaudio.so, a checked-in binary of Flower's
+# own vendored source. Nothing here redirects it, so an Android head built
+# while this switch is on pairs new managed code with an older library - and
+# the metadata calls are in the Decoder constructor, so that is every open
+# failing rather than one feature missing.
+echo "Note: Flower.Android still loads its checked-in façade, which predates the"
+echo "      package's metadata calls - run that one switched off."
 echo
 echo "Try it:"
 echo "  dotnet test Flower.Tests/Flower.Tests.csproj --filter Category=RequiresFfmpeg"
 echo "  dotnet run --project Flower.MacOS/Flower.MacOS.csproj"
+if [ -n "$ios_package" ]; then
+    echo "  scripts/ios-device-checks.sh"
+fi
