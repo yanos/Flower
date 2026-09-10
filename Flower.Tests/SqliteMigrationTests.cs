@@ -96,6 +96,50 @@ public class SqliteMigrationTests : IDisposable
         Assert.DoesNotContain("origin_album_art_hash", ColumnsOf(connection, "tracks"));
     }
 
+    // The other half of the same mistake, and the one that got further: a
+    // column added by editing V1 in place reaches a fresh database and no
+    // existing one, while user_version says there is nothing to do. On a phone
+    // that was album_artist - LibraryStore caught the "no such column", logged
+    // it, and started with an empty library, and every save after it failed the
+    // same way. An empty library reads as a sync fault, so the search starts in
+    // the wrong place entirely.
+    //
+    // Simulated by dropping the column back out of an up-to-date database,
+    // which is exactly the shape the phone was in: latest version, missing a
+    // column V1 grew later.
+    [Fact]
+    public void A_column_folded_into_V1_reaches_a_database_that_already_existed()
+    {
+        using var connection = OpenNew("folded.db");
+        SqliteMigrations.Apply(connection);
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN album_artist;");
+        Assert.DoesNotContain("album_artist", ColumnsOf(connection, "tracks"));
+
+        SqliteMigrations.Apply(connection);
+
+        Assert.Contains("album_artist", ColumnsOf(connection, "tracks"));
+        Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
+    }
+
+    // And it has to survive the round trip that matters: the repaired column is
+    // NOT NULL DEFAULT '', so an ALTER that got the default wrong would add it
+    // and then fail on the first insert - which is the same silent-empty-library
+    // failure one step further along.
+    [Fact]
+    public void A_repaired_database_can_be_written_to_again()
+    {
+        using var connection = OpenNew("repaired.db");
+        SqliteMigrations.Apply(connection);
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN album_artist;");
+
+        SqliteMigrations.Apply(connection);
+
+        Execute(connection, "INSERT INTO tracks (id, path, title, date_added) VALUES ('t1', '/music/a.mp3', 'A', 0);");
+        using var read = connection.CreateCommand();
+        read.CommandText = "SELECT album_artist FROM tracks WHERE id = 't1';";
+        Assert.Equal(string.Empty, read.ExecuteScalar());
+    }
+
     // The failure itself. Without V7 this database keeps origin_album_art_hash
     // forever and TrackRepository.LoadAll throws on its first SELECT.
     [Fact]
