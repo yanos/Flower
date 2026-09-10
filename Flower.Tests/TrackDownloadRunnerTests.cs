@@ -155,6 +155,65 @@ public class TrackDownloadRunnerTests
         Assert.True(scope.Disposed);
     }
 
+    // The icon a download leaves behind, which is none: the catalog does not
+    // know the file has landed until the next rebuild (debounced), so for that
+    // whole window the row still says "downloadable" and the control fell back
+    // through its idle cloud icon on the way out - a visible flash between the
+    // spinner and the empty well. See DownloadIndicatorViewModel.FinishDownload.
+    [Fact]
+    public async Task ASuccessfulDownloadTakesTheIconAwayRatherThanReturningItToIdle()
+    {
+        var row = Row(Placeholder("A"));
+        row.IsDownloadable = true;
+        var flashed = false;
+        row.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(row.IsDownloading) && !row.IsDownloading)
+                flashed = row.IsDownloadable && row.IsDownloadIdle;
+        };
+        var runner = new TrackDownloadRunner(_ => Task.FromResult(TrackDownloadResult.Downloaded), Lookup([row]));
+
+        await runner.DownloadRowAsync(row);
+
+        Assert.False(row.IsDownloadable);
+        Assert.False(flashed);
+    }
+
+    // The other half of that: the icon has to come back if the file goes away
+    // again (the "Delete Downloaded File" action), so the latch above is only
+    // good until whoever owns the question has caught up.
+    [Fact]
+    public async Task ARowThatIsDownloadableAgainShowsItsIconAgain()
+    {
+        var row = Row(Placeholder("A"));
+        row.IsDownloadable = true;
+        var runner = new TrackDownloadRunner(_ => Task.FromResult(TrackDownloadResult.Downloaded), Lookup([row]));
+
+        await runner.DownloadRowAsync(row);
+        // What a rebuild pushes in once the download is in the catalog,
+        // followed by what the file being deleted later pushes in.
+        row.IsDownloadable = false;
+        row.IsDownloadable = true;
+
+        Assert.True(row.IsDownloadable);
+    }
+
+    // A download that failed is the one ending with something left to say, so
+    // that icon stays put - it is the alert glyph, and it is also the thing
+    // that gets clicked to try again.
+    [Fact]
+    public async Task AFailedDownloadKeepsItsIcon()
+    {
+        var row = Row(Placeholder("A"));
+        row.IsDownloadable = true;
+        var runner = new TrackDownloadRunner(_ => Task.FromResult(TrackDownloadResult.Failed), Lookup([row]));
+
+        await runner.DownloadRowAsync(row);
+
+        Assert.True(row.IsDownloadable);
+        Assert.True(row.IsDownloadUnavailable);
+    }
+
     // The album-level icon (a grid tile, downloading its whole album behind
     // one spinner) - the same runner, driving an indicator that stands for
     // several tracks rather than one.
@@ -169,6 +228,10 @@ public class TrackDownloadRunnerTests
         Assert.False(tile.IsDownloading);
         Assert.False(tile.IsDownloadUnavailable);
         Assert.False(runner.IsBulkDownloading);
+        // And is gone, the same way a single row's icon is - this is also
+        // mobile's top-bar download-all button, which is one of these over a
+        // whole screenful (see MobileMainViewModel.DownloadAllIndicator).
+        Assert.False(tile.IsDownloadable);
     }
 
     [Fact]
@@ -207,6 +270,7 @@ public class TrackDownloadRunnerTests
 
     private static AlbumTileViewModel Tile() => new()
     {
+        IsDownloadable = true,
         Name = "An Album",
         RepresentativeTrack = Placeholder("A"),
         Tracks = [Placeholder("A"), Placeholder("B")],

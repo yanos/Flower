@@ -3,6 +3,7 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:controls="clr-namespace:Flower.Controls"
              x:Class="Flower.Controls.ScreenSlot"
              x:DataType="vm:MobileMainViewModel"
              x:Name="Root"
@@ -62,45 +63,31 @@
 
       <!-- Downloads every not-yet-downloaded track currently in view - see
            MobileMainView.axaml's former copy of this button for the full
-           history/reasoning. Two mutually-exclusive buttons (album vs.
-           playlist track list), same as before. -->
-      <Button Grid.Column="2"
-              Command="{Binding DownloadAllVisibleCommand}"
-              IsEnabled="{Binding !IsBulkDownloading}"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="10"
-              ToolTip.Tip="Download all">
-        <Button.IsVisible>
-          <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
-            <Binding ElementName="Root" Path="Frame.IsAlbumTrackList" />
-            <Binding Path="Main.CanForceSync" />
-          </MultiBinding>
-        </Button.IsVisible>
-        <Panel>
-          <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding !IsBulkDownloading}" />
-          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding IsBulkDownloading}" />
-        </Panel>
-      </Button>
+           history/reasoning.
 
-      <Button Grid.Column="2"
-              Command="{Binding DownloadAllVisibleCommand}"
-              IsEnabled="{Binding !IsBulkDownloading}"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="10"
-              ToolTip.Tip="Download all">
-        <Button.IsVisible>
+           The same control every per-track download icon is, over its own
+           indicator (MobileMainViewModel.DownloadAllIndicator), which is what
+           makes it spin while the batch runs and take itself away once there
+           is nothing on the screen left to fetch. It used to be two
+           hand-copied pairs of glyphs - one for an album, one for a playlist -
+           that did neither.
+
+           The frame/server gating goes on a wrapper rather than on the button:
+           the button's own IsVisible is the indicator's answer, and the two
+           questions are different ones. -->
+      <Panel Grid.Column="2">
+        <Panel.IsVisible>
           <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
-            <Binding ElementName="Root" Path="Frame.IsPlaylistTrackList" />
+            <Binding ElementName="Root" Path="Frame.IsTrackList" />
             <Binding Path="Main.CanForceSync" />
           </MultiBinding>
-        </Button.IsVisible>
-        <Panel>
-          <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding !IsBulkDownloading}" />
-          <materialIcons:MaterialIcon Kind="Sync" Width="22" Height="22" Opacity="0.7" IsVisible="{Binding IsBulkDownloading}" />
-        </Panel>
-      </Button>
+        </Panel.IsVisible>
+        <controls:TrackDownloadButton DataContext="{Binding DownloadAllIndicator}"
+                                      IconSize="22"
+                                      IconPadding="10"
+                                      Label="Download all"
+                                      Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
+      </Panel>
     </Grid>
 
     <ContentControl Grid.Row="1" x:Name="ContentHost" />

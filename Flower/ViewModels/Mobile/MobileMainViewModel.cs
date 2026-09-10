@@ -486,13 +486,33 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         return header;
     }
 
-    // True while DownloadAllVisibleCommand is working through a batch - drives
-    // the top bar's download-all icon swapping to a spinner and disabling
-    // itself against a second overlapping run (see MobileMainView.axaml). The
-    // state itself lives on the shared runner (see Main.Downloads); this is
-    // the bindable face of it here, kept in step by the subscription in this
-    // ViewModel's constructor.
-    public bool IsBulkDownloading => Main.Downloads.IsBulkDownloading;
+    // The top bar's download-all button, which is the same control every
+    // per-track download icon is (see TrackDownloadButton) rather than a
+    // hand-copied pair of glyphs - so it spins while its batch runs and goes
+    // away when there is nothing left on the screen to fetch, both of which
+    // the copy it replaces did not do.
+    //
+    // One instance for the whole app rather than one per screen: only one
+    // screen is ever the current one, and RefreshDownloadAllIndicator below
+    // re-answers "is there anything here to download" for whichever that is.
+    public BulkDownloadIndicatorViewModel DownloadAllIndicator { get; } = new();
+
+    // Asked of the tracks themselves rather than of the rows' own
+    // IsDownloadable, so this never depends on TrackAvailability.Apply having
+    // run over Main.Rows before this handler did - the answer is the same one
+    // it pushes into them (see MainViewModel.Availability).
+    private void RefreshDownloadAllIndicator()
+    {
+        // Not while its own batch is running: a track landing mid-batch is a
+        // library update, and the last row on the screen going local would
+        // otherwise take the spinner away before the batch it belongs to is
+        // actually over. FinishDownload owns that ending.
+        if (DownloadAllIndicator.IsDownloading)
+            return;
+
+        var availability = Main.Availability;
+        DownloadAllIndicator.IsDownloadable = Main.Rows.Any(r => availability.IsDownloadable(r.Track));
+    }
 
     // Re-anchors Next/Previous/auto-advance to whatever's actually on screen
     // right now, mirroring desktop's MainViewModel.SyncPlayQueueToCurrentView -
@@ -869,6 +889,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             // computed artist/year underneath it.
             _currentAlbumHeaderName = null;
             OnPropertyChanged(nameof(CurrentAlbumHeader));
+            RefreshDownloadAllIndicator();
         }),
             h => Main.Library.TracksUpdated += h, h => Main.Library.TracksUpdated -= h);
         _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
@@ -877,20 +898,15 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             // own SearchQuery-driven path (see that property's setter) and no
             // longer touches Main.Rows at all.
             if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems))
+            {
                 RaiseEmptyStateChanged();
+                RefreshDownloadAllIndicator();
+            }
             if (e.PropertyName is nameof(MainViewModel.PairingCodeError)
                 or nameof(MainViewModel.IsPairedServerTrustConfirmed))
                 SettleCodePairing();
         },
             h => Main.PropertyChanged += h, h => Main.PropertyChanged -= h);
-        // The bulk-download flag lives on the shared runner now (see
-        // IsBulkDownloading below), so the top bar's spinner watches it there.
-        _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
-        {
-            if (e.PropertyName == nameof(TrackDownloadRunner.IsBulkDownloading))
-                OnPropertyChanged(nameof(IsBulkDownloading));
-        },
-            h => Main.Downloads.PropertyChanged += h, h => Main.Downloads.PropertyChanged -= h);
         // SearchSongResults is a separate TrackRowViewModel list from
         // Main.Rows (see RebuildSearchResultsAsync's own doc comment), so it
         // needs its own live-update subscription to stay correct after the
@@ -905,6 +921,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         {
             TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
             ApplyAlbumTileAvailability();
+            RefreshDownloadAllIndicator();
         },
             h => Main.ReachabilityChanged += h, h => Main.ReachabilityChanged -= h);
         RebuildPlaylistPicker();
@@ -1102,8 +1119,12 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // batching itself (throttle, per-row icon state, re-resolving rows a
         // completed download replaced) is the shared runner's - see
         // TrackDownloadRunner.DownloadAllAsync.
+        // Through the indicator rather than straight to DownloadAllAsync, so
+        // the button spins while the batch runs and leaves the way a track's
+        // own icon does - see DownloadIndicatorViewModel.FinishDownload.
         DownloadAllVisibleCommand = new RelayCommand(async () =>
-            await Main.Downloads.DownloadAllAsync(Main.Rows.Select(r => r.Track).ToList()));
+            await Main.Downloads.DownloadAlbumAsync(
+                DownloadAllIndicator, Main.Rows.Select(r => r.Track).ToList()));
 
         // Confirm-before-pairing (see ConfirmPairServerMessage) rather than
         // pairing immediately - matches desktop's ServerPickerView dialog.

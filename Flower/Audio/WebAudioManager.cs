@@ -82,8 +82,19 @@ namespace Flower.Audio
         // fault signals, and its "error" event isn't wired through yet. A
         // browser-side decode failure therefore still just stops, the same as
         // before - #pragma because "never assigned" is exactly the point.
+        //
+        // PlayedOut is declared and never raised for a different reason: there
+        // is no seam here between "the queue is empty" and "the last sample has
+        // been heard". A browser <audio> element ends when it ends, and its
+        // element is what holds the audio, so a queue that runs out on this
+        // head simply leaves the last track sitting at its end - there is no
+        // buffered tail to wait out and no output device to put down. The park-
+        // at-the-top-of-the-queue behaviour PlayedOut drives (see
+        // PlaylistControlViewModel) is therefore a phone/desktop behaviour
+        // only, which is where the Lock Screen card it exists for lives.
 #pragma warning disable CS0067
         public event EventHandler<TrackFailedEventArgs>? TrackFailed;
+        public event EventHandler? PlayedOut;
 #pragma warning restore CS0067
 
         public WebAudioManager()

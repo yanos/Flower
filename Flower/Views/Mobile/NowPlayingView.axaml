@@ -3,9 +3,11 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:vm2="clr-namespace:Flower.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:conv="clr-namespace:Flower.Converters"
              xmlns:controls="clr-namespace:Flower.UserControls"
+             xmlns:layout="clr-namespace:Flower.Controls"
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.NowPlayingView"
              x:DataType="vm:MobileMainViewModel"
@@ -27,13 +29,28 @@
       <Setter Property="Opacity" Value="1" />
       <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
     </Style>
+
+    <!-- Fluent's Slider reserves 15px above and below its 20px track (the
+         SliderPre/PostContentMargin rows of its template), so a bare one is
+         50px tall with a 20px rail floating in the middle - which reads as a
+         gap on a phone, where these two sit tight against the rows around
+         them. Height="28" closed the gap by cropping the template instead of
+         shrinking it: the track stayed at y=15, so the bottom third of the
+         thumb was cut off on both sliders. A negative margin gives back the
+         same 28px of occupied height without constraining what draws inside
+         it - the whole thumb is painted, it just overhangs, and nothing in
+         this sheet clips. -->
+    <Style Selector="Slider.tight">
+      <Setter Property="Margin" Value="0,-11" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
   </UserControl.Styles>
 
   <!-- No horizontal padding on the root: the top bar has to line up with the
        fixed back/settings overlay in MobileMainView, which sits flush against
        the window edge, so the 24px inset belongs to the rows below it rather
        than to the whole sheet. -->
-  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="0,0,0,24">
+  <Grid RowDefinitions="Auto,*" Margin="0,0,0,10">
 
     <!-- Top bar: collapse only - no "Now Playing" label, the sheet's own
          content already makes that obvious. Margin and button padding mirror
@@ -62,90 +79,132 @@
                                    VerticalAlignment="Center" />
     </Grid>
 
-    <!-- Album art + track info -->
-    <StackPanel Grid.Row="1" VerticalAlignment="Center" Spacing="24" Margin="24,0">
+    <!-- Album art and the controls, laid out by NowPlayingBodyPanel: stacked
+         upright, side by side when the phone is turned, with the cover always
+         a square off the short edge. Two children in that order and nothing
+         else - the panel owns every size and position here. -->
+    <layout:NowPlayingBodyPanel Grid.Row="1" Margin="24,0">
       <!-- Tapping the art jumps to that track's album (closing this sheet) -
            see GoToCurrentlyPlayingAlbumCommand. -->
+      <!-- Stretch explicitly: the panel hands this button a square to fill,
+           and a track with no art yet has nothing to give the button a size of
+           its own - left to its default it would collapse to nothing and the
+           slot would sit empty. -->
       <Button Command="{Binding GoToCurrentlyPlayingAlbumCommand}"
-              HorizontalAlignment="Center"
-              HorizontalContentAlignment="Center"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Stretch"
+              HorizontalContentAlignment="Stretch"
+              VerticalContentAlignment="Stretch"
               Background="Transparent"
               BorderThickness="0"
               Padding="0">
-        <Border Width="280" Height="280"
-                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+        <Border Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
                 CornerRadius="8"
                 ClipToBounds="True">
           <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
         </Border>
       </Button>
 
-      <StackPanel Spacing="4" HorizontalAlignment="Center">
-        <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   HorizontalAlignment="Center"
-                   TextAlignment="Center"
-                   TextTrimming="CharacterEllipsis" />
-        <TextBlock Text="{Binding CurrentlyPlaying.Subtitle}"
-                   FontSize="14"
-                   Opacity="0.65"
-                   HorizontalAlignment="Center"
-                   TextAlignment="Center"
-                   TextTrimming="CharacterEllipsis" />
-      </StackPanel>
-    </StackPanel>
+      <!-- Title, seek bar and transport, bottom-aligned by the leading star
+           row: whatever slack there is goes above them rather than between
+           them, so the block stays as tight sideways as it is upright. -->
+      <Grid RowDefinitions="*,Auto,Auto,Auto,Auto" VerticalAlignment="Stretch">
+        <StackPanel Grid.Row="1" Spacing="2" HorizontalAlignment="Center">
+          <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
+                     FontSize="20"
+                     FontWeight="SemiBold"
+                     HorizontalAlignment="Center"
+                     TextAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding CurrentlyPlaying.Subtitle}"
+                     FontSize="14"
+                     Opacity="0.65"
+                     HorizontalAlignment="Center"
+                     TextAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
 
-    <!-- Seek slider + times, flanked by shuffle/repeat toggles (same
-         placement convention as desktop's CurrentlyPlayingControl). -->
-    <StackPanel Grid.Row="2" Margin="24,8,24,0">
-      <Slider Minimum="0" Maximum="1"
-              Value="{Binding CurrentlyPlaying.SeekPosition}" />
-      <Grid ColumnDefinitions="Auto,*,*,Auto">
-        <Button Grid.Column="0"
-                Command="{Binding ToggleShuffleCommand}"
-                Background="Transparent" BorderThickness="0" Padding="6">
-          <materialIcons:MaterialIcon Kind="Shuffle" Width="18" Height="18"
-                                       Classes="transportToggle"
-                                       Classes.active="{Binding CurrentlyPlaying.IsShuffleEnabled}" />
-        </Button>
-        <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="12" Opacity="0.65" VerticalAlignment="Center" Margin="8,0,0,0" />
-        <TextBlock Grid.Column="2" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="12" Opacity="0.65" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0" />
-        <Button Grid.Column="3"
-                Command="{Binding ToggleRepeatCommand}"
-                Background="Transparent" BorderThickness="0" Padding="6">
-          <materialIcons:MaterialIcon Kind="Repeat" Width="18" Height="18"
-                                       Classes="transportToggle"
-                                       Classes.active="{Binding CurrentlyPlaying.IsRepeatEnabled}" />
-        </Button>
+        <!-- Seek slider + times, flanked by shuffle/repeat toggles (same
+             placement convention as desktop's CurrentlyPlayingControl). The
+             slider is given a height because the default template reserves
+             room for a tick bar it hasn't got, which reads as a gap. -->
+        <StackPanel Grid.Row="2" Margin="0,8,0,0">
+          <Slider Classes="tight"
+                  Minimum="0" Maximum="1"
+                  Value="{Binding CurrentlyPlaying.SeekPosition}" />
+          <Grid ColumnDefinitions="Auto,*,*,Auto">
+            <Button Grid.Column="0"
+                    Command="{Binding ToggleShuffleCommand}"
+                    Background="Transparent" BorderThickness="0" Padding="6">
+              <materialIcons:MaterialIcon Kind="Shuffle" Width="18" Height="18"
+                                           Classes="transportToggle"
+                                           Classes.active="{Binding CurrentlyPlaying.IsShuffleEnabled}" />
+            </Button>
+            <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="12" Opacity="0.65" VerticalAlignment="Center" Margin="8,0,0,0" />
+            <TextBlock Grid.Column="2" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="12" Opacity="0.65" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <Button Grid.Column="3"
+                    Command="{Binding ToggleRepeatCommand}"
+                    Background="Transparent" BorderThickness="0" Padding="6">
+              <materialIcons:MaterialIcon Kind="Repeat" Width="18" Height="18"
+                                           Classes="transportToggle"
+                                           Classes.active="{Binding CurrentlyPlaying.IsRepeatEnabled}" />
+            </Button>
+          </Grid>
+        </StackPanel>
+
+        <!-- Transport controls -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,*,*" Margin="0,4,0,0">
+          <Button Grid.Column="0"
+                  Command="{Binding PreviousTrackCommand}"
+                  Background="Transparent" BorderThickness="0"
+                  HorizontalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="Rewind" Width="32" Height="32" />
+          </Button>
+          <Button Grid.Column="1"
+                  Command="{Binding ToggleMiniPlayerCommand}"
+                  Width="64" Height="64"
+                  Background="Transparent"
+                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                  BorderThickness="1.5"
+                  CornerRadius="9999"
+                  HorizontalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
+                                         Width="32" Height="32" />
+          </Button>
+          <Button Grid.Column="2"
+                  Command="{Binding NextTrackCommand}"
+                  Background="Transparent" BorderThickness="0"
+                  HorizontalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="FastForward" Width="32" Height="32" />
+          </Button>
+        </Grid>
+
+        <!-- Volume, below the transport where a thumb already is. Bound
+             straight to the same VolumeControlViewModel the desktop status bar
+             drives, so the two never disagree - but drawn as a plain Slider
+             rather than reusing desktop's VolumeControl, whose 10px thumb and
+             3px rail are a mouse target, not a finger one. -->
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Margin="0,8,0,0"
+              DataContext="{Binding Main.Volume}"
+              x:CompileBindings="True" x:DataType="vm2:VolumeControlViewModel">
+          <materialIcons:MaterialIcon Grid.Column="0"
+                                      Kind="VolumeLow"
+                                      Width="18" Height="18"
+                                      Opacity="0.5"
+                                      VerticalAlignment="Center"
+                                      Margin="0,0,10,0" />
+          <Slider Grid.Column="1"
+                  Classes="tight"
+                  Minimum="0" Maximum="100"
+                  Value="{Binding Volume, Mode=TwoWay}" />
+          <materialIcons:MaterialIcon Grid.Column="2"
+                                      Kind="VolumeHigh"
+                                      Width="18" Height="18"
+                                      Opacity="0.5"
+                                      VerticalAlignment="Center"
+                                      Margin="10,0,0,0" />
+        </Grid>
       </Grid>
-    </StackPanel>
-
-    <!-- Transport controls -->
-    <Grid Grid.Row="3" ColumnDefinitions="*,*,*" Margin="24,20,24,0">
-      <Button Grid.Column="0"
-              Command="{Binding PreviousTrackCommand}"
-              Background="Transparent" BorderThickness="0"
-              HorizontalAlignment="Center">
-        <materialIcons:MaterialIcon Kind="Rewind" Width="32" Height="32" />
-      </Button>
-      <Button Grid.Column="1"
-              Command="{Binding ToggleMiniPlayerCommand}"
-              Width="72" Height="72"
-              Background="Transparent"
-              BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-              BorderThickness="1.5"
-              CornerRadius="9999"
-              HorizontalAlignment="Center">
-        <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                     Width="34" Height="34" />
-      </Button>
-      <Button Grid.Column="2"
-              Command="{Binding NextTrackCommand}"
-              Background="Transparent" BorderThickness="0"
-              HorizontalAlignment="Center">
-        <materialIcons:MaterialIcon Kind="FastForward" Width="32" Height="32" />
-      </Button>
-    </Grid>
+    </layout:NowPlayingBodyPanel>
   </Grid>
 </UserControl>

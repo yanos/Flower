@@ -94,7 +94,80 @@ public class GaplessAudioManagerTests
         manager.Stop();
 
         Assert.Equal(2, platformAudioSession.ActivationCount);
-        Assert.Equal(2, platformAudioSession.DeactivationCount);
+
+        // Only the stop. A pause deliberately keeps the session, because on
+        // iOS the session is what keeps the Lock Screen card up and the card is
+        // where a pause is undone - see GaplessAudioManager.Pause.
+        Assert.Equal(1, platformAudioSession.DeactivationCount);
+    }
+
+    [Fact]
+    public void Pausing_keeps_the_platform_audio_session()
+    {
+        var platformAudioSession = new RecordingPlatformAudioSession();
+        var (manager, _, sink) = Make(platformAudioSession);
+
+        manager.Play(T("A", TimeSpan.FromSeconds(10)));
+        manager.Pause();
+
+        Assert.False(sink.IsPlaying);
+        Assert.Equal(0, platformAudioSession.DeactivationCount);
+    }
+
+    // The end of the album, and the two things it must leave behind: the output
+    // put down (rather than a device left open rendering silence, which is what
+    // the coordinator dropping its decoder used to leave) and a PlayedOut for
+    // the ViewModel to park the queue on. Notably not a Stopped - see
+    // IAudioManager.PlayedOut.
+    [Fact]
+    public void A_queue_that_runs_out_plays_out_once_the_tail_has_been_heard()
+    {
+        var (manager, decoder, sink, _) = PlayTrack(T("A", TimeSpan.FromSeconds(1)));
+        manager.QuietBeforePlayedOut = TimeSpan.Zero;
+        manager.PostToUiThread = action => action();
+
+        var playedOut = 0;
+        var stopped = 0;
+        manager.PlayedOut += (_, _) => playedOut++;
+        manager.Stopped += (_, _) => stopped++;
+
+        // Nothing armed behind it, so the coordinator lets its decoder go and
+        // the ring is all that is left - which nothing here ever filled.
+        decoder.RaiseDrained();
+
+        // The first check only starts the clock: a queue advancing on its own
+        // passes through this same state for a moment.
+        manager.CheckWhetherPlayedOut();
+        Assert.Equal(0, playedOut);
+        Assert.True(sink.IsPlaying);
+
+        manager.CheckWhetherPlayedOut();
+
+        Assert.Equal(1, playedOut);
+        Assert.Equal(0, stopped);
+        Assert.False(sink.IsPlaying);
+    }
+
+    // The window the quiet period exists for: the decode thread has finished a
+    // track and the Play for the next one is still on its way, so the ring can
+    // legitimately be empty with nothing decoding.
+    [Fact]
+    public void A_track_starting_before_the_quiet_period_is_out_is_not_a_played_out_queue()
+    {
+        var (manager, decoder, sink, _) = PlayTrack(T("A", TimeSpan.FromSeconds(1)));
+        manager.PostToUiThread = action => action();
+
+        var playedOut = 0;
+        manager.PlayedOut += (_, _) => playedOut++;
+
+        decoder.RaiseDrained();
+        manager.CheckWhetherPlayedOut();
+
+        manager.Play(T("B", TimeSpan.FromSeconds(1)));
+        manager.CheckWhetherPlayedOut();
+
+        Assert.Equal(0, playedOut);
+        Assert.True(sink.IsPlaying);
     }
 
     [Fact]
@@ -298,9 +371,10 @@ public class GaplessAudioManagerTests
         Assert.False(sink.IsPlaying);
         Assert.Equal(1, paused);
 
-        // Routed through Pause() rather than straight at the sink, so the
-        // audio session is released exactly as a tapped pause button would.
-        Assert.Equal(1, platformAudioSession.DeactivationCount);
+        // Routed through Pause() rather than straight at the sink, so this
+        // lands in exactly the state a tapped pause button would - the session,
+        // and with it the now-playing card, kept.
+        Assert.Equal(0, platformAudioSession.DeactivationCount);
     }
 
     [Fact]

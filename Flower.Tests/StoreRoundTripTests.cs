@@ -157,6 +157,7 @@ public class StoreRoundTripTests : IDisposable
         public event EventHandler? VolumeChanged;
         public event EventHandler? EndReached;
         public event EventHandler<Flower.Audio.TrackFailedEventArgs>? TrackFailed;
+        public event EventHandler? PlayedOut;
 #pragma warning restore CS0067
     }
 

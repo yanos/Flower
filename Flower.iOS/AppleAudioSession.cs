@@ -278,6 +278,11 @@ public sealed class AppleAudioSession : IPlatformAudioSession, IDisposable
             route, _session.OtherAudioPlaying, _session.SampleRate, _session.IOBufferDuration * 1000);
     }
 
+    // Only a stop reaches here - a pause deliberately keeps the session, because
+    // the session is also what keeps the Lock Screen/Control Center card up and
+    // a pause is the middle of listening rather than the end of it. See
+    // GaplessAudioManager.Pause, and docs/MEDIA-KEYS-PLAN.md's "How long the
+    // card stays up".
     public void DeactivateAfterPlayback()
     {
         // An interruption has already taken the session away, and the pause it

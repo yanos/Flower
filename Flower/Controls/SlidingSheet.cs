@@ -1,8 +1,12 @@
 using System;
 using System.Linq;
+using System.Windows.Input;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -104,6 +108,25 @@ public sealed class SlidingSheet : ContentControl
         set => SetValue(EntersBackwardProperty, value);
     }
 
+    // What a rightward swipe on a full-bleed pushed sheet runs - the same
+    // command its back arrow does (CloseSheetCommand, for both Settings and
+    // Now Playing). A sheet that arrives from the right and is dismissed with
+    // a back arrow is a pushed screen as far as the user is concerned, and
+    // every other pushed screen goes back to the finger as well as to the
+    // arrow - see ScreenStackPanel, which owns the identical gesture for the
+    // screens underneath these sheets. Left unset, the sheet does not respond
+    // to the gesture at all, which is the right answer for the ones that rise
+    // from the bottom with a ChevronDown: their dismissal is downwards, not
+    // backwards.
+    public static readonly StyledProperty<ICommand?> DismissCommandProperty =
+        AvaloniaProperty.Register<SlidingSheet, ICommand?>(nameof(DismissCommand));
+
+    public ICommand? DismissCommand
+    {
+        get => GetValue(DismissCommandProperty);
+        set => SetValue(DismissCommandProperty, value);
+    }
+
     // Set on the one element inside a backdrop-and-card sheet that should
     // actually move (the card itself) - see the class comment. A sheet with no
     // such element slides whole.
@@ -117,6 +140,13 @@ public sealed class SlidingSheet : ContentControl
     private Control? _card;
     private TranslateTransform? _cardTransform;
     private IDisposable? _easing;
+
+    // Jumps whatever easing is in flight straight to its end (running its
+    // completion, if any) - see Ease. Null when nothing is animating.
+    private Action? _finishEasing;
+
+    private Point? _swipeStart;
+    private bool _capturedForSwipe;
 
     // The clock the easing runs on. AnimationClock.Current is the process-wide
     // 60Hz timer; a test hands in one it steps by hand, so a sheet's animation
@@ -132,6 +162,15 @@ public sealed class SlidingSheet : ContentControl
     {
         RenderTransform = _sheetTransform;
         IsVisible = false;
+
+        // Tunnel, and handledEventsToo, for the same reason ScreenStackPanel's
+        // are: a touch landing on a list, a button or a scroll viewer inside
+        // the sheet is watched by that control's own gesture machinery too, and
+        // a bubbling handler would only hear about the ones nobody else wanted.
+        AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerMovedEvent, OnPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, OnPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerCaptureLostEvent, OnPointerCaptureLost, RoutingStrategies.Tunnel, handledEventsToo: true);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -335,27 +374,178 @@ public sealed class SlidingSheet : ContentControl
 
         var duration = TimeSpan.FromMilliseconds(EasingDurationMs);
         IDisposable? easing = null;
+
+        // The last frame's work, named so a finger landing mid-slide can run it
+        // early (see _finishEasing) instead of fighting the easing for the very
+        // transform it is about to drag. Idempotent: whichever of the two paths
+        // gets there first clears the field the other would have read.
+        void Finish()
+        {
+            if (_finishEasing == null)
+                return;
+            _finishEasing = null;
+            apply(1.0);
+            easing!.Dispose();
+            if (ReferenceEquals(_easing, easing))
+                _easing = null;
+            onFinished?.Invoke();
+        }
+
         easing = Clock.Subscribe(elapsed =>
         {
             var t = Math.Min(1.0, elapsed.TotalMilliseconds / duration.TotalMilliseconds);
             apply(EaseOut(t));
 
             if (t >= 1.0)
-            {
-                apply(1.0);
-                easing!.Dispose();
-                if (ReferenceEquals(_easing, easing))
-                    _easing = null;
-                onFinished?.Invoke();
-            }
+                Finish();
         });
         _easing = easing;
+        _finishEasing = Finish;
     }
 
     private void StopEasing()
     {
         _easing?.Dispose();
         _easing = null;
+        _finishEasing = null;
+    }
+
+    // ── Swipe to dismiss ──────────────────────────────────────────────────
+    //
+    // A full-bleed sheet that arrived from the right is a pushed screen with a
+    // back arrow, so it goes back to a rightward swipe as well - the same
+    // gesture, thresholds and easing ScreenStackPanel gives the screens
+    // underneath it, written again here rather than shared because the two move
+    // different things: that panel drags one of three live slots and commits by
+    // navigating, this drags the sheet itself and commits by running the
+    // command its own back arrow runs.
+    //
+    // The commit deliberately does no animating of its own. Executing
+    // DismissCommand puts ActiveSheet back to None, which lands on IsOpen and
+    // calls Close() - and Close already starts its slide-out from wherever the
+    // transform currently is, which is exactly where the finger let go.
+    private const double EarlyCommitThreshold = 18.0;
+    private const double DirectionRatio = 1.5;
+    private const double SwipeThreshold = 60.0;
+
+    // Card sheets are excluded because their dismissal is downwards over a
+    // dimmed backdrop, and because the thing that slides is the card rather
+    // than this control - a rightward drag would move the backdrop with it.
+    private bool CanSwipeToDismiss =>
+        IsOpen && Entrance == SheetEntrance.FromRight && DismissCommand != null && FindCard() == null;
+
+    private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        // A sheet still sliding in has to be found settled, or the drag below
+        // and the entrance would drive the same transform frame by frame.
+        _finishEasing?.Invoke();
+
+        _capturedForSwipe = false;
+        _swipeStart = CanSwipeToDismiss && !StartedOnADraggableControl(e.Source as Visual)
+            ? e.GetPosition(this)
+            : null;
+    }
+
+    // Now Playing's seek bar is dragged horizontally, on purpose, right across
+    // the middle of the sheet - and a slider that has to be scrubbed without
+    // dismissing the screen underneath is not an edge case there, it is the
+    // control the user reaches for most. So a gesture that starts on any
+    // range control (the seek bar, a scrollbar thumb) is that control's, and
+    // this never looks at it again.
+    private bool StartedOnADraggableControl(Visual? source)
+    {
+        for (var visual = source; visual != null && !ReferenceEquals(visual, this); visual = visual.GetVisualParent())
+        {
+            if (visual is RangeBase)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_swipeStart is not { } start)
+            return;
+
+        var current = e.GetPosition(this);
+        var dx = current.X - start.X;
+        var dy = current.Y - start.Y;
+
+        if (!_capturedForSwipe)
+        {
+            if (Math.Abs(dx) < EarlyCommitThreshold && Math.Abs(dy) < EarlyCommitThreshold)
+                return;
+
+            // Anything vertical or ambiguous is an ordinary scroll (Settings is
+            // one long scrolling list), and a leftward drag is nothing at all -
+            // there is no forward from a sheet. Both abandon tracking without
+            // capturing, so whatever is underneath keeps handling the pointer.
+            if (dx <= 0 || Math.Abs(dx) <= Math.Abs(dy) * DirectionRatio)
+            {
+                _swipeStart = null;
+                return;
+            }
+
+            e.Pointer.Capture(this);
+            _capturedForSwipe = true;
+        }
+
+        // Clamped so the drag only ever uncovers what is behind the sheet, never
+        // pulls it past its own width, and never travels left of home.
+        SetOffset(_sheetTransform, Math.Clamp(dx, 0, Math.Max(1, SlideDistance)));
+        e.Handled = true;
+    }
+
+    private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        var wasCaptured = _capturedForSwipe;
+        if (wasCaptured)
+            e.Pointer.Capture(null);
+        _capturedForSwipe = false;
+
+        if (_swipeStart is not { } start)
+            return;
+        _swipeStart = null;
+        if (!wasCaptured)
+            return;
+
+        e.Handled = true;
+
+        var dx = e.GetPosition(this).X - start.X;
+        if (dx > SwipeThreshold && DismissCommand is { } dismiss && dismiss.CanExecute(null))
+        {
+            dismiss.Execute(null);
+
+            // Only if the command declined to actually close the sheet - it is
+            // the ViewModel's decision, not this control's, and a sheet left
+            // open must not be left parked halfway off the screen.
+            if (!IsOpen)
+                return;
+        }
+
+        SlideBackToRest();
+    }
+
+    private void OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        // Defensive, exactly as in ScreenStackPanel: something stealing the
+        // capture mid-gesture must not leave the sheet stranded halfway.
+        if (!_capturedForSwipe)
+            return;
+
+        _capturedForSwipe = false;
+        _swipeStart = null;
+        SlideBackToRest();
+    }
+
+    private void SlideBackToRest()
+    {
+        var from = GetOffset(_sheetTransform);
+        if (from == 0)
+            return;
+
+        Ease(p => SetOffset(_sheetTransform, from * (1 - p)), null);
     }
 
     private static double EaseOut(double t) => 1 - Math.Pow(1 - t, 3);

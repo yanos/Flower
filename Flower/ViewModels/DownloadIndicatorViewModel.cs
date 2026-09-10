@@ -31,15 +31,34 @@ public abstract class DownloadIndicatorViewModel : ViewModelBase, IDisposable
     private bool _isDownloadable;
     public bool IsDownloadable
     {
-        get => _isDownloadable;
+        get => _isDownloadable && !_hasJustArrived;
         set
         {
-            if (_isDownloadable == value)
-                return;
+            var was = IsDownloadable;
             _isDownloadable = value;
-            OnPropertyChanged();
+            // Whoever owns the question now says there is nothing to fetch,
+            // which is the catalog having caught up with the download the
+            // latch below was covering for - so the latch has done its job.
+            if (!value)
+                _hasJustArrived = false;
+            if (IsDownloadable != was)
+                OnPropertyChanged();
         }
     }
+
+    // What a download that has just succeeded knows and IsDownloadable above
+    // doesn't yet: the bytes are here.
+    //
+    // The pushed value goes on saying "downloadable" for as long as it takes
+    // whoever pushes it to notice - a rebuild of the rows off
+    // Library.TracksUpdated, which is debounced, so a good fraction of a
+    // second. For that whole window the spinner had stopped and nothing had
+    // hidden the icon yet, so the control fell back through its idle
+    // "click to download" state on the way out: a visible flash of the
+    // cloud icon between the spinner and the icon well going empty. Latching
+    // it here means the transition a download actually makes is
+    // spinner -> gone.
+    private bool _hasJustArrived;
 
     // Transient UI state for an in-flight download - set by TrackDownloadRunner,
     // not derived from any Track.
@@ -86,6 +105,26 @@ public abstract class DownloadIndicatorViewModel : ViewModelBase, IDisposable
     // state. A plain computed property (not stored) kept in sync via the two
     // setters above rather than a converter, since it depends on both.
     public bool IsDownloadIdle => !_isDownloading && !_isDownloadUnavailable;
+
+    // The end of one download, in a single step, whatever kind of indicator
+    // this is - a row, an album's tile, a whole screen's worth. Succeeding
+    // hides the icon (see _hasJustArrived); failing leaves the alert glyph
+    // behind, which is the one ending that has something left to say.
+    //
+    // Deliberately the only way TrackDownloadRunner ends a download: setting
+    // IsDownloading and IsDownloadUnavailable separately is what let an idle
+    // frame slip out between them.
+    public void FinishDownload(bool succeeded)
+    {
+        if (succeeded)
+        {
+            _hasJustArrived = true;
+            OnPropertyChanged(nameof(IsDownloadable));
+        }
+
+        IsDownloadUnavailable = !succeeded;
+        IsDownloading = false;
+    }
 
     // Supplied by whoever built this (LibraryBrowserViewModel threads the
     // container's instance down through TrackRowMerge). Null only when built by

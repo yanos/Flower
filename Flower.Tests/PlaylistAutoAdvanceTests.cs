@@ -102,17 +102,79 @@ public class PlaylistAutoAdvanceTests : IDisposable
         PumpUntil(() => vm.CurrentlyPlayingTrack == b, TimeSpan.FromSeconds(5));
     }
 
+    // The end of the album is the end of the album: the queue advancing on its
+    // own does NOT start it again, which is what repeat is for. Manual Next()
+    // still wraps (see PlaylistControlViewModelTests) - a press of the skip
+    // button has to go somewhere.
     [AvaloniaFact]
-    public void EndReached_wraps_around_to_the_first_track_after_the_last()
+    public void EndReached_on_the_last_track_does_not_start_the_queue_again()
     {
         var a = T("A");
         var b = T("B");
         var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
         vm.Play(b);
+        audio.SetUpcomingCalls.Clear();
 
         audio.RaiseEndReached();
 
-        PumpUntil(() => vm.CurrentlyPlayingTrack == a, TimeSpan.FromSeconds(5));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
+        Assert.Same(b, audio.LastPlayed);
+    }
+
+    // Nothing armed behind the last track is what eventually lets the audio
+    // manager notice it has played out - see GaplessAudioManager.PlayedOut.
+    [AvaloniaFact]
+    public void The_last_track_of_a_queue_arms_nothing_behind_it()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+
+        vm.Play(b);
+
+        Assert.Equal(new Track?[] { null }, audio.SetUpcomingCalls);
+    }
+
+    // What the user is left holding when the album ends: the queue wound back
+    // to its first track, still "currently playing" so the Lock Screen card
+    // stays up, and a press of play starting that track rather than resuming a
+    // decoder that was let go when the album finished.
+    [AvaloniaFact]
+    public void Playing_out_parks_the_queue_at_its_first_track()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.Play(b);
+        audio.RaiseEndReached();
+        Dispatcher.UIThread.RunJobs();
+
+        audio.RaisePlayedOut();
+
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+        Assert.Same(b, audio.LastPlayed);
+
+        vm.PlayOrPause();
+
+        Assert.Same(a, audio.LastPlayed);
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    // The card's own play button lands here too, through
+    // NowPlayingIntegrationService - and must not resume, since there is
+    // nothing loaded to resume.
+    [AvaloniaFact]
+    public void Playing_out_does_not_leave_play_resuming_nothing()
+    {
+        var a = T("A");
+        var vm = MakeViewModel(new List<Track> { a }, out var audio);
+        vm.Play(a);
+        audio.RaisePlayedOut();
+
+        vm.PlayOrPause();
+
+        Assert.Equal(0, audio.ResumeCount);
     }
 
     [AvaloniaFact]

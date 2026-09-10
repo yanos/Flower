@@ -169,10 +169,19 @@ namespace Flower.ViewModels
             _subscriptions.Add<EventHandler>((s, e) => Dispatcher.UIThread.Post(() =>
             {
                 LeavePlayingTrack();
+                _parkedAtQueueTop = false;
                 OnPropertyChanged(nameof(IsPlaying));
                 CurrentlyPlayingTrack = null;
             }),
                 h => _audioManager.Stopped += h, h => _audioManager.Stopped -= h);
+
+            // The queue ran out and the last track's audio has been heard - see
+            // IAudioManager.PlayedOut, which is raised on the UI thread after
+            // the manager has put its own output down. Not posted, unlike
+            // Stopped above: this one arrives by contract on the thread that
+            // owns the state it is about to change.
+            _subscriptions.Add<EventHandler>((s, e) => ParkAtTopOfQueue(),
+                h => _audioManager.PlayedOut += h, h => _audioManager.PlayedOut -= h);
 
             // Remembered but not forgotten: a pause is the most likely moment
             // for a long file to be put down for the day, and unlike Stopped
@@ -429,10 +438,21 @@ namespace Flower.ViewModels
         // repeat/shuffle state - carrying the position along with the track so
         // the advance lands on a slot rather than on the first entry that
         // happens to hold the same track.
+        //
+        // Deliberately does not wrap: an album that has played its last track is
+        // over, and the queue advancing on its own past the end and starting it
+        // again is a loop nobody asked for - that is what repeat is for. Manual
+        // Next() still wraps (it goes through GetNextEntry directly), because a
+        // press of the skip button on the last track is a request for
+        // *something*, and there is nowhere else for it to go.
+        //
+        // Answering (null, -1) here is also what arms nothing behind the last
+        // track, which is what eventually lets the audio manager notice it has
+        // played out - see IAudioManager.PlayedOut and ParkAtTopOfQueue below.
         private (Track? Track, int Index) GetUpcomingEntry(Track currentTrack, int currentIndex) =>
-            IsRepeatEnabled ? (currentTrack, currentIndex) : GetNextEntry(currentTrack, currentIndex);
+            IsRepeatEnabled ? (currentTrack, currentIndex) : GetNextEntry(currentTrack, currentIndex, wrap: false);
 
-        private (Track? Track, int Index) GetNextEntry(Track currentTrack, int currentIndex)
+        private (Track? Track, int Index) GetNextEntry(Track currentTrack, int currentIndex, bool wrap = true)
         {
             var tracks = _currentPlaylist.Tracks;
             if (tracks.Count == 0)
@@ -467,6 +487,11 @@ namespace Flower.ViewModels
                 } while (any == currentIndex);
                 return (tracks[any], any);
             }
+
+            // Off the end of a queue nobody asked to loop - the end of the
+            // album, and the one case that answers "nothing".
+            if (!wrap && currentIndex >= 0 && currentIndex + 1 >= tracks.Count)
+                return (null, -1);
 
             // Off the end, or playing something that isn't in this queue at
             // all, both wrap round to the front - the behaviour the old
@@ -573,6 +598,7 @@ namespace Flower.ViewModels
             // matters.
             LeavePlayingTrack();
 
+            _parkedAtQueueTop = false;
             SelectedTrack = track;
             CurrentlyPlayingTrack = track;
 
@@ -707,11 +733,55 @@ namespace Flower.ViewModels
             return streaming;
         }
 
+        // Set while the queue has played out and been parked back at its first
+        // track: something is "currently playing" as far as the rest of the app
+        // and the OS now-playing card are concerned, but nothing is loaded
+        // behind it, so play has to start that track rather than resume.
+        private bool _parkedAtQueueTop;
+
+        // The album finished. Rather than clearing the current track - which is
+        // what a stop does, and which takes the Lock Screen/Control Center card
+        // down with it - the queue is wound back to its first track and left
+        // there, paused at the beginning. The card stays up showing that track,
+        // so the album can be started again from it without opening the app,
+        // and pressing play anywhere does exactly what it says.
+        //
+        // Only ever reached with nothing playing: the audio manager raises
+        // PlayedOut after it has put its own output down. See
+        // GaplessAudioManager.CheckWhetherPlayedOut.
+        private void ParkAtTopOfQueue()
+        {
+            // The finished track's own bookkeeping - its resume position (the
+            // EndReached handler has already cleared it, but a queue that ran
+            // out after a run of failures has not) and its volume adjustment,
+            // which must not be left applied to whatever plays next.
+            LeavePlayingTrack();
+
+            var first = _currentPlaylist.Tracks.FirstOrDefault();
+            _logger.LogInformation(
+                "Queue played out; parking at {Title}", first?.Title ?? "nothing - the queue is empty");
+
+            _queueIndex = first != null ? 0 : -1;
+            _parkedAtQueueTop = first != null;
+            if (first != null)
+                SelectedTrack = first;
+            CurrentlyPlayingTrack = first;
+            OnPropertyChanged(nameof(IsPlaying));
+        }
+
         public void PlayOrPause(Track track)
         {
             if (_audioManager.IsPlaying)
             {
                 _audioManager.Pause();
+            }
+            else if (_parkedAtQueueTop && CurrentlyPlayingTrack is { } parked)
+            {
+                // Parked at the top of a queue that finished: there is nothing
+                // to resume - the coordinator let its decoder go when the album
+                // ended - so this starts the album again from the top, which is
+                // what the card showing that first track promises.
+                Play(parked, _queueIndex);
             }
             else
             {

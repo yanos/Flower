@@ -82,9 +82,8 @@ public sealed class TrackDownloadRunner : ViewModelBase
         var remaining = MinDownloadSpinnerDuration - (DateTime.UtcNow - started);
         if (remaining > TimeSpan.Zero)
             await Task.Delay(remaining);
-        indicator.IsDownloading = false;
         var failed = result is TrackDownloadResult.PeerUnavailable or TrackDownloadResult.Failed;
-        indicator.IsDownloadUnavailable = failed;
+        indicator.FinishDownload(!failed);
         return !failed;
     }
 
@@ -100,14 +99,14 @@ public sealed class TrackDownloadRunner : ViewModelBase
 
         indicator.IsDownloadUnavailable = false;
         indicator.IsDownloading = true;
+        var succeeded = false;
         try
         {
-            var succeeded = await DownloadAllAsync(tracks);
-            indicator.IsDownloadUnavailable = !succeeded;
+            succeeded = await DownloadAllAsync(tracks);
         }
         finally
         {
-            indicator.IsDownloading = false;
+            indicator.FinishDownload(succeeded);
         }
     }
 

@@ -10,7 +10,7 @@ namespace Flower.Controls;
 // XAML's own doc comment for why this exists. Frame carries every piece of
 // per-screen header state (title/search-visibility/create-playlist/
 // download-all gating); genuinely live/global state (SearchQuery, the
-// commands, Main.CanForceSync/IsBulkDownloading) binds straight through to
+// commands, Main.CanForceSync, DownloadAllIndicator) binds straight through to
 // DataContext instead, which ScreenStackPanel sets to the shared VM on every
 // slot it builds.
 public partial class ScreenSlot : UserControl

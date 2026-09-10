@@ -23,6 +23,28 @@ Add an `IPlatformNowPlaying` seam (the same shape as the `IPlatformShell` propos
 - **Linux** — export `org.mpris.MediaPlayer2`/`.Player` as a D-Bus service under `org.mpris.MediaPlayer2.Flower`; confirm whether the transitive `Tmds.DBus` reference is sufficient or an explicit package reference is needed for exporting (vs. consuming) a service. Smoke-test against both GNOME and KDE — their MPRIS property/signal handling isn't perfectly consistent. Medium effort, Medium risk (DE inconsistency, not the D-Bus mechanics).
 - **Android** — `MediaSessionCompat` (check whether Media3's `MediaSession` makes more sense before adding a second media library), implementing the `onPlay`/`onPause`/`onSkipToNext/Previous` callbacks. Decide whether a foreground notification is needed alongside the session, since Android is more aggressive about killing background playback without one. Medium effort, Medium risk.
 
+## How long the card stays up
+
+The card is not only raised, it has to *survive*, and on iOS what keeps it alive
+is the app's `AVAudioSession` being active — deactivating it is how a player
+tells the OS it is no longer the now-playing app. Flower used to hand the
+session back on every pause (`GaplessAudioManager.Pause` →
+`AppleAudioSession.DeactivateAfterPlayback`), which took the Lock Screen card
+down the instant it was used to pause. It doesn't any more: only `Stop()`
+releases the session, and nothing in the app calls it. The cost is the one
+courtesy that deactivation bought — telling whatever Flower interrupted that it
+may resume — which is not worth the card, and is not something Apple's own Music
+app does either.
+
+The other half is the end of the queue. Auto-advance no longer wraps round to
+the first track (see `PlaylistControlViewModel.GetUpcomingEntry`), so an album
+genuinely ends; `GaplessAudioManager` notices the queue has played out once the
+tail left in the ring has been rendered, puts its output down with a *pause*
+rather than a stop, and raises `IAudioManager.PlayedOut`. The ViewModel parks
+the queue back at its first track and leaves it there as the current track, so
+the card stays up showing it and the album can be started again from the card
+without opening the app.
+
 ## Suggested order
 
 1. Windows — cheapest, validates the `IPlatformNowPlaying` seam shape.

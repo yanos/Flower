@@ -90,6 +90,12 @@ public sealed record MobileNavigationFrame(
     // CurrentPlaylist's own condition exactly.
     public bool IsPlaylistTrackList => Tab == MobileTab.Playlists && HasDrilledIn && SidebarItem?.Playlist != null;
 
+    // Either of the two above: a frame whose track list is one specific
+    // album's or one specific playlist's, which is where "download everything
+    // on this screen" means something (see ScreenSlot's own download button).
+    // Not the flat Songs list, which is the whole library.
+    public bool IsTrackList => IsAlbumTrackList || IsPlaylistTrackList;
+
     // Identifies which materialized control a frame should reuse - two
     // frames with the same ScopeKey are "the same screen" as far as
     // ScreenControlFactory's cache is concerned (e.g. revisiting the same

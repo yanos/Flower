@@ -91,5 +91,20 @@ namespace Flower.Audio
         // docs/AUDIOPHILE-PLAN.md's DSD/APE section, which needs this same seam
         // for its "unsupported format" messaging.
         public event EventHandler<TrackFailedEventArgs>? TrackFailed;
+
+        // Everything that was going to play has played: the last track reached
+        // its end, nothing was queued behind it, and the audio still buffered
+        // behind that track has been rendered too. Raised after the manager has
+        // put its own output down, and deliberately not accompanied by Stopped -
+        // a queue that ran out is a pause at the end of the album, not the user
+        // throwing playback away, and on iOS the difference is whether the Lock
+        // Screen card survives it. Subscribers park the queue back at its first
+        // track so the album can be started again from that card - see
+        // PlaylistControlViewModel.
+        //
+        // Only a gapless manager can tell: the moment the queue empties and the
+        // moment the last sample is heard are seconds apart. The browser head
+        // (WebAudioManager) never raises it - see there.
+        public event EventHandler? PlayedOut;
     }
 }

@@ -316,7 +316,11 @@
          screen and dismissing with that screen's back arrow.
          The four drawn as a card over a dimmed backdrop mark that card with
          SlidingSheet.IsCard, so the card slides while the dimming fades in
-         behind it rather than sweeping up the screen with it. -->
+         behind it rather than sweeping up the screen with it.
+         The two that arrive from the right are pushed screens with a back
+         arrow, so they take DismissCommand as well and go back to a rightward
+         swipe the way every screen underneath them does - see
+         SlidingSheet's own "Swipe to dismiss" section. -->
 
     <!-- Now-playing sheet: full-screen overlay above everything else. Arrives
          from the right, like Settings below and for the same reason - it is a
@@ -326,6 +330,7 @@
          off to the left by the album coming in behind it. -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
                             IsOpen="{Binding IsShowingNowPlaying}"
+                            DismissCommand="{Binding CloseSheetCommand}"
                             ExitsForward="{Binding NowPlayingExitsForward}"
                             EntersBackward="{Binding NowPlayingEntersBackward}">
       <views:NowPlayingView />
@@ -354,7 +359,8 @@
          arrow the rest of the app pushes screens with, not the ChevronDown the
          sheets that rise from the bottom use - see SettingsView. -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            IsOpen="{Binding IsShowingSettings}">
+                            IsOpen="{Binding IsShowingSettings}"
+                            DismissCommand="{Binding CloseSheetCommand}">
       <views:SettingsView />
     </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"

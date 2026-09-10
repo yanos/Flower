@@ -40,8 +40,20 @@ public sealed class FakeAudioManager : IAudioManager
         LastPlayed = track;
         LastPlayWasImmediate = immediate;
     }
-    public void SetUpcoming(Track? next) => LastUpcoming = next;
-    public void Resume() { }
+    public void SetUpcoming(Track? next)
+    {
+        LastUpcoming = next;
+        SetUpcomingCalls.Add(next);
+    }
+
+    // Every arm in order, so a test can assert that the last track of a queue
+    // armed nothing behind it - LastUpcoming alone cannot tell "armed null"
+    // from "never armed at all".
+    public List<Track?> SetUpcomingCalls { get; } = [];
+
+    public int ResumeCount { get; private set; }
+
+    public void Resume() => ResumeCount++;
     public void Pause() { }
     public void Stop() { }
     public void ApplyEqualizer(Equalizer? equalizer) => LastAppliedEqualizer = equalizer;
@@ -71,6 +83,7 @@ public sealed class FakeAudioManager : IAudioManager
     public event EventHandler? VolumeChanged;
     public event EventHandler? EndReached;
     public event EventHandler<TrackFailedEventArgs>? TrackFailed;
+    public event EventHandler? PlayedOut;
 
     public void RaisePaused() => Paused?.Invoke(this, EventArgs.Empty);
     public void RaiseStopped() => Stopped?.Invoke(this, EventArgs.Empty);
@@ -79,4 +92,5 @@ public sealed class FakeAudioManager : IAudioManager
     public void RaiseVolumeChanged() => VolumeChanged?.Invoke(this, EventArgs.Empty);
     public void RaiseEndReached() => EndReached?.Invoke(this, EventArgs.Empty);
     public void RaiseTrackFailed(Track track) => TrackFailed?.Invoke(this, new TrackFailedEventArgs(track));
+    public void RaisePlayedOut() => PlayedOut?.Invoke(this, EventArgs.Empty);
 }

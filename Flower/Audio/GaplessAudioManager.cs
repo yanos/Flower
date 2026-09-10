@@ -6,6 +6,8 @@ using System.Timers;
 
 using Timer = System.Timers.Timer;
 
+using Avalonia.Threading;
+
 using Microsoft.Extensions.Logging;
 
 
@@ -43,6 +45,7 @@ namespace Flower.Audio
         public event EventHandler? VolumeChanged;
         public event EventHandler? EndReached;
         public event EventHandler<TrackFailedEventArgs>? TrackFailed;
+        public event EventHandler? PlayedOut;
 
         public GaplessAudioManager(
             IAudioSink sink,
@@ -184,6 +187,8 @@ namespace Flower.Audio
                     PositionChanged?.Invoke(this, EventArgs.Empty);
                     LogDiagnosticSnapshotIfDue();
                 }
+
+                CheckWhetherPlayedOut();
             };
             _positionTimer.Start();
         }
@@ -268,13 +273,21 @@ namespace Flower.Audio
             _sink.Resume();
         }
 
+        // Deliberately does NOT hand the platform audio session back, which
+        // Stop below still does. On iOS the session is what makes Flower the
+        // "now playing" app, so deactivating it takes the Lock Screen/Control
+        // Center card down with it - and a pause is not the end of listening,
+        // it is the middle of it. The card has to survive a pause for the same
+        // reason every other music player's does: it is where playback is
+        // resumed from, and having it vanish the instant it is used is worse
+        // than the one thing giving it up buys, which is telling whatever
+        // Flower interrupted that it may resume. See AppleAudioSession, and
+        // PlaylistControlViewModel's park-at-the-top-of-the-queue handler for
+        // the other half of keeping that card alive.
         public void Pause()
         {
             _logger.LogInformation("Playback paused at {ElapsedMs}ms; IsPlaying={IsPlaying}", Time, IsPlaying);
-            var wasPlaying = _sink.IsPlaying;
             _sink.Pause();
-            if (wasPlaying)
-                _platformAudioSession?.DeactivateAfterPlayback();
         }
 
         public void Stop()
@@ -304,6 +317,75 @@ namespace Flower.Audio
             _sink.SetOutputDevice(deviceId);
         }
 
+        // How long the "nothing left anywhere" condition below has held, or 0
+        // while it is not holding at all.
+        private long _playedOutSince;
+
+        // Long enough that an auto-advance in flight always wins the race. The
+        // queue decision is made on the decode thread (see
+        // GaplessCoordinator.HandleDrainedOrFaulted) and the Play it leads to
+        // is posted to the UI thread, so there is a window in which nothing is
+        // decoding and the ring may legitimately be empty while the next track
+        // is already on its way. Four position ticks of silence is not that
+        // window.
+        //
+        // Settable only so a test need not spend a real second of wall clock
+        // proving the condition holds; nothing in the app changes it.
+        internal TimeSpan QuietBeforePlayedOut { get; set; } = TimeSpan.FromMilliseconds(1000);
+
+        // The queue ran out: the last track's decode finished, nothing was
+        // armed behind it (repeat off at the end of the album), and the tail it
+        // left in the ring has now been rendered too. Nothing else notices -
+        // the coordinator drops its current decoder and says so in the log, but
+        // the sink goes on asking for samples and getting silence, so without
+        // this the device stays open and the app looks like it is still
+        // playing.
+        //
+        // Put down rather than stopped: Pause leaves the platform audio session
+        // alone, and the session is what keeps the Lock Screen card up. The
+        // card is the point - PlayedOut is what PlaylistControlViewModel parks
+        // the queue back at its first track on, so the album that just finished
+        // can be started again from the card without opening the app.
+        internal void CheckWhetherPlayedOut()
+        {
+            if (!_sink.IsPlaying
+                || _coordinator.CurrentTrack != null
+                || _sharedRing.AvailableBytes > 0
+                || _sink.BufferedBytes > 0)
+            {
+                _playedOutSince = 0;
+                return;
+            }
+
+            var now = Stopwatch.GetTimestamp();
+            if (_playedOutSince == 0)
+            {
+                _playedOutSince = now;
+                return;
+            }
+
+            if (Stopwatch.GetElapsedTime(_playedOutSince, now) < QuietBeforePlayedOut)
+                return;
+
+            _playedOutSince = 0;
+            _logger.LogInformation("Nothing left to play and nothing buffered; putting playback down at the end of the queue");
+
+            // Onto the UI thread, same contract as every other event this class
+            // raises (see MiniaudioSink's own OutputDeviceLost post): the timer
+            // runs on a threadpool thread, and both the sink's Paused event and
+            // PlayedOut land in ViewModels the view is bound to.
+            PostToUiThread(() =>
+            {
+                _sink.Pause();
+                _coordinator.Stop();
+                PlayedOut?.Invoke(this, EventArgs.Empty);
+            });
+        }
+
+        // Settable so a test can run the hand-off inline instead of needing a
+        // real dispatcher loop; nothing in the app changes it.
+        internal Action<Action> PostToUiThread { get; set; } = action => Dispatcher.UIThread.Post(action);
+
         private void LogDiagnosticSnapshotIfDue()
         {
             var now = Stopwatch.GetTimestamp();
@@ -321,8 +403,8 @@ namespace Flower.Audio
         // every music app on the platform does; the alternative is Flower
         // carrying on at full volume through the handset speaker, or the
         // laptop's, in a quiet room. Routed through Pause() rather than
-        // straight at the sink so the audio session is released too, exactly
-        // as a tapped pause button would.
+        // straight at the sink so this leaves exactly the state a tapped pause
+        // button would, the now-playing card included.
         //
         // Reached from either reporter - IPlatformAudioSession on iOS,
         // IAudioSink everywhere else - because the decision is the same one
