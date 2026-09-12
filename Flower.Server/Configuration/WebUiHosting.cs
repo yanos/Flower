@@ -90,13 +90,13 @@ public static class WebUiHosting
         // Single-page fallback: the browser UI reads its route out of the URL
         // fragment (see Flower.Web), so in practice only "/" is ever requested,
         // but a refresh on any other path must not 404 into nothing. Scoped away
-        // from the API surfaces so a mistyped /rest/... still fails as an API
-        // call rather than silently returning HTML that a Subsonic client will
-        // try to parse as XML.
+        // from the API surface so a mistyped /api/... still fails as an API call
+        // rather than silently returning HTML that a client will try to parse as
+        // JSON.
         app.MapFallback(async context =>
         {
             var path = context.Request.Path;
-            if (path.StartsWithSegments("/api") || path.StartsWithSegments("/rest"))
+            if (path.StartsWithSegments("/api"))
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
                 return;

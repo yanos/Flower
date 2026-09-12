@@ -32,7 +32,6 @@ public class SettingsRosterlessLoadTests
             RebuildDatabase = true,
             TrustedDevices = false,
             PairingCodes = false,
-            SubsonicCredentials = false,
             ServerNetwork = false,
             Log = false,
         };
@@ -57,15 +56,6 @@ public class SettingsRosterlessLoadTests
         public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;
 
         public Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task<IReadOnlyList<SubsonicCredentialRow>> LoadSubsonicCredentialsAsync(CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task<SubsonicCredentialRow> IssueSubsonicCredentialAsync(string label, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task RevokeSubsonicCredentialAsync(SubsonicCredentialRow credential, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
         public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>

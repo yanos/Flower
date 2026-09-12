@@ -14,7 +14,6 @@ using Flower.Server.Configuration;
 using Flower.Server.Services;
 using Flower.Services;
 
-using Flower.Server.Subsonic;
 
 namespace Flower.Server.Endpoints;
 
@@ -39,10 +38,9 @@ public sealed record DeviceLogResponse(
 // high-water mark rather than the last entry returned.
 public sealed record LogSliceResponse(long LastSequence, IReadOnlyList<LogEntryResponse> Entries);
 
-// The admin API: issuing pairing codes, listing and revoking devices, minting the
-// per-client credentials third-party Subsonic clients need, and - for the browser
-// settings page - reading and writing this server's own configuration, triggering
-// a rescan and reading its log.
+// The admin API: issuing pairing codes, listing and revoking devices, and - for
+// the browser settings page - reading and writing this server's own
+// configuration, triggering a rescan and reading its log.
 //
 // There is no login route here, and no admin password anywhere in this project.
 // Under SYNC-PLAN.md's "Passwordless by design" a device pairs by redeeming a code
@@ -213,12 +211,6 @@ public static class AdminEndpoints
             return Results.NoContent();
         });
 
-        // The three routes that manage OpenSubsonic client credentials, in
-        // the adapter's own folder because they go when it does. They hang off
-        // this group rather than their own so that "admin" keeps meaning one
-        // gate and one budget - see Flower.Server/Subsonic/.
-        authenticated.MapSubsonicCredentialEndpoints(logger, jsonOptions);
-
         authenticated.MapGet("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IServer boundServer,
             PublicAddressProbe publicAddress) =>
@@ -388,14 +380,12 @@ public static class AdminEndpoints
 
         // Album art, written into the server's own files.
         //
-        // This is the admin surface's one *content* write, and it is here rather
-        // than on /rest because it is an owner's act, not a listener's: the
-        // Subsonic protocol has no route for replacing cover art, and inventing
-        // one there would put a whole-file rewrite behind the same credential a
-        // third-party player uses to browse. TrustedPeer.IsAdmin is the right
-        // gate for it.
+        // This is the admin surface's one *content* write, and it is on the admin
+        // surface because it is an owner's act, not a listener's: a whole-file
+        // rewrite does not belong behind the credential a player browses with.
+        // TrustedPeer.IsAdmin is the right gate for it.
         //
-        // Addressed by the same id GET /rest/getCoverArt reads at - an album id
+        // Addressed by the same id the cover-art read takes - an album id
         // or a song id - and it writes into exactly the files that read would
         // have consulted (MediaEndpoints.CoverArtCandidates). That symmetry
         // is the whole point: art is addressed per album on the way out (see

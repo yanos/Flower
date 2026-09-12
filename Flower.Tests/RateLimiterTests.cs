@@ -96,9 +96,9 @@ public class RateLimiterTests
         var limiter = new RateLimiter(max: 2, TimeSpan.FromSeconds(60));
         var now = DateTimeOffset.UtcNow;
 
-        // Peeking is what SubsonicEndpoints does on every request against its
-        // failed-auth budget - if it charged, a single well-behaved client
-        // would lock itself out.
+        // Peeking is what a failed-auth budget needs on every request - if the
+        // check itself charged, a single well-behaved client would lock itself
+        // out.
         Assert.True(limiter.WouldAllow("key", now));
         Assert.True(limiter.WouldAllow("key", now));
 

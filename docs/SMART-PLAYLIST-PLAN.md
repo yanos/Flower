@@ -303,6 +303,15 @@ Two edges, both cheap:
 
 ## Server / Subsonic surface
 
+> **The OpenSubsonic surface was removed in September 2026** (`SYNC-PLAN.md`,
+> "OpenSubsonic, built and removed"). This section is kept because its reasoning
+> transfers to Flower's own surface, which serves the same materialized
+> `playlist_tracks` rows to the same clients: a smart playlist is a stored
+> playlist on the wire either way, and the questions here — what a client sees,
+> what it may edit, what a rule-set means to a caller that has no vocabulary for
+> one — are unchanged. Read the endpoint names as shapes, not routes.
+
+
 Third-party clients see an ordinary playlist, because that is the only thing
 OpenSubsonic can describe: `getPlaylists`/`getPlaylist` read the
 materialized `playlist_tracks` rows and need no changes at all.

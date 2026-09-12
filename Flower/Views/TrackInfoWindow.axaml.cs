@@ -494,9 +494,9 @@ public partial class TrackInfoWindow : Window
 
     // Immediate, like the artwork below and unlike every tag field in this
     // window: there is no file write to batch it with, and Library.SetStarred
-    // is the one path that both mutates the track and persists the change (it
-    // is what the Subsonic /star route calls too), so routing it through this
-    // window's own OK would mean a second way to do the same thing.
+    // is the one path that both mutates the track and persists the change, so
+    // routing it through this window's own OK would mean a second way to do the
+    // same thing.
     private void StarButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_editTracks.Count == 0)
@@ -694,8 +694,8 @@ public partial class TrackInfoWindow : Window
     // Rather than refuse (which is what the tab did until now - "there's no
     // local file to write artwork into"), an admin device asks the server to do
     // the write, over the same signed admin surface the settings screen uses.
-    // See AdminEndpoints' /cover-art routes for why that is an admin route and
-    // not a Subsonic one.
+    // See AdminEndpoints' /cover-art routes for why that is an admin route
+    // rather than one a listener could reach.
     //
     // Addressed by album id, not by track: art is served per album on the way
     // out (LibraryDtoMapper's CoverArt field, and PeerCoverArtUrlResolver asks

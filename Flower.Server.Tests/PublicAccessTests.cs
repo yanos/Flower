@@ -57,8 +57,8 @@ public sealed class PublicServerFixture : WebApplicationFactory<Program>
 // consequential setting this server has. These tests pin both halves: that the
 // switch does what it says, and that nothing behind it was relying on the
 // guard to be the thing keeping strangers out.
-public class PublicAccessTests(PublicServerFixture publicServer, SubsonicServerFixture lanOnly)
-    : IClassFixture<PublicServerFixture>, IClassFixture<SubsonicServerFixture>
+public class PublicAccessTests(PublicServerFixture publicServer, FlowerServerFixture lanOnly)
+    : IClassFixture<PublicServerFixture>, IClassFixture<FlowerServerFixture>
 {
     // Ungated apart from LanGuard, which makes it the cheapest probe for "was
     // this caller admitted at all".

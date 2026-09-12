@@ -32,7 +32,6 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
     {
         ServerNetwork = true,
         PairingCodes = true,
-        SubsonicCredentials = true,
         Log = true,
         ThemePicker = false,
         ITunesIntegration = true,
@@ -135,15 +134,6 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
     public async Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
         (await client.IssuePairingCodeAsync(grantsAdmin, ct)).Code;
 
-    public async Task<IReadOnlyList<SubsonicCredentialRow>> LoadSubsonicCredentialsAsync(CancellationToken ct = default) =>
-        (await client.GetSubsonicCredentialsAsync(ct)).Select(ToRow).ToList();
-
-    public async Task<SubsonicCredentialRow> IssueSubsonicCredentialAsync(string label, CancellationToken ct = default) =>
-        ToRow(await client.IssueSubsonicCredentialAsync(label, ct));
-
-    public Task RevokeSubsonicCredentialAsync(SubsonicCredentialRow credential, CancellationToken ct = default) =>
-        client.RevokeSubsonicCredentialAsync(credential.Username, ct);
-
     public Task RescanAsync(CancellationToken ct = default) => client.RescanAsync(ct);
 
     public Task RebuildDatabaseAsync(CancellationToken ct = default) =>
@@ -185,13 +175,4 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         client.GetLibraryStatusAsync(ct);
 
     public string? DataDirectory => _lastLoaded?.DataDirectory;
-
-    private static SubsonicCredentialRow ToRow(SubsonicCredentialDto dto) => new()
-    {
-        Username = dto.Username,
-        Label = dto.Label,
-        CreatedAt = dto.CreatedAt,
-        LastSeenAt = dto.LastSeenAt,
-        Password = dto.Password,
-    };
 }

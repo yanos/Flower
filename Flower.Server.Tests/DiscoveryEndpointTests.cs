@@ -20,7 +20,7 @@ namespace Flower.Server.Tests;
 // (NetworkDiscoveryService.ResolveAliasAsync), not deserialized into a shared
 // type, which means a casing change is a silent break rather than a compile
 // error.
-public class DiscoveryEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
+public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<FlowerServerFixture>
 {
     private static DeviceSigningKey NewDevice()
     {

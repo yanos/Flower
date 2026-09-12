@@ -15,7 +15,6 @@ using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
 using Flower.Server.Endpoints;
 using Flower.Server.Services;
-using Flower.Server.Subsonic;
 using Flower.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -120,8 +119,9 @@ var (deviceKey, devicePublicKeyRaw) = new DeviceKeyStore(
 // is minted from the keypair just loaded, and a client that paired with this
 // server already stores that key, so it can validate the certificate against
 // something it has rather than against an authority nobody set up. The plain
-// port stays exactly as it was for the callers that cannot do that - third
-// party OpenSubsonic clients, and anything holding an http bookmark.
+// port stays exactly as it was for the one caller that cannot do that: a
+// browser tab, which has no pin to check a certificate against, plus anything
+// holding an http bookmark.
 //
 // UseUrls rather than a Kestrel Listen call, deliberately: an explicit Listen
 // makes Kestrel ignore the Urls configuration entirely, which would silently
@@ -205,9 +205,8 @@ builder.Services.AddSingleton(services => new Library(
 builder.Services.AddScoped<LibraryImportService>();
 // Keeps smart playlists in step with the catalog. Registered on the server as
 // well as in the app, and not only for symmetry: a listener's play reported in
-// over /api/flower/v1/plays and an admin's star over Subsonic are both
-// smart-playlist inputs, and the server's own materialized playlist_tracks
-// rows are what every OpenSubsonic client reads.
+// over /api/flower/v1/plays is a smart-playlist input, and the server's own
+// materialized playlist_tracks rows are what it serves from.
 builder.Services.AddSingleton<SmartPlaylistRefresher>();
 builder.Services.AddSingleton<PairingCodeService>();
 builder.Services.AddSingleton<StreamTicketService>();
@@ -216,7 +215,6 @@ builder.Services.AddSingleton<StreamTicketService>();
 builder.Services.AddSingleton<LibraryRescanCoordinator>();
 builder.Services.AddSingleton<NonceReplayGuard>();
 builder.Services.AddSingleton<TrustedPeerStore>();
-builder.Services.AddSubsonicAdapter();
 builder.Services.AddSingleton<LibraryManifestCache>();
 builder.Services.AddSingleton<PlayReportService>();
 // Where a paired device's pushed log snapshot lands (SyncEndpoints'
@@ -500,9 +498,6 @@ using (var scope = app.Services.CreateScope())
 // raises TracksUpdated, which this subscribes to.
 app.Services.GetRequiredService<SmartPlaylistRefresher>().Start();
 
-// The OpenSubsonic adapter, for third-party clients. Two lines and a
-// folder - see Flower.Server/Subsonic/SubsonicEndpoints.cs.
-app.MapSubsonicEndpoints();
 app.MapAdminEndpoints();
 app.MapPairingEndpoints();
 app.MapSyncEndpoints();

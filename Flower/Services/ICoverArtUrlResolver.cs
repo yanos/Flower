@@ -67,13 +67,13 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
         return peer.Url($"/api/flower/v1/cover-art?id={Uri.EscapeDataString(albumId)}").ToString();
     }
 
-    // The batch form of the call above, and on the same surface. A batch is not
-    // an OpenSubsonic idea, and /rest is a published protocol other clients
-    // implement, so inventing a route there would have been a private extension
-    // on a shared surface - which is what first put this one route on Flower's
-    // own. The single-art call has since followed it, along with playback: this
-    // app speaks its own protocol to its own server, and /rest exists for
-    // clients that speak nothing else.
+    // The batch form of the call above, and on the same surface. It went on
+    // Flower's own surface rather than the OpenSubsonic adapter because a batch
+    // is not an OpenSubsonic idea and /rest was a published protocol other
+    // clients implement, so a route there would have been a private extension on
+    // a shared surface. The single-art call and playback followed it, and the
+    // adapter has since been retired outright (docs/SYNC-PLAN.md) - so all this
+    // app ever speaks now is its own protocol to its own server.
     public (string Endpoint, string Id)? ResolveBatch(Track track)
     {
         var peer = peerTrackResolver.Resolve(track);
@@ -85,13 +85,13 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
 }
 
 // The browser head's implementation: the origin server the page was served
-// from, over the Flower sync surface rather than /rest.
+// from, over the Flower sync surface.
 //
-// /rest is the wrong door here for the same reason it was for the catalog: it
-// authenticates with the classic Subsonic credential scheme, and a tab has no
-// Subsonic credential. GET /api/flower/v1/cover-art sits behind the same signed
-// gate as GET /library, so the key that fetched the catalog also fetches the art
-// for it - no ticket, no second credential.
+// GET /api/flower/v1/cover-art sits behind the same signed gate as GET /library,
+// so the key that fetched the catalog also fetches the art for it - no ticket,
+// no second credential. (The retired OpenSubsonic adapter would have been the
+// wrong door for the same reason it was for the catalog: it authenticated with a
+// password scheme, and a tab has no password.)
 //
 // Addressed by the album id recomputed from this track's own tags rather than
 // by the CoverArt value the manifest carried. The two agree today (see

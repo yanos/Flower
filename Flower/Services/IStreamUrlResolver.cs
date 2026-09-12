@@ -50,7 +50,7 @@ public interface IStreamUrlResolver
     Task<string?> ResolveAsync(Track track);
 }
 
-// The app's implementation: an on-demand OpenSubsonic stream URL from whichever
+// The app's implementation: an on-demand signed stream URL from whichever
 // peer currently holds the track, so it plays without being downloaded first.
 // Moved here wholesale from PeerSyncCoordinator.GetStreamUrl, which had no
 // business being on a sync coordinator except that MainViewModel was the only

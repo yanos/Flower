@@ -32,10 +32,9 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         // live log through the very same viewer this tab would - a second copy
         // of it here, fetched rather than live, would be strictly worse.
         Log = false,
-        // Handing out pairing codes and keeping Subsonic credentials are both
-        // the server's job; this device redeems a code, it never issues one.
+        // Handing out pairing codes is the server's job; this device redeems a
+        // code, it never issues one.
         PairingCodes = false,
-        SubsonicCredentials = false,
         ServerNetwork = false,
     };
 
@@ -145,15 +144,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 
     public Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
         throw new NotSupportedException("An app peer pairs by approving a request, not by issuing a code.");
-
-    public Task<IReadOnlyList<SubsonicCredentialRow>> LoadSubsonicCredentialsAsync(CancellationToken ct = default) =>
-        throw new NotSupportedException("Only a Flower server issues Subsonic credentials.");
-
-    public Task<SubsonicCredentialRow> IssueSubsonicCredentialAsync(string label, CancellationToken ct = default) =>
-        throw new NotSupportedException("Only a Flower server issues Subsonic credentials.");
-
-    public Task RevokeSubsonicCredentialAsync(SubsonicCredentialRow credential, CancellationToken ct = default) =>
-        throw new NotSupportedException("Only a Flower server issues Subsonic credentials.");
 
     public Task<Logging.LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>
         throw new NotSupportedException("The app has its own Log window.");

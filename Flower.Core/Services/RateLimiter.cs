@@ -110,10 +110,9 @@ public sealed class RateLimiter
     public int TrackedKeyCount => _buckets.Count;
 
     // Read-only peek: is this key currently under its ceiling? For budgets
-    // that are only *spent* on some outcomes but must gate every request -
-    // SubsonicEndpoints charges its failed-auth limiter only when auth
-    // actually fails, then locks the source out entirely while it's over
-    // budget.
+    // that are only *spent* on some outcomes but must gate every request: a
+    // failed-auth limiter is charged only when auth actually fails, then locks
+    // the source out entirely while it's over budget.
     public bool WouldAllow(string key, DateTimeOffset now)
     {
         if (!_buckets.TryGetValue(key, out var existing))

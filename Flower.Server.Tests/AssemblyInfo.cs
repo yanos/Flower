@@ -5,7 +5,7 @@ using Xunit;
 // process-global (see Program.cs, which sets it during startup from
 // configuration). Two hosts with different data directories running at once
 // means whichever started last decides where *both* of them read trusted
-// peers and Subsonic credentials from, so a request authenticated against one
+// peers from, so a request authenticated against one
 // fixture's credential can be checked against another's empty store.
 //
 // Program.cs already noted this hazard for FlowerDb, which it works around by

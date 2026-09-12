@@ -213,8 +213,9 @@ Measured, inserting distinct nonces at a fixed timestamp so nothing is evicted
 ```
 
 Quadratic, as expected. **Calibration matters here, so: under Flower's own rate
-limits this is not currently a bottleneck.** The /rest limiters total 660
-requests per minute per source, which at a 120 s retention is a steady state of
+limits this is not currently a bottleneck.** The per-source limiters totalled 660
+requests per minute when this was measured (the `/rest` group has since gone; the
+surviving budgets are lower), which at a 120 s retention is a steady state of
 about 1,300 entries — around 40 µs per request. Real, wasteful, not a crisis.
 
 What makes it worth fixing anyway is the shape rather than today's number.
@@ -259,7 +260,7 @@ against a concurrent **invalidation**:
 
 The snapshot now describes the old catalog, and nothing will invalidate it until
 the *next* mutation — which on a server that has just finished its startup
-rescan may be a long time. Every `/rest` browse, search and `Find(id)` reads
+rescan may be a long time. Every browse, search and `Find(id)` reads
 through `Snapshot`, so the symptom is a library that looks like it did before the
 scan, indefinitely.
 
@@ -336,6 +337,13 @@ single-user one.
 
 ### C1. There is no authorisation model on the Subsonic surface, only authentication
 
+> **Moot by deletion, September 2026** — the surface is gone (`SYNC-PLAN.md`,
+> "OpenSubsonic, built and removed"), and with it every per-client credential.
+> But read the last paragraph before closing it: the *underlying* gap is that
+> Flower has no user model, and that is unchanged. Every paired device can still
+> delete any playlist. What went away is the surface on which a non-admin
+> credential existed to exploit it, not the missing model.
+
 `Flower.Server/Endpoints/SubsonicEndpoints.cs:396` (`ToDto`), `:499`
 (`DeletePlaylist`), `:435` (`UpdatePlaylist`), `:509` (`SetStarred`)
 
@@ -386,6 +394,11 @@ first — which is the shape the store already has for time-based eviction. A to
 store ceiling as a second backstop.
 
 ### C3. `getAlbumList2` does not clamp `size`
+
+> **Moot by deletion, September 2026** — the route is gone with the adapter.
+> Worth keeping as a shape to check for on Flower's own surface: no bulk route
+> there takes a caller-supplied size today, and none should acquire one without
+> a clamp.
 
 `Flower.Server/Endpoints/SubsonicEndpoints.cs:325`
 
@@ -753,9 +766,9 @@ are right. These are the specific gaps the findings above walked through.
    causes.
 
 5. **Playlist authorisation.** There is nothing to test until there is a model
-   (C1), but `SubsonicEndpointTests` asserting that a second credential *can*
-   currently delete the first's playlist would at least pin the present behaviour
-   as a decision.
+   (C1). The adapter that made this reachable by a non-admin credential is gone;
+   what remains untested is that any paired device can delete any playlist, which
+   is worth pinning as a decision on Flower's own surface.
 
 6. **`NonceReplayGuard` has no dedicated test file.** It is exercised indirectly
    through `PeerSignatureAuthTests` and five others. A direct one covering

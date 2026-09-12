@@ -6,30 +6,25 @@ using Flower.Services;
 namespace Flower.Server.Endpoints;
 
 // Serving the bytes of a track, once something has decided the caller may have
-// them. Two routes reach this and they are the same code:
+// them: GET /api/flower/v1/stream, /download, and cover art.
 //
-//   GET /api/flower/v1/stream    - Flower's own, what every Flower client uses
-//   GET /rest/stream             - the OpenSubsonic adapter, for third-party
-//                                  clients that speak nothing else
+// Its own file because the gate in front is not its business - a caller arrives
+// holding a device signature or a stream ticket, and whichever admitted them,
+// what reads a file off disk is the same code.
 //
-// and the same for /download and for cover art (/api/flower/v1/cover-art and
-// /rest/getCoverArt). Only the gate in front differs, which is the whole reason
-// this is its own file: the native route admits a device signature or a stream
-// ticket, the adapter route additionally admits a Subsonic password, and
-// neither gate belongs to the thing that reads a file off disk.
+// This used to be shared with an OpenSubsonic adapter at /rest/*, which admitted
+// a password as a third currency. The adapter is gone (see docs/SYNC-PLAN.md);
+// that it could be deleted without taking a byte of media serving with it is
+// what this separation was for.
 //
-// It is also what keeps the adapter droppable. Every one of these routes is
-// served on Flower's own surface as well, so Flower.Server/Subsonic/ can be
-// deleted whole without taking a byte of media serving with it.
-//
-// Deliberately GET-mapped, on both, so a HEAD reaches no endpoint and every
+// Deliberately GET-mapped so a HEAD reaches no endpoint and every
 // client finds a track's length through the ranged-GET probe instead. That is
 // not an oversight: it is the path Flower.DeviceChecks exercises on all five
 // platforms, and answering HEAD here would take it out of every check at once.
 //
 // What a HEAD actually gets is a 404, not the 405 routing would give on its own
 // - WebUiHosting's single-page fallback matches every method, and answers /api
-// and /rest with a 404 rather than serving HTML to something expecting audio.
+// with a 404 rather than serving HTML to something expecting audio.
 // Callers only ever ask whether the response succeeded (SeekableHttpStream's
 // ProbeServerAsync), so the two are the same answer; the distinction is written
 // down because three comments used to name the wrong one.
@@ -100,8 +95,8 @@ public static class MediaEndpoints
     private const string StreamLogCategory = "Flower.Server.Media.Stream";
 
     // Who asked, in whichever currency the gate that admitted them accepts: a
-    // paired device's fingerprint, a Subsonic username on /rest, or - for a
-    // stream ticket, which names nobody - the address alone.
+    // paired device's fingerprint, or - for a stream ticket, which names
+    // nobody - the address alone.
     private static string StreamPeer(HttpContext context)
     {
         var address = context.Connection.RemoteIpAddress?.ToString() ?? "an unknown address";
@@ -133,11 +128,8 @@ public static class MediaEndpoints
         return track?.Path is not null && File.Exists(track.Path) ? track : null;
     }
 
-    // Album art, at GET /api/flower/v1/cover-art and GET /rest/getCoverArt.
-    // One handler behind both, so the two doors cannot drift about what an
-    // album's art even is - and, like the two routes above, it lives out here
-    // rather than in the adapter so that deleting the adapter takes nothing
-    // with it that Flower's own surface is still serving.
+    // Album art, at GET /api/flower/v1/cover-art. Out here with the routes
+    // above rather than inline, for the same reason they are.
     internal static IResult GetCoverArt(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))

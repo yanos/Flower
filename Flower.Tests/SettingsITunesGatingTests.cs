@@ -47,15 +47,6 @@ public class SettingsITunesGatingTests
         public Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
-        public Task<IReadOnlyList<SubsonicCredentialRow>> LoadSubsonicCredentialsAsync(CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<SubsonicCredentialRow>>([]);
-
-        public Task<SubsonicCredentialRow> IssueSubsonicCredentialAsync(string label, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task RevokeSubsonicCredentialAsync(SubsonicCredentialRow credential, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;
 
@@ -74,7 +65,6 @@ public class SettingsITunesGatingTests
         ITunesIntegration = true,
         ServerNetwork = true,
         PairingCodes = true,
-        SubsonicCredentials = true,
         Log = true,
     };
 

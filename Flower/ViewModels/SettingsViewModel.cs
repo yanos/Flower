@@ -118,7 +118,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public ObservableCollection<LibraryPathRow> LibraryPaths { get; } = [];
     public ObservableCollection<TrustedPeerRow> Devices { get; } = [];
     public ObservableCollection<DeniedPeerRow> DeniedDevices { get; } = [];
-    public ObservableCollection<SubsonicCredentialRow> SubsonicCredentials { get; } = [];
 
     // The pending list, which the rows above are a rendering of. Kept separately
     // because the rows carry a song count that has to be recomputed whenever the
@@ -285,13 +284,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         private set => SetProperty(ref _pairingCode, value);
     }
 
-    private string _newCredentialLabel = "";
-    public string NewCredentialLabel
-    {
-        get => _newCredentialLabel;
-        set => SetProperty(ref _newCredentialLabel, value);
-    }
-
     public string DataDirectory => _snapshot.DataDirectory;
     public string ITunesLibraryDescription => _snapshot.ITunesLibraryDescription;
 
@@ -405,8 +397,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
             // switch's ApplyAppleMusicFolder side effect never armed.
             if (Capabilities.TrustedDevices)
                 await RefreshDevicesAsync(ct);
-            if (Capabilities.SubsonicCredentials)
-                await RefreshSubsonicCredentialsAsync(ct);
 
             IsLoaded = true;
             DeviceListChanged?.Invoke(this, EventArgs.Empty);
@@ -536,35 +526,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
         await _backend.ForgetDenialAsync(device, ct);
         await RefreshDevicesAsync(ct);
-    });
-
-    [RelayCommand]
-    private Task IssueSubsonicCredentialAsync() => RunAsync(async ct =>
-    {
-        var label = string.IsNullOrWhiteSpace(NewCredentialLabel) ? "Subsonic client" : NewCredentialLabel.Trim();
-        var issued = await _backend.IssueSubsonicCredentialAsync(label, ct);
-        NewCredentialLabel = "";
-
-        await RefreshSubsonicCredentialsAsync(ct);
-        // The listing endpoint never returns a password, so the only copy that
-        // will ever exist is the one in this response - put that row back at the
-        // top of the list with it still attached.
-        var listed = SubsonicCredentials.FirstOrDefault(c => c.Username == issued.Username);
-        if (listed != null)
-            SubsonicCredentials.Remove(listed);
-        SubsonicCredentials.Insert(0, issued);
-
-        StatusMessage = "Copy this password now - it is not stored and cannot be shown again.";
-    });
-
-    [RelayCommand]
-    private Task RevokeSubsonicCredentialAsync(SubsonicCredentialRow? credential) => RunAsync(async ct =>
-    {
-        if (credential == null)
-            return;
-
-        await _backend.RevokeSubsonicCredentialAsync(credential, ct);
-        await RefreshSubsonicCredentialsAsync(ct);
     });
 
     // Which logs the Logs tab can show: the server's own, then one row per
@@ -855,13 +816,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(HasDevices));
         OnPropertyChanged(nameof(ShowsDeniedDevices));
-    }
-
-    private async Task RefreshSubsonicCredentialsAsync(CancellationToken ct = default)
-    {
-        SubsonicCredentials.Clear();
-        foreach (var credential in await _backend.LoadSubsonicCredentialsAsync(ct))
-            SubsonicCredentials.Add(credential);
     }
 
     // Turning the iTunes integration on adds Music.app's media folder to the

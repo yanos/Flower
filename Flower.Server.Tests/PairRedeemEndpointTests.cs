@@ -15,7 +15,7 @@ namespace Flower.Server.Tests;
 // RedeemPairingCodeAsync). Everything below the UI - the code, the signature,
 // the resulting TrustedPeer - meets here, so this is where the flow is worth
 // exercising end to end rather than a layer at a time.
-public class PairRedeemEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
+public class PairRedeemEndpointTests(FlowerServerFixture server) : IClassFixture<FlowerServerFixture>
 {
     private const string Path = "/api/flower/v1/pair-redeem";
 

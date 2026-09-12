@@ -20,10 +20,9 @@ namespace Flower.Services;
 // for the operator to configure. See docs/REMOTE-TRANSPORT-PLAN.md's
 // certificate section, which decided the shape; this is where it lands.
 //
-// A real, publicly-trusted certificate remains the optional upgrade for the two
-// callers that cannot pin - a browser tab and a third-party OpenSubsonic client
-// - and needs none of this: it arrives as a file and is validated the ordinary
-// way. See docs/SELF-HOSTING.md.
+// A real, publicly-trusted certificate remains the optional upgrade for the one
+// caller that cannot pin - a browser tab - and needs none of this: it arrives as
+// a file and is validated the ordinary way. See docs/SELF-HOSTING.md.
 public static class DeviceCertificate
 {
     // The raw uncompressed SEC1 point (0x04 || X(32) || Y(32)) that this

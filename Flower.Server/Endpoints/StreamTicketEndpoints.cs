@@ -51,10 +51,8 @@ public static class StreamTicketEndpoints
             // The whole point is a URL that can be dropped straight into an
             // <audio src>, so hand back the assembled thing rather than a bare
             // token every caller would have to concatenate identically.
-            // Flower's own route, not /rest. The tab is a Flower client and
-            // has no reason to go through the OpenSubsonic adapter to reach
-            // bytes this server serves directly - and scoping the ticket to
-            // this group means it cannot be spent anywhere but here.
+            // Scoping the ticket to this group means it cannot be spent
+            // anywhere but here.
             var url = $"/api/flower/v1/stream?id={Uri.EscapeDataString(id)}&ticket={Uri.EscapeDataString(ticket)}";
             return Results.Json(new StreamTicketResponse(ticket, expiresAt, url), jsonOptions);
         });

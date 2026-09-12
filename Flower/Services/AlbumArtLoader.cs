@@ -265,7 +265,7 @@ public class AlbumArtLoader
     // Raw art bytes for a track this device actually has a file for - see
     // LocalAlbumArtReader, which is the one implementation of the embedded-
     // tag-then-cover-file lookup and is shared with Flower.Server, which serves
-    // the same bytes at /api/flower/v1/cover-art and /rest/getCoverArt.
+    // the same bytes at /api/flower/v1/cover-art.
     // Callers that also need to know what to serve the bytes *as* should use
     // LocalAlbumArtReader.ForFile directly rather than sniff.
     public static byte[]? TryGetLocalArtBytes(Track track) =>

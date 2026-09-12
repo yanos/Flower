@@ -11,16 +11,15 @@ using Flower.Services;
 
 namespace Flower.Server.Endpoints;
 
-// Flower's own device-to-device sync protocol (/api/flower/v1/*), the half a
-// paired client actually bulk-syncs through - as opposed to /rest/*, which is
-// the published OpenSubsonic surface third-party clients speak.
+// Flower's own device-to-device sync protocol (/api/flower/v1/*), which a
+// paired client bulk-syncs through. Since the OpenSubsonic adapter was deleted
+// (docs/SYNC-PLAN.md) it is the only client protocol this server speaks.
 //
 // This server answered none of it until now, so a client that paired with it
-// then failed its very first sync on a flat 404 from GET /library: pairing
-// made the client a Client of this Server (SyncRolePolicy), and a Client pulls
-// its whole catalog from its Server through this endpoint rather than through
-// /rest/getAlbumList2 (see LibrarySyncContracts for why the bulk shape exists
-// alongside the per-album one).
+// then failed its very first sync on a flat 404 from GET /library: a paired
+// client pulls its whole catalog from its server through this endpoint (see
+// LibraryDtoMapper and LibraryContracts for why the bulk shape exists alongside
+// the per-album one).
 //
 // Deliberately only the three routes a Client drives against its Server:
 //
@@ -71,9 +70,8 @@ public static class SyncEndpoints
     // head painting an album grid spends twenty in the time it takes to scroll
     // a screen - and then the 429 lands on GET /library, which is the one route
     // in here that actually matters. The art throttled the sync. Generous
-    // because it has to be: a third-party client on /rest has no batch route
-    // and asks one tile at a time, and this head's grid can too when a batch
-    // request fails.
+    // because it has to be: a head's grid degrades to one tile at a time
+    // whenever a batch request fails.
     private static readonly RateLimiter ArtLimiter = new(max: 600, TimeSpan.FromSeconds(60));
 
     // Playback is the third plane, and it is here for the same reason art is:
@@ -81,8 +79,7 @@ public static class SyncEndpoints
     // costs. One track is a probe plus a body GET plus a reopen or two on a
     // phone changing networks, and decode-ahead has two tracks in flight at
     // once - so playing an album would spend the sync budget several times
-    // over, and the 429 would land on whichever request came next. Same ceiling
-    // /rest gives the same traffic, because it is the same traffic.
+    // over, and the 429 would land on whichever request came next.
     private static readonly RateLimiter MediaLimiter = new(max: 240, TimeSpan.FromSeconds(60));
 
     // Composed from the same two pieces the route is mapped from, so renaming
@@ -106,8 +103,7 @@ public static class SyncEndpoints
 
     // The wire format is whatever the client's FlowerJsonContext writes:
     // PascalCase (no naming policy) with nulls omitted. Reflection-based here
-    // for the same reason SubsonicResults is - this host is neither trimmed
-    // nor AOT-compiled.
+    // Reflection-based because this host is neither trimmed nor AOT-compiled.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -234,10 +230,8 @@ public static class SyncEndpoints
         // /log/report answers with the same shape.
         sync.MapGet("/log/watermark", GetLogWatermark);
 
-        // The same album art /rest/getCoverArt serves, behind this group's gate
-        // instead of the Subsonic one. A browser tab holds a session token and
-        // no signing key, so /rest is a door it cannot open - and unlike
-        // playback, art needs no stream ticket to get through this one, because
+        // Album art behind this group's gate. Unlike
+        // playback, art needs no stream ticket to get through it, because
         // AlbumArtLoader fetches it with an HttpClient that can send the header
         // (an <audio> element is what cannot). Deliberately the existing
         // handler rather than a second implementation of "an album's art".
@@ -259,10 +253,8 @@ public static class SyncEndpoints
         // bodies already.
         sync.MapPost(CoverArtBatchRoute, (HttpContext context, Library library) => GetCoverArtBatch(context, library));
 
-        // The bytes themselves, on Flower's own surface. /rest serves the same
-        // two handlers behind the adapter's gate (see MediaEndpoints); this is
-        // the door every Flower client uses, and the only one a stream ticket
-        // opens.
+        // The bytes themselves (see MediaEndpoints): the door every Flower client
+        // uses, and the only one a stream ticket opens.
         sync.MapGet(StreamRoute, MediaEndpoints.Stream);
         sync.MapGet(DownloadRoute, MediaEndpoints.Download);
     }
@@ -376,17 +368,14 @@ public static class SyncEndpoints
 
         var json = cache.Get(token, () =>
         {
-            // Only tracks this server actually has a file for, the same rule
-            // the OpenSubsonic surface follows: a placeholder learned from
-            // somewhere else is not this device's to advertise.
+            // Only tracks this server actually has a file for: a placeholder
+            // learned from somewhere else is not this device's to advertise.
             var songs = library.Snapshot.Albums
                 .SelectMany(album => album.Tracks)
                 .Where(track => track.Path != null)
                 // Under this server's own fingerprint, so a client merging
                 // this manifest files the counts as *this device's* rather
-                // than its own - see Track.RemotePlayCounts, and
-                // LibraryDtoMapper.ToTrackDto for why the /rest browse endpoints
-                // deliberately do not pass one.
+                // than its own - see Track.RemotePlayCounts.
                 .Select(track => LibraryDtoMapper.ToTrackDto(track, signingKey.Fingerprint, options.CurrentValue.LibraryPaths))
                 .ToList();
             return JsonSerializer.Serialize(new LibrarySyncManifestDto(signingKey.Fingerprint, songs), JsonOptions);

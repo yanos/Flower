@@ -11,7 +11,6 @@ using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
 
-using Flower.Server.Subsonic;
 
 namespace Flower.Server.Tests;
 
@@ -19,7 +18,7 @@ namespace Flower.Server.Tests;
 // a flat 404 until SyncEndpoints existed - a client paired fine and then failed
 // its first library sync, since a Client pulls its catalog from its Server
 // through GET /library, not through /rest.
-public class SyncEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
+public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<FlowerServerFixture>
 {
     private static DeviceSigningKey NewDevice()
     {

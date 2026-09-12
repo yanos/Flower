@@ -12,11 +12,11 @@ iOS owns its music files itself — its own sandboxed Documents-folder library, 
 
 ---
 
-## The unifying decision: one OpenSubsonic client, one kind of server
+## The unifying decision: one client protocol, one kind of server
 
-Peer-to-peer WiFi sync and self-hosted-server support were originally scoped as separate protocols. They became one client protocol, and then — see "Peer-to-peer, built and removed" below — one thing on the other end of it.
+Peer-to-peer WiFi sync and self-hosted-server support were originally scoped as separate protocols. They became one client protocol, then — see "Peer-to-peer, built and removed" below — one thing on the other end of it, and finally — see "OpenSubsonic, built and removed" — one protocol rather than two.
 
-- **Protocol: OpenSubsonic** (actively-maintained open successor to the classic Subsonic API, JSON-first, backwards compatible). Building a client means **zero server code** to get self-hosting working — point Flower at Navidrome, Gonic, Airsonic-Advanced, or Ampache.
+- **Protocol: OpenSubsonic** (actively-maintained open successor to the classic Subsonic API, JSON-first, backwards compatible). Building a client means **zero server code** to get self-hosting working — point Flower at Navidrome, Gonic, Airsonic-Advanced, or Ampache. **This is now history on both sides**: the client was cut back and then deleted, and the server surface went in September 2026 — see "OpenSubsonic, built and removed" below. Flower speaks its own protocol to its own server.
 - **Target server: Navidrome** (Go, Docker-first, drives OpenSubsonic's evolution). Feature coverage confirmed sufficient: browsing, ranged `/stream`, playlist CRUD, favorites, cover art, search, scrobble.
 - **Auth**: classic `token=md5(password+salt)` or OpenSubsonic's API-key extension.
 - **No usable .NET client library existed**, so Flower hand-rolled one. **Done, then mostly deleted**: `OpenSubsonicClient` (`Flower.Core/Services/`) covered auth, ID3-based browsing, `search3`, playlist CRUD, star/scrobble and URL builders. Every browse call lost its last caller once the catalog moved to `GET /api/flower/v1/library`, so in September 2026 the client was cut back to what playback and the download button use — a signed `stream` URL and a resumable download — and the `subsonic-response` envelope parser went with it. A real browsing client is still the right thing for a third-party server with no bulk route; it is not carried until something asks.
@@ -32,7 +32,23 @@ There used to be a third option, and for a while it was the interesting one: **a
 
 So: **a client is never a server.** Only `Flower.Server` serves, only `Flower.Server` advertises over mDNS, and a client browses without advertising. Pairing is always a redeemed code. Every discovered device is a server, which is what collapsed the role concept, the two sidebar sections and the two pairing paths into one each.
 
-**What that gave up, and what should come back.** Browsing another *device's* library on the LAN — opening your desktop's collection from your phone and playing a track off it, with no server involved — went with the listener. It is wanted, and it is not deferred by accident. It should return as its own design rather than as a revived `SyncHttpServer`: the old one earned its keep by also carrying sync, pairing and trust, and a browse-only feature does not need any of that. The client half is gone too now, and deliberately: `PeerLibraryViewModel` was the device-detail browse pane, and against `Flower.Server` — the only peer left — it showed the same catalog the library already holds, since `LibrarySyncService` merges a paired server's tracks in and `IStreamUrlResolver` streams them from the ordinary track list. The sidebar row's pane is that server's *settings* now (`MainViewModel.SelectedServerSettings`, `RemoteServerSettingsBackend`), which is the one thing about a server that had nowhere else to live. Rebuilding the browse client is small — `PeerOpenSubsonicClientFactory` and `OpenSubsonicClient` are still here and are all it ever used — so what is missing is still the same two things: a minimal, opt-in, browse-and-stream-only listener on the serving side, and an honest answer about what it means for a phone to open a port.
+**What that gave up.** Browsing another *device's* library on the LAN — opening your desktop's collection from your phone and playing a track off it, with no server involved — went with the listener. The client half is gone too, and deliberately: `PeerLibraryViewModel` was the device-detail browse pane, and against `Flower.Server` — the only peer left — it showed the same catalog the library already holds, since `LibrarySyncService` merges a paired server's tracks in and `IStreamUrlResolver` streams them from the ordinary track list. The sidebar row's pane is that server's *settings* now (`MainViewModel.SelectedServerSettings`, `RemoteServerSettingsBackend`), which is the one thing about a server that had nowhere else to live.
+
+**And how it comes back: through the server, not around it.** This used to read "it should return as its own design", with two things missing — a minimal browse-and-stream-only listener on the serving side, and an honest answer about what it means for a phone to open a port. **September 2026 decision: there is no answer to the second question, so do not ask it.** A device never listens. If music on one device should be reachable from another, it goes *to the server*, and the server serves it — the same star topology, the same single trust boundary, the same one implementation of pairing, rate limiting and `LanGuard`.
+
+That is a better answer than the listener on every axis that matters here. Nothing on a phone binds a socket, so there is no second `LanGuard`, no trusted-device roster on a device with no business holding one, and no design question about a listener on a cellular network. The traffic is encrypted and pinned because it is the ordinary paired-client path — a device-to-device listener would have been plain HTTP at a link-local address, which is what `NetworkDiscoveryService.HttpOrigin` still assumes and what `CleartextOrigins` exists to contain.
+
+**What it needs that does not exist: ingest.** A server can only middle-man music it has, and sync today moves playlist metadata and track *references*, not audio — the download button pulls files from the server, and nothing pushes the other way. So this decision is really a statement about where the library lives: **one library, on the server; devices hold subsets of it, not private collections worth browsing.** Which suits the deployment model in `CLAUDE.md` exactly. The work is an upload path — a device offering a file the server does not have, the server taking it into its own library and scan — plus whatever UI admits that it is a copy rather than a stream. Until that exists, the honest description of device-to-device browsing is not "deferred" but "replaced".
+
+### OpenSubsonic, built and removed
+
+**September 2026: `/rest/*` is gone.** OpenSubsonic was the right *starting* protocol and the wrong thing to keep. It earned its place twice — it meant zero server code to get self-hosting working at all, and it gave the catalog, the id scheme and the wire shapes a design someone else had already debugged. Both debts are paid: `Flower.Server` exists, and the shapes it taught are still here (`LibraryContracts`, `EntityId`, `CatalogIdentity`, `Track.Starred`, the playlist attributes in `Schema`). What was left was a second published surface serving a client that does not exist yet.
+
+What it cost was not the folder. `Flower.Server/Subsonic/` was eight files and three lines of wiring, exactly as advertised — but hanging off it were: a password, the only guessable credential in the system, with a store, an admin surface to mint and revoke it, and a settings pane in every Flower head to drive that; a second gate on the media routes; a second set of rate-limit budgets; and a standing argument in favour of the plain HTTP port, because a third-party client cannot pin a certificate. Every one of those is a trust-boundary component, which is the part of this system where `CLAUDE.md`'s "it's just for me" reasoning explicitly does not apply.
+
+So the ledger for deleting it: **the system now has no password in it at all.** The only caller that cannot pin the server's self-signed certificate is a browser tab, which narrows what a real certificate is *for* (`docs/SELF-HOSTING.md`), and the plain port's remaining callers are a tab on a LAN address and an old bookmark. `MediaEndpoints` separated the gate from the file-reading specifically so the adapter could be deleted without taking media serving with it; that it came out clean is that argument having been right.
+
+**What it gave up, and the terms for its return.** Playing a Flower library in someone else's app — Symfonium, play:Sub, Amperfy, a car head unit — and pointing Flower at a Navidrome or Jellyfin someone else runs. The client half of that was already gone before this (`OpenSubsonicClient` had lost its last browse caller; see the protocol bullet above), so this is the server half following it. Neither is hard to rebuild — the shapes never left — and the stated intent is to publish Flower's own protocol instead, so that a third-party client speaks the one surface this project actually maintains. Bringing OpenSubsonic back needs a reason of the form "a specific person wants to use a specific app", not "a client might exist".
 
 ### Staged path to "always available to sync with"
 
@@ -89,7 +105,7 @@ No supported path for bulk Bluetooth file transfer from an iOS app to an arbitra
 
 **Protocol: OpenSubsonic**, reusing the same client built above (`getIndexes`/`getArtists`/`getAlbumList`/`getSong` for browsing, `stream`/`download` for audio). Still on `HttpListener`, not Kestrel (either device may be the one holding a file). Trust/auth is Flower's own fingerprint-based pairing gate (below), not OpenSubsonic credentials, between two Flower devices. `Track.SyncKey` is still the cross-device identity — an OpenSubsonic id is only stable within one server's own scan.
 
-**Confirmed real problem, changed after real-world testing:** the original per-album (`getAlbumList2`+`getAlbum`) catalog fetch produced 1000+ HTTP connections against a 1,397-album library, causing real network/battery cost on iOS. `LibrarySyncService` now uses a bespoke bulk endpoint instead — `GET /api/flower/v1/library` returning the whole manifest in one response, same shape as the playlist endpoint. The standard `/rest/getAlbumList2`/`getAlbum` endpoints are unchanged for real OpenSubsonic interop; only Flower-to-Flower bulk sync moved off them.
+**Confirmed real problem, changed after real-world testing:** the original per-album (`getAlbumList2`+`getAlbum`) catalog fetch produced 1000+ HTTP connections against a 1,397-album library, causing real network/battery cost on iOS. `LibrarySyncService` now uses a bespoke bulk endpoint instead — `GET /api/flower/v1/library` returning the whole manifest in one response, same shape as the playlist endpoint. The standard `/rest/getAlbumList2`/`getAlbum` endpoints stayed alongside it for third-party interop at the time, and were removed with the rest of the adapter in September 2026.
 
 That endpoint is now conditional: it serves `Library.ChangeToken` as its `ETag` and answers `304` to a matching `If-None-Match`, and the serialized manifest is cached against the token it was built from (the album-art hashes it embeds cost ~1,400 TagLib file opens to compute). The same token is advertised on `/info`, which is what finally lets a Client notice a *server-side* change: sync previously fired only on first mDNS contact or a debounced local change, so a track added on the Server went unnoticed for as long as both apps stayed running. The ~5s `/info` poll every Client already runs now carries the token, so a change on either side converges within one poll. See ARCHITECTURE-REVIEW §1.4.
 
@@ -129,7 +145,7 @@ Resumable/partial downloads (retry-from-scratch in v1); multi-source download (o
 
 ## Optional, additive: Jellyfin client support
 
-Many self-hosters already run Jellyfin (MIT-licensed `Jellyfin.Sdk`, separate from the GPLv2 server — plain network client use, no derivative-work concern) for movies/TV and would rather not run a second server for music. Worth adding as a second optional `IMusicImporter` backend once the Subsonic client exists — not a replacement for it, since Jellyfin is ~5-10x heavier (300-800MB RAM idle) and video-first; treat it as "support the server users already have."
+Many self-hosters already run Jellyfin (MIT-licensed `Jellyfin.Sdk`, separate from the GPLv2 server — plain network client use, no derivative-work concern) for movies/TV and would rather not run a second server for music. Worth adding as a second optional `IMusicImporter` backend once a browse client exists again — not a replacement for it, since Jellyfin is ~5-10x heavier (300-800MB RAM idle) and video-first; treat it as "support the server users already have."
 
 ## Next: first-party `Flower.Server`, headless with a web interface
 
@@ -137,7 +153,8 @@ Promoted from "optional, later" — this is the next initiative. Goal: a headles
 (NAS/VPS/home box) that plays music through a browser-reachable web interface, lets the owner
 configure the server through that same interface, and lets new devices request pairing with no
 local screen to pop a dialog on. Speaks OpenSubsonic itself so the existing client — and any
-third-party Subsonic mobile client — works against it for free.
+third-party Subsonic mobile client — works against it for free. (That last sentence is why the
+adapter was built and no longer describes the server: see "OpenSubsonic, built and removed".)
 
 **Recommended stack:** ASP.NET Core Minimal API + Kestrel (range-request streaming via
 `Results.File(..., enableRangeProcessing: true)`, no custom code, uses `sendfile`); SQLite
@@ -234,20 +251,22 @@ ACME library, one `AddLettuceEncrypt()` call, no custom ACME plumbing.
 
 **No accounts, no registration, and no password the user has to invent or remember.** Every
 Flower surface — desktop, mobile, *and* the browser admin UI — authenticates the same way, with
-a device keypair and a one-time pairing code. The only thing that can't join that scheme is a
-third-party Subsonic client, and only because the protocol it implements is published and fixed.
+a device keypair and a one-time pairing code. The one thing that could never join that scheme was
+a third-party Subsonic client, because the protocol it implements is published and fixed — and
+with that surface retired (see "OpenSubsonic, built and removed"), **path B is gone and there is
+no password anywhere in this system.** What follows is the record of it having existed.
 
 An earlier revision of this section had three paths, with the browser UI on WebAuthn passkeys as
 its own middle tier. That was built on a false premise — see the security bullet above — and is
 now folded into path A.
 
-**Status — server side done, browser client not started.** Built and tested:
-`TrustedPeer.IsAdmin` and the admin-granting pairing code that sets it; `/api/admin` gated by
-`DeviceSignatureAuth.VerifyTrustedPeer` + `IsAdmin` instead of a login; the `PairingInvite`
-(`flower://pair?host=…&code=…&fp=…`) shared type and the `fp=` server-key pin; the startup
-bootstrap code printed to stdout; path B end to end (`SubsonicCredentialStore`, the admin
-routes that mint/list/revoke, `SubsonicAuth` over per-client credentials, and the `apiKey`
-form); and `StreamTicketService` with its mint route and `/rest` redemption.
+**Status — done.** Built and tested: `TrustedPeer.IsAdmin` and the admin-granting pairing code
+that sets it; `/api/admin` gated by `DeviceSignatureAuth.VerifyTrustedPeer` + `IsAdmin` instead of
+a login; the `PairingInvite` (`flower://pair?host=…&code=…&fp=…`) shared type and the `fp=`
+server-key pin; the startup bootstrap code printed to stdout; and `StreamTicketService` with its
+mint route, which the browser's `<audio>` element presents. Path B was built end to end too
+(`SubsonicCredentialStore`, the admin routes that minted and revoked, `SubsonicAuth`, the `apiKey`
+form, and ticket redemption on `/rest`) and was deleted with the adapter.
 
 ### The server had to be findable first
 
@@ -411,6 +430,10 @@ mode in the server for exactly one client type. The syncing and phishing-resista
 they hold over this design don't pay for that.
 
 #### Path B — the protocol-mandated exception: third-party Subsonic clients
+
+> **Removed, September 2026.** The adapter this path existed for is gone, and path B with it —
+> there is no password in the system now. Kept as the record of how it worked, and of what would
+> have to come back with it. See "OpenSubsonic, built and removed".
 
 DSub / substreamer / Symfonium implement a published protocol and will send `u=`/`t=`/`s=` or an
 `apiKey`. No design choice on this side changes that, so this one genuinely can't merge into

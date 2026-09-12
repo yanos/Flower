@@ -8,10 +8,10 @@ namespace Flower.Server.Configuration;
 // Note what is *not* here: there is no admin username or password, and no
 // credential of any kind. Under SYNC-PLAN.md's "Passwordless by design" every
 // Flower surface - including the browser admin UI - authenticates with a
-// device keypair it obtained by redeeming a pairing code, and third-party
-// Subsonic clients use per-client credentials this server generates at
-// runtime (SubsonicCredentialStore). Nothing an operator has to invent, type
-// into a config file, or remember to change from a placeholder.
+// device keypair it obtained by redeeming a pairing code. Nothing an operator
+// has to invent, type into a config file, or remember to change from a
+// placeholder - and since the OpenSubsonic adapter went (docs/SYNC-PLAN.md),
+// nothing in this system authenticates with a password at all.
 //
 // Derives from MusicLibrarySettings, which the app's own AppSettings derives
 // from too: the library folders and the three iTunes switches are the same
@@ -74,9 +74,9 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // the plain one in Urls. 0 turns TLS off entirely.
     //
     // A second port rather than a scheme change on 4533, because the plain
-    // listener has callers that cannot follow: third-party OpenSubsonic
-    // clients configured with an http address, and anything holding a
-    // bookmark. Serving both costs a port and breaks nothing, and Flower's own
+    // listener has callers that cannot follow: a browser tab on a LAN address,
+    // and anything holding an http bookmark. Serving both costs a port and
+    // breaks nothing, and Flower's own
     // clients move over on their own - the server lists its https origins from
     // /info and the client's candidate ranking prefers them (see
     // LocalAddresses.Reachable's scheme parameter, and REMOTE-ACCESS-PLAN.md).
@@ -90,9 +90,10 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
 
     // A real certificate to serve instead of the self-signed one, as a PEM
     // pair. Empty means self-signed, which is right for every client that
-    // paired with this server; set these for the two that cannot pin - a
-    // browser tab and a third-party OpenSubsonic client. Both files are
-    // needed; naming only one is a configuration error and startup says so.
+    // paired with this server; set these for the one that cannot pin - a
+    // browser tab, which has no key of ours to check a certificate against.
+    // Both files are needed; naming only one is a configuration error and
+    // startup says so.
     public string CertificatePath { get; set; } = "";
     public string CertificateKeyPath { get; set; } = "";
 

@@ -14,8 +14,8 @@ namespace Flower.Server.Configuration;
 //   1. A certificate file the operator named (CertificatePath). This is the
 //      real, publicly-trusted certificate - from Let's Encrypt, `tailscale
 //      cert`, or a domain they own - and it is the only thing that satisfies
-//      the two callers that cannot pin: a browser tab and a third-party
-//      OpenSubsonic client. See docs/SELF-HOSTING.md.
+//      the one caller that cannot pin: a browser tab. See
+//      docs/SELF-HOSTING.md.
 //
 //   2. Failing that, a self-signed certificate over this server's own device
 //      key. No file, no authority, no domain, nothing to configure - and a

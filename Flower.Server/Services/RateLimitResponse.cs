@@ -6,10 +6,11 @@ namespace Flower.Server.Services;
 // shared by every rate-limited surface (SyncEndpoints' three planes and the
 // adapter's three).
 //
-// It lived on SubsonicEndpoints, which made refusing a request on Flower's own
-// surface a call into the OpenSubsonic adapter. That was backwards in the
-// ordinary way and load-bearing in a specific one: the adapter is meant to be
-// deletable, and a 429 is not something Flower's own routes can lose.
+// It lived on the OpenSubsonic adapter's endpoints, which made refusing a
+// request on Flower's own surface a call into the adapter. That was backwards in
+// the ordinary way and load-bearing in a specific one: the adapter was meant to
+// be deletable, and a 429 is not something Flower's own routes can lose. The
+// adapter has since been deleted, which is the argument having been right.
 public static class RateLimitResponse
 {
     // One window, rounded up. Anything shorter invites a client to spend the

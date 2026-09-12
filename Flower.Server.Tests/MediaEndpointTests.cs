@@ -11,20 +11,18 @@ using Flower.Services;
 
 namespace Flower.Server.Tests;
 
-// GET /api/flower/v1/stream and /download - Flower's own media routes, which
-// every Flower client uses and which /rest now merely mirrors.
+// GET /api/flower/v1/stream and /download - Flower's own media routes, and since
+// the OpenSubsonic adapter was retired (docs/SYNC-PLAN.md) the only ones.
 //
-// What is actually new here is the gate and the registration, not the serving:
-// both routes run the same MediaEndpoints handlers /rest has always run, and
-// those are proven by the /rest tests next door. So these are about who gets
-// in, what a ticket may spend itself on, which budget the traffic is charged
-// to, and the one verb the whole streaming path depends on being refused.
+// These are about the gate rather than the serving: who gets in, what a ticket
+// may spend itself on, which budget the traffic is charged to, and the one verb
+// the whole streaming path depends on being refused.
 //
 // A seeded track's file does not exist, so an admitted request answers 404
-// (see SubsonicEndpointTests' own note on that). That is the signal used
+// (FlowerServerFixture seeds rows, not files). That is the signal used
 // throughout: 404 means the gate let it through and the handler looked for the
 // file, where 401 means it never got that far.
-public class MediaEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
+public class MediaEndpointTests(FlowerServerFixture server) : IClassFixture<FlowerServerFixture>
 {
     private string ASeededSongId => server.Seeded[0].Id.ToString("N");
 
@@ -149,35 +147,35 @@ public class MediaEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
         Assert.Equal(HttpStatusCode.Forbidden, status);
     }
 
-    // /rest used to redeem tickets, because that is where the browser player
-    // pointed. It points at the native route now, and a credential good for one
-    // track has no business on a surface whose other routes are the catalog.
+    // A ticket is scoped to the two media routes it was issued for, so it opens
+    // nothing else on the surface - the catalog included. What it used to be
+    // tested against was the retired /rest mirror; the scoping is the point, and
+    // it outlives that surface.
     [Fact]
-    public async Task A_stream_ticket_no_longer_opens_the_rest_mirror()
+    public async Task A_stream_ticket_opens_no_route_but_the_media_ones()
     {
         var tickets = server.Services.GetRequiredService<StreamTicketService>();
         var (ticket, _) = tickets.Issue(ASeededSongId, "some-browser");
 
         var status = await GetAsync(
-            "/rest/stream", $"?id={ASeededSongId}&ticket={Uri.EscapeDataString(ticket)}", "10.0.5.5");
+            "/api/flower/v1/library", $"?ticket={Uri.EscapeDataString(ticket)}", "10.0.5.5");
 
-        // The Subsonic envelope's own way of saying no, on an HTTP 200.
-        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(HttpStatusCode.Forbidden, status);
     }
 
-    // Both routes are MapGet, so a HEAD matches no endpoint and every client
+    // The route is MapGet, so a HEAD matches no endpoint and every client
     // reaches a track's length through the ranged-GET probe instead.
     // Flower.DeviceChecks pins the client half of this on five platforms; this
     // is the server half, and answering HEAD would take that probe out of every
     // check at once.
     //
     // 404 rather than routing's 405: WebUiHosting's fallback matches every
-    // method and answers /api and /rest with a 404. Callers only ask whether the
-    // response succeeded, so it makes no difference to them - but it is asserted
-    // as what it is rather than what three comments used to claim it was.
+    // method and answers /api with a 404. Callers only ask whether the response
+    // succeeded, so it makes no difference to them - but it is asserted as what
+    // it is rather than what three comments used to claim it was.
     [Theory]
     [InlineData("/api/flower/v1/stream")]
-    [InlineData("/rest/stream")]
+    [InlineData("/api/flower/v1/download")]
     public async Task A_HEAD_to_a_media_route_is_refused_so_the_probe_stays_the_only_path(string path)
     {
         var status = await GetAsync(path, $"?id={ASeededSongId}", "10.0.5.6", method: "HEAD");

@@ -295,7 +295,6 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         Assert.False(settings.Capabilities.ServerNetwork);
         Assert.False(settings.Capabilities.TrustedDevices);
         Assert.False(settings.Capabilities.PairingCodes);
-        Assert.False(settings.Capabilities.SubsonicCredentials);
         Assert.False(settings.Capabilities.Log);
     }
 

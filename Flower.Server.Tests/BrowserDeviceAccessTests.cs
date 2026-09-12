@@ -12,7 +12,6 @@ using Flower.Server.Endpoints;
 using Flower.Server.Services;
 using Flower.Services;
 
-using Flower.Server.Subsonic;
 
 namespace Flower.Server.Tests;
 
@@ -31,7 +30,7 @@ namespace Flower.Server.Tests;
 // form, the same identity headers a tab sends. That is the whole of what the
 // server sees, so signing here with a plain ECDsa is not a weaker stand-in - it
 // is the same bytes.
-public class BrowserDeviceAccessTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
+public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixture<FlowerServerFixture>
 {
     private static DeviceSigningKey NewDevice()
     {

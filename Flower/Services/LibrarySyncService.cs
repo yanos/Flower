@@ -70,14 +70,13 @@ public enum SyncFailure
 // - see LibrarySyncContracts) and merges anything this device doesn't already
 // have as Path == null placeholders - see SYNC-PLAN.md Phase 3. Talks to the
 // server's bulk endpoint directly (same signed identity headers as
-// PlaylistSyncService, not real OpenSubsonic credentials - see Flower.Server's
-// SyncEndpoints) rather than through PeerMediaClient: an
-// earlier version used the OpenSubsonic-shaped getAlbumList2/getAlbum pair,
-// one request per album, which for a library of hundreds/thousands of albums
-// meant hundreds/thousands of individual connections in a burst - observed in
-// practice as heavy iOS nw_connection log churn. PeerMediaClient itself is
-// unaffected and still used for the OpenSubsonic-shaped endpoints (stream/
-// download, and real third-party server support later).
+// PlaylistSyncService - see Flower.Server's SyncEndpoints) rather than through
+// PeerMediaClient: an earlier version used the OpenSubsonic-shaped
+// getAlbumList2/getAlbum pair, one request per album, which for a library of
+// hundreds/thousands of albums meant hundreds/thousands of individual
+// connections in a burst - observed in practice as heavy iOS nw_connection log
+// churn. PeerMediaClient itself is unaffected and still used for stream and
+// download.
 //
 // Originally both sides of a discovered pair ran this independently rather
 // than electing one initiator - there's no write-back to the peer here, just

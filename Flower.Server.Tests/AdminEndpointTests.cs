@@ -21,7 +21,7 @@ namespace Flower.Server.Tests;
 // server's own configuration, triggering a rescan, and reading its log. One way
 // in for every caller, a device signature plus IsAdmin - the browser included,
 // which holds a WebCrypto keypair of its own now (see BrowserPeerCredentials).
-public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<SubsonicServerFixture>
+public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<FlowerServerFixture>
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -438,15 +438,15 @@ public class AdminEndpointTests(SubsonicServerFixture server) : IClassFixture<Su
         Assert.Contains("wasm-tools", await BodyAsync(context));
     }
 
-    // The fallback must not swallow an unknown API path: a Subsonic client parsing
-    // an HTML page as XML fails far less legibly than a 404 does.
+    // The fallback must not swallow an unknown API path: a client parsing an HTML
+    // page as JSON fails far less legibly than a 404 does.
     [Fact]
     public async Task An_unknown_api_path_still_fails_as_an_api_call()
     {
         var context = await server.Server.SendAsync(c =>
         {
             c.Request.Method = "GET";
-            c.Request.Path = "/rest/nothingHere";
+            c.Request.Path = "/api/nothingHere";
             c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.54");
         }, TestContext.Current.CancellationToken);
 
@@ -577,7 +577,7 @@ public class WebUiHostingTests
 
             builder.UseSetting("Flower:DataDirectory", _dataDirectory);
             builder.UseSetting("Flower:LibraryPaths:0", emptyLibrary);
-            // See SubsonicServerFixture - keeps the adopted Music.app folder
+            // See FlowerServerFixture - keeps the adopted Music.app folder
             // out of the pinned library path list.
             builder.UseSetting("Flower:IntegrateWithITunes", "false");
             builder.UseSetting("Flower:WebUiPath", WebUi);
@@ -620,7 +620,7 @@ public class WebUiHostingTests
         Assert.Contains("flower", deepBody);
 
         // Still not allowed to shadow the APIs.
-        var (apiStatus, _) = await GetAsync(factory, "/rest/nothingHere");
+        var (apiStatus, _) = await GetAsync(factory, "/api/nothingHere");
         Assert.Equal(StatusCodes.Status404NotFound, apiStatus);
     }
 }

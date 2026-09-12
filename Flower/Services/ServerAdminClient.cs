@@ -39,8 +39,6 @@ public sealed record AdminDeviceLogDto(
 // (SettingsViewModel.SetLogTabActive), which is the only caller that passes a
 // cursor other than "everything".
 public sealed record AdminLogSliceDto(long LastSequence, List<AdminLogEntryDto> Entries);
-public sealed record SubsonicCredentialDto(
-    string Username, string Label, DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt, string? Password);
 
 // How many of the files behind an art id the server managed to rewrite, out of
 // how many it found. Written can be smaller than Total without the call having
@@ -130,16 +128,6 @@ public sealed class ServerAdminClient(
     public Task<AdminDeviceLogDto> GetDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
         SendAsync<AdminDeviceLogDto>(
             HttpMethod.Get, $"/api/admin/devices/{Uri.EscapeDataString(fingerprint)}/logs?limit={limit}", null, ct);
-
-    public Task<List<SubsonicCredentialDto>> GetSubsonicCredentialsAsync(CancellationToken ct = default) =>
-        SendAsync<List<SubsonicCredentialDto>>(HttpMethod.Get, "/api/admin/subsonic-credentials", null, ct);
-
-    public Task<SubsonicCredentialDto> IssueSubsonicCredentialAsync(string label, CancellationToken ct = default) =>
-        SendAsync<SubsonicCredentialDto>(
-            HttpMethod.Post, $"/api/admin/subsonic-credentials?label={Uri.EscapeDataString(label)}", null, ct);
-
-    public Task RevokeSubsonicCredentialAsync(string username, CancellationToken ct = default) =>
-        SendAsync(HttpMethod.Delete, $"/api/admin/subsonic-credentials/{Uri.EscapeDataString(username)}", null, ct);
 
     // Replaces the album art behind an id - the same id GET /api/flower/v1/cover-art
     // reads at - by embedding the picture in the server's own files. The one

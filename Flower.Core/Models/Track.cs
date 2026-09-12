@@ -314,9 +314,9 @@ namespace Flower.Models
         // rescans the same way DateAdded/PlayCount are.
         public DateTimeOffset? LastPlayedAt { get; set; }
 
-        // Subsonic's "starred" flag, set through /rest/star and /rest/unstar
-        // (see Flower.Server's SubsonicEndpoints) and reported back on every
-        // song it serves. On the Track model rather than in a server-only
+        // A "starred" flag, inherited from the OpenSubsonic surface that first
+        // carried it and outliving it (docs/SYNC-PLAN.md), reported back on
+        // every song the server serves. On the Track model rather than in a server-only
         // table because it is a property of the track everywhere - the client
         // has no UI for it yet, but a liked-songs view is the obvious next
         // consumer, and CarryForwardMutableState already named Starred as the

@@ -13,8 +13,7 @@ design record. The reasoning behind these choices lives in `SYNC-PLAN.md`.
 
 `Flower.Server` is a headless music server: it scans folders you point it at,
 serves that library to Flower clients over Flower's own sync protocol, serves it
-to third-party apps over OpenSubsonic, and serves a full browser UI of its own
-that plays music in a tab.
+and serves a full browser UI of its own that plays music in a tab.
 
 ```bash
 dotnet run --project Flower.Server
@@ -135,15 +134,32 @@ Two directories matter:
 writable by it. If your music sits somewhere that user cannot read, uncomment
 `user:` in the compose file and give it a uid that can.
 
-### Host networking is not optional
+### Host networking, and when bridge is right instead
 
 `docker-compose.yml` uses `network_mode: host` instead of mapping ports, and
-that is the one line in it not to change casually. The server announces itself
-over mDNS, which is multicast, and Docker's default bridge network drops
-multicast. On a bridge the server starts, serves the browser UI, answers
-OpenSubsonic and streams music to anything given its address — and never appears
-in the sidebar of any Flower client on the network. There is no error to find;
-the row simply is not there.
+which one you want follows from where your listeners are rather than from
+preference. What it decides is discovery, not reachability.
+
+The server announces itself over mDNS, which is multicast, and Docker's default
+bridge network drops multicast. On a bridge the server starts, serves the
+browser UI, pairs devices and streams music to anything
+given its address — it is fully reachable — and simply never appears in the
+sidebar of a Flower client on the same LAN. There is no error to find; the row
+is not there. That silence is the reason to choose deliberately: a LAN
+deployment on a bridge looks broken in a way nothing explains.
+
+So **host networking, for a server and listeners on the same LAN** — the
+announcement is what spares anyone having to know an IP address, which is most
+of the point of running this at home.
+
+And **bridge, for a server reached only through Tailscale, a tunnel, or a
+reverse proxy.** mDNS is useless to those listeners regardless of this setting,
+since link-local multicast crosses neither a tailnet nor a tunnel. They pair by
+redeeming a code against an address they were given, and from then on the server
+reports its own reachable addresses and the client keeps up without ever hearing
+an announcement (`PairedServerReachability`). Bridge costs that deployment
+nothing, which is why the compose file carries the settings for it rather than
+warning you off them.
 
 If you genuinely want a bridge — a server only ever reached through a reverse
 proxy or a tailnet, where nothing is supposed to discover it on a LAN — the
@@ -196,8 +212,8 @@ intentional.
 - **The browser UI is built in.** That costs a `wasm-tools` workload install in
   the build stage — several minutes the first time, none of it in the finished
   image. `--build-arg INCLUDE_WEB_UI=false` skips it, and the server then still
-  serves its API and its OpenSubsonic surface but shows a placeholder where the
-  browser settings page would be.
+  serves its API but shows a placeholder where the browser settings page would
+  be.
 
 Multi-architecture images are cheap to build, because the published payload is
 architecture-neutral and only the runtime base image differs — the SDK stage
@@ -227,14 +243,12 @@ origins when a paired device asks where it can be reached, and the client prefer
 the encrypted one. If it cannot validate the certificate for any reason it
 falls back to the plain port rather than failing.
 
-`4533` stays exactly as it was, because two kinds of caller cannot do any of the
-above:
-
-- **Third-party OpenSubsonic clients**, which have no idea what a Flower pairing
-  is. They keep using the plain port and their own username/password.
-- **A browser**, which meets arbitrary servers for a living and so cannot assume
-  it knows which one it means. It shows an interstitial for a self-signed
-  certificate — see "Reaching it from a browser" below.
+`4533` stays exactly as it was, because one kind of caller cannot do any of the
+above: **a browser**, which meets arbitrary servers for a living and so cannot
+assume it knows which one it means. It shows an interstitial for a self-signed
+certificate — see "Reaching it from a browser" below. (There used to be a second:
+third-party OpenSubsonic clients, which had no idea what a Flower pairing is.
+That surface has been removed — see `SYNC-PLAN.md`.)
 
 Two things this does *not* do, stated plainly:
 
@@ -242,12 +256,21 @@ Two things this does *not* do, stated plainly:
   encrypts the LAN; it does not publish the server, punch through NAT, or give
   a browser a usable address. Tailscale, Cloudflare Tunnel and port forwarding
   are all still exactly as necessary as they were.
-- **Audio is encrypted but not authenticated.** Playback hands the stream URL to
-  the media stack, which does its own TLS and cannot be given Flower's
-  certificate check. Everything else — the catalog, admin, sync, cover art — is
-  both encrypted and pinned. The gap costs a single track to an attacker already
-  positioned on your network, because a stream URL is signed per request rather
-  than carrying a reusable password. See `REMOTE-TRANSPORT-PLAN.md`.
+- **It does not help a browser tab.** A tab has nothing to pin with: under
+  WebAssembly the certificate is the browser's business and the validation
+  callback cannot even be set (`PeerHttpClient.Create`). So a tab gets an
+  interstitial, and clicking through it is trust-on-first-click — it cannot
+  tell this server from anything else presenting a self-signed certificate.
+  Because the certificate is minted fresh on every start, it asks again after
+  each restart. A tab reached from outside the LAN wants a real certificate,
+  below.
+
+Audio is *not* an exception to the pin, though it used to be. Playback reads
+through `SeekableHttpStream` on `PeerHttpClient.CreateSigned`, so a stream is
+validated by the same pin as the catalog and signed per request on top of it —
+see `FfmpegTrackDecoder.AudioHttpClient`. The gap that existed while the media
+stack did its own TLS closed when FFmpeg became the only decoder; a browser tab
+remains the one caller streaming without a pin.
 
 ### Using a real certificate instead
 
@@ -269,12 +292,19 @@ than quietly serving the self-signed certificate to callers that will reject it.
 
 Where to get the pair, cheapest first:
 
-- **`tailscale cert basement.tail1234.ts.net`** — free, renews itself, and needs
-  no domain of your own. If you followed the Tailscale section, you already have
-  everything this needs.
+- **`tailscale cert basement.tail1234.ts.net`** — free and needs no domain of
+  your own, because Tailscale runs the `ts.net` zone and completes the ACME
+  challenge in it for you. If you followed the Tailscale section you already
+  have everything it needs. Two caveats: the name resolves only inside your
+  tailnet, so this does **not** serve a port-forwarded deployment, and "renews
+  itself" is the certificate, not the server — re-running it is a timer you own,
+  and the server reads the pair at startup.
 - **Let's Encrypt over DNS-01**, against a free subdomain (DuckDNS and friends).
   Proves ownership through a TXT record, so the name may point at `192.168.1.40`
-  and the certificate still issues — publicly trusted, no open ports.
+  and the certificate still issues — publicly trusted, no open ports, and unlike
+  `tailscale cert` the name resolves from anywhere, which makes this the one to
+  use with a forwarded port. Renewal is certbot's, and restarting the server
+  afterwards is yours.
 - **A domain you own**, through certbot or your provider.
 
 You can also skip this entirely and let a reverse proxy terminate TLS, which is
@@ -322,11 +352,34 @@ Three settings change it, and they answer different questions:
   applies immediately, in both directions.
 
 Turning that last one on is the single most consequential thing you can do to
-this server, so it says so in the log every time it starts. What holds the door
-afterwards is the same thing that always did the real work: **every route that
-matters requires a paired device's signature**, and unsigned callers get a `403`
-whether they came from your sofa or from a botnet. The allow-list was the belt.
-That is the braces.
+this server, so it says so in the log every time it starts. It removes a layer
+rather than weakening one.
+
+**What the allow-list is actually worth.** With it on, a request from a
+non-private address is dropped with no reply at all — not a `403`, which would
+confirm something is listening, but nothing. A scanner sweeping your IP for open
+ports learns that there is no service here. With it off, every one of those
+reaches the authentication layer, and an attacker can then do the things that
+precede an attack rather than being one: find the port, fingerprint the server
+and its version, watch how it answers malformed input, and retry anything
+unauthenticated for as long as they care to. None of that is stopped by the
+signature check, because none of it is a request the signature check refuses —
+it is reconnaissance against everything *around* the check, including TLS
+termination and the HTTP stack.
+
+What holds the door afterwards is real: **every route that matters requires a
+paired device's signature**, and unsigned callers get a `403` whether they came
+from your sofa or from a botnet. Since the OpenSubsonic adapter was removed
+there is no password anywhere in Flower, so there is nothing guessable left
+except a pairing code during the ten minutes one is outstanding. The allow-list
+was the belt. That is the braces — and with `AllowPublicAccess` on, you are
+wearing only the braces.
+
+**Tailscale avoids the trade entirely.** A tailnet address is in `100.64.0.0/10`,
+which the allow-list already admits, so a Tailscale-reachable server keeps both
+layers and stays invisible to a port scan — it has no open port to find. That is
+why it is first in the list above, and why this switch should stay off unless
+you are forwarding a port, running a tunnel, or sitting behind a proxy.
 
 ---
 
@@ -640,14 +693,23 @@ to read your traffic or decide your library is the wrong sort of content.
 It is also the one where a mistake is entirely yours, so read this part before
 the steps.
 
-> **Do not forward port 4533 to the server and stop there.** Flower speaks plain
-> HTTP and does not obtain certificates of its own. Unencrypted on the open
-> internet, two things leak that matter: third-party Subsonic clients
-> authenticate with a password derived scheme that assumes a trusted transport,
-> and stream URLs carry a short-lived ticket in the query string. Both are fine
-> on a LAN and neither is fine in the clear across the internet. **Terminate TLS
-> in front of the server.** The steps below do that with Caddy, which gets a
-> certificate on its own and renews it without being asked.
+> **Do not forward port 4533 to the server and stop there.** That port is the
+> plain one, and unencrypted on the open internet two things leak that matter:
+> a browser tab has no pin to fall back on, and everything it sends — including
+> the session it was paired with — crosses in the clear. That is not fine across
+> the internet.
+>
+> The server's own TLS port (`4534`, above) is a real answer for *paired Flower
+> clients*, which validate it against a key they already hold — better than a
+> certificate authority, not worse. What it does not satisfy is the one caller
+> that cannot pin: a browser, which sees a self-signed certificate for the wrong
+> name and warns. Nor does Flower obtain or renew a certificate of its own.
+>
+> So unless every listener is a paired Flower app, **terminate TLS in front of
+> the server.** The steps below do that with Caddy, which gets a certificate on
+> its own and renews it without being asked. Pointing the server at a PEM pair
+> instead works (see "Using a real certificate instead") but leaves the 90-day
+> renewal, and the restart it needs, yours to automate.
 
 ### 1. Give the server a fixed address on your LAN
 
@@ -795,11 +857,12 @@ running the server, `http://localhost:4533` remains the simplest option of all.
   will load a PEM pair you point it at, but it does not go and get one. Until
   it does, `tailscale cert`, certbot, or Caddy above are the answer and work
   fine.
-- **Pinned audio.** Playback goes through the media stack's own TLS, which
-  Flower's certificate check cannot reach, so streams are encrypted but not
-  authenticated. Closing this means reading the stream through Flower's own HTTP
-  client and handing the decoder the bytes, which also means owning seeking. See
-  `REMOTE-TRANSPORT-PLAN.md`.
+- **A pinned stream in a browser tab.** Everywhere else this is done: playback
+  reads through `SeekableHttpStream` on Flower's own pinned, per-request-signed
+  client, which is what electing FFmpeg as the only decoder bought. A tab cannot
+  join in — WebAssembly has no TLS stack to configure — so a browser streaming
+  over a self-signed certificate is encrypted but not authenticated. A real
+  certificate is the answer there, not more code.
 - **Automatic port mapping** (UPnP / NAT-PMP). See the note at the end of the
   port-forwarding section.
 - **A `.deb`, and an APT repository behind it.** A self-contained publish plus a
@@ -847,11 +910,9 @@ keyed by the address the request arrived from, so if `TrustedProxies` is not set
 that is the proxy's address and every device shares one budget. See step 3, and
 check the log for the `X-Forwarded-For arrived from ...` warning.
 
-Failed logins are narrower than the rest: that budget is keyed by address *and*
-username, and it only ever gates password attempts. A paired Flower device
-signs its requests rather than sending a password, so it is never locked out by
-someone else's wrong guesses — but two third-party Subsonic clients sharing one
-username would be.
+Failed authentications are narrower than the rest: that budget only ever gates
+requests that failed to prove who they were. A paired Flower device signs every
+request, so a working device is never locked out by someone else's failures.
 
 **The server does not appear in a client's sidebar.** mDNS does not cross
 subnets and does not reach into a tailnet, so a client only ever *discovers* a

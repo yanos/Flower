@@ -45,7 +45,7 @@ exposing a C API, built `-buildmode=c-archive` for iOS arm64 and
 both targets officially.
 
 The shim should **not** expose a dialer. Eleven call sites build
-`$"http://{device.EndPoint}"` (`PeerOpenSubsonicClientFactory.cs:15`,
+`$"http://{device.EndPoint}"` (`PeerMediaClientFactory.cs`,
 `NetworkDiscoveryService.cs:400`, `LibrarySyncService.cs:130`,
 `PlaylistSyncService.cs:127`, `ICoverArtUrlResolver.cs:53` and the rest), and
 the decoder takes a URL of its own — teaching all of them about a tunnel is
@@ -291,9 +291,11 @@ The consequence worth stating: **a LAN-only listener configures nothing and
 still gets encryption.** No domain, no certificate authority, no third party,
 and it works on a bare IP.
 
-**A real certificate is the optional upgrade**, for the two things that cannot
-pin: the browser UI (`Flower.Web`) and third-party OpenSubsonic clients. Three
-ways to get one, and only the last needs a purchase:
+**A real certificate is the optional upgrade**, for the one thing that cannot
+pin: the browser UI (`Flower.Web`). It was two until the OpenSubsonic adapter was
+removed (`SYNC-PLAN.md`), which is most of why the upgrade is now genuinely
+optional rather than needed by anyone with a third-party client. Three ways to
+get one, and only the last needs a purchase:
 
 - **DNS-01 against a free subdomain.** A DuckDNS-style name plus Let's
   Encrypt's DNS-01 challenge, which proves ownership through a TXT record and
@@ -320,9 +322,9 @@ with" turned out to be literal: the certificate is minted *from the server's own
 pairing code. No new field in the invite, no certificate fingerprint store, no
 second trust root — `DeviceCertificate` and `PeerHttpClient` are the whole
 mechanism, and the operator configures nothing. The plain listener stays
-alongside the TLS one (`FlowerServerOptions.HttpsPort`, 4534) so third-party
-OpenSubsonic clients and old bookmarks are untouched, and `/info` reports both
-origins so a paired client moves itself over.
+alongside the TLS one (`FlowerServerOptions.HttpsPort`, 4534) so a browser on a
+LAN address and old bookmarks are untouched, and `/info` reports both origins so
+a paired client moves itself over.
 
 The thing it did not buy, and has since bought: **audio**. `TrackDecoder` handed
 the stream URL to LibVLC, which opened it with its own TLS stack — one that knew
@@ -435,9 +437,9 @@ no budget at all, has one.
 itself — it cannot be caught at startup, because `cloudflared` dials out and
 delivers over loopback, so the server watches for the one signal that exists (an
 `X-Forwarded-For` from a hop `TrustedProxies` does not name) and says what it
-costs. The failed-auth budget no longer locks out the whole `/rest` surface
-either: it gates password attempts only, so a paired device sharing an address
-with a guesser keeps playing.
+costs. The failed-auth budget no longer locks out a whole surface either: it
+gates failed authentications only, so a paired device sharing an address with a
+guesser keeps playing.
 
 **And #7 is closed, which was the last thing between a test and a deployment.**
 The 60-minute full-admin bearer token the browser ran on is deleted, along with
@@ -454,10 +456,12 @@ transport considered here terminates TLS anyway, and step 4 already gates on it.
 
 **Cloudflare Tunnel is ready to be turned on**, not merely tested.
 
-What remains there is sequenced against the steps above, including the one that
-hardens the ordering here — a mapped public port cannot ship before TLS, because
-classic Subsonic auth puts a permanent credential in a query string, so step 4
-is downstream of step 3 rather than parallel to it.
+What remains there is sequenced against the steps above. The original argument
+for that ordering was that classic Subsonic auth puts a permanent credential in a
+query string, so a mapped public port could not ship before TLS; that credential
+no longer exists (`SYNC-PLAN.md`), but the ordering stands on its own — a browser
+tab still has nothing to pin with, so step 4 remains downstream of step 3 rather
+than parallel to it.
 
 **Step 3 — Cloudflare Tunnel — is built and documented end to end** in
 `SELF-HOSTING.md`: prerequisites, `cloudflared` setup, the `config.yml`, the

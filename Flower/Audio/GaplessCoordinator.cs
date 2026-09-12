@@ -323,7 +323,7 @@ namespace Flower.Audio
                 // By identity, not by Path. A local track's Path is a stable
                 // filename, so comparing paths worked for as long as that was
                 // the only kind of track; a streamed one's Path is a signed
-                // OpenSubsonic URL minted fresh - new nonce, new signature -
+                // stream URL minted fresh - new nonce, new signature -
                 // every time PlaylistControlViewModel.ResolveForPlaybackAsync
                 // runs, and it runs once for the arm and again for the
                 // auto-advance. So the two spellings of the same track never

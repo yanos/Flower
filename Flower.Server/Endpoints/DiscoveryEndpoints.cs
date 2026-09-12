@@ -169,9 +169,8 @@ public static class DiscoveryEndpoints
     // Every origin this server can be reached on, https first.
     //
     // Both schemes, because both listeners are real and they serve different
-    // callers: the plain one is what a third-party OpenSubsonic client and an
-    // old bookmark use, the TLS one is what a paired Flower client should
-    // prefer. Listing both and letting the client choose is what makes moving
+    // callers: the plain one is what a browser tab on a LAN address and an old
+    // bookmark use, the TLS one is what a paired Flower client should prefer. Listing both and letting the client choose is what makes moving
     // to TLS cost the operator nothing - see FlowerServerOptions.HttpsPort.
     //
     // Ordered rather than merely collected: the client breaks a tie between two

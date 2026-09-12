@@ -30,7 +30,7 @@ public sealed class ProxiedServerFixture : WebApplicationFactory<Program>
         Directory.CreateDirectory(_emptyLibrary);
         Directory.CreateDirectory(_noWebUi);
 
-        // Same pinning as SubsonicServerFixture, and for the same reason -
+        // Same pinning as FlowerServerFixture, and for the same reason -
         // an unpinned library path plus the default IntegrateWithITunes has
         // this server adopt the developer's real Music.app folder.
         builder.UseSetting("Flower:DataDirectory", _dataDirectory);
@@ -66,8 +66,8 @@ public sealed class ProxiedServerFixture : WebApplicationFactory<Program>
 // forwarded header from anyone and every caller picks their own source
 // address; believe none of them behind `tailscale serve` and every tailnet
 // device shares one bucket, where one busy client locks out the rest.
-public class ForwardedHeaderTests(ProxiedServerFixture proxied, SubsonicServerFixture direct)
-    : IClassFixture<ProxiedServerFixture>, IClassFixture<SubsonicServerFixture>
+public class ForwardedHeaderTests(ProxiedServerFixture proxied, FlowerServerFixture direct)
+    : IClassFixture<ProxiedServerFixture>, IClassFixture<FlowerServerFixture>
 {
     // SyncProtocol.InfoPath - LocalSend-shaped, and ungated apart from
     // LanGuard, which is what makes it the cheapest probe for "was this caller

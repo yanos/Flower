@@ -48,9 +48,6 @@ public sealed record SettingsCapabilities
     // hands codes out.
     public bool PairingCodes { get; init; }
 
-    // SYNC-PLAN.md path B - credentials for third-party Subsonic clients.
-    public bool SubsonicCredentials { get; init; }
-
     // A Logs tab reading the log of the thing being configured.
     public bool Log { get; init; }
 
@@ -159,10 +156,6 @@ public interface ISettingsBackend
     Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default);
 
     Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default);
-
-    Task<IReadOnlyList<SubsonicCredentialRow>> LoadSubsonicCredentialsAsync(CancellationToken ct = default);
-    Task<SubsonicCredentialRow> IssueSubsonicCredentialAsync(string label, CancellationToken ct = default);
-    Task RevokeSubsonicCredentialAsync(SubsonicCredentialRow credential, CancellationToken ct = default);
 
     // Kicks off a library rescan and returns once it has *started*, not once it
     // has finished - a full scan outlasts any sensible request timeout, and on the

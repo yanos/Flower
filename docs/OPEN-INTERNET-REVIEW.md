@@ -11,6 +11,17 @@ still fronted by `LanGuard`, and no transport has been added. What this
 records is which of those defences stop working the moment one is, and which
 were never load-bearing to begin with.
 
+> **Read against a surface that no longer exists, in part.** The OpenSubsonic
+> adapter (`/rest/*`, `SubsonicEndpoints`, `SubsonicAuth`, `SubsonicCredentialStore`)
+> was removed in September 2026 — see `SYNC-PLAN.md`, "OpenSubsonic, built and
+> removed". Findings that were *about* that surface are moot by deletion, which
+> is the strongest form of fixed: #6 entirely (classic Subsonic auth was the
+> system's only password, and there is no password now), and the `/rest` halves
+> of #2b and #2c. The findings themselves stay, because the reasoning is why the
+> surface went — and because the same mistakes are available on Flower's own
+> surface, which is the one that survived. Where a finding names a
+> `Subsonic*` symbol, read it as history.
+
 ## The finding that reframes the rest: LanGuard is doing more work than it looks
 
 `LanGuard.IsPrivateOrLoopback` is one `if` in one middleware, but it is cited

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Flower is a .NET 10, C# cross-platform music player and self-hosted music server. `Flower/` contains shared Avalonia UI, view models, services, and persistence. Platform launchers live in `Flower.Desktop/`, `Flower.Android/`, and `Flower.iOS/`. `Flower.Core/` holds shared server/client domain code; `Flower.Server/` exposes the web and OpenSubsonic APIs, while `Flower.Web/` contains its browser UI. Tests are in `Flower.Tests/` and `Flower.Server.Tests/`. Keep design records in `docs/` and native audio dependencies under `native/miniaudio/`.
+Flower is a .NET 10, C# cross-platform music player and self-hosted music server. `Flower/` contains shared Avalonia UI, view models, services, and persistence. Platform launchers live in `Flower.Desktop/`, `Flower.Android/`, and `Flower.iOS/`. `Flower.Core/` holds shared server/client domain code; `Flower.Server/` exposes the web API, while `Flower.Web/` contains its browser UI. Tests are in `Flower.Tests/` and `Flower.Server.Tests/`. Keep design records in `docs/` and native audio dependencies under `native/miniaudio/`.
 
 ## Build, Test, and Development Commands
 

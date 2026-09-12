@@ -81,25 +81,6 @@ public sealed class DeniedPeerRow
     public string DeniedAtDisplay => $"Denied {DeniedAt.LocalDateTime:g}";
 }
 
-// A credential minted for a third-party Subsonic client - SYNC-PLAN.md's path B,
-// for clients that cannot hold a keypair. Password is non-null exactly once, in
-// the response that created it: the server does not store it retrievably, so the
-// page either shows it now or the user issues a new one.
-public sealed class SubsonicCredentialRow : ViewModelBase
-{
-    public required string Username { get; init; }
-    public required string Label { get; init; }
-    public required DateTimeOffset CreatedAt { get; init; }
-    public DateTimeOffset? LastSeenAt { get; init; }
-    public string? Password { get; init; }
-
-    public bool HasPassword => !string.IsNullOrEmpty(Password);
-
-    public string Detail => LastSeenAt is { } seen
-        ? $"Created {CreatedAt.LocalDateTime:g} - last seen {seen.LocalDateTime:g}"
-        : $"Created {CreatedAt.LocalDateTime:g} - never used";
-}
-
 // One row in the Logs tab's list of whose log to read: the server itself, or a
 // device on its roster. A null Fingerprint is the server - it answers its own
 // admin route rather than one keyed by fingerprint, and it is the row the tab
