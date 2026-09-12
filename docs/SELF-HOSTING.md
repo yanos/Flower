@@ -12,8 +12,8 @@ design record. The reasoning behind these choices lives in `SYNC-PLAN.md`.
 ## What the server is
 
 `Flower.Server` is a headless music server: it scans folders you point it at,
-serves that library to Flower clients over Flower's own sync protocol, serves it
-and serves a full browser UI of its own that plays music in a tab.
+serves that library to Flower clients over Flower's own sync protocol, and
+serves a full browser UI of its own that plays music in a tab.
 
 ```bash
 dotnet run --project Flower.Server

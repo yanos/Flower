@@ -22,9 +22,9 @@ services:
     # Host networking, not a ports: mapping - this is the one setting that is
     # not a preference. The server announces itself over mDNS (multicast to
     # 224.0.0.251, via Makaretu), and Docker's default bridge network drops
-    # multicast. On a bridge the server comes up, serves OpenSubsonic, answers
-    # every request correctly, and simply never appears in the sidebar of any
-    # Flower client on the LAN - a failure with no error anywhere to explain it.
+    # multicast. On a bridge the server comes up, answers every request
+    # correctly, and simply never appears in the sidebar of any Flower client on
+    # the LAN - a failure with no error anywhere to explain it.
     #
     # Host networking is a Linux-only feature; on Docker Desktop for macOS or
     # Windows it does nothing useful. Those are not the deployment target here.

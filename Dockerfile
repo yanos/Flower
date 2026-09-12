@@ -12,11 +12,11 @@
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 # Whether to build the Avalonia WebAssembly browser UI into the image. On by
-# default: without it the server still serves its API and its OpenSubsonic
-# surface, but a browser reaching the settings page gets WebUiHosting's
-# "not deployed" placeholder instead. It costs a wasm-tools workload install
-# and an Emscripten link step - several minutes and a few hundred MB, all of it
-# confined to this stage and none of it reaching the runtime image.
+# default: without it the server still serves its API, but a browser reaching
+# the settings page gets WebUiHosting's "not deployed" placeholder instead. It
+# costs a wasm-tools workload install and an Emscripten link step - several
+# minutes and a few hundred MB, all of it confined to this stage and none of it
+# reaching the runtime image.
 ARG INCLUDE_WEB_UI=true
 
 # Normally empty. .git is deliberately *not* excluded by .dockerignore (it is
