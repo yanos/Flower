@@ -14,6 +14,7 @@ using Avalonia.Threading;
 
 using Flower.Controls;
 using Flower.Models;
+using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels.Mobile;
 using Flower.Views.Mobile.Screens;
@@ -151,8 +152,35 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         public TrackListScreenView? CurrentTrackList() =>
             Panel.Children.LastOrDefault()?.GetLogicalDescendants().OfType<TrackListScreenView>().FirstOrDefault();
 
+        // Several tests here assert what they came for partway through the
+        // 280ms commit easing and return without waiting it out. That easing
+        // holds a subscription on the process-wide AnimationClock, and nothing
+        // pumps the dispatcher between tests - so it does not merely finish
+        // late, it never finishes at all, and the clock's 60Hz timer goes on
+        // ticking for the rest of the assembly.
+        //
+        // Whether that is fatal is pure luck of ordering. Any following test
+        // pumps the pending easing to completion as a side effect of its own
+        // waiting, so only the test that happens to run *last* leaves the clock
+        // alive for HeadlessSessionWarmup's end-of-run backstop to find - and
+        // that failure reads as the suite exiting non-zero with 0 failed tests
+        // and no message, on one platform and not another.
+        //
+        // ScreenStackPanelEntranceTests' harness pumps a flat 600ms here for
+        // the same reason. This drains rather than sleeping, because this class
+        // has twenty-odd tests and most of them end with nothing animating at
+        // all: an idle clock costs one check instead of six tenths of a second.
+        // The cap is only a backstop, and matches that sibling's budget.
+        private static void LetAnyEasingFinish()
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(600);
+            while (AnimationClock.Current.IsRunning && DateTime.UtcNow < deadline)
+                Pump(50);
+        }
+
         public void Dispose()
         {
+            LetAnyEasingFinish();
             Window.Close();
             _vm.Dispose();
         }
