@@ -30,7 +30,20 @@ ARG VERSION=
 
 WORKDIR /src
 
-RUN if [ "$INCLUDE_WEB_UI" = "true" ]; then dotnet workload install wasm-tools --skip-sign-check; fi
+# python3 alongside the workload, because Emscripten's entry points are shell
+# wrappers around python scripts and on Linux and macOS they use the *system*
+# python rather than one the SDK carries (EmSdkRepo.Defaults.props says so in
+# as many words; only Windows gets an EmscriptenPythonToolsPath). The dotnet
+# SDK image ships no python at all, so emcc exits 1 with "unable to find python
+# in $PATH" the moment the browser UI reaches its link step. emcc looks for
+# python3 before python, so the one package is enough and python-is-python3 is
+# not needed.
+RUN if [ "$INCLUDE_WEB_UI" = "true" ]; then \
+      apt-get update \
+   && apt-get install -y --no-install-recommends python3 \
+   && rm -rf /var/lib/apt/lists/* \
+   && dotnet workload install wasm-tools --skip-sign-check; \
+    fi
 
 # Restore against the project files alone, before the sources land, so that
 # editing a .cs file doesn't re-download the whole package graph. The four
