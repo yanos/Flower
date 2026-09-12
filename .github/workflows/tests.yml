@@ -370,3 +370,63 @@ jobs:
 
       - name: Build for browser-wasm
         run: dotnet build Flower.Web/Flower.Web.csproj --configuration Release
+
+  # The server image, built but not published.
+  #
+  # publish-server-image.yml is the only workflow that touches the Dockerfile,
+  # and it runs on `v*` tags alone - so a change that breaks the image (a moved
+  # csproj in the restore layer, a base image that stops carrying something,
+  # a workload that stops installing) surfaced as "the release produced no
+  # image", at the worst possible moment. This job asks the same question on
+  # every push, for about the price of the publish minus the push.
+  #
+  # linux/amd64 only, and that is not a gap: this is a framework-dependent
+  # publish whose payload is architecture-neutral IL plus SQLitePCLRaw's
+  # runtimes/ folder, so the arm64 image differs from this one only in its
+  # runtime base layer. Building both here would mean QEMU and most of an hour
+  # for no new signal; the tag build proves the pair.
+  build-image:
+    name: Build server image
+    runs-on: ubuntu-latest
+
+    steps:
+      # Full history, for the same reason as every other job here: the
+      # Dockerfile deliberately keeps .git in the build context so MinVer stamps
+      # the image from the tags, and a depth-1 checkout would have it silently
+      # fall back to 0.1.0-alpha.0. That path is exercised here rather than
+      # patched over with the VERSION build-arg the publish workflow needs
+      # (which does check out shallow) - between them both halves are covered.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Loaded into the daemon rather than discarded, so the step below can look
+      # inside it. No QEMU and no registry login: nothing here leaves the runner.
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: flower-server:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The browser UI is built into the image by Flower.Server's own targets,
+      # which copy the bundle *if* the Emscripten toolchain is present and say
+      # nothing at all when it is not (see "The browser UI" in
+      # Flower.Server.csproj, and _BuildFlowerWebUi's condition on
+      # @(_EmscriptenPack)). So an image whose `dotnet workload install
+      # wasm-tools` quietly stopped working still builds, still runs, still
+      # serves the API, and serves WebUiHosting's "not deployed" placeholder to
+      # anyone opening the settings page - with nothing anywhere reporting a
+      # failure. A green build is therefore not enough on its own; this asserts
+      # the bundle actually landed where WebUiHosting looks for it.
+      - name: Check the browser UI is in the image
+        run: |
+          docker run --rm --entrypoint sh flower-server:ci \
+            -c 'test -s /app/wwwroot/index.html' \
+            || { echo "::error::/app/wwwroot/index.html is missing - the wasm-tools build was skipped, so this image would serve the 'not deployed' placeholder"; exit 1; }
