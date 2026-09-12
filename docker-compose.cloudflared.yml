@@ -1,0 +1,45 @@
+# Cloudflare Tunnel: reaching the server with no open port and nothing for a
+# listener to install.
+#
+#   export FLOWER_HOSTNAME=music.example.com
+#   export TUNNEL_TOKEN=<the token from the Cloudflare dashboard>
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d
+#
+# An override, not a replacement - see docker-compose.caddy.yml, which has the
+# same shape for the same reason. Read the warning in docs/SELF-HOSTING.md,
+# "Cloudflare Tunnel", before choosing this: their CDN terms reserve the right
+# to throttle or cut off exactly this use, and TLS terminates at their edge, so
+# your traffic is decrypted on a machine you do not own.
+
+services:
+  flower:
+    environment:
+      # cloudflared delivers over loopback under host networking, so without
+      # this every remote listener arrives as 127.0.0.1 and shares one
+      # rate-limit bucket. Read once at startup.
+      - Flower__TrustedProxies__0=127.0.0.1/32
+      - Flower__AdvertisedHost=https://${FLOWER_HOSTNAME:?set FLOWER_HOSTNAME to the tunnel hostname}
+      - Flower__AdvertiseOnLan=true
+
+    # AllowPublicAccess is deliberately not set here either, and for the same
+    # reason: the settings page owns it, this file would silently outrank the
+    # page. Turn it on there, or in data/flower-server.json. Without it every
+    # listener is dropped with the tunnel working perfectly.
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: flower-cloudflared
+    restart: unless-stopped
+    # Host networking so `localhost:4533` in the ingress rule means the server,
+    # which under the base file's host networking is listening right there. On a
+    # bridge this would need `http://flower:4533` and the server on that bridge.
+    network_mode: host
+    depends_on:
+      - flower
+    # A remotely-managed tunnel: ingress lives in the Cloudflare dashboard
+    # (Zero Trust -> Networks -> Tunnels), pointed at http://localhost:4533.
+    # That is the form that works in a container without mounting credentials.
+    # For a locally-configured tunnel instead, drop the token, mount
+    # ~/.cloudflared, and use `tunnel run flower` - SELF-HOSTING.md has the
+    # config.yml.
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?set TUNNEL_TOKEN from the Cloudflare dashboard}

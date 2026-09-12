@@ -30,4 +30,15 @@ docs/
 .DS_Store
 Dockerfile
 .dockerignore
-docker-compose.yml
+docker-compose*.yml
+# The sidecar configuration the override files mount. Read by Caddy at run time,
+# never by the build.
+docker/
+
+# A running deployment's state, if the compose files were used from this
+# checkout: ./data is the server's DataDirectory and holds the device key, and
+# the caddy-* pair holds Caddy's certificates. Nothing the build reads, and the
+# last thing that should be shipped into a build context.
+data/
+caddy-data/
+caddy-config/

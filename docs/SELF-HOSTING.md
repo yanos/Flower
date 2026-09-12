@@ -171,7 +171,9 @@ still win over both.
 
 ## Running it in Docker
 
-The repository ships a `Dockerfile` and a `docker-compose.yml`. Nothing has to
+The repository ships a `Dockerfile` and a `docker-compose.yml`, plus two
+override files for the remote-access paths that need an extra container. Nothing
+has to
 be installed on the host first — no .NET runtime, no SQLite, no ffmpeg. The
 server does not decode audio either (that is the client's job), so no decoder is
 involved on this side at all.
@@ -248,6 +250,79 @@ Updating is `docker compose pull && docker compose up -d` against a published
 image, or `docker compose up -d --build` while you are building it yourself.
 `/data` is untouched either way, so the server comes back with the same identity
 and the same paired devices.
+
+### Reaching it from outside, without a second compose file
+
+The three remote-access options further down are not three deployments. The
+server is configured the same way in all of them; what differs is whether
+something else has to run beside it. So `docker-compose.yml` stays the one
+description of the server, and each path that needs a sidecar adds an override
+on top of it rather than a copy of it:
+
+| Path | Command |
+|---|---|
+| Tailscale | `docker compose up -d` — no override at all |
+| Port forwarding, paired Flower apps only | `docker compose up -d` — no override at all |
+| Port forwarding, with a browser among the listeners | `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d` |
+| Cloudflare Tunnel | `docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d` |
+
+Two of the four need nothing added, for unrelated reasons.
+
+**Port forwarding needs no override when every listener is a paired Flower app**,
+because the port you forward is then `4534` — the server's own TLS port, whose
+certificate those clients validate against a key they already hold. No proxy, so
+nothing to run beside the server and no `TrustedProxies`; give it its outside
+address in `data/flower-server.json` and that is the whole of it:
+
+```json
+{ "Flower": { "AdvertisedHost": "https://music.example.com:4534" } }
+```
+
+A name from dynamic DNS or a bare public IP both work there, because nothing in
+that path asks a certificate authority for anything. The moment a browser is one
+of the listeners that stops being true — it cannot pin, sees a self-signed
+certificate for the wrong name, and warns — which is what the Caddy override is
+for, and why it insists on a real hostname: Let's Encrypt will not issue for an
+IP address, so a Caddy with no name to serve cannot do the one thing it is there
+to do.
+
+**Tailscale needs nothing either**, which is part of why it is the one to prefer.
+Install it on the host, and `network_mode: host` means the container is already
+on the tailnet — a tailnet address is in `100.64.0.0/10`, which the allow-list
+admits, so there is no setting to change either. The exception is
+`tailscale serve`: that is a proxy on loopback, so it wants `TrustedProxies` the
+same way the other two do.
+
+The two override files expect the public name in the environment, and refuse to
+start without it rather than coming up with a wrong one — a wrong
+`AdvertisedHost` is baked into pairing invites and found days later:
+
+```bash
+export FLOWER_HOSTNAME=music.example.com
+export TUNNEL_TOKEN=…                      # cloudflared only
+```
+
+The Caddy override binds two more directories beside `./data` —
+`./caddy-data` and `./caddy-config`, for its certificates and ACME account keys.
+Docker creates them, and keeping them matters: lose `caddy-data` and Caddy
+re-issues on every restart, which Let's Encrypt rate-limits after a handful of
+attempts. All three are gitignored, being a running deployment's state rather
+than the repository's.
+
+Each sets `TrustedProxies` and `AdvertisedHost`, which belong to the deployment.
+Neither sets **`AllowPublicAccess`**, which this deployment does need on — and
+the omission is deliberate. It is the one setting that is also a switch on the
+settings page, the page persists it to `data/flower-server.json`, and the compose
+`environment:` outranks that file. Set it in the override and the switch still
+moves and still does nothing. So turn it on from the settings page, or in
+`data/flower-server.json`, and it stays yours:
+
+```json
+{ "Flower": { "AllowPublicAccess": true } }
+```
+
+Until it is on, every listener from outside is refused with the proxy or tunnel
+working perfectly. The startup log says which state you are in.
 
 ### Published images
 
@@ -730,6 +805,11 @@ cloudflared tunnel run flower
 Once it works, install it as a service so it survives a reboot —
 `sudo cloudflared service install` on macOS and Linux.
 
+If the server runs in Docker, `docker-compose.cloudflared.yml` does this instead
+— a remotely-managed tunnel, so the ingress rule lives in the Cloudflare
+dashboard rather than in `config.yml`, pointed at `http://localhost:4533`. See
+*Reaching it from outside* above.
+
 ### 6. Check you got it right
 
 The failure this setup produces is quiet, so look for it deliberately:
@@ -831,6 +911,11 @@ on speaking plain HTTP on loopback, exactly as it does behind `tailscale serve`.
 sudo caddy run --config /etc/caddy/Caddyfile      # to try it
 sudo brew services start caddy                     # once it works
 ```
+
+If the server runs in Docker, skip all of this and use
+`docker-compose.caddy.yml` instead — it brings up Caddy beside the server with
+this same configuration, from `docker/Caddyfile`. See *Reaching it from outside*
+above.
 
 ### 4. Forward the ports on the router
 

@@ -7,8 +7,22 @@
 #
 #   docker compose logs flower
 #
-# See docs/SELF-HOSTING.md for what to do with it, and for HTTPS, Tailscale and
-# Cloudflare Tunnel in front of this.
+# See docs/SELF-HOSTING.md for what to do with it, and for reaching the server
+# from outside. Two of those paths add a container, so each has an override file
+# to merge on top of this one rather than a copy of it:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml       up -d
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d
+#
+# Tailscale needs neither, which is part of why it is the one to prefer: install
+# it on the host, and `network_mode: host` below means the container is already
+# on the tailnet. The one setting it does want is TrustedProxies, if you put
+# `tailscale serve` in front - see SELF-HOSTING.md.
+#
+# Nor does port forwarding, as long as every listener is a paired Flower app:
+# forward 4534, the server's own TLS port, which those clients validate against
+# a key they already hold. The caddy override is for the case where one of the
+# listeners is a browser, which cannot pin and so needs a real certificate.
 
 services:
   flower:

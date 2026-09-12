@@ -1,0 +1,67 @@
+# Port forwarding, with Caddy terminating TLS in front of the server.
+#
+# For the case where every listener is a paired Flower app, you do not want this
+# file: forward 4534 instead and the base compose file is enough, because those
+# clients validate the server's own certificate against a key they already hold.
+# This is for when one of the listeners is a browser, which cannot pin - hence a
+# real hostname, which is also why FLOWER_HOSTNAME below has no default. Let's
+# Encrypt will not issue for an IP address.
+#
+#   export FLOWER_HOSTNAME=music.example.com
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+#
+# An override, not a replacement: everything about the server itself - the music
+# mount, the data volume, host networking - stays in docker-compose.yml, and is
+# the same here as it is on a LAN-only box. All this file adds is the proxy and
+# the two settings that become true because the proxy exists.
+#
+# Forward 443 and 80 on the router to this machine. Both: Let's Encrypt
+# validates over 80, so without it Caddy never gets a certificate. Do not
+# forward 4533 - see docs/SELF-HOSTING.md, "Port forwarding", for why that one
+# line is the difference between this being safe and not.
+
+services:
+  flower:
+    environment:
+      # Caddy delivers over loopback, so without this every remote listener
+      # arrives as 127.0.0.1: one identity, therefore one rate-limit bucket, and
+      # one busy listener locks out everyone else. Read once at startup.
+      - Flower__TrustedProxies__0=127.0.0.1/32
+      # The origin put into pairing invites and handed to paired clients as an
+      # address to remember. The scheme is load-bearing - it is what tells a
+      # client to reach this over TLS rather than guessing http.
+      - Flower__AdvertisedHost=https://${FLOWER_HOSTNAME:?set FLOWER_HOSTNAME to the public name}
+      # Left on deliberately. The tunnel is an extra way in, not a replacement;
+      # clients rank a LAN address ahead of it and fall back to it from outside.
+      - Flower__AdvertiseOnLan=true
+
+    # AllowPublicAccess is deliberately NOT set here, though this deployment
+    # needs it on. It is the one server setting that is also a switch on the
+    # settings page, and the page persists it to data/flower-server.json - which
+    # an environment variable outranks. Set it here and the switch still moves
+    # and still does nothing. So turn it on once, from the settings page or in
+    # data/flower-server.json, and leave the operator holding it:
+    #
+    #   { "Flower": { "AllowPublicAccess": true } }
+    #
+    # Until it is on, every listener from outside is dropped even with the proxy
+    # working perfectly. The startup log says which state you are in.
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: flower-caddy
+    restart: unless-stopped
+    # Host networking for the same reason the server uses it, minus the
+    # multicast: Caddy has to own 80 and 443 on the machine the router forwards
+    # to, and reach the server on loopback where it already listens.
+    network_mode: host
+    depends_on:
+      - flower
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys. Lose this and Caddy re-issues on
+      # every restart, which Let's Encrypt rate-limits after a handful of tries.
+      - ./caddy-data:/data
+      - ./caddy-config:/config
+    environment:
+      - FLOWER_HOSTNAME=${FLOWER_HOSTNAME:?set FLOWER_HOSTNAME to the public name}
