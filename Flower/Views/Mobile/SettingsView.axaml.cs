@@ -81,4 +81,12 @@ public partial class SettingsView : UserControl
 
         _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(code);
     }
+
+    private void CopyPairingInviteButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ViewModels.Mobile.MobileMainViewModel vm || vm.Main.IssuedPairingInvite is not { Length: > 0 } invite)
+            return;
+
+        _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(invite);
+    }
 }

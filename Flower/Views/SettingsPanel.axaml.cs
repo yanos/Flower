@@ -193,6 +193,26 @@ public partial class SettingsPanel : UserControl
         _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(row.Address);
     }
 
+    // Same argument as CopyAddressButton_Click, twice over: the code is read
+    // into a message to whoever is holding the other device, and the link is
+    // too long to be read out at all, so copying is the only realistic gesture
+    // for either.
+    private void CopyPairingCodeButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.PairingCode is not { Length: > 0 } code)
+            return;
+
+        _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(code);
+    }
+
+    private void CopyPairingInviteButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.PairingInvite is not { Length: > 0 } invite)
+            return;
+
+        _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(invite);
+    }
+
     private void OpenAppDataLocationButton_Click(object? sender, RoutedEventArgs e) =>
         _mainViewModel?.OpenAppDataLocationCommand?.Execute(null);
 

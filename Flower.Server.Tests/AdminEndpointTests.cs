@@ -122,6 +122,28 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         }
     }
 
+    // The settings screen is where an operator reads this server's identity off
+    // to someone checking a paired device against it, so it has to be there and
+    // has to be this server's own - see PairingEntry for what the check is for.
+    [Fact]
+    public async Task The_settings_page_reports_this_servers_own_identity()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(
+                await SignedAsync(admin, "GET", "/api/admin/settings"));
+
+            Assert.Equal(
+                server.Services.GetRequiredService<DeviceSigningKey>().Fingerprint,
+                settings.Fingerprint);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
     // The settings page used to render an empty Name box on a server that
     // plainly had a name - every client's sidebar was showing it - because an
     // unset Alias means "the machine name" everywhere except in the DTO, which

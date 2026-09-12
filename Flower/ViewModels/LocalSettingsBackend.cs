@@ -142,7 +142,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         return Task.CompletedTask;
     }
 
-    public Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
+    public Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
         throw new NotSupportedException("An app peer pairs by approving a request, not by issuing a code.");
 
     public Task<Logging.LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>

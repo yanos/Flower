@@ -340,6 +340,22 @@
                 <TextBlock Text="{Binding SelectedSidebarItem.Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <TextBlock Text="{Binding SelectedDevice.Origin}" Opacity="0.5" FontSize="13"/>
+              <!-- The key this device actually pinned, so it can be compared
+                   against what the server says about itself. Only useful for a
+                   pairing made with a bare code - one made from a flower://
+                   invite checked it before pinning anything - but it is shown
+                   either way rather than conditionally, since the app does not
+                   record which was used and a check offered only sometimes is
+                   one nobody learns to make. See
+                   PeerSyncCoordinator.PairedServerPinnedFingerprint. -->
+              <StackPanel Orientation="Horizontal" Spacing="5"
+                          IsVisible="{Binding HasSelectedDevicePinnedFingerprint}">
+                <TextBlock Text="Verified as" Opacity="0.4" FontSize="11" VerticalAlignment="Center"/>
+                <SelectableTextBlock Text="{Binding SelectedDevicePinnedFingerprint}"
+                                     Opacity="0.55" FontSize="11" FontFamily="monospace"
+                                     VerticalAlignment="Center"
+                                     ToolTip.Tip="The server identity this device pinned when it paired. Every later connection is checked against it. Compare it with the fingerprint the server shows in its own settings."/>
+              </StackPanel>
             </StackPanel>
             <!-- Only shown for a peer advertising Server mode, while this device
                  is a Client (see MainViewModel.CanPairWithSelectedDevice) - mirrors
@@ -349,10 +365,14 @@
                  is nobody in front of a server to tap Allow, so an admin issues
                  a one-time code out of band and this redeems it. Hidden once
                  paired, when there is nothing left to redeem. -->
+            <!-- Wide enough for a whole flower:// invite, not just the five
+                 characters of a code. The cap used to be 20, which silently
+                 truncated a pasted link into something that could only fail as
+                 a bad code - see PairingEntry, which is what reads either. -->
             <TextBox Text="{Binding PairingCode}"
-                     PlaceholderText="Pairing code"
+                     PlaceholderText="Pairing code or link"
                      IsVisible="{Binding IsPairingCodeRequired}"
-                     Width="140" MaxLength="20"
+                     Width="180" MaxLength="400"
                      KeyDown="PairingCodeBox_KeyDown"
                      Margin="12,0,0,0" VerticalAlignment="Center"/>
             <Button Content="{Binding PairActionLabel}"

@@ -217,6 +217,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public string? PairedServerFingerprint => Sync.PairedServerFingerprint;
     public string? PairedServerAlias       => Sync.PairedServerAlias;
 
+    // Shown on the paired server's own detail page so it can be compared
+    // against what that server displays about itself - see
+    // PeerSyncCoordinator.PairedServerPinnedFingerprint for why it is the
+    // pinned value and not the announced one. Only meaningful for the server
+    // this device is paired with, so it is blank on every other row.
+    public string? SelectedDevicePinnedFingerprint =>
+        IsSelectedDevicePaired ? Sync.PairedServerPinnedFingerprint : null;
+
+    public bool HasSelectedDevicePinnedFingerprint => !string.IsNullOrEmpty(SelectedDevicePinnedFingerprint);
+
     public IEnumerable<DiscoveredDevice> AvailableServers => Sync.AvailableServers;
 
     // Whether that list has anything in it, so mobile's Settings sheet can say
@@ -739,19 +749,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
-    // Whether the code currently on screen is an administrator's. Said out loud
-    // next to it rather than left to the checkbox above: the checkbox describes
-    // the *next* press, and the two disagree the moment it is un-ticked with a
-    // code still showing.
-    private bool _issuedPairingCodeGrantsAdmin;
-    public bool IssuedPairingCodeGrantsAdmin
+    // The same code rendered as a flower:// link, which additionally carries
+    // this server's fingerprint. Kept beside the bare code rather than
+    // replacing it: five characters is what survives being read down a phone
+    // line, but only the link lets the device on the other end check which
+    // server it is pairing with, so the stronger of the two has to be on
+    // screen for anyone to use it - see PairingEntry.
+    private string? _issuedPairingInvite;
+    public string? IssuedPairingInvite
     {
-        get => _issuedPairingCodeGrantsAdmin;
+        get => _issuedPairingInvite;
         private set
         {
-            if (_issuedPairingCodeGrantsAdmin == value)
+            if (_issuedPairingInvite == value)
                 return;
-            _issuedPairingCodeGrantsAdmin = value;
+            _issuedPairingInvite = value;
             OnPropertyChanged();
         }
     }
@@ -835,7 +847,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // The previous code is dropped before the request rather than after it:
         // a stale code left on screen next to a spinner reads as the new one.
         IssuedPairingCode = null;
-        IssuedPairingCodeGrantsAdmin = false;
+        IssuedPairingInvite = null;
         IsIssuingPairingCode = true;
         try
         {
@@ -843,7 +855,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             var client = CreateServerAdminClient(http, device);
             var pairing = await client.IssuePairingCodeAsync(PairingCodeGrantsAdmin);
             IssuedPairingCode = pairing.Code;
-            IssuedPairingCodeGrantsAdmin = PairingCodeGrantsAdmin;
+            IssuedPairingInvite = pairing.Invite;
         }
         catch (Exception ex)
         {
@@ -1022,6 +1034,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         OnPropertyChanged(nameof(CanPairWithSelectedDevice));
         OnPropertyChanged(nameof(IsSelectedDevicePaired));
+        // Appears with the pairing and goes with it - it reads off the trusted
+        // store, which PairWithServer/UnpairServer are what change.
+        OnPropertyChanged(nameof(SelectedDevicePinnedFingerprint));
+        OnPropertyChanged(nameof(HasSelectedDevicePinnedFingerprint));
         OnPropertyChanged(nameof(IsPairedServerTrustConfirmed));
         OnPropertyChanged(nameof(IsPairedServerAwaitingApproval));
         OnPropertyChanged(nameof(IsSelectedDeviceTrustConfirmed));
@@ -1787,6 +1803,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // in DeviceRowsChanged, which also runs on the 5s peer poll - a code
         // that vanished every few seconds could not be read out loud.
         IssuedPairingCode = null;
+        IssuedPairingInvite = null;
         IssuedPairingCodeError = null;
         ServerSettingsError = null;
         NotifyPairButtonPropertiesChanged();

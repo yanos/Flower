@@ -72,10 +72,13 @@
                           Click="ForceSyncButton_Click"/>
                   <!-- Hidden once paired (ServerRow.IsPairingCodeRequired) -
                        there is nothing left to redeem. -->
+                  <!-- Sized for a whole flower:// invite as well as a bare
+                       code - see MainView's own box for what the old 20-char
+                       cap did to a pasted link. -->
                   <TextBox Text="{Binding PairingCode}"
-                           PlaceholderText="Pairing code"
+                           PlaceholderText="Pairing code or link"
                            IsVisible="{Binding IsPairingCodeRequired}"
-                           Width="130" MaxLength="20"
+                           Width="170" MaxLength="400"
                            VerticalAlignment="Center"/>
                   <Button Content="{Binding ActionLabel}"
                           IsEnabled="{Binding IsActionEnabled}"

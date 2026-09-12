@@ -64,6 +64,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             PublicAddress = settings.PublicAddress,
             DataDirectory = settings.DataDirectory,
             Version = settings.Version,
+            Fingerprint = settings.Fingerprint,
         };
     }
 
@@ -131,8 +132,11 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
 
     public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => Task.CompletedTask;
 
-    public async Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
-        (await client.IssuePairingCodeAsync(grantsAdmin, ct)).Code;
+    public async Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default)
+    {
+        var issued = await client.IssuePairingCodeAsync(grantsAdmin, ct);
+        return (issued.Code, issued.Invite);
+    }
 
     public Task RescanAsync(CancellationToken ct = default) => client.RescanAsync(ct);
 

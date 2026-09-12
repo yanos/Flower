@@ -402,6 +402,31 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     public bool IsPairedServerTrustConfirmed =>
         !string.IsNullOrEmpty(PairedServerFingerprint) && _appSettings.PairedServerTrustConfirmed;
 
+    // The fingerprint of the key actually pinned for the paired server, derived
+    // from the stored key rather than read from any label beside it.
+    //
+    // Deliberately not DiscoveredDevice.Fingerprint, which is what the thing
+    // answering right now *claims* to be - showing that would confirm nothing,
+    // since an impostor announces whatever it likes. This is the value every
+    // later TLS handshake is measured against (PeerHttpClient.IsPinnedServerKey),
+    // so it is the one worth putting in front of a user: someone who paired
+    // with a bare code can read it off the server's own screen afterwards and
+    // find out whether they pinned the right machine. SSH's model - verify
+    // late rather than not at all. A device paired with a flower:// invite
+    // checked this before it pinned anything (see PairingEntry) and needs no
+    // second look.
+    public string? PairedServerPinnedFingerprint
+    {
+        get
+        {
+            if (_trustedPeerStore == null || _appSettings.PairedServerFingerprint is not { Length: > 0 } paired)
+                return null;
+            return _trustedPeerStore.GetPublicKey(paired) is { Length: > 0 } key
+                ? PairingEntry.FingerprintOf(key)
+                : null;
+        }
+    }
+
     // Paired but not yet confirmed - the code was redeemed and the first sync
     // that proves the server really did accept it has not landed yet.
     public bool IsPairedServerAwaitingApproval =>
@@ -455,8 +480,29 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // pairingCode is the whole of the authorization: a server is headless, so
     // there is nobody in front of it to tap Allow, and an admin issues a
     // one-time code instead (SYNC-PLAN.md, "Passwordless by design").
+    //
+    // It is also allowed to be a whole flower:// invite rather than a bare
+    // code, and that is the case worth having: an invite names the server's
+    // fingerprint, which is the only thing in this flow that did not arrive
+    // over the connection being authenticated. See PairingEntry.
     public void PairWithServer(DiscoveredDevice device, string pairingCode)
     {
+        var entry = PairingEntry.Parse(pairingCode);
+
+        // Before anything is recorded, and before the code is spent. A
+        // mismatch here means the thing answering at this address is not the
+        // server the invite came from, and the two things that must not happen
+        // in that case are handing it a live pairing code and leaving this
+        // device half-paired to it.
+        if (entry.RejectionFor(device.PublicKey) is { } mismatch)
+        {
+            _logger.LogWarning(
+                "Refused to pair with {Alias} at {EndPoint}: it identifies itself as {Served}, but the invite named {Expected}",
+                device.Alias, device.BaseUri, device.Fingerprint, entry.ExpectedFingerprint);
+            PairingCodeRejected?.Invoke(this, mismatch);
+            return;
+        }
+
         _appSettings.PairedServerFingerprint = device.Fingerprint;
         _appSettings.PairedServerAlias = device.Alias;
         _appSettings.PairedServerTrustConfirmed = false; // a fresh request - see ConfirmServerTrust
@@ -473,16 +519,16 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // would just get a flat 403 - a sync request is never itself treated
         // as a pairing attempt. Redeem the code first, and only start syncing
         // once that comes back accepted.
-        RunTrackedSync(() => RedeemPairingCodeThenSyncAsync(device, pairingCode));
+        RunTrackedSync(() => RedeemPairingCodeThenSyncAsync(device, entry));
     }
 
     // The code the admin issued *is* the approval, so there is no waiting
     // state at all - the redeem either comes back trusted or the code was
     // wrong, and the difference is known within one round trip. See
     // PeerPairingService.RedeemPairingCodeAsync.
-    private async Task RedeemPairingCodeThenSyncAsync(DiscoveredDevice device, string pairingCode)
+    private async Task RedeemPairingCodeThenSyncAsync(DiscoveredDevice device, PairingEntry entry)
     {
-        var rejection = await (_peerPairingService?.RedeemPairingCodeAsync(device, pairingCode)
+        var rejection = await (_peerPairingService?.RedeemPairingCodeAsync(device, entry.Code)
                                ?? Task.FromResult<string?>("Pairing is not available on this device."));
 
         if (_appSettings.PairedServerFingerprint != device.Fingerprint)
@@ -508,6 +554,36 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // IsPinnedServerKey. Skipped, rather than guessed at, if /info has
         // not produced a key yet: pinning nothing is a refusal, and pinning
         // the wrong thing is worse.
+        //
+        // Re-checked against the invite rather than trusted from the check in
+        // PairWithServer: /info is polled continuously, so the key here is not
+        // necessarily the one that passed a moment ago, and a pin recorded now
+        // is what every later connection is measured against.
+        if (entry.RejectionFor(device.PublicKey) is { } changed)
+        {
+            _logger.LogWarning(
+                "{Alias} changed its identity key between the invite check and the redeem; not pinning it", device.Alias);
+            Dispatcher.UIThread.Post(UnpairServer);
+            PairingCodeRejected?.Invoke(this, changed);
+            return;
+        }
+
+        // The fingerprint and the key both came from /info, so this catches no
+        // attacker - it catches a server whose two identity fields disagree,
+        // which would otherwise be recorded as a TrustedPeer whose pin and
+        // whose signature checks are about different identities.
+        if (device.PublicKey.Length > 0
+            && PairingEntry.FingerprintOf(device.PublicKey) is { } derived
+            && !string.Equals(derived, device.Fingerprint, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "{Alias} announced fingerprint {Announced} but a key deriving to {Derived}; not pinning it",
+                device.Alias, device.Fingerprint, derived);
+            Dispatcher.UIThread.Post(UnpairServer);
+            PairingCodeRejected?.Invoke(this, "That server's identity is inconsistent, so it was not paired.");
+            return;
+        }
+
         if (_trustedPeerStore != null && device.PublicKey.Length > 0)
             await _trustedPeerStore.ApproveAsync(device.Fingerprint, device.Alias, device.PublicKey);
 

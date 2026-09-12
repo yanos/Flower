@@ -284,7 +284,27 @@ public sealed partial class SettingsViewModel : ViewModelBase
         private set => SetProperty(ref _pairingCode, value);
     }
 
+    // The same code as a flower:// link, which additionally names this
+    // server's fingerprint. Shown next to the bare code rather than instead of
+    // it: a code is what gets read down a phone line, but a device handed the
+    // link can check it reached the server the link came from, and a device
+    // handed five characters cannot - see PairingEntry.
+    private string _pairingInvite = "";
+    public string PairingInvite
+    {
+        get => _pairingInvite;
+        private set => SetProperty(ref _pairingInvite, value);
+    }
+
     public string DataDirectory => _snapshot.DataDirectory;
+
+    // This server's identity, shown so it can be read off against what a paired
+    // device says it pinned. The device can display what it trusts but cannot
+    // vouch for it - only the machine itself can, and only over a channel that
+    // is not the connection being checked, which is to say a screen a person is
+    // looking at. See PeerSyncCoordinator.PairedServerPinnedFingerprint.
+    public string? Fingerprint => _snapshot.Fingerprint;
+    public bool HasFingerprint => !string.IsNullOrEmpty(_snapshot.Fingerprint);
     public string ITunesLibraryDescription => _snapshot.ITunesLibraryDescription;
 
     // Read-only, one row per origin. An operator deciding whether to open this
@@ -502,10 +522,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private Task IssuePairingCodeAsync() => RunAsync(async ct =>
     {
         var grantsAdmin = PairingCodeGrantsAdmin;
-        PairingCode = await _backend.IssuePairingCodeAsync(grantsAdmin, ct);
-        StatusMessage = grantsAdmin
-            ? "This code grants administrator access. Enter it on the device you are adding; it expires in a few minutes."
-            : "Enter this code on the device you are adding. It expires in a few minutes.";
+        (PairingCode, PairingInvite) = await _backend.IssuePairingCodeAsync(grantsAdmin, ct);
+        StatusMessage = "Enter this code on the device you are adding. It expires in a few minutes.";
     });
 
     [RelayCommand]

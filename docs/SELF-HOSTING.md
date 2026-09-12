@@ -79,21 +79,85 @@ whichever screen is already open:
 - **The Flower phone app**, same condition — Settings → **Generate Pairing
   Code**.
 
-All three hand out the same thing: one code, good for ten minutes and one
-device. It is an ordinary listener's code unless the **Administrator** checkbox
-beside the button is ticked, which is off every time the screen is opened —
-adding somebody's phone is the common case, and a box left ticked from an hour
-ago would quietly make the next guest an administrator.
+#### What a pairing gives away
 
-More than one device may be an administrator. Your own desktop and your own
-phone both being one is the expected shape, not a workaround.
+Worth reading once before handing one out, because it is more than "can
+listen":
 
-An app that is paired but is *not* an admin does not show the button at all: the
-server reports whether the caller is one of its administrators on the same
+- **Any paired device** plays the whole library, and its plays are added to
+  this server's counts. Its playlists **replace** the ones here, so it can add
+  or remove playlists for everybody. There is no read-only pairing.
+- **An administrator** can also change the server's settings — including which
+  folders the library is read from, which is how music is added to or removed
+  from it — star tracks for everyone, and add and remove devices, including
+  other administrators.
+
+That distinction is the **Administrator** checkbox beside the button, which is
+off every time the screen is opened. Adding somebody's phone is the common
+case, and a box left ticked from an hour ago would quietly make the next guest
+an administrator. More than one device may be an administrator: your own
+desktop and your own phone both being one is the expected shape, not a
+workaround.
+
+An app that is paired but is *not* an admin does not show the button at all:
+the server reports whether the caller is one of its administrators on the same
 handshake the client already polls, so this is known without asking, and a
 control whose every press returns a refusal reads as broken rather than as
-forbidden. (**Server Settings…** next to it is still shown to everyone — opening
-a page you cannot read costs one trip that says so.)
+forbidden. (**Server Settings…** next to it is still shown to everyone —
+opening a page you cannot read costs one trip that says so.)
+
+#### Send the link, not the code
+
+Every screen hands out the same pairing two ways: a five-character **code**,
+and a **`flower://pair?...` link** printed underneath it, each with a **Copy**
+button. Both are good for ten minutes and one device, and whichever is used
+first is the device that pairs. They are not, however, equally safe, and the
+difference is not a nicety:
+
+- **The link is checked.** It carries the server's fingerprint, so the app
+  knows which server it is allowed to end up trusting *before* it sends
+  anything. A device given a link refuses to pair with anything but the server
+  that issued it, and says so.
+- **The code is trust-on-first-use.** It proves to the *server* that you
+  authorized this device. It tells the *device* nothing about what it just
+  handed its key to, so the app pins whatever answered at that address. If
+  something on the network is answering in the server's place, a code pairs you
+  to it and nothing objects.
+
+So the link is the way to add a device, and the code is the fallback for when
+the only channel you have is your own voice. Either box ("Pairing code or
+link") takes both, so there is no setting to get wrong — only a habit worth
+having. Copy the link into whatever you would have typed the code into.
+
+A refusal says *"This is not the server that invite came from"* and names both
+fingerprints. The dull explanation is that the link was for a different server,
+or the server was rebuilt onto a new key. The other explanation is that
+something is answering in its place, so don't retry until you know which.
+
+### Checking a pairing afterwards
+
+A device paired from a link verified the server before it trusted anything, and
+needs no second look. A device paired from a bare code verified nothing — so
+the check has to be made by hand, and it is only worth what the person making
+it is: an eye that skims two strings of hex and calls them equal has checked
+nothing. Read them.
+
+Both halves are on screen:
+
+- **On the device**, click the server in the sidebar. Under its name is
+  **Verified as `<fingerprint>`** — the identity that device actually pinned,
+  and what every later connection is checked against.
+- **On the server**, the settings page's General tab shows **This server's
+  identity**.
+
+Read the server's from the server's own screen, not from the app that just
+paired: if something answered in its place, the app is quoting the impostor and
+will agree with itself.
+
+They should be the same string. If they differ, that device is talking to
+something that is not this server, and the fix is to unpair it and pair again
+with the link. This is SSH's model — the check is worth making late if it was
+not made early, and worth not needing at all, which is what the link buys.
 
 ### Settings
 
@@ -347,9 +411,9 @@ Three settings change it, and they answer different questions:
   is*. See below. Deployment-shaped, so it is read once at startup.
 - **`AllowPublicAccess`** — *turn the allow-list off entirely*. For a server
   deliberately published to the internet, through a tunnel or a mapped port. Off
-  by default. On the settings page it is **Accept connections from outside this
-  network**, in Network, with the server's own addresses shown above it; it
-  applies immediately, in both directions.
+  by default. On the settings page it is **Accept connections from outside of
+  LAN with port forwarding**, in Network, with the server's own addresses shown
+  above it; it applies immediately, in both directions.
 
 Turning that last one on is the single most consequential thing you can do to
 this server, so it says so in the log every time it starts. It removes a layer
@@ -528,8 +592,17 @@ two options exist.
 ### Pairing a device over the tailnet
 
 **Pair on your home Wi-Fi first, before you travel.** Open the settings page,
-press **Generate Pairing Code**, and enter the code in the client's **Pairing
-code** box.
+press **Generate Pairing Code**, and paste the `flower://pair?...` link into the
+client's **Pairing code or link** box.
+
+This is the one step where the link matters more than anywhere else, because
+first contact on the LAN happens over plain HTTP — the client dials
+`http://<ip>:4533` from an mDNS announcement, and mDNS authenticates nothing.
+The link's fingerprint is the only part of that exchange that did not travel
+over the wire, so it is what stops a device on your network from answering in
+the server's place and being pinned forever after. Once the pin is recorded,
+every later connection — including every remote one over HTTPS — is checked
+against it.
 
 The Flower app finds servers by mDNS, which is a local-network protocol — it does
 not reach into a tailnet. So a client that has never shared a network with this

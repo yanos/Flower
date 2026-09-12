@@ -94,7 +94,7 @@ public class AdminJsonContractTests
              "syncDateAddedFromITunes":true,"appleMusicFolder":"/Users/x/Music/Music/Media.localized",
              "iTunesLibraryDescription":"Exports a fresh copy from Music.app each launch",
              "dataDirectory":"/data","version":"1.2.3","allowPublicAccess":true,
-             "addresses":["http://192.168.1.40:4533"]}
+             "addresses":["http://192.168.1.40:4533"],"fingerprint":"0123456789abcdef0123456789abcdef"}
             """,
             options);
 
@@ -107,6 +107,9 @@ public class AdminJsonContractTests
         Assert.Equal("/Users/x/Music/Music/Media.localized", settings.AppleMusicFolder);
         Assert.True(settings.AllowPublicAccess);
         Assert.Equal(["http://192.168.1.40:4533"], settings.Addresses);
+        // The half of the pin check that has to come from the server itself -
+        // a paired device can show what it trusts but cannot vouch for it.
+        Assert.Equal("0123456789abcdef0123456789abcdef", settings.Fingerprint);
 
         var update = JsonSerializer.Serialize(
             new ServerSettingsUpdateDto("Basement", null, null, null, null, null, null, null, null, null), options);

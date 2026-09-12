@@ -55,7 +55,7 @@ public class SettingsRosterlessLoadTests
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;
 
-        public Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
+        public Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
         public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>

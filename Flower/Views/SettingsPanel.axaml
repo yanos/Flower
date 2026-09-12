@@ -70,6 +70,20 @@
                                FontSize="11" Opacity="0.7" TextWrapping="Wrap"
                                IsVisible="{Binding !Capabilities.RevealAppDataLocation}"/>
 
+          <!-- Read off against what a paired device shows as "Verified as" on
+               that server's page. The device knows what it pinned; only the
+               server can say whether that was the right key, and only away from
+               the connection in question - see PairingEntry. -->
+          <TextBlock Text="This server's identity"
+                     FontWeight="SemiBold" Margin="0,20,0,4"
+                     IsVisible="{Binding HasFingerprint}"/>
+          <SelectableTextBlock Text="{Binding Fingerprint}"
+                               FontSize="11" FontFamily="monospace" Opacity="0.7" TextWrapping="Wrap"
+                               IsVisible="{Binding HasFingerprint}"/>
+          <TextBlock Text="A paired device shows the identity it pinned under the server's name. If the two differ, that device is talking to something else."
+                     FontSize="11" Opacity="0.5" TextWrapping="Wrap" Margin="0,2,0,0"
+                     IsVisible="{Binding HasFingerprint}"/>
+
           <!-- "Where is this server?" is the first thing anyone asks of it, and
                the answer is the same one whether they came to set a network
                option or not - so it lives here rather than buried on the Network
@@ -290,15 +304,54 @@
                   <CheckBox Content="Administrator"
                             IsChecked="{Binding PairingCodeGrantsAdmin}"
                             VerticalAlignment="Center"/>
-                  <SelectableTextBlock Text="{Binding PairingCode}"
+                </StackPanel>
+                <!-- Shown whether or not the box is ticked, because what
+                     pairing costs is the decision being made here and a
+                     warning that only appears once the dangerous option is
+                     already chosen has arrived too late to inform it. The
+                     ordinary grant is not nothing either - a listener's
+                     playlists replace this server's - so both halves are
+                     stated rather than only the administrator one. -->
+                <TextBlock Text="A paired device plays the whole library and adds its plays to this server's counts, and its playlists replace the ones here - so it can add or remove playlists for everyone."
+                           Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
+                <TextBlock Text="An administrator can also change these settings, including which folders the library is read from, so it can add or remove music. It can star tracks for everyone, and add and remove devices."
+                           Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
+                <!-- The link is the safer of the two renderings, so it is
+                     offered rather than hidden behind the code: a device given
+                     the whole link checks that it reached the server the link
+                     came from, and a device given five characters trusts
+                     whatever answers. See PairingEntry.
+                     Both get a Copy button. Neither is retyped by the person
+                     reading it - the code goes into a message and the link is
+                     far too long to be read out at all - and a selection drag
+                     is not how anyone does that. -->
+                <Grid ColumnDefinitions="Auto,Auto" HorizontalAlignment="Left"
+                      IsVisible="{Binding PairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
+                  <SelectableTextBlock Grid.Column="0" Text="{Binding PairingCode}"
                                        FontFamily="monospace"
                                        FontSize="18" FontWeight="SemiBold"
+                                       Margin="0,0,10,0"
                                        VerticalAlignment="Center"/>
-                </StackPanel>
+                  <Button Grid.Column="1" Content="Copy"
+                          Click="CopyPairingCodeButton_Click"
+                          VerticalAlignment="Center"/>
+                </Grid>
                 <TextBlock Text="Type this code on the new device. It works once, and only for a few minutes."
+                           IsVisible="{Binding PairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                            Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
-                <TextBlock Text="Administrators can also change these settings and add devices themselves."
-                           IsVisible="{Binding PairingCodeGrantsAdmin}"
+                <Grid ColumnDefinitions="*,Auto"
+                      IsVisible="{Binding PairingInvite, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
+                  <SelectableTextBlock Grid.Column="0" Text="{Binding PairingInvite}"
+                                       FontFamily="monospace" FontSize="11"
+                                       Margin="0,0,10,0"
+                                       Opacity="0.7" TextWrapping="Wrap"
+                                       VerticalAlignment="Center"/>
+                  <Button Grid.Column="1" Content="Copy link"
+                          Click="CopyPairingInviteButton_Click"
+                          VerticalAlignment="Center"/>
+                </Grid>
+                <TextBlock Text="Send the link rather than the code. A device given the link refuses to pair with anything but this server; a device given five characters trusts whatever answers."
+                           IsVisible="{Binding PairingInvite, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                            Opacity="0.5" FontSize="12" TextWrapping="Wrap"/>
               </StackPanel>
             </StackPanel>
@@ -411,14 +464,20 @@
             <TextBlock Text="Flower apps on the same network find this server by themselves, with nothing to type in. Turn it off if everyone reaches it through a tunnel or proxy instead."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
-            <!-- The switch that retires LanGuard. Worded as what it does rather
-                 than as a setting name, because it is the most consequential one
-                 here by a distance - see FlowerServerOptions.AllowPublicAccess. -->
-            <CheckBox Content="Accept connections from outside this network"
+            <!-- The switch that retires LanGuard, named after the deployment
+                 that needs it rather than after the option, because that is the
+                 decision the reader is actually making - see
+                 FlowerServerOptions.AllowPublicAccess. Two paragraphs instead
+                 of one: what it removes, then what does not need it. An
+                 operator who only learns the cost turns it on anyway, having
+                 nowhere else to go. -->
+            <CheckBox Content="Accept connections from outside of LAN"
                       Margin="0,20,0,0"
                       IsChecked="{Binding AllowPublicAccess, Mode=TwoWay}"/>
-            <TextBlock Text="Off: only devices on your own network (plus anything allowed below) get an answer - everything else is ignored. On: anyone can reach it, and a paired device's key is the only thing keeping strangers out. Turn it on if you reach this server through a tunnel, a proxy or a forwarded port."
+            <TextBlock Text="Allow connections that arrive through a forwarded port, tunnel, or proxy. When this is off, outside connection attempts are silently ignored, making it difficult for internet scanners to detect that the server exists. When enabled, outside users can reach the server's login and may be able to identify and repeatedly probe it. Authentication still protects access, but the server itself is exposed."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+            <TextBlock Text="If possible, use Tailscale instead. It lets your devices connect privately without exposing the server to the internet, so this option can stay off."
+                       Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
             <!-- The address this server answers on from outside, which none of
                  the ones on the General tab is - see PublicAddressProbe.

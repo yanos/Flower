@@ -59,7 +59,15 @@ public sealed record ServerSettingsDto(
     // The fields whose new value is on disk and bound but not yet acted on, so
     // the page can say so instead of appearing to have done nothing:
     // MdnsAdvertiser reads its options once, when the hosted service starts.
-    List<string>? RestartRequired = null);
+    List<string>? RestartRequired = null,
+    // This server's own identity fingerprint, read-only. It is the other half
+    // of a check a paired device can only half-make on its own: the device
+    // shows what it pinned, and the answer to "is that the right machine?"
+    // has to come from the machine itself, over a channel that is not the one
+    // being checked - a screen someone is looking at. Matters most for a
+    // device paired with a bare code, which had nothing to verify at the time
+    // (see PairingEntry).
+    string? Fingerprint = null);
 
 public sealed record ServerSettingsUpdateDto(
     string? Alias,

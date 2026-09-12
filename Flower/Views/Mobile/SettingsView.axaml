@@ -176,10 +176,15 @@
                       IsChecked="{Binding Main.PairingCodeGrantsAdmin}"
                       VerticalAlignment="Center"/>
           </StackPanel>
-          <TextBlock Text="Type this code on the new device. It works once, and only for a few minutes."
+          <!-- Shown whether or not the box is ticked, because what pairing
+               costs is the decision being made here and a warning that only
+               appears once the dangerous option is already chosen has arrived
+               too late to inform it. The ordinary grant is not nothing either -
+               a listener's playlists replace the server's - so both halves are
+               stated rather than only the administrator one. -->
+          <TextBlock Text="A paired device plays the whole library and adds its plays to the server's counts, and its playlists replace the ones there - so it can add or remove playlists for everyone."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
-          <TextBlock IsVisible="{Binding Main.PairingCodeGrantsAdmin}"
-                     Text="Administrators can also change these settings and add devices themselves."
+          <TextBlock Text="An administrator can also change the server's settings, including which folders the library is read from, so it can add or remove music. It can star tracks for everyone, and add and remove devices."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
           <!-- Copying is the actual gesture on a phone - the code goes into a
                message to whoever is holding the other device, and a selection
@@ -207,12 +212,28 @@
           <TextBlock IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                      Text="Enter this code on the device you are adding. It works once."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
-          <!-- What the code on screen grants, which the checkbox above stops
-               describing the moment it is un-ticked - see
-               MainViewModel.IssuedPairingCodeGrantsAdmin. -->
-          <TextBlock IsVisible="{Binding Main.IssuedPairingCodeGrantsAdmin}"
-                     Text="This code grants administrator access."
-                     FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+          <!-- The link is the safer of the two renderings, so it is offered
+               rather than hidden behind the code: a device given the whole
+               link checks that it reached the server the link came from, and a
+               device given five characters trusts whatever answers. See
+               PairingEntry.
+               It gets the same Copy button as the code, and needs it more: a
+               flower:// link is not something anyone retypes, and on a phone a
+               selection drag across a wrapped monospace string is worse still. -->
+          <Grid ColumnDefinitions="*,Auto"
+                IsVisible="{Binding Main.IssuedPairingInvite, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
+            <SelectableTextBlock Grid.Column="0" Text="{Binding Main.IssuedPairingInvite}"
+                                 FontFamily="monospace" FontSize="11"
+                                 Margin="0,0,12,0"
+                                 Opacity="0.7" TextWrapping="Wrap"
+                                 VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="Copy link"
+                    Click="CopyPairingInviteButton_Click"
+                    VerticalAlignment="Center"/>
+          </Grid>
+          <TextBlock IsVisible="{Binding Main.IssuedPairingInvite, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                     Text="Send the link rather than the code. A device given the link refuses to pair with anything but this server; a device given five characters trusts whatever answers."
+                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
           <TextBlock IsVisible="{Binding Main.IssuedPairingCodeError, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                      Text="{Binding Main.IssuedPairingCodeError}"
                      Foreground="{DynamicResource AppWarningBrush}"

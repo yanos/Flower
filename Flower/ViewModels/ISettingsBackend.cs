@@ -93,6 +93,12 @@ public sealed record SettingsSnapshot
     public string DataDirectory { get; init; } = "";
     public string? Version { get; init; }
 
+    // This thing's own identity fingerprint. Shown so a paired device can be
+    // checked against it: the device displays what it pinned, and only the
+    // server can say whether that was the right key - see
+    // PeerSyncCoordinator.PairedServerPinnedFingerprint.
+    public string? Fingerprint { get; init; }
+
     // Where play counts would actually come from, described without doing the
     // slow work of exporting them (see SettingsWindow.DescribeITunesLibrarySource).
     public string ITunesLibraryDescription { get; init; } = "";
@@ -155,7 +161,13 @@ public interface ISettingsBackend
     Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default);
     Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default);
 
-    Task<string> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default);
+    // Both renderings of one code. The bare Code is what gets read out over
+    // the phone; Invite is the flower:// link that also names this server's
+    // fingerprint, and is the only one of the two that lets the new device
+    // check which server it is pairing with - see PairingEntry. Returned
+    // together because a surface that showed only the code would quietly
+    // remove that check from every pairing it was used for.
+    Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default);
 
     // Kicks off a library rescan and returns once it has *started*, not once it
     // has finished - a full scan outlasts any sensible request timeout, and on the

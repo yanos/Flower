@@ -213,16 +213,17 @@ public static class AdminEndpoints
 
         authenticated.MapGet("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IServer boundServer,
-            PublicAddressProbe publicAddress) =>
+            PublicAddressProbe publicAddress, DeviceSigningKey signingKey) =>
             Results.Json(
-                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, context.RequestAborted),
+                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, signingKey, context.RequestAborted),
                 jsonOptions));
 
         // Read from the raw (buffered, rewound) stream rather than a bound
         // parameter - see the filter above for why no route here may bind a body.
         authenticated.MapPut("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
-            LibraryRescanCoordinator rescans, IServer boundServer, PublicAddressProbe publicAddress) =>
+            LibraryRescanCoordinator rescans, IServer boundServer, PublicAddressProbe publicAddress,
+            DeviceSigningKey signingKey) =>
         {
             ServerSettingsUpdateDto? update;
             try
@@ -358,7 +359,7 @@ public static class AdminEndpoints
                 rescans.TryStart();
             }
 
-            var described = await DescribeAsync(after, boundServer, publicAddress, context.RequestAborted);
+            var described = await DescribeAsync(after, boundServer, publicAddress, signingKey, context.RequestAborted);
             return Results.Json(described with { RestartRequired = restartRequired }, jsonOptions);
         });
 
@@ -537,7 +538,8 @@ public static class AdminEndpoints
     // sidebar shows - and a settings page that answers "what is this server
     // called" with an empty box is wrong about a name that plainly exists.
     private static async Task<ServerSettingsDto> DescribeAsync(
-        FlowerServerOptions options, IServer boundServer, PublicAddressProbe publicAddress, CancellationToken ct) =>
+        FlowerServerOptions options, IServer boundServer, PublicAddressProbe publicAddress,
+        DeviceSigningKey signingKey, CancellationToken ct) =>
         new(MdnsAdvertiser.InstanceName(options),
             options.AdvertisedHost,
             options.AdvertiseOnLan,
@@ -553,7 +555,9 @@ public static class AdminEndpoints
             AppVersion.Display,
             options.AllowPublicAccess,
             DiscoveryEndpoints.ReachableOrigins(boundServer, options),
-            await publicAddress.GetAsync(ct));
+            await publicAddress.GetAsync(ct),
+            RestartRequired: null,
+            Fingerprint: signingKey.Fingerprint);
 
     // The host in the invite is the address the admin's own browser reached
     // this server on, not a configured one: on a box with a LAN address, a
