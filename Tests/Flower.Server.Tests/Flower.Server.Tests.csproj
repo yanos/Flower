@@ -27,7 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Flower.Server\Flower.Server.csproj" />
+    <ProjectReference Include="..\..\Flower.Server\Flower.Server.csproj" />
   </ItemGroup>
 
 </Project>

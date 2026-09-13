@@ -11,7 +11,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Flower.Desktop", "Flower.De
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Flower.iOS", "Flower.iOS\Flower.iOS.csproj", "{88619AA6-F380-46C7-B912-5DB7F28C2309}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Tests", "Flower.Tests\Flower.Tests.csproj", "{515D402C-228F-46E9-B014-99EA9F4460E0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Tests", "Tests\Flower.Tests\Flower.Tests.csproj", "{515D402C-228F-46E9-B014-99EA9F4460E0}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Core", "Flower.Core\Flower.Core.csproj", "{13E3662D-8D9F-4E92-9941-9024C3511647}"
 EndProject
@@ -19,15 +19,15 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Server", "Flower.Ser
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Web", "Flower.Web\Flower.Web.csproj", "{076635ED-6BD9-4252-AB34-225C9633FD74}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Server.Tests", "Flower.Server.Tests\Flower.Server.Tests.csproj", "{2209AF84-651B-43A9-BCC9-27FB1B64B108}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Server.Tests", "Tests\Flower.Server.Tests\Flower.Server.Tests.csproj", "{2209AF84-651B-43A9-BCC9-27FB1B64B108}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.MacOS", "Flower.MacOS\Flower.MacOS.csproj", "{D63557B2-25CB-42DA-A9BA-1A7767CACED4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks", "Flower.DeviceChecks\Flower.DeviceChecks.csproj", "{6ECA890F-834D-4FA3-881C-97334D977176}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks", "Tests\Flower.DeviceChecks\Flower.DeviceChecks.csproj", "{6ECA890F-834D-4FA3-881C-97334D977176}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks.iOS", "Flower.DeviceChecks.iOS\Flower.DeviceChecks.iOS.csproj", "{E6915A17-2368-45B1-AB42-EAD733852069}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks.iOS", "Tests\Flower.DeviceChecks.iOS\Flower.DeviceChecks.iOS.csproj", "{E6915A17-2368-45B1-AB42-EAD733852069}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks.Android", "Flower.DeviceChecks.Android\Flower.DeviceChecks.Android.csproj", "{1563D7EF-3DFA-4B56-BD5A-A133F2C7C7EA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks.Android", "Tests\Flower.DeviceChecks.Android\Flower.DeviceChecks.Android.csproj", "{1563D7EF-3DFA-4B56-BD5A-A133F2C7C7EA}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE1}") = "Tests", "Tests", "{E6B9C0AA-B8A0-49AF-929B-75FB39DF04FA}"
 EndProject

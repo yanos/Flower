@@ -60,13 +60,13 @@
        hardware: an emulator on Apple silicon is arm64-v8a, one on a CI runner
        is x86_64, and armeabi-v7a is what an older phone would load. -->
   <ItemGroup>
-    <AndroidNativeLibrary Include="..\Flower.Android\libs\arm64-v8a\libffaudio.so">
+    <AndroidNativeLibrary Include="..\..\Flower.Android\libs\arm64-v8a\libffaudio.so">
       <Abi>arm64-v8a</Abi>
     </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="..\Flower.Android\libs\x86_64\libffaudio.so">
+    <AndroidNativeLibrary Include="..\..\Flower.Android\libs\x86_64\libffaudio.so">
       <Abi>x86_64</Abi>
     </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="..\Flower.Android\libs\armeabi-v7a\libffaudio.so">
+    <AndroidNativeLibrary Include="..\..\Flower.Android\libs\armeabi-v7a\libffaudio.so">
       <Abi>armeabi-v7a</Abi>
     </AndroidNativeLibrary>
   </ItemGroup>

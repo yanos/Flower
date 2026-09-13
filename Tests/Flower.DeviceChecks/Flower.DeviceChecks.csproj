@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Flower\Flower.csproj" />
+    <ProjectReference Include="..\..\Flower\Flower.csproj" />
   </ItemGroup>
 
 </Project>
