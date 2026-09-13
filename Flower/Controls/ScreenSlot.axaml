@@ -20,18 +20,26 @@
        comment for why this works correctly even for a kept-alive
        back/forward preview.
 
-       Margin below (60,4,60,4) must stay in sync with the fixed back/settings
+       Margin below (60,4,100,4) must stay in sync with the fixed back/settings
        overlay's own margin in MobileMainView.axaml - see that file's comment
        for the pixel math, horizontal and vertical both. The 52px row here is
        what that overlay aligns its own 52px band to, so neither the row height
        nor the 4px vertical margin can move on its own. -->
   <Grid RowDefinitions="52,*">
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="60,4,60,4">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="60,4,100,4">
+      <!-- Centred in the space between the floating back button and the
+           search/settings pill - which the margin above already is, so the
+           column only has to centre it. Centred there whether or not the back
+           button is showing, so a title never shifts when it comes and goes;
+           a screen's own buttons beside it do take their width out of that
+           space. -->
       <TextBlock Grid.Column="0"
                  Text="{Binding #Root.Frame.Title}"
                  IsVisible="{Binding !#Root.Frame.IsSearchScreen}"
                  FontSize="22"
                  FontWeight="SemiBold"
+                 HorizontalAlignment="Center"
+                 TextTrimming="CharacterEllipsis"
                  VerticalAlignment="Center" />
 
       <!-- Search tab's own always-visible box, bound to SearchQuery on the
@@ -72,13 +80,16 @@
            hand-copied pairs of glyphs - one for an album, one for a playlist -
            that did neither.
 
+           Playlists only: an album's sits beside its name instead, in
+           TrackListScreenView's album header.
+
            The frame/server gating goes on a wrapper rather than on the button:
            the button's own IsVisible is the indicator's answer, and the two
            questions are different ones. -->
       <Panel Grid.Column="2">
         <Panel.IsVisible>
           <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
-            <Binding ElementName="Root" Path="Frame.IsTrackList" />
+            <Binding ElementName="Root" Path="Frame.IsPlaylistTrackList" />
             <Binding Path="Main.CanForceSync" />
           </MultiBinding>
         </Panel.IsVisible>

@@ -128,6 +128,16 @@ public sealed class ScreenStackPanel : Panel
         }
     }
 
+    // Raised once the screen a navigation lands on is at rest: straight away
+    // when it cuts, or when its entrance slide ends. A back step has already
+    // done its sliding before the navigation commits, so it lands at rest too.
+    // MobileMainView shows and hides its back button off this rather than off
+    // CanGoBack, which changes as the navigation starts - so the button would
+    // otherwise pop in over a screen still sliding into place.
+    public event EventHandler? Settled;
+
+    private void RaiseSettled() => Settled?.Invoke(this, EventArgs.Empty);
+
     public void SyncToCurrentFrame(MobileMainViewModel vm)
     {
         var currentFrame = vm.CurrentFrame;
@@ -224,7 +234,10 @@ public sealed class ScreenStackPanel : Panel
         _oneForwardInner = forwardInner;
 
         if (unchanged)
+        {
+            RaiseSettled();
             return;
+        }
 
         // Both "underneath" slots first, current last (on top) - a plain Panel
         // stacks children full-bleed in collection order, same as ContentGrid's
@@ -266,8 +279,10 @@ public sealed class ScreenStackPanel : Panel
             // the transform below is set before this dispatcher job returns.
             UpdateLayout();
             entrance.X = transition == MobileNavigationTransition.FromRight ? entranceWidth : -entranceWidth;
-            EaseTransform(entrance, 0, null);
+            EaseTransform(entrance, 0, RaiseSettled);
         }
+        else
+            RaiseSettled();
     }
 
     // Reuses the existing slot for a role if it's still wrapping the exact

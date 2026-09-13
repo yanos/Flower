@@ -16,7 +16,20 @@ public partial class MobileMainView : UserControl
     public MobileMainView()
     {
         InitializeComponent();
+        ScreenStack.Settled += (_, _) => UpdateBackPill();
     }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        UpdateBackPill();
+    }
+
+    // Only once the screen has finished arriving: CanGoBack changes as a
+    // navigation starts, so a binding to it would pop the button in over a
+    // screen still sliding into place. See ScreenStackPanel.Settled.
+    private void UpdateBackPill() =>
+        BackPill.IsVisible = DataContext is MobileMainViewModel { CanGoBack: true };
 
     private const double TabBarInsetOverlap = 14;
 

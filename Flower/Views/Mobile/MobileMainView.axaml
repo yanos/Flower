@@ -60,6 +60,29 @@
     <Style Selector="Button.tab.selected">
       <Setter Property="Opacity" Value="1" />
     </Style>
+    <!-- The floating controls over the top of the screens: back, and the
+         search/settings pill - and the back buttons of the Now Playing and
+         Settings sheets, which reach these styles by being hosted here. Height 40 with CornerRadius 20 makes a pill
+         round at both ends, and a circle when it is 40 wide. -->
+    <Style Selector="Border.floating">
+      <Setter Property="Height" Value="40" />
+      <Setter Property="CornerRadius" Value="20" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BoxShadow" Value="0 2 8 0 #28000000" />
+    </Style>
+    <Style Selector="Button.pill">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.pill.selected materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+    </Style>
     <Style Selector="Button.pickerRow, Button.trackRow">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -144,7 +167,7 @@
            discrete tab-paging otherwise - see that class's own doc comment.
            Each slot now carries its own sliding title/search/create-playlist/
            download-all header (see ScreenSlot) - only the back button and
-           settings gear below stay fixed on top of it. -->
+           the search/settings pill below stay fixed on top of it. -->
       <controls:ScreenStackPanel x:Name="ScreenStack" />
 
       <!-- Empty state: shown instead of a blank screen when the current list has nothing in it -->
@@ -176,12 +199,13 @@
            (Avalonia doesn't hit-test an unpainted Panel/Grid's empty area -
            same technique AlbumArtView/AlbumGridRowControl already rely on).
            Margin/button sizing here must stay in sync with ScreenSlot.axaml's
-           own header Margin="60,4,60,4" and with NowPlayingView's top bar,
+           own header Margin="60,4,100,4" and with NowPlayingView's top bar,
            which draws its own back arrow over this one - see those files'
-           comments for the pixel math (back button: Padding 10 + 24px icon = 44px wide, at
-           outer margin 4 -> right edge 48, +12px gap -> 60; settings button:
-           Padding 10 + 22px icon = 42px wide, at outer margin 16 -> 60
-           clearance).
+           comments for the pixel math (back: a 40px circle at
+           outer margin 12 -> right edge 52, +8px gap -> 60; search/settings
+           pill: two Padding 8 + 20px icon = 36px buttons, + Padding 2 and a
+           1px border on each side = 78px wide, at outer margin 12 -> 90,
+           +10px gap -> 100).
            Vertically the two must share a band, not a margin: this Grid and
            ScreenSlot's 52px header row are siblings both starting at y=0, and
            Margin sits *outside* Height - so any top margin here would push
@@ -189,23 +213,42 @@
            it 0 and let Height="52" alone define the band, which centres these
            buttons on 26 - the same centre ScreenSlot's own Margin="...,4,...,4"
            inside its 52px row produces. -->
-      <Grid ColumnDefinitions="Auto,*,Auto" Height="52" Margin="4,0,16,0" VerticalAlignment="Top">
-        <Button Grid.Column="0"
-                Click="BackButton_Click"
-                IsVisible="{Binding CanGoBack}"
-                Background="Transparent"
-                BorderThickness="0"
-                Padding="10">
-          <materialIcons:MaterialIcon Kind="ArrowLeft" Width="24" Height="24" />
-        </Button>
+      <Grid ColumnDefinitions="Auto,*,Auto" Height="52" Margin="12,0,12,0" VerticalAlignment="Top">
+        <!-- The pill below with one button in it, so a circle. Shown and
+             hidden from code rather than bound to CanGoBack, which changes
+             as a navigation starts - see UpdateBackPill. -->
+        <Border x:Name="BackPill"
+                Grid.Column="0"
+                Classes="floating"
+                Width="40"
+                IsVisible="False">
+          <Button Classes="pill"
+                  Click="BackButton_Click"
+                  HorizontalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
+          </Button>
+        </Border>
 
-        <Button Grid.Column="2"
-                Command="{Binding OpenSettingsCommand}"
-                Background="Transparent"
-                BorderThickness="0"
-                Padding="10">
-          <materialIcons:MaterialIcon Kind="Cogs" Width="22" Height="22" />
-        </Button>
+        <!-- Search and Settings, floating in one pill. Search is still a tab
+             (SelectTabCommand, and SearchTab_Click refocusing the box when it
+             is already showing) - it just is not in the tab bar - so it keeps a
+             selected state, drawn in the accent colour. -->
+        <Border Grid.Column="2"
+                Classes="floating"
+                Padding="2,0">
+          <StackPanel Orientation="Horizontal">
+            <Button Classes="pill"
+                    Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Search}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="Search"
+                    Click="SearchTab_Click">
+              <materialIcons:MaterialIcon Kind="Magnify" Width="20" Height="20" />
+            </Button>
+            <Button Classes="pill"
+                    Command="{Binding OpenSettingsCommand}">
+              <materialIcons:MaterialIcon Kind="Cog" Width="20" Height="20" />
+            </Button>
+          </StackPanel>
+        </Border>
       </Grid>
     </Grid>
 
@@ -275,7 +318,7 @@
     <Border x:Name="TabBar"
             Grid.Row="2"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
-    <Grid ColumnDefinitions="*,*,*,*,*,*"
+    <Grid ColumnDefinitions="*,*,*,*,*"
           Height="60"
           Margin="12,0">
       <Button Grid.Column="0" Classes="tab"
@@ -321,16 +364,6 @@
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" HorizontalAlignment="Center" />
           <TextBlock Text="Playlists" FontSize="11" HorizontalAlignment="Center" />
-        </StackPanel>
-      </Button>
-      <Button Grid.Column="5" Classes="tab"
-              Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Search}"
-              Command="{Binding SelectTabCommand}" CommandParameter="Search"
-              Click="SearchTab_Click"
-              Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
-        <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="Magnify" Width="22" Height="22" HorizontalAlignment="Center" />
-          <TextBlock Text="Search" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
     </Grid>
@@ -382,7 +415,7 @@
       <views:AddToPlaylistView />
     </controls:SlidingSheet>
     <!-- The other sheet that arrives from the right, like a pushed screen -
-         it is reached from a gear pinned beside the screen title rather than
+         it is reached from a gear pinned above the screens rather than
          from a row's own menu, and reads as going somewhere rather than
          raising something over what is already there. Its dismiss is the back
          arrow the rest of the app pushes screens with, not the ChevronDown the
