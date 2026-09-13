@@ -23,12 +23,17 @@
        and SearchResultsScreenView implement, purely so this template has
        one static type to bind $parent[...] against. -->
   <DataTemplate x:Key="TrackRowTemplate" x:DataType="rowvm:TrackRowViewModel">
+    <!-- A long press opens the same menu as the "..." button at the end of
+         the row, without also playing the track once the finger lifts (see
+         LongPress). -->
     <Button Classes="trackRow"
             Classes.playing="{Binding IsCurrentlyPlaying}"
             Classes.placeholder="{Binding IsUnavailable}"
             Classes.dense="{Binding !$parent[views:ITrackRowHost].ShowsRowArtist}"
             Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).PlayTrackCommand}"
-            CommandParameter="{Binding}">
+            CommandParameter="{Binding}"
+            controls:LongPress.Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
+            controls:LongPress.CommandParameter="{Binding}">
       <Grid ColumnDefinitions="Auto,Auto,14,*,Auto,Auto">
         <!-- Pointer wiring for drag-to-reorder is NOT attached here as XAML
              event attributes - this file is a class-less ResourceDictionary
@@ -151,9 +156,14 @@
                Deleting the downloaded file is the file-dependent one, and
                it gates itself on having a Path - see
                MobileMainViewModel.CanDeleteDownloadedFile - so an
-               undownloaded track opens this sheet without it. -->
+               undownloaded track opens this sheet without it. Downloading
+               is the other way round (CanDownloadActionTarget).
+
+               Handed the row rather than its Track, because downloading
+               from the menu goes through the row: that is what spins the
+               row's own icon while it runs. -->
           <Button Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
-                  CommandParameter="{Binding Track}"
+                  CommandParameter="{Binding}"
                   Background="Transparent"
                   BorderThickness="0"
                   Padding="4"

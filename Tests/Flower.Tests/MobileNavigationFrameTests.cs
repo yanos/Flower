@@ -121,8 +121,15 @@ public class MobileNavigationFrameTests
     [Fact]
     public void Title_uses_sidebar_item_name_when_drilled_in_outside_Artists()
     {
+        var playlistsItem = new SidebarItem(SidebarItemKind.Playlist, "Road Trip");
+        Assert.Equal("Road Trip", Frame(MobileTab.Playlists, hasDrilledIn: true, sidebarItem: playlistsItem).Title);
+    }
+
+    [Fact]
+    public void Title_is_blank_over_an_albums_own_tracks()
+    {
         var albumsItem = new SidebarItem(SidebarItemKind.Albums, "Albums");
-        Assert.Equal("Albums", Frame(MobileTab.Albums, hasDrilledIn: true, sidebarItem: albumsItem, subItem: "Dawn").Title);
+        Assert.Equal("", Frame(MobileTab.Albums, hasDrilledIn: true, sidebarItem: albumsItem, subItem: "Dawn").Title);
     }
 
     [Fact]

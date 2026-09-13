@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:screens="clr-namespace:Flower.Views.Mobile.Screens"
@@ -30,50 +31,58 @@
                                      Classes.dimmed="{Binding IsUnavailable}" />
       </DataTemplate>
 
-      <!-- The album's download-all sits to the right of its name rather than
-           in the screen's top bar, where a playlist still keeps it (see
-           ScreenSlot). It is the same button and the same screen-wide
-           indicator and command, reached through the screen's DataContext
+      <!-- Under the name, artist and year, a pill of the album's own actions:
+           play, shuffle, add to playlist, download. The download is the same
+           button download-all always was - the screen-wide indicator and
+           command, so it spins while the batch runs and leaves once there is
+           nothing left to fetch - and the other three act on the same rows it
+           does. Play comes first, ringed like Now Playing's (Button.pill.circle): it is
+           what the group is for. Download goes last because it is the one that
+           leaves, so nothing shifts when it does. All of them are reached through the screen's DataContext,
            since this template's own is the album tile.
 
-           Centred under the art, the spacer on the left balances the button
-           so the name stays centred over the artist line; beside the art the
-           name ranges left and the spacer is sized away (.albumText styles).
-           The spacer shows only while the button does, so a library with
-           nothing to fetch gets its full width back. -->
+           The pill is the floating one MobileMainView puts over its screens
+           (Border.floating, Button.pill), which reaches here because the
+           screens are hosted inside that view. Centred under the art, ranged
+           left beside it (.albumText styles). -->
       <DataTemplate x:Key="AlbumTextTemplate" x:DataType="vm:AlbumTileViewModel">
         <StackPanel Spacing="2" Classes.dimmed="{Binding IsUnavailable}">
-          <Grid ColumnDefinitions="Auto,*,Auto">
-            <Panel Grid.Column="0" Classes="titleSpacer">
-              <Panel.IsVisible>
-                <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
-                  <Binding ElementName="DownloadAllWell" Path="IsVisible" />
-                  <Binding ElementName="DownloadAll" Path="IsVisible" />
-                </MultiBinding>
-              </Panel.IsVisible>
-            </Panel>
-            <TextBlock Grid.Column="1"
-                       Text="{Binding Name}"
-                       FontSize="20" FontWeight="Bold"
-                       TextWrapping="Wrap"
-                       VerticalAlignment="Center" />
-            <Panel Grid.Column="2"
-                   x:Name="DownloadAllWell"
-                   IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">
-              <controls:TrackDownloadButton x:Name="DownloadAll"
-                                            DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllIndicator}"
-                                            IconSize="22"
-                                            IconPadding="10"
-                                            Label="Download album"
-                                            Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
-            </Panel>
-          </Grid>
+          <TextBlock Text="{Binding Name}"
+                     FontSize="20" FontWeight="Bold"
+                     TextWrapping="Wrap" />
           <TextBlock Text="{Binding Artist}"
                      FontSize="15" Opacity="0.7"
                      TextWrapping="Wrap" />
           <TextBlock Text="{Binding RepresentativeTrack.Year}"
                      FontSize="13" Opacity="0.5"
                      IsVisible="{Binding RepresentativeTrack.Year, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}" />
+          <Border Classes="floating albumActions" Padding="2,0" Margin="0,12,0,0">
+            <StackPanel Orientation="Horizontal">
+              <Button Classes="pill circle"
+                      Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).PlayAlbumCommand}">
+                <Border Classes="ring">
+                  <materialIcons:MaterialIcon Kind="Play" Width="20" Height="20" />
+                </Border>
+              </Button>
+              <Button Classes="pill"
+                      Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShuffleAlbumCommand}">
+                <materialIcons:MaterialIcon Kind="Shuffle" Width="20" Height="20" />
+              </Button>
+              <Button Classes="pill"
+                      Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).OpenAlbumAddToPlaylistCommand}">
+                <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="20" Height="20" />
+              </Button>
+              <!-- Its own IsVisible is the indicator's answer, so the server
+                   gate goes on a wrapper - the two are different questions. -->
+              <Panel IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">
+                <controls:TrackDownloadButton DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllIndicator}"
+                                              IconSize="20"
+                                              IconPadding="8"
+                                              Label="Download album"
+                                              Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
+              </Panel>
+            </StackPanel>
+          </Border>
         </StackPanel>
       </DataTemplate>
     </ResourceDictionary>
@@ -99,21 +108,19 @@
          rather than on the use site because a local Margin would outrank
          them. -->
     <Style Selector="ContentControl.albumText">
-      <Setter Property="Margin" Value="16,4,16,16" />
+      <Setter Property="Margin" Value="12,4,12,16" />
     </Style>
     <Style Selector="ContentControl.albumText.beside TextBlock">
       <Setter Property="TextAlignment" Value="Left" />
     </Style>
-    <!-- The download-all button's width (22px icon in 10px of padding), so a
-         centred name stays centred. Ranged left there is nothing to balance. -->
-    <Style Selector="ContentControl.albumText Panel.titleSpacer">
-      <Setter Property="Width" Value="42" />
+    <Style Selector="ContentControl.albumText Border.albumActions">
+      <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
-    <Style Selector="ContentControl.albumText.beside Panel.titleSpacer">
-      <Setter Property="Width" Value="0" />
+    <Style Selector="ContentControl.albumText.beside Border.albumActions">
+      <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
     <Style Selector="ContentControl.albumText.beside">
-      <Setter Property="Margin" Value="22,4,16,16" />
+      <Setter Property="Margin" Value="22,4,12,16" />
     </Style>
 
     <!-- A row with no artist line under the title is a single line of text,

@@ -60,29 +60,8 @@
     <Style Selector="Button.tab.selected">
       <Setter Property="Opacity" Value="1" />
     </Style>
-    <!-- The floating controls over the top of the screens: back, and the
-         search/settings pill - and the back buttons of the Now Playing and
-         Settings sheets, which reach these styles by being hosted here. Height 40 with CornerRadius 20 makes a pill
-         round at both ends, and a circle when it is 40 wide. -->
-    <Style Selector="Border.floating">
-      <Setter Property="Height" Value="40" />
-      <Setter Property="CornerRadius" Value="20" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="BoxShadow" Value="0 2 8 0 #28000000" />
-    </Style>
-    <Style Selector="Button.pill">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="8" />
-      <Setter Property="CornerRadius" Value="18" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.pill.selected materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
-    </Style>
+    <!-- Border.floating and Button.pill, the floating controls over the top of
+         the screens, are app-wide now: Styles/IconButtons.axaml. -->
     <Style Selector="Button.pickerRow, Button.trackRow">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />

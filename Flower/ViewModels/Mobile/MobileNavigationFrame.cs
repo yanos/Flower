@@ -63,10 +63,14 @@ public sealed record MobileNavigationFrame(
     // MobileMainViewModel.ScreenTitle's own logic exactly (see that
     // property's history), now derived per-frame so a swiped-in back/forward
     // preview shows its own title rather than the live VM's.
+    //
+    // Blank over one album's tracks: the only name to give it was the sidebar
+    // item's, "Albums", and the album's own name is already in large type in
+    // the header right below. Under Artists the artist's name still wins.
     public string Title =>
         Tab == MobileTab.Artists && SelectedArtistName != null
             ? SelectedArtistName
-            : IsSearchScreen
+            : IsSearchScreen || IsAlbumTrackList
                 ? string.Empty
                 : HasDrilledIn
                     ? (SidebarItem?.Name ?? Tab.ToString())

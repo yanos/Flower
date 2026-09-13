@@ -55,6 +55,18 @@
           </StackPanel>
         </Button>
 
+        <!-- Only while the row's own download icon would show (see
+             MobileMainViewModel.CanDownloadActionTarget), and the opposite of
+             the entry below: a track has either this or that, or neither when
+             the server that has it is out of reach. -->
+        <Button Classes="action" Command="{Binding DownloadActionTargetCommand}"
+                IsVisible="{Binding CanDownloadActionTarget}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" />
+            <TextBlock Text="Download" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
         <!-- Any track with a real local file (see
              MobileMainViewModel.CanDeleteDownloadedFile) - reverts it back to
              a not-yet-downloaded placeholder and frees the local file's
@@ -66,7 +78,7 @@
                 IsVisible="{Binding CanDeleteDownloadedFile}">
           <StackPanel Orientation="Horizontal" Spacing="14">
             <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="22" Height="22" Foreground="#E05555" />
-            <TextBlock Text="Delete Downloaded File" FontSize="16" VerticalAlignment="Center" Foreground="#E05555" />
+            <TextBlock Text="Delete Local File" FontSize="16" VerticalAlignment="Center" Foreground="#E05555" />
           </StackPanel>
         </Button>
 

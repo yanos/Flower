@@ -162,15 +162,14 @@
             <materialIcons:MaterialIcon Kind="Rewind" Width="32" Height="32" />
           </Button>
           <Button Grid.Column="1"
+                  Classes="pill circle"
                   Command="{Binding ToggleMiniPlayerCommand}"
                   Width="64" Height="64"
-                  Background="Transparent"
-                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-                  BorderThickness="1.5"
-                  CornerRadius="9999"
                   HorizontalAlignment="Center">
-            <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                         Width="32" Height="32" />
+            <Border Classes="ring">
+              <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
+                                           Width="32" Height="32" />
+            </Border>
           </Button>
           <Button Grid.Column="2"
                   Command="{Binding NextTrackCommand}"

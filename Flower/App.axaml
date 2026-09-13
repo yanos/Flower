@@ -85,5 +85,8 @@
         <Style Selector="TabItem">
             <Setter Property="FontSize" Value="12"/>
         </Style>
+        <!-- Floating pills and round icon buttons, desktop and mobile both -
+             see the file. -->
+        <StyleInclude Source="avares://Flower/Styles/IconButtons.axaml"/>
     </Application.Styles>
 </Application>

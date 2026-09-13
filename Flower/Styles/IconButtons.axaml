@@ -1,0 +1,58 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
+
+  <!-- Icon-only buttons, app-wide: the floating back button and search/settings
+       pill over the mobile screens, the back buttons of the Now Playing and
+       Settings sheets, an album's action group, and every download button
+       (TrackDownloadButton puts the class on its own inner Button). Kept here
+       rather than in MobileMainView so they all press the same way wherever
+       they are hosted - the download button used to light up a square around
+       its glyph while everything beside it lit up a circle. -->
+
+  <!-- A pill round at both ends, and a circle when it is 40 wide. -->
+  <Style Selector="Border.floating">
+    <Setter Property="Height" Value="40" />
+    <Setter Property="CornerRadius" Value="20" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BoxShadow" Value="0 2 8 0 #28000000" />
+  </Style>
+
+  <!-- CornerRadius is what rounds the pressed and hover highlight: Fluent paints
+       those on the template's ContentPresenter, which takes the Button's radius.
+       Larger than any icon button is tall, so the highlight is always a circle
+       around a square button, whatever its size. Padding is the tap target
+       around the glyph; TrackDownloadButton sets its own from IconPadding. -->
+  <Style Selector="Button.pill">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="8" />
+    <Setter Property="CornerRadius" Value="9999" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.pill.selected materialIcons|MaterialIcon">
+    <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+  </Style>
+
+  <!-- Play, wherever it is the point of a group (Now Playing's transport, an
+       album's actions): a thin ring around the glyph, no fill. The ring is a
+       Border.ring the markup puts inside the Button, rather than the Button's
+       own border, so it sits a few pixels inside the round press highlight -
+       pressing greys the whole button and leaves that gap showing. The Button's
+       Padding is the gap; the ring's Padding is its room around the glyph.
+       Contents stretch so a Button given a fixed size draws its ring that size. -->
+  <Style Selector="Button.pill.circle">
+    <Setter Property="Padding" Value="3" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.pill.circle Border.ring">
+    <Setter Property="CornerRadius" Value="9999" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" />
+    <Setter Property="Padding" Value="3.5" />
+  </Style>
+</Styles>

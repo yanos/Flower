@@ -34,12 +34,13 @@
        want 13px in a desktop row, 16px on a phone's row and 22px in its top
        bar, and the padding around the glyph is the tap target. Its own
        property rather than this UserControl's Padding, which a ContentControl
-       template already applies once on the way in and would apply twice. -->
+       template already applies once on the way in and would apply twice.
+
+       Button.pill (Styles/IconButtons.axaml) is the look every icon button
+       shares, and what makes a press light up a circle rather than a square. -->
   <Button x:Name="DownloadButton"
-          Background="Transparent"
-          BorderThickness="0"
-          Padding="{Binding #Root.IconPadding}"
-          VerticalAlignment="Center">
+          Classes="pill"
+          Padding="{Binding #Root.IconPadding}">
     <Panel>
       <materialIcons:MaterialIcon Kind="CloudDownloadOutline"
                                   Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}" Opacity="0.7"

@@ -150,10 +150,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand OpenSettingsCommand { get; }
     public ICommand OpenAppSettingsCommand { get; }
     public ICommand DownloadTrackCommand { get; }
+    public ICommand DownloadActionTargetCommand { get; }
     public ICommand DeleteDownloadedFileCommand { get; }
     public ICommand ConfirmDeleteFileCommand { get; }
     public ICommand CancelDeleteFileCommand { get; }
     public ICommand DownloadAllVisibleCommand { get; }
+    public ICommand PlayAlbumCommand { get; }
+    public ICommand ShuffleAlbumCommand { get; }
+    public ICommand OpenAlbumAddToPlaylistCommand { get; }
     public ICommand PairWithServerCommand { get; }
     public ICommand UnpairServerCommand { get; }
 
@@ -522,6 +526,19 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // needs its own branch here; every other screen (Songs, an album/
     // artist-album/Recently-Added drill-in, or a playlist) renders straight
     // from Main.Rows, whatever MainViewModel already narrowed it to.
+    private void PlayAlbum(bool shuffle)
+    {
+        var rows = Main.Rows;
+        if (rows.Count == 0)
+            return;
+        if (PlaylistControl.IsShuffleEnabled != shuffle)
+            PlaylistControl.ToggleShuffle();
+
+        var index = shuffle ? Random.Shared.Next(rows.Count) : 0;
+        SyncPlayQueueToCurrentView();
+        PlaylistControl.Play(rows[index].Track, index);
+    }
+
     private void SyncPlayQueueToCurrentView() =>
         Main.SetPlayQueue(IsShowingSearchResults
             ? SearchSongResults.Select(r => r.Track)
@@ -544,7 +561,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 return;
             _activeSheet = value;
             if (value == MobileSheet.None)
+            {
                 ActionTarget = null;
+                _playlistTargets = null;
+            }
             if (value == MobileSheet.NowPlaying)
                 NowPlayingExitsForward = false;
             else
@@ -727,6 +747,17 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public bool HasMediaPermissionPrompt => PlatformPermissions.Current != null;
     public bool HasMediaPermission => PlatformPermissions.Current?.IsGranted() ?? true;
 
+    // The row the action menu was opened from, kept alongside ActionTarget for
+    // the menu's Download entry: a download goes through its row so the row's
+    // own icon spins (TrackDownloadRunner.DownloadRowAsync).
+    private TrackRowViewModel? _actionRow;
+
+    // What the Add to Playlist sheet adds when it was opened from an album's
+    // own actions rather than from one track's menu: the whole album. Null
+    // otherwise, and cleared with the sheet, so the sheet falls back to
+    // ActionTarget.
+    private IReadOnlyList<Track>? _playlistTargets;
+
     // The track a row's "..." action menu (and, in turn, the Track Info sheet) applies to.
     private Track? _actionTarget;
     public Track? ActionTarget
@@ -737,6 +768,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             _actionTarget = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanDeleteDownloadedFile));
+            OnPropertyChanged(nameof(CanDownloadActionTarget));
             OnPropertyChanged(nameof(IsRecoverableDownload));
             OnPropertyChanged(nameof(ConfirmDeleteFileTitle));
             OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
@@ -751,6 +783,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // imported it directly (or a peer that once had it is no longer the
     // paired Server) should still be deletable, just with eyes open.
     public bool CanDeleteDownloadedFile => ActionTarget?.Path != null;
+
+    // The menu's Download entry shows exactly when the row's own download icon
+    // does: a placeholder the paired server can serve right now.
+    public bool CanDownloadActionTarget => _actionRow?.IsDownloadable == true;
 
     // Whether ActionTarget's file, once deleted, would actually come back on
     // its own - true only if the currently paired Server is the same device
@@ -1052,11 +1088,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         CloseSheetCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
         NextTrackCommand = new RelayCommand(PlaylistControl.Next);
         PreviousTrackCommand = new RelayCommand(PlaylistControl.Previous);
-        OpenTrackActionsCommand = new RelayCommand<Track>(track =>
+        OpenTrackActionsCommand = new RelayCommand<TrackRowViewModel>(row =>
         {
-            if (track == null)
+            if (row == null)
                 return;
-            ActionTarget = track;
+            _actionRow = row;
+            _playlistTargets = null;
+            ActionTarget = row.Track;
             ActiveSheet = MobileSheet.TrackActions;
         });
         ViewTrackInfoCommand = new RelayCommand(() =>
@@ -1074,13 +1112,21 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         });
         AddTrackToPlaylistCommand = new RelayCommand<SidebarItem>(async item =>
         {
-            if (ActionTarget != null && item?.Playlist != null)
-                await Main.AddTrackToPlaylist(ActionTarget, item.Playlist);
+            if (item?.Playlist is { } playlist)
+            {
+                if (_playlistTargets != null)
+                    await Main.AddTracksToPlaylist(_playlistTargets, playlist);
+                else if (ActionTarget != null)
+                    await Main.AddTrackToPlaylist(ActionTarget, playlist);
+            }
             ActiveSheet = MobileSheet.None;
         });
         CreatePlaylistCommand = new RelayCommand(async () =>
         {
-            await Main.CreatePlaylistWithTrack(ActionTarget);
+            if (_playlistTargets != null)
+                await Main.CreatePlaylistWithTracks(_playlistTargets);
+            else
+                await Main.CreatePlaylistWithTrack(ActionTarget);
             ActiveSheet = MobileSheet.None;
         });
         OpenSettingsCommand = new RelayCommand(() =>
@@ -1092,6 +1138,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         DownloadTrackCommand = new RelayCommand<TrackRowViewModel>(async row =>
         {
             if (row != null)
+                await Main.Downloads.DownloadRowAsync(row);
+        });
+        // Closes the menu first: the download runs on in the row's own icon,
+        // not in a sheet waiting on it.
+        DownloadActionTargetCommand = new RelayCommand(async () =>
+        {
+            ActiveSheet = MobileSheet.None;
+            if (_actionRow is { } row)
                 await Main.Downloads.DownloadRowAsync(row);
         });
         // Opens the confirm sheet (ConfirmDeleteFileCommand/CancelDeleteFileCommand
@@ -1125,6 +1179,23 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         DownloadAllVisibleCommand = new RelayCommand(async () =>
             await Main.Downloads.DownloadAlbumAsync(
                 DownloadAllIndicator, Main.Rows.Select(r => r.Track).ToList()));
+
+        // The album header's play and shuffle (TrackListScreenView). Both start
+        // the album the way tapping one of its rows does - the queue re-anchored
+        // to the rows on screen first - and both leave shuffle the way the
+        // button says: play is the album in order from its first track, shuffle
+        // is shuffle turned on from a random one. Through ToggleShuffle rather
+        // than the property, so the choice persists like the Now Playing toggle.
+        PlayAlbumCommand = new RelayCommand(() => PlayAlbum(shuffle: false));
+        ShuffleAlbumCommand = new RelayCommand(() => PlayAlbum(shuffle: true));
+        OpenAlbumAddToPlaylistCommand = new RelayCommand(() =>
+        {
+            if (Main.Rows.Count == 0)
+                return;
+            ActionTarget = null;
+            _playlistTargets = Main.Rows.Select(r => r.Track).ToList();
+            ActiveSheet = MobileSheet.AddToPlaylist;
+        });
 
         // Confirm-before-pairing (see ConfirmPairServerMessage) rather than
         // pairing immediately - matches desktop's ServerPickerView dialog.
