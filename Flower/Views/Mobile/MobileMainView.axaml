@@ -214,32 +214,53 @@
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
             BorderThickness="0,1,0,1"
-            Padding="16,8">
-      <Grid ColumnDefinitions="*,Auto">
+            Padding="12,4">
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <!-- The art is part of the row rather than a button of its own, so a
+             tap on it opens Now Playing like the rest of the row does - the
+             same image, from the same loader, that sheet then shows large. -->
         <Button Grid.Column="0"
                 Classes="pickerRow"
                 Command="{Binding OpenNowPlayingCommand}"
                 Padding="0"
+                HorizontalContentAlignment="Stretch"
                 VerticalContentAlignment="Center">
-          <StackPanel Spacing="1" VerticalAlignment="Center">
-            <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
-                       FontSize="15"
-                       FontWeight="Medium"
-                       TextTrimming="CharacterEllipsis" />
-            <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Artists}"
-                       FontSize="12"
-                       Opacity="0.65"
-                       TextTrimming="CharacterEllipsis" />
-          </StackPanel>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <Border Grid.Column="0"
+                    Width="40" Height="40"
+                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                    CornerRadius="4"
+                    ClipToBounds="True">
+              <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+              <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
+                         FontSize="15"
+                         FontWeight="Medium"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Artists}"
+                         FontSize="12"
+                         Opacity="0.65"
+                         TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+          </Grid>
         </Button>
         <Button Grid.Column="1"
                 Command="{Binding ToggleMiniPlayerCommand}"
                 Background="Transparent"
                 BorderThickness="0"
-                Padding="10"
+                Padding="8"
                 VerticalAlignment="Center">
           <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                       Width="28" Height="28" />
+                                       Width="26" Height="26" />
+        </Button>
+        <Button Grid.Column="2"
+                Command="{Binding NextTrackCommand}"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="8"
+                VerticalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="FastForward" Width="26" Height="26" />
         </Button>
       </Grid>
     </Border>
