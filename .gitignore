@@ -502,10 +502,12 @@ native/ffmpeg/ios/ffmpeg/
 native/ffmpeg/android/ffmpeg/
 native/ffmpeg/windows/ffmpeg/
 
-# The FFAudio.NET package switch, written by scripts/use-ffaudio-package.sh so
-# Flower can be built against a CI-built package instead of its own copy of the
-# façade. A local testing state, not a fact about the repo.
-FFAudioPackage.props
+# Which FFAudio.NET package a particular machine is pointed at, written by
+# scripts/use-ffaudio-package.sh: a version and a local feed path, both facts
+# about one developer's disk rather than about the repo. The switch it drives
+# is FFAudioPackage.props, which is tracked - see its own header for why the
+# two are separate files.
+FFAudioPackage.local.props
 
 ##
 ## What `docker compose up` writes beside the compose files. The base file binds
