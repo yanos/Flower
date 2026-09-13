@@ -10,7 +10,8 @@
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.MobileMainView"
-             x:DataType="vm:MobileMainViewModel">
+             x:DataType="vm:MobileMainViewModel"
+             Background="{DynamicResource AppBackgroundBrush}">
 
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
@@ -129,7 +130,7 @@
     </Style>
   </UserControl.Styles>
 
-  <Grid RowDefinitions="*,Auto,Auto">
+  <Grid x:Name="Root" RowDefinitions="*,Auto,Auto">
 
     <!-- Content -->
     <Grid Grid.Row="0">
@@ -266,11 +267,17 @@
     </Border>
 
     <!-- Bottom tab bar - Recently Added first/leftmost, matching it being the
-         app's default/home tab (see MobileMainViewModel._selectedTab). -->
-    <Grid Grid.Row="2"
-          ColumnDefinitions="*,*,*,*,*,*"
+         app's default/home tab (see MobileMainViewModel._selectedTab).
+         The Border rather than the Grid carries the bar's colour so it can run
+         down behind the home indicator: MobileMainView.axaml.cs hands it the
+         bottom safe-area inset as Padding, which keeps the 60px of buttons
+         clear of the indicator while the grey reaches the edge of the screen. -->
+    <Border x:Name="TabBar"
+            Grid.Row="2"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+    <Grid ColumnDefinitions="*,*,*,*,*,*"
           Height="60"
-          Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+          Margin="12,0">
       <Button Grid.Column="0" Classes="tab"
               Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=RecentlyAdded}"
               Command="{Binding SelectTabCommand}" CommandParameter="RecentlyAdded"
@@ -327,6 +334,7 @@
         </StackPanel>
       </Button>
     </Grid>
+    </Border>
 
     <!-- Every sheet slides rather than blinking in and out - see SlidingSheet,
          which is why these take IsOpen instead of an IsVisible binding (the
