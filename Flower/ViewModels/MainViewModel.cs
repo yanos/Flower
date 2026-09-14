@@ -1562,7 +1562,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.History, "History", MaterialIconKind.ClockTimeEightOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Songs,   "Songs",   MaterialIconKind.Music));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Albums,  "Albums",  MaterialIconKind.Album));
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Artists, "Artists", MaterialIconKind.AccountMusic));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Artists, "Artists", MaterialIconKind.Account));
 
         if (Library.Playlists.Count > 0)
         {

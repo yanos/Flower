@@ -58,9 +58,10 @@
     </Style>
     <!-- The tabs take Button.pill (Styles/IconButtons.axaml) for its round
          press highlight, which fits the oval they sit in. This style is
-         nearer, so it makes each one a square as tall as the oval's inside
-         (64 less its 1px border, top and bottom) - a circle, then, rather than
-         a stadium as wide as its column - centred in its column, with the
+         nearer, so it makes each one a 58px square, a little short of the
+         oval's inside (64 less its 1px border, top and bottom) so the
+         highlight sits clear of the rim - a circle, then, rather than a
+         stadium as wide as its column - centred in its column, with the
          icon and label centred in it and no padding pushing them off.
          The tab showing is marked .current rather than .selected:
          Button.pill.selected tints its icon with the accent, which suits the
@@ -68,8 +69,8 @@
          reach. -->
     <Style Selector="Button.tab">
       <Setter Property="Opacity" Value="0.55" />
-      <Setter Property="Width" Value="62" />
-      <Setter Property="Height" Value="62" />
+      <Setter Property="Width" Value="58" />
+      <Setter Property="Height" Value="58" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Center" />
       <Setter Property="VerticalAlignment" Value="Center" />
@@ -393,7 +394,7 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Artists}"
               Command="{Binding SelectTabCommand}" CommandParameter="Artists">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="AccountMusic" Width="22" Height="22" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="Account" Width="22" Height="22" HorizontalAlignment="Center" />
           <TextBlock Text="Artists" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>

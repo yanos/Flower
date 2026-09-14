@@ -37,7 +37,7 @@
            button download-all always was - the screen-wide indicator and
            command, so it spins while the batch runs and leaves once there is
            nothing left to fetch - and the other three act on the same rows it
-           does. Play comes first, ringed like Now Playing's (Button.pill.circle) and
+           does. Play comes first, a bare glyph in a round button of its own,
            standing apart from the pill: it is what the actions are for. Download goes last because it is the one that
            leaves, so nothing shifts when it does. All of them are reached through the screen's DataContext,
            since this template's own is the album tile.
@@ -47,7 +47,7 @@
            screens are hosted inside that view. Centred under the art, ranged
            left beside it (.albumText styles). Drawn a fifth larger than the
            floating pill's own 40px: 24px glyphs in 44px buttons, 48 tall, and
-           play's circle 48 across to match. -->
+           play's round button 48 across to match. -->
       <DataTemplate x:Key="AlbumTextTemplate" x:DataType="vm:AlbumTileViewModel">
         <StackPanel Spacing="2" Classes.dimmed="{Binding IsUnavailable}">
           <TextBlock Classes="albumName"
@@ -62,11 +62,9 @@
                      IsVisible="{Binding RepresentativeTrack.Year, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}" />
           <StackPanel Classes="albumActions" Orientation="Horizontal" Spacing="10" Margin="0,12,0,0">
             <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
-              <Button Classes="pill circle" Padding="3" HorizontalAlignment="Center"
+              <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
                       Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).PlayAlbumCommand}">
-                <Border Classes="ring" Padding="5.5">
-                  <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" />
-                </Border>
+                <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" />
               </Button>
             </Border>
             <Border Classes="floating" Height="48" CornerRadius="24" Padding="2,0">
