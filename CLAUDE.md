@@ -79,8 +79,8 @@ yet, and their absence is not a problem to fix. See `docs/agents/domain.md`.
 dotnet build Flower.Desktop/Flower.Desktop.csproj                               # Windows/Linux head
 dotnet build Flower.MacOS/Flower.MacOS.csproj                                   # macOS head, needs `sudo dotnet workload install macos`
 dotnet run --project Flower.MacOS/Flower.MacOS.csproj                           # launches it — or just hit Run in the IDE, see below
-dotnet test Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
-dotnet test Flower.Tests/Flower.Tests.csproj                                    # full run, needs ffaudio built
+dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
+dotnet test Tests/Flower.Tests/Flower.Tests.csproj                                    # full run, needs ffaudio built
 dotnet run --project Flower.Server                                              # server + its browser UI
 ```
 
@@ -125,7 +125,7 @@ lsof -nP -iTCP -sTCP:LISTEN | grep -i flower   # expect no output
 Also pass `--Flower:DataDirectory=<scratch>` to anything throwaway, so a test
 instance never writes to `~/Library/Application Support/Flower/Server`.
 
-`Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `FfmpegTrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no native decoder), real-decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresFfmpeg`, need the façade built same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
+`Tests/Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `FfmpegTrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no native decoder), real-decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresFfmpeg`, need the façade built same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Tests/Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
 
 `GaplessCoordinator` used to give the armed (decode-ahead) role its own independent LibVLC core, because two `MediaPlayer`s sharing one core silently dropped `OnDrain`/`EndReached` under real decode load. That went out with LibVLC — two `FfmpegTrackDecoder`s share nothing to contend over. The bug that fix exposed did not: a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`, and still what `GaplessCoordinatorRealDecodeTests`' class comment is about.
 
@@ -133,7 +133,7 @@ Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is drive
 
 ## Device Checks
 
-`Flower.DeviceChecks/` answers one question — *does this platform actually turn
+`Tests/Flower.DeviceChecks/` answers one question — *does this platform actually turn
 a track into the right audio?* — on the platform in question rather than on a
 developer's Mac. `DecodeChecks.RunAll()` decodes a synthetic WAV from disk and
 over a loopback HTTP server, and compares the result to the fixture's own
@@ -170,7 +170,7 @@ So the checks carry no test framework, no `HttpListener` (iOS has none — hence
 about the samples:
 
 ```bash
-dotnet test Flower.Tests/Flower.Tests.csproj --filter FullyQualifiedName~DeviceChecksTests  # here
+dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter FullyQualifiedName~DeviceChecksTests  # here
 scripts/ios-device-checks.sh                                                                # iOS Simulator
 scripts/android-device-checks.sh                                                            # Android emulator
 ```
@@ -294,10 +294,10 @@ side.
 | `Flower.MacOS/` | macOS entry point — `net10.0-macos`, so AVKit/AppKit are reachable (needs the `macos` workload) |
 | `Flower.Android/` | Android entry point |
 | `Flower.iOS/` | iOS entry point |
-| `Flower.Tests/` | xUnit tests for the shared library |
-| `Flower.DeviceChecks/` | Functional decode checks that run on any platform, phone included |
-| `Flower.DeviceChecks.iOS/` | iOS head that runs them on a simulator or a device |
-| `Flower.DeviceChecks.Android/` | Android head that runs them on an emulator or a device |
+| `Tests/Flower.Tests/` | xUnit tests for the shared library |
+| `Tests/Flower.DeviceChecks/` | Functional decode checks that run on any platform, phone included |
+| `Tests/Flower.DeviceChecks.iOS/` | iOS head that runs them on a simulator or a device |
+| `Tests/Flower.DeviceChecks.Android/` | Android head that runs them on an emulator or a device |
 
 All meaningful code lives in `Flower/`.
 
