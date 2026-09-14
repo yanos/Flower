@@ -15,6 +15,8 @@
 
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
+    <!-- Replaced from the code-behind as BottomChrome's height changes. -->
+    <Thickness x:Key="BottomChromeInset">0,0,0,100</Thickness>
     <conv:EqualsConverter x:Key="EqualsConverter" />
   </UserControl.Resources>
 
@@ -54,11 +56,39 @@
     <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
+    <!-- The tabs take Button.pill (Styles/IconButtons.axaml) for its round
+         press highlight, which fits the oval they sit in. This style is
+         nearer, so it makes each one a square as tall as the oval's inside
+         (64 less its 1px border, top and bottom) - a circle, then, rather than
+         a stadium as wide as its column - centred in its column, with the
+         icon and label centred in it and no padding pushing them off.
+         The tab showing is marked .current rather than .selected:
+         Button.pill.selected tints its icon with the accent, which suits the
+         search button but not a tab, whose label and Songs note it cannot
+         reach. -->
     <Style Selector="Button.tab">
       <Setter Property="Opacity" Value="0.55" />
+      <Setter Property="Width" Value="62" />
+      <Setter Property="Height" Value="62" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
-    <Style Selector="Button.tab.selected">
+    <Style Selector="Button.tab.current">
       <Setter Property="Opacity" Value="1" />
+    </Style>
+    <!-- The mini player and the tab oval float over the bottom of the screens
+         (BottomChrome below), so every screen's scroller keeps that much room
+         past its last item - enough to bring it up clear of them, while the
+         list still runs behind them on the way. BottomChromeInset follows
+         their height from the code-behind: the mini player comes and goes. A
+         ListBox's Padding is the margin of its items inside its own scroller,
+         so it is the ListBox that takes it rather than its templated
+         ScrollViewer. -->
+    <Style Selector="ScrollViewer.screenScroll, ListBox.screenScroll">
+      <Setter Property="Padding" Value="{DynamicResource BottomChromeInset}" />
     </Style>
     <!-- Border.floating and Button.pill, the floating controls over the top of
          the screens, are app-wide now: Styles/IconButtons.axaml. -->
@@ -134,8 +164,8 @@
 
   <Grid x:Name="Root" RowDefinitions="*,Auto,Auto">
 
-    <!-- Content -->
-    <Grid Grid.Row="0">
+    <!-- Content - the full height, under the mini player and tab oval too -->
+    <Grid Grid.Row="0" Grid.RowSpan="3">
 
       <!-- Swipe-back navigation feature, final stage: the 7 IsVisible-
            toggled screen siblings Stage 1 introduced are owned by
@@ -231,9 +261,19 @@
       </Grid>
     </Grid>
 
+    <!-- The mini player over the tab oval, both floating over the bottom of
+         the screens rather than taking rows of their own, so a list scrolls on
+         behind and around them. No Background on the stack, so the gap between
+         the two passes touches through to the list. The screens' scrollers
+         keep their height clear past the end - see screenScroll above. -->
+    <StackPanel x:Name="BottomChrome"
+                Grid.Row="0" Grid.RowSpan="3"
+                VerticalAlignment="Bottom"
+                Spacing="8"
+                SizeChanged="BottomChrome_SizeChanged">
+
     <!-- Mini player -->
-    <Border Grid.Row="1"
-            IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+    <Border IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
             BorderThickness="0,1,0,1"
@@ -288,31 +328,30 @@
       </Grid>
     </Border>
 
-    <!-- Bottom tab bar - Recently Added first/leftmost, matching it being the
-         app's default/home tab (see MobileMainViewModel._selectedTab).
-         The Border rather than the Grid carries the bar's colour so it can run
-         down behind the home indicator: MobileMainView.axaml.cs hands it the
-         bottom safe-area inset as Padding, which keeps the 60px of buttons
-         clear of the indicator while the grey reaches the edge of the screen. -->
+    <!-- Tab oval - Recently Added first/leftmost, matching it being the app's
+         default/home tab (see MobileMainViewModel._selectedTab). The same
+         floating look as the back button and the search/settings pill, drawn
+         taller to fit a label under each icon. Its bottom margin comes from
+         the safe area (MobileMainView.axaml.cs), which lifts it off the home
+         indicator. -->
     <Border x:Name="TabBar"
-            Grid.Row="2"
-            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
-    <Grid ColumnDefinitions="*,*,*,*,*"
-          Height="60"
-          Margin="12,0">
-      <Button Grid.Column="0" Classes="tab"
-              Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=RecentlyAdded}"
-              Command="{Binding SelectTabCommand}" CommandParameter="RecentlyAdded"
-              Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
+            Classes="floating"
+            Height="64"
+            CornerRadius="32"
+            Margin="16,0"
+            Padding="4,0">
+    <Grid ColumnDefinitions="*,*,*,*,*">
+      <Button Grid.Column="0" Classes="pill tab"
+              Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=RecentlyAdded}"
+              Command="{Binding SelectTabCommand}" CommandParameter="RecentlyAdded">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <materialIcons:MaterialIcon Kind="ClockPlusOutline" Width="22" Height="22" HorizontalAlignment="Center" />
           <TextBlock Text="Recent" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
-      <Button Grid.Column="1" Classes="tab"
-              Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Songs}"
-              Command="{Binding SelectTabCommand}" CommandParameter="Songs"
-              Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
+      <Button Grid.Column="1" Classes="pill tab"
+              Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Songs}"
+              Command="{Binding SelectTabCommand}" CommandParameter="Songs">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <!-- The placeholder art's two-stemmed note (AlbumArtPlaceholder's ♫).
                Material's Music icon is that note with stubby stems, so this is
@@ -325,28 +364,25 @@
           <TextBlock x:Name="SongsLabel" Text="Songs" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
-      <Button Grid.Column="2" Classes="tab"
-              Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Albums}"
-              Command="{Binding SelectTabCommand}" CommandParameter="Albums"
-              Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
+      <Button Grid.Column="2" Classes="pill tab"
+              Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Albums}"
+              Command="{Binding SelectTabCommand}" CommandParameter="Albums">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <materialIcons:MaterialIcon Kind="Album" Width="22" Height="22" HorizontalAlignment="Center" />
           <TextBlock Text="Albums" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
-      <Button Grid.Column="3" Classes="tab"
-              Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Artists}"
-              Command="{Binding SelectTabCommand}" CommandParameter="Artists"
-              Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
+      <Button Grid.Column="3" Classes="pill tab"
+              Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Artists}"
+              Command="{Binding SelectTabCommand}" CommandParameter="Artists">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <materialIcons:MaterialIcon Kind="AccountMusic" Width="22" Height="22" HorizontalAlignment="Center" />
           <TextBlock Text="Artists" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
-      <Button Grid.Column="4" Classes="tab"
-              Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Playlists}"
-              Command="{Binding SelectTabCommand}" CommandParameter="Playlists"
-              Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch">
+      <Button Grid.Column="4" Classes="pill tab"
+              Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Playlists}"
+              Command="{Binding SelectTabCommand}" CommandParameter="Playlists">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" HorizontalAlignment="Center" />
           <TextBlock Text="Playlists" FontSize="11" HorizontalAlignment="Center" />
@@ -354,6 +390,7 @@
       </Button>
     </Grid>
     </Border>
+    </StackPanel>
 
     <!-- Every sheet slides rather than blinking in and out - see SlidingSheet,
          which is why these take IsOpen instead of an IsVisible binding (the

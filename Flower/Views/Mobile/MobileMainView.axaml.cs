@@ -32,6 +32,17 @@ public partial class MobileMainView : UserControl
         BackPill.IsVisible = DataContext is MobileMainViewModel { CanGoBack: true };
 
     private const double TabBarInsetOverlap = 14;
+    private const double TabBarMinimumBottomMargin = 12;
+
+    // Past the top of the mini player, so a list's last row comes to rest a
+    // little above it rather than touching it.
+    private const double BottomChromeClearance = 8;
+
+    // The screens' scrollers leave this much room past their last item (the
+    // screenScroll style), which has to follow the floating stack's height as
+    // the mini player appears and the safe area changes.
+    private void BottomChrome_SizeChanged(object? sender, SizeChangedEventArgs e) =>
+        Resources["BottomChromeInset"] = new Thickness(0, 0, 0, e.NewSize.Height + BottomChromeClearance);
 
     private IInsetsManager? _insets;
 
@@ -81,9 +92,10 @@ public partial class MobileMainView : UserControl
     {
         Padding = new Thickness(safeArea.Left, safeArea.Top, safeArea.Right, 0);
         // Not the whole bottom inset: the home indicator is a thin line at the
-        // very bottom of that inset, so the buttons can come most of the way
-        // down into it before they crowd it.
-        TabBar.Padding = new Thickness(0, 0, 0, Math.Max(0, safeArea.Bottom - TabBarInsetOverlap));
+        // very bottom of that inset, so the oval can come most of the way down
+        // into it before it crowds it. On a phone with no inset at all it
+        // still floats clear of the edge.
+        TabBar.Margin = new Thickness(16, 0, 16, Math.Max(TabBarMinimumBottomMargin, safeArea.Bottom - TabBarInsetOverlap));
 
         foreach (var child in Root.Children)
         {

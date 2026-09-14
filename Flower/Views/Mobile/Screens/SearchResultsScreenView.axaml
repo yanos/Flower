@@ -21,7 +21,7 @@
        ScrollViewer+StackPanel rather than TrackListScreenView's virtualized
        ListBox - search results are bounded by the query, not the whole
        library, so virtualization isn't worth the extra complexity here. -->
-  <ScrollViewer controls:RubberBandScroll.IsEnabled="True">
+  <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
     <StackPanel>
       <StackPanel IsVisible="{Binding HasSearchArtistResults}">
         <TextBlock Text="Artists" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />

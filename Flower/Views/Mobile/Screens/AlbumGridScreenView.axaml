@@ -11,7 +11,7 @@
        than by-recency - AlbumGridBuilder groups by Album name alone to match
        desktop's existing Albums sidebar logic. Tapping a tile reuses the
        plain-text picker's own SelectAlbumOrArtistCommand. -->
-  <ScrollViewer controls:RubberBandScroll.IsEnabled="True">
+  <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
     <ItemsControl ItemsSource="{Binding AlbumGridRows}"
                   Margin="12,12,0,12"
                   controls:AlbumGridColumnSizing.IsEnabled="True">

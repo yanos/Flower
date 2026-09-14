@@ -8,7 +8,7 @@
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Artist name picker -->
-  <ListBox Background="Transparent"
+  <ListBox Classes="screenScroll" Background="Transparent"
            ItemsSource="{Binding Main.SubListItems}"
            controls:RubberBandScroll.IsEnabled="True"
            SelectionMode="Single">

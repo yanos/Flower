@@ -207,7 +207,7 @@
            navigate generally, not just within an album (the same bug, in the
            same shape, that motivated AlbumDetailRows in the first place - see
            TrackListScreenView.axaml.cs's ObserveLive/Freeze). -->
-      <ScrollViewer Grid.Column="1" controls:RubberBandScroll.IsEnabled="True">
+      <ScrollViewer Grid.Column="1" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
         <StackPanel>
           <ContentControl IsVisible="{Binding !#Root.IsWideAlbumLayout}"
                           Content="{Binding #Root.DisplayHeader}"
@@ -229,7 +229,7 @@
     <!-- Songs (flat)/playlist mode: unchanged virtualized ListBox, still
          backing DragHandle_PointerPressed/etc.'s TrackListBox references
          for playlist drag-to-reorder. -->
-    <ListBox IsVisible="{Binding !#Root.IsAlbumMode}"
+    <ListBox Classes="screenScroll" IsVisible="{Binding !#Root.IsAlbumMode}"
               x:Name="TrackListBox"
               Background="Transparent"
               ItemsSource="{Binding #Root.DisplayRows}"

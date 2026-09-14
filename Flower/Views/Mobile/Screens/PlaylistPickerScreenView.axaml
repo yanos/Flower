@@ -9,7 +9,7 @@
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Playlist picker -->
-  <ListBox Background="Transparent"
+  <ListBox Classes="screenScroll" Background="Transparent"
            ItemsSource="{Binding PlaylistPickerItems}"
            controls:RubberBandScroll.IsEnabled="True"
            SelectionMode="Single">
