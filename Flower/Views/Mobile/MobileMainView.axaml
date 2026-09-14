@@ -272,12 +272,23 @@
                 Spacing="8"
                 SizeChanged="BottomChrome_SizeChanged">
 
-    <!-- Mini player -->
-    <Border IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
-            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-            BorderThickness="0,1,0,1"
-            Padding="12,4">
+    <!-- Mini player - an oval of its own, the same floating look as the tabs
+         under it but running 97% of the width between the margins, where the
+         tab oval takes 85% of it: the longer shape over the shorter one. Its
+         art is round to sit in the oval's rounded end. The star columns
+         centre it at 97% of the width between its margins, and pass touches
+         either side through to the list, as the tab oval's do. Both ovals take a
+         shadow with no offset, rather than the floating pill's downward one, so
+         it rings the whole oval over the list scrolling behind it. -->
+    <Grid IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+          Margin="12,0"
+          ColumnDefinitions="3*,194*,3*">
+    <Border Grid.Column="1"
+            Classes="floating"
+            Height="56"
+            BoxShadow="0 0 16 1.6 #4D000000"
+            CornerRadius="28"
+            Padding="8,0,6,0">
       <Grid ColumnDefinitions="*,Auto,Auto">
         <!-- The art is part of the row rather than a button of its own, so a
              tap on it opens Now Playing like the rest of the row does - the
@@ -292,7 +303,7 @@
             <Border Grid.Column="0"
                     Width="40" Height="40"
                     Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-                    CornerRadius="4"
+                    CornerRadius="20"
                     ClipToBounds="True">
               <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
             </Border>
@@ -309,24 +320,23 @@
           </Grid>
         </Button>
         <Button Grid.Column="1"
+                Classes="pill"
                 Command="{Binding ToggleMiniPlayerCommand}"
-                Background="Transparent"
-                BorderThickness="0"
                 Padding="8"
                 VerticalAlignment="Center">
           <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
                                        Width="26" Height="26" />
         </Button>
         <Button Grid.Column="2"
+                Classes="pill"
                 Command="{Binding NextTrackCommand}"
-                Background="Transparent"
-                BorderThickness="0"
                 Padding="8"
                 VerticalAlignment="Center">
           <materialIcons:MaterialIcon Kind="FastForward" Width="26" Height="26" />
         </Button>
       </Grid>
     </Border>
+    </Grid>
 
     <!-- Tab oval - Recently Added first/leftmost, matching it being the app's
          default/home tab (see MobileMainViewModel._selectedTab). The same
@@ -342,6 +352,7 @@
     <Border Grid.Column="1"
             Classes="floating"
             Height="64"
+            BoxShadow="0 0 16 1.6 #4D000000"
             CornerRadius="32"
             Padding="4,0">
     <Grid ColumnDefinitions="*,*,*,*,*">
