@@ -32,12 +32,13 @@
       </DataTemplate>
 
       <!-- Under the name, artist and year, a pill of the album's own actions:
-           play, shuffle, add to playlist, download. The download is the same
+           play, shuffle, add to playlist, download - play on a round button
+           of its own, the other three grouped in a pill beside it. The download is the same
            button download-all always was - the screen-wide indicator and
            command, so it spins while the batch runs and leaves once there is
            nothing left to fetch - and the other three act on the same rows it
-           does. Play comes first, ringed like Now Playing's (Button.pill.circle): it is
-           what the group is for. Download goes last because it is the one that
+           does. Play comes first, ringed like Now Playing's (Button.pill.circle) and
+           standing apart from the pill: it is what the actions are for. Download goes last because it is the one that
            leaves, so nothing shifts when it does. All of them are reached through the screen's DataContext,
            since this template's own is the album tile.
 
@@ -45,7 +46,8 @@
            (Border.floating, Button.pill), which reaches here because the
            screens are hosted inside that view. Centred under the art, ranged
            left beside it (.albumText styles). Drawn a fifth larger than the
-           floating pill's own 40px: 24px glyphs in 44px buttons, 48 tall. -->
+           floating pill's own 40px: 24px glyphs in 44px buttons, 48 tall, and
+           play's circle 48 across to match. -->
       <DataTemplate x:Key="AlbumTextTemplate" x:DataType="vm:AlbumTileViewModel">
         <StackPanel Spacing="2" Classes.dimmed="{Binding IsUnavailable}">
           <TextBlock Text="{Binding Name}"
@@ -57,33 +59,37 @@
           <TextBlock Text="{Binding RepresentativeTrack.Year}"
                      FontSize="13" Opacity="0.5"
                      IsVisible="{Binding RepresentativeTrack.Year, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}" />
-          <Border Classes="floating albumActions" Height="48" CornerRadius="24" Padding="2,0" Margin="0,12,0,0">
-            <StackPanel Orientation="Horizontal">
-              <Button Classes="pill circle" Padding="3"
+          <StackPanel Classes="albumActions" Orientation="Horizontal" Spacing="10" Margin="0,12,0,0">
+            <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
+              <Button Classes="pill circle" Padding="3" HorizontalAlignment="Center"
                       Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).PlayAlbumCommand}">
                 <Border Classes="ring" Padding="5.5">
                   <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" />
                 </Border>
               </Button>
-              <Button Classes="pill" Padding="10"
-                      Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShuffleAlbumCommand}">
-                <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24" />
-              </Button>
-              <Button Classes="pill" Padding="10"
-                      Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).OpenAlbumAddToPlaylistCommand}">
-                <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="24" Height="24" />
-              </Button>
-              <!-- Its own IsVisible is the indicator's answer, so the server
-                   gate goes on a wrapper - the two are different questions. -->
-              <Panel IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">
-                <controls:TrackDownloadButton DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllIndicator}"
-                                              IconSize="24"
-                                              IconPadding="10"
-                                              Label="Download album"
-                                              Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
-              </Panel>
-            </StackPanel>
-          </Border>
+            </Border>
+            <Border Classes="floating" Height="48" CornerRadius="24" Padding="2,0">
+              <StackPanel Orientation="Horizontal">
+                <Button Classes="pill" Padding="10"
+                        Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShuffleAlbumCommand}">
+                  <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24" />
+                </Button>
+                <Button Classes="pill" Padding="10"
+                        Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).OpenAlbumAddToPlaylistCommand}">
+                  <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="24" Height="24" />
+                </Button>
+                <!-- Its own IsVisible is the indicator's answer, so the server
+                     gate goes on a wrapper - the two are different questions. -->
+                <Panel IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">
+                  <controls:TrackDownloadButton DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllIndicator}"
+                                                IconSize="24"
+                                                IconPadding="10"
+                                                Label="Download album"
+                                                Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
+                </Panel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
         </StackPanel>
       </DataTemplate>
     </ResourceDictionary>
@@ -114,10 +120,10 @@
     <Style Selector="ContentControl.albumText.beside TextBlock">
       <Setter Property="TextAlignment" Value="Left" />
     </Style>
-    <Style Selector="ContentControl.albumText Border.albumActions">
+    <Style Selector="ContentControl.albumText StackPanel.albumActions">
       <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
-    <Style Selector="ContentControl.albumText.beside Border.albumActions">
+    <Style Selector="ContentControl.albumText.beside StackPanel.albumActions">
       <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
     <Style Selector="ContentControl.albumText.beside">

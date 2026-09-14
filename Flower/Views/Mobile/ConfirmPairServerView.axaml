@@ -35,7 +35,7 @@
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             CornerRadius="12,12,0,0"
             Padding="20,20,20,28">
-      <StackPanel Spacing="14">
+      <StackPanel Spacing="14" Margin="{DynamicResource SheetBottomInset}">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <materialIcons:MaterialIcon Kind="Sync" Width="24" Height="24" />
           <TextBlock Text="{Binding ConfirmPairServerTitle}"

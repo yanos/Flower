@@ -16,7 +16,9 @@
       <DataTemplate x:DataType="system:String">
         <Button Classes="pickerRow"
                 Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistCommand}"
-                CommandParameter="{Binding}">
+                CommandParameter="{Binding}"
+                controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}"
+                controls:LongPress.CommandParameter="{Binding}">
           <TextBlock Text="{Binding}" FontSize="16" TextTrimming="CharacterEllipsis" />
         </Button>
       </DataTemplate>

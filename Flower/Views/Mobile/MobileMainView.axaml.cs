@@ -2,6 +2,8 @@ using System;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.LogicalTree;
+using System.Linq;
 using Avalonia.Controls.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml.MarkupExtensions;
@@ -97,10 +99,18 @@ public partial class MobileMainView : UserControl
         // still floats clear of the edge.
         TabBar.Margin = new Thickness(16, 0, 16, Math.Max(TabBarMinimumBottomMargin, safeArea.Bottom - TabBarInsetOverlap));
 
+        // A card's background runs down to the very bottom edge, under the
+        // home indicator, and only what is on it keeps clear of the inset -
+        // SheetBottomInset, which each card puts on its content. A sheet with
+        // no card is a whole screen, and still stops above the inset.
+        Resources["SheetBottomInset"] = new Thickness(0, 0, 0, safeArea.Bottom);
         foreach (var child in Root.Children)
         {
             if (child is SlidingSheet sheet)
-                sheet.Margin = new Thickness(0, 0, 0, safeArea.Bottom);
+            {
+                var hasCard = sheet.GetLogicalDescendants().OfType<Control>().Any(SlidingSheet.GetIsCard);
+                sheet.Margin = new Thickness(0, 0, 0, hasCard ? 0 : safeArea.Bottom);
+            }
         }
     }
 

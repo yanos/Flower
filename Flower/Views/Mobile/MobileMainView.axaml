@@ -432,6 +432,12 @@
                             IsOpen="{Binding IsShowingTrackActions}">
       <views:TrackActionsView />
     </controls:SlidingSheet>
+    <!-- The album menu, from a long press on a cover in any album grid -->
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingAlbumActions}">
+      <views:AlbumActionsView />
+    </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingTrackInfo}">

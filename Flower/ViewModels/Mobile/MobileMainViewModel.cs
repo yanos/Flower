@@ -38,7 +38,7 @@ public enum MobileNavigationTransition { None, FromRight, FromLeft }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, TrackInfo, AddToPlaylist, Settings, ConfirmPairServer, ConfirmDeleteFile }
+public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, ConfirmPairServer, ConfirmDeleteFile }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -158,6 +158,12 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand PlayAlbumCommand { get; }
     public ICommand ShuffleAlbumCommand { get; }
     public ICommand OpenAlbumAddToPlaylistCommand { get; }
+    public ICommand OpenAlbumActionsCommand { get; }
+    public ICommand OpenArtistActionsCommand { get; }
+    public ICommand PlayAlbumActionTargetCommand { get; }
+    public ICommand ShuffleAlbumActionTargetCommand { get; }
+    public ICommand AddAlbumActionTargetToPlaylistCommand { get; }
+    public ICommand DownloadAlbumActionTargetCommand { get; }
     public ICommand PairWithServerCommand { get; }
     public ICommand UnpairServerCommand { get; }
 
@@ -563,6 +569,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (value == MobileSheet.None)
             {
                 ActionTarget = null;
+                AlbumActionTarget = null;
                 _playlistTargets = null;
             }
             if (value == MobileSheet.NowPlaying)
@@ -576,6 +583,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsShowingNowPlaying));
             OnPropertyChanged(nameof(IsShowingTrackActions));
+            OnPropertyChanged(nameof(IsShowingAlbumActions));
             OnPropertyChanged(nameof(IsShowingTrackInfo));
             OnPropertyChanged(nameof(IsShowingAddToPlaylist));
             OnPropertyChanged(nameof(IsShowingSettings));
@@ -639,6 +647,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         }
     }
     public bool IsShowingTrackActions => ActiveSheet == MobileSheet.TrackActions;
+    public bool IsShowingAlbumActions => ActiveSheet == MobileSheet.AlbumActions;
     public bool IsShowingTrackInfo => ActiveSheet == MobileSheet.TrackInfo;
     public bool IsShowingAddToPlaylist => ActiveSheet == MobileSheet.AddToPlaylist;
     public bool IsShowingSettings => ActiveSheet == MobileSheet.Settings;
@@ -752,6 +761,80 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // own icon spins (TrackDownloadRunner.DownloadRowAsync).
     private TrackRowViewModel? _actionRow;
 
+    // Read by the menu's header for the row's art; ActionTarget's setter
+    // raises its change, since the two are always set together.
+    public TrackRowViewModel? ActionRow => _actionRow;
+
+    // The album tile a long press on a grid's cover opened the album menu
+    // from (AlbumActionsView). The tile rather than its tracks, because the
+    // menu's header shows its art and name and its Download spins the tile's
+    // own indicator, the one under that cover in the grid.
+    private AlbumTileViewModel? _albumActionTarget;
+    public AlbumTileViewModel? AlbumActionTarget
+    {
+        get => _albumActionTarget;
+        private set
+        {
+            _albumActionTarget = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanDownloadAlbumActionTarget));
+        }
+    }
+
+    // Shown when the album's own download button would be: something in it
+    // to fetch, from a server that is there to fetch it from.
+    public bool CanDownloadAlbumActionTarget =>
+        AlbumActionTarget?.IsDownloadable == true && Main.CanForceSync;
+
+    // A tile's tracks come in library order, so they are put in the album's
+    // own before anything plays them - the order its track list shows. An
+    // artist's stand-in tile holds several albums, which play one after
+    // another in the order their grid shows them.
+    private static List<Track> InAlbumOrder(AlbumTileViewModel tile) =>
+        tile.Tracks.OrderBy(t => t.Album).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber).ToList();
+
+    // The album menu for an artist's name: a tile standing for everything of
+    // theirs, built on the spot since the name list has none. Its art is their
+    // most recently added album's, and where an album's artist would go it
+    // says how much there is.
+    private AlbumTileViewModel? BuildArtistTile(string artist)
+    {
+        var tracks = Main.Library.Tracks.Where(t => t.Artists == artist).ToList();
+        if (tracks.Count == 0)
+            return null;
+
+        var albums = tracks.Select(t => t.Album).Distinct().Count();
+        var tile = new AlbumTileViewModel
+        {
+            Name = artist,
+            Artist = $"{albums} {(albums == 1 ? "album" : "albums")} · {tracks.Count} {(tracks.Count == 1 ? "song" : "songs")}",
+            RepresentativeTrack = tracks.MaxBy(t => t.DateAdded)!,
+            MostRecentlyAdded = tracks.Max(t => t.DateAdded),
+            Tracks = tracks,
+        };
+        TrackAvailability.Apply([tile], Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+        return tile;
+    }
+
+    // PlayAlbum's counterpart for an album that is not the screen showing:
+    // the queue is the album rather than the rows on screen.
+    private void PlayAlbumActionTarget(bool shuffle)
+    {
+        var tile = AlbumActionTarget;
+        ActiveSheet = MobileSheet.None;
+        if (tile == null)
+            return;
+        var tracks = InAlbumOrder(tile);
+        if (tracks.Count == 0)
+            return;
+        if (PlaylistControl.IsShuffleEnabled != shuffle)
+            PlaylistControl.ToggleShuffle();
+
+        var index = shuffle ? Random.Shared.Next(tracks.Count) : 0;
+        Main.SetPlayQueue(tracks);
+        PlaylistControl.Play(tracks[index], index);
+    }
+
     // What the Add to Playlist sheet adds when it was opened from an album's
     // own actions rather than from one track's menu: the whole album. Null
     // otherwise, and cleared with the sheet, so the sheet falls back to
@@ -767,6 +850,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         {
             _actionTarget = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(ActionRow));
             OnPropertyChanged(nameof(CanDeleteDownloadedFile));
             OnPropertyChanged(nameof(CanDownloadActionTarget));
             OnPropertyChanged(nameof(IsRecoverableDownload));
@@ -1096,6 +1180,39 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             _playlistTargets = null;
             ActionTarget = row.Track;
             ActiveSheet = MobileSheet.TrackActions;
+        });
+        OpenAlbumActionsCommand = new RelayCommand<AlbumTileViewModel>(tile =>
+        {
+            if (tile == null)
+                return;
+            _playlistTargets = null;
+            ActionTarget = null;
+            AlbumActionTarget = tile;
+            ActiveSheet = MobileSheet.AlbumActions;
+        });
+        OpenArtistActionsCommand = new RelayCommand<string>(artist =>
+        {
+            if (artist == null || BuildArtistTile(artist) is not { } tile)
+                return;
+            OpenAlbumActionsCommand.Execute(tile);
+        });
+        PlayAlbumActionTargetCommand = new RelayCommand(() => PlayAlbumActionTarget(shuffle: false));
+        ShuffleAlbumActionTargetCommand = new RelayCommand(() => PlayAlbumActionTarget(shuffle: true));
+        AddAlbumActionTargetToPlaylistCommand = new RelayCommand(() =>
+        {
+            if (AlbumActionTarget is not { } tile)
+                return;
+            _playlistTargets = InAlbumOrder(tile);
+            ActiveSheet = MobileSheet.AddToPlaylist;
+        });
+        // Closes the menu first, like the track menu's Download: the batch
+        // runs on in the tile's own indicator.
+        DownloadAlbumActionTargetCommand = new RelayCommand(async () =>
+        {
+            var tile = AlbumActionTarget;
+            ActiveSheet = MobileSheet.None;
+            if (tile != null)
+                await Main.Downloads.DownloadAlbumAsync(tile, tile.Tracks);
         });
         ViewTrackInfoCommand = new RelayCommand(() =>
         {

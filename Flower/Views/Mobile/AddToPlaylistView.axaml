@@ -35,7 +35,7 @@
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             CornerRadius="12,12,0,0"
             Padding="0,8">
-      <DockPanel>
+      <DockPanel Margin="{DynamicResource SheetBottomInset}">
         <TextBlock DockPanel.Dock="Top"
                    Text="Add to Playlist"
                    FontSize="14"

@@ -6,9 +6,16 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:controls="clr-namespace:Flower.Controls"
              mc:Ignorable="d"
-             x:Class="Flower.Views.Mobile.TrackActionsView"
+             x:Class="Flower.Views.Mobile.AlbumActionsView"
              x:DataType="vm:MobileMainViewModel">
 
+  <!-- The album menu, raised by a long press on a cover in the Albums,
+       Recently Added and an artist's album grids - and on an artist's name,
+       where it acts on every album of theirs at once. The same card as a song's
+       menu (TrackActionsView): the art and name of what it acts on at the top,
+       dismissed by the X beside them or a tap on the backdrop. Its actions are
+       the album header's (TrackListScreenView), acting on the tile pressed
+       rather than on the album the screen is showing. -->
   <UserControl.Styles>
     <Style Selector="Button.action">
       <Setter Property="Background" Value="Transparent" />
@@ -34,18 +41,16 @@
             CornerRadius="12,12,0,0"
             Padding="0,8,0,16">
       <StackPanel Margin="{DynamicResource SheetBottomInset}">
-        <!-- What the menu acts on - the song's art, title and artist - with
-             the X that closes it in the top right corner. -->
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="20,8,8,8">
           <controls:AlbumArtView Grid.Column="0"
-                                  AlbumArt="{Binding ActionRow.AlbumArt}"
+                                  AlbumArt="{Binding AlbumActionTarget.AlbumArt}"
                                   Width="52" Height="52" />
           <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-            <TextBlock Text="{Binding ActionTarget.Title}"
+            <TextBlock Text="{Binding AlbumActionTarget.Name}"
                        FontSize="16"
                        FontWeight="SemiBold"
                        TextTrimming="CharacterEllipsis" />
-            <TextBlock Text="{Binding ActionTarget.Artists}"
+            <TextBlock Text="{Binding AlbumActionTarget.Artist}"
                        FontSize="13"
                        Opacity="0.65"
                        TextTrimming="CharacterEllipsis" />
@@ -58,44 +63,36 @@
           </Button>
         </Grid>
 
-        <Button Classes="action" Command="{Binding ViewTrackInfoCommand}">
+        <Button Classes="action" Command="{Binding PlayAlbumActionTargetCommand}">
           <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="InformationOutline" Width="22" Height="22" />
-            <TextBlock Text="View Info" FontSize="16" VerticalAlignment="Center" />
+            <Border Width="26" Height="26" Margin="-2"
+                    CornerRadius="9999" BorderThickness="1.5"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+              <materialIcons:MaterialIcon Kind="Play" Width="15" Height="15" />
+            </Border>
+            <TextBlock Text="Play" FontSize="16" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
 
-        <Button Classes="action" Command="{Binding OpenAddToPlaylistCommand}">
+        <Button Classes="action" Command="{Binding ShuffleAlbumActionTargetCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="Shuffle" Width="22" Height="22" />
+            <TextBlock Text="Shuffle" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="action" Command="{Binding AddAlbumActionTargetToPlaylistCommand}">
           <StackPanel Orientation="Horizontal" Spacing="14">
             <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="22" Height="22" />
             <TextBlock Text="Add to Playlist" FontSize="16" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
 
-        <!-- Only while the row's own download icon would show (see
-             MobileMainViewModel.CanDownloadActionTarget), and the opposite of
-             the entry below: a track has either this or that, or neither when
-             the server that has it is out of reach. -->
-        <Button Classes="action" Command="{Binding DownloadActionTargetCommand}"
-                IsVisible="{Binding CanDownloadActionTarget}">
+        <Button Classes="action" Command="{Binding DownloadAlbumActionTargetCommand}"
+                IsVisible="{Binding CanDownloadAlbumActionTarget}">
           <StackPanel Orientation="Horizontal" Spacing="14">
             <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" />
             <TextBlock Text="Download" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- Any track with a real local file (see
-             MobileMainViewModel.CanDeleteDownloadedFile) - reverts it back to
-             a not-yet-downloaded placeholder and frees the local file's
-             storage, rather than removing the track from the library. Opens a
-             confirm sheet (ConfirmDeleteFileView) that warns first if this
-             particular file wouldn't come back on its own - see
-             IsRecoverableDownload. -->
-        <Button Classes="action" Command="{Binding DeleteDownloadedFileCommand}"
-                IsVisible="{Binding CanDeleteDownloadedFile}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="22" Height="22" Foreground="{DynamicResource AppErrorBrush}" />
-            <TextBlock Text="Delete Local File" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
           </StackPanel>
         </Button>
       </StackPanel>

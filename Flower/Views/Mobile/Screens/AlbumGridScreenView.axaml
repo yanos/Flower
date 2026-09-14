@@ -43,7 +43,9 @@
               <DataTemplate x:DataType="vm:AlbumTileViewModel">
                 <Button Classes="pickerRow" Padding="0" Margin="0,0,12,24"
                         Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
-                        CommandParameter="{Binding Name}">
+                        CommandParameter="{Binding Name}"
+                        controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
+                        controls:LongPress.CommandParameter="{Binding}">
                   <StackPanel Spacing="6" HorizontalAlignment="Stretch"
                               Classes.dimmed="{Binding IsUnavailable}">
                     <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" />
