@@ -43,6 +43,15 @@
                      whole app repaints from editing one file. -->
                 <ResourceInclude Source="avares://Flower/Theme.axaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- The Songs note, on the phone's tab and in the desktop sidebar:
+                 the placeholder art's two-stemmed note (AlbumArtPlaceholder's
+                 ♫). Material's Music icon is that note with stubby stems, so
+                 this is its geometry with the beam lifted 3 units - longer
+                 stems, heads still round. It spans 19 by 21 units, and a Path
+                 drawing it at Material's own scale is 19/24 and 21/24 of the
+                 icon size it stands in for. -->
+            <StreamGeometry x:Key="SongNoteGeometry">M21,0 V15.5 A3.5,3.5 0 0,1 17.5,19 A3.5,3.5 0 0,1 14,15.5 A3.5,3.5 0 0,1 17.5,12 C18.04,12 18.55,12.12 19,12.34 V3.47 L9,5.6 V17.5 A3.5,3.5 0 0,1 5.5,21 A3.5,3.5 0 0,1 2,17.5 A3.5,3.5 0 0,1 5.5,14 C6.04,14 6.55,14.12 7,14.34 V3 Z</StreamGeometry>
         </ResourceDictionary>
     </Application.Resources>
 

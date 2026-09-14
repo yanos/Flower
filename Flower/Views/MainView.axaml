@@ -157,13 +157,26 @@
                   <StackPanel IsVisible="{Binding IsSelectable}"
                               Orientation="Horizontal"
                               Margin="12,5,8,5">
-                    <materialIcons:MaterialIcon Kind="{Binding Icon}"
-                                               Width="16" Height="16"
-                                               Margin="0,0,8,0"
-                                               VerticalAlignment="Center"/>
+                    <Panel Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                      <materialIcons:MaterialIcon Kind="{Binding Icon}"
+                                                 IsVisible="{Binding UsesMaterialIcon}"
+                                                 Width="16" Height="16"/>
+                      <!-- At Material's scale for a 16px icon (App.axaml's
+                           SongNoteGeometry), so the note is no larger than the
+                           glyphs around it, only taller-stemmed. Filled from
+                           the row's name, the way the phone's Songs tab fills
+                           it from its label, so it takes the text colour the
+                           icons beside it inherit. -->
+                      <Path Data="{StaticResource SongNoteGeometry}"
+                            IsVisible="{Binding UsesSongNote}"
+                            Fill="{Binding #SidebarRowName.Foreground}"
+                            Stretch="Uniform"
+                            Width="12.67" Height="14"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Panel>
                     <StackPanel VerticalAlignment="Center" Spacing="1">
                       <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding !IsEditing}">
-                        <TextBlock Text="{Binding Name}"/>
+                        <TextBlock x:Name="SidebarRowName" Text="{Binding Name}"/>
                         <!-- Paired-server standing - see SidebarItem.
                              ShowReachableIcon/ShowUnreachableIcon. Only ever
                              set on the one Device row for MainViewModel's

@@ -45,6 +45,12 @@ public class SidebarItem : ViewModelBase
     public bool IsHeader => Kind == SidebarItemKind.Header;
     public bool IsSelectable => !IsHeader;
 
+    // Songs draws the long-stemmed note (App.axaml's SongNoteGeometry) in
+    // place of Icon, whose Material Music glyph has stems too short to read as
+    // anything but squat beside it.
+    public bool UsesSongNote => Kind == SidebarItemKind.Songs;
+    public bool UsesMaterialIcon => !UsesSongNote;
+
     // Second line shown under Name in the sidebar - currently only used for a
     // Device row whose display name collides with another device's (see
     // MainViewModel.RefreshDeviceDisplayNames), showing that device's IP to

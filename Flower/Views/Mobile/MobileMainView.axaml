@@ -66,7 +66,16 @@
          The tab showing is marked .current rather than .selected:
          Button.pill.selected tints its icon with the accent, which suits the
          search button but not a tab, whose label and Songs note it cannot
-         reach. -->
+         reach.
+
+         The icons are sized to the Songs note rather than to one number. A
+         Material icon draws its glyph inside a 24-unit box with a margin that
+         varies by icon, while the note is stretched to fill its 22px, so at
+         22px each of them came out smaller than it: the clock 19px across, the
+         disc 18, the person 16. Each is enlarged until its glyph spans 22px
+         at its widest or tallest - 22 x 24 / the glyph's extent in units - and
+         a negative margin gives the enlargement back, so every icon still
+         takes 22px of the tab's layout and the labels stay on one line. -->
     <Style Selector="Button.tab">
       <Setter Property="Opacity" Value="0.55" />
       <Setter Property="Width" Value="58" />
@@ -363,7 +372,7 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=RecentlyAdded}"
               Command="{Binding SelectTabCommand}" CommandParameter="RecentlyAdded">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="ClockPlusOutline" Width="22" Height="22" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="ClockPlusOutline" Width="25" Height="25" Margin="-1.5" HorizontalAlignment="Center" />
           <TextBlock Text="Recent" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
@@ -371,12 +380,10 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Songs}"
               Command="{Binding SelectTabCommand}" CommandParameter="Songs">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <!-- The placeholder art's two-stemmed note (AlbumArtPlaceholder's ♫).
-               Material's Music icon is that note with stubby stems, so this is
-               its geometry with the beam lifted 3 units - longer stems, heads
-               still round. Filled from the label so the tab's opacity dimming
-               and the theme reach it the way they reach an icon. -->
-          <Path Data="M21,0 V15.5 A3.5,3.5 0 0,1 17.5,19 A3.5,3.5 0 0,1 14,15.5 A3.5,3.5 0 0,1 17.5,12 C18.04,12 18.55,12.12 19,12.34 V3.47 L9,5.6 V17.5 A3.5,3.5 0 0,1 5.5,21 A3.5,3.5 0 0,1 2,17.5 A3.5,3.5 0 0,1 5.5,14 C6.04,14 6.55,14.12 7,14.34 V3 Z"
+          <!-- SongNoteGeometry (App.axaml). Filled from the label so the tab's
+               opacity dimming and the theme reach it the way they reach an
+               icon. -->
+          <Path Data="{StaticResource SongNoteGeometry}"
                 Fill="{Binding #SongsLabel.Foreground}"
                 Stretch="Uniform" Width="22" Height="22" HorizontalAlignment="Center" />
           <TextBlock x:Name="SongsLabel" Text="Songs" FontSize="11" HorizontalAlignment="Center" />
@@ -386,7 +393,7 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Albums}"
               Command="{Binding SelectTabCommand}" CommandParameter="Albums">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="Album" Width="22" Height="22" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="Album" Width="26" Height="26" Margin="-2" HorizontalAlignment="Center" />
           <TextBlock Text="Albums" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
@@ -394,7 +401,7 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Artists}"
               Command="{Binding SelectTabCommand}" CommandParameter="Artists">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="Account" Width="22" Height="22" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="Account" Width="33" Height="33" Margin="-5.5" HorizontalAlignment="Center" />
           <TextBlock Text="Artists" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
@@ -402,7 +409,7 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Playlists}"
               Command="{Binding SelectTabCommand}" CommandParameter="Playlists">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="28" Height="28" Margin="-3" HorizontalAlignment="Center" />
           <TextBlock Text="Playlists" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
