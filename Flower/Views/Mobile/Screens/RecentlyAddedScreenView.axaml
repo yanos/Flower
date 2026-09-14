@@ -27,7 +27,7 @@
        forcing an unconstrained measure pass. -->
   <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
     <ItemsControl ItemsSource="{Binding RecentlyAddedAlbumRows}"
-                  Margin="12,12,0,12"
+                  Padding="12,12,0,12"
                   controls:AlbumGridColumnSizing.IsEnabled="True">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>

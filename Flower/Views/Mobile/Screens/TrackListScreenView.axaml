@@ -105,11 +105,10 @@
     </Style>
     <!-- Centred under the art, the words answer to the screen, so they are
          inset evenly. Ranged left beside it they answer to the song titles
-         below instead, and take their left inset from the row: 8 of
-         Button.trackRow's own horizontal Padding (see MobileMainView.axaml)
-         plus the 14px download well every row reserves ahead of its title
-         (see TrackRowTemplate.axaml). Change either number there and this one
-         follows - AlbumDetailLayoutTests.The_album_name_lines_up_with_the_
+         below instead, and take their left inset from the row: the 8 of
+         Button.trackRow's own horizontal Padding (see MobileMainView.axaml),
+         which is all that stands ahead of a title inside an album. Change it
+         there and this one follows - AlbumDetailLayoutTests.The_album_name_lines_up_with_the_
          song_titles measures the two against each other. Both live here
          rather than on the use site because a local Margin would outrank
          them. -->
@@ -132,7 +131,7 @@
       <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
     <Style Selector="ContentControl.albumText.beside">
-      <Setter Property="Margin" Value="22,4,12,16" />
+      <Setter Property="Margin" Value="8,4,12,16" />
     </Style>
 
     <!-- A row with no artist line under the title is a single line of text,

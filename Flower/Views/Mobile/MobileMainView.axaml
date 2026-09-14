@@ -93,12 +93,27 @@
          (BottomChrome below), so every screen's scroller keeps that much room
          past its last item - enough to bring it up clear of them, while the
          list still runs behind them on the way. BottomChromeInset follows
-         their height from the code-behind: the mini player comes and goes. A
-         ListBox's Padding is the margin of its items inside its own scroller,
-         so it is the ListBox that takes it rather than its templated
-         ScrollViewer. -->
-    <Style Selector="ScrollViewer.screenScroll, ListBox.screenScroll">
+         their height from the code-behind: the mini player comes and goes.
+
+         Where it goes depends on the scroller, because it has to lengthen what
+         scrolls rather than shrink the window onto it. A ListBox's Padding is
+         the margin of its items inside its own scroller, so the ListBox takes
+         it. A bare ScrollViewer's Padding does not reach its extent at all -
+         the last song of a long album stayed under the tabs with the list at
+         the end of its travel - so there it is a margin on the content
+         instead. Which is why the album grids inset their tiles with Padding:
+         a Margin of their own would beat this one.
+
+         Named by type rather than as any child, because the scroller's own
+         template parts count as its children too: a margin on its presenter
+         shrank the window by the same amount, and the list stopped the
+         inset's height again short of the tabs. Every screen's content is one
+         of these two; a screen that scrolls something else needs adding. -->
+    <Style Selector="ListBox.screenScroll">
       <Setter Property="Padding" Value="{DynamicResource BottomChromeInset}" />
+    </Style>
+    <Style Selector="ScrollViewer.screenScroll > StackPanel, ScrollViewer.screenScroll > ItemsControl">
+      <Setter Property="Margin" Value="{DynamicResource BottomChromeInset}" />
     </Style>
     <!-- Border.floating and Button.pill, the floating controls over the top of
          the screens, are app-wide now: Styles/IconButtons.axaml. -->
@@ -124,19 +139,14 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
     <!-- Narrower left/right inset than the picker rows above (16): a song row
-         carries art, a download well, a title, a duration and a menu across
+         carries art, a title, a download icon, a duration and a menu across
          one phone width, and the 8px on each side buys the title more of it
-         than the margin was doing. The download button cancels it outright with
-         a matching negative margin (see TrackRowTemplate.axaml), so inside an
-         album the icon sits a pixel off the screen edge while everything else
-         on the row keeps this inset - change this number and change that one
-         with it. The vertical half is untouched - it is what
+         than the margin was doing. The vertical half is untouched - it is what
          makes the row a comfortable tap. TrackListScreenView's album header
-         adds this number to the download well's width to line its text up with
-         the titles, so changing it here moves that too (see the margin on
-         ContentControl.albumText.beside). -->
+         uses this number to line its text up with the titles, so changing it
+         here moves that too (see the margin on ContentControl.albumText.beside). -->
     <Style Selector="Button.trackRow">
-      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Padding" Value="8,4" />
     </Style>
     <!-- The currently playing song, said the one way it is said on every
          list on every platform: weight, and nothing else. Desktop marks its

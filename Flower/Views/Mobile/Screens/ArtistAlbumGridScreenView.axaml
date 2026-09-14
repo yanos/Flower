@@ -12,7 +12,7 @@
        album's tracks via SelectArtistAlbumCommand. -->
   <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
     <ItemsControl ItemsSource="{Binding ArtistAlbumGridRows}"
-                  Margin="12,12,0,12"
+                  Padding="12,12,0,12"
                   controls:AlbumGridColumnSizing.IsEnabled="True">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>

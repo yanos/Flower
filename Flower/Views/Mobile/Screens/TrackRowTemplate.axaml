@@ -34,7 +34,7 @@
             CommandParameter="{Binding}"
             controls:LongPress.Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
             controls:LongPress.CommandParameter="{Binding}">
-      <Grid ColumnDefinitions="Auto,Auto,14,*,Auto,Auto">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
         <!-- Pointer wiring for drag-to-reorder is NOT attached here as XAML
              event attributes - this file is a class-less ResourceDictionary
              (no x:Class), so the XAML compiler has no code-behind type to
@@ -74,49 +74,7 @@
                                 IsVisible="{Binding !$parent[views:ITrackRowHost].IsAlbumMode}"
                                 Width="40" Height="40"
                                 Margin="0,0,10,0" />
-        <!-- The leading edge, not the trailing one where this used to sit
-             beside the "..." menu: it is the row's own answer to "is this
-             on the phone?", and reads as one down the left margin the way
-             the art and the title do. The well is a fixed width and is
-             reserved on every row, downloaded or not - an Auto column
-             would collapse on each row with nothing to fetch, and in a
-             part-synced library every second title would step in and out
-             down the screen. Same trade the desktop row makes for the
-             same reason (TrackRowControl.BuildCellContent).
-
-             Sized to the glyph and nothing more, and then pulled left out
-             of the row's own padding by exactly that padding (the -8
-             Margin below matches Button.trackRow in MobileMainView.axaml,
-             and the dense override in TrackListScreenView.axaml - change
-             it there and this follows): inside an album this icon is the
-             first thing on the row, and the inset that suits a title
-             reads as a gap in front of a 16px glyph. Everything else on
-             the row keeps the inset, which is why this is a negative
-             margin on the button rather than a smaller padding on the
-             row. Only the icon moves; the well's own width still decides
-             where the title starts. That does make it a small target -
-             the vertical padding is what keeps it tappable at all, so
-             trim that last.
-
-             Tapping the row itself (PlayTrackCommand, above) is a no-op
-             for a placeholder track, so this is the only thing on that
-             row that acts on the music rather than on the catalog entry
-             (the "..." menu does the latter). The control itself is the
-             shared one every download icon in the app is now
-             (TrackDownloadButton), which is where the three mutually
-             exclusive icon states and the spinner live - this row used to
-             carry its own copy of them, and a copy is a thing that can
-             miss a fix. -->
-        <controls:TrackDownloadButton Grid.Column="2"
-                                      IconSize="16"
-                                      IconPadding="0,4"
-                                      Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).DownloadTrackCommand}"
-                                      CommandParameter="{Binding}"
-                                      Width="18"
-                                      Margin="-8,0,0,0"
-                                      HorizontalAlignment="Left" />
-
-        <StackPanel Grid.Column="3" Spacing="2" VerticalAlignment="Center">
+        <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
           <TextBlock Text="{Binding Track.Title}"
                      FontSize="16"
                      TextTrimming="CharacterEllipsis" />
@@ -132,46 +90,87 @@
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
 
+        <!-- Ranged right against the duration, so it lines up down the screen
+             however long each track is: the duration cell beside it is one
+             fixed width on every row (below). An Auto column that collapses
+             on a row with nothing to fetch, which only gives that row's title
+             a little more room - nothing else on the row moves.
+
+             Tapping the row itself (PlayTrackCommand, above) is a no-op
+             for a placeholder track, so this is the only thing on that
+             row that acts on the music rather than on the catalog entry
+             (the "..." menu does the latter). The control itself is the
+             shared one every download icon in the app is now
+             (TrackDownloadButton), which is where the three mutually
+             exclusive icon states and the spinner live - this row used to
+             carry its own copy of them, and a copy is a thing that can
+             miss a fix.
+
+             Padded evenly, so the press lights up a circle (Button.pill) -
+             and only 3px, so that circle stays tight round the glyph rather
+             than growing into a disc between the title and the time. The
+             negative right margin gives that padding back on the duration's
+             side, and the left one is short by the same 3, so the glyph
+             itself sits where it would with no padding at all. -->
+        <controls:TrackDownloadButton Grid.Column="3"
+                                      IconSize="16"
+                                      IconPadding="3"
+                                      Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).DownloadTrackCommand}"
+                                      CommandParameter="{Binding}"
+                                      Margin="5,0,-3,0"
+                                      HorizontalAlignment="Right" />
+
         <!-- Duration always shows, downloaded or not - a placeholder still
              knows its own length (Track.Duration comes from the peer's
              catalog, not from reading a local file - see
-             LibrarySyncMapper.ToPlaceholderTrack), there's no reason to
-             hide it just because the file isn't local yet. The same goes
-             for the "..." menu below - the download button, which is the
-             one thing here that did need the file, has moved to the
-             leading edge of the row. -->
-        <StackPanel Grid.Column="4" Grid.ColumnSpan="2"
-                    Orientation="Horizontal" Spacing="0">
+             LibrarySyncMapper.ToPlaceholderTrack).
+
+             The cell is as wide as the longest duration it can say, 9:59:59,
+             on every row, so the download icons beside it stay in one column
+             whether a track runs two minutes or two hours. Measured from an
+             invisible copy of that text rather than a fixed pixel width, so it
+             follows the font; bold, because the playing row's text is bold
+             (Button.trackRow.playing) and its cell must not be the one that
+             is wider. -->
+        <Panel Grid.Column="4" Margin="1,0,0,0" VerticalAlignment="Center">
+          <TextBlock Text="9:59:59"
+                     FontSize="13"
+                     FontWeight="Bold"
+                     Opacity="0" />
           <TextBlock Text="{Binding DurationDisplay}"
                      FontSize="13"
                      Opacity="0.65"
-                     VerticalAlignment="Center"
-                     Margin="8,0,0,0" />
-          <!-- Shown on every row, placeholder or not. It used to hide on
-               IsPlaceholder, which read as "actions need the file" - but
-               only one of the actions behind it does. Viewing a track's
-               info and adding it to a playlist are both about the catalog
-               entry, which a placeholder fully is, and the playlist stores
-               a track reference rather than a path (see playlists.json).
-               Deleting the downloaded file is the file-dependent one, and
-               it gates itself on having a Path - see
-               MobileMainViewModel.CanDeleteDownloadedFile - so an
-               undownloaded track opens this sheet without it. Downloading
-               is the other way round (CanDownloadActionTarget).
+                     HorizontalAlignment="Right" />
+        </Panel>
 
-               Handed the row rather than its Track, because downloading
-               from the menu goes through the row: that is what spins the
-               row's own icon while it runs. -->
-          <Button Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
-                  CommandParameter="{Binding}"
-                  Background="Transparent"
-                  BorderThickness="0"
-                  Padding="4"
-                  Margin="4,0,0,0"
-                  VerticalAlignment="Center">
-            <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
-          </Button>
-        </StackPanel>
+        <!-- Shown on every row, placeholder or not. It used to hide on
+             IsPlaceholder, which read as "actions need the file" - but
+             only one of the actions behind it does. Viewing a track's
+             info and adding it to a playlist are both about the catalog
+             entry, which a placeholder fully is, and the playlist stores
+             a track reference rather than a path (see playlists.json).
+             Deleting the downloaded file is the file-dependent one, and
+             it gates itself on having a Path - see
+             MobileMainViewModel.CanDeleteDownloadedFile - so an
+             undownloaded track opens this sheet without it. Downloading
+             is the other way round (CanDownloadActionTarget).
+
+             Handed the row rather than its Track, because downloading
+             from the menu goes through the row: that is what spins the
+             row's own icon while it runs.
+
+             Only 2px either side: the glyph already sits in a wide
+             margin of its own, so the gap to the duration and to the screen
+             edge is mostly that. -->
+        <Button Grid.Column="5"
+                Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
+                CommandParameter="{Binding}"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="2,4,2,4"
+                VerticalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
+        </Button>
       </Grid>
     </Button>
   </DataTemplate>
