@@ -70,7 +70,8 @@
         <Button Classes="peerAction" Content="{Binding ConfirmPairServerActionLabel}"
                 Command="{Binding ConfirmPairServerCommand}"
                 IsEnabled="{Binding IsConfirmPairServerEnabled}"
-                Background="{DynamicResource SystemAccentColor}" />
+                Background="{DynamicResource AppPrimaryBrush}"
+                Foreground="{DynamicResource AppOnPrimaryBrush}" />
         <Button Classes="peerAction" Content="Cancel" Command="{Binding CancelPairServerCommand}"
                 Background="Transparent" />
       </StackPanel>

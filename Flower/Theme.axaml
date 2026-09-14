@@ -4,118 +4,211 @@
   <!-- App-wide color scheme. Two layers:
 
        1. Overrides for FluentTheme's own classic "System*Color" palette
-          (SystemAccentColor, SystemBaseHighColor, SystemAltHighColor, etc.) -
-          confirmed live in this Avalonia version by several existing
-          DynamicResource lookups already in the codebase (e.g.
-          MainView.axaml's SystemControlBackgroundAltHighBrush/
-          SystemControlBackgroundChromeMediumBrush, MusicListView.axaml.cs's
-          SystemControlForegroundBaseMediumLowBrush, TrackRowControl.axaml's
-          SystemControlHighlightListLowBrush). FluentTheme's own
-          SystemControl*Brush resources are themselves defined against these
-          base colors via DynamicResource internally, so overriding just the
-          ~20 base colors here re-themes every derived brush FluentTheme
-          hands out on its own (scrollbars, buttons, menus, etc.) without
-          needing to redefine each one individually.
+          (SystemAccentColor, SystemBaseHighColor, SystemAltHighColor, etc.).
+          These re-theme what Fluent draws from them itself (scrollbars,
+          buttons, menus). Many SystemControl*Brush resources, though, are
+          resolved from Fluent's own colors when it loads and never see
+          these, so the ones the views name are set directly as
+          well. So are the list selection ones, which Fluent otherwise
+          derives from the accent at 60% and more: a red that strong reads
+          as an alarm on every selected row.
 
-       2. A small set of app-owned semantic brushes (AppAccentBrush,
-          AppElevatedSurfaceBrush, ...) for the handful of controls that used
-          to hardcode a literal color (DodgerBlue, "#F5EFC4", Brushes.Black)
-          instead of reading any theme resource at all - see
-          CurrentlyPlayingControl.axaml, TrackRowControl.axaml,
-          VolumeControl.axaml, MainView.axaml's drop-target highlights.
+       2. App-owned semantic brushes (AppAccentBrush, AppErrorBrush, ...) for
+          the controls that need a role rather than a Fluent key. No view
+          carries a literal color; a new one belongs here.
 
-       Dark is a soft, muted Nord-inspired scheme (dark slate greys, soft
-       off-white text, a pastel frost-blue accent) rather than FluentTheme's
-       stock nearly-black/nearly-white default. Light stays close to
-       FluentTheme's own defaults - it was never the complaint - just with a
-       matching accent color so the app looks like one coherent theme in
-       either mode. -->
+       Both variants are one palette, a brick red over warm (light) or slate
+       (dark) neutrals. How its roles map onto Fluent's:
+
+       - Alt*    background ramp: Background, Surface Alt, Elevated, Divider, Border
+                 (light); Background, Surface, Surface Alt, Elevated, Border (dark)
+       - Base*   foreground ramp: Text Primary, Secondary, Muted, Disabled, Border
+       - Chrome* sheets and floating chrome; ChromeAltLow is Fluent's contrasting one
+       - Accent  Primary, with Hover/Active as Dark1/Dark2 and Soft as Light1
+
+       AppAccentBrush is the highlight color - an active icon, the playing row,
+       a volume fill - and is Primary Soft in dark, where Primary itself is too
+       dim against the background to read as lit. AppPrimaryBrush is the fill
+       of a primary button, the same red in both. -->
   <ResourceDictionary.ThemeDictionaries>
 
     <ResourceDictionary x:Key="Dark">
       <!-- FluentTheme's own base palette -->
-      <Color x:Key="SystemAccentColor">#88C0D0</Color>
-      <Color x:Key="SystemAltHighColor">#2E3440</Color>
-      <Color x:Key="SystemAltMediumHighColor">#333945</Color>
-      <Color x:Key="SystemAltMediumColor">#3B4252</Color>
-      <Color x:Key="SystemAltMediumLowColor">#434C5E</Color>
-      <Color x:Key="SystemAltLowColor">#4C566A</Color>
-      <Color x:Key="SystemBaseHighColor">#ECEFF4</Color>
-      <Color x:Key="SystemBaseMediumHighColor">#D8DEE9</Color>
-      <Color x:Key="SystemBaseMediumColor">#B8C0D0</Color>
-      <Color x:Key="SystemBaseMediumLowColor">#8992A6</Color>
-      <Color x:Key="SystemBaseLowColor">#4C566A</Color>
-      <Color x:Key="SystemChromeHighColor">#434C5E</Color>
-      <Color x:Key="SystemChromeMediumColor">#3B4252</Color>
-      <Color x:Key="SystemChromeMediumLowColor">#333945</Color>
-      <Color x:Key="SystemChromeLowColor">#2E3440</Color>
-      <Color x:Key="SystemChromeAltLowColor">#3B4252</Color>
-      <Color x:Key="SystemChromeDisabledHighColor">#4C566A</Color>
-      <Color x:Key="SystemChromeDisabledLowColor">#6B7385</Color>
-      <Color x:Key="SystemChromeGrayColor">#6B7385</Color>
-      <Color x:Key="SystemListLowColor">#3B4252</Color>
-      <Color x:Key="SystemListMediumColor">#434C5E</Color>
-      <Color x:Key="SystemRegionColor">#2E3440</Color>
+      <Color x:Key="SystemAccentColor">#C53A34</Color>
+      <Color x:Key="SystemAccentColorDark1">#AE302C</Color>
+      <Color x:Key="SystemAccentColorDark2">#8F2724</Color>
+      <Color x:Key="SystemAccentColorDark3">#6B2F2C</Color>
+      <Color x:Key="SystemAccentColorLight1">#E07E7A</Color>
+      <Color x:Key="SystemAccentColorLight2">#F4A7A3</Color>
+      <Color x:Key="SystemAccentColorLight3">#FBD9D6</Color>
+      <Color x:Key="SystemAltHighColor">#2A2D31</Color>
+      <Color x:Key="SystemAltMediumHighColor">#32363B</Color>
+      <Color x:Key="SystemAltMediumColor">#3C4148</Color>
+      <Color x:Key="SystemAltMediumLowColor">#484E57</Color>
+      <Color x:Key="SystemAltLowColor">#565D66</Color>
+      <Color x:Key="SystemBaseHighColor">#F2F4F7</Color>
+      <Color x:Key="SystemBaseMediumHighColor">#CBD0D6</Color>
+      <Color x:Key="SystemBaseMediumColor">#9AA0A8</Color>
+      <Color x:Key="SystemBaseMediumLowColor">#787F88</Color>
+      <Color x:Key="SystemBaseLowColor">#565D66</Color>
+      <Color x:Key="SystemChromeHighColor">#565D66</Color>
+      <Color x:Key="SystemChromeMediumColor">#3C4148</Color>
+      <Color x:Key="SystemChromeMediumLowColor">#32363B</Color>
+      <Color x:Key="SystemChromeLowColor">#2A2D31</Color>
+      <Color x:Key="SystemChromeAltLowColor">#CBD0D6</Color>
+      <Color x:Key="SystemChromeDisabledHighColor">#565D66</Color>
+      <Color x:Key="SystemChromeDisabledLowColor">#787F88</Color>
+      <Color x:Key="SystemChromeGrayColor">#9AA0A8</Color>
+      <Color x:Key="SystemListLowColor">#3C4148</Color>
+      <Color x:Key="SystemListMediumColor">#484E57</Color>
+      <Color x:Key="SystemRegionColor">#2A2D31</Color>
+
+      <!-- Selected list rows: Primary Subtle, a step lighter under the pointer
+           and another when pressed. -->
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="#6B2F2C"/>
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#793532"/>
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="#873B37"/>
+
+      <!-- Fluent brushes the views name directly. Fluent resolves these
+           from its own colors when it loads, so the palette above never
+           reaches them: a sheet or the floating chrome kept Fluent's stock
+           grey until they were set here. -->
+      <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush" Color="#3C4148"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundAltHighBrush" Color="#2A2D31"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundBaseLowBrush" Color="#3C4148"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush" Color="#3C4148"/>
+      <SolidColorBrush x:Key="SystemControlHighlightListLowBrush" Color="#3C4148"/>
+      <SolidColorBrush x:Key="SystemControlForegroundBaseMediumLowBrush" Color="#787F88"/>
+      <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush" Color="#565D66"/>
 
       <!-- App-owned semantic brushes -->
-      <SolidColorBrush x:Key="AppBackgroundBrush" Color="#2E3440"/>
-      <SolidColorBrush x:Key="AppSurfaceBrush" Color="#3B4252"/>
-      <SolidColorBrush x:Key="AppElevatedSurfaceBrush" Color="#434C5E"/>
-      <SolidColorBrush x:Key="AppBorderBrush" Color="#4C566A"/>
-      <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#ECEFF4"/>
-      <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#B8C0D0"/>
-      <SolidColorBrush x:Key="AppAccentBrush" Color="#88C0D0"/>
-      <SolidColorBrush x:Key="AppAccentMutedBrush" Color="#5E81AC"/>
+      <SolidColorBrush x:Key="AppBackgroundBrush" Color="#2A2D31"/>
+      <SolidColorBrush x:Key="AppSurfaceBrush" Color="#32363B"/>
+      <SolidColorBrush x:Key="AppSurfaceAltBrush" Color="#3C4148"/>
+      <SolidColorBrush x:Key="AppElevatedSurfaceBrush" Color="#484E57"/>
+      <SolidColorBrush x:Key="AppBorderBrush" Color="#565D66"/>
+      <SolidColorBrush x:Key="AppDividerBrush" Color="#444A52"/>
+      <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#F2F4F7"/>
+      <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#CBD0D6"/>
+      <SolidColorBrush x:Key="AppTextMutedBrush" Color="#9AA0A8"/>
+      <SolidColorBrush x:Key="AppTextDisabledBrush" Color="#787F88"/>
+      <SolidColorBrush x:Key="AppLinkBrush" Color="#7FB3FF"/>
+      <SolidColorBrush x:Key="AppPrimaryBrush" Color="#C53A34"/>
+      <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="#FFFFFF"/>
+      <SolidColorBrush x:Key="AppPrimarySubtleBrush" Color="#6B2F2C"/>
+      <SolidColorBrush x:Key="AppAccentBrush" Color="#E07E7A"/>
+      <!-- Text selection, under text that stays its own color. -->
+      <SolidColorBrush x:Key="AppAccentMutedBrush" Color="#8F2724"/>
       <!-- Translucent accent (~25% alpha baked into the color, not a
            separate Opacity setter) for a highlight whose child content -
            e.g. NewPlaylistDropZone's "New Playlist" label - must stay fully
            opaque itself. -->
-      <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#4088C0D0"/>
+      <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#40E07E7A"/>
       <!-- Paired-server sidebar row reachability glyph (green check/amber
            exclamation) - see SidebarItem.ShowReachableIcon/
            ShowUnreachableIcon, MainView.axaml's Device row template. -->
-      <SolidColorBrush x:Key="AppSuccessBrush" Color="#A3BE8C"/>
-      <SolidColorBrush x:Key="AppWarningBrush" Color="#EBCB8B"/>
+      <SolidColorBrush x:Key="AppSuccessBrush" Color="#3DAA6B"/>
+      <SolidColorBrush x:Key="AppWarningBrush" Color="#E0A82E"/>
+      <SolidColorBrush x:Key="AppErrorBrush" Color="#E0524D"/>
+      <SolidColorBrush x:Key="AppInfoBrush" Color="#4A8FE7"/>
+      <SolidColorBrush x:Key="AppInfoSubtleBrush" Color="#2B4F7D"/>
+      <!-- Secondary accents, the same in both variants. Nothing uses them yet. -->
+      <SolidColorBrush x:Key="AppAccentPinkBrush" Color="#F4A7A3"/>
+      <SolidColorBrush x:Key="AppAccentPurpleBrush" Color="#B88CF0"/>
+      <SolidColorBrush x:Key="AppAccentTealBrush" Color="#4CC9C3"/>
+      <SolidColorBrush x:Key="AppAccentOrangeBrush" Color="#F2994A"/>
+      <SolidColorBrush x:Key="AppAccentLimeBrush" Color="#A3D977"/>
+      <SolidColorBrush x:Key="AppAccentSlateBrush" Color="#4A5563"/>
+      <!-- The unfilled part of the desktop volume bar, and the square and note
+           standing in for a missing cover. -->
+      <SolidColorBrush x:Key="AppTrackBrush" Color="#565D66"/>
+      <SolidColorBrush x:Key="AppPlaceholderBrush" Color="#3C4148"/>
+      <SolidColorBrush x:Key="AppPlaceholderGlyphBrush" Color="#787F88"/>
     </ResourceDictionary>
 
     <ResourceDictionary x:Key="Light">
-      <!-- FluentTheme's own base palette - close to its stock light values,
-           just retinted to the same accent as Dark above. -->
-      <Color x:Key="SystemAccentColor">#4C8FB0</Color>
-      <Color x:Key="SystemAltHighColor">#FFFFFF</Color>
-      <Color x:Key="SystemAltMediumHighColor">#F7F8FA</Color>
-      <Color x:Key="SystemAltMediumColor">#F0F1F4</Color>
-      <Color x:Key="SystemAltMediumLowColor">#E7E9ED</Color>
-      <Color x:Key="SystemAltLowColor">#DDE1E7</Color>
-      <Color x:Key="SystemBaseHighColor">#1E2328</Color>
-      <Color x:Key="SystemBaseMediumHighColor">#3A414A</Color>
-      <Color x:Key="SystemBaseMediumColor">#5B6270</Color>
-      <Color x:Key="SystemBaseMediumLowColor">#848B99</Color>
-      <Color x:Key="SystemBaseLowColor">#D8DCE3</Color>
-      <Color x:Key="SystemChromeHighColor">#E7E9ED</Color>
-      <Color x:Key="SystemChromeMediumColor">#F0F1F4</Color>
-      <Color x:Key="SystemChromeMediumLowColor">#F5F6F8</Color>
-      <Color x:Key="SystemChromeLowColor">#FAFBFC</Color>
-      <Color x:Key="SystemChromeAltLowColor">#F0F1F4</Color>
-      <Color x:Key="SystemChromeDisabledHighColor">#D8DCE3</Color>
-      <Color x:Key="SystemChromeDisabledLowColor">#A8AEB8</Color>
-      <Color x:Key="SystemChromeGrayColor">#848B99</Color>
-      <Color x:Key="SystemListLowColor">#F0F1F4</Color>
-      <Color x:Key="SystemListMediumColor">#E7E9ED</Color>
-      <Color x:Key="SystemRegionColor">#FFFFFF</Color>
+      <!-- FluentTheme's own base palette. Dark3 is not in the palette: it is
+           Active taken one step further. -->
+      <Color x:Key="SystemAccentColor">#C53A34</Color>
+      <Color x:Key="SystemAccentColorDark1">#AE302C</Color>
+      <Color x:Key="SystemAccentColorDark2">#8F2724</Color>
+      <Color x:Key="SystemAccentColorDark3">#6E1E1C</Color>
+      <Color x:Key="SystemAccentColorLight1">#E97D78</Color>
+      <Color x:Key="SystemAccentColorLight2">#F4A7A3</Color>
+      <Color x:Key="SystemAccentColorLight3">#FBD9D6</Color>
+      <Color x:Key="SystemAltHighColor">#FAF8F6</Color>
+      <Color x:Key="SystemAltMediumHighColor">#F2EFEB</Color>
+      <Color x:Key="SystemAltMediumColor">#E9E4DF</Color>
+      <Color x:Key="SystemAltMediumLowColor">#E6E1DD</Color>
+      <Color x:Key="SystemAltLowColor">#D9D3CF</Color>
+      <Color x:Key="SystemBaseHighColor">#2B2623</Color>
+      <Color x:Key="SystemBaseMediumHighColor">#6B6460</Color>
+      <Color x:Key="SystemBaseMediumColor">#8A807C</Color>
+      <Color x:Key="SystemBaseMediumLowColor">#A9A1A0</Color>
+      <Color x:Key="SystemBaseLowColor">#D9D3CF</Color>
+      <Color x:Key="SystemChromeHighColor">#D9D3CF</Color>
+      <Color x:Key="SystemChromeMediumColor">#FFFFFF</Color>
+      <Color x:Key="SystemChromeMediumLowColor">#FFFFFF</Color>
+      <Color x:Key="SystemChromeLowColor">#FAF8F6</Color>
+      <Color x:Key="SystemChromeAltLowColor">#6B6460</Color>
+      <Color x:Key="SystemChromeDisabledHighColor">#D9D3CF</Color>
+      <Color x:Key="SystemChromeDisabledLowColor">#A9A1A0</Color>
+      <Color x:Key="SystemChromeGrayColor">#8A807C</Color>
+      <Color x:Key="SystemListLowColor">#F2EFEB</Color>
+      <Color x:Key="SystemListMediumColor">#E9E4DF</Color>
+      <Color x:Key="SystemRegionColor">#FAF8F6</Color>
+
+      <!-- Selected list rows: Primary Light, a step deeper under the pointer
+           and another when pressed. -->
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="#FBD9D6"/>
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#F8CCC8"/>
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="#F4BEB9"/>
+
+      <!-- Fluent brushes the views name directly. Fluent resolves these
+           from its own colors when it loads, so the palette above never
+           reaches them: a sheet or the floating chrome kept Fluent's stock
+           grey until they were set here. -->
+      <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush" Color="#FFFFFF"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundAltHighBrush" Color="#FAF8F6"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundBaseLowBrush" Color="#F2EFEB"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush" Color="#F2EFEB"/>
+      <SolidColorBrush x:Key="SystemControlHighlightListLowBrush" Color="#F2EFEB"/>
+      <SolidColorBrush x:Key="SystemControlForegroundBaseMediumLowBrush" Color="#A9A1A0"/>
+      <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush" Color="#D9D3CF"/>
 
       <!-- App-owned semantic brushes -->
-      <SolidColorBrush x:Key="AppBackgroundBrush" Color="#FFFFFF"/>
-      <SolidColorBrush x:Key="AppSurfaceBrush" Color="#F5F6F8"/>
-      <SolidColorBrush x:Key="AppElevatedSurfaceBrush" Color="#EDEEF2"/>
-      <SolidColorBrush x:Key="AppBorderBrush" Color="#D8DCE3"/>
-      <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#1E2328"/>
-      <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#5B6270"/>
-      <SolidColorBrush x:Key="AppAccentBrush" Color="#4C8FB0"/>
-      <SolidColorBrush x:Key="AppAccentMutedBrush" Color="#7FA9C4"/>
-      <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#404C8FB0"/>
-      <SolidColorBrush x:Key="AppSuccessBrush" Color="#3F9142"/>
-      <SolidColorBrush x:Key="AppWarningBrush" Color="#C98A1B"/>
+      <SolidColorBrush x:Key="AppBackgroundBrush" Color="#FAF8F6"/>
+      <SolidColorBrush x:Key="AppSurfaceBrush" Color="#FFFFFF"/>
+      <SolidColorBrush x:Key="AppSurfaceAltBrush" Color="#F2EFEB"/>
+      <SolidColorBrush x:Key="AppElevatedSurfaceBrush" Color="#E9E4DF"/>
+      <SolidColorBrush x:Key="AppBorderBrush" Color="#D9D3CF"/>
+      <SolidColorBrush x:Key="AppDividerBrush" Color="#E6E1DD"/>
+      <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#2B2623"/>
+      <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#6B6460"/>
+      <SolidColorBrush x:Key="AppTextMutedBrush" Color="#8A807C"/>
+      <SolidColorBrush x:Key="AppTextDisabledBrush" Color="#A9A1A0"/>
+      <SolidColorBrush x:Key="AppLinkBrush" Color="#C53A34"/>
+      <SolidColorBrush x:Key="AppPrimaryBrush" Color="#C53A34"/>
+      <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="#FFFFFF"/>
+      <SolidColorBrush x:Key="AppPrimarySubtleBrush" Color="#FBD9D6"/>
+      <SolidColorBrush x:Key="AppAccentBrush" Color="#C53A34"/>
+      <SolidColorBrush x:Key="AppAccentMutedBrush" Color="#FBD9D6"/>
+      <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#33C53A34"/>
+      <SolidColorBrush x:Key="AppSuccessBrush" Color="#4CAF7B"/>
+      <SolidColorBrush x:Key="AppWarningBrush" Color="#F4B942"/>
+      <SolidColorBrush x:Key="AppErrorBrush" Color="#D64545"/>
+      <SolidColorBrush x:Key="AppInfoBrush" Color="#3B82F6"/>
+      <SolidColorBrush x:Key="AppInfoSubtleBrush" Color="#DCEAFF"/>
+      <!-- Secondary accents, the same in both variants. Nothing uses them yet. -->
+      <SolidColorBrush x:Key="AppAccentPinkBrush" Color="#F4A7A3"/>
+      <SolidColorBrush x:Key="AppAccentPurpleBrush" Color="#B88CF0"/>
+      <SolidColorBrush x:Key="AppAccentTealBrush" Color="#4CC9C3"/>
+      <SolidColorBrush x:Key="AppAccentOrangeBrush" Color="#F2994A"/>
+      <SolidColorBrush x:Key="AppAccentLimeBrush" Color="#A3D977"/>
+      <SolidColorBrush x:Key="AppAccentSlateBrush" Color="#4A5563"/>
+      <SolidColorBrush x:Key="AppTrackBrush" Color="#D9D3CF"/>
+      <SolidColorBrush x:Key="AppPlaceholderBrush" Color="#F2EFEB"/>
+      <SolidColorBrush x:Key="AppPlaceholderGlyphBrush" Color="#A9A1A0"/>
     </ResourceDictionary>
 
   </ResourceDictionary.ThemeDictionaries>

@@ -557,7 +557,7 @@
     <StackPanel Grid.Row="1" Margin="0,8,0,0" Spacing="2">
       <TextBlock Text="{Binding ErrorMessage}"
                  IsVisible="{Binding ErrorMessage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                 Foreground="#E57373" FontSize="12" TextWrapping="Wrap"/>
+                 Foreground="{DynamicResource AppErrorBrush}" FontSize="12" TextWrapping="Wrap"/>
       <TextBlock Text="{Binding StatusMessage}"
                  IsVisible="{Binding StatusMessage, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                  Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>

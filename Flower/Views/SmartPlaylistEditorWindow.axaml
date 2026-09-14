@@ -54,7 +54,7 @@
                 ToolTip.Tip="Keep re-evaluating these rules as the library changes. Off means fill the playlist in once, now, and then leave it alone."/>
 
       <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}"
-                 Foreground="#D45B5B" TextWrapping="Wrap"/>
+                 Foreground="{DynamicResource AppErrorBrush}" TextWrapping="Wrap"/>
 
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
         <Button Content="Cancel" Click="Cancel_Click" MinWidth="90"/>

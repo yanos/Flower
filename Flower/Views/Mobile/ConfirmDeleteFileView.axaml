@@ -42,7 +42,7 @@
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
         <Button Classes="deleteAction" Content="Delete" Command="{Binding ConfirmDeleteFileCommand}"
-                Background="#E05555" Foreground="White" />
+                Background="{DynamicResource AppErrorBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
         <Button Classes="deleteAction" Content="Cancel" Command="{Binding CancelDeleteFileCommand}"
                 Background="Transparent" />
       </StackPanel>

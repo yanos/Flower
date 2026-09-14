@@ -18,16 +18,14 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
-    <!-- Same "active" convention MobileMainView's own currently-playing row
-         highlight already uses (SystemAccentColor), not desktop's
-         AppAccentBrush - keeps this consistent with mobile's own theming
-         rather than importing a second color convention. -->
+    <!-- The app-wide highlight color (AppAccentBrush), the same one an
+         active pill icon and the playing row use. -->
     <Style Selector="materialIcons|MaterialIcon.transportToggle">
       <Setter Property="Opacity" Value="0.5" />
     </Style>
     <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
       <Setter Property="Opacity" Value="1" />
-      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
     </Style>
 
     <!-- Fluent's Slider reserves 15px above and below its 20px track (the

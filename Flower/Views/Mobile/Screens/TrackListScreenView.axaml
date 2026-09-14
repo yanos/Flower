@@ -240,7 +240,7 @@
     <!-- Drop-position indicator for the playlist drag-to-reorder gesture -->
     <Border x:Name="DropIndicator"
             Height="2"
-            Background="{DynamicResource SystemAccentColor}"
+            Background="{DynamicResource AppAccentBrush}"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Top"
             IsHitTestVisible="False"

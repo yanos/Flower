@@ -384,7 +384,7 @@
                  plainly next to the box rather than raised as a dialog. -->
             <TextBlock Text="{Binding PairingCodeError}"
                        IsVisible="{Binding PairingCodeError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                       Foreground="#E57373" FontSize="12"
+                       Foreground="{DynamicResource AppErrorBrush}" FontSize="12"
                        VerticalAlignment="Center" Margin="8,0,0,0"/>
             <TextBlock Text="{Binding PairActionHint}"
                        IsVisible="{Binding PairActionHint, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
@@ -409,7 +409,7 @@
                  said plainly next to the button, same as PairingCodeError. -->
             <TextBlock Text="{Binding ServerSettingsError}"
                        IsVisible="{Binding ServerSettingsError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-                       Foreground="#E57373" FontSize="12" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppErrorBrush}" FontSize="12" TextWrapping="Wrap"
                        MaxWidth="260"
                        VerticalAlignment="Center" Margin="8,0,0,0"/>
           </StackPanel>

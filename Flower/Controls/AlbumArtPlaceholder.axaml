@@ -9,14 +9,14 @@
        caller gives this control - so the glyph is always the same proportion
        of the box, no matter whether it's a 28px row thumbnail or a 200px
        Track Info header. -->
-  <Border Background="#18FFFFFF"
+  <Border Background="{DynamicResource AppPlaceholderBrush}"
           CornerRadius="{Binding #Root.CornerRadius}">
     <Viewbox Stretch="Uniform">
       <Grid Width="100" Height="100">
         <TextBlock Text="♫"
                    FontSize="50"
                    FontWeight="Bold"
-                   Foreground="#606060"
+                   Foreground="{DynamicResource AppPlaceholderGlyphBrush}"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"/>
       </Grid>

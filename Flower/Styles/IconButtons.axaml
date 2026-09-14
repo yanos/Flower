@@ -34,7 +34,7 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="Button.pill.selected materialIcons|MaterialIcon">
-    <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+    <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
   </Style>
 
   <!-- Play, wherever it is the point of a group (Now Playing's transport, an
