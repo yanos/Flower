@@ -333,12 +333,16 @@
          floating look as the back button and the search/settings pill, drawn
          taller to fit a label under each icon. Its bottom margin comes from
          the safe area (MobileMainView.axaml.cs), which lifts it off the home
-         indicator. -->
-    <Border x:Name="TabBar"
+         indicator. The star columns centre it at 85% of the width between
+         those margins; the wrapper has no Background, so the empty columns
+         either side pass touches through to the list. -->
+    <Grid x:Name="TabBar"
+          Margin="16,0"
+          ColumnDefinitions="3*,34*,3*">
+    <Border Grid.Column="1"
             Classes="floating"
             Height="64"
             CornerRadius="32"
-            Margin="16,0"
             Padding="4,0">
     <Grid ColumnDefinitions="*,*,*,*,*">
       <Button Grid.Column="0" Classes="pill tab"
@@ -390,6 +394,7 @@
       </Button>
     </Grid>
     </Border>
+    </Grid>
     </StackPanel>
 
     <!-- Every sheet slides rather than blinking in and out - see SlidingSheet,

@@ -44,7 +44,8 @@
            The pill is the floating one MobileMainView puts over its screens
            (Border.floating, Button.pill), which reaches here because the
            screens are hosted inside that view. Centred under the art, ranged
-           left beside it (.albumText styles). -->
+           left beside it (.albumText styles). Drawn a fifth larger than the
+           floating pill's own 40px: 24px glyphs in 44px buttons, 48 tall. -->
       <DataTemplate x:Key="AlbumTextTemplate" x:DataType="vm:AlbumTileViewModel">
         <StackPanel Spacing="2" Classes.dimmed="{Binding IsUnavailable}">
           <TextBlock Text="{Binding Name}"
@@ -56,28 +57,28 @@
           <TextBlock Text="{Binding RepresentativeTrack.Year}"
                      FontSize="13" Opacity="0.5"
                      IsVisible="{Binding RepresentativeTrack.Year, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}" />
-          <Border Classes="floating albumActions" Padding="2,0" Margin="0,12,0,0">
+          <Border Classes="floating albumActions" Height="48" CornerRadius="24" Padding="2,0" Margin="0,12,0,0">
             <StackPanel Orientation="Horizontal">
-              <Button Classes="pill circle"
+              <Button Classes="pill circle" Padding="3"
                       Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).PlayAlbumCommand}">
-                <Border Classes="ring">
-                  <materialIcons:MaterialIcon Kind="Play" Width="20" Height="20" />
+                <Border Classes="ring" Padding="5.5">
+                  <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" />
                 </Border>
               </Button>
-              <Button Classes="pill"
+              <Button Classes="pill" Padding="10"
                       Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShuffleAlbumCommand}">
-                <materialIcons:MaterialIcon Kind="Shuffle" Width="20" Height="20" />
+                <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24" />
               </Button>
-              <Button Classes="pill"
+              <Button Classes="pill" Padding="10"
                       Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).OpenAlbumAddToPlaylistCommand}">
-                <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="20" Height="20" />
+                <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="24" Height="24" />
               </Button>
               <!-- Its own IsVisible is the indicator's answer, so the server
                    gate goes on a wrapper - the two are different questions. -->
               <Panel IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">
                 <controls:TrackDownloadButton DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllIndicator}"
-                                              IconSize="20"
-                                              IconPadding="8"
+                                              IconSize="24"
+                                              IconPadding="10"
                                               Label="Download album"
                                               Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
               </Panel>
