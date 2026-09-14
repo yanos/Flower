@@ -10,7 +10,8 @@
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.SettingsView"
              x:DataType="vm:MobileMainViewModel"
-             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+             Padding="{DynamicResource SheetBottomInset}">
 
   <UserControl.Styles>
     <Style Selector="StackPanel.section">

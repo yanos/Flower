@@ -1310,6 +1310,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (Main.Rows.Count == 0)
                 return;
             ActionTarget = null;
+            // The sheet's header shows what it adds, the same way it does
+            // when it is reached from the album menu.
+            AlbumActionTarget = CurrentAlbumHeader;
             _playlistTargets = Main.Rows.Select(r => r.Track).ToList();
             ActiveSheet = MobileSheet.AddToPlaylist;
         });

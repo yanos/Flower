@@ -6,6 +6,7 @@
              xmlns:svm="clr-namespace:Flower.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.AddToPlaylistView"
              x:DataType="vm:MobileMainViewModel">
@@ -34,18 +35,60 @@
             MaxHeight="420"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             CornerRadius="12,12,0,0"
-            Padding="0,8">
+            Padding="0,8,0,16">
       <DockPanel Margin="{DynamicResource SheetBottomInset}">
-        <TextBlock DockPanel.Dock="Top"
-                   Text="Add to Playlist"
-                   FontSize="14"
-                   FontWeight="SemiBold"
-                   Opacity="0.6"
-                   Margin="20,8,20,8" />
-
-        <Button DockPanel.Dock="Bottom" Classes="action" Command="{Binding CloseSheetCommand}" Margin="0,8,0,0">
-          <TextBlock Text="Cancel" FontSize="16" HorizontalAlignment="Center" Opacity="0.7" />
-        </Button>
+        <!-- The same header as the song and album menus (TrackActionsView,
+             AlbumActionsView): the art and name of what is being added, with
+             the X that closes the sheet in the top right corner. A song when
+             it came from a song's menu; otherwise the album, from the album
+             menu or from the album screen's own actions. Only one of the two
+             targets is ever set while this sheet is up. -->
+        <Grid DockPanel.Dock="Top"
+              IsVisible="{Binding ActionTarget, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+              ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="20,8,8,8">
+          <controls:AlbumArtView Grid.Column="0"
+                                  AlbumArt="{Binding ActionRow.AlbumArt}"
+                                  Width="52" Height="52" />
+          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+            <TextBlock Text="{Binding ActionTarget.Title}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding ActionTarget.Artists}"
+                       FontSize="13"
+                       Opacity="0.65"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <Button Grid.Column="2"
+                  Classes="pill"
+                  VerticalAlignment="Top"
+                  Command="{Binding CloseSheetCommand}">
+            <materialIcons:MaterialIcon Kind="Close" Width="22" Height="22" Opacity="0.7" />
+          </Button>
+        </Grid>
+        <Grid DockPanel.Dock="Top"
+              IsVisible="{Binding AlbumActionTarget, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+              ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="20,8,8,8">
+          <controls:AlbumArtView Grid.Column="0"
+                                  AlbumArt="{Binding AlbumActionTarget.AlbumArt}"
+                                  Width="52" Height="52" />
+          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+            <TextBlock Text="{Binding AlbumActionTarget.Name}"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding AlbumActionTarget.Artist}"
+                       FontSize="13"
+                       Opacity="0.65"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <Button Grid.Column="2"
+                  Classes="pill"
+                  VerticalAlignment="Top"
+                  Command="{Binding CloseSheetCommand}">
+            <materialIcons:MaterialIcon Kind="Close" Width="22" Height="22" Opacity="0.7" />
+          </Button>
+        </Grid>
 
         <ScrollViewer>
           <StackPanel>

@@ -7,7 +7,8 @@
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.TrackInfoView"
              x:DataType="vm:MobileMainViewModel"
-             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+             Padding="{DynamicResource SheetBottomInset}">
 
   <UserControl.Styles>
     <Style Selector="TextBlock.lbl">

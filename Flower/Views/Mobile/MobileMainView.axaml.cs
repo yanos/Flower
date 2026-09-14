@@ -2,8 +2,6 @@ using System;
 
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.LogicalTree;
-using System.Linq;
 using Avalonia.Controls.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml.MarkupExtensions;
@@ -54,8 +52,8 @@ public partial class MobileMainView : UserControl
     // own Padding, the bottom one inside the tab bar, whose background then
     // runs down behind the home indicator.
     //
-    // The sheets span every row, so they get the bottom inset as a margin -
-    // they sit exactly where they did when the platform padded everything.
+    // The sheets span every row and run down behind the home indicator too;
+    // each keeps its content clear of the inset itself (SheetBottomInset).
     //
     // The top level is painted with the screens' own brush as well, for any
     // platform that shows it despite the preference (a status bar strip).
@@ -99,19 +97,11 @@ public partial class MobileMainView : UserControl
         // still floats clear of the edge.
         TabBar.Margin = new Thickness(16, 0, 16, Math.Max(TabBarMinimumBottomMargin, safeArea.Bottom - TabBarInsetOverlap));
 
-        // A card's background runs down to the very bottom edge, under the
-        // home indicator, and only what is on it keeps clear of the inset -
-        // SheetBottomInset, which each card puts on its content. A sheet with
-        // no card is a whole screen, and still stops above the inset.
+        // Every sheet's background runs down to the very bottom edge, under
+        // the home indicator, and only what is on it keeps clear of the inset -
+        // SheetBottomInset, which a card puts on its content and a whole-screen
+        // sheet (Now Playing, Settings, Track Info) takes as its own Padding.
         Resources["SheetBottomInset"] = new Thickness(0, 0, 0, safeArea.Bottom);
-        foreach (var child in Root.Children)
-        {
-            if (child is SlidingSheet sheet)
-            {
-                var hasCard = sheet.GetLogicalDescendants().OfType<Control>().Any(SlidingSheet.GetIsCard);
-                sheet.Margin = new Thickness(0, 0, 0, hasCard ? 0 : safeArea.Bottom);
-            }
-        }
     }
 
     // Tapping the Search tab icon while already on the Search tab is a no-op

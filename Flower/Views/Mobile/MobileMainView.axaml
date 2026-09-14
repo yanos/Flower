@@ -230,6 +230,7 @@
                 Grid.Column="0"
                 Classes="floating"
                 Width="40"
+                BoxShadow="0 0 16 1.6 #4D000000"
                 IsVisible="False">
           <Button Classes="pill"
                   Click="BackButton_Click"
@@ -244,6 +245,7 @@
              selected state, drawn in the accent colour. -->
         <Border Grid.Column="2"
                 Classes="floating"
+                BoxShadow="0 0 16 1.6 #4D000000"
                 Padding="2,0">
           <StackPanel Orientation="Horizontal">
             <Button Classes="pill"

@@ -50,7 +50,8 @@
            play's circle 48 across to match. -->
       <DataTemplate x:Key="AlbumTextTemplate" x:DataType="vm:AlbumTileViewModel">
         <StackPanel Spacing="2" Classes.dimmed="{Binding IsUnavailable}">
-          <TextBlock Text="{Binding Name}"
+          <TextBlock Classes="albumName"
+                     Text="{Binding Name}"
                      FontSize="20" FontWeight="Bold"
                      TextWrapping="Wrap" />
           <TextBlock Text="{Binding Artist}"
@@ -116,6 +117,12 @@
          them. -->
     <Style Selector="ContentControl.albumText">
       <Setter Property="Margin" Value="12,4,12,16" />
+    </Style>
+    <!-- Stacked, the album's name sits over its art instead (see the title
+         above the art in the scroll), so the words under the art begin at the
+         artist. Beside the art the name stays at the head of the track column. -->
+    <Style Selector="ContentControl.albumText:not(.beside) TextBlock.albumName">
+      <Setter Property="IsVisible" Value="False" />
     </Style>
     <Style Selector="ContentControl.albumText.beside TextBlock">
       <Setter Property="TextAlignment" Value="Left" />
@@ -216,10 +223,18 @@
            TrackListScreenView.axaml.cs's ObserveLive/Freeze). -->
       <ScrollViewer Grid.Column="1" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
         <StackPanel>
+          <!-- Stacked, the album's name heads the screen, over its art; the
+               artist, year and actions stay under the art. -->
+          <TextBlock IsVisible="{Binding !#Root.IsWideAlbumLayout}"
+                     Text="{Binding #Root.DisplayHeader.Name}"
+                     Classes.dimmed="{Binding #Root.DisplayHeader.IsUnavailable}"
+                     FontSize="20" FontWeight="Bold"
+                     TextWrapping="Wrap" TextAlignment="Center"
+                     Margin="24,4,24,10" />
           <ContentControl IsVisible="{Binding !#Root.IsWideAlbumLayout}"
                           Content="{Binding #Root.DisplayHeader}"
                           ContentTemplate="{StaticResource AlbumArtTemplate}"
-                          Width="240" Margin="24,4,24,12"
+                          Width="240" Margin="24,0,24,12"
                           HorizontalAlignment="Center" />
           <!-- Inset by the .albumText styles above, which is where the two
                layouts differ - the ranged-left one has to line its first

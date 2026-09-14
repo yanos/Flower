@@ -152,6 +152,8 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
         Assert.NotNull(AlbumText(window).FindAncestorOfType<ScrollViewer>());
         Assert.True(InWindow(window, VisibleArt(window)).Bottom
             <= InWindow(window, AlbumText(window)).Y, "the words are not under the art");
+        Assert.True(InWindow(window, TextBlockSaying(window, Album)).Bottom
+            <= InWindow(window, VisibleArt(window)).Y, "the album name is not over the art");
         Assert.Equal(0, Math.Round(InWindow(window, TrackList(window)).X));
 
         window.Close();
@@ -270,7 +272,7 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
     }
 
     private static TextBlock TextBlockSaying(Window window, string text) =>
-        window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == text);
+        window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == text && t.IsEffectivelyVisible);
 
     private static ItemsControl TrackList(Window window) =>
         window.GetVisualDescendants().OfType<ItemsControl>()
