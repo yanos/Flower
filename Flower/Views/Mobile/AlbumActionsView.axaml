@@ -92,7 +92,20 @@
                 IsVisible="{Binding CanDownloadAlbumActionTarget}">
           <StackPanel Orientation="Horizontal" Spacing="14">
             <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" />
-            <TextBlock Text="Download" FontSize="16" VerticalAlignment="Center" />
+            <TextBlock Text="Download All" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <!-- Once any song in the album has a file on this device
+             (CanDeleteAlbumActionTargetLocalFiles): every such file, reverted to
+             a placeholder the way a song's own Delete Local File does, through
+             the same confirm sheet and its warning when a file would not come
+             back. -->
+        <Button Classes="action" Command="{Binding DeleteAlbumActionTargetLocalFilesCommand}"
+                IsVisible="{Binding CanDeleteAlbumActionTargetLocalFiles}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="22" Height="22" Foreground="{DynamicResource AppErrorBrush}" />
+            <TextBlock Text="Delete Local Files" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
           </StackPanel>
         </Button>
       </StackPanel>

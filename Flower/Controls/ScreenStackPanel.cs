@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Runtime.CompilerServices;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -6,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using Flower.Services;
 using Flower.ViewModels.Mobile;
@@ -118,8 +121,16 @@ public sealed class ScreenStackPanel : Panel
             // briefly inconsistent mid-transition and flashing the wrong
             // content - see MobileMainViewModel.NavigationLeaving's own doc
             // comment for the concrete bug this closes.
+            vm.ScrollToTopRequested += (_, _) => ScrollCurrentToTop();
             vm.NavigationLeaving += (_, leavingFrame) =>
             {
+                // A navigation takes the screen away; its glide to the top
+                // must not keep writing to a list that is no longer current.
+                _scrollToTop?.Dispose();
+                _scrollToTop = null;
+                // Read before freezing, which rebinds the rows the list shows.
+                if (_currentInner != null && ScrollerOf(_currentInner) is { } scroller)
+                    _scrollOffsets.AddOrUpdate(leavingFrame, new StrongBox<Vector>(scroller.Offset));
                 if (_currentInner is TrackListScreenView currentTrackList)
                     currentTrackList.Freeze(leavingFrame);
             };
@@ -185,6 +196,7 @@ public sealed class ScreenStackPanel : Panel
         current.RenderTransform = new TranslateTransform();
         if (currentFrame.IsSearchScreen)
             current.FocusSearchBox();
+        var restoredFrame = vm.ConsumeRestoredFrame();
 
         // Both inert slots are full-bleed and opaque, and only ONE of them can
         // be the screen a given motion uncovers - so exactly one is visible at
@@ -226,6 +238,17 @@ public sealed class ScreenStackPanel : Panel
 
         bool unchanged = ReferenceEquals(_current, current) && ReferenceEquals(_oneBack, back) && ReferenceEquals(_oneForward, forward);
 
+        // Only a screen that has just become current starts at the top; a
+        // resync over the one already showing (a rescan, a search refresh)
+        // leaves it where the user has it.
+        var currentOffset = restoredFrame != null
+            ? SavedOffset(restoredFrame)
+            : ReferenceEquals(_currentInner, currentInner) ? null : Vector.Zero;
+        var scrollOffsets = new (Control?, Vector?)[]
+        {
+            (currentInner, currentOffset), (backInner, SavedOffset(backFrame)), (forwardInner, SavedOffset(forwardFrame)),
+        };
+
         _current = current;
         _oneBack = back;
         _oneForward = forward;
@@ -235,6 +258,7 @@ public sealed class ScreenStackPanel : Panel
 
         if (unchanged)
         {
+            RestoreScrollOffsets(scrollOffsets);
             RaiseSettled();
             return;
         }
@@ -251,6 +275,11 @@ public sealed class ScreenStackPanel : Panel
         if (forward != null)
             Children.Add(forward);
         Children.Add(current);
+
+        // Before the entrance below parks the screen off to one side, for the
+        // same reason its own layout pass comes first: it has to be measured
+        // where it will rest.
+        RestoreScrollOffsets(scrollOffsets);
 
         if (transition != MobileNavigationTransition.None
             && back != null
@@ -283,6 +312,59 @@ public sealed class ScreenStackPanel : Panel
         }
         else
             RaiseSettled();
+    }
+
+    // Where each screen was scrolled to when the user left it, keyed on the
+    // exact frame object the ViewModel recorded for that departure - the one
+    // that goes into the history and into the tab's remembered screens (see
+    // MobileMainViewModel.RememberTab), and that comes back out when either
+    // lands there again. By reference, not by value: the same album visited
+    // twice is two departures, and only the one being returned to has a say.
+    // Weak, so a frame dropped from every history takes its offset with it.
+    //
+    // Kept here rather than trusting each control to hold on to its own: the
+    // cache evicts, the pickers' item sources are replaced as the sidebar scope
+    // moves, and a ScrollViewer clamps its offset to whatever extent it has at
+    // the time - any of which puts a list back at the top.
+    private readonly ConditionalWeakTable<MobileNavigationFrame, StrongBox<Vector>> _scrollOffsets = new();
+
+    // The screen's one scroller: the first showing one, outermost first. The
+    // track list screen has two and hides whichever its mode does not use.
+    private static ScrollViewer? ScrollerOf(Control screen) =>
+        screen.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault(s => s.IsEffectivelyVisible);
+
+    private Vector? SavedOffset(MobileNavigationFrame? frame) =>
+        frame != null && _scrollOffsets.TryGetValue(frame, out var box) ? box.Value : null;
+
+    // The screen a Back, Forward or tab restore landed on goes back to where it
+    // was left, and so do both inert ones, so a swipe uncovers them there. A
+    // screen a fresh navigation brings up starts at the top: the cache hands
+    // back the same control for an album opened again, still scrolled wherever
+    // the last visit left it.
+    //
+    // Set, laid out, and set again: a virtualizing list's extent is an estimate
+    // grown from the rows it has realized, so the first try can be clamped
+    // short of an offset the list really does reach.
+    private void RestoreScrollOffsets(params (Control? Screen, Vector? Offset)[] screens)
+    {
+        var pending = screens.Where(s => s is { Screen: not null, Offset: not null }).ToList();
+        if (pending.Count == 0)
+            return;
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            UpdateLayout();
+            var settled = true;
+            foreach (var (screen, offset) in pending)
+            {
+                if (ScrollerOf(screen!) is not { } scroller || scroller.Offset == offset!.Value)
+                    continue;
+                scroller.Offset = offset.Value;
+                settled = false;
+            }
+            if (settled)
+                return;
+        }
     }
 
     // Reuses the existing slot for a role if it's still wrapping the exact
@@ -573,6 +655,34 @@ public sealed class ScreenStackPanel : Panel
         });
         _easing = easing;
         _finishEasing = Finish;
+    }
+
+    // Tapping the tab already showing its first screen: the list glides back
+    // to the top over the same easing a screen slides in with, rather than
+    // jumping there. On the shared clock rather than an Avalonia animation
+    // for the reason EasingDurationMs gives.
+    private IDisposable? _scrollToTop;
+
+    private void ScrollCurrentToTop()
+    {
+        _scrollToTop?.Dispose();
+        if (_currentInner == null || ScrollerOf(_currentInner) is not { } scroller || scroller.Offset.Y <= 0)
+            return;
+
+        var from = scroller.Offset;
+        var duration = TimeSpan.FromMilliseconds(EasingDurationMs);
+        IDisposable? scrolling = null;
+        scrolling = AnimationClock.Current.Subscribe(elapsed =>
+        {
+            var t = Math.Min(1.0, elapsed.TotalMilliseconds / duration.TotalMilliseconds);
+            scroller.Offset = new Vector(from.X, from.Y * (1 - EaseOut(t)));
+            if (t < 1.0)
+                return;
+            scrolling!.Dispose();
+            if (ReferenceEquals(_scrollToTop, scrolling))
+                _scrollToTop = null;
+        });
+        _scrollToTop = scrolling;
     }
 
     private static double EaseOut(double t) => 1 - Math.Pow(1 - t, 3);

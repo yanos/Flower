@@ -164,6 +164,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand ShuffleAlbumActionTargetCommand { get; }
     public ICommand AddAlbumActionTargetToPlaylistCommand { get; }
     public ICommand DownloadAlbumActionTargetCommand { get; }
+    public ICommand DeleteAlbumActionTargetLocalFilesCommand { get; }
     public ICommand PairWithServerCommand { get; }
     public ICommand UnpairServerCommand { get; }
 
@@ -250,9 +251,43 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     {
         var frame = BuildLeavingFrame();
         NavigationLeaving?.Invoke(this, frame);
+        RememberTab(frame);
         _navigationHistory.Push(frame);
         _forwardHistory.Clear();
         _pendingTransition = transition;
+        _restoredFrame = null;
+    }
+
+    // What each tab was last showing, root first: Albums, then the album the
+    // user had open in it. Tapping a tab puts the user back there - on that
+    // album, with the grid under it for Back - rather than at the top of the
+    // tab again. The same frame objects the history holds, so a screen comes
+    // back where it was scrolled to as well (see ConsumeRestoredFrame).
+    //
+    // Recorded on every screen left, overwriting: whatever a tab's last
+    // recording was when the user walked off it is what it was showing. The
+    // screens under it are the run of the history's top that belong to the
+    // same tab, which is that one visit to it and nothing from an earlier one.
+    private readonly Dictionary<MobileTab, IReadOnlyList<MobileNavigationFrame>> _tabScreens = new();
+
+    private void RememberTab(MobileNavigationFrame leaving) =>
+        _tabScreens[leaving.Tab] = _navigationHistory
+            .TakeWhile(f => f.Tab == leaving.Tab)
+            .Reverse()
+            .Append(leaving)
+            .ToList();
+
+    // The frame the last Back, Forward or tab restore landed on, for the view
+    // to put that screen's scroll position back - see ScreenStackPanel, which
+    // keys the positions on these exact objects. Null after a fresh navigation,
+    // which starts at the top.
+    private MobileNavigationFrame? _restoredFrame;
+
+    public MobileNavigationFrame? ConsumeRestoredFrame()
+    {
+        var frame = _restoredFrame;
+        _restoredFrame = null;
+        return frame;
     }
 
     // How the screen this navigation lands on should arrive - the forward
@@ -326,9 +361,63 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             PushHistory(value > _selectedTab
                 ? MobileNavigationTransition.FromRight
                 : MobileNavigationTransition.FromLeft);
-            SetSelectedTabCore(value);
+            if (RememberedScreens(value) is { Count: > 0 } screens)
+                RestoreTab(screens);
+            else
+                SetSelectedTabCore(value);
         }
     }
+
+    // A tab's remembered screens, cut short at the first one naming a sidebar
+    // item that no longer exists - a playlist deleted since, or replaced by a
+    // sync (PlaylistManagementViewModel.RefreshSidebarItems builds new items).
+    // What is left under it is still somewhere the user was.
+    private IReadOnlyList<MobileNavigationFrame>? RememberedScreens(MobileTab tab) =>
+        _tabScreens.TryGetValue(tab, out var screens)
+            ? screens.TakeWhile(f => f.SidebarItem == null || Main.SidebarItems.Contains(f.SidebarItem)).ToList()
+            : null;
+
+    // Lands on the last of a tab's screens with the rest under it in the
+    // history, so Back walks down through that tab before leaving it. Arrives
+    // the way the tab tap says (PushHistory just set it), and without the
+    // sheet the screen was left under: a tab is tapped with no sheet up, and
+    // the one sheet a navigation carries is Now Playing, which was being
+    // dismissed on the way out rather than something to reopen here.
+    private void RestoreTab(IReadOnlyList<MobileNavigationFrame> screens)
+    {
+        foreach (var screen in screens.Take(screens.Count - 1))
+            _navigationHistory.Push(screen);
+        ApplyFrame(screens[^1], goingBack: false, restoringTab: true).Forget(_logger, "Tab restore");
+    }
+
+    // Tapping the tab already showing, the way a phone's tab bar answers it:
+    // from inside the tab (an album, an artist's grid, a playlist) it goes
+    // back to the tab's first screen, at the top; on that first screen it
+    // scrolls it to the top.
+    //
+    // The tab's screens come off the history rather than the one being left
+    // going on, so Back from the root leaves the tab instead of walking back
+    // into the album the tap just closed. Arrives from the left, the side a
+    // screen further up the tab is on.
+    private void ReselectTab()
+    {
+        if (!_hasDrilledIn)
+        {
+            ScrollToTopRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        NavigationLeaving?.Invoke(this, BuildLeavingFrame());
+        while (_navigationHistory.TryPeek(out var under) && under.Tab == _selectedTab)
+            _navigationHistory.Pop();
+        _forwardHistory.Clear();
+        _pendingTransition = MobileNavigationTransition.FromLeft;
+        _restoredFrame = null;
+        SetSelectedTabCore(_selectedTab);
+    }
+
+    // The current screen should scroll back to its top - see ReselectTab.
+    public event EventHandler? ScrollToTopRequested;
 
     // The actual state mutation, split out from the public setter above so
     // compound jumps (SelectSearchAlbumCommand/SelectSearchArtistCommand)
@@ -571,6 +660,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 ActionTarget = null;
                 AlbumActionTarget = null;
                 _playlistTargets = null;
+                _albumDeleteTargets = null;
             }
             if (value == MobileSheet.NowPlaying)
                 NowPlayingExitsForward = false;
@@ -778,6 +868,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             _albumActionTarget = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanDownloadAlbumActionTarget));
+            OnPropertyChanged(nameof(CanDeleteAlbumActionTargetLocalFiles));
         }
     }
 
@@ -785,6 +876,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // to fetch, from a server that is there to fetch it from.
     public bool CanDownloadAlbumActionTarget =>
         AlbumActionTarget?.IsDownloadable == true && Main.CanForceSync;
+
+    // Shown once any song in the album has a file on this device - the
+    // album's counterpart to a song's own Delete (CanDeleteDownloadedFile).
+    public bool CanDeleteAlbumActionTargetLocalFiles =>
+        AlbumActionTarget?.Tracks.Any(t => t.Path != null) == true;
 
     // A tile's tracks come in library order, so they are put in the album's
     // own before anything plays them - the order its track list shows. An
@@ -879,15 +975,38 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // import) or a fingerprint that isn't the current pairing (a track from
     // before a Server switch, or synced via ad-hoc peer browsing rather than
     // bulk sync) both mean the same thing here: nothing will resync it back.
-    public bool IsRecoverableDownload =>
-        ActionTarget?.OriginDeviceFingerprint != null &&
-        ActionTarget.OriginDeviceFingerprint == Main.PairedServerFingerprint;
+    // For an album, only if every one of its files would come back.
+    public bool IsRecoverableDownload => DeleteTargets.Count > 0 && DeleteTargets.All(t =>
+        t.OriginDeviceFingerprint != null && t.OriginDeviceFingerprint == Main.PairedServerFingerprint);
 
-    public string ConfirmDeleteFileTitle => $"Delete \"{ActionTarget?.Title}\"?";
+    // The album menu's Delete Local Files confirms through the same sheet as
+    // a song's Delete, over every file of the album's on this device. Null
+    // while the sheet is confirming ActionTarget alone.
+    private IReadOnlyList<Track>? _albumDeleteTargets;
 
-    public string ConfirmDeleteFileMessage => IsRecoverableDownload
-        ? "This removes the downloaded copy from this device. Your paired server still has it, so you can download it again later."
-        : "Your currently paired server doesn't have this file, so it won't be synced back automatically. Deleting it now will remove your only copy.";
+    private IReadOnlyList<Track> DeleteTargets =>
+        _albumDeleteTargets ?? (ActionTarget is { } track ? [track] : []);
+
+    public string ConfirmDeleteFileTitle => _albumDeleteTargets is { } files
+        ? $"Delete {files.Count} local {(files.Count == 1 ? "file" : "files")} of \"{AlbumActionTarget?.Name}\"?"
+        : $"Delete \"{ActionTarget?.Title}\"?";
+
+    public string ConfirmDeleteFileMessage => (_albumDeleteTargets != null, IsRecoverableDownload) switch
+    {
+        (false, true) => "This removes the downloaded copy from this device. Your paired server still has it, so you can download it again later.",
+        (false, false) => "Your currently paired server doesn't have this file, so it won't be synced back automatically. Deleting it now will remove your only copy.",
+        (true, true) => "This removes the downloaded copies from this device. Your paired server still has them, so you can download them again later.",
+        (true, false) => "Your currently paired server doesn't have some of these files, so they won't be synced back automatically. Deleting them now will remove your only copy.",
+    };
+
+    private void ConfirmDeleting(IReadOnlyList<Track>? albumFiles)
+    {
+        _albumDeleteTargets = albumFiles;
+        OnPropertyChanged(nameof(IsRecoverableDownload));
+        OnPropertyChanged(nameof(ConfirmDeleteFileTitle));
+        OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
+        ActiveSheet = MobileSheet.ConfirmDeleteFile;
+    }
 
     // Whichever list is currently on screen (picker or track list) has nothing in it.
     // Without this, an empty library or an empty search just renders a blank screen.
@@ -1052,7 +1171,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
         SelectTabCommand = new RelayCommand<string>(name =>
         {
-            if (name != null && System.Enum.TryParse<MobileTab>(name, out var tab))
+            if (name == null || !System.Enum.TryParse<MobileTab>(name, out var tab))
+                return;
+            if (tab == SelectedTab)
+                ReselectTab();
+            else
                 SelectedTab = tab;
         });
         SelectAlbumOrArtistCommand = new RelayCommand<string>(SelectAlbumOrArtist);
@@ -1214,6 +1337,17 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (tile != null)
                 await Main.Downloads.DownloadAlbumAsync(tile, tile.Tracks);
         });
+        // Confirmed first, like a song's Delete. The confirm sheet replaces the
+        // menu without passing through None, so AlbumActionTarget is still set
+        // for its title.
+        DeleteAlbumActionTargetLocalFilesCommand = new RelayCommand(() =>
+        {
+            if (AlbumActionTarget is not { } tile)
+                return;
+            var files = tile.Tracks.Where(t => t.Path != null).ToList();
+            if (files.Count > 0)
+                ConfirmDeleting(files);
+        });
         ViewTrackInfoCommand = new RelayCommand(() =>
         {
             if (ActionTarget != null)
@@ -1273,11 +1407,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         DeleteDownloadedFileCommand = new RelayCommand(() =>
         {
             if (ActionTarget != null)
-                ActiveSheet = MobileSheet.ConfirmDeleteFile;
+                ConfirmDeleting(albumFiles: null);
         });
         ConfirmDeleteFileCommand = new RelayCommand(async () =>
         {
-            if (ActionTarget is { } track)
+            foreach (var track in DeleteTargets.ToList())
                 await Main.DeleteDownloadedFileAsync(track);
             ActiveSheet = MobileSheet.None;
         });
@@ -1772,6 +1906,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // opposite push (onto _navigationHistory instead).
         var leaving = BuildLeavingFrame();
         NavigationLeaving?.Invoke(this, leaving);
+        if (frame.Tab != leaving.Tab)
+            RememberTab(leaving);
         _forwardHistory.Push(leaving);
 
         await ApplyFrame(frame, goingBack: true);
@@ -1789,6 +1925,12 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         var frame = _forwardHistory.Pop();
         var leaving = BuildLeavingFrame();
         NavigationLeaving?.Invoke(this, leaving);
+        // Before the push, so the run of this tab's screens under it is read
+        // off the history as it was. Back remembers only when it crosses to
+        // another tab too, and there the popped destination is on top and is
+        // not this tab's, so nothing under the screen being left is taken.
+        if (frame.Tab != leaving.Tab)
+            RememberTab(leaving);
         _navigationHistory.Push(leaving);
 
         await ApplyFrame(frame, goingBack: false);
@@ -1797,13 +1939,18 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // Restores a popped frame's state and rebuilds whatever needs it -
     // shared by GoBack and GoForward, which differ only in which stack they
     // pop from/push the outgoing screen onto (see both above).
-    private async Task ApplyFrame(MobileNavigationFrame frame, bool goingBack)
+    //
+    // restoringTab is a tab tap landing on what that tab was showing (see
+    // RestoreTab): a forward navigation, so it keeps the entrance the tap set
+    // and leaves the sheet alone.
+    private async Task ApplyFrame(MobileNavigationFrame frame, bool goingBack, bool restoringTab = false)
     {
         // Back/Forward animate the OUTGOING screen off (ScreenStackPanel's own
         // easing, whether from a swipe or the back button), revealing the one
         // already sitting underneath - nothing slides in on top, so no
         // entrance transition is pending for the frame being restored.
-        _pendingTransition = MobileNavigationTransition.None;
+        if (!restoringTab)
+            _pendingTransition = MobileNavigationTransition.None;
         _selectedTab = frame.Tab;
         _hasDrilledIn = frame.HasDrilledIn;
         _selectedArtistName = frame.SelectedArtistName;
@@ -1845,7 +1992,12 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // that same comment.
         if (frame.ScreenKind == MobileScreenKind.TrackList)
             await Main.RebuildRowsImmediatelyAsync(includeGridTiles: false);
+        // After the await, so a NavigationChanged raised for something else in
+        // the meantime cannot take it for the screen still showing.
+        _restoredFrame = frame;
         RaiseNavigationChanged();
+        if (restoringTab)
+            return;
         // Last, over a destination that is fully built: a sheet is raised on
         // top of a screen, so opening it before that screen is ready would
         // animate it over the outgoing one.

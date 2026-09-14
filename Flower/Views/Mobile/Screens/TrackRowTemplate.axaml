@@ -131,8 +131,13 @@
              invisible copy of that text rather than a fixed pixel width, so it
              follows the font; bold, because the playing row's text is bold
              (Button.trackRow.playing) and its cell must not be the one that
-             is wider. -->
-        <Panel Grid.Column="4" Margin="1,0,0,0" VerticalAlignment="Center">
+             is wider.
+
+             No gap before it: the bold copy is 3px wider in Inter than the
+             regular 9:59:59, which is exactly what the download circle reaches
+             into the cell, and the 9 draws a pixel inside its own box - so the
+             circle ends one pixel short of the longest time's ink. -->
+        <Panel Grid.Column="4" VerticalAlignment="Center">
           <TextBlock Text="9:59:59"
                      FontSize="13"
                      FontWeight="Bold"

@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             x:Class="Flower.Controls.ScreenTitle">
+
+  <!-- A screen's name, as the first thing in its scroller rather than fixed in
+       the header band: it sits on its own line under the back button, ranged
+       left with the rows, and scrolls away with them. Every screen puts one at
+       the top of what it scrolls - a ListBox through the screenScroll template
+       in MobileMainView.axaml.
+
+       The name is the frame's, read off the ScreenSlot hosting the screen, so
+       a kept-alive back or forward screen shows its own rather than the live
+       one's (see MobileNavigationFrame.Title). Blank over an album's tracks and
+       on Search, where the line collapses and takes no room: the album's name
+       is right there in large type, and Search has its box in the band. -->
+  <TextBlock Text="{Binding $parent[controls:ScreenSlot].Frame.Title}"
+             IsVisible="{Binding $parent[controls:ScreenSlot].Frame.Title, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+             FontSize="22"
+             FontWeight="SemiBold"
+             Margin="16,0,16,8"
+             TextTrimming="CharacterEllipsis" />
+</UserControl>

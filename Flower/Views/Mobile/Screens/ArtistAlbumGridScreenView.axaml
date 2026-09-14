@@ -11,63 +11,68 @@
        RecentlyAddedScreenView's own comment); tapping a tile drills into that
        album's tracks via SelectArtistAlbumCommand. -->
   <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
-    <ItemsControl ItemsSource="{Binding ArtistAlbumGridRows}"
-                  Padding="12,12,0,12"
-                  controls:AlbumGridColumnSizing.IsEnabled="True">
-      <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate>
-          <VirtualizingStackPanel Orientation="Vertical" />
-        </ItemsPanelTemplate>
-      </ItemsControl.ItemsPanel>
-      <ItemsControl.ItemTemplate>
-        <DataTemplate x:DataType="vm:AlbumGridRow">
-          <!-- One UniformGrid per row, sized by that row's own Columns: the
-               grid fits as many ~150px tiles across as the width allows, so a
-               phone turned into landscape shows five where portrait shows two
-               (see AlbumGridRow.ColumnsFor, fed by AlbumGridColumnSizing on
-               the ItemsControl above). UniformGrid has no ColumnSpacing of its
-               own, so the 12px gutter is each tile's right margin and the
-               ItemsControl leaves its own right edge to the last tile's - that
-               is what keeps the gap identical at both screen edges and between
-               columns. The gap *below* a tile is deliberately much larger than
-               the 6 between its art and its caption, so a title reads as
-               belonging to the album above it rather than the one below. -->
-          <ItemsControl ItemsSource="{Binding Tiles}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <UniformGrid Columns="{Binding Columns}" />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:AlbumTileViewModel">
-                <Button Classes="pickerRow" Padding="0" Margin="0,0,12,24"
-                        Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistAlbumCommand}"
-                        CommandParameter="{Binding Name}"
-                        controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
-                        controls:LongPress.CommandParameter="{Binding}">
-                  <StackPanel Spacing="6" HorizontalAlignment="Stretch"
-                              Classes.dimmed="{Binding IsUnavailable}">
-                    <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" />
-                    <!-- Explicit LineHeights, not the font default: Inter has no CJK
-                         glyphs, so a Japanese title falls back to a system face 1.45x to
-                         1.6x taller (which face, and so which of those, depends on the
-                         machine), and a row pairing one with a Latin title puts the two
-                         captions at different heights. Pinning both lines makes every
-                         caption 39px whatever script it is in - 39 rather than the 37
-                         these were first set to because that was the tallest fallback on
-                         one Mac, and a CI runner's is two pixels taller still. See
-                         AlbumTileCaptionTests. -->
-                    <StackPanel>
-                      <TextBlock Text="{Binding Name}" FontSize="13" LineHeight="21" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Text="{Binding Artist}" FontSize="11" LineHeight="18" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+    <!-- Stacked with the screen's title, so the title scrolls away with the
+         tiles (ScreenTitle). -->
+    <StackPanel>
+      <controls:ScreenTitle />
+      <ItemsControl ItemsSource="{Binding ArtistAlbumGridRows}"
+                    Padding="12,12,0,12"
+                    controls:AlbumGridColumnSizing.IsEnabled="True">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel Orientation="Vertical" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:AlbumGridRow">
+            <!-- One UniformGrid per row, sized by that row's own Columns: the
+                 grid fits as many ~150px tiles across as the width allows, so a
+                 phone turned into landscape shows five where portrait shows two
+                 (see AlbumGridRow.ColumnsFor, fed by AlbumGridColumnSizing on
+                 the ItemsControl above). UniformGrid has no ColumnSpacing of its
+                 own, so the 12px gutter is each tile's right margin and the
+                 ItemsControl leaves its own right edge to the last tile's - that
+                 is what keeps the gap identical at both screen edges and between
+                 columns. The gap *below* a tile is deliberately much larger than
+                 the 6 between its art and its caption, so a title reads as
+                 belonging to the album above it rather than the one below. -->
+            <ItemsControl ItemsSource="{Binding Tiles}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <UniformGrid Columns="{Binding Columns}" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:AlbumTileViewModel">
+                  <Button Classes="pickerRow" Padding="0" Margin="0,0,12,24"
+                          Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistAlbumCommand}"
+                          CommandParameter="{Binding Name}"
+                          controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
+                          controls:LongPress.CommandParameter="{Binding}">
+                    <StackPanel Spacing="6" HorizontalAlignment="Stretch"
+                                Classes.dimmed="{Binding IsUnavailable}">
+                      <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" />
+                      <!-- Explicit LineHeights, not the font default: Inter has no CJK
+                           glyphs, so a Japanese title falls back to a system face 1.45x to
+                           1.6x taller (which face, and so which of those, depends on the
+                           machine), and a row pairing one with a Latin title puts the two
+                           captions at different heights. Pinning both lines makes every
+                           caption 39px whatever script it is in - 39 rather than the 37
+                           these were first set to because that was the tallest fallback on
+                           one Mac, and a CI runner's is two pixels taller still. See
+                           AlbumTileCaptionTests. -->
+                      <StackPanel>
+                        <TextBlock Text="{Binding Name}" FontSize="13" LineHeight="21" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Artist}" FontSize="11" LineHeight="18" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
                     </StackPanel>
-                  </StackPanel>
-                </Button>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
   </ScrollViewer>
 </UserControl>

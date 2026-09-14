@@ -78,11 +78,12 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         private set => SetValue(IsWideAlbumLayoutProperty, value);
     }
 
-    // Must match the Margin on the pinned art in the XAML, doubled - the art
+    // Must match the vertical Margin on the pinned art in the XAML - the art
     // is square and sized off the height left over once its own margin is
     // taken out, so the two numbers have to agree or it overflows the screen
-    // by exactly the difference.
-    private const double PinnedArtInset = 32;
+    // by exactly the difference. 16 below, and 16 below the header band above,
+    // since the screen runs up under the see-through header (ScreenSlot).
+    private const double PinnedArtInset = 16 + Flower.Controls.ScreenSlot.HeaderHeight + 16;
 
     // ...and how much of the width the art is allowed to take. A landscape
     // phone is height-bound, so the cap never binds there and the art simply

@@ -40,9 +40,10 @@ public partial class MobileMainView : UserControl
 
     // The screens' scrollers leave this much room past their last item (the
     // screenScroll style), which has to follow the floating stack's height as
-    // the mini player appears and the safe area changes.
+    // the mini player appears and the safe area changes. The top is the
+    // see-through header band, which does not move.
     private void BottomChrome_SizeChanged(object? sender, SizeChangedEventArgs e) =>
-        Resources["BottomChromeInset"] = new Thickness(0, 0, 0, e.NewSize.Height + BottomChromeClearance);
+        Resources["ScreenScrollInset"] = new Thickness(0, ScreenSlot.HeaderHeight, 0, e.NewSize.Height + BottomChromeClearance);
 
     private IInsetsManager? _insets;
 

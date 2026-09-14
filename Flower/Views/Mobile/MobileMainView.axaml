@@ -16,7 +16,7 @@
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
     <!-- Replaced from the code-behind as BottomChrome's height changes. -->
-    <Thickness x:Key="BottomChromeInset">0,0,0,100</Thickness>
+    <Thickness x:Key="ScreenScrollInset">0,52,0,100</Thickness>
     <conv:EqualsConverter x:Key="EqualsConverter" />
   </UserControl.Resources>
 
@@ -92,8 +92,12 @@
     <!-- The mini player and the tab oval float over the bottom of the screens
          (BottomChrome below), so every screen's scroller keeps that much room
          past its last item - enough to bring it up clear of them, while the
-         list still runs behind them on the way. BottomChromeInset follows
+         list still runs behind them on the way. ScreenScrollInset follows
          their height from the code-behind: the mini player comes and goes.
+         The top is the same idea for the header band, which has no background
+         and lets the list run on under the back button (ScreenSlot): the
+         content - the screen's title first (ScreenTitle) - starts below it,
+         and scrolls up behind it.
 
          Where it goes depends on the scroller, because it has to lengthen what
          scrolls rather than shrink the window onto it. A ListBox's Padding is
@@ -109,11 +113,36 @@
          shrank the window by the same amount, and the list stopped the
          inset's height again short of the tabs. Every screen's content is one
          of these two; a screen that scrolls something else needs adding. -->
+    <!-- The template is Fluent's with the screen's title stacked above the
+         items, inside the scroll, so it moves with them (ScreenTitle) - a
+         ListBox has nowhere else to put a line before its first item. The
+         virtualizing panel still only realizes what shows: it sizes itself off
+         the effective viewport, which a StackPanel around it does not change. -->
     <Style Selector="ListBox.screenScroll">
-      <Setter Property="Padding" Value="{DynamicResource BottomChromeInset}" />
+      <Setter Property="Padding" Value="{DynamicResource ScreenScrollInset}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="border"
+                  Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}">
+            <ScrollViewer Name="PART_ScrollViewer"
+                          HorizontalScrollBarVisibility="{TemplateBinding (ScrollViewer.HorizontalScrollBarVisibility)}"
+                          VerticalScrollBarVisibility="{TemplateBinding (ScrollViewer.VerticalScrollBarVisibility)}"
+                          AllowAutoHide="{TemplateBinding (ScrollViewer.AllowAutoHide)}">
+              <StackPanel Margin="{TemplateBinding Padding}">
+                <controls:ScreenTitle />
+                <ItemsPresenter Name="PART_ItemsPresenter"
+                                ItemsPanel="{TemplateBinding ItemsPanel}" />
+              </StackPanel>
+            </ScrollViewer>
+          </Border>
+        </ControlTemplate>
+      </Setter>
     </Style>
     <Style Selector="ScrollViewer.screenScroll > StackPanel, ScrollViewer.screenScroll > ItemsControl">
-      <Setter Property="Margin" Value="{DynamicResource BottomChromeInset}" />
+      <Setter Property="Margin" Value="{DynamicResource ScreenScrollInset}" />
     </Style>
     <!-- Border.floating and Button.pill, the floating controls over the top of
          the screens, are app-wide now: Styles/IconButtons.axaml. -->

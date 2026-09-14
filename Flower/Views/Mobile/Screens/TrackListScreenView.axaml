@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:screens="clr-namespace:Flower.Views.Mobile.Screens"
              x:Class="Flower.Views.Mobile.Screens.TrackListScreenView"
@@ -17,7 +16,7 @@
       </ResourceDictionary.MergedDictionaries>
 
       <!-- The art and the words are two templates, not one header: the
-           narrow layout stacks them (art, then title/artist/year, then the
+           narrow layout stacks them (art, then title and artist, then the
            tracks, all in one scroll), while the wide one pins the art down the
            left and puts the words at the top of the track column, where they
            scroll away with the songs. Splitting them is what lets the wide
@@ -31,7 +30,7 @@
                                      Classes.dimmed="{Binding IsUnavailable}" />
       </DataTemplate>
 
-      <!-- Under the name, artist and year, a pill of the album's own actions:
+      <!-- Under the name and artist, a pill of the album's own actions:
            play, shuffle, add to playlist, download - play on a round button
            of its own, the other three grouped in a pill beside it. The download is the same
            button download-all always was - the screen-wide indicator and
@@ -57,9 +56,6 @@
           <TextBlock Text="{Binding Artist}"
                      FontSize="15" Opacity="0.7"
                      TextWrapping="Wrap" />
-          <TextBlock Text="{Binding RepresentativeTrack.Year}"
-                     FontSize="13" Opacity="0.5"
-                     IsVisible="{Binding RepresentativeTrack.Year, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}" />
           <StackPanel Classes="albumActions" Orientation="Horizontal" Spacing="10" Margin="0,12,0,0">
             <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
               <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -114,12 +110,6 @@
          them. -->
     <Style Selector="ContentControl.albumText">
       <Setter Property="Margin" Value="12,4,12,16" />
-    </Style>
-    <!-- Stacked, the album's name sits over its art instead (see the title
-         above the art in the scroll), so the words under the art begin at the
-         artist. Beside the art the name stays at the head of the track column. -->
-    <Style Selector="ContentControl.albumText:not(.beside) TextBlock.albumName">
-      <Setter Property="IsVisible" Value="False" />
     </Style>
     <Style Selector="ContentControl.albumText.beside TextBlock">
       <Setter Property="TextAlignment" Value="Left" />
@@ -190,7 +180,7 @@
                       Content="{Binding #Root.DisplayHeader}"
                       ContentTemplate="{StaticResource AlbumArtTemplate}"
                       Width="{Binding #Root.PinnedArtSize}"
-                      Margin="16"
+                      Margin="16,68,16,16"
                       VerticalAlignment="Center" />
 
       <!-- Album mode: header + track list share one ScrollViewer, so the art
@@ -220,18 +210,13 @@
            TrackListScreenView.axaml.cs's ObserveLive/Freeze). -->
       <ScrollViewer Grid.Column="1" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
         <StackPanel>
-          <!-- Stacked, the album's name heads the screen, over its art; the
-               artist, year and actions stay under the art. -->
-          <TextBlock IsVisible="{Binding !#Root.IsWideAlbumLayout}"
-                     Text="{Binding #Root.DisplayHeader.Name}"
-                     Classes.dimmed="{Binding #Root.DisplayHeader.IsUnavailable}"
-                     FontSize="20" FontWeight="Bold"
-                     TextWrapping="Wrap" TextAlignment="Center"
-                     Margin="24,4,24,10" />
+          <!-- An artist's album keeps the artist's name as its title; one
+               reached from Albums has none, and this collapses. -->
+          <controls:ScreenTitle />
           <ContentControl IsVisible="{Binding !#Root.IsWideAlbumLayout}"
                           Content="{Binding #Root.DisplayHeader}"
                           ContentTemplate="{StaticResource AlbumArtTemplate}"
-                          Width="240" Margin="24,0,24,12"
+                          Width="240" Margin="24,4,24,12"
                           HorizontalAlignment="Center" />
           <!-- Inset by the .albumText styles above, which is where the two
                layouts differ - the ranged-left one has to line its first

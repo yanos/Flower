@@ -15,6 +15,11 @@ namespace Flower.Controls;
 // slot it builds.
 public partial class ScreenSlot : UserControl
 {
+    // The header band's height - the XAML's first row. The screen runs up
+    // under it, so what scrolls starts this far down (MobileMainView's
+    // ScreenScrollInset) and what does not keeps clear of it on its own.
+    public const double HeaderHeight = 52;
+
     public static readonly StyledProperty<MobileNavigationFrame?> FrameProperty =
         AvaloniaProperty.Register<ScreenSlot, MobileNavigationFrame?>(nameof(Frame));
 
