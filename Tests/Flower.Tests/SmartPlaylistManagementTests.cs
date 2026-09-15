@@ -35,6 +35,7 @@ public class SmartPlaylistManagementTests
         public int ContentChanges { get; private set; }
         public int SyncsScheduled { get; private set; }
 
+        public IReadOnlyList<Playlist> SelectedPlaylists => new List<Playlist>();
         public void PlaylistContentChanged() => ContentChanges++;
         public void ScheduleContentSync() => SyncsScheduled++;
     }

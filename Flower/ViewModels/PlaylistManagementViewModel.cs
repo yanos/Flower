@@ -15,7 +15,9 @@ namespace Flower.ViewModels;
 // is involved.
 public sealed class DeletePlaylistConfirmationEventArgs : EventArgs
 {
-    public required Playlist Playlist { get; init; }
+    // At least one; several when they were selected together in the sidebar,
+    // confirmed by one dialog rather than one each.
+    public required IReadOnlyList<Playlist> Playlists { get; init; }
     public required TaskCompletionSource<bool> Confirmed { get; init; }
 }
 
@@ -26,6 +28,10 @@ public sealed class DeletePlaylistConfirmationEventArgs : EventArgs
 public interface IPlaylistManagementHost
 {
     SidebarItem? SelectedSidebarItem { get; set; }
+
+    // Every playlist selected in the sidebar - several on desktop after a
+    // Cmd/Ctrl+click, where SelectedSidebarItem is only the one being shown.
+    IReadOnlyList<Playlist> SelectedPlaylists { get; }
 
     // Where selection lands when the selected playlist is deleted or its row
     // disappears in a refresh - the Songs row.
@@ -134,8 +140,13 @@ public sealed class PlaylistManagementViewModel
         return Task.CompletedTask;
     }
 
-    public async Task DeleteAsync(Playlist playlist)
+    public Task DeleteAsync(Playlist playlist) => DeleteAsync(new[] { playlist });
+
+    public async Task DeleteAsync(IReadOnlyList<Playlist> playlists)
     {
+        if (playlists.Count == 0)
+            return;
+
         // Gated here rather than at each call site (the sidebar's context menu
         // and the Playlist main-menu command both land here) so neither one can
         // forget to confirm. No subscriber (e.g. no window yet) means proceed
@@ -143,12 +154,13 @@ public sealed class PlaylistManagementViewModel
         if (DeleteConfirmationRequested is { } handler)
         {
             var confirmed = new TaskCompletionSource<bool>();
-            handler.Invoke(this, new DeletePlaylistConfirmationEventArgs { Playlist = playlist, Confirmed = confirmed });
+            handler.Invoke(this, new DeletePlaylistConfirmationEventArgs { Playlists = playlists, Confirmed = confirmed });
             if (!await confirmed.Task)
                 return;
         }
 
-        _library.RemovePlaylist(playlist);
+        foreach (var playlist in playlists)
+            _library.RemovePlaylist(playlist);
 
         // Reuses the sidebar-rebuild logic sync already needed to reflect a
         // changed Library.Playlists (see PlaylistSyncService) - it also handles
@@ -163,9 +175,14 @@ public sealed class PlaylistManagementViewModel
     // whichever playlist is currently selected.
     public bool CanRenameOrDeleteSelected() => _host.SelectedSidebarItem?.Kind == SidebarItemKind.Playlist;
 
+    // Every selected playlist, not just the one on screen - the selection is
+    // what the user sees highlighted, and a menu command deleting a part of it
+    // would be deleting something other than what it appears to.
     public async Task DeleteSelectedAsync()
     {
-        if (_host.SelectedSidebarItem?.Playlist is { } playlist)
+        if (_host.SelectedPlaylists.Count > 0)
+            await DeleteAsync(_host.SelectedPlaylists);
+        else if (_host.SelectedSidebarItem?.Playlist is { } playlist)
             await DeleteAsync(playlist);
     }
 

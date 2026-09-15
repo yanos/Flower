@@ -616,7 +616,40 @@ public partial class MainView : UserControl
 
         _sidebarItemMenu.Items.Clear();
 
-        if (item is { Kind: SidebarItemKind.Playlist, Playlist: { } playlist })
+        // Right-clicking one of several selected playlists acts on all of them;
+        // right-clicking any other row acts on that row alone, leaving the
+        // selection as it is - the Finder's rule.
+        var selectedPlaylists = SelectedSidebarPlaylists();
+        if (item is { Kind: SidebarItemKind.Playlist, Playlist: { } clicked }
+            && selectedPlaylists.Count > 1
+            && selectedPlaylists.Contains(clicked))
+        {
+            // Rename and Edit Rules are about one playlist, so they are not
+            // offered here.
+            var deleteAllItem = new MenuItem { Header = $"Delete {selectedPlaylists.Count} Playlists" };
+            deleteAllItem.Click += async (_, _) => await vm.DeletePlaylistsAsync(selectedPlaylists);
+            _sidebarItemMenu.Items.Add(deleteAllItem);
+
+            var smart = selectedPlaylists.Where(p => p.IsSmart).ToList();
+            if (smart.Count > 0 && vm.SmartPlaylists != null)
+            {
+                _sidebarItemMenu.Items.Add(new Separator());
+
+                var convertAllItem = new MenuItem
+                {
+                    Header = smart.Count == 1
+                        ? "Convert Smart Playlist to Ordinary"
+                        : $"Convert {smart.Count} Smart Playlists to Ordinary",
+                };
+                convertAllItem.Click += async (_, _) =>
+                {
+                    foreach (var playlist in smart)
+                        await vm.ConvertPlaylistToOrdinary(playlist);
+                };
+                _sidebarItemMenu.Items.Add(convertAllItem);
+            }
+        }
+        else if (item is { Kind: SidebarItemKind.Playlist, Playlist: { } playlist })
         {
             // Reuses the same IsEditing/RenameBox flow CreatePlaylistWithTrack
             // already drops a freshly-created playlist into - see
@@ -1179,11 +1212,10 @@ public partial class MainView : UserControl
             return;
         }
 
-        var confirmed = await ConfirmDialogWindow.ShowAsync(
-            owner,
-            "Delete Playlist?",
-            $"\"{e.Playlist.Name}\" will be permanently deleted. This cannot be undone.",
-            "Delete");
+        var (title, message) = e.Playlists.Count == 1
+            ? ("Delete Playlist?", $"\"{e.Playlists[0].Name}\" will be permanently deleted. This cannot be undone.")
+            : ($"Delete {e.Playlists.Count} Playlists?", $"{e.Playlists.Count} playlists will be permanently deleted. This cannot be undone.");
+        var confirmed = await ConfirmDialogWindow.ShowAsync(owner, title, message, "Delete");
         e.Confirmed.TrySetResult(confirmed);
     }
 
@@ -1349,14 +1381,56 @@ public partial class MainView : UserControl
 
     private SidebarItem? _lastSelectableSidebarItem;
 
+    // Set while SidebarList_SelectionChanged corrects the selection itself, so
+    // the changes it makes are not judged again half-applied.
+    private bool _settlingSidebarSelection;
+
+    // Multiple selection is on for playlists only - see SidebarSelection.
     private void SidebarList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (sender is not ListBox list)
+        if (_settlingSidebarSelection || sender is not ListBox { SelectedItems: { } selectedItems } list)
             return;
-        if (list.SelectedItem is SidebarItem { IsHeader: true })
-            list.SelectedItem = _lastSelectableSidebarItem;
-        else if (list.SelectedItem is SidebarItem item)
+
+        var selected = selectedItems.OfType<SidebarItem>().ToList();
+        var settled = SidebarSelection.Settle(selected, e.AddedItems.OfType<SidebarItem>().ToList(), _lastSelectableSidebarItem);
+        if (settled is { Count: > 0 })
+        {
+            _settlingSidebarSelection = true;
+            try
+            {
+                // One row: through SelectedItem, which replaces the selection
+                // in one change - removing the others one at a time would walk
+                // SelectedSidebarItem, and the track list, through each of them.
+                if (settled.Count == 1)
+                    list.SelectedItem = settled[0];
+                else
+                {
+                    foreach (var extra in selected.Except(settled))
+                        selectedItems.Remove(extra);
+                }
+            }
+            finally
+            {
+                _settlingSidebarSelection = false;
+            }
+        }
+
+        if (selectedItems.Count == 1 && list.SelectedItem is SidebarItem { IsHeader: false } item)
             _lastSelectableSidebarItem = item;
+
+        // So the Playlist menu's Delete acts on the whole selection too.
+        _viewModel?.SetSelectedPlaylists(SelectedSidebarPlaylists());
+    }
+
+    // The playlists selected together in the sidebar, in sidebar order.
+    private List<Playlist> SelectedSidebarPlaylists()
+    {
+        var selected = SidebarList.SelectedItems?.OfType<SidebarItem>().ToHashSet() ?? new HashSet<SidebarItem>();
+        return _viewModel?.SidebarItems
+            .Where(selected.Contains)
+            .Select(i => i.Playlist)
+            .OfType<Playlist>()
+            .ToList() ?? new List<Playlist>();
     }
 
     // ── Sidebar rename (new playlist) ────────────────────────────────────────

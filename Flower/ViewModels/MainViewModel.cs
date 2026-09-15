@@ -1744,6 +1744,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Task DeletePlaylistAsync(Playlist playlist) => Playlists.DeleteAsync(playlist);
 
+    public Task DeletePlaylistsAsync(IReadOnlyList<Playlist> playlists) => Playlists.DeleteAsync(playlists);
+
+    // Pushed by MainView on every sidebar selection change: the ListBox owns
+    // the multiple selection, and SelectedSidebarItem carries only one of it.
+    public IReadOnlyList<Playlist> SelectedPlaylists { get; private set; } = Array.Empty<Playlist>();
+
+    public void SetSelectedPlaylists(IReadOnlyList<Playlist> playlists) => SelectedPlaylists = playlists;
+
     public Task AddTrackToPlaylist(Track track, Playlist playlist) => Playlists.AddTrack(track, playlist);
 
     public Task AddTracksToPlaylist(IEnumerable<Track> tracks, Playlist playlist) => Playlists.AddTracks(tracks, playlist);

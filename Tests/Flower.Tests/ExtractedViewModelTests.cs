@@ -75,6 +75,7 @@ public class PlaylistManagementViewModelTests
     {
         public SidebarItem? SelectedSidebarItem { get; set; }
         public SidebarItem? DefaultSelection { get; set; }
+        public IReadOnlyList<Playlist> SelectedPlaylists { get; set; } = new List<Playlist>();
         public int ContentChangedCount;
         public int ScheduledSyncs;
         public void PlaylistContentChanged() => ContentChangedCount++;
@@ -131,6 +132,55 @@ public class PlaylistManagementViewModelTests
         Assert.DoesNotContain(items, i => i.Kind == SidebarItemKind.Playlist);
         Assert.DoesNotContain(items, i => i.Kind == SidebarItemKind.Header && i.Name == "Playlists");
         Assert.Same(host.DefaultSelection, host.SelectedSidebarItem);
+    }
+
+    [Fact]
+    public async Task Deleting_several_playlists_asks_once_and_removes_them_all()
+    {
+        var (vm, library, items, host) = Make();
+        await vm.CreateWithTracks(new[] { Song("a") });
+        await vm.CreateWithTracks(new[] { Song("b") });
+        await vm.CreateWithTracks(new[] { Song("c") });
+        foreach (var row in items)
+            row.IsEditing = false;
+        var keep = library.Playlists[2];
+        var doomed = library.Playlists.Take(2).ToList();
+        host.SelectedSidebarItem = items.Single(i => i.Playlist == doomed[0]);
+        var confirmations = new List<IReadOnlyList<Playlist>>();
+        vm.DeleteConfirmationRequested += (_, e) =>
+        {
+            confirmations.Add(e.Playlists);
+            e.Confirmed.SetResult(true);
+        };
+        var syncsBefore = host.ScheduledSyncs;
+
+        await vm.DeleteAsync(doomed);
+
+        Assert.Equal(doomed, Assert.Single(confirmations));
+        Assert.Same(keep, Assert.Single(library.Playlists));
+        Assert.Same(keep, items.Single(i => i.Kind == SidebarItemKind.Playlist).Playlist);
+        Assert.Same(host.DefaultSelection, host.SelectedSidebarItem);
+        Assert.Equal(syncsBefore + 1, host.ScheduledSyncs);
+    }
+
+    // The Playlist menu's Delete, with several playlists selected in the
+    // sidebar: all of them go, not only the one being shown.
+    [Fact]
+    public async Task Deleting_the_selection_deletes_every_selected_playlist()
+    {
+        var (vm, library, items, host) = Make();
+        await vm.CreateWithTracks(new[] { Song("a") });
+        await vm.CreateWithTracks(new[] { Song("b") });
+        await vm.CreateWithTracks(new[] { Song("c") });
+        foreach (var row in items)
+            row.IsEditing = false;
+        var keep = library.Playlists[1];
+        host.SelectedSidebarItem = items.Single(i => i.Playlist == library.Playlists[0]);
+        host.SelectedPlaylists = new[] { library.Playlists[0], library.Playlists[2] };
+
+        await vm.DeleteSelectedAsync();
+
+        Assert.Same(keep, Assert.Single(library.Playlists));
     }
 
     [Fact]

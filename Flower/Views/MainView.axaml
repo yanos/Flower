@@ -128,6 +128,7 @@
           <ListBox x:Name="SidebarList"
                    ItemsSource="{Binding SidebarItems}"
                    SelectedItem="{Binding SelectedSidebarItem, Mode=TwoWay}"
+                   SelectionMode="Multiple"
                    Background="Transparent"
                    Padding="0,4,0,4"
                    SelectionChanged="SidebarList_SelectionChanged">
