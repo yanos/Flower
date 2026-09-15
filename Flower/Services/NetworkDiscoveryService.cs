@@ -110,6 +110,11 @@ public class DiscoveredDevice
     // ARCHITECTURE-REVIEW Tier 1.4, MainViewModel.HandleDeviceDiscovered).
     public string LibraryToken { get; set; } = "";
 
+    // The same for this peer's playlists (Library.PlaylistsToken) - kept apart
+    // from LibraryToken so a playlist edit syncs playlists without pulling the
+    // track catalog. Empty until resolved.
+    public string PlaylistsToken { get; set; } = "";
+
     // Every address this peer says it can be reached on, from the same /info
     // handshake as the rest (SyncInfoResponseDto.Addresses). Empty for a peer
     // that predates the field. A client persists these for the server it paired
@@ -612,6 +617,13 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                 device.LibraryToken = libraryToken;
                 changed = true;
             }
+            if (doc.RootElement.TryGetProperty("playlistsToken", out var playlistsTokenProp) &&
+                playlistsTokenProp.ValueKind == JsonValueKind.String &&
+                playlistsTokenProp.GetString() is { } playlistsToken && playlistsToken != device.PlaylistsToken)
+            {
+                device.PlaylistsToken = playlistsToken;
+                changed = true;
+            }
             // Where this peer says it can be reached. Replaced wholesale rather
             // than merged: an address the peer has stopped reporting is one it
             // no longer has, and merging would leave a client probing a stale
@@ -968,6 +980,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     TrustsUs = existing.TrustsUs,
                     WeAreAdmin = existing.WeAreAdmin,
                     LibraryToken = existing.LibraryToken,
+                    PlaylistsToken = existing.PlaylistsToken,
                     Addresses = existing.Addresses,
                     IsRemembered = true,
                     IsResponding = false,

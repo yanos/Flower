@@ -1022,6 +1022,47 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
     }
 
+    // The last Library.PlaylistsToken observed on each peer's /info answer.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _observedPeerPlaylistsTokens = new();
+
+    // TriggerSyncIfPeerCatalogChanged's twin for playlists. A playlist created,
+    // renamed or deleted on another device reaches the server through that
+    // device's /apply, and nothing told this one: the catalog trigger above
+    // syncs tracks only, and the server's catalog token does not move for a
+    // playlist anyway. So a phone left open kept the playlists it had at
+    // launch until it made an edit of its own.
+    //
+    // This device's own /apply moves the token too, and that echo is left to
+    // cost one playlist exchange rather than suppressed the way the catalog's
+    // is: it is two small requests, and the second push is a no-op on the
+    // server (Library.ReplacePlaylists skips an unchanged set without
+    // announcing it), so the token does not move again and the exchange ends
+    // there.
+    public void TriggerSyncIfPeerPlaylistsChanged(DiscoveredDevice device)
+    {
+        if (string.IsNullOrEmpty(device.Fingerprint) || string.IsNullOrEmpty(device.PlaylistsToken))
+            return;
+        if (!SyncRolePolicy.MayRequestFrom(_appSettings.PairedServerFingerprint, device.Fingerprint))
+            return;
+
+        var isFirstObservation = !_observedPeerPlaylistsTokens.TryGetValue(device.Fingerprint, out var previousToken);
+        _observedPeerPlaylistsTokens[device.Fingerprint] = device.PlaylistsToken;
+        if (isFirstObservation || previousToken == device.PlaylistsToken)
+            return;
+
+        if (IsCoolingOff(device.Fingerprint))
+        {
+            _logger.LogDebug(
+                "{Alias} ({Fingerprint}) reports changed playlists, but it is rate limiting this device; waiting",
+                device.Alias, device.Fingerprint);
+            return;
+        }
+
+        _logger.LogInformation("{Alias} ({Fingerprint}) reports changed playlists ({Previous} -> {Current}), syncing",
+            device.Alias, device.Fingerprint, previousToken, device.PlaylistsToken);
+        RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
+    }
+
     // Runs a playlist sync session (Phase 2) and a library sync session
     // (Phase 3 - see LibrarySyncService) with a newly (re-)discovered device
     // once each. DeviceDiscovered fires more than once per peer (mDNS fallback

@@ -56,4 +56,5 @@ public static class SyncProtocol
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
     string Fingerprint, string PublicKey, bool Download, bool? TrustsCaller,
-    string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null);
+    string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null,
+    string? PlaylistsToken = null);

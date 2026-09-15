@@ -407,6 +407,56 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         Assert.False(vm.IsSyncing);
     }
 
+    // ── Playlists-change trigger ──────────────────────────────────────────────
+    //
+    // A playlist created or deleted on another device used to reach this one
+    // only on relaunch - see PeerSyncCoordinator.TriggerSyncIfPeerPlaylistsChanged.
+
+    private MainViewModelHarness.Parts StubbedPairedClient()
+    {
+        var parts = Own(MainViewModelHarness.BuildParts(
+            new Library(new List<Track>()), new MainPlaylist(new List<Track>()),
+            new AppSettings { PairedServerFingerprint = "fp-server", PairedServerAlias = "Server" },
+            stubSyncServices: true));
+        parts.Main.AddOrUpdateDeviceSidebarItem(Peer("fp-server", "Server"));
+        return parts;
+    }
+
+    private static DiscoveredDevice PeerWithPlaylists(string playlistsToken)
+    {
+        var peer = Peer("fp-server", "Server");
+        peer.PlaylistsToken = playlistsToken;
+        return peer;
+    }
+
+    [AvaloniaFact]
+    public void The_first_observation_of_a_peers_playlists_token_does_not_sync()
+    {
+        var parts = StubbedPairedClient();
+
+        parts.Main.TriggerSyncIfPeerPlaylistsChanged(PeerWithPlaylists("pl-1"));
+        Wait(300);
+
+        Assert.Empty(parts.StubPlaylistSync!.SyncedWith);
+    }
+
+    [AvaloniaFact]
+    public void A_changed_playlists_token_syncs_playlists_and_not_the_catalog()
+    {
+        var parts = StubbedPairedClient();
+        parts.Main.TriggerSyncIfPeerPlaylistsChanged(PeerWithPlaylists("pl-1"));
+
+        parts.Main.TriggerSyncIfPeerPlaylistsChanged(PeerWithPlaylists("pl-1"));
+        Wait(100);
+        Assert.Empty(parts.StubPlaylistSync!.SyncedWith);
+
+        parts.Main.TriggerSyncIfPeerPlaylistsChanged(PeerWithPlaylists("pl-2"));
+        PumpUntil(() => parts.StubPlaylistSync!.SyncedWith.Count == 1, 5000);
+
+        Assert.True(parts.StubPlaylistSync!.SyncedWith[0].ForceInitiator);
+        Assert.Empty(parts.StubLibrarySync!.SyncedWith);
+    }
+
     // ── Catalog-change trigger ────────────────────────────────────────────────
     //
     // The peer advertises an opaque library token on /info; a change in it is

@@ -160,7 +160,10 @@ public static class DiscoveryEndpoints
                 // see MainViewModel.CanInviteDeviceToPairedServer. It grants
                 // nothing: AdminEndpoints checks the same store itself on
                 // every request.
-                callerIsTrusted ? trustedPeers.IsAdmin(caller.Fingerprint!) : null);
+                callerIsTrusted ? trustedPeers.IsAdmin(caller.Fingerprint!) : null,
+                // Library.PlaylistsToken - what tells a client that stayed
+                // open that a playlist changed on another device.
+                library.PlaylistsToken);
 
             return Results.Json(response, SyncProtocolJsonContext.Default.SyncInfoResponseDto);
         });

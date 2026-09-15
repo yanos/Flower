@@ -150,6 +150,18 @@ namespace Flower.Models
         // which ride along in the manifest.
         private void BumpChangeToken() => Interlocked.Increment(ref _changeCount);
 
+        // The playlists' own token, on the same session-id-plus-counter terms.
+        // Separate from ChangeToken on purpose: a client pulls the whole track
+        // manifest when that one moves, and a renamed playlist is not a reason
+        // to fetch 16k tracks. Without any token for playlists at all, a
+        // client that stayed open never learned of a playlist created or
+        // deleted on another device - it only ever pulled playlists on first
+        // contact or after an edit of its own, so a desktop and a phone showed
+        // different playlist counts until the phone was relaunched.
+        private long _playlistChangeCount;
+
+        public string PlaylistsToken => $"{_sessionId}-{Interlocked.Read(ref _playlistChangeCount)}";
+
         public event EventHandler? TracksUpdated;
 
         // A play count / LastPlayedAt bump on a single track, as opposed to
@@ -1329,6 +1341,7 @@ namespace Flower.Models
         // tens of playlists.
         private void RaisePlaylistsChanged()
         {
+            Interlocked.Increment(ref _playlistChangeCount);
             SavePlaylists();
             PlaylistsChanged?.Invoke(this, EventArgs.Empty);
         }

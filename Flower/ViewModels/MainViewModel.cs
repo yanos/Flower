@@ -1338,6 +1338,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             });
             Sync.HandlePeerTrustChanged(device);
             TriggerSyncIfPeerCatalogChanged(device);
+            TriggerSyncIfPeerPlaylistsChanged(device);
             TriggerSyncIfReady(device);
         },
                 h => networkDiscovery.DeviceDiscovered += h, h => networkDiscovery.DeviceDiscovered -= h);
@@ -1726,6 +1727,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // NetworkDiscoveryService would mean standing up an mDNS backend AND an
     // HTTP /info endpoint per case, just to choose a Fingerprint.
     internal void TriggerSyncIfPeerCatalogChanged(DiscoveredDevice device) => Sync.TriggerSyncIfPeerCatalogChanged(device);
+
+    internal void TriggerSyncIfPeerPlaylistsChanged(DiscoveredDevice device) => Sync.TriggerSyncIfPeerPlaylistsChanged(device);
 
     internal void TriggerSyncIfReady(DiscoveredDevice device) => Sync.TriggerSyncIfReady(device);
 
