@@ -15,6 +15,14 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <StartupObject>Flower.MacOS.Program</StartupObject>
+
+    <!-- Xcode 27 is ahead of the newest .NET for macOS workload (26.5), which
+         refuses to build against anything but Xcode 26.6. Nothing in the
+         build actually needs 26.6 - with the check off, 27.0 builds this head
+         cleanly - so the check is off, rather than every machine keeping an
+         old Xcode beside the current one. Delete this once a workload that
+         names Xcode 27 is published (`dotnet workload update`). -->
+    <ValidateXcodeVersion>false</ValidateXcodeVersion>
     <ApplicationTitle>Flower</ApplicationTitle>
 
     <!-- The bundle is Flower.MacOS.app, named after the assembly rather than

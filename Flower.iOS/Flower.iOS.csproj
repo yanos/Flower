@@ -6,6 +6,14 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
+    <!-- Xcode 27 is ahead of the newest .NET for iOS workload (26.5), which
+         refuses to build against anything but Xcode 26.6. Nothing in the
+         build actually needs 26.6 - with the check off, 27.0 builds this head
+         cleanly - so the check is off, rather than every machine keeping an
+         old Xcode beside the current one. Delete this once a workload that
+         names Xcode 27 is published (`dotnet workload update`). -->
+    <ValidateXcodeVersion>false</ValidateXcodeVersion>
+
     <!-- Device is the default, but an explicitly passed RID wins, so the
          Simulator is just `-r iossimulator-arm64` (or the IDE's device
          picker) rather than an edit to this file. A simulator build isn't

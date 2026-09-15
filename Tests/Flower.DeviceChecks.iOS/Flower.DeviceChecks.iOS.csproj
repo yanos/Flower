@@ -17,6 +17,10 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
 
+    <!-- Off for the reason Flower.iOS gives: Xcode 27 builds this cleanly, and
+         the 26.5 workload refuses anything but Xcode 26.6. -->
+    <ValidateXcodeVersion>false</ValidateXcodeVersion>
+
     <!-- Simulator by default, unlike Flower.iOS: this is run far more often
          from a script on this machine than from a device, and a simulator
          build needs no signing. A device run is `-r ios-arm64`. -->
