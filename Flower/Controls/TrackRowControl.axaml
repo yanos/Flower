@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:controls="clr-namespace:Flower.Controls"
              x:Class="Flower.Controls.TrackRowControl"
@@ -29,6 +30,13 @@
          selection/hover backgrounds behind it stay at full strength. -->
     <Style Selector="StackPanel#CellsPanel.dimmed, Panel#ArtCell.dimmed">
       <Setter Property="Opacity" Value="0.5"/>
+    </Style>
+    <!-- Grey, not the faded red dimming alone would leave them. -->
+    <Style Selector="StackPanel#CellsPanel.dimmed materialIcons|MaterialIcon, Panel#ArtCell.dimmed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
+    </Style>
+    <Style Selector="StackPanel#CellsPanel.dimmed TextBlock.placeholderGlyph, Panel#ArtCell.dimmed TextBlock.placeholderGlyph">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
     </Style>
     <!-- The currently playing song. This was a "▶" glyph in a 14px well ahead
          of the title, which cost every row that width to mark one of them, and

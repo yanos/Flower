@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Controls.AlbumTileControl"
@@ -26,6 +27,13 @@
          backgrounds behind it are unaffected. -->
     <Style Selector="StackPanel#TileContent.dimmed">
       <Setter Property="Opacity" Value="0.5"/>
+    </Style>
+    <!-- Grey, not the faded red dimming alone would leave them. -->
+    <Style Selector="StackPanel#TileContent.dimmed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
+    </Style>
+    <Style Selector="StackPanel#TileContent.dimmed TextBlock.placeholderGlyph">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
     </Style>
   </UserControl.Styles>
 

@@ -94,6 +94,9 @@
       <SolidColorBrush x:Key="AppTextDisabledBrush" Color="#787F88"/>
       <SolidColorBrush x:Key="AppLinkBrush" Color="#7FB3FF"/>
       <SolidColorBrush x:Key="AppPrimaryBrush" Color="#C53A34"/>
+      <!-- The primary at half strength, for the rim of every oval: at full
+           strength a one-pixel ring outshouted the icon inside it. -->
+      <SolidColorBrush x:Key="AppPrimaryBorderBrush" Color="#80C53A34"/>
       <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="#FFFFFF"/>
       <SolidColorBrush x:Key="AppPrimarySubtleBrush" Color="#6B2F2C"/>
       <SolidColorBrush x:Key="AppAccentBrush" Color="#E07E7A"/>
@@ -119,11 +122,25 @@
       <SolidColorBrush x:Key="AppAccentOrangeBrush" Color="#F2994A"/>
       <SolidColorBrush x:Key="AppAccentLimeBrush" Color="#A3D977"/>
       <SolidColorBrush x:Key="AppAccentSlateBrush" Color="#4A5563"/>
-      <!-- The unfilled part of the desktop volume bar, and the square and note
+      <!-- The unfilled part of the desktop volume bar, and the square
            standing in for a missing cover. -->
       <SolidColorBrush x:Key="AppTrackBrush" Color="#565D66"/>
       <SolidColorBrush x:Key="AppPlaceholderBrush" Color="#3C4148"/>
-      <SolidColorBrush x:Key="AppPlaceholderGlyphBrush" Color="#787F88"/>
+
+      <!-- Fluent's Slider, the seek bars and the phone's volume: filled and
+           thumbed in Primary, deepening under the pointer and the press, and
+           grey when disabled. Named outright because Fluent's own slider
+           brushes resolve its accent inside its own dictionary, where this
+           file's SystemAccentColor never reaches, and came out the platform's
+           blue. -->
+      <SolidColorBrush x:Key="SliderTrackValueFill" Color="#C53A34"/>
+      <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#AE302C"/>
+      <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#8F2724"/>
+      <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="#787F88"/>
+      <SolidColorBrush x:Key="SliderThumbBackground" Color="#C53A34"/>
+      <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#AE302C"/>
+      <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#8F2724"/>
+      <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="#787F88"/>
     </ResourceDictionary>
 
     <ResourceDictionary x:Key="Light">
@@ -189,6 +206,9 @@
       <SolidColorBrush x:Key="AppTextDisabledBrush" Color="#A9A1A0"/>
       <SolidColorBrush x:Key="AppLinkBrush" Color="#C53A34"/>
       <SolidColorBrush x:Key="AppPrimaryBrush" Color="#C53A34"/>
+      <!-- The primary at half strength, for the rim of every oval: at full
+           strength a one-pixel ring outshouted the icon inside it. -->
+      <SolidColorBrush x:Key="AppPrimaryBorderBrush" Color="#80C53A34"/>
       <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="#FFFFFF"/>
       <SolidColorBrush x:Key="AppPrimarySubtleBrush" Color="#FBD9D6"/>
       <SolidColorBrush x:Key="AppAccentBrush" Color="#C53A34"/>
@@ -208,7 +228,16 @@
       <SolidColorBrush x:Key="AppAccentSlateBrush" Color="#4A5563"/>
       <SolidColorBrush x:Key="AppTrackBrush" Color="#D9D3CF"/>
       <SolidColorBrush x:Key="AppPlaceholderBrush" Color="#F2EFEB"/>
-      <SolidColorBrush x:Key="AppPlaceholderGlyphBrush" Color="#A9A1A0"/>
+
+      <!-- Fluent's Slider in Primary - see the dark variant. -->
+      <SolidColorBrush x:Key="SliderTrackValueFill" Color="#C53A34"/>
+      <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#AE302C"/>
+      <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#8F2724"/>
+      <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="#A9A1A0"/>
+      <SolidColorBrush x:Key="SliderThumbBackground" Color="#C53A34"/>
+      <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#AE302C"/>
+      <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#8F2724"/>
+      <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="#A9A1A0"/>
     </ResourceDictionary>
 
   </ResourceDictionary.ThemeDictionaries>

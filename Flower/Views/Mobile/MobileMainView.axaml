@@ -77,7 +77,6 @@
          a negative margin gives the enlargement back, so every icon still
          takes 22px of the tab's layout and the labels stay on one line. -->
     <Style Selector="Button.tab">
-      <Setter Property="Opacity" Value="0.55" />
       <Setter Property="Width" Value="58" />
       <Setter Property="Height" Value="58" />
       <Setter Property="Padding" Value="0" />
@@ -86,8 +85,24 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
-    <Style Selector="Button.tab.current">
-      <Setter Property="Opacity" Value="1" />
+    <!-- The tabs not showing are grey rather than dimmed: dimming left their
+         icons a faded red that still read as lit. The one showing keeps the
+         primary red every icon is drawn in, and its label and the Songs note
+         follow it. -->
+    <Style Selector="Button.tab Path">
+      <Setter Property="Fill" Value="{DynamicResource AppPrimaryBrush}" />
+    </Style>
+    <Style Selector="Button.tab.current TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}" />
+    </Style>
+    <Style Selector="Button.tab:not(.current) materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}" />
+    </Style>
+    <Style Selector="Button.tab:not(.current) TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}" />
+    </Style>
+    <Style Selector="Button.tab:not(.current) Path">
+      <Setter Property="Fill" Value="{DynamicResource AppTextDisabledBrush}" />
     </Style>
     <!-- The mini player and the tab oval float over the bottom of the screens
          (BottomChrome below), so every screen's scroller keeps that much room
@@ -208,6 +223,14 @@
          definition. -->
     <Style Selector="StackPanel.dimmed">
       <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <!-- Both of the above grey their icons and missing-cover note rather than
+         leaving them the faded red dimming alone would. -->
+    <Style Selector="Button.trackRow.placeholder materialIcons|MaterialIcon, StackPanel.dimmed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
+    </Style>
+    <Style Selector="Button.trackRow.placeholder TextBlock.placeholderGlyph, StackPanel.dimmed TextBlock.placeholderGlyph">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
     </Style>
   </UserControl.Styles>
 
@@ -419,11 +442,9 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Songs}"
               Command="{Binding SelectTabCommand}" CommandParameter="Songs">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <!-- SongNoteGeometry (App.axaml). Filled from the label so the tab's
-               opacity dimming and the theme reach it the way they reach an
-               icon. -->
+          <!-- SongNoteGeometry (App.axaml). Its fill comes from the Button.tab
+               styles above, red when the tab is showing and grey when not. -->
           <Path Data="{StaticResource SongNoteGeometry}"
-                Fill="{Binding #SongsLabel.Foreground}"
                 Stretch="Uniform" Width="22" Height="22" HorizontalAlignment="Center" />
           <TextBlock x:Name="SongsLabel" Text="Songs" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>

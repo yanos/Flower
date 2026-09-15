@@ -13,9 +13,10 @@
     <!-- Repeat/shuffle icon color, theme-aware (was a hardcoded Brushes.Black/
          Brushes.Gray IValueConverter - invisible against a dark background).
          Classes.active mirrors the same pattern MobileMainView.axaml already
-         uses for its own "currently playing" row highlight. -->
+         uses for its own "currently playing" row highlight. Off is the grey
+         of a disabled control, as on Now Playing: a dimmed red read as on. -->
     <Style Selector="materialIcons|MaterialIcon.transportToggle">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
     </Style>
     <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
       <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>

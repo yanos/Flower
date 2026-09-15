@@ -66,7 +66,8 @@
         </materialIcons:MaterialIcon.RenderTransform>
       </materialIcons:MaterialIcon>
       <materialIcons:MaterialIcon Kind="AlertCircleOutline"
-                                  Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}" Opacity="0.7"
+                                  Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}"
+                                  Foreground="{DynamicResource AppTextDisabledBrush}"
                                   IsVisible="{Binding IsDownloadUnavailable}"
                                   ToolTip.Tip="Download failed - try again later"/>
     </Panel>

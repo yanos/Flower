@@ -164,13 +164,11 @@
                                                  Width="16" Height="16"/>
                       <!-- At Material's scale for a 16px icon (App.axaml's
                            SongNoteGeometry), so the note is no larger than the
-                           glyphs around it, only taller-stemmed. Filled from
-                           the row's name, the way the phone's Songs tab fills
-                           it from its label, so it takes the text colour the
-                           icons beside it inherit. -->
+                           glyphs around it, only taller-stemmed. In the
+                           primary red the icons beside it are drawn in. -->
                       <Path Data="{StaticResource SongNoteGeometry}"
                             IsVisible="{Binding UsesSongNote}"
-                            Fill="{Binding #SidebarRowName.Foreground}"
+                            Fill="{DynamicResource AppPrimaryBrush}"
                             Stretch="Uniform"
                             Width="12.67" Height="14"
                             HorizontalAlignment="Center" VerticalAlignment="Center"/>

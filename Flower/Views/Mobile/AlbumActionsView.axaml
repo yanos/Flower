@@ -66,8 +66,8 @@
         <Button Classes="action" Command="{Binding PlayAlbumActionTargetCommand}">
           <StackPanel Orientation="Horizontal" Spacing="14">
             <Border Width="26" Height="26" Margin="-2"
-                    CornerRadius="9999" BorderThickness="1.5"
-                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+                    CornerRadius="9999" BorderThickness="1"
+                    BorderBrush="{DynamicResource AppPrimaryBorderBrush}">
               <materialIcons:MaterialIcon Kind="Play" Width="15" Height="15" />
             </Border>
             <TextBlock Text="Play" FontSize="16" VerticalAlignment="Center" />

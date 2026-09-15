@@ -13,10 +13,12 @@
           CornerRadius="{Binding #Root.CornerRadius}">
     <Viewbox Stretch="Uniform">
       <Grid Width="100" Height="100">
+        <!-- Coloured by App.axaml's TextBlock.placeholderGlyph rather than
+             here, so an unavailable row or tile can grey it. -->
         <TextBlock Text="♫"
+                   Classes="placeholderGlyph"
                    FontSize="50"
                    FontWeight="Bold"
-                   Foreground="{DynamicResource AppPlaceholderGlyphBrush}"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"/>
       </Grid>

@@ -97,5 +97,26 @@
         <!-- Floating pills and round icon buttons, desktop and mobile both -
              see the file. -->
         <StyleInclude Source="avares://Flower/Styles/IconButtons.axaml"/>
+
+        <!-- Every icon is drawn in the primary red, rather than inheriting the
+             text colour of whatever it sits in. The note Paths and the
+             placeholder's ♫ glyph say the same thing themselves. An icon that
+             carries a meaning of its own keeps its colour by setting it where
+             it is declared: a delete in AppErrorBrush, a server's standing in
+             success or warning, a lit toggle or selected pill in AppAccentBrush.
+             Set directly on the icon, so a disabled button's greyed foreground
+             no longer reaches it; the disabled style below greys it again. -->
+        <Style Selector="materialIcons|MaterialIcon">
+            <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}"/>
+        </Style>
+        <Style Selector="materialIcons|MaterialIcon:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
+        </Style>
+        <!-- The missing-cover note (AlbumArtPlaceholder). A style rather than
+             a local value, so the rows and tiles that dim what cannot be
+             played can grey it along with their icons. -->
+        <Style Selector="TextBlock.placeholderGlyph">
+            <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}"/>
+        </Style>
     </Application.Styles>
 </Application>
