@@ -147,7 +147,16 @@ public sealed class ScreenStackPanel : Panel
     // otherwise pop in over a screen still sliding into place.
     public event EventHandler? Settled;
 
+    // Raised as a screen starts to move: a drag uncovering the one behind it,
+    // a back step easing it off, an entrance sliding one in. Settled follows
+    // once it stops, a cancelled drag included. MobileMainView hides its empty
+    // state in between, since that sits over the stack rather than inside a
+    // screen and would otherwise hang in place over one sliding away.
+    public event EventHandler? Moving;
+
     private void RaiseSettled() => Settled?.Invoke(this, EventArgs.Empty);
+
+    private void RaiseMoving() => Moving?.Invoke(this, EventArgs.Empty);
 
     public void SyncToCurrentFrame(MobileMainViewModel vm)
     {
@@ -308,6 +317,7 @@ public sealed class ScreenStackPanel : Panel
             // the transform below is set before this dispatcher job returns.
             UpdateLayout();
             entrance.X = transition == MobileNavigationTransition.FromRight ? entranceWidth : -entranceWidth;
+            RaiseMoving();
             EaseTransform(entrance, 0, RaiseSettled);
         }
         else
@@ -486,6 +496,8 @@ public sealed class ScreenStackPanel : Panel
                 else if (dx < 0 && vm.CanGoForward)
                     _interactiveDirection = SwipeDirection.Forward;
                 Reveal(_interactiveDirection);
+                if (_interactiveDirection != SwipeDirection.None)
+                    RaiseMoving();
             }
             e.Handled = true;
         }
@@ -588,6 +600,7 @@ public sealed class ScreenStackPanel : Panel
         // is the only thing that picks the revealed slot on the back-button
         // path.
         Reveal(direction);
+        RaiseMoving();
         var width = Math.Max(1, Bounds.Width);
         var target = direction == SwipeDirection.Back ? width : -width;
         EaseTransform(transform, target, () =>
@@ -604,7 +617,7 @@ public sealed class ScreenStackPanel : Panel
     private void CancelInteractive()
     {
         if (_current?.RenderTransform is TranslateTransform transform)
-            EaseTransform(transform, 0, null);
+            EaseTransform(transform, 0, RaiseSettled);
     }
 
     // Uncovers the one inert slot this motion is actually revealing and hides

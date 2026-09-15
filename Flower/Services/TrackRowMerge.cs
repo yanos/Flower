@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using Flower.Models;
 using Flower.ViewModels;
 
@@ -90,5 +91,75 @@ public static class TrackRowMerge
         }
 
         return result;
+    }
+
+    // Brings `current` to `next` without replacing it, when `next` is the same
+    // row instances in the same order or with exactly one of them relocated -
+    // which is what a playlist drag-to-reorder produces. Returns false, leaving
+    // `current` untouched, for anything else; the caller replaces the
+    // collection as before.
+    //
+    // Replacing it is a Reset to whatever list is bound to it, and on mobile
+    // that is a ListBox, which re-realizes every visible row: after a drop the
+    // row sat in its old place for well over a second on a phone before
+    // jumping. A single Move is one container. Larger permutations (a sort
+    // change over the whole library) are deliberately not attempted - as a
+    // run of Move events they would cost more than the Reset they replace.
+    public static bool TryApplyInPlace(ObservableCollection<TrackRowViewModel> current, IReadOnlyList<TrackRowViewModel> next)
+    {
+        if (current.Count != next.Count)
+            return false;
+
+        var first = 0;
+        while (first < next.Count && ReferenceEquals(current[first], next[first]))
+            first++;
+        if (first == next.Count)
+            return true;
+
+        var last = next.Count - 1;
+        while (last > first && ReferenceEquals(current[last], next[last]))
+            last--;
+        // One position differing on its own cannot be a relocation of an
+        // existing row - it is a different instance.
+        if (last == first)
+            return false;
+
+        if (MovedDown(current, next, first, last))
+        {
+            current.Move(first, last);
+            return true;
+        }
+        if (MovedUp(current, next, first, last))
+        {
+            current.Move(last, first);
+            return true;
+        }
+        return false;
+    }
+
+    // current[first] now sits at `last`, and everything between shifted up one.
+    private static bool MovedDown(IReadOnlyList<TrackRowViewModel> current, IReadOnlyList<TrackRowViewModel> next, int first, int last)
+    {
+        if (!ReferenceEquals(next[last], current[first]))
+            return false;
+        for (var i = first; i < last; i++)
+        {
+            if (!ReferenceEquals(next[i], current[i + 1]))
+                return false;
+        }
+        return true;
+    }
+
+    // current[last] now sits at `first`, and everything between shifted down one.
+    private static bool MovedUp(IReadOnlyList<TrackRowViewModel> current, IReadOnlyList<TrackRowViewModel> next, int first, int last)
+    {
+        if (!ReferenceEquals(next[first], current[last]))
+            return false;
+        for (var i = first + 1; i <= last; i++)
+        {
+            if (!ReferenceEquals(next[i], current[i - 1]))
+                return false;
+        }
+        return true;
     }
 }

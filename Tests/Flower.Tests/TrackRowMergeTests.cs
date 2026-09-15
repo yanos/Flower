@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
@@ -255,5 +257,89 @@ public class TrackRowMergeTests : IDisposable
         Assert.Single(second);
         Assert.Same(first[0], second[0]);
         Assert.Same(first[1], Assert.Single(retired));
+    }
+
+    // ── TryApplyInPlace ───────────────────────────────────────────────────
+
+    private static List<Track> Tracks(int count) =>
+        Enumerable.Range(0, count).Select(i => T($"Song {i}")).ToList();
+
+    private static List<TrackRowViewModel> PlaylistRows(IEnumerable<Track> order, IReadOnlyList<TrackRowViewModel>? previous = null) =>
+        TrackRowMerge.Apply(previous, TrackListBuilder.Plan(order, null, "PlaylistOrder", true), out _);
+
+    private static (ObservableCollection<TrackRowViewModel> collection, List<NotifyCollectionChangedEventArgs> events) Observed(IEnumerable<TrackRowViewModel> rows)
+    {
+        var collection = new ObservableCollection<TrackRowViewModel>(rows);
+        var events = new List<NotifyCollectionChangedEventArgs>();
+        collection.CollectionChanged += (_, e) => events.Add(e);
+        return (collection, events);
+    }
+
+    // The case this exists for: a dropped row reaches a bound ListBox as one
+    // Move, not the Reset that re-realizes every visible row.
+    [Theory]
+    [InlineData(1, 4)] // dragged down
+    [InlineData(4, 1)] // dragged up
+    [InlineData(0, 5)] // first to last
+    [InlineData(5, 0)] // last to first
+    [InlineData(2, 3)] // neighbours
+    public void A_playlist_reorder_is_applied_as_a_single_move(int from, int to)
+    {
+        var tracks = Tracks(6);
+        var before = PlaylistRows(tracks);
+        var reordered = new List<Track>(tracks);
+        var dragged = reordered[from];
+        reordered.RemoveAt(from);
+        reordered.Insert(to, dragged);
+        var after = PlaylistRows(reordered, before);
+        var (collection, events) = Observed(before);
+
+        Assert.True(TrackRowMerge.TryApplyInPlace(collection, after));
+
+        Assert.Equal(after, collection);
+        var move = Assert.Single(events);
+        Assert.Equal(NotifyCollectionChangedAction.Move, move.Action);
+    }
+
+    [Fact]
+    public void An_unchanged_order_is_kept_without_touching_the_collection()
+    {
+        var tracks = Tracks(4);
+        var before = PlaylistRows(tracks);
+        var (collection, events) = Observed(before);
+
+        Assert.True(TrackRowMerge.TryApplyInPlace(collection, PlaylistRows(tracks, before)));
+
+        Assert.Empty(events);
+    }
+
+    // A sort change over the library: many rows move, and a run of Move events
+    // would cost more than the Reset it replaced.
+    [Fact]
+    public void More_than_one_relocation_is_left_to_the_caller()
+    {
+        var tracks = Tracks(6);
+        var before = PlaylistRows(tracks);
+        var reversed = Enumerable.Reverse(tracks).ToList();
+        var (collection, events) = Observed(before);
+
+        Assert.False(TrackRowMerge.TryApplyInPlace(collection, PlaylistRows(reversed, before)));
+
+        Assert.Equal(before, collection);
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public void A_different_row_instance_is_left_to_the_caller()
+    {
+        var tracks = Tracks(4);
+        var before = PlaylistRows(tracks);
+        var replaced = new List<Track>(tracks) { [2] = T("Other") };
+        var (collection, events) = Observed(before);
+
+        Assert.False(TrackRowMerge.TryApplyInPlace(collection, PlaylistRows(replaced, before)));
+        Assert.False(TrackRowMerge.TryApplyInPlace(collection, PlaylistRows(tracks.Take(3), before)));
+
+        Assert.Empty(events);
     }
 }

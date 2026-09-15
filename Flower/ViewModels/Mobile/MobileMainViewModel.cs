@@ -1025,7 +1025,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbumRows.Count == 0) ||
         IsShowingSearchPrompt ||
         (IsShowingSearchResults && !HasSearchAlbumResults && !HasSearchArtistResults && !HasSearchSongResults) ||
-        (IsShowingTrackList && Main.Rows.Count == 0);
+        // Not while the rows for this scope are still being built: until they
+        // land, Main.Rows belongs to the screen being left - see
+        // LibraryBrowserViewModel.IsRowsRebuildPending.
+        (IsShowingTrackList && Main.Rows.Count == 0 && !Main.Browser.IsRowsRebuildPending);
 
     public MaterialIconKind EmptyStateIcon => IsShowingSearchPrompt ? MaterialIconKind.Magnify : MaterialIconKind.MusicNoteOff;
 
@@ -1136,7 +1139,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             // Songs/Albums/Artists picker empty-states only - Search has its
             // own SearchQuery-driven path (see that property's setter) and no
             // longer touches Main.Rows at all.
-            if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems))
+            if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems)
+                or nameof(LibraryBrowserViewModel.IsRowsRebuildPending))
             {
                 RaiseEmptyStateChanged();
                 RefreshDownloadAllIndicator();

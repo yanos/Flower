@@ -251,26 +251,31 @@
            the search/settings pill below stay fixed on top of it. -->
       <controls:ScreenStackPanel x:Name="ScreenStack" />
 
-      <!-- Empty state: shown instead of a blank screen when the current list has nothing in it -->
-      <StackPanel IsVisible="{Binding IsContentEmpty}"
-                  HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                  Spacing="10"
-                  MaxWidth="280">
-        <materialIcons:MaterialIcon Kind="{Binding EmptyStateIcon}" Width="40" Height="40" Opacity="0.35" HorizontalAlignment="Center" />
-        <TextBlock Text="{Binding EmptyStateTitle}"
-                   FontSize="17"
-                   FontWeight="SemiBold"
-                   Opacity="0.6"
-                   HorizontalAlignment="Center"
-                   TextAlignment="Center" />
-        <TextBlock Text="{Binding EmptyStateMessage}"
-                   FontSize="14"
-                   Opacity="0.5"
-                   HorizontalAlignment="Center"
-                   TextAlignment="Center"
-                   TextWrapping="Wrap" />
-      </StackPanel>
+      <!-- Empty state: shown instead of a blank screen when the current list has nothing in it.
+           The host is hidden while the screen stack is moving (ScreenStackPanel.Moving/Settled,
+           in the code-behind): this sits over the stack, not inside a screen, so it would
+           otherwise stay put over a screen sliding away and describe the wrong one. -->
+      <Panel x:Name="EmptyStateHost">
+        <StackPanel IsVisible="{Binding IsContentEmpty}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="10"
+                    MaxWidth="280">
+          <materialIcons:MaterialIcon Kind="{Binding EmptyStateIcon}" Width="40" Height="40" Opacity="0.35" HorizontalAlignment="Center" />
+          <TextBlock Text="{Binding EmptyStateTitle}"
+                     FontSize="17"
+                     FontWeight="SemiBold"
+                     Opacity="0.6"
+                     HorizontalAlignment="Center"
+                     TextAlignment="Center" />
+          <TextBlock Text="{Binding EmptyStateMessage}"
+                     FontSize="14"
+                     Opacity="0.5"
+                     HorizontalAlignment="Center"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </Panel>
 
       <!-- Fixed back/settings overlay: unlike the title/search/create-
            playlist/download-all controls (now part of each ScreenSlot's own

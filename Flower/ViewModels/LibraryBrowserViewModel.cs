@@ -541,9 +541,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 
     private async Task ScheduleFilterAsync()
     {
-        _filterCts?.Cancel();
-        _filterCts = new CancellationTokenSource();
-        var token = _filterCts.Token;
+        var token = BeginRowsRebuild();
 
         try
         {
@@ -551,6 +549,42 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             await RebuildRowsAsync(token);
         }
         catch (OperationCanceledException) { }
+        finally
+        {
+            EndRowsRebuild(token);
+        }
+    }
+
+    // True from the moment a rebuild is asked for until its rows land (or it
+    // fails). Rows in between still belong to whatever scope came before, so
+    // an empty Rows then says nothing about the scope now selected - mobile
+    // switching from the Albums grid (whose own Rows are empty) to Songs showed
+    // "Nothing Here" for the length of the debounce and the build. A rebuild
+    // superseded by a newer one leaves the flag to that newer one.
+    public bool IsRowsRebuildPending { get; private set; }
+
+    private CancellationToken BeginRowsRebuild()
+    {
+        _filterCts?.Cancel();
+        _filterCts = new CancellationTokenSource();
+        // Raised on the way up as well as down: mobile's empty state can be
+        // re-read before this (a sidebar change raises SubListItems first) and
+        // nothing else would tell it the rows it saw are on their way out.
+        // Only on the change, so typing into the filter is not one event per key.
+        if (!IsRowsRebuildPending)
+        {
+            IsRowsRebuildPending = true;
+            OnPropertyChanged(nameof(IsRowsRebuildPending));
+        }
+        return _filterCts.Token;
+    }
+
+    private void EndRowsRebuild(CancellationToken token)
+    {
+        if (!IsRowsRebuildPending || _filterCts?.Token != token)
+            return;
+        IsRowsRebuildPending = false;
+        OnPropertyChanged(nameof(IsRowsRebuildPending));
     }
 
     private async Task RebuildRowsAsync(CancellationToken token, bool includeGridTiles = true)
@@ -564,6 +598,9 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var playing    = _host.CurrentlyPlayingTrack;
         var baseTracks = GetBaseTracksForFilter();
         var allTracks  = _allTracks;
+        // Read with the snapshot above, not after the plan: a change landing
+        // mid-build must leave the cached rows looking stale, not current.
+        var libraryChangeToken = _library.ChangeToken;
         var pairedServerFingerprint = _host.PairedServerFingerprint;
         var pairedServerReachable   = _host.IsPairedServerReachable;
 
@@ -596,6 +633,34 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var buildGrids = includeGridTiles &&
             _host.CurrentKind is SidebarItemKind.Albums or SidebarItemKind.RecentlyAdded;
 
+        // A scope left since nothing it is built from changed comes back as it
+        // was, synchronously: no plan, no new rows. Returning to Songs from an
+        // album used to re-sort the whole library and allocate a row per track
+        // before the screen could even start to slide, because Main.Rows had
+        // meanwhile been rebuilt for the album and the Songs rows discarded.
+        // Playlists and History are always rebuilt - their contents change
+        // (a reorder, a play) without anything in the signature moving - and
+        // so is any rebuild that also builds the tile grids, which are not kept.
+        var scopeKey  = CurrentViewKey;
+        var signature = new RowsSignature(allTracks, libraryChangeToken, text, sortCol, sortAsc, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
+        var cached    = CachedScope(scopeKey);
+        if (cached != null && cached.Signature == signature && !buildGrids
+            && _host.CurrentKind is not (SidebarItemKind.Playlist or SidebarItemKind.History))
+        {
+            RememberScope(cached);
+            // The one thing that moves under a cached scope without touching
+            // its signature - UpdatePlayingIndicators only reaches the rows on
+            // screen.
+            foreach (var row in cached.Rows)
+                row.IsCurrentlyPlaying = playing != null && row.Track.Id == playing.Id;
+            _currentFilteredTracks = cached.Tracks;
+            IsRowsRebuildPending = false;
+            _logger.LogTrace("Rows reused: {Rows} row(s) ({Kind})", cached.Rows.Count, _host.CurrentKind);
+            PublishRows(cached.Rows);
+            OnPropertyChanged(nameof(StatusBarText));
+            return;
+        }
+
         // Only the plan - filter, sort and album grouping over plain Tracks -
         // runs off the UI thread. Turning it into rows is a UI-thread job now
         // that rows are reused rather than reallocated (see TrackRowMerge):
@@ -617,11 +682,22 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         if (token.IsCancellationRequested)
             return;
 
-        var rows = TrackRowMerge.Apply(_rows, plan, out var retired, _animationClock);
+        // Cleared before Rows is raised below, so whoever reacts to the new
+        // rows already reads the rebuild as done.
+        IsRowsRebuildPending = false;
 
-        _currentFilteredTracks = new List<Track>(plan.Count);
+        // Only this scope's own rows are offered for reuse, never whichever
+        // scope happens to be on screen: reusing re-points a row's album
+        // grouping at this plan, and a row still cached for Songs would carry
+        // an album's grouping back there. So every row belongs to exactly one
+        // scope, and only ever gets retired - disposed - from that one.
+        var rows = TrackRowMerge.Apply(cached?.Rows, plan, out var retired, _animationClock);
+
+        var filteredTracks = new List<Track>(plan.Count);
         foreach (var entry in plan)
-            _currentFilteredTracks.Add(entry.Track);
+            filteredTracks.Add(entry.Track);
+        _currentFilteredTracks = filteredTracks;
+        RememberScope(new ScopeRows(scopeKey, signature, rows, filteredTracks));
 
         // Only the rows that did *not* survive the merge are dropped on the
         // floor here, so anything they own that isn't purely managed memory has
@@ -637,7 +713,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         _logger.LogTrace("Rows rebuilt: {Rows} row(s) from {Base} track(s) of {All} ({Kind})",
             rows.Count, baseTracks.Count, allTracks.Count, _host.CurrentKind);
 
-        Rows = new ObservableCollection<TrackRowViewModel>(rows);
+        PublishRows(rows);
         foreach (var row in retired)
             row.Dispose();
         if (buildGrids)
@@ -646,6 +722,65 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             ApplyTileAvailability();
         }
         OnPropertyChanged(nameof(StatusBarText));
+    }
+
+    // Same instance when nothing moved or one row did (a playlist reorder),
+    // so a bound ListBox sees a single Move rather than a Reset - see
+    // TrackRowMerge.TryApplyInPlace. Rows is still raised, since desktop's
+    // MusicListView re-reads it on that (and rebuilds its album-group
+    // index, which a move can change) rather than following the collection.
+    private void PublishRows(List<TrackRowViewModel> rows)
+    {
+        if (TrackRowMerge.TryApplyInPlace(_rows, rows))
+        {
+            OnPropertyChanged(nameof(Rows));
+            OnPropertyChanged(nameof(StatusBarText));
+        }
+        else
+        {
+            Rows = new ObservableCollection<TrackRowViewModel>(rows);
+        }
+    }
+
+    // ── Rows per scope ────────────────────────────────────────────────────
+
+    // Everything a scope's rows are built from, bar the scope itself and the
+    // playing track (patched on reuse instead). Both halves of the library are
+    // needed. The track list, by reference, is what Repopulate replaces on a
+    // library change - but only once its posted handler runs. ChangeToken moves
+    // at once, and also for what changes a track in place without replacing the
+    // list: a play count, a last-played stamp, a star, a reported play.
+    private readonly record struct RowsSignature(
+        List<Track> AllTracks,
+        string LibraryChangeToken,
+        string? FilterText,
+        string? SortColumn,
+        bool SortAscending,
+        bool SortArtistAlbumsByYear,
+        string? PairedServerFingerprint,
+        bool PairedServerReachable);
+
+    private sealed record ScopeRows(string Key, RowsSignature Signature, List<TrackRowViewModel> Rows, List<Track> Tracks);
+
+    // The same bound ScreenControlFactory keeps screens to, so every screen
+    // mobile still holds can come back to its own rows. Most recent last.
+    private const int MaxCachedScopes = 6;
+    private readonly List<ScopeRows> _scopeRows = new();
+
+    private ScopeRows? CachedScope(string key) => _scopeRows.Find(s => s.Key == key);
+
+    // A scope's rows are its own (see RebuildRowsAsync), so an evicted scope's
+    // can all go: none of them is on screen, or it would not be the oldest.
+    private void RememberScope(ScopeRows scope)
+    {
+        _scopeRows.RemoveAll(s => s.Key == scope.Key);
+        _scopeRows.Add(scope);
+        while (_scopeRows.Count > MaxCachedScopes)
+        {
+            foreach (var row in _scopeRows[0].Rows)
+                row.Dispose();
+            _scopeRows.RemoveAt(0);
+        }
     }
 
     // Bypasses ScheduleFilter's own 250ms debounce - meant for a single,
@@ -670,9 +805,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // false explicitly instead, since mobile never reads them at all.
     public async Task<bool> RebuildRowsImmediatelyAsync(bool includeGridTiles = true)
     {
-        _filterCts?.Cancel();
-        _filterCts = new CancellationTokenSource();
-        var token = _filterCts.Token;
+        var token = BeginRowsRebuild();
         try
         {
             await RebuildRowsAsync(token, includeGridTiles);
@@ -681,6 +814,10 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         catch (OperationCanceledException)
         {
             return false;
+        }
+        finally
+        {
+            EndRowsRebuild(token);
         }
     }
 

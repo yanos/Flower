@@ -16,7 +16,12 @@ public partial class MobileMainView : UserControl
     public MobileMainView()
     {
         InitializeComponent();
-        ScreenStack.Settled += (_, _) => UpdateBackPill();
+        ScreenStack.Settled += (_, _) =>
+        {
+            UpdateBackPill();
+            EmptyStateHost.IsVisible = true;
+        };
+        ScreenStack.Moving += (_, _) => EmptyStateHost.IsVisible = false;
     }
 
     protected override void OnDataContextChanged(EventArgs e)

@@ -1790,9 +1790,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // ── IPlaylistManagementHost ───────────────────────────────────────────
 
-    // A playlist currently on screen gained/lost/reordered tracks - the debounce
-    // is right here, this is not a rapid-fire path.
-    void IPlaylistManagementHost.PlaylistContentChanged() => ScheduleFilter();
+    // A playlist currently on screen gained/lost/reordered tracks. One discrete
+    // user action, not a rapid-fire one like typing a search, so it bypasses
+    // ScheduleFilter's 250ms debounce the way a navigation does - through it, a
+    // dropped row sat back in its old place for the debounce plus the rebuild,
+    // well over a second on a phone, before jumping to where it was dropped.
+    void IPlaylistManagementHost.PlaylistContentChanged() =>
+        RebuildRowsImmediatelyAsync().Forget(_logger, "Playlist content rebuild");
 
     private void OnSidebarSelectionChanged()
     {
