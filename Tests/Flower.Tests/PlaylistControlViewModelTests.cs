@@ -350,6 +350,37 @@ public class PlaylistControlViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Previous_a_few_seconds_into_a_track_rewinds_it_instead_of_stepping_back()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.Play(b);
+        audio.Time = 45_000;
+        audio.Position = 0.3f;
+
+        vm.Previous();
+
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
+        Assert.Same(b, audio.LastPlayed);
+        Assert.Equal(0f, audio.Position);
+    }
+
+    [Fact]
+    public void Previous_close_to_the_start_of_a_track_steps_back_a_track()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.Play(b);
+        audio.Time = 2_000;
+
+        vm.Previous();
+
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
     public void Previous_at_the_start_of_the_playlist_does_not_wrap_to_the_last_track()
     {
         // Matches PlaylistControlViewModel.GetPreviousEntry - unlike

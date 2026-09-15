@@ -921,10 +921,22 @@ namespace Flower.ViewModels
             }
         }
 
+        // How far into a track Previous() rewinds it instead of stepping back a
+        // track - the CD player convention: a press a few seconds in restarts
+        // the song, and a second press, now at the start, goes to the one
+        // before it.
+        private static readonly TimeSpan PreviousRewindThreshold = TimeSpan.FromSeconds(3);
+
         public void Previous()
         {
             if (CurrentlyPlayingTrack != null)
             {
+                if (_audioManager.Time > PreviousRewindThreshold.TotalMilliseconds)
+                {
+                    _audioManager.Position = 0;
+                    return;
+                }
+
                 var previous = GetPreviousEntry(ResolveQueueIndex(CurrentlyPlayingTrack));
                 if (previous.Track != null)
                 {
