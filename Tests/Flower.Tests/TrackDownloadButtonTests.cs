@@ -177,31 +177,46 @@ public class TrackDownloadButtonTests
     }
 }
 
-// Mobile's top bar asks for the same control, over an indicator that stands
-// for the whole screen (see MobileMainViewModel.DownloadAllIndicator). What is
-// worth asserting here is the wiring the compiler cannot check: which
-// DataContext the control ends up on, and that its command resolves off the
-// slot's own ancestor binding rather than off the indicator it is bound to.
+// The album/playlist header asks for the same control, over an indicator that
+// stands for the whole screen (see MobileMainViewModel.DownloadAllIndicator).
+// It sat in the top bar until that band was cleared; what is worth asserting
+// either way is the wiring the compiler cannot check: which DataContext the
+// control ends up on, and that its command resolves off the screen's own
+// ancestor binding rather than off the indicator it is bound to.
 [Collection("PlatformDataDirectory")]
-public class ScreenSlotDownloadAllTests : PinnedDataDirectory
+public class DetailHeaderDownloadAllTests : PinnedDataDirectory
 {
-    public ScreenSlotDownloadAllTests() => TestIoc.EnsureConfigured();
+    public DetailHeaderDownloadAllTests() => TestIoc.EnsureConfigured();
 
     [AvaloniaFact]
-    public void The_top_bars_download_all_is_the_shared_control_over_the_shared_indicator()
+    public void The_headers_download_all_is_the_shared_control_over_the_shared_indicator()
     {
         var tracks = new List<Track> { new() { Title = "A", Album = "An Album", Path = "/music/a.flac" } };
         using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
-        var slot = new ScreenSlot { DataContext = parts.Mobile };
-        var window = new Window { Content = slot };
-        window.Show();
+        parts.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+        parts.Mobile.SelectAlbumOrArtistCommand.Execute("An Album");
+        MainViewModelHarness.WaitForTheDrillIn(parts.Mobile, "An Album");
 
-        var button = slot.GetVisualDescendants().OfType<TrackDownloadButton>().Single();
+        var view = new Flower.Views.Mobile.Screens.TrackListScreenView { DataContext = parts.Mobile };
+        var window = new Window { Width = 390, Height = 700 };
+        window.Styles.Add(new FluentTheme());
+        window.Content = view;
+        window.Show();
+        view.ObserveLive(parts.Mobile);
+        window.Measure(new Size(390, 700));
+        window.Arrange(new Rect(0, 0, 390, 700));
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+
+        var button = view.GetVisualDescendants().OfType<TrackDownloadButton>()
+            .Single(b => b.Label == "Download all");
 
         Assert.Same(parts.Mobile.DownloadAllIndicator, button.DataContext);
         Assert.Same(parts.Mobile.DownloadAllVisibleCommand, button.Command);
         // Nothing to fetch on a fully local library, so the icon well is empty
         // - the bug this replaces was a button that stayed up regardless.
         Assert.False(button.IsVisible);
+
+        window.Close();
     }
 }

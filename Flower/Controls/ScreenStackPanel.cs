@@ -42,7 +42,7 @@ namespace Flower.Controls;
 //
 // Each of the 3 live slots is a ScreenSlot (not the raw screen Control
 // itself) - a small wrapper pairing the screen's content with its own
-// sliding header (title/search box/create-playlist/download-all), so the
+// sliding header (the Search tab's box), so the
 // gesture code below (which only ever touches _current's own RenderTransform)
 // carries the header along automatically. The raw screen Control for each
 // role is tracked separately (_currentInner/_oneBackInner/_oneForwardInner) -

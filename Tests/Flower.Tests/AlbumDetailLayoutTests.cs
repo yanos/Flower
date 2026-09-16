@@ -125,9 +125,14 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
 
     // The header ContentControls are the only ones bound to DisplayHeader;
     // the art ones are the ones that ended up with an art view under them.
+    // The stacked header (AlbumHeaderTemplate) is itself one such control
+    // over the same tile, with the art and the words as two more inside it,
+    // so what is measured here is the leaves - the outer one is the
+    // arrangement, not either half of it.
     private static List<ContentControl> Headers(Window window) =>
         window.GetVisualDescendants().OfType<ContentControl>()
-            .Where(c => c.ContentTemplate != null && c.Content is AlbumTileViewModel)
+            .Where(c => c.ContentTemplate != null && c.Content is AlbumTileViewModel
+                && !c.GetVisualDescendants().OfType<ContentControl>().Any(d => d.Content is AlbumTileViewModel))
             .ToList();
 
     private static ContentControl VisibleArt(Window window) =>
@@ -194,14 +199,15 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
         using var scope = BuildInAlbum();
         var (window, view) = Show(scope.Mobile, 2000);
 
-        // 700 tall minus the 16px margin below and the header band plus 16
-        // above, and well inside the 40% of 2000 the width cap would allow.
-        Assert.Equal(616, Math.Round(view.PinnedArtSize));
+        // 700 tall minus the 16px margin below and the header band, the gap
+        // after it and 16 above (ScreenSlot.HeaderHeight/ContentGap), and well
+        // inside the 40% of 2000 the width cap would allow.
+        Assert.Equal(604, Math.Round(view.PinnedArtSize));
 
         var art = Assert.Single(window.GetVisualDescendants().OfType<SquareAlbumArtView>(),
             a => a.IsVisible && a.FindAncestorOfType<ScrollViewer>() == null);
-        Assert.Equal(616, Math.Round(art.Bounds.Width));
-        Assert.Equal(616, Math.Round(art.Bounds.Height));
+        Assert.Equal(604, Math.Round(art.Bounds.Width));
+        Assert.Equal(604, Math.Round(art.Bounds.Height));
 
         window.Close();
     }

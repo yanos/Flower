@@ -82,7 +82,14 @@
         <Style Selector="Window">
             <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}"/>
         </Style>
-        <Style Selector="TextBox">
+        <!-- Stated for anything that IS a TextBox rather than for TextBox
+             exactly, so the app's own text box (Flower.Controls.TextInput -
+             the same box with a clear button in it) is covered by this too
+             rather than restating it. The outline that goes with it is not a
+             style at all: Fluent draws a different one per state from inside
+             its own ControlTheme, so it is set as the brushes that theme
+             resolves - TextControlBorderBrush* in Theme.axaml. -->
+        <Style Selector=":is(TextBox)">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
         </Style>
         <!-- Compact tab headers app-wide (Settings, Track Info) - FluentTheme's
@@ -111,6 +118,46 @@
         </Style>
         <Style Selector="materialIcons|MaterialIcon:disabled">
             <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
+        </Style>
+        <!-- A hairline around every icon: one unit of the 24-unit box a
+             Material glyph is defined in, so one device pixel at the 24px
+             most of them are drawn at, and a pixel and a half at the largest
+             (the 36px Artists tab). Small enough to read as the glyph being
+             defined rather than as a border around it, and - unlike the
+             quarter-unit this started at - actually visible. A quarter of a
+             unit in the icon's own colour was measured, rendered, at 2-4% of
+             a luminance step on edge pixels only: present in the buffer,
+             indistinguishable from anti-aliasing to an eye. What makes a rim
+             visible at this width is contrast against the glyph, not width,
+             which is why this is AppIconOutlineBrush - translucent, and
+             per theme variant (white on the dark theme, black on the light)
+             rather than a shade of the fill that would sink into it.
+
+             Round joins because at this width a mitre on one of the sharper
+             glyphs - the chevrons, the fast-forward - is a spike longer than
+             the stroke itself.
+
+             MaterialIcon's template is Border > Viewbox#PART_IconViewbox >
+             Path, so reaching the Path needs /template/. The Viewbox scales
+             the geometry and the pen together, which is what keeps this a
+             count of icon units rather than of pixels: every icon gets the
+             same rim relative to its own size, whatever size it is drawn. -->
+        <Style Selector="materialIcons|MaterialIcon /template/ Path">
+            <Setter Property="Stroke" Value="{DynamicResource AppIconOutlineBrush}"/>
+            <Setter Property="StrokeThickness" Value="1"/>
+            <Setter Property="StrokeJoin" Value="Round"/>
+        </Style>
+        <!-- The Songs note (SongNoteGeometry above) is a hand-drawn Path
+             rather than a MaterialIcon, on the phone's tab and in the desktop
+             sidebar both, so it takes the same rim the same way - it sits
+             beside those icons and would otherwise be the one that looked
+             thin. Nothing else in the app is a bare Path (a plain selector
+             does not cross a template boundary, so the icons' own Paths are
+             not matched twice). -->
+        <Style Selector="Path">
+            <Setter Property="Stroke" Value="{DynamicResource AppIconOutlineBrush}"/>
+            <Setter Property="StrokeThickness" Value="1"/>
+            <Setter Property="StrokeJoin" Value="Round"/>
         </Style>
         <!-- The missing-cover note (AlbumArtPlaceholder). A style rather than
              a local value, so the rows and tiles that dim what cannot be

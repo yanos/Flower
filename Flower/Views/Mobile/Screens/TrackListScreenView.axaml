@@ -1,9 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
-             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
-             xmlns:screens="clr-namespace:Flower.Views.Mobile.Screens"
              x:Class="Flower.Views.Mobile.Screens.TrackListScreenView"
              x:DataType="vm:MobileMainViewModel"
              x:Name="Root"
@@ -13,100 +11,22 @@
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
         <ResourceInclude Source="avares://Flower/Views/Mobile/Screens/TrackRowTemplate.axaml" />
+        <!-- The header an album's tracks and a playlist's tracks both get -
+             one definition for the two of them. See that file. -->
+        <ResourceInclude Source="avares://Flower/Views/Mobile/Screens/AlbumHeaderTemplates.axaml" />
       </ResourceDictionary.MergedDictionaries>
 
-      <!-- The art and the words are two templates, not one header: the
-           narrow layout stacks them (art, then title and artist, then the
-           tracks, all in one scroll), while the wide one pins the art down the
-           left and puts the words at the top of the track column, where they
-           scroll away with the songs. Splitting them is what lets the wide
-           layout keep the art still while the text moves.
-
-           Neither carries a size of its own: SquareAlbumArtView takes whatever
-           width it is given and stays square (see that control), so each use
-           site sets a Width and the art follows. -->
-      <!-- Lifted off the page by a shadow, which is drawn by a Border round
-           the art rather than by the art itself: AlbumArtView clips its
-           content to its corners, and a shadow is outside them. Same 4px
-           radius as AlbumArtView's own outer Border, so the shadow follows the
-           rounded corners instead of squaring them off. Both ContentControls
-           that host this template turn ClipToBounds off: a ContentControl
-           clips by default, at exactly the art's square, which left the
-           shadow showing only in the four rounded corners. -->
-      <DataTemplate x:Key="AlbumArtTemplate" x:DataType="vm:AlbumTileViewModel">
-        <Border CornerRadius="4"
-                BoxShadow="0 4 16 0 #40000000">
-          <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}"
-                                       Classes.dimmed="{Binding IsUnavailable}" />
-        </Border>
-      </DataTemplate>
-
-      <!-- Under the name and artist, a pill of the album's own actions:
-           play, shuffle, add to playlist, download - play on a round button
-           of its own, the other three grouped in a pill beside it. The download is the same
-           button download-all always was - the screen-wide indicator and
-           command, so it spins while the batch runs and leaves once there is
-           nothing left to fetch - and the other three act on the same rows it
-           does. Play comes first, a bare glyph in a round button of its own,
-           standing apart from the pill: it is what the actions are for. Download goes last because it is the one that
-           leaves, so nothing shifts when it does. All of them are reached through the screen's DataContext,
-           since this template's own is the album tile.
-
-           The pill is the floating one MobileMainView puts over its screens
-           (Border.floating, Button.pill), which reaches here because the
-           screens are hosted inside that view. Centred under the art, ranged
-           left beside it (.albumText styles). Drawn a fifth larger than the
-           floating pill's own 40px: 24px glyphs in 44px buttons, 48 tall, and
-           play's round button 48 across to match. -->
-      <DataTemplate x:Key="AlbumTextTemplate" x:DataType="vm:AlbumTileViewModel">
-        <StackPanel Spacing="2" Classes.dimmed="{Binding IsUnavailable}">
-          <TextBlock Classes="albumName"
-                     Text="{Binding Name}"
-                     FontSize="20" FontWeight="Bold"
-                     TextWrapping="Wrap" />
-          <TextBlock Text="{Binding Artist}"
-                     FontSize="15" Opacity="0.7"
-                     TextWrapping="Wrap" />
-          <StackPanel Classes="albumActions" Orientation="Horizontal" Spacing="10" Margin="0,12,0,0">
-            <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
-              <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
-                      Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).PlayAlbumCommand}">
-                <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" />
-              </Button>
-            </Border>
-            <Border Classes="floating" Height="48" CornerRadius="24" Padding="2,0">
-              <StackPanel Orientation="Horizontal">
-                <Button Classes="pill" Padding="10"
-                        Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShuffleAlbumCommand}">
-                  <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24" />
-                </Button>
-                <Button Classes="pill" Padding="10"
-                        Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).OpenAlbumAddToPlaylistCommand}">
-                  <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="24" Height="24" />
-                </Button>
-                <!-- Its own IsVisible is the indicator's answer, so the server
-                     gate goes on a wrapper - the two are different questions. -->
-                <Panel IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">
-                  <controls:TrackDownloadButton DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllIndicator}"
-                                                IconSize="24"
-                                                IconPadding="10"
-                                                Label="Download album"
-                                                Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
-                </Panel>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </StackPanel>
-      </DataTemplate>
     </ResourceDictionary>
   </UserControl.Resources>
 
   <UserControl.Styles>
-    <!-- The words are one ContentControl used by both layouts, so the only
-         thing that varies with the layout - centred under the art when it is
-         stacked, ranged left at the head of the track column when it is not -
-         has to come from a class on that one use site rather than from two
-         templates. -->
+    <!-- The words are the same template wherever they are drawn (stacked
+         under the art, or at the head of the track column beside it), so the
+         only thing that varies - centred there, ranged left here - comes from
+         a class on the ContentControl showing them rather than from a second
+         copy of them. .beside is the wide album layout's; the .albumText
+         without it is the stacked header's own, inside
+         AlbumHeaderTemplate. -->
     <Style Selector="ContentControl.albumText TextBlock">
       <Setter Property="TextAlignment" Value="Center" />
     </Style>
@@ -192,7 +112,7 @@
                       ContentTemplate="{StaticResource AlbumArtTemplate}"
                       ClipToBounds="False"
                       Width="{Binding #Root.PinnedArtSize}"
-                      Margin="16,68,16,16"
+                      Margin="16,80,16,16"
                       VerticalAlignment="Center" />
 
       <!-- Album mode: header + track list share one ScrollViewer, so the art
@@ -225,17 +145,16 @@
           <!-- An artist's album keeps the artist's name as its title; one
                reached from Albums has none, and this collapses. -->
           <controls:ScreenTitle />
+          <!-- Stacked, the art and the words are one thing (the same one a
+               playlist shows); pinned, the art is out of this scroller
+               entirely and only the words are left here, ranged left so they
+               line their first character up with the song titles below. -->
           <ContentControl IsVisible="{Binding !#Root.IsWideAlbumLayout}"
                           Content="{Binding #Root.DisplayHeader}"
-                          ContentTemplate="{StaticResource AlbumArtTemplate}"
-                          ClipToBounds="False"
-                          Width="240" Margin="24,4,24,12"
-                          HorizontalAlignment="Center" />
-          <!-- Inset by the .albumText styles above, which is where the two
-               layouts differ - the ranged-left one has to line its first
-               character up with the song titles below it. -->
-          <ContentControl Classes="albumText"
-                          Classes.beside="{Binding #Root.IsWideAlbumLayout}"
+                          ContentTemplate="{StaticResource AlbumHeaderTemplate}"
+                          ClipToBounds="False" />
+          <ContentControl Classes="albumText beside"
+                          IsVisible="{Binding #Root.IsWideAlbumLayout}"
                           Content="{Binding #Root.DisplayHeader}"
                           ContentTemplate="{StaticResource AlbumTextTemplate}" />
           <ItemsControl ItemsSource="{Binding #Root.DisplayRows}" ItemTemplate="{StaticResource TrackRowTemplate}" />
@@ -243,11 +162,18 @@
       </ScrollViewer>
     </Grid>
 
-    <!-- Songs (flat)/playlist mode: unchanged virtualized ListBox, still
-         backing DragHandle_PointerPressed/etc.'s TrackListBox references
-         for playlist drag-to-reorder. -->
+    <!-- Songs (flat)/playlist mode: the virtualized ListBox, still backing
+         DragHandle_PointerPressed/etc.'s TrackListBox references for playlist
+         drag-to-reorder. A playlist's own header goes above its first row
+         through the screenScroll template (ScreenScroll.Header) rather than
+         into a scroller of its own like the album screen's: a playlist can be
+         thousands of songs long, and hoisting it out of the ListBox would
+         cost exactly the virtualization that makes that bearable. ListHeader
+         is null on the flat Songs list, which stands for the whole library
+         and is nobody's one thing. -->
     <ListBox Classes="screenScroll" IsVisible="{Binding !#Root.IsAlbumMode}"
               x:Name="TrackListBox"
+              controls:ScreenScroll.Header="{Binding #Root.ListHeader}"
               Background="Transparent"
               ItemsSource="{Binding #Root.DisplayRows}"
               ItemTemplate="{StaticResource TrackRowTemplate}"

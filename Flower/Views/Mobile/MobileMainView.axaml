@@ -15,13 +15,37 @@
              Background="{DynamicResource AppBackgroundBrush}">
 
   <UserControl.Resources>
-    <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
-    <!-- Replaced from the code-behind as BottomChrome's height changes. -->
-    <Thickness x:Key="ScreenScrollInset">0,52,0,100</Thickness>
-    <conv:EqualsConverter x:Key="EqualsConverter" />
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <!-- For the screenScroll ListBox template below, which shows one of
+             these above a playlist's rows. -->
+        <ResourceInclude Source="avares://Flower/Views/Mobile/Screens/AlbumHeaderTemplates.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+      <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
+      <!-- Replaced from the code-behind as BottomChrome's height changes. -->
+      <Thickness x:Key="ScreenScrollInset">0,64,0,100</Thickness>
+      <conv:EqualsConverter x:Key="EqualsConverter" />
+    </ResourceDictionary>
   </UserControl.Resources>
 
   <UserControl.Styles>
+    <!-- No scrollbars anywhere on the phone. A finger already knows how far
+         down a list it is, and every scroller here is a full-width screen
+         whose Fluent scrollbar drew a grey rail down the right edge - over
+         the album grids' last column of art, and over the floating ovals at
+         the bottom. Opacity rather than IsVisible because ScrollBar sets its
+         own IsVisible from code as the extent changes, which beats a style
+         setter; and rather than a width of 0 because the scrollers here
+         auto-hide, so the bars overlay the content and take no layout from
+         it either way. IsHitTestVisible goes with it so an invisible rail
+         cannot swallow a drag meant for the list.
+
+         Desktop keeps its own: a mouse has no other way to tell how long a
+         list is, which is why this sits here and not in App.axaml. -->
+    <Style Selector="ScrollBar">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
     <!-- The ListBoxItem container FluentTheme generates around each row has its
          own default Padding/MinHeight independent of the row Button's - showing
          up as a second, differently-colored selection box wrapped around the
@@ -145,11 +169,12 @@
          shrank the window by the same amount, and the list stopped the
          inset's height again short of the tabs. Every screen's content is one
          of these two; a screen that scrolls something else needs adding. -->
-    <!-- The template is Fluent's with the screen's title stacked above the
-         items, inside the scroll, so it moves with them (ScreenTitle) - a
-         ListBox has nowhere else to put a line before its first item. The
-         virtualizing panel still only realizes what shows: it sizes itself off
-         the effective viewport, which a StackPanel around it does not change. -->
+    <!-- The template is Fluent's with the screen's title (and a playlist's
+         header) stacked above the items, inside the scroll, so they move with
+         them (ScreenTitle) - a ListBox has nowhere else to put anything before
+         its first item. The virtualizing panel still only realizes what shows:
+         it sizes itself off the effective viewport, which a StackPanel around
+         it does not change. -->
     <Style Selector="ListBox.screenScroll">
       <Setter Property="Padding" Value="{DynamicResource ScreenScrollInset}" />
       <Setter Property="Template">
@@ -165,6 +190,15 @@
                           AllowAutoHide="{TemplateBinding (ScrollViewer.AllowAutoHide)}">
               <StackPanel Margin="{TemplateBinding Padding}">
                 <controls:ScreenTitle />
+                <!-- ...and, under it, whatever the screen put there: a
+                     playlist's own header, the same one an album's tracks get
+                     (TrackListScreenView, ScreenScroll.Header). Nothing at
+                     all on every other screen, where the property is unset
+                     and a ContentControl with no content draws and measures
+                     nothing. -->
+                <ContentControl Content="{TemplateBinding (controls:ScreenScroll.Header)}"
+                                ContentTemplate="{StaticResource AlbumHeaderTemplate}"
+                                ClipToBounds="False" />
                 <ItemsPresenter Name="PART_ItemsPresenter"
                                 ItemsPanel="{TemplateBinding ItemsPanel}" />
               </StackPanel>
@@ -263,9 +297,9 @@
            swipe gesture - live-drag reveal on a rightward swipe (when
            there's history to reveal), easing to commit/cancel on release,
            discrete tab-paging otherwise - see that class's own doc comment.
-           Each slot now carries its own sliding title/search/create-playlist/
-           download-all header (see ScreenSlot) - only the back button and
-           the settings button below stay fixed on top of it. -->
+           Each slot carries its own sliding header, which is the Search
+           tab's box and nothing else (see ScreenSlot) - only the back button
+           and the settings button below stay fixed on top of it. -->
       <controls:ScreenStackPanel x:Name="ScreenStack" />
 
       <!-- Empty state: shown instead of a blank screen when the current list has nothing in it.

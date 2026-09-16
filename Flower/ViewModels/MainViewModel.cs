@@ -1757,6 +1757,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Task CreatePlaylistWithTracks(IEnumerable<Track> tracks) => Playlists.CreateWithTracks(tracks);
 
+    // The mobile flow: the name is typed before anything is created - see
+    // PlaylistManagementViewModel.CreateNamed.
+    public Task CreatePlaylistNamed(string name, IEnumerable<Track> tracks) => Playlists.CreateNamed(name, tracks);
+
     public Task DeletePlaylistAsync(Playlist playlist) => Playlists.DeleteAsync(playlist);
 
     public Task DeletePlaylistsAsync(IReadOnlyList<Playlist> playlists) => Playlists.DeleteAsync(playlists);

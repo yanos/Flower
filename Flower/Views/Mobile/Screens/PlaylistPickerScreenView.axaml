@@ -8,22 +8,38 @@
              x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource AppBackgroundBrush}">
 
-  <!-- Playlist picker -->
-  <ListBox Classes="screenScroll" Background="Transparent"
-           ItemsSource="{Binding PlaylistPickerItems}"
-           controls:RubberBandScroll.IsEnabled="True"
-           SelectionMode="Single">
-    <ListBox.ItemTemplate>
-      <DataTemplate x:DataType="svm:SidebarItem">
-        <Button Classes="pickerRow"
-                Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectPlaylistCommand}"
-                CommandParameter="{Binding}">
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" VerticalAlignment="Center" />
-            <TextBlock Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-          </StackPanel>
-        </Button>
-      </DataTemplate>
-    </ListBox.ItemTemplate>
-  </ListBox>
+  <!-- Playlist picker. A ScrollViewer over an ItemsControl rather than the
+       ListBox the other pickers use, because this one puts the screen's title
+       and the New Playlist row above its items and a ListBox has nowhere to
+       put anything before its first item (the screenScroll ListBox template
+       stacks ScreenTitle in for exactly that reason, and stops there). Nothing
+       is lost by giving up its virtualization: this list is as long as the
+       user has playlists.
+
+       The way to make a playlist is here, under the title and ranged left with
+       the rows, rather than a bare plus in the header band where it read as an
+       icon with no subject - see controls:NewPlaylistEntry, which is also what
+       the add-to-playlist sheet shows. -->
+  <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
+    <StackPanel>
+      <controls:ScreenTitle />
+
+      <controls:NewPlaylistEntry />
+
+      <ItemsControl ItemsSource="{Binding PlaylistPickerItems}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="svm:SidebarItem">
+            <Button Classes="pickerRow"
+                    Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectPlaylistCommand}"
+                    CommandParameter="{Binding}">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

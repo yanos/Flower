@@ -1,0 +1,68 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             x:Class="Flower.Controls.NewPlaylistEntry"
+             x:DataType="vm:MobileMainViewModel"
+             x:Name="Root">
+
+  <!-- Making a playlist on a phone, in the two places it can be done: at the
+       top of the Playlists tab, and at the top of the add-to-playlist sheet.
+       One control, so the two are one flow rather than two that drift - the
+       sheet only differs by the padding its own rows use (RowPadding).
+
+       Two states in the same place. At rest, a circled plus and the words
+       "New Playlist". Tapped, that row is replaced in place by a playlist row
+       whose name is an empty box, focused, reading "Playlist Name" until
+       something is typed - so the new entry appears at the top of the list
+       before it exists. Nothing is created until a name is committed, and an
+       empty one creates nothing at all: see MobileMainViewModel's
+       BeginCreatePlaylistCommand/CommitNewPlaylistCommand, and the
+       code-behind for what commits it. -->
+  <Panel>
+    <Button x:Name="StartButton"
+            Classes="pickerRow"
+            Padding="{Binding #Root.RowPadding}"
+            IsVisible="{Binding !IsNamingNewPlaylist}"
+            Command="{Binding BeginCreatePlaylistCommand}">
+      <!-- 26 and 8 rather than the rows' 22 and 12: a circle a little larger
+           than the glyph it stands beside, starting at the same left edge and
+           leaving the words at the same place - so "New Playlist" and every
+           playlist name below it begin on one line. -->
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
+        <!-- The app's own circle - the floating oval every round thing on the
+             phone is (Styles/IconButtons.axaml), at the size of the glyph
+             beside a playlist name rather than of a button. -->
+        <Border Classes="floating" Width="26" Height="26" CornerRadius="13" BoxShadow="0 1 4 0 #28000000">
+          <materialIcons:MaterialIcon Kind="Plus" Width="16" Height="16"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <TextBlock Text="New Playlist" FontSize="16" VerticalAlignment="Center" />
+      </StackPanel>
+    </Button>
+
+    <!-- Lined up with the rows under it: the same glyph in the same place, so
+         the box sits exactly where the name it is about to have will. -->
+    <Grid x:Name="EditorRow"
+          ColumnDefinitions="Auto,*" ColumnSpacing="12"
+          Margin="{Binding #Root.RowPadding}"
+          IsVisible="{Binding IsNamingNewPlaylist}">
+      <materialIcons:MaterialIcon Grid.Column="0" Kind="PlaylistPlay" Width="22" Height="22" VerticalAlignment="Center" />
+      <!-- PropertyChanged rather than a TextBox's own default of LostFocus:
+           the box is dismissed by losing focus, and on that default it wrote
+           its text back into the ViewModel on the way out - which put a
+           cancelled name back after Cancel had cleared it, and a just-used one
+           back after Enter had already made the playlist. Two playlists, one
+           of them from an Escape. -->
+      <controls:TextInput Grid.Column="1"
+                          x:Name="NameBox"
+                          Text="{Binding NewPlaylistName, UpdateSourceTrigger=PropertyChanged}"
+                          PlaceholderText="Playlist Name"
+                          FontSize="16"
+                          VerticalAlignment="Center"
+                          KeyDown="NameBox_KeyDown"
+                          LostFocus="NameBox_LostFocus" />
+    </Grid>
+  </Panel>
+</UserControl>

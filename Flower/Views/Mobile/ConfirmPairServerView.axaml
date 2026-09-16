@@ -52,11 +52,11 @@
              trusting, which a bare code cannot (see PairingEntry). The length
              cap is sized for it - at 20 a pasted link was cut into a code that
              could only fail. -->
-        <TextBox Text="{Binding PendingPairingCode}"
-                 PlaceholderText="Pairing code or link"
-                 IsEnabled="{Binding !IsPairingInProgress}"
-                 controls:SoftKeyboard.ReopenOnTap="True"
-                 MaxLength="400" FontSize="16" Padding="12,10" TextWrapping="Wrap" />
+        <controls:TextInput Text="{Binding PendingPairingCode}"
+                            PlaceholderText="Pairing code or link"
+                            IsEnabled="{Binding !IsPairingInProgress}"
+                            controls:SoftKeyboard.ReopenOnTap="True"
+                            MaxLength="400" FontSize="16" Padding="12,10" TextWrapping="Wrap" />
 
         <!-- The sheet deliberately stays up through the redeem so this can be
              read next to the code that caused it - see

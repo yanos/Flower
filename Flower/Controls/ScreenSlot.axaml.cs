@@ -7,18 +7,25 @@ using Flower.ViewModels.Mobile;
 namespace Flower.Controls;
 
 // One screen's own materialized content plus its sliding header - see the
-// XAML's own doc comment for why this exists. Frame carries every piece of
-// per-screen header state (title/search-visibility/create-playlist/
-// download-all gating); genuinely live/global state (SearchQuery, the
-// commands, Main.CanForceSync, DownloadAllIndicator) binds straight through to
-// DataContext instead, which ScreenStackPanel sets to the shared VM on every
-// slot it builds.
+// XAML's own doc comment for why this exists. Frame carries the per-screen
+// header state, which is now down to one question (is this the Search tab, and
+// so is the box showing); genuinely live/global state - the query itself -
+// binds straight through to DataContext instead, which ScreenStackPanel sets
+// to the shared VM on every slot it builds.
 public partial class ScreenSlot : UserControl
 {
     // The header band's height - the XAML's first row. The screen runs up
     // under it, so what scrolls starts this far down (MobileMainView's
     // ScreenScrollInset) and what does not keeps clear of it on its own.
     public const double HeaderHeight = 52;
+
+    // ...plus this much before anything of the screen's own begins. The band
+    // is see-through and the back button sits in it, so a title or a first row
+    // that started flush against the band's edge started right under that
+    // button. Every screen takes both together (MobileMainView's
+    // ScreenScrollInset, and the pinned album art in TrackListScreenView,
+    // which is the one piece of screen content outside a scroller).
+    public const double ContentGap = 12;
 
     public static readonly StyledProperty<MobileNavigationFrame?> FrameProperty =
         AvaloniaProperty.Register<ScreenSlot, MobileNavigationFrame?>(nameof(Frame));

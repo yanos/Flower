@@ -62,8 +62,8 @@
         <TextBlock Classes="section-header" Text="General"/>
 
         <TextBlock Text="Device Name" FontSize="13" Opacity="0.6"/>
-        <TextBox Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"
-                 controls:SoftKeyboard.ReopenOnTap="True"/>
+        <controls:TextInput Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"
+                            controls:SoftKeyboard.ReopenOnTap="True"/>
         <TextBlock Text="Shown on the server this device syncs with"
                    FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
 
@@ -255,10 +255,10 @@
              reports its own addresses and keeps working away from home without
              anything being typed - see docs/REMOTE-ACCESS-PLAN.md. -->
         <Grid ColumnDefinitions="*,Auto">
-          <TextBox Grid.Column="0" Text="{Binding ManualServerAddress}"
-                   PlaceholderText="my-server.tail1234.ts.net:4533"
-                   controls:SoftKeyboard.ReopenOnTap="True"
-                   FontSize="14" Margin="0,0,8,0"/>
+          <controls:TextInput Grid.Column="0" Text="{Binding ManualServerAddress}"
+                              PlaceholderText="my-server.tail1234.ts.net:4533"
+                              controls:SoftKeyboard.ReopenOnTap="True"
+                              FontSize="14" Margin="0,0,8,0"/>
           <Button Grid.Column="1" Content="Add" Command="{Binding AddManualServerCommand}"/>
         </Grid>
         <TextBlock IsVisible="{Binding ManualServerStatus, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"

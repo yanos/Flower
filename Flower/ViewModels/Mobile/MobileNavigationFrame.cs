@@ -64,13 +64,15 @@ public sealed record MobileNavigationFrame(
     // property's history), now derived per-frame so a swiped-in back/forward
     // preview shows its own title rather than the live VM's.
     //
-    // Blank over one album's tracks: the only name to give it was the sidebar
-    // item's, "Albums", and the album's own name is already in large type in
-    // the header right below. Under Artists the artist's name still wins.
+    // Blank over one album's or one playlist's tracks: both draw their own
+    // name in large type in the header right below (see
+    // AlbumHeaderTemplates.axaml), and the only name this line had to give an
+    // album was the sidebar item's, "Albums". Under Artists the artist's name
+    // still wins.
     public string Title =>
         Tab == MobileTab.Artists && SelectedArtistName != null
             ? SelectedArtistName
-            : IsSearchScreen || IsAlbumTrackList
+            : IsSearchScreen || IsTrackList
                 ? string.Empty
                 : HasDrilledIn
                     ? (SidebarItem?.Name ?? Tab.ToString())
@@ -79,10 +81,6 @@ public sealed record MobileNavigationFrame(
     // The Search tab's own always-visible box replaces the title there - see
     // MobileMainViewModel.IsShowingSearchTabBox's own former doc comment.
     public bool IsSearchScreen => ScreenKind == MobileScreenKind.SearchResults;
-
-    // Mirrors MobileMainViewModel.IsShowingPlaylistPicker's own condition -
-    // used by ScreenSlot to gate the create-playlist button per-frame.
-    public bool IsPlaylistPicker => ScreenKind == MobileScreenKind.PlaylistPicker;
 
     // Whether this frame's TrackList (if any) is showing one album's own
     // tracks vs. a flat Songs/playlist list - mirrors
@@ -95,9 +93,10 @@ public sealed record MobileNavigationFrame(
     public bool IsPlaylistTrackList => Tab == MobileTab.Playlists && HasDrilledIn && SidebarItem?.Playlist != null;
 
     // Either of the two above: a frame whose track list is one specific
-    // album's or one specific playlist's, which is where "download everything
-    // on this screen" means something (see ScreenSlot's own download button).
-    // Not the flat Songs list, which is the whole library.
+    // album's or one specific playlist's - the two that get a header of their
+    // own, which is also where "download everything on this screen" means
+    // something (the header's own download button). Not the flat Songs list,
+    // which is the whole library.
     public bool IsTrackList => IsAlbumTrackList || IsPlaylistTrackList;
 
     // Identifies which materialized control a frame should reuse - two

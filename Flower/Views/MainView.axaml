@@ -190,6 +190,14 @@
                             IsBusy="{Binding IsSyncing}"
                             VerticalAlignment="Center"/>
                       </StackPanel>
+                      <!-- The one field in the app that is a plain TextBox
+                           rather than controls:TextInput: the row it replaces
+                           is 20px tall, and the clear button inside a
+                           TextInput is taller than that on its own, so it
+                           would push every sidebar row apart to hold a button
+                           for something Escape already does. It still draws
+                           the primary outline, which is a theme brush rather
+                           than anything that control owns. -->
                       <TextBox Text="{Binding Name, Mode=TwoWay}"
                                IsVisible="{Binding IsEditing}"
                                VerticalContentAlignment="Center"
@@ -381,12 +389,12 @@
                  characters of a code. The cap used to be 20, which silently
                  truncated a pasted link into something that could only fail as
                  a bad code - see PairingEntry, which is what reads either. -->
-            <TextBox Text="{Binding PairingCode}"
-                     PlaceholderText="Pairing code or link"
-                     IsVisible="{Binding IsPairingCodeRequired}"
-                     Width="180" MaxLength="400"
-                     KeyDown="PairingCodeBox_KeyDown"
-                     Margin="12,0,0,0" VerticalAlignment="Center"/>
+            <controls:TextInput Text="{Binding PairingCode}"
+                                PlaceholderText="Pairing code or link"
+                                IsVisible="{Binding IsPairingCodeRequired}"
+                                Width="180" MaxLength="400"
+                                KeyDown="PairingCodeBox_KeyDown"
+                                Margin="12,0,0,0" VerticalAlignment="Center"/>
             <Button Content="{Binding PairActionLabel}"
                     IsVisible="{Binding CanPairWithSelectedDevice}"
                     IsEnabled="{Binding IsPairActionEnabled}"

@@ -1,7 +1,5 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:controls="clr-namespace:Flower.Controls"
              x:Class="Flower.Controls.ScreenSlot"
@@ -10,7 +8,7 @@
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Wraps one materialized screen control together with that screen's own
-       header row (title/search box/create-playlist/download-all), so
+       header row (the Search tab's box; nothing at all on the rest), so
        ScreenStackPanel's existing swipe transform - applied to this whole
        control - carries the header along with the screen content instead of
        leaving it behind in a static bar. Frame is reassigned wholesale on
@@ -34,67 +32,24 @@
   <Grid RowDefinitions="52,*">
     <ContentControl Grid.Row="0" Grid.RowSpan="2" x:Name="ContentHost" />
 
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="60,4,60,4">
+    <Grid Grid.Row="0" Margin="60,4,60,4">
       <!-- No title here: it is the first line of the screen's own scroller,
            under the back button, and moves with the list (ScreenTitle). -->
 
       <!-- Search tab's own always-visible box, bound to SearchQuery on the
            shared DataContext (genuinely live/global state, not per-frame -
-           see ScreenSlot.axaml.cs's own doc comment). -->
-      <TextBox Grid.Column="0"
-               x:Name="SearchTabBox"
-               Text="{Binding SearchQuery}"
-               IsVisible="{Binding #Root.Frame.IsSearchScreen}"
-               PlaceholderText="Search your library"
-               VerticalAlignment="Center">
-        <TextBox.InnerRightContent>
-          <Button Command="{Binding ClearSearchQueryCommand}"
-                  IsVisible="{Binding SearchQuery, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                  Background="Transparent" BorderThickness="0" Padding="4">
-            <materialIcons:MaterialIcon Kind="CloseCircle" Width="16" Height="16" Opacity="0.6" />
-          </Button>
-        </TextBox.InnerRightContent>
-      </TextBox>
-
-      <Button Grid.Column="1"
-              Command="{Binding CreatePlaylistCommand}"
-              IsVisible="{Binding #Root.Frame.IsPlaylistPicker}"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="10">
-        <materialIcons:MaterialIcon Kind="Plus" Width="24" Height="24" />
-      </Button>
-
-      <!-- Downloads every not-yet-downloaded track currently in view - see
-           MobileMainView.axaml's former copy of this button for the full
-           history/reasoning.
-
-           The same control every per-track download icon is, over its own
-           indicator (MobileMainViewModel.DownloadAllIndicator), which is what
-           makes it spin while the batch runs and take itself away once there
-           is nothing on the screen left to fetch. It used to be two
-           hand-copied pairs of glyphs - one for an album, one for a playlist -
-           that did neither.
-
-           Playlists only: an album's sits beside its name instead, in
-           TrackListScreenView's album header.
-
-           The frame/server gating goes on a wrapper rather than on the button:
-           the button's own IsVisible is the indicator's answer, and the two
-           questions are different ones. -->
-      <Panel Grid.Column="2">
-        <Panel.IsVisible>
-          <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
-            <Binding ElementName="Root" Path="Frame.IsPlaylistTrackList" />
-            <Binding Path="Main.CanForceSync" />
-          </MultiBinding>
-        </Panel.IsVisible>
-        <controls:TrackDownloadButton DataContext="{Binding DownloadAllIndicator}"
-                                      IconSize="22"
-                                      IconPadding="10"
-                                      Label="Download all"
-                                      Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
-      </Panel>
+           see ScreenSlot.axaml.cs's own doc comment). The app's own box
+           (controls:TextInput), so the x that empties it is the one every
+           other field has rather than one written out here - which is also
+           what retired ClearSearchQueryCommand: clearing the text is the
+           whole of what it did. PropertyChanged so the results follow each
+           keystroke, and so clearing reaches the query without waiting for
+           the box to lose focus. -->
+      <controls:TextInput x:Name="SearchTabBox"
+                          Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                          IsVisible="{Binding #Root.Frame.IsSearchScreen}"
+                          PlaceholderText="Search your library"
+                          VerticalAlignment="Center" />
     </Grid>
   </Grid>
 </UserControl>

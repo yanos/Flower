@@ -1,0 +1,203 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
+using Avalonia.Headless.XUnit;
+using Avalonia.Layout;
+using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.Themes.Fluent;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+
+using Flower.Controls;
+using Flower.Models;
+using Flower.Tests.TestSupport;
+using Flower.ViewModels;
+using Flower.ViewModels.Mobile;
+using Flower.Views.Mobile;
+using Flower.Views.Mobile.Screens;
+
+using Material.Icons;
+using Material.Icons.Avalonia;
+
+using Microsoft.Extensions.Logging.Abstractions;
+
+using Xunit;
+
+using Track = Flower.Models.Track;
+
+namespace Flower.Tests;
+
+// A playlist's own tracks are a screen about one thing, the way an album's
+// are, and used to be the only such screen with nothing at the top of it
+// saying so. It shows the album screen's header now - the same markup
+// (AlbumHeaderTemplates.axaml), so its cover, its name and its pill of
+// actions can only ever be changed for both - with the count of its songs
+// where an artist's name goes and, until a playlist can carry a picture of
+// its own, an empty cover.
+[Collection("PlatformDataDirectory")]
+public class PlaylistDetailLayoutTests : PinnedDataDirectory
+{
+    public PlaylistDetailLayoutTests() => TestIoc.EnsureConfigured();
+
+    private const string PlaylistName = "Songs to hum badly";
+
+    private static Track SomeTrack(string title) => new()
+    {
+        Title = title,
+        Album = "Bee Thousand",
+        Artists = "Guided by Voices",
+        Path = "/music/" + title + ".flac",
+        DateAdded = DateTimeOffset.UtcNow,
+    };
+
+    // The whole MobileMainView rather than a bare TrackListScreenView: a
+    // playlist's header goes into the screenScroll ListBox template, which is
+    // declared there (see ScreenScroll.Header), and so is every style the
+    // header's own pill of actions needs.
+    private sealed class Harness : IDisposable
+    {
+        public Window Window { get; }
+        public MobileMainViewModel Vm => _parts.Mobile;
+
+        private readonly MainViewModelHarness.MobileParts _parts;
+
+        public Harness(int songs)
+        {
+            var tracks = Enumerable.Range(0, songs).Select(i => SomeTrack("Song " + i)).ToList();
+            var library = new Library(tracks);
+            library.AddPlaylist(new Playlist(PlaylistName, tracks));
+
+            _parts = MainViewModelHarness.BuildMobile(library, new MainPlaylist(new List<Track>()));
+            Window = new Window { Width = 390, Height = 800 };
+            Window.Styles.Add(new FluentTheme());
+            Window.Content = new MobileMainView { DataContext = Vm };
+            Window.Show();
+            Pump();
+
+            Vm.SelectTabCommand.Execute(nameof(MobileTab.Playlists));
+            Pump(500);
+            Vm.SelectPlaylistCommand.Execute(Vm.PlaylistPickerItems.First(i => i.Name == PlaylistName));
+            // Past the entrance easing, so the screen is at rest and the rows
+            // the drill-in rebuilt on the pool have landed.
+            Pump(700);
+
+            Assert.True(Vm.IsShowingPlaylistTracks, "never drilled into the playlist");
+        }
+
+        public static void Pump(int milliseconds = 150)
+        {
+            using var cts = new CancellationTokenSource(milliseconds);
+            Dispatcher.UIThread.MainLoop(cts.Token);
+        }
+
+        public void Dispose()
+        {
+            Window.Close();
+            _parts.Dispose();
+        }
+    }
+
+    // Searched inside the track list screen rather than the whole window: the
+    // screen behind it is kept alive for the swipe back, and it is the
+    // playlist picker - which has a row saying this playlist's name too.
+    private static TrackListScreenView Screen(Window window) =>
+        window.GetVisualDescendants().OfType<TrackListScreenView>().Last(v => v.IsEffectivelyVisible);
+
+    private static TextBlock TextBlockSaying(Window window, string text) =>
+        Screen(window).GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == text && t.IsEffectivelyVisible);
+
+    private static Rect InWindow(Window window, Visual control) =>
+        new(control.TranslatePoint(default, window) ?? default, control.Bounds.Size);
+
+    [AvaloniaFact]
+    public void The_playlist_says_its_name_and_how_many_songs_it_holds()
+    {
+        using var harness = new Harness(3);
+        var window = harness.Window;
+
+        var name = TextBlockSaying(window, PlaylistName);
+        var count = TextBlockSaying(window, "3 songs");
+        var firstSong = TextBlockSaying(window, "Song 0");
+
+        Assert.True(InWindow(window, name).Bottom <= InWindow(window, count).Y, "the count is not under the name");
+        Assert.True(InWindow(window, count).Bottom <= InWindow(window, firstSong).Y, "the header is not above the songs");
+
+    }
+
+    // One song is not "1 songs".
+    [AvaloniaFact]
+    public void One_song_is_counted_in_the_singular()
+    {
+        using var harness = new Harness(1);
+        Assert.Equal("1 song", harness.Vm.CurrentPlaylistHeader?.Artist);
+    }
+
+    // The point of the exercise: the same buttons the album screen has, from
+    // the same markup, acting on the same rows.
+    [AvaloniaFact]
+    public void It_offers_the_album_screen_s_own_play_shuffle_and_add_to_playlist()
+    {
+        using var harness = new Harness(3);
+        var window = harness.Window;
+
+        var kinds = Screen(window).GetVisualDescendants().OfType<MaterialIcon>()
+            .Where(i => i.IsEffectivelyVisible && i.FindAncestorOfType<Button>() is { Classes: var c } && c.Contains("pill"))
+            .Select(i => i.Kind)
+            .ToList();
+
+        Assert.Contains(MaterialIconKind.Play, kinds);
+        Assert.Contains(MaterialIconKind.Shuffle, kinds);
+        Assert.Contains(MaterialIconKind.PlaylistPlus, kinds);
+
+    }
+
+    // Empty rather than borrowing the first song's cover: a playlist is not an
+    // album, and the placeholder is what AlbumArtView draws for anything with
+    // no art of its own.
+    [AvaloniaFact]
+    public void Its_cover_is_empty()
+    {
+        using var harness = new Harness(3);
+        var window = harness.Window;
+
+        var art = Assert.Single(Screen(window).GetVisualDescendants().OfType<SquareAlbumArtView>(), a => a.IsEffectivelyVisible);
+        Assert.Null(art.AlbumArt);
+        Assert.NotNull(art.GetVisualDescendants().OfType<AlbumArtPlaceholder>().FirstOrDefault(p => p.IsEffectivelyVisible));
+        Assert.Null(harness.Vm.CurrentPlaylistHeader?.RepresentativeTrack);
+
+    }
+
+    // The header goes above the rows inside the list's own scroller, so it
+    // scrolls away with them - and the list is still the virtualizing ListBox,
+    // which is the whole reason it is put there rather than stacked above it.
+    [AvaloniaFact]
+    public void The_header_scrolls_with_the_songs()
+    {
+        using var harness = new Harness(3);
+        var window = harness.Window;
+
+        var name = TextBlockSaying(window, PlaylistName);
+        var list = Assert.Single(Screen(window).GetVisualDescendants().OfType<ListBox>(), l => l.IsEffectivelyVisible);
+
+        Assert.Same(list, name.FindAncestorOfType<ListBox>());
+        Assert.NotNull(name.FindAncestorOfType<ScrollViewer>());
+
+    }
+
+    // The screen's title line would otherwise say the playlist's name in the
+    // band as well as in the header right below it.
+    [AvaloniaFact]
+    public void The_name_is_not_also_in_the_title_line()
+    {
+        using var harness = new Harness(3);
+        Assert.Equal(string.Empty, harness.Vm.CurrentFrame.Title);
+    }
+}

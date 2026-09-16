@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Flower.Controls"
         xmlns:vm="using:Flower.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -18,7 +19,7 @@
     <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
       <Grid ColumnDefinitions="Auto,*">
         <TextBlock Grid.Column="0" Text="Name" VerticalAlignment="Center" Margin="0,0,10,0" Opacity="0.75"/>
-        <TextBox Grid.Column="1" Text="{Binding Name, Mode=TwoWay}"/>
+        <controls:TextInput Grid.Column="1" Text="{Binding Name, Mode=TwoWay}"/>
       </Grid>
 
       <StackPanel Orientation="Horizontal" Spacing="8">
@@ -80,10 +81,10 @@
                         SelectedItem="{Binding Operator, Mode=TwoWay}"/>
 
               <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                <TextBox Text="{Binding ValueText, Mode=TwoWay}"
-                         ToolTip.Tip="{Binding ValueHint}"
-                         IsVisible="{Binding ShowValueBox}"
-                         MinWidth="160" VerticalAlignment="Center"/>
+                <controls:TextInput Text="{Binding ValueText, Mode=TwoWay}"
+                                    ToolTip.Tip="{Binding ValueHint}"
+                                    IsVisible="{Binding ShowValueBox}"
+                                    MinWidth="160" VerticalAlignment="Center"/>
 
                 <DatePicker SelectedDate="{Binding DateValue, Mode=TwoWay}"
                             IsVisible="{Binding ShowDateBox}"
@@ -92,10 +93,10 @@
                 <TextBlock Text="and" IsVisible="{Binding ShowRangeSeparator}"
                            VerticalAlignment="Center" Opacity="0.75"/>
 
-                <TextBox Text="{Binding SecondValueText, Mode=TwoWay}"
-                         ToolTip.Tip="{Binding ValueHint}"
-                         IsVisible="{Binding ShowSecondValueBox}"
-                         MinWidth="160" VerticalAlignment="Center"/>
+                <controls:TextInput Text="{Binding SecondValueText, Mode=TwoWay}"
+                                    ToolTip.Tip="{Binding ValueHint}"
+                                    IsVisible="{Binding ShowSecondValueBox}"
+                                    MinWidth="160" VerticalAlignment="Center"/>
 
                 <DatePicker SelectedDate="{Binding SecondDateValue, Mode=TwoWay}"
                             IsVisible="{Binding ShowSecondDateBox}"

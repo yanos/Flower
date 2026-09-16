@@ -85,14 +85,6 @@ public class MobileNavigationFrameTests
         Assert.False(Frame(MobileTab.Songs).IsSearchScreen);
     }
 
-    [Fact]
-    public void IsPlaylistPicker_true_only_for_the_undrilled_playlists_picker()
-    {
-        Assert.True(Frame(MobileTab.Playlists, hasDrilledIn: false).IsPlaylistPicker);
-        Assert.False(Frame(MobileTab.Playlists, hasDrilledIn: true).IsPlaylistPicker);
-        Assert.False(Frame(MobileTab.Albums).IsPlaylistPicker);
-    }
-
     // Mirrors MobileMainViewModel's former ScreenTitle exactly - see
     // MobileNavigationFrame.Title's own doc comment for why this moved here.
     [Theory]

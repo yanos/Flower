@@ -43,7 +43,7 @@
       <Setter Property="Opacity" Value="0.4"/>
       <Setter Property="Margin" Value="0,0,0,6"/>
     </Style>
-    <Style Selector="TextBox.val">
+    <Style Selector=":is(TextBox).val">
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="Margin" Value="0,0,0,4"/>
       <Setter Property="Padding" Value="4,2"/>
@@ -52,7 +52,7 @@
       <Setter Property="TextWrapping" Value="Wrap"/>
       <Setter Property="MinWidth" Value="150"/>
     </Style>
-    <Style Selector="TextBox.numVal">
+    <Style Selector=":is(TextBox).numVal">
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="Padding" Value="4,2"/>
       <Setter Property="MinHeight" Value="0"/>
@@ -157,7 +157,7 @@
             <TextBlock Text="GENERAL" Classes="sectionHeader"/>
             <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,14">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="Title"  Classes="lbl"/>
-              <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val"/>
+              <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val"/>
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="Artist" Classes="lbl"/>
               <AutoCompleteBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val"/>
@@ -169,13 +169,13 @@
               <AutoCompleteBox Grid.Row="3" Grid.Column="1" x:Name="AlbumBox"  Classes="val"/>
 
               <TextBlock Grid.Row="4" Grid.Column="0" Text="Composer" Classes="lbl"/>
-              <TextBox   Grid.Row="4" Grid.Column="1" x:Name="ComposerBox" Classes="val"/>
+              <controls:TextInput   Grid.Row="4" Grid.Column="1" x:Name="ComposerBox" Classes="val"/>
 
               <TextBlock Grid.Row="5" Grid.Column="0" Text="Conductor" Classes="lbl"/>
-              <TextBox   Grid.Row="5" Grid.Column="1" x:Name="ConductorBox" Classes="val"/>
+              <controls:TextInput   Grid.Row="5" Grid.Column="1" x:Name="ConductorBox" Classes="val"/>
 
               <TextBlock Grid.Row="6" Grid.Column="0" Text="Remixed By" Classes="lbl"/>
-              <TextBox   Grid.Row="6" Grid.Column="1" x:Name="RemixedByBox" Classes="val"/>
+              <controls:TextInput   Grid.Row="6" Grid.Column="1" x:Name="RemixedByBox" Classes="val"/>
             </Grid>
 
             <TextBlock Text="ALBUM" Classes="sectionHeader"/>
@@ -183,34 +183,34 @@
               <Grid Grid.Column="0" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Track" Classes="lbl"/>
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,2,0,4">
-                  <TextBox x:Name="TrackNumBox"   Classes="numVal"/>
+                  <controls:TextInput x:Name="TrackNumBox"   Classes="numVal"/>
                   <TextBlock Text=" / " VerticalAlignment="Center" Opacity="0.45" FontSize="12" Margin="4,0"/>
-                  <TextBox x:Name="TrackTotalBox" Classes="numVal"/>
+                  <controls:TextInput x:Name="TrackTotalBox" Classes="numVal"/>
                 </StackPanel>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Disc" Classes="lbl"/>
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,2,0,4">
-                  <TextBox x:Name="DiscNumBox"    Classes="numVal"/>
+                  <controls:TextInput x:Name="DiscNumBox"    Classes="numVal"/>
                   <TextBlock Text=" / " VerticalAlignment="Center" Opacity="0.45" FontSize="12" Margin="4,0"/>
-                  <TextBox x:Name="DiscTotalBox"  Classes="numVal"/>
+                  <controls:TextInput x:Name="DiscTotalBox"  Classes="numVal"/>
                 </StackPanel>
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Year"  Classes="lbl"/>
-                <TextBox   Grid.Row="2" Grid.Column="1" x:Name="YearBox"  Classes="val"/>
+                <controls:TextInput   Grid.Row="2" Grid.Column="1" x:Name="YearBox"  Classes="val"/>
 
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Genre" Classes="lbl"/>
-                <TextBox   Grid.Row="3" Grid.Column="1" x:Name="GenreBox" Classes="val"/>
+                <controls:TextInput   Grid.Row="3" Grid.Column="1" x:Name="GenreBox" Classes="val"/>
               </Grid>
 
               <Grid Grid.Column="2" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="BPM"      Classes="lbl"/>
-                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="BpmBox"      Classes="val"/>
+                <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="BpmBox"      Classes="val"/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Key"      Classes="lbl"/>
-                <TextBox   Grid.Row="1" Grid.Column="1" x:Name="KeyBox"      Classes="val"/>
+                <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="KeyBox"      Classes="val"/>
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Grouping" Classes="lbl"/>
-                <TextBox   Grid.Row="2" Grid.Column="1" x:Name="GroupingBox" Classes="val"/>
+                <controls:TextInput   Grid.Row="2" Grid.Column="1" x:Name="GroupingBox" Classes="val"/>
               </Grid>
             </Grid>
 
@@ -257,27 +257,27 @@
             <Grid ColumnDefinitions="*,24,*" Margin="0,0,0,10">
               <Grid Grid.Column="0" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Subtitle"  Classes="lbl"/>
-                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox"  Classes="val"/>
+                <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox"  Classes="val"/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Publisher" Classes="lbl"/>
-                <TextBox   Grid.Row="1" Grid.Column="1" x:Name="PublisherBox" Classes="val"/>
+                <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="PublisherBox" Classes="val"/>
               </Grid>
 
               <Grid Grid.Column="2" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Copyright" Classes="lbl"/>
-                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="CopyrightBox" Classes="val"/>
+                <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="CopyrightBox" Classes="val"/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="ISRC"      Classes="lbl"/>
-                <TextBox   Grid.Row="1" Grid.Column="1" x:Name="ISRCBox"      Classes="val"/>
+                <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="ISRCBox"      Classes="val"/>
               </Grid>
             </Grid>
 
             <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto" Margin="0,0,0,10">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="Description" Classes="lbl"/>
-              <TextBox   Grid.Row="0" Grid.Column="1" x:Name="DescriptionBox" Classes="val" AcceptsReturn="True" MinHeight="48"/>
+              <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="DescriptionBox" Classes="val" AcceptsReturn="True" MinHeight="48"/>
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="Comment"     Classes="lbl"/>
-              <TextBox   Grid.Row="1" Grid.Column="1" x:Name="CommentBox"     Classes="val" AcceptsReturn="True" MinHeight="48"/>
+              <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="CommentBox"     Classes="val" AcceptsReturn="True" MinHeight="48"/>
             </Grid>
           </StackPanel>
         </ScrollViewer>
@@ -381,16 +381,16 @@
                  empty field. -->
             <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,14">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="Sort title"    Classes="lbl"/>
-              <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TitleSortBox"     Classes="val"/>
+              <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="TitleSortBox"     Classes="val"/>
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="Sort artist"   Classes="lbl"/>
-              <TextBox   Grid.Row="1" Grid.Column="1" x:Name="ArtistSortBox"    Classes="val"/>
+              <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="ArtistSortBox"    Classes="val"/>
 
               <TextBlock Grid.Row="2" Grid.Column="0" Text="Sort album"    Classes="lbl"/>
-              <TextBox   Grid.Row="2" Grid.Column="1" x:Name="AlbumSortBox"     Classes="val"/>
+              <controls:TextInput   Grid.Row="2" Grid.Column="1" x:Name="AlbumSortBox"     Classes="val"/>
 
               <TextBlock Grid.Row="3" Grid.Column="0" Text="Sort composer" Classes="lbl"/>
-              <TextBox   Grid.Row="3" Grid.Column="1" x:Name="ComposerSortBox"  Classes="val"/>
+              <controls:TextInput   Grid.Row="3" Grid.Column="1" x:Name="ComposerSortBox"  Classes="val"/>
             </Grid>
 
             <CheckBox x:Name="CompilationBox"

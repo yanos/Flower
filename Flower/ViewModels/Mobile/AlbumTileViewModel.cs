@@ -45,7 +45,10 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
     // AlbumTileMerge), so the three things a rebuild can actually change about
     // an album of a given name and artist have to be writable. Same trade
     // TrackRowViewModel.Track makes, for the same reason.
-    public required Track RepresentativeTrack { get; set; }
+    // Null for the one header that stands for no album at all: a playlist's
+    // (see MobileMainViewModel.CurrentPlaylistHeader), which shows the same
+    // empty cover the art view draws for a track with no art of its own.
+    public required Track? RepresentativeTrack { get; set; }
     public DateTimeOffset MostRecentlyAdded { get; set; }
 
     // What identifies this tile among its grid's tiles - see AlbumTileKey.
@@ -77,7 +80,8 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
             // The point of reuse is that the decoded bitmap survives; it only
             // stops being the right image when what AlbumArtLoader keys on
             // changed - see TrackRowViewModel.ArtSourceMatches.
-            if (!TrackRowViewModel.ArtSourceMatches(previous, built.RepresentativeTrack))
+            if (previous == null || built.RepresentativeTrack == null
+                || !TrackRowViewModel.ArtSourceMatches(previous, built.RepresentativeTrack))
                 ResetAlbumArt();
         }
 
@@ -170,7 +174,13 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
     {
         var generation = Volatile.Read(ref _artGeneration);
         var cacheGeneration = AlbumArtLoader.CacheGeneration;
-        var bmp = await AlbumArtLoader.Current.LoadAsync(RepresentativeTrack);
+        if (RepresentativeTrack is not { } track)
+        {
+            Interlocked.Exchange(ref _artState, 2);
+            return;
+        }
+
+        var bmp = await AlbumArtLoader.Current.LoadAsync(track);
         if (Volatile.Read(ref _artGeneration) != generation)
             return;
         Volatile.Write(ref _artCacheGeneration, cacheGeneration);

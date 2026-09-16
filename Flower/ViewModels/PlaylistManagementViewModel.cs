@@ -140,6 +140,25 @@ public sealed class PlaylistManagementViewModel
         return Task.CompletedTask;
     }
 
+    // Named before it exists, rather than created as "New Playlist" and renamed
+    // in place: a phone has no sidebar row to type into after the fact, so the
+    // mobile flow shows an empty, focused box first and only gets here once the
+    // user has actually typed something (see MobileMainViewModel's
+    // BeginCreatePlaylistCommand/CommitNewPlaylistCommand). Which also means
+    // no row is ever left behind by a create the user changed their mind about,
+    // and nothing here comes back IsEditing.
+    public Task CreateNamed(string name, IEnumerable<Track> tracks)
+    {
+        var playlist = new Playlist(name, tracks.ToList());
+        _library.AddPlaylist(playlist);
+        RefreshSidebarItems();
+
+        _host.SelectedSidebarItem = _items.FirstOrDefault(i => i.Playlist == playlist);
+
+        _host.ScheduleContentSync();
+        return Task.CompletedTask;
+    }
+
     public Task DeleteAsync(Playlist playlist) => DeleteAsync(new[] { playlist });
 
     public async Task DeleteAsync(IReadOnlyList<Playlist> playlists)

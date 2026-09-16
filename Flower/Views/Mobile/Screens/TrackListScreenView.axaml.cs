@@ -42,6 +42,21 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
     public static readonly StyledProperty<AlbumTileViewModel?> DisplayHeaderProperty =
         AvaloniaProperty.Register<TrackListScreenView, AlbumTileViewModel?>(nameof(DisplayHeader));
 
+    // The header the virtualized list shows above its first row - a
+    // playlist's, and nothing at all for the flat Songs list, which is the
+    // whole library rather than one thing with a name and a cover. Separate
+    // from DisplayHeader because the two go to different places: DisplayHeader
+    // is the album screen's own, in its own scroller, and this one is handed
+    // to the ListBox's template (ScreenScroll.Header).
+    public static readonly StyledProperty<AlbumTileViewModel?> ListHeaderProperty =
+        AvaloniaProperty.Register<TrackListScreenView, AlbumTileViewModel?>(nameof(ListHeader));
+
+    public AlbumTileViewModel? ListHeader
+    {
+        get => GetValue(ListHeaderProperty);
+        private set => SetValue(ListHeaderProperty, value);
+    }
+
     public static readonly StyledProperty<bool> IsAlbumModeProperty =
         AvaloniaProperty.Register<TrackListScreenView, bool>(nameof(IsAlbumMode));
 
@@ -81,9 +96,11 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
     // Must match the vertical Margin on the pinned art in the XAML - the art
     // is square and sized off the height left over once its own margin is
     // taken out, so the two numbers have to agree or it overflows the screen
-    // by exactly the difference. 16 below, and 16 below the header band above,
-    // since the screen runs up under the see-through header (ScreenSlot).
-    private const double PinnedArtInset = 16 + Flower.Controls.ScreenSlot.HeaderHeight + 16;
+    // by exactly the difference. 16 below, and 16 below the gap the header
+    // band leaves above, since the screen runs up under the see-through header
+    // (ScreenSlot.HeaderHeight/ContentGap).
+    private const double PinnedArtInset =
+        16 + Flower.Controls.ScreenSlot.HeaderHeight + Flower.Controls.ScreenSlot.ContentGap + 16;
 
     // ...and how much of the width the art is allowed to take. A landscape
     // phone is height-bound, so the cap never binds there and the art simply
@@ -230,6 +247,7 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         DisplayHeader = frame.FrozenHeader;
         IsAlbumMode = frame.IsAlbumTrackList;
         IsPlaylistMode = frame.IsPlaylistTrackList;
+        ListHeader = IsPlaylistMode ? frame.FrozenHeader : null;
     }
 
     // ScreenControlFactory calls this when evicting a cached instance from
@@ -254,6 +272,7 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         IsPlaylistMode = _observedVm.IsShowingPlaylistTracks;
         DisplayRows = IsAlbumMode ? _observedVm.AlbumDetailRows : _observedVm.Main.Rows;
         DisplayHeader = _observedVm.CurrentAlbumHeader;
+        ListHeader = _observedVm.CurrentPlaylistHeader;
     }
 
     private void DragHandle_PointerPressed(object? sender, PointerPressedEventArgs e)

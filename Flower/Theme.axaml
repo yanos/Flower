@@ -98,6 +98,20 @@
            strength a one-pixel ring outshouted the icon inside it. -->
       <SolidColorBrush x:Key="AppPrimaryBorderBrush" Color="#80C53A34"/>
       <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="#FFFFFF"/>
+      <!-- The hairline every icon is drawn with (App.axaml). White here, and
+           translucent rather than a shade of any one icon colour, because the
+           icons are not one colour - primary red, disabled grey, accent, the
+           delete's error red - and one translucent rim lifts all of them the
+           same amount without a twin per colour to keep in step.
+
+           20% and not more: the rim has to read as an edge on the glyph, not
+           as light coming off it. Rendered against both backgrounds an icon
+           actually sits on - the page and the ovals' surface - 20% white is
+           about 40 of 255 at its strongest, which is the strength the black
+           rim had on the grey disabled icons and a little more than it had on
+           the red. 40% is twice that again (80+, mean 60) and stops looking
+           like an outline. -->
+      <SolidColorBrush x:Key="AppIconOutlineBrush" Color="#33FFFFFF"/>
       <SolidColorBrush x:Key="AppPrimarySubtleBrush" Color="#6B2F2C"/>
       <SolidColorBrush x:Key="AppAccentBrush" Color="#E07E7A"/>
       <!-- Text selection, under text that stays its own color. -->
@@ -126,6 +140,16 @@
            standing in for a missing cover. -->
       <SolidColorBrush x:Key="AppTrackBrush" Color="#565D66"/>
       <SolidColorBrush x:Key="AppPlaceholderBrush" Color="#3C4148"/>
+
+      <!-- Every text box's outline, in Primary: half strength at rest, full
+           under the pointer and while the caret is in it. Named outright for
+           the same reason the slider brushes below are - Fluent resolves its
+           own text-box brushes inside its own dictionary, where this file's
+           SystemAccentColor never reaches, so a focused box came out the
+           platform's blue against a red app. -->
+      <SolidColorBrush x:Key="TextControlBorderBrush" Color="#80C53A34"/>
+      <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#C53A34"/>
+      <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#C53A34"/>
 
       <!-- Fluent's Slider, the seek bars and the phone's volume: filled and
            thumbed in Primary, deepening under the pointer and the press, and
@@ -210,6 +234,12 @@
            strength a one-pixel ring outshouted the icon inside it. -->
       <SolidColorBrush x:Key="AppPrimaryBorderBrush" Color="#80C53A34"/>
       <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="#FFFFFF"/>
+      <!-- The dark variant's rim inverted: what defines a glyph is a rim that
+           carries on past the background rather than sinking into it, so it
+           is white on the dark theme and black here. Black at 40% because on
+           this background it has to work from further down - see the dark
+           variant's note for the numbers this was matched against. -->
+      <SolidColorBrush x:Key="AppIconOutlineBrush" Color="#66000000"/>
       <SolidColorBrush x:Key="AppPrimarySubtleBrush" Color="#FBD9D6"/>
       <SolidColorBrush x:Key="AppAccentBrush" Color="#C53A34"/>
       <SolidColorBrush x:Key="AppAccentMutedBrush" Color="#FBD9D6"/>
@@ -228,6 +258,11 @@
       <SolidColorBrush x:Key="AppAccentSlateBrush" Color="#4A5563"/>
       <SolidColorBrush x:Key="AppTrackBrush" Color="#D9D3CF"/>
       <SolidColorBrush x:Key="AppPlaceholderBrush" Color="#F2EFEB"/>
+
+      <!-- Every text box's outline, in Primary - see the dark variant. -->
+      <SolidColorBrush x:Key="TextControlBorderBrush" Color="#80C53A34"/>
+      <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#C53A34"/>
+      <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#C53A34"/>
 
       <!-- Fluent's Slider in Primary - see the dark variant. -->
       <SolidColorBrush x:Key="SliderTrackValueFill" Color="#C53A34"/>

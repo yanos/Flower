@@ -143,10 +143,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand PreviousTrackCommand { get; }
     public ICommand OpenTrackActionsCommand { get; }
     public ICommand ViewTrackInfoCommand { get; }
-    public ICommand ClearSearchQueryCommand { get; }
     public ICommand OpenAddToPlaylistCommand { get; }
     public ICommand AddTrackToPlaylistCommand { get; }
-    public ICommand CreatePlaylistCommand { get; }
+    public ICommand BeginCreatePlaylistCommand { get; }
+    public ICommand CommitNewPlaylistCommand { get; }
+    public ICommand CancelNewPlaylistCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand OpenAppSettingsCommand { get; }
     public ICommand DownloadTrackCommand { get; }
@@ -222,9 +223,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // Only captured leaving a track-list screen - see
         // MobileNavigationFrame's own doc comment for why a kept-alive
         // one-back TrackListScreenView needs these instead of the live,
-        // wholesale-replaced Main.Rows/CurrentAlbumHeader.
+        // wholesale-replaced Main.Rows/CurrentDetailHeader.
         IsShowingTrackList ? Main.Rows.ToList() : null,
-        IsShowingAlbumTrackList ? CurrentAlbumHeader : null,
+        CurrentDetailHeader,
         // Almost always None - the one sheet that is up while a navigation is
         // pushed is Now Playing, whose album art is a drill-in. See
         // MobileNavigationFrame.Sheet.
@@ -433,6 +434,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // frame it started, so what the user saw was no animation at all.
     private void SetSelectedTabCore(MobileTab value, bool raiseNavigationChanged = true)
     {
+        // Leaving the Playlists tab - or drilling into one of its rows - takes
+        // the half-typed draft with it rather than leaving it to reappear on
+        // the way back.
+        EndNamingNewPlaylist();
         _selectedTab = value;
         _hasDrilledIn = false;
         _selectedArtistName = null;
@@ -561,6 +566,55 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         }
     }
 
+    // The same header, for a playlist: mimicking the album screen rather than
+    // being a screen of its own is the whole point, so a playlist gets an
+    // AlbumTileViewModel too and the one header markup draws both (see
+    // AlbumHeaderTemplates.axaml). What it says instead of an artist is how
+    // many songs are in it, and its art is deliberately nothing at all -
+    // AlbumArtView's empty cover - until a playlist has a picture of its own
+    // to show.
+    //
+    // Keyed by the playlist and by how many tracks it holds, so adding a song
+    // to the one on screen re-counts the line under its name; everything else
+    // about it is fixed for as long as it is that playlist's header, and
+    // rebuilding on every binding pass would restart the download indicator
+    // underneath it.
+    private (Playlist? Playlist, int Count) _currentPlaylistHeaderKey;
+    private AlbumTileViewModel? _currentPlaylistHeader;
+    public AlbumTileViewModel? CurrentPlaylistHeader
+    {
+        get
+        {
+            var playlist = CurrentPlaylist;
+            var key = (playlist, playlist?.Tracks.Count ?? 0);
+            if (key != _currentPlaylistHeaderKey)
+            {
+                _currentPlaylistHeaderKey = key;
+                _currentPlaylistHeader = playlist == null ? null : BuildPlaylistHeader(playlist);
+            }
+            return _currentPlaylistHeader;
+        }
+    }
+
+    // Whichever of the two the screen is showing - one of them at most, since
+    // a track list is one album's or one playlist's or the whole library's.
+    public AlbumTileViewModel? CurrentDetailHeader => CurrentAlbumHeader ?? CurrentPlaylistHeader;
+
+    private AlbumTileViewModel? BuildPlaylistHeader(Playlist playlist)
+    {
+        var tracks = playlist.Tracks.ToList();
+        var header = new AlbumTileViewModel
+        {
+            Name = playlist.Name,
+            Artist = tracks.Count == 1 ? "1 song" : $"{tracks.Count} songs",
+            RepresentativeTrack = null,
+            MostRecentlyAdded = tracks.Count == 0 ? default : tracks.Max(t => t.DateAdded),
+            Tracks = tracks,
+        };
+        TrackAvailability.Apply([header], Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+        return header;
+    }
+
     private AlbumTileViewModel? BuildAlbumHeader(string albumName)
     {
         var tracks = Main.Library.Tracks.Where(t => t.Album == albumName).ToList();
@@ -657,6 +711,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             _activeSheet = value;
             if (value == MobileSheet.None)
             {
+                EndNamingNewPlaylist();
                 ActionTarget = null;
                 AlbumActionTarget = null;
                 _playlistTargets = null;
@@ -937,6 +992,50 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // ActionTarget.
     private IReadOnlyList<Track>? _playlistTargets;
 
+    // What the playlist being named is to be created with, taken at the moment
+    // the box opened - see BeginCreatePlaylistCommand.
+    private IReadOnlyList<Track>? _newPlaylistTracks;
+
+    // The draft row: shown at the top of the playlist list (and at the top of
+    // the add-to-playlist sheet's own list) with an empty name box in it, in
+    // place of the New Playlist button that opened it. Both places show the
+    // same control - Controls/NewPlaylistEntry - so the flow is one flow.
+    private bool _isNamingNewPlaylist;
+    public bool IsNamingNewPlaylist
+    {
+        get => _isNamingNewPlaylist;
+        private set
+        {
+            if (_isNamingNewPlaylist == value)
+                return;
+            _isNamingNewPlaylist = value;
+            OnPropertyChanged();
+            // The draft row is something on an otherwise empty Playlists tab,
+            // so "Nothing Here" must not be over it.
+            RaiseEmptyStateChanged();
+        }
+    }
+
+    private string? _newPlaylistName;
+    public string? NewPlaylistName
+    {
+        get => _newPlaylistName;
+        set
+        {
+            if (_newPlaylistName == value)
+                return;
+            _newPlaylistName = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void EndNamingNewPlaylist()
+    {
+        IsNamingNewPlaylist = false;
+        NewPlaylistName = "";
+        _newPlaylistTracks = null;
+    }
+
     // The track a row's "..." action menu (and, in turn, the Track Info sheet) applies to.
     private Track? _actionTarget;
     public Track? ActionTarget
@@ -1021,7 +1120,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         (IsShowingAlbumGrid && AlbumGridRows.Count == 0) ||
         (IsShowingArtistPicker && Main.SubListItems.Count == 0) ||
         (IsShowingArtistAlbumGrid && ArtistAlbumGridRows.Count == 0) ||
-        (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0) ||
+        (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0 && !IsNamingNewPlaylist) ||
         (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbumRows.Count == 0) ||
         IsShowingSearchPrompt ||
         (IsShowingSearchResults && !HasSearchAlbumResults && !HasSearchArtistResults && !HasSearchSongResults) ||
@@ -1045,7 +1144,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // track is "most recently added" (representative art) or the
         // computed artist/year underneath it.
         _currentAlbumHeaderName = null;
-        OnPropertyChanged(nameof(CurrentAlbumHeader));
+        _currentPlaylistHeaderKey = default;
+        RaiseDetailHeaderChanged();
         RefreshDownloadAllIndicator();
     }
 
@@ -1371,9 +1471,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (ActionTarget != null)
                 ActiveSheet = MobileSheet.TrackInfo;
         });
-        // Search tab's own inline clear (the embedded "x" in SearchTabBox, see
-        // MobileMainView.axaml) - just empties the query and leaves the box focused.
-        ClearSearchQueryCommand = new RelayCommand(() => SearchQuery = null);
         OpenAddToPlaylistCommand = new RelayCommand(() =>
         {
             if (ActionTarget != null)
@@ -1390,14 +1487,40 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             }
             ActiveSheet = MobileSheet.None;
         });
-        CreatePlaylistCommand = new RelayCommand(async () =>
+        // Nothing is created here: the draft row appears with an empty, focused
+        // box (NewPlaylistEntry), and only a name the user actually typed
+        // becomes a playlist. Whatever the new playlist is meant to hold is
+        // captured now rather than at commit time - the sheet's own targets are
+        // cleared the moment it closes (see ActiveSheet's setter), and the
+        // commit closes it before it creates anything.
+        BeginCreatePlaylistCommand = new RelayCommand(() =>
         {
-            if (_playlistTargets != null)
-                await Main.CreatePlaylistWithTracks(_playlistTargets);
-            else
-                await Main.CreatePlaylistWithTrack(ActionTarget);
-            ActiveSheet = MobileSheet.None;
+            _newPlaylistTracks = _playlistTargets
+                ?? (ActionTarget is { } track ? [track] : []);
+            NewPlaylistName = "";
+            IsNamingNewPlaylist = true;
         });
+        CommitNewPlaylistCommand = new RelayCommand(async () =>
+        {
+            // One name, one playlist: committing is reachable from both Enter
+            // and the focus the box loses on its way out, and the second of
+            // those arrives after the first has already finished.
+            if (!IsNamingNewPlaylist)
+                return;
+
+            var name = NewPlaylistName?.Trim();
+            var tracks = _newPlaylistTracks ?? [];
+            EndNamingNewPlaylist();
+
+            // An empty name is how the user says no - the draft row simply goes
+            // away, and the sheet it may have been in stays up.
+            if (string.IsNullOrEmpty(name))
+                return;
+
+            ActiveSheet = MobileSheet.None;
+            await Main.CreatePlaylistNamed(name, tracks);
+        });
+        CancelNewPlaylistCommand = new RelayCommand(EndNamingNewPlaylist);
         OpenSettingsCommand = new RelayCommand(() =>
         {
             OnPropertyChanged(nameof(HasMediaPermission));
@@ -1464,7 +1587,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             ActionTarget = null;
             // The sheet's header shows what it adds, the same way it does
             // when it is reached from the album menu.
-            AlbumActionTarget = CurrentAlbumHeader;
+            AlbumActionTarget = CurrentDetailHeader;
             _playlistTargets = Main.Rows.Select(r => r.Track).ToList();
             ActiveSheet = MobileSheet.AddToPlaylist;
         });
@@ -1576,6 +1699,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // every reachability change (see the constructor's subscription) - the
     // header included, since an album drilled into while the server was up
     // stays on screen after it goes away.
+    private void RaiseDetailHeaderChanged()
+    {
+        OnPropertyChanged(nameof(CurrentAlbumHeader));
+        OnPropertyChanged(nameof(CurrentPlaylistHeader));
+        OnPropertyChanged(nameof(CurrentDetailHeader));
+    }
+
     private void ApplyAlbumTileAvailability()
     {
         var fingerprint = Main.PairedServerFingerprint;
@@ -1584,7 +1714,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         TrackAvailability.Apply(AlbumTilesIn(AlbumGridRows), fingerprint, reachable);
         TrackAvailability.Apply(AlbumTilesIn(ArtistAlbumGridRows), fingerprint, reachable);
         TrackAvailability.Apply(SearchAlbumResults, fingerprint, reachable);
-        if (CurrentAlbumHeader is { } header)
+        if (CurrentDetailHeader is { } header)
             TrackAvailability.Apply([header], fingerprint, reachable);
     }
 
@@ -2108,7 +2238,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsShowingPlaylistTracks));
         OnPropertyChanged(nameof(IsShowingAlbumTrackList));
         OnPropertyChanged(nameof(AlbumDetailRows));
-        OnPropertyChanged(nameof(CurrentAlbumHeader));
+        RaiseDetailHeaderChanged();
         // SearchQuery and its matched results survive leaving the Search tab
         // (see SearchQuery's own doc comment) - deliberately NOT cleared here
         // on the way out, so they're still there the instant the user comes

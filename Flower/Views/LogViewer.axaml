@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:vm="using:Flower.ViewModels"
              xmlns:ae="using:AvaloniaEdit"
              x:Class="Flower.Views.LogViewer"
@@ -30,9 +31,9 @@
                   Margin="0,0,16,0"
                   IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"/>
 
-        <TextBox Grid.Column="6"
-                 Text="{Binding FilterText, Mode=TwoWay}"
-                 PlaceholderText="Filter..."/>
+        <controls:TextInput Grid.Column="6"
+                            Text="{Binding FilterText, Mode=TwoWay}"
+                            PlaceholderText="Filter..."/>
       </Grid>
     </Border>
 
