@@ -63,6 +63,10 @@ public static class LongPress
         {
             if (e.HoldingState != HoldingState.Started)
                 return;
+            // A finger resting where it landed to stop a glide - see
+            // FlingStopGuard.
+            if (FlingStopGuard.IsStoppingGlide(element.GetValue(PressedPointerProperty)))
+                return;
             var command = GetCommand(element);
             var parameter = GetCommandParameter(element);
             if (command == null || !command.CanExecute(parameter))
