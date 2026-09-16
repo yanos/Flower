@@ -100,16 +100,28 @@
             <ItemsControl ItemsSource="{Binding PlaylistPickerItems}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="svm:SidebarItem">
+                  <!-- Stretched, unlike the menu entries Button.action is
+                       otherwise: this row has something at its right edge, and
+                       a left-aligned content presenter would hand the grid only
+                       as much width as its text needs and leave the count
+                       trailing the name instead. -->
                   <Button Classes="action"
+                          HorizontalContentAlignment="Stretch"
                           Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).AddTrackToPlaylistCommand}"
                           CommandParameter="{Binding}">
                     <!-- 12, with the 22px glyph, is what puts a name here at
                          the same offset as the one in the New Playlist row
-                         above (26 + 8) - see controls:NewPlaylistEntry. -->
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                      <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" />
-                      <TextBlock Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
+                         above (26 + 8) - see controls:NewPlaylistEntry. The
+                         count and length on the right are the ones the
+                         Playlists tab's own rows show, from the same property:
+                         which of two playlists with similar names to add a
+                         song to is usually answered by how big they are. -->
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                      <materialIcons:MaterialIcon Grid.Column="0" Kind="PlaylistPlay" Width="22" Height="22" />
+                      <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="2" Text="{Binding PlaylistSummary}"
+                                 FontSize="13" Opacity="0.55" VerticalAlignment="Center" />
+                    </Grid>
                   </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>

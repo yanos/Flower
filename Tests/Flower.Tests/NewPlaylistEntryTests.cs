@@ -146,8 +146,11 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
         // row's own glyph does.
         var circle = Assert.Single(entry.GetVisualDescendants().OfType<Border>(),
             b => b.Classes.Contains("floating"));
+        // The row's leading glyph, not its trailing "..." - see
+        // PlaylistPickerScreenView, where a row now ends in its own menu.
         var rowGlyph = window.GetVisualDescendants().OfType<MaterialIcon>()
-            .Single(i => !i.GetVisualAncestors().OfType<NewPlaylistEntry>().Any());
+            .Single(i => i.Kind == Material.Icons.MaterialIconKind.PlaylistPlay
+                         && !i.GetVisualAncestors().OfType<NewPlaylistEntry>().Any());
         Assert.Equal(rowGlyph.TranslatePoint(default, window)!.Value.X,
             circle.TranslatePoint(default, window)!.Value.X, 1);
 

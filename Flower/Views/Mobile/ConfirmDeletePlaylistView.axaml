@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             mc:Ignorable="d"
+             x:Class="Flower.Views.Mobile.ConfirmDeletePlaylistView"
+             x:DataType="vm:MobileMainViewModel">
+
+  <!-- "Really delete this playlist?" - the phone's answer to the question
+       PlaylistManagementViewModel.DeleteAsync asks before it removes
+       anything (desktop's is a dialog raised from MainView). The same card as
+       ConfirmDeleteFileView, and deliberately not dismissible by a tap on the
+       backdrop for the same reason: the two buttons are the only ways out of
+       a destructive choice. -->
+  <UserControl.Styles>
+    <Style Selector="Button.deleteAction">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="Padding" Value="16,12" />
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid>
+    <Border Background="#66000000" />
+
+    <Border VerticalAlignment="Bottom"
+            controls:SlidingSheet.IsCard="True"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+            CornerRadius="12,12,0,0"
+            Padding="20,20,20,28">
+      <StackPanel Spacing="14" Margin="{DynamicResource SheetBottomInset}">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <materialIcons:MaterialIcon Kind="PlaylistRemove" Width="24" Height="24" />
+          <TextBlock Text="{Binding ConfirmDeletePlaylistTitle}"
+                     FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <TextBlock Text="{Binding ConfirmDeletePlaylistMessage}"
+                   FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
+
+        <Button Classes="deleteAction" Content="Delete" Command="{Binding ConfirmDeletePlaylistCommand}"
+                Background="{DynamicResource AppErrorBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
+        <Button Classes="deleteAction" Content="Cancel" Command="{Binding CancelDeletePlaylistCommand}"
+                Background="Transparent" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

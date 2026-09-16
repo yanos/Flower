@@ -15,7 +15,13 @@
        menu (TrackActionsView): the art and name of what it acts on at the top,
        dismissed by the X beside them or a tap on the backdrop. Its actions are
        the album header's (TrackListScreenView), acting on the tile pressed
-       rather than on the album the screen is showing. -->
+       rather than on the album the screen is showing.
+
+       Also the playlist menu, from a row's "..." in the Playlists tab: play,
+       shuffle, add these songs somewhere and download them are the same
+       questions asked of a different pile of songs, and asking them twice in
+       two sheets is how the two would start to differ. The playlist's own two
+       entries appear underneath, on IsActingOnAPlaylist. -->
   <UserControl.Styles>
     <Style Selector="Button.action">
       <Setter Property="Background" Value="Transparent" />
@@ -96,6 +102,19 @@
           </StackPanel>
         </Button>
 
+        <!-- The two entries a playlist has that an album does not: it is a
+             thing the user made, so it can be called something else or thrown
+             away. Both act on the row the menu was opened from, not on
+             whatever the screen behind is showing - see
+             MobileMainViewModel.PlaylistActionTarget. -->
+        <Button Classes="action" Command="{Binding RenamePlaylistActionTargetCommand}"
+                IsVisible="{Binding IsActingOnAPlaylist}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="RenameBox" Width="22" Height="22" />
+            <TextBlock Text="Rename" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
         <!-- Once any song in the album has a file on this device
              (CanDeleteAlbumActionTargetLocalFiles): every such file, reverted to
              a placeholder the way a song's own Delete Local File does, through
@@ -106,6 +125,18 @@
           <StackPanel Orientation="Horizontal" Spacing="14">
             <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="22" Height="22" Foreground="{DynamicResource AppErrorBrush}" />
             <TextBlock Text="Delete Local Files" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
+          </StackPanel>
+        </Button>
+
+        <!-- Last, and in the destructive colour, under everything that is not:
+             it is the one entry here that cannot be undone. It confirms first
+             (ConfirmDeletePlaylistView) - and the songs themselves are
+             untouched, which is what that prompt says. -->
+        <Button Classes="action" Command="{Binding DeletePlaylistActionTargetCommand}"
+                IsVisible="{Binding IsActingOnAPlaylist}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="PlaylistRemove" Width="22" Height="22" Foreground="{DynamicResource AppErrorBrush}" />
+            <TextBlock Text="Delete Playlist" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
           </StackPanel>
         </Button>
       </StackPanel>

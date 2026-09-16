@@ -311,6 +311,18 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
 
     private void DragHandle_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        // Only a release that ends a drag of ours. This handler tunnels over
+        // the whole list, so it sees every release inside it - and a playlist's
+        // header lives inside it too (ScreenScroll.Header), buttons and all.
+        // Releasing the capture on a press that was never a drag took the
+        // pointer off whatever the finger was on before that control's own
+        // release handler ran, and a Button that has lost capture raises no
+        // Click: the header's play, shuffle, add-to-playlist and download did
+        // nothing at all on a playlist, while the same markup worked on an
+        // album, whose header is not inside a list.
+        if (_draggedRow == null)
+            return;
+
         if (_isDragging && _draggedRow != null && DataContext is MobileMainViewModel vm)
         {
             int index = InsertionIndexAt(e.GetPosition(TrackListBox).Y);

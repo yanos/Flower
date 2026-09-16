@@ -42,6 +42,17 @@ public class SidebarItem : ViewModelBase
         set { _device = value; OnPropertyChanged(); }
     }
 
+    // What the phone's playlist rows say on the right: how many songs this
+    // playlist holds and how long they run (PlaylistPickerScreenView).
+    // Computed from the playlist itself rather than stored, because adding a
+    // song to one changes this without changing anything about the row - see
+    // MobileMainViewModel's PlaylistsChanged subscription, which is what asks
+    // for it to be read again.
+    public string PlaylistSummary =>
+        Playlist is { } playlist ? PlaylistSummaryText.For(playlist.Tracks) : "";
+
+    public void NotifyPlaylistSummaryChanged() => OnPropertyChanged(nameof(PlaylistSummary));
+
     public bool IsHeader => Kind == SidebarItemKind.Header;
     public bool IsSelectable => !IsHeader;
 

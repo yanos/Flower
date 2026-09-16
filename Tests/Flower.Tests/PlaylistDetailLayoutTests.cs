@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
@@ -190,6 +191,58 @@ public class PlaylistDetailLayoutTests : PinnedDataDirectory
         Assert.Same(list, name.FindAncestorOfType<ListBox>());
         Assert.NotNull(name.FindAncestorOfType<ScrollViewer>());
 
+    }
+
+    // An empty playlist used to get the "Nothing Here" overlay, centred over
+    // the whole screen - which, now that the screen has a header saying whose
+    // empty space this is, landed on top of it. The header is the answer to
+    // the question the overlay was asking.
+    [AvaloniaFact]
+    public void An_empty_playlist_shows_its_header_rather_than_an_overlay()
+    {
+        using var harness = new Harness(0);
+        var window = harness.Window;
+
+        Assert.False(harness.Vm.IsContentEmpty);
+        Assert.NotNull(TextBlockSaying(window, PlaylistName));
+        Assert.DoesNotContain(window.GetVisualDescendants().OfType<TextBlock>(),
+            t => t.IsEffectivelyVisible && t.Text == "Nothing Here");
+    }
+
+    // The buttons were there, bound and enabled, and a tap did nothing: a
+    // playlist's header sits inside the track ListBox (ScreenScroll.Header),
+    // and the list's drag-to-reorder handler tunnels over everything in it,
+    // releasing the pointer capture on any release at all. That took the
+    // pointer off the button before the button saw its own release, and a
+    // Button that has lost capture raises no Click. An album's header, not
+    // being inside a list, was never touched by it - so the same markup
+    // worked there and nowhere else.
+    [AvaloniaFact]
+    public void A_tap_on_the_header_buttons_reaches_them()
+    {
+        using var harness = new Harness(3);
+        var window = harness.Window;
+
+        Tap(window, HeaderButton(window, MaterialIconKind.Shuffle));
+        Assert.True(harness.Vm.PlaylistControl.IsShuffleEnabled, "shuffle did not answer the tap");
+
+        Tap(window, HeaderButton(window, MaterialIconKind.PlaylistPlus));
+        Assert.True(harness.Vm.IsShowingAddToPlaylist, "add to playlist did not answer the tap");
+    }
+
+    private static Button HeaderButton(Window window, MaterialIconKind kind) =>
+        Screen(window).GetVisualDescendants().OfType<MaterialIcon>()
+            .Where(i => i.IsEffectivelyVisible && i.Kind == kind)
+            .Select(i => i.FindAncestorOfType<Button>()!)
+            .First(b => b.Classes.Contains("pill"));
+
+    private static void Tap(Window window, Button button)
+    {
+        var middle = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window) ?? default;
+        window.MouseDown(middle, MouseButton.Left);
+        Harness.Pump(60);
+        window.MouseUp(middle, MouseButton.Left);
+        Harness.Pump(120);
     }
 
     // The screen's title line would otherwise say the playlist's name in the

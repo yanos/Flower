@@ -143,7 +143,7 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
 
     public string ResumePositionDisplay =>
         Track.ResumePosition is { } resume && resume > TimeSpan.Zero
-            ? (resume.TotalHours >= 1 ? resume.ToString(@"h\:mm\:ss") : resume.ToString(@"m\:ss"))
+            ? DurationText.Compact(resume)
             : "";
 
     public string VolumeAdjustmentDisplay =>
@@ -257,16 +257,7 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     }
 
 
-    public string DurationDisplay
-    {
-        get
-        {
-            var ts = Track.Duration;
-            return (int)ts.TotalHours > 0
-                ? ts.ToString(@"h\:mm\:ss")
-                : ts.ToString(@"m\:ss");
-        }
-    }
+    public string DurationDisplay => DurationText.Compact(Track.Duration);
 
     // ── Selection / playing ───────────────────────────────────────────────────
 

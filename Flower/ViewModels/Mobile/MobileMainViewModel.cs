@@ -38,7 +38,7 @@ public enum MobileNavigationTransition { None, FromRight, FromLeft }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, ConfirmPairServer, ConfirmDeleteFile }
+public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -160,6 +160,15 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand ShuffleAlbumCommand { get; }
     public ICommand OpenAlbumAddToPlaylistCommand { get; }
     public ICommand OpenAlbumActionsCommand { get; }
+
+    // A playlist row's own "..." (PlaylistPickerScreenView) - the album menu,
+    // over a playlist, with the two entries only a playlist has.
+    public ICommand OpenPlaylistActionsCommand { get; }
+    public ICommand RenamePlaylistActionTargetCommand { get; }
+    public ICommand CommitPlaylistRenameCommand { get; }
+    public ICommand DeletePlaylistActionTargetCommand { get; }
+    public ICommand ConfirmDeletePlaylistCommand { get; }
+    public ICommand CancelDeletePlaylistCommand { get; }
     public ICommand OpenArtistActionsCommand { get; }
     public ICommand PlayAlbumActionTargetCommand { get; }
     public ICommand ShuffleAlbumActionTargetCommand { get; }
@@ -606,7 +615,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         var header = new AlbumTileViewModel
         {
             Name = playlist.Name,
-            Artist = tracks.Count == 1 ? "1 song" : $"{tracks.Count} songs",
+            // The same line the playlist's own row shows in the picker, from
+            // the same place - how many songs, and how long they run.
+            Artist = PlaylistSummaryText.For(tracks),
             RepresentativeTrack = null,
             MostRecentlyAdded = tracks.Count == 0 ? default : tracks.Max(t => t.DateAdded),
             Tracks = tracks,
@@ -714,8 +725,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 EndNamingNewPlaylist();
                 ActionTarget = null;
                 AlbumActionTarget = null;
+                PlaylistActionTarget = null;
                 _playlistTargets = null;
                 _albumDeleteTargets = null;
+                // A confirmation still waiting for an answer when its sheet
+                // goes away has been answered: no. Nothing else resolves it,
+                // and PlaylistManagementViewModel.DeleteAsync is sitting on
+                // that task until something does.
+                ResolvePendingPlaylistDeletion(confirmed: false);
             }
             if (value == MobileSheet.NowPlaying)
                 NowPlayingExitsForward = false;
@@ -734,6 +751,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingSettings));
             OnPropertyChanged(nameof(IsShowingConfirmPairServer));
             OnPropertyChanged(nameof(IsShowingConfirmDeleteFile));
+            OnPropertyChanged(nameof(IsShowingConfirmDeletePlaylist));
 
             // Sampling costs a timer tick a second, so it runs only while the
             // readout that consumes it is actually on screen - a diagnostics
@@ -798,6 +816,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public bool IsShowingSettings => ActiveSheet == MobileSheet.Settings;
     public bool IsShowingConfirmPairServer => ActiveSheet == MobileSheet.ConfirmPairServer;
     public bool IsShowingConfirmDeleteFile => ActiveSheet == MobileSheet.ConfirmDeleteFile;
+    public bool IsShowingConfirmDeletePlaylist => ActiveSheet == MobileSheet.ConfirmDeletePlaylist;
 
     // Set by PairWithServerCommand (Settings' server list) before switching to
     // the ConfirmPairServer sheet, cleared once ConfirmPairServerCommand/
@@ -926,6 +945,27 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(CanDeleteAlbumActionTargetLocalFiles));
         }
     }
+
+    // The playlist row whose "..." raised that same menu, and null whenever
+    // it was raised over an album. The menu is one sheet for both because
+    // most of what it offers - play, shuffle, add these songs somewhere,
+    // download them - is the same question asked of a different pile of
+    // songs; what this carries is the row itself, because the two entries it
+    // does add (renaming it, deleting it) are about the playlist rather than
+    // about its tracks.
+    private SidebarItem? _playlistActionTarget;
+    public SidebarItem? PlaylistActionTarget
+    {
+        get => _playlistActionTarget;
+        private set
+        {
+            _playlistActionTarget = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsActingOnAPlaylist));
+        }
+    }
+
+    public bool IsActingOnAPlaylist => PlaylistActionTarget?.Playlist != null;
 
     // Shown when the album's own download button would be: something in it
     // to fetch, from a server that is there to fetch it from.
@@ -1107,6 +1147,39 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         ActiveSheet = MobileSheet.ConfirmDeleteFile;
     }
 
+    // Deleting a playlist is confirmed here rather than taken on trust, the
+    // same way deleting a downloaded file is. The prompt is not this view
+    // model's idea: PlaylistManagementViewModel.DeleteAsync asks whoever owns
+    // the screen (desktop's is a dialog from MainView) and waits on the
+    // answer, so a phone that never answered would leave that delete hanging
+    // forever.
+    private DeletePlaylistConfirmationEventArgs? _pendingPlaylistDelete;
+
+    public string ConfirmDeletePlaylistTitle => _pendingPlaylistDelete?.Playlists is { Count: 1 } one
+        ? $"Delete \"{one[0].Name}\"?"
+        : $"Delete {_pendingPlaylistDelete?.Playlists.Count ?? 0} playlists?";
+
+    public string ConfirmDeletePlaylistMessage =>
+        "The playlist goes away. The songs in it stay in your library.";
+
+    private void AskToDeletePlaylist(DeletePlaylistConfirmationEventArgs e)
+    {
+        _pendingPlaylistDelete = e;
+        OnPropertyChanged(nameof(ConfirmDeletePlaylistTitle));
+        OnPropertyChanged(nameof(ConfirmDeletePlaylistMessage));
+        ActiveSheet = MobileSheet.ConfirmDeletePlaylist;
+    }
+
+    // Answers at most once: the sheet's own two buttons both close it, and
+    // closing it comes back through here (see ActiveSheet) with the answer
+    // already given.
+    private void ResolvePendingPlaylistDeletion(bool confirmed)
+    {
+        var pending = _pendingPlaylistDelete;
+        _pendingPlaylistDelete = null;
+        pending?.Confirmed.TrySetResult(confirmed);
+    }
+
     // Whichever list is currently on screen (picker or track list) has nothing in it.
     // Without this, an empty library or an empty search just renders a blank screen.
     // IsShowingSearchPrompt counts as "empty" too - the Search tab before anything is
@@ -1127,7 +1200,12 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // Not while the rows for this scope are still being built: until they
         // land, Main.Rows belongs to the screen being left - see
         // LibraryBrowserViewModel.IsRowsRebuildPending.
-        (IsShowingTrackList && Main.Rows.Count == 0 && !Main.Browser.IsRowsRebuildPending);
+        // A playlist is the one track list that says what it is even when it
+        // holds nothing: its header (name, cover, actions) is the screen, and
+        // an overlay centred over the whole thing sat on top of that header
+        // to announce what the empty space under it already showed.
+        (IsShowingTrackList && !IsShowingPlaylistTracks
+            && Main.Rows.Count == 0 && !Main.Browser.IsRowsRebuildPending);
 
     // What mobile derives from the library as a whole rather than from the rows
     // Main keeps: the album grids, search results, the album header and the
@@ -1157,8 +1235,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         {
             if (IsShowingSearchPrompt)
                 return "Search Your Library";
-            if (IsShowingPlaylistTracks)
-                return "Playlist is Empty";
             if (IsShowingSearchResults)
                 return "No Results";
             if (Main.Library.Tracks.Count == 0)
@@ -1173,8 +1249,6 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         {
             if (IsShowingSearchPrompt)
                 return "Find songs by title, artist, album, or genre.";
-            if (IsShowingPlaylistTracks)
-                return "Add tracks from a track's ... menu.";
             if (IsShowingSearchResults)
                 return $"No matches for \"{SearchQuery}\".";
             if (Main.Library.Tracks.Count > 0)
@@ -1237,6 +1311,16 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
         _subscriptions.Add<NotifyCollectionChangedEventHandler>((_, _) => RebuildPlaylistPicker(),
             h => Main.SidebarItems.CollectionChanged += h, h => Main.SidebarItems.CollectionChanged -= h);
+        // A song added to (or dragged within, or removed from) a playlist
+        // changes what its row says on the right without changing which rows
+        // there are, so the collection above never hears about it.
+        _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(RefreshPlaylistSummaries),
+            h => Main.Library.PlaylistsChanged += h, h => Main.Library.PlaylistsChanged -= h);
+        // Mobile's answer to "really delete this playlist?" - desktop's is a
+        // dialog raised from MainView. Something has to answer, or the delete
+        // waits forever; see AskToDeletePlaylist.
+        _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>((_, e) => AskToDeletePlaylist(e),
+            h => Main.DeletePlaylistConfirmationRequested += h, h => Main.DeletePlaylistConfirmationRequested -= h);
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(RebuildLibraryDerivedState),
             h => Main.Library.LibraryChanged += h, h => Main.Library.LibraryChanged -= h);
         // Only a change that can move a track between albums, or change its
@@ -1431,6 +1515,55 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             AlbumActionTarget = tile;
             ActiveSheet = MobileSheet.AlbumActions;
         });
+        // The album menu over a playlist: its own tile for the header and the
+        // actions that act on songs, plus the two this target adds (see
+        // IsActingOnAPlaylist).
+        OpenPlaylistActionsCommand = new RelayCommand<SidebarItem>(item =>
+        {
+            if (item?.Playlist is not { } playlist)
+                return;
+            _playlistTargets = null;
+            ActionTarget = null;
+            AlbumActionTarget = BuildPlaylistHeader(playlist);
+            PlaylistActionTarget = item;
+            ActiveSheet = MobileSheet.AlbumActions;
+        });
+        // Renaming happens on the row itself rather than in a sheet of its
+        // own: the menu closes, the row's name turns into a box with the
+        // current name in it, and the phone's keyboard comes up under it -
+        // the same shape as naming a new one (NewPlaylistEntry), and the same
+        // commit rules as the desktop sidebar's in-place rename, which is
+        // literally the same service underneath.
+        RenamePlaylistActionTargetCommand = new RelayCommand(() =>
+        {
+            var item = PlaylistActionTarget;
+            ActiveSheet = MobileSheet.None;
+            if (item?.Playlist == null)
+                return;
+            foreach (var other in PlaylistPickerItems)
+                other.IsEditing = false;
+            item.IsEditing = true;
+        });
+        CommitPlaylistRenameCommand = new RelayCommand<SidebarItem>(async item =>
+        {
+            if (item is { IsEditing: true })
+                await Main.Rename.CommitAsync(item, Main);
+        });
+        // Closes the menu and asks. What asks is the delete itself - see
+        // AskToDeletePlaylist - so this cannot forget to.
+        DeletePlaylistActionTargetCommand = new RelayCommand(async () =>
+        {
+            var playlist = PlaylistActionTarget?.Playlist;
+            ActiveSheet = MobileSheet.None;
+            if (playlist != null)
+                await Main.DeletePlaylistAsync(playlist);
+        });
+        ConfirmDeletePlaylistCommand = new RelayCommand(() =>
+        {
+            ResolvePendingPlaylistDeletion(confirmed: true);
+            ActiveSheet = MobileSheet.None;
+        });
+        CancelDeletePlaylistCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
         OpenArtistActionsCommand = new RelayCommand<string>(artist =>
         {
             if (artist == null || BuildArtistTile(artist) is not { } tile)
@@ -1687,6 +1820,16 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private void RefreshPlaylistSummaries()
+    {
+        foreach (var item in PlaylistPickerItems)
+            item.NotifyPlaylistSummaryChanged();
+        // The screen's own header counts its songs too, and a playlist the
+        // user is looking at is the one most likely to have just gained one.
+        _currentPlaylistHeaderKey = default;
+        RaiseDetailHeaderChanged();
+    }
+
     private void RebuildPlaylistPicker()
     {
         PlaylistPickerItems.Clear();
@@ -1924,10 +2067,22 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             MobileTab.Artists => SidebarItemKind.Artists,
             _ => (SidebarItemKind?)null
         };
+        UseTheSortThisScreenWants(flatSongs: SelectedTab == MobileTab.Songs);
         Main.SelectedSidebarItem = kind != null
             ? Main.SidebarItems.FirstOrDefault(i => i.Kind == kind)
             : null;
     }
+
+    // A phone has no column headers, so the order a list comes in is the app's
+    // to choose rather than the user's to set - and the two screens want
+    // opposite things. The flat Songs list is the whole library at once, where
+    // track number means nothing and a name is what anyone is looking for; an
+    // album is the album, in its own order. Applied before the scope changes,
+    // so the rebuild that the scope change causes is already the right sort
+    // and nothing is sorted twice. Set rather than persisted (see
+    // LibraryBrowserViewModel.UseSort): it is not a choice anyone made.
+    private void UseTheSortThisScreenWants(bool flatSongs) =>
+        Main.Browser.UseSort(flatSongs ? "Title" : "TrackNumber", ascending: true);
 
     // Albums tab grid tiles only now - Artists' own name picker uses
     // SelectArtist below instead, so tapping an artist lands on that artist's
@@ -1966,6 +2121,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // above were duplicated with them, three times each.
     private async Task DrillIntoAsync(SidebarItem? sidebarItem = null, string? subItem = null, DrillLevel level = DrillLevel.TrackList)
     {
+        // Drilling in is always into one thing - an album, an artist's album,
+        // a playlist - and none of those is the flat Songs list.
+        UseTheSortThisScreenWants(flatSongs: false);
         if (sidebarItem != null)
             Main.SelectedSidebarItem = sidebarItem;
         if (subItem != null)
@@ -2103,6 +2261,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         _hasDrilledIn = frame.HasDrilledIn;
         _selectedArtistName = frame.SelectedArtistName;
         _hasDrilledIntoArtistAlbum = frame.HasDrilledIntoArtistAlbum;
+        // The restored screen's own order, the same as if it had been
+        // navigated to forwards - back out of an album and the library is
+        // alphabetical again.
+        UseTheSortThisScreenWants(flatSongs: frame.Tab == MobileTab.Songs && !frame.HasDrilledIn);
         Main.SelectedSidebarItem = frame.SidebarItem;
         Main.SelectedSubItem = frame.SubItem;
         if (frame.SelectedArtistName != null)

@@ -151,6 +151,24 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Sets the sort outright, without the toggle <see cref="SortByColumn"/>
+    /// applies when the column asked for is the one already in use, and
+    /// without persisting it. For a client with no column headers to click:
+    /// mobile picks the order for each screen it shows (alphabetical for its
+    /// flat Songs list, album order inside an album) rather than carrying a
+    /// sort the user has no way to change - see
+    /// MobileMainViewModel.UseTheSortThisScreenWants.
+    /// </summary>
+    public void UseSort(string columnId, bool ascending)
+    {
+        if (_sortColumn == columnId && _sortAscending == ascending)
+            return;
+        _sortColumn = columnId;
+        _sortAscending = ascending;
+        NotifySortChanged();
+    }
+
     public void SortByColumn(string? columnId)
     {
         if (columnId == null)
