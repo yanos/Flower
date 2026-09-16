@@ -59,11 +59,18 @@
     </Style>
     <!-- The tabs take Button.pill (Styles/IconButtons.axaml) for its round
          press highlight, which fits the oval they sit in. This style is
-         nearer, so it makes each one a 58px square, a little short of the
-         oval's inside (64 less its 1px border, top and bottom) so the
-         highlight sits clear of the rim - a circle, then, rather than a
-         stadium as wide as its column - centred in its column, with the
-         icon and label centred in it and no padding pushing them off.
+         nearer, so it makes each one a 52px square, well inside the oval
+         (64 less its 1px border, top and bottom) so the highlight sits clear
+         of the rim - a circle, then, rather than a stadium as wide as its
+         column - centred in its column, with the icon and label centred in
+         it and no padding pushing them off.
+
+         52 rather than the 58 five tabs could afford: Search joined them from
+         the pill at the top, and six circles have to fit the oval on the
+         narrowest phone. The oval widened with them to the mini player's own
+         length (TabBar below), and what sets the floor is not the circle but
+         the longest label - "Playlists" has to stay on one line in a column of
+         about 55px. MobileTabBarLayoutTests measures both, at 375 and at 430.
          The tab showing is marked .current rather than .selected:
          Button.pill.selected tints its icon with the accent, which suits the
          search button but not a tab, whose label and Songs note it cannot
@@ -71,15 +78,24 @@
 
          The icons are sized to the Songs note rather than to one number. A
          Material icon draws its glyph inside a 24-unit box with a margin that
-         varies by icon, while the note is stretched to fill its 22px, so at
-         22px each of them came out smaller than it: the clock 19px across, the
-         disc 18, the person 16. Each is enlarged until its glyph spans 22px
-         at its widest or tallest - 22 x 24 / the glyph's extent in units - and
-         a negative margin gives the enlargement back, so every icon still
-         takes 22px of the tab's layout and the labels stay on one line. -->
+         varies by icon, while the note is stretched to fill its box, so drawn
+         at the same size every one of them came out smaller than it: measured,
+         the clock spans 21 of those units, the disc 20, the person 16, the
+         playlist 19 and the magnifier 17.5. Each is enlarged until its glyph
+         spans 24px at its widest or tallest - 24 x 24 / the glyph's extent in
+         units - and a negative margin gives the enlargement back, so every
+         icon still takes 24px of the tab's layout and the labels stay on one
+         line.
+
+         That span was 22px until the icons were asked to be a little bigger.
+         Only the glyphs grew: the margins absorb the difference, so each tab
+         is the same 52px square in the same oval, and nothing above or beside
+         them moved. Which is the whole point of sizing them this way - the
+         alternative, growing the icons by growing their boxes, would have
+         pushed the labels down and the oval out. -->
     <Style Selector="Button.tab">
-      <Setter Property="Width" Value="58" />
-      <Setter Property="Height" Value="58" />
+      <Setter Property="Width" Value="52" />
+      <Setter Property="Height" Value="52" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Center" />
       <Setter Property="VerticalAlignment" Value="Center" />
@@ -249,7 +265,7 @@
            discrete tab-paging otherwise - see that class's own doc comment.
            Each slot now carries its own sliding title/search/create-playlist/
            download-all header (see ScreenSlot) - only the back button and
-           the search/settings pill below stay fixed on top of it. -->
+           the settings button below stay fixed on top of it. -->
       <controls:ScreenStackPanel x:Name="ScreenStack" />
 
       <!-- Empty state: shown instead of a blank screen when the current list has nothing in it.
@@ -286,13 +302,13 @@
            (Avalonia doesn't hit-test an unpainted Panel/Grid's empty area -
            same technique AlbumArtView/AlbumGridRowControl already rely on).
            Margin/button sizing here must stay in sync with ScreenSlot.axaml's
-           own header Margin="60,4,100,4" and with NowPlayingView's top bar,
+           own header Margin="60,4,60,4" and with NowPlayingView's top bar,
            which draws its own back arrow over this one - see those files'
-           comments for the pixel math (back: a 40px circle at
-           outer margin 12 -> right edge 52, +8px gap -> 60; search/settings
-           pill: two Padding 8 + 20px icon = 36px buttons, + Padding 2 and a
-           1px border on each side = 78px wide, at outer margin 12 -> 90,
-           +10px gap -> 100).
+           comments for the pixel math. Both sides are a 40px circle now, so
+           both come to the same number: outer margin 12 -> edge 52, +8px gap
+           -> 60. Settings used to share a pill with Search, which made that
+           side 78px wide and the header's right margin 100 - Search is a tab
+           in the oval at the bottom now.
            Vertically the two must share a band, not a margin: this Grid and
            ScreenSlot's 52px header row are siblings both starting at y=0, and
            Margin sits *outside* Height - so any top margin here would push
@@ -317,26 +333,21 @@
           </Button>
         </Border>
 
-        <!-- Search and Settings, floating in one pill. Search is still a tab
-             (SelectTabCommand, and SearchTab_Click refocusing the box when it
-             is already showing) - it just is not in the tab bar - so it keeps a
-             selected state, drawn in the accent colour. -->
-        <Border Grid.Column="2"
+        <!-- Settings, in a pill of its own with one button in it - so a
+             circle, the size of the back button facing it across the band.
+             Search used to share this pill, which made it a stadium; it is a
+             tab in the oval at the bottom now, where it is marked .current
+             like every other tab rather than tinted with the accent. -->
+        <Border x:Name="SettingsPill"
+                Grid.Column="2"
                 Classes="floating"
-                BoxShadow="0 0 16 1.6 #4D000000"
-                Padding="2,0">
-          <StackPanel Orientation="Horizontal">
-            <Button Classes="pill"
-                    Classes.selected="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Search}"
-                    Command="{Binding SelectTabCommand}" CommandParameter="Search"
-                    Click="SearchTab_Click">
-              <materialIcons:MaterialIcon Kind="Magnify" Width="20" Height="20" />
-            </Button>
-            <Button Classes="pill"
-                    Command="{Binding OpenSettingsCommand}">
-              <materialIcons:MaterialIcon Kind="Cog" Width="20" Height="20" />
-            </Button>
-          </StackPanel>
+                Width="40"
+                BoxShadow="0 0 16 1.6 #4D000000">
+          <Button Classes="pill"
+                  Command="{Binding OpenSettingsCommand}"
+                  HorizontalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="Cog" Width="20" Height="20" />
+          </Button>
         </Border>
       </Grid>
     </Grid>
@@ -352,14 +363,15 @@
                 Spacing="8"
                 SizeChanged="BottomChrome_SizeChanged">
 
-    <!-- Mini player - an oval of its own, the same floating look as the tabs
-         under it but running 97% of the width between the margins, where the
-         tab oval takes 85% of it: the longer shape over the shorter one. Its
-         art is round to sit in the oval's rounded end. The star columns
-         centre it at 97% of the width between its margins, and pass touches
-         either side through to the list, as the tab oval's do. Both ovals take a
-         shadow with no offset, rather than the floating pill's downward one, so
-         it rings the whole oval over the list scrolling behind it. -->
+    <!-- Mini player - an oval of its own, with the same floating look and the
+         same length as the tabs under it: one shape repeated, rather than two
+         that are nearly the same width. Its art is round to sit in the oval's
+         rounded end. The star columns centre it at 97% of the width between
+         its margins, and pass touches either side through to the list, as the
+         tab oval's do - and that oval takes this same margin and this same
+         97%, so neither number can move here without moving there. Both ovals
+         take a shadow with no offset, rather than the floating pill's downward
+         one, so it rings the whole oval over the list scrolling behind it. -->
     <Grid IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
           Margin="12,0"
           ColumnDefinitions="3*,194*,3*">
@@ -420,27 +432,35 @@
 
     <!-- Tab oval - Recently Added first/leftmost, matching it being the app's
          default/home tab (see MobileMainViewModel._selectedTab). The same
-         floating look as the back button and the search/settings pill, drawn
+         floating look as the back button and the settings button, drawn
          taller to fit a label under each icon. Its bottom margin comes from
          the safe area (MobileMainView.axaml.cs), which lifts it off the home
-         indicator. The star columns centre it at 85% of the width between
+         indicator. The star columns centre it at 97% of the width between
          those margins; the wrapper has no Background, so the empty columns
-         either side pass touches through to the list. -->
+         either side pass touches through to the list.
+
+         The same margin and the same 97% as the mini player above, so the two
+         are one oval repeated rather than two nearly-alike ones. Both numbers
+         have to move together - the margin lives in the code-behind as well,
+         which re-applies it for the safe area - and MobileTabBarLayoutTests
+         measures that the two come out the same length. It was 85% of a wider
+         margin while there were five tabs; Search made six, which did not fit
+         at that width whatever the circles did - see Button.tab above. -->
     <Grid x:Name="TabBar"
-          Margin="16,0"
-          ColumnDefinitions="3*,34*,3*">
+          Margin="12,0"
+          ColumnDefinitions="3*,194*,3*">
     <Border Grid.Column="1"
             Classes="floating"
             Height="64"
             BoxShadow="0 0 16 1.6 #4D000000"
             CornerRadius="32"
             Padding="4,0">
-    <Grid ColumnDefinitions="*,*,*,*,*">
+    <Grid ColumnDefinitions="*,*,*,*,*,*">
       <Button Grid.Column="0" Classes="pill tab"
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=RecentlyAdded}"
               Command="{Binding SelectTabCommand}" CommandParameter="RecentlyAdded">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="ClockPlusOutline" Width="25" Height="25" Margin="-1.5" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="ClockPlusOutline" Width="27" Height="27" Margin="-1.5" HorizontalAlignment="Center" />
           <TextBlock Text="Recent" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
@@ -451,7 +471,7 @@
           <!-- SongNoteGeometry (App.axaml). Its fill comes from the Button.tab
                styles above, red when the tab is showing and grey when not. -->
           <Path Data="{StaticResource SongNoteGeometry}"
-                Stretch="Uniform" Width="22" Height="22" HorizontalAlignment="Center" />
+                Stretch="Uniform" Width="24" Height="24" HorizontalAlignment="Center" />
           <TextBlock x:Name="SongsLabel" Text="Songs" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
@@ -459,7 +479,7 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Albums}"
               Command="{Binding SelectTabCommand}" CommandParameter="Albums">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="Album" Width="26" Height="26" Margin="-2" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="Album" Width="29" Height="29" Margin="-2.5" HorizontalAlignment="Center" />
           <TextBlock Text="Albums" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
@@ -467,7 +487,7 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Artists}"
               Command="{Binding SelectTabCommand}" CommandParameter="Artists">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="Account" Width="33" Height="33" Margin="-5.5" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="Account" Width="36" Height="36" Margin="-6" HorizontalAlignment="Center" />
           <TextBlock Text="Artists" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
@@ -475,8 +495,22 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Playlists}"
               Command="{Binding SelectTabCommand}" CommandParameter="Playlists">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="28" Height="28" Margin="-3" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="30" Height="30" Margin="-3" HorizontalAlignment="Center" />
           <TextBlock Text="Playlists" FontSize="11" HorizontalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <!-- Last, matching MobileTab's own declaration order, which is what
+           swipe-paging clamps against (FirstTab/LastTab in
+           MobileMainViewModel). Keeps SearchTab_Click: tapping the tab while
+           already on Search refocuses the box, which SelectTabCommand alone
+           cannot do - see the code-behind. -->
+      <Button Grid.Column="5" Classes="pill tab"
+              Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Search}"
+              Command="{Binding SelectTabCommand}" CommandParameter="Search"
+              Click="SearchTab_Click">
+        <StackPanel HorizontalAlignment="Center" Spacing="2">
+          <materialIcons:MaterialIcon Kind="Magnify" Width="33" Height="33" Margin="-4.5" HorizontalAlignment="Center" />
+          <TextBlock Text="Search" FontSize="11" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
     </Grid>

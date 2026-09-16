@@ -20,7 +20,7 @@
        comment for why this works correctly even for a kept-alive
        back/forward preview.
 
-       Margin below (60,4,100,4) must stay in sync with the fixed back/settings
+       Margin below (60,4,60,4) must stay in sync with the fixed back/settings
        overlay's own margin in MobileMainView.axaml - see that file's comment
        for the pixel math, horizontal and vertical both. The 52px row here is
        what that overlay aligns its own 52px band to, so neither the row height
@@ -34,7 +34,7 @@
   <Grid RowDefinitions="52,*">
     <ContentControl Grid.Row="0" Grid.RowSpan="2" x:Name="ContentHost" />
 
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="60,4,100,4">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="60,4,60,4">
       <!-- No title here: it is the first line of the screen's own scroller,
            under the back button, and moves with the list (ScreenTitle). -->
 

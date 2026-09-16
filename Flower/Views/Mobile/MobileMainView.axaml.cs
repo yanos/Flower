@@ -101,7 +101,10 @@ public partial class MobileMainView : UserControl
         // very bottom of that inset, so the oval can come most of the way down
         // into it before it crowds it. On a phone with no inset at all it
         // still floats clear of the edge.
-        TabBar.Margin = new Thickness(16, 0, 16, Math.Max(TabBarMinimumBottomMargin, safeArea.Bottom - TabBarInsetOverlap));
+        // 12 to each side, the mini player's own margin: the two ovals are the
+        // same length, which takes the same margin as well as the same star
+        // columns - see MobileMainView.axaml's comment on either of them.
+        TabBar.Margin = new Thickness(12, 0, 12, Math.Max(TabBarMinimumBottomMargin, safeArea.Bottom - TabBarInsetOverlap));
 
         // Every sheet's background runs down to the very bottom edge, under
         // the home indicator, and only what is on it keeps clear of the inset -
