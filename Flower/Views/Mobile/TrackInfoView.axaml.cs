@@ -184,7 +184,7 @@ public partial class TrackInfoView : UserControl
         // Tracks back into UpdateTracks as a "fresh scan" silently doubles
         // every placeholder track. The single-track form persists this one
         // row rather than the whole library.
-        vm.Main.Library.NotifyTrackChanged(_track);
+        vm.Main.Library.NotifyTrackChanged(_track, TrackChange.Tags);
     }
 
     private static string? NullIfEmpty(string? s) =>

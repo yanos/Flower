@@ -32,6 +32,9 @@ public class OriginPlayReporterTests
     private static Track Placeholder(string originTrackId = "tr-1") =>
         new() { Title = "On A Server", Path = null, OriginTrackId = originTrackId };
 
+    private static TrackChangedEventArgs Changed(Track track, TrackChange change, ChangeSource source = ChangeSource.Local) =>
+        new([track], change, source);
+
     // Collects the batches the reporter posts, answering however the caller
     // says. Bodies are captured under a lock: the pump posts from a threadpool
     // task while the test reads.
@@ -88,7 +91,7 @@ public class OriginPlayReporterTests
         using var origin = new RecordingOrigin();
         var reporter = Reporter(origin.Server);
 
-        reporter.Report(Placeholder(), TrackStatsChange.Finished);
+        reporter.Report(Changed(Placeholder(), TrackChange.PlayFinished));
         await reporter.InFlight;
 
         var play = Assert.Single(Assert.Single(origin.Batches).Plays);
@@ -99,14 +102,14 @@ public class OriginPlayReporterTests
 
     // The two halves stay distinct on the wire, so the far side ends up with
     // the History a local player would have had rather than counting a skip as
-    // a listen - see Library.TrackStatsChange.
+    // a listen - see Library.TrackChange.
     [Fact]
     public async Task A_started_play_is_reported_as_a_start_and_not_as_a_count()
     {
         using var origin = new RecordingOrigin();
         var reporter = Reporter(origin.Server);
 
-        reporter.Report(Placeholder(), TrackStatsChange.Started);
+        reporter.Report(Changed(Placeholder(), TrackChange.PlayStarted));
         await reporter.InFlight;
 
         var play = Assert.Single(Assert.Single(origin.Batches).Plays);
@@ -123,7 +126,38 @@ public class OriginPlayReporterTests
         using var origin = new RecordingOrigin();
         var reporter = Reporter(origin.Server);
 
-        reporter.Report(new Track { Title = "Local", Path = "/music/a.mp3" }, TrackStatsChange.Finished);
+        reporter.Report(Changed(new Track { Title = "Local", Path = "/music/a.mp3" }, TrackChange.PlayFinished));
+        await reporter.InFlight;
+
+        Assert.Empty(origin.Batches);
+    }
+
+    // TrackChanged carries every kind of change, and this is the subscriber for
+    // which that is a trap: a star handed on unfiltered would go out as a play
+    // report with neither half set.
+    [Theory]
+    [InlineData(TrackChange.Starred)]
+    [InlineData(TrackChange.Options)]
+    [InlineData(TrackChange.Tags)]
+    public async Task A_change_that_is_not_a_play_is_not_reported(TrackChange change)
+    {
+        using var origin = new RecordingOrigin();
+        var reporter = Reporter(origin.Server);
+
+        reporter.Report(Changed(Placeholder(), change));
+        await reporter.InFlight;
+
+        Assert.Empty(origin.Batches);
+    }
+
+    // A play this tab was told about is one the server already has.
+    [Fact]
+    public async Task A_remote_play_is_not_reported_back()
+    {
+        using var origin = new RecordingOrigin();
+        var reporter = Reporter(origin.Server);
+
+        reporter.Report(Changed(Placeholder(), TrackChange.PlayFinished, ChangeSource.Remote));
         await reporter.InFlight;
 
         Assert.Empty(origin.Batches);
@@ -138,10 +172,10 @@ public class OriginPlayReporterTests
         using var origin = new RecordingOrigin { Failures = 1 };
         var reporter = Reporter(origin.Server);
 
-        reporter.Report(Placeholder("tr-first"), TrackStatsChange.Finished);
+        reporter.Report(Changed(Placeholder("tr-first"), TrackChange.PlayFinished));
         await reporter.InFlight;
 
-        reporter.Report(Placeholder("tr-second"), TrackStatsChange.Finished);
+        reporter.Report(Changed(Placeholder("tr-second"), TrackChange.PlayFinished));
         await reporter.InFlight;
 
         // Two attempts: the rejected one, then the retry carrying both. In the
@@ -160,10 +194,10 @@ public class OriginPlayReporterTests
         using var origin = new RecordingOrigin { Failures = 1 };
         var reporter = Reporter(origin.Server);
 
-        reporter.Report(Placeholder(), TrackStatsChange.Finished);
+        reporter.Report(Changed(Placeholder(), TrackChange.PlayFinished));
         await reporter.InFlight;
 
-        reporter.Report(Placeholder(), TrackStatsChange.Finished);
+        reporter.Report(Changed(Placeholder(), TrackChange.PlayFinished));
         await reporter.InFlight;
 
         var rejected = origin.Batches[0].Plays;

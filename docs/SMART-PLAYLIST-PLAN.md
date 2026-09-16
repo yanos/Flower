@@ -140,35 +140,31 @@ already tolerates track ids that no longer resolve.
 
 ## Recomputation
 
-Triggers. Note that `Library.TracksUpdated` alone is *not* enough — the
-fields the flagship playlists are built on deliberately do not raise it:
+Triggers. There are two library events, and a pass needs both:
 
-- `Library.TracksUpdated` — rescan, download, track added or removed. Covers
-  the descriptive fields plus `DateAdded`.
-- `Library.TrackStatsChanged` — play count, `LastPlayedAt`, skip count. These
-  were split out of `TracksUpdated` precisely because it means a full
+- `Library.LibraryChanged` — rescan, reload, import, track added or removed,
+  and `MergeSyncedTracks` landing a pulled catalog.
+- `Library.TrackChanged` — any in-place change to known tracks, carrying which
+  tracks and a `TrackChange` saying what moved: a play (either half), a star, a
+  tag edit, artwork, a download, a playback option. Every kind is a rule input
+  (`IgnoreWhenShuffling` and `IsLocallyDownloaded` included), so the refresher
+  takes all of them. Plays are the ones this design is easiest to get wrong:
+  they were split off the library-wide event precisely because it means a full
   track-list rebuild plus a peer sync, twice per track change
-  (`ARCHITECTURE-REVIEW.md` Tier 1.1). But "Recently Played" / "Most Played" /
-  "Never Played" live entirely on this event; hang recomputation off
-  `TracksUpdated` only and they never update until a rescan.
-- `Library.TrackStarsChanged` — a star, from the Track Info window or a
-  Subsonic `/star`. Both go through `Library.SetStarred`, which reached neither
-  event above; this event was added for exactly that. Deliberately not folded
-  into `TrackStatsChanged`, which at least one subscriber reads as "a play
-  happened" and forwards as a scrobble (`IPlayReporter`).
+  (`ARCHITECTURE-REVIEW.md` Tier 1.1), and "Recently Played" / "Most Played" /
+  "Never Played" live entirely on them. `MergeReportedTrackState` (a paired
+  device pushing its counts and stars in) and `RecordPlay` (a browser tab's
+  plays) raise it too, marked `ChangeSource.Remote`.
 - `Library.PlaylistsChanged` — a `PlaylistRef` rule makes another playlist's
   contents an input, so a playlist change is a track-set change for its
   dependents.
 - a rule edit, obviously — the editor calling `Schedule` directly.
 
-Two paths that looked like they needed their own trigger turned out not to:
-`MergeReportedTrackState` (an admin client pushing play counts and stars *in*)
-already raises `TrackStatsChanged` per changed track, and `MergeSyncedTracks`
-(a catalog pull) already raises `TracksUpdated`. Smart-playlist inputs arriving
-from off-machine are covered by the same two events as this device's own
-listening.
+Stars and playback options used to be the gaps: stars had an event of their
+own, `TrackStarsChanged`, and options raised nothing. Both are `TrackChanged`
+now, like everything else that changes a track in place.
 
-Debouncing is not polish: `TrackStatsChanged` fires twice per track change,
+Debouncing is not polish: a play raises `TrackChanged` twice per track change,
 and a sync merge touches thousands of tracks in a loop.
 
 One debounced pass recomputes every smart playlist in topological order,
@@ -404,8 +400,8 @@ is a one-liner and worth having; the reverse is not offered.
    a recompute is not a sync-visible change, but because the refresher
    subscribes to that event (a membership rule makes one playlist another's
    input), so announcing its own write would feed straight back into itself.
-   **`Library.TrackStarsChanged` is a new event**, for the reason in the
-   trigger list above. And **`EvaluateAll` now seeds a `Random` per playlist
+   **Stars reach the refresher**, then through an event of their own and now
+   as a `Library.TrackChanged` - see the trigger list above. And **`EvaluateAll` now seeds a `Random` per playlist
    from its id** instead of sharing one for the pass: a
    `LimitSelector.Random` playlist is re-evaluated on every play, since play
    counts are an input, and with an ambient `Random` it would draw a different

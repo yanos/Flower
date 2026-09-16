@@ -109,7 +109,7 @@ namespace Flower.Persistence.Sql
 
         // The Tier 4.1 payoff: a play-count bump is one UPDATE of one row,
         // rather than re-serializing and rewriting the entire library. See
-        // Library.IncrementPlayCount/RecordPlayed, whose TrackStatsChanged
+        // Library.IncrementPlayCount/RecordPlayed, whose TrackChanged
         // event this backs.
         public void UpdateStats(Track track)
         {

@@ -39,6 +39,11 @@ public sealed class DeviceLogArchive
         _live = live;
     }
 
+    // How far the live ring has got, whether or not it has been drained yet -
+    // what a push compares against to tell "something was logged since" from
+    // "nothing was".
+    public long LiveSequence => _live.LastSequence;
+
     // Drain whatever the live ring has gained since the last call onto disk.
     // Must run on its own schedule rather than inside a push: lines logged
     // while no server is listed are exactly the ones worth keeping, and the

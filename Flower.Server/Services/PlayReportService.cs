@@ -39,11 +39,11 @@ public sealed class PlayReportService(Library library, ILogger<PlayReportService
         var applied = 0;
         foreach (var play in report.Plays)
         {
-            var change = default(TrackStatsChange);
+            var change = default(TrackChange);
             if (play.Started)
-                change |= TrackStatsChange.Started;
+                change |= TrackChange.PlayStarted;
             if (play.Completed)
-                change |= TrackStatsChange.Finished;
+                change |= TrackChange.PlayFinished;
 
             // Neither half set says nothing happened. Dropped before the id is
             // recorded, so it cannot burn an id that a real event might reuse.

@@ -495,7 +495,7 @@ using (var scope = app.Services.CreateScope())
 
 // After the first rescan, so the opening pass runs against the real catalog
 // rather than recomputing every smart playlist twice at startup - the rescan
-// raises TracksUpdated, which this subscribes to.
+// raises LibraryChanged, which this subscribes to.
 app.Services.GetRequiredService<SmartPlaylistRefresher>().Start();
 
 app.MapAdminEndpoints();

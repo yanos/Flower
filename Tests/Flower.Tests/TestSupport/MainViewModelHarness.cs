@@ -147,6 +147,17 @@ public static class MainViewModelHarness
         public override bool CausedPeerLibraryToken(string fingerprint, string token) =>
             TokensThisDeviceCaused.Contains(token);
 
+        // Recorded rather than sent, so a test can see a push being asked for.
+        // Takes what is pending the way the real one does.
+        public List<DiscoveredDevice> PushedTrackStateTo { get; } = new();
+
+        public override Task<bool> PushTrackStateAsync(DiscoveredDevice device)
+        {
+            PushedTrackStateTo.Add(device);
+            TakeTrackStateCandidates();
+            return Task.FromResult(true);
+        }
+
         // Recorded separately from SyncedWith: the point of several tests is
         // that the periodic log push happens *without* a catalog pull.
         public override Task<bool> PushLogsOnlyAsync(DiscoveredDevice device)

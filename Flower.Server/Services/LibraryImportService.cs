@@ -133,13 +133,13 @@ public class LibraryImportService(
     // tracks the scan just reconciled. Which of the two run is
     // ITunesIntegration's call, the same one the app's startup rescan makes;
     // what is server-specific is only how the result gets published - both
-    // importers mutate Track objects in place, so the one NotifyTrackChanged
+    // importers mutate Track objects in place, so the one NotifyLibraryChanged
     // here is what persists them and invalidates the snapshot every client
     // reads through. Skipped entirely when neither ran, rather than issuing a
     // whole-table rewrite for two no-ops.
     private void ApplyITunesImports(FlowerServerOptions settings)
     {
         if (ITunesIntegration.ApplyImports(settings, library.Tracks, logger))
-            library.NotifyTrackChanged();
+            library.NotifyLibraryChanged();
     }
 }

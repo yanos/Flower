@@ -65,7 +65,18 @@ public sealed class OriginPlayReporter(
 
     public Task InFlight { get; private set; } = Task.CompletedTask;
 
-    public void Report(Track track, TrackStatsChange change)
+    public void Report(TrackChangedEventArgs change)
+    {
+        // The guard the event's breadth makes load-bearing: without it a star
+        // would go out as a play report with neither half set.
+        if (change.Source != ChangeSource.Local || !change.IsPlay)
+            return;
+
+        foreach (var track in change.Tracks)
+            Report(track, change.Change);
+    }
+
+    private void Report(Track track, TrackChange change)
     {
         if (track.OriginTrackId is not { Length: > 0 } originTrackId)
         {
@@ -79,8 +90,8 @@ public sealed class OriginPlayReporter(
             Guid.NewGuid().ToString("N"),
             originTrackId,
             DateTimeOffset.UtcNow,
-            change.HasFlag(TrackStatsChange.Started),
-            change.HasFlag(TrackStatsChange.Finished));
+            change.HasFlag(TrackChange.PlayStarted),
+            change.HasFlag(TrackChange.PlayFinished));
 
         lock (_gate)
         {

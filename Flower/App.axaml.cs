@@ -689,7 +689,19 @@ public partial class App : Application
         // as close to "about to be killed" as iOS/Android ever get).
         var playbackControls = provider.GetRequiredService<PlaylistControlViewModel>();
         if (mainView is Window mainWindowForShutdown)
-            mainWindowForShutdown.Closing += (_, _) => playbackControls.SavePlaybackState();
+        {
+            mainWindowForShutdown.Closing += (_, _) =>
+            {
+                playbackControls.SavePlaybackState();
+
+                // And the paired server told, which on a desktop cannot be left
+                // to the push SavePlaybackState sets off: that one is posted to a
+                // dispatcher about to stop. Bounded, so a server that is not
+                // answering cannot hold the window open. A position that misses
+                // this still goes out next launch, which restates every track.
+                mainViewModel.Sync.PushTrackStateNowAsync().Wait(TimeSpan.FromSeconds(2));
+            };
+        }
         if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
             activatable.Deactivated += (_, _) => playbackControls.SavePlaybackState();
 
@@ -753,14 +765,14 @@ public partial class App : Application
         if (playlistWriter != null)
             library.PlaylistsChanged += (_, _) => playlistWriter.Schedule(library.Playlists);
 
-        // Likewise the browser only - see IPlayReporter. TrackStatsChanged is
-        // already the "one track's counters moved" signal both halves of a
-        // play raise (the played-at stamp when it starts, the count bump when
-        // it ends naturally), and it carries which half it was, so this needs
-        // no second subscription and no knowledge of the playback pipeline.
+        // Likewise the browser only - see IPlayReporter. Both halves of a play
+        // raise TrackChanged (the played-at stamp when a track starts, the
+        // count bump when it ends naturally) and say which half they were, so
+        // this needs no knowledge of the playback pipeline. The reporter picks
+        // the plays out of everything else the event carries.
         var playReporter = provider.GetService<Importer.IPlayReporter>();
         if (playReporter != null)
-            library.TrackStatsChanged += (_, e) => playReporter.Report(e.Track, e.Change);
+            library.TrackChanged += (_, e) => playReporter.Report(e);
 
         _ = Task.Run(async () =>
         {
@@ -789,7 +801,7 @@ public partial class App : Application
                 var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
                 rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
 
-                // Update the playlist first so navigation is consistent when TracksUpdated fires
+                // Update the playlist first so navigation is consistent when LibraryChanged fires
                 mainPlaylist.ReplaceAll(freshTracks);
                 // Persisted by UpdateTracks itself - see Library's
                 // ITrackStore. Flower.Server's rescan is the same two

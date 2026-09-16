@@ -479,15 +479,12 @@ public partial class TrackInfoWindow : Window
         PersistOptions();
     }
 
-    // One upsert per edited track, no TracksUpdated: none of the three shows up
-    // in a track list, so there is nothing for a view to rebuild - and
-    // rebuilding it would mean a peer library sync per drag of the volume
-    // slider. Same reasoning as Library.RecordResumePosition's own comment.
-    private void PersistOptions()
-    {
-        foreach (var track in _editTracks)
-            _library.PersistTrackOptions(track);
-    }
+    // One event for every edited track, per change. None of the three shows up
+    // in a track list, so TrackChanged's subscribers only refresh rows and
+    // smart playlists (IgnoreWhenShuffling is a rule field) - no rebuild and no
+    // catalog sync, which would otherwise be one per drag of the volume slider.
+    private void PersistOptions() =>
+        _library.NotifyTracksChanged(_editTracks, TrackChange.Options);
 
     private static string StarredOnText(Track track) =>
         track.StarredAt is { } at ? $"Starred {at.LocalDateTime:MMM d, yyyy}" : "Starred";
@@ -662,7 +659,7 @@ public partial class TrackInfoWindow : Window
         // MainViewModel.SyncITunesPlayCountAsync's comment on why passing
         // Tracks back into UpdateTracks as a "fresh scan" silently doubles
         // every placeholder track.
-        _library.NotifyTracksChanged(_editTracks);
+        _library.NotifyTracksChanged(_editTracks, TrackChange.Tags);
     }
 
     // ── Artwork tab ────────────────────────────────────────────────────────
@@ -890,7 +887,7 @@ public partial class TrackInfoWindow : Window
         foreach (var track in _editTracks)
             AlbumArtLoader.Invalidate(track);
 
-        _library.NotifyTracksChanged(_editTracks);
+        _library.NotifyTracksChanged(_editTracks, TrackChange.Artwork);
         await LoadAlbumArtAsync();
 
         if (message != null)

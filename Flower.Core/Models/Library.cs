@@ -12,32 +12,73 @@ using Flower.Services;
 
 namespace Flower.Models
 {
-    // Which half of a play a stats change was. Flower deliberately triggers
-    // the two at different moments - LastPlayedAt when a track starts (so
-    // History means "what I put on"), PlayCount when it ends naturally (so a
-    // skip does not count as a listen) - see Track.LastPlayedAt. Flags rather
-    // than two enum members because a scrobble arriving over the wire is one
-    // request carrying both.
+    // What moved on the tracks a TrackChanged names. Flags, because one event
+    // covers one action and an action can move several things: a paired
+    // device's report states a count, a star and the options together, and a
+    // scrobble is both halves of a play.
+    //
+    // The two halves of a play stay apart because Flower triggers them at
+    // different moments - LastPlayedAt when a track starts (so History means
+    // "what I put on"), PlayCount when it ends naturally (so a skip does not
+    // count as a listen) - see Track.LastPlayedAt.
     [Flags]
-    public enum TrackStatsChange
+    public enum TrackChange
     {
-        Started = 1,
-        Finished = 2,
+        PlayStarted  = 1,
+        PlayFinished = 2,
+        Starred      = 4,
+
+        // Title, artists, album, year - anything Track Info's tag fields edit.
+        Tags         = 8,
+        Artwork      = 16,
+
+        // Where the audio is: a placeholder's download landing, or a downloaded
+        // file deleted back to a placeholder.
+        File         = 32,
+
+        // RememberPlaybackPosition, IgnoreWhenShuffling, VolumeAdjustment.
+        Options      = 64,
+
+        // Where a track that asks to be resumed was left: a pause, a track
+        // change, the app going away. Only the Resume At column shows it.
+        ResumePosition = 128,
+
+        Plays = PlayStarted | PlayFinished,
+
+        // What a paired device tells its server about a track - see
+        // LibrarySyncService.PushTrackStateAsync.
+        TrackState = Plays | Starred | Options | ResumePosition,
+
+        // What can move a track to another album, artist or sort position, or
+        // change what its row draws beyond a cell or two. A subscriber showing
+        // a list rebuilds it for these, and only refreshes rows for the rest.
+        Reshaping = Tags | Artwork | File,
     }
 
-    // See Library.TrackStatsChanged. Carries the Track object that was
-    // actually mutated, which is not necessarily the one the caller passed in -
-    // a rescan can have replaced it since (see Library.ResolveCurrent).
-    //
-    // Change is what lets a subscriber that has to *forward* the play - the
-    // browser head reporting to its origin server, see IPlayReporter - tell a
-    // start from a finish. A subscriber that only refreshes a stats column
-    // does not care and ignores it.
-    public sealed class TrackStatsChangedEventArgs(Track track, TrackStatsChange change) : EventArgs
+    // Whether this device made a change or was told about it. A change a paired
+    // device or a browser tab reported in is already known where it came from,
+    // so anything that forwards changes elsewhere ignores it - otherwise a
+    // reported play would be reported straight back.
+    public enum ChangeSource
     {
-        public Track Track { get; } = track;
+        Local,
+        Remote,
+    }
 
-        public TrackStatsChange Change { get; } = change;
+    // See Library.TrackChanged. Tracks are the objects actually mutated, which
+    // are not necessarily the ones a caller passed in - a rescan can have
+    // replaced them since (see Library.ResolveCurrent).
+    public sealed class TrackChangedEventArgs(IReadOnlyList<Track> tracks, TrackChange change, ChangeSource source) : EventArgs
+    {
+        public IReadOnlyList<Track> Tracks { get; } = tracks;
+
+        public TrackChange Change { get; } = change;
+
+        public ChangeSource Source { get; } = source;
+
+        public bool Reshapes => (Change & TrackChange.Reshaping) != 0;
+
+        public bool IsPlay => (Change & TrackChange.Plays) != 0;
     }
 
     public class Library
@@ -91,7 +132,7 @@ namespace Flower.Models
         // through this class at all - so an index kept up to date only at the
         // points where Tracks is *replaced* would silently miss that. Every
         // path that can change either the list or a Path calls Invalidate,
-        // including NotifyTrackChanged, which is exactly the "a Track you
+        // including NotifyTracksChanged, which is exactly the "a Track you
         // already hold was mutated in place" signal.
         private Dictionary<string, Track>? _byPath;
 
@@ -162,18 +203,30 @@ namespace Flower.Models
 
         public string PlaylistsToken => $"{_sessionId}-{Interlocked.Read(ref _playlistChangeCount)}";
 
-        public event EventHandler? TracksUpdated;
+        // Anything about the library may have changed, and nothing says what:
+        // tracks added or removed by a rescan or a sync merge, a reload, an
+        // import rewriting every track at once. A subscriber re-reads whatever
+        // it shows. A change to tracks already known is TrackChanged instead.
+        public event EventHandler? LibraryChanged;
 
-        // A play count / LastPlayedAt bump on a single track, as opposed to
-        // TracksUpdated's "the track list itself changed".
+        // These tracks changed in place, in this way - a play, a star, a tag
+        // edit, new artwork, a download landing, a playback option. One event
+        // per action, however many tracks it touched: starring an album or
+        // editing the tags of twenty songs is one of these, not twenty.
         //
-        // These used to be the same event, so playing a song rebuilt the whole
-        // UI (a 16k-element copy, a full album regroup, and 16k
-        // TrackRowViewModel allocations - see MainViewModel.PopulateTracks) and
-        // triggered a full library sync with the paired peer, twice per track
-        // change. Subscribers should refresh just the affected track's stats
-        // columns. See docs/ARCHITECTURE-REVIEW.md Tier 1.1.
-        public event EventHandler<TrackStatsChangedEventArgs>? TrackStatsChanged;
+        // Every in-place change comes through here, so every subscriber hears
+        // all of them and decides from Change what each one is worth. That is
+        // the point of there being one. Stars used to have an event of their
+        // own that only smart playlists listened to, so a star never reached a
+        // track list on screen, and playback options had none at all. A list
+        // rebuilds for TrackChange.Reshaping and refreshes rows for the rest,
+        // and a play reporter forwards Plays and nothing else.
+        //
+        // Plays were once announced the way LibraryChanged is, so playing a
+        // song rebuilt the whole UI (16k row allocations and a full album
+        // regroup) and triggered a full library sync with the paired peer,
+        // twice per track change. See docs/ARCHITECTURE-REVIEW.md Tier 1.1.
+        public event EventHandler<TrackChangedEventArgs>? TrackChanged;
 
         // Fired when a sync replaces the playlist set wholesale - PlaylistSyncService
         // on the client, SyncEndpoints' /playlists/apply on the server. See
@@ -196,24 +249,6 @@ namespace Flower.Models
         // see ReplacePlaylists), whereas this one means "the on-disk copy is
         // stale" and must fire for exactly those.
         public event EventHandler? PlaylistsChanged;
-
-        // Stars moved on one or more tracks - see SetStarred, the only path
-        // that can do it, whether the star came from the Track Info window or
-        // a Subsonic /star call.
-        //
-        // Deliberately not folded into TrackStatsChanged, tempting as that is:
-        // at least one subscriber reads that event as "a play happened" and
-        // forwards it as a scrobble (see IPlayReporter and App.axaml.cs), so a
-        // star raised there would be reported to the origin server as a listen.
-        // Starred and StarredAt are smart-playlist inputs, and SetStarred
-        // reaches neither of the two events above, so without this a starred
-        // track would not enter a "Starred in the last week" playlist until
-        // something unrelated triggered a pass.
-        //
-        // One event per call, not per track: starring a whole album or artist
-        // is a single user action, and every subscriber so far only needs to
-        // know that stars moved at all.
-        public event EventHandler? TrackStarsChanged;
 
         // Convenience overload for the many call sites (mostly tests) that don't
         // care about log output - production code always goes through the other
@@ -269,7 +304,7 @@ namespace Flower.Models
                 InvalidateIndexes();
             }
 
-            TracksUpdated?.Invoke(this, EventArgs.Empty);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void UpdateTracks(List<Track> tracks)
@@ -423,7 +458,7 @@ namespace Flower.Models
             _logger.LogInformation("Library updated: {FreshCount} track(s) from scan, {CarriedForwardCount} placeholder/downloaded track(s) carried forward, {TotalBefore} -> {TotalAfter}",
                 tracks.Count, carriedForwardCount, beforeCount, afterCount);
 
-            TracksUpdated?.Invoke(this, EventArgs.Empty);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
 
         // Whether a track with no local file still has an origin that could
@@ -497,7 +532,7 @@ namespace Flower.Models
             _logger.LogInformation("Dropped {RemovedCount} placeholder(s) from origin {Origin} and cleared its metadata from the rest",
                 removedCount, originFingerprint);
 
-            TracksUpdated?.Invoke(this, EventArgs.Empty);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
             return removedCount;
         }
 
@@ -681,7 +716,7 @@ namespace Flower.Models
                 Persist(() => _store!.ReplaceAll(Tracks));
             }
 
-            TracksUpdated?.Invoke(this, EventArgs.Empty);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
             return removedCount;
         }
 
@@ -794,7 +829,7 @@ namespace Flower.Models
         {
             var current = BumpPlayCount(playedTrack);
             Persist(() => _store!.UpdateStats(current));
-            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current, TrackStatsChange.Finished));
+            RaiseTrackChanged([current], TrackChange.PlayFinished);
             return current;
         }
 
@@ -864,7 +899,8 @@ namespace Flower.Models
             return index;
         }
 
-        // Callers must hold _lock, except NotifyTrackChanged - see its comment.
+        // Callers must hold _lock, except NotifyTracksChanged and
+        // NotifyLibraryChanged - see the former.
         private void InvalidateIndexes()
         {
             _byPath = null;
@@ -884,7 +920,7 @@ namespace Flower.Models
         {
             var current = StampLastPlayed(playedTrack);
             Persist(() => _store!.UpdateStats(current));
-            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current, TrackStatsChange.Started));
+            RaiseTrackChanged([current], TrackChange.PlayStarted);
             return current;
         }
 
@@ -899,29 +935,17 @@ namespace Flower.Models
             }
         }
 
-        // Persists an in-place mutation to a track that nothing on screen
-        // displays - the three playback options on Track Info's Options tab.
-        //
-        // One upsert, like NotifyTrackChanged, but deliberately without its
-        // TracksUpdated: that means a full track-list rebuild plus a peer
-        // library sync, which is a lot to pay per drag of a volume slider for a
-        // value no list has a column for. No index invalidation either - none
-        // of the three is part of what Snapshot or _byPath key on.
-        public void PersistTrackOptions(Track track)
-        {
-            Persist(() => _store!.Upsert(track));
-        }
-
         // Where a track was left off, for the tracks that ask to be resumed
         // rather than restarted (see Track.RememberPlaybackPosition). Null
         // clears it, which is what finishing a track does.
         //
         // Same resolve-under-lock pattern as RecordPlayed above and for the
-        // same reason - but deliberately NOT raising TracksUpdated: this fires
-        // on every pause and every track change, and TracksUpdated means a full
-        // track-list rebuild plus a peer library sync. Nothing displays a resume
-        // position, so there is nothing for a view to redraw. It is not indexed
-        // either, so no snapshot has to be thrown away.
+        // same reason. Announced, as TrackChange.ResumePosition: a paired
+        // server should hear where a podcast was put down without waiting for
+        // anything else to happen. It fires on every pause and every track
+        // change, which is why no subscriber rebuilds anything for it. Not
+        // indexed, so no snapshot is thrown away - only the change token
+        // moves, since the manifest carries the position.
         public Track RecordResumePosition(Track track, TimeSpan? position)
         {
             Track current;
@@ -932,9 +956,11 @@ namespace Flower.Models
                     return current;
 
                 current.ResumePosition = position;
+                BumpChangeToken();
             }
 
             Persist(() => _store!.Upsert(current));
+            RaiseTrackChanged([current], TrackChange.ResumePosition);
             return current;
         }
 
@@ -961,20 +987,23 @@ namespace Flower.Models
         // playback begins and a finish when it ends naturally, so the far side
         // ends up with the same History a local player would have had - passes
         // the half it means instead.
-        public bool RecordPlay(string? id, TrackStatsChange change = TrackStatsChange.Started | TrackStatsChange.Finished)
+        //
+        // Announced as Remote: the play happened on whatever reported it, and
+        // that already knows.
+        public bool RecordPlay(string? id, TrackChange change = TrackChange.Plays)
         {
             if (Find(id) is not { } track)
                 return false;
 
             var current = track;
-            if (change.HasFlag(TrackStatsChange.Finished))
+            if (change.HasFlag(TrackChange.PlayFinished))
                 current = BumpPlayCount(current);
-            if (change.HasFlag(TrackStatsChange.Started))
+            if (change.HasFlag(TrackChange.PlayStarted))
                 current = StampLastPlayed(current);
 
             Persist(() => _store!.UpdateStats(current));
 
-            TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(current, change));
+            RaiseTrackChanged([current], change & TrackChange.Plays, ChangeSource.Remote);
             return true;
         }
 
@@ -1013,7 +1042,8 @@ namespace Flower.Models
         //    it ride in the pulling direction: a resume position is not a
         //    counter, going backwards in a file is normal, and the device that
         //    played the track most recently is the one whose idea of where it
-        //    got to is worth having.
+        //    got to is worth having - including a later report from that same
+        //    sitting, which is how a pause reaches the server.
         //  - Starred is taken as stated. It is a toggle with no timestamp that
         //    survives being switched off (unstarring nulls StarredAt), so there
         //    is no ordering to compare and max is meaningless. What keeps this
@@ -1042,6 +1072,7 @@ namespace Flower.Models
                 return 0;
 
             var changed = new List<Track>();
+            var change = default(TrackChange);
             lock (_lock)
             {
                 foreach (var entry in reported)
@@ -1049,7 +1080,7 @@ namespace Flower.Models
                     if (Find(entry.TrackId) is not { } track)
                         continue;
 
-                    var moved = false;
+                    var moved = default(TrackChange);
 
                     // Max, not assignment - the same rule MergeRemotePlayCounts
                     // applies to a pulled catalog. A report that arrives out of
@@ -1058,14 +1089,17 @@ namespace Flower.Models
                         track.RemotePlayCounts.GetValueOrDefault(deviceFingerprint) < entry.Count)
                     {
                         track.RemotePlayCounts[deviceFingerprint] = entry.Count;
-                        moved = true;
+                        moved |= TrackChange.PlayFinished;
                     }
 
                     if (callerIsAdmin)
                         moved |= ApplyReportedOwnerState(track, entry);
 
-                    if (moved)
+                    if (moved != 0)
+                    {
                         changed.Add(track);
+                        change |= moved;
+                    }
                 }
 
                 if (changed.Count > 0)
@@ -1085,24 +1119,26 @@ namespace Flower.Models
             foreach (var track in changed)
                 Persist(() => _store!.Upsert(track));
 
-            foreach (var track in changed)
-                TrackStatsChanged?.Invoke(this, new TrackStatsChangedEventArgs(track, TrackStatsChange.Finished));
+            // One event for the whole report, and Remote: the device that sent
+            // it already knows, and forwarding it would send it straight back.
+            if (changed.Count > 0)
+                RaiseTrackChanged(changed, change, ChangeSource.Remote);
 
             return changed.Count;
         }
 
         // The admin half of the report above, split out so the rule for each
         // field sits next to the field rather than inside a loop that is
-        // already doing counts. Returns whether anything actually changed.
-        private static bool ApplyReportedOwnerState(Track track, TrackStateDto entry)
+        // already doing counts. Returns what actually changed, if anything.
+        private static TrackChange ApplyReportedOwnerState(Track track, TrackStateDto entry)
         {
-            var moved = false;
+            var moved = default(TrackChange);
 
             if (track.Starred != entry.Starred)
             {
                 track.Starred = entry.Starred;
                 track.StarredAt = entry.StarredAt;
-                moved = true;
+                moved |= TrackChange.Starred;
             }
 
             // The settings, before the listening half below returns early on
@@ -1116,23 +1152,38 @@ namespace Flower.Models
                 track.RememberPlaybackPosition = entry.RememberPlaybackPosition;
                 track.IgnoreWhenShuffling = entry.IgnoreWhenShuffling;
                 track.VolumeAdjustment = entry.VolumeAdjustment;
-                moved = true;
+                moved |= TrackChange.Options;
             }
 
             // Nothing to say about listening: a report from before this server's
             // own last-played, or from a device that has never played the track,
-            // leaves both the timestamp and the options that ride with it alone.
+            // leaves both the timestamp and the position that rides with it alone.
             if (entry.LastPlayedAt is not { } reportedAt)
                 return moved;
-            if (track.LastPlayedAt is { } knownAt && knownAt >= reportedAt)
+            if (track.LastPlayedAt is { } knownAt && knownAt > reportedAt)
                 return moved;
 
-            track.LastPlayedAt = reportedAt;
-            track.ResumePosition = entry.ResumePositionSeconds is { } seconds
+            var resume = entry.ResumePositionSeconds is { } seconds
                 ? TimeSpan.FromSeconds(seconds)
-                : null;
+                : (TimeSpan?)null;
 
-            return true;
+            // The same sitting, reported again: the listen is already known, but
+            // where it got to has moved - a pause, a track change, the app going
+            // away. Taken, because the device that started the sitting is the
+            // one still in it.
+            if (track.LastPlayedAt == reportedAt)
+            {
+                if (track.ResumePosition == resume)
+                    return moved;
+
+                track.ResumePosition = resume;
+                return moved | TrackChange.ResumePosition;
+            }
+
+            track.LastPlayedAt = reportedAt;
+            track.ResumePosition = resume;
+
+            return moved | TrackChange.PlayStarted;
         }
 
         // Stars or unstars every track behind one Subsonic id - a song, or every
@@ -1185,7 +1236,7 @@ namespace Flower.Models
             var stored = target == StarTarget.Song ? matches[0].Id.ToKey() : value;
             Persist(() => _store!.SetStarred(target, stored, starred, starredAt));
 
-            TrackStarsChanged?.Invoke(this, EventArgs.Empty);
+            RaiseTrackChanged(matches, TrackChange.Starred);
             return matches.Count;
         }
 
@@ -1219,45 +1270,57 @@ namespace Flower.Models
             }
         }
 
-        // Notifies listeners that a Track already in Tracks was mutated in place -
-        // e.g. a placeholder's Path being set after a successful download (see
-        // LibraryDownloadService) - without a list replacement, since the same
-        // Track reference is still current and nothing was added or removed.
-        // The in-place mutation this announces may well be a Path being set on
-        // a placeholder that just finished downloading, so the path index has
-        // to go with it. Taking _lock here only to null a field would be
-        // pointless (a concurrent reader either sees the stale index and is
-        // about to be told to re-read anyway, or rebuilds it fresh); what
-        // matters is that the next resolve rebuilds rather than trusting an
-        // index that predates the new Path.
         // The whole-library form, for a mutation applied across every track at
-        // once - the iTunes play-count/date-added sync. Rewrites the table,
-        // because that is genuinely what changed.
-        public void NotifyTrackChanged()
+        // once - the iTunes play-count/date-added import. Rewrites the table,
+        // because that is genuinely what changed, and raises LibraryChanged
+        // rather than a TrackChanged naming every track: a subscriber handed
+        // sixteen thousand tracks would only re-read everything anyway.
+        public void NotifyLibraryChanged()
         {
             InvalidateIndexes();
             Persist(() => _store!.ReplaceAll(Tracks));
-            TracksUpdated?.Invoke(this, EventArgs.Empty);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        // The same signal for a known, bounded set of changed tracks - a
-        // placeholder's Path after a download, a tag edit - which is one
-        // upsert each rather than a rewrite of the whole table. Every one of
-        // these call sites used to persist by saving the entire library: four
-        // separate 16k-row writes to push one changed row.
-        public void NotifyTracksChanged(IReadOnlyList<Track> changed)
+        // Announces an in-place change to tracks already in Tracks, and
+        // persists them - one upsert each, where every one of these call sites
+        // used to rewrite the whole table to push a handful of rows. For
+        // whoever mutated the tracks itself: Track Info's tags, artwork and
+        // options, a download setting a placeholder's Path. The changes this
+        // class makes itself (plays, stars, reports) raise the same event from
+        // their own methods.
+        //
+        // The indexes are only thrown away for a change that can move what
+        // they key on - a Path, an album or an artist. Anything else keeps them
+        // and only moves the change token, since all of it rides in the
+        // manifest. Neither takes _lock: nulling a field under it would buy
+        // nothing, since a concurrent reader either sees the stale index and is
+        // about to be told to re-read anyway, or rebuilds it fresh. What
+        // matters is that the next resolve rebuilds rather than trusting an
+        // index that predates a new Path.
+        public void NotifyTracksChanged(IReadOnlyList<Track> changed, TrackChange change)
         {
-            InvalidateIndexes();
+            if (changed.Count == 0)
+                return;
+
+            if ((change & TrackChange.Reshaping) != 0)
+                InvalidateIndexes();
+            else
+                BumpChangeToken();
+
             Persist(() =>
             {
                 foreach (var track in changed)
                     _store!.Upsert(track);
             });
 
-            TracksUpdated?.Invoke(this, EventArgs.Empty);
+            RaiseTrackChanged(changed, change);
         }
 
-        public void NotifyTrackChanged(Track changed) => NotifyTracksChanged([changed]);
+        public void NotifyTrackChanged(Track changed, TrackChange change) => NotifyTracksChanged([changed], change);
+
+        private void RaiseTrackChanged(IReadOnlyList<Track> tracks, TrackChange change, ChangeSource source = ChangeSource.Local) =>
+            TrackChanged?.Invoke(this, new TrackChangedEventArgs(tracks, change, source));
 
         public void AddPlaylist(Playlist playlist)
         {

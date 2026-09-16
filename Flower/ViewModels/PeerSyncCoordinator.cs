@@ -136,13 +136,24 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _logPushTimer = new DispatcherTimer { Interval = ContentSyncCooldown };
         _logPushTimer.Tick += (_, _) => LogPushTick();
         _logPushTimer.Start();
+
+        // What the tick's track-state push has to look at, kept up to date as
+        // it happens rather than worked out by walking the library every tick -
+        // see LibrarySyncService.MarkTrackStateChanged.
+        if (library != null && librarySyncService != null)
+        {
+            _subscriptions.Add<EventHandler<TrackChangedEventArgs>>((_, e) => OnTrackChanged(e),
+                h => library.TrackChanged += h, h => library.TrackChanged -= h);
+            _subscriptions.Add<EventHandler>((_, _) => librarySyncService.MarkAllTrackStateChanged(),
+                h => library.LibraryChanged += h, h => library.LibraryChanged -= h);
+        }
     }
 
     // ── Sync tracking ─────────────────────────────────────────────────────
 
     // Non-zero while at least one PlaylistSyncService/LibrarySyncService call
     // is in flight (see RunTrackedSync) - both services' merges fire
-    // Library.TracksUpdated/PlaylistsUpdated unconditionally, even when
+    // Library.LibraryChanged/PlaylistsUpdated unconditionally, even when
     // nothing actually changed (e.g. every song a peer reports already exists
     // locally). Without this guard, the debounced resync below
     // (ScheduleContentSync) would treat a sync's own merge as "a local change
@@ -152,7 +163,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     private int _activeSyncCount;
 
     // Whether one of our own syncs is currently merging - MainViewModel's
-    // Library.TracksUpdated/PlaylistsUpdated handlers consult this to tell a
+    // Library.LibraryChanged/PlaylistsUpdated handlers consult this to tell a
     // sync's own merge apart from a genuine local change.
     public bool IsMergingOwnSync => _activeSyncCount > 0;
 
@@ -240,9 +251,9 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     public void ForgetSyncedDevice(string fingerprint) => _syncedDeviceFingerprints.TryRemove(fingerprint, out _);
 
     // Called whenever a genuine local change happens to this device's library
-    // or playlists: a rescan or download completing (Library.TracksUpdated),
+    // or playlists: a rescan or download completing (Library.LibraryChanged, TrackChanged),
     // or a playlist being created/renamed/deleted/reordered/added-to (called
-    // directly at each of those call sites - unlike TracksUpdated,
+    // directly at each of those call sites - unlike LibraryChanged,
     // Library.PlaylistsUpdated only fires for a *sync's own* ReplacePlaylists
     // call, never for these ordinary local actions, per its own doc comment,
     // so there is no single event to hook for playlists the way there is for
@@ -353,12 +364,13 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             foreach (var device in devices)
             {
                 // On this tick rather than only on a catalog sync, because a
-                // play does not move the catalog: TrackStatsChanged
+                // play does not move the catalog: its TrackChanged
                 // deliberately does not schedule one (see Library's own
                 // comment), so counts pushed only from SyncWithAsync would sit
                 // here until something else happened to change the library.
-                // Costs nothing when nothing changed - the push sends no
-                // request at all when it has nothing new to state, and the
+                // Costs nothing when nothing changed - the push looks only at
+                // tracks marked since the last one, sends no request when none
+                // of them is news, and the
                 // owner-state half stays silent entirely until a catalog pull
                 // has told it what the server already holds.
                 allSucceeded &= await _librarySyncService!.PushTrackStateAsync(device);
@@ -383,6 +395,44 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
                 _logger.LogTrace("Log push did not fully succeed; the next tick will retry the same lines");
             _logPushInFlight = false;
         }
+    }
+
+    // A play, a star, an option or a resume position this device made is marked
+    // for the next push. A resume position also pushes straight away: it is
+    // recorded as playback stops - a pause, a track change, the app going to
+    // the background - which is exactly when a listener is likely to pick the
+    // track up on another device, and a phone locked a second later may not
+    // run the next tick. Raised on whatever thread recorded it; the push starts
+    // on the UI thread, where the peer list lives.
+    private void OnTrackChanged(TrackChangedEventArgs e)
+    {
+        if (e.Source != ChangeSource.Local || (e.Change & TrackChange.TrackState) == 0)
+            return;
+
+        _librarySyncService!.MarkTrackStateChanged(e.Tracks);
+        if (e.Change.HasFlag(TrackChange.ResumePosition))
+            Dispatcher.UIThread.Post(() => _ = PushTrackStateNowAsync());
+    }
+
+    // Pushes whatever track state is pending to the paired server now rather
+    // than on the next tick. The work goes to the thread pool, so a caller that
+    // has to block on it - the desktop window closing, see App.axaml.cs - is
+    // not waiting on continuations queued behind itself. Call on the UI thread,
+    // which PendingSyncDevices reads from.
+    public Task PushTrackStateNowAsync()
+    {
+        if (_librarySyncService is not { } sync)
+            return Task.CompletedTask;
+
+        var devices = PendingSyncDevices();
+        if (devices.Count == 0)
+            return Task.CompletedTask;
+
+        return Task.Run(async () =>
+        {
+            foreach (var device in devices)
+                await sync.PushTrackStateAsync(device);
+        });
     }
 
     // ── Pairing and trust ─────────────────────────────────────────────────

@@ -57,7 +57,7 @@ public class AlbumTileMergeTests : IDisposable
     }
 
     // The reported bug: clicking an album's download button starts a batch, the
-    // first track to land fires TracksUpdated, and the rebuild that follows used
+    // first track to land fires TrackChanged, and the rebuild that follows used
     // to swap in a fresh tile with IsDownloading false - the spinner reverting to
     // the download icon while the download was still running.
     [Fact]

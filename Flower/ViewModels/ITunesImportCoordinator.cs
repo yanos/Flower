@@ -73,17 +73,14 @@ public sealed class ITunesImportCoordinator
     {
         using var _ = _busy.BeginScope(busyMessage);
         await Task.Run(() => apply(_library.Tracks));
-        // Same list, same Track instances mutated in place - just need
-        // TracksUpdated to fire so the Plays column reflects the new
-        // ImportedPlayCount values immediately. NotifyTrackChanged (not
-        // UpdateTracks(Library.Tracks)) specifically - see its own doc
-        // comment: passing Tracks back into UpdateTracks as if it were a
-        // fresh scan result double-counts every placeholder (Path == null)
-        // track, since UpdateTracks' own carry-forward step re-adds them a
-        // second time on top of their copy already sitting in the argument.
-        // The no-argument form: this mutated every track in place, so the
-        // whole-table rewrite it issues is what actually changed. Persisting
-        // is NotifyTrackChanged's own now - see Library's ITrackStore.
-        _library.NotifyTrackChanged();
+        // Same list, same Track instances mutated in place, all of them - so the
+        // library-wide announcement rather than a TrackChanged naming every
+        // track. NotifyLibraryChanged, not UpdateTracks(Library.Tracks):
+        // passing Tracks back into UpdateTracks as if it were a fresh scan
+        // result double-counts every placeholder (Path == null) track, since
+        // UpdateTracks' own carry-forward step re-adds them a second time on
+        // top of their copy already sitting in the argument. It also issues
+        // the whole-table rewrite this needs - see Library's ITrackStore.
+        _library.NotifyLibraryChanged();
     }
 }

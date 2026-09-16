@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Flower.Models;
+using Flower.Services;
 
 namespace Flower.Tests;
 
@@ -28,11 +29,11 @@ public class LibraryTests
     }
 
     [Fact]
-    public void UpdateTracks_raises_TracksUpdated_exactly_once()
+    public void UpdateTracks_raises_LibraryChanged_exactly_once()
     {
         var library = new Library(new List<Track>());
         int raised = 0;
-        library.TracksUpdated += (_, _) => raised++;
+        library.LibraryChanged += (_, _) => raised++;
 
         library.UpdateTracks(new List<Track> { new Track { Title = "A" } });
 
@@ -786,14 +787,14 @@ public class LibraryTests
     }
 
     [Fact]
-    public void RemoveTracksFromOrigin_raises_TracksUpdated()
+    public void RemoveTracksFromOrigin_raises_LibraryChanged()
     {
         var library = new Library(new List<Track>
         {
             new Track { Title = "From The Server", Path = null, OriginDeviceFingerprint = "server-1" },
         });
         var raised = 0;
-        library.TracksUpdated += (_, _) => raised++;
+        library.LibraryChanged += (_, _) => raised++;
 
         library.RemoveTracksFromOrigin("server-1");
 
@@ -1421,26 +1422,28 @@ public class LibraryTests
     // ── Tier 1.1 / 1.5: stats changes are not list changes ───────────────────
 
     [Fact]
-    public void IncrementPlayCount_raises_TrackStatsChanged_not_TracksUpdated()
+    public void IncrementPlayCount_raises_TrackChanged_not_LibraryChanged()
     {
         var track   = new Track { Title = "A", Path = "/music/a.mp3" };
         var library = new Library(new List<Track> { track });
 
-        var tracksUpdated = 0;
-        Track? statsChanged = null;
-        library.TracksUpdated    += (_, _) => tracksUpdated++;
-        library.TrackStatsChanged += (_, e) => statsChanged = e.Track;
+        var libraryChanged = 0;
+        TrackChangedEventArgs? changed = null;
+        library.LibraryChanged += (_, _) => libraryChanged++;
+        library.TrackChanged   += (_, e) => changed = e;
 
         library.IncrementPlayCount(track);
 
-        // A play count bump used to arrive as TracksUpdated, which means a full
-        // UI rebuild and a peer library sync - twice per song change.
-        Assert.Equal(0, tracksUpdated);
-        Assert.Same(track, statsChanged);
+        // A play count bump used to arrive the way a library change does, which
+        // means a full UI rebuild and a peer library sync - twice per song change.
+        Assert.Equal(0, libraryChanged);
+        Assert.Same(track, Assert.Single(changed!.Tracks));
+        Assert.Equal(TrackChange.PlayFinished, changed.Change);
+        Assert.Equal(ChangeSource.Local, changed.Source);
     }
 
     [Fact]
-    public void RecordPlayed_raises_TrackStatsChanged_with_the_resolved_track()
+    public void RecordPlayed_raises_TrackChanged_with_the_resolved_track()
     {
         var oldTrack = new Track { Title = "A", Path = "/music/a.mp3" };
         var library  = new Library(new List<Track> { oldTrack });
@@ -1450,13 +1453,114 @@ public class LibraryTests
         var rescanned = new Track { Title = "A", Path = "/music/a.mp3" };
         library.UpdateTracks(new List<Track> { rescanned });
 
-        Track? statsChanged = null;
-        library.TrackStatsChanged += (_, e) => statsChanged = e.Track;
+        TrackChangedEventArgs? changed = null;
+        library.TrackChanged += (_, e) => changed = e;
 
         library.RecordPlayed(oldTrack);
 
-        Assert.Same(rescanned, statsChanged);
+        Assert.Same(rescanned, Assert.Single(changed!.Tracks));
+        Assert.Equal(TrackChange.PlayStarted, changed.Change);
         Assert.NotNull(rescanned.LastPlayedAt);
+    }
+
+    // Stars used to have an event of their own that no track list listened to.
+    [Fact]
+    public void Starring_a_track_raises_TrackChanged_saying_so()
+    {
+        var track   = new Track { Title = "A", Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { track });
+        var events  = new List<TrackChangedEventArgs>();
+        library.TrackChanged += (_, e) => events.Add(e);
+
+        library.SetStarred(StarTarget.Song, track.Id.ToString(), starred: true);
+
+        var changed = Assert.Single(events);
+        Assert.Same(track, Assert.Single(changed.Tracks));
+        Assert.Equal(TrackChange.Starred, changed.Change);
+    }
+
+    // One action, one event, however many tracks it touched.
+    [Fact]
+    public void Tracks_edited_together_are_announced_once_and_not_as_a_library_change()
+    {
+        var a = new Track { Title = "A", Path = "/music/a.mp3" };
+        var b = new Track { Title = "B", Path = "/music/b.mp3" };
+        var library = new Library(new List<Track> { a, b });
+        var events = new List<TrackChangedEventArgs>();
+        var libraryChanged = 0;
+        library.TrackChanged   += (_, e) => events.Add(e);
+        library.LibraryChanged += (_, _) => libraryChanged++;
+
+        library.NotifyTracksChanged([a, b], TrackChange.Tags);
+
+        var changed = Assert.Single(events);
+        Assert.Equal(new[] { a, b }, changed.Tracks);
+        Assert.True(changed.Reshapes);
+        Assert.Equal(0, libraryChanged);
+    }
+
+    // Remote is what keeps a play a paired device reported from being
+    // forwarded straight back to where it came from.
+    [Fact]
+    public void A_report_from_another_device_is_one_remote_TrackChanged_saying_what_moved()
+    {
+        var a = new Track { Title = "A", Path = "/music/a.mp3" };
+        var b = new Track { Title = "B", Path = "/music/b.mp3" };
+        var library = new Library(new List<Track> { a, b });
+        var events = new List<TrackChangedEventArgs>();
+        library.TrackChanged += (_, e) => events.Add(e);
+
+        library.MergeReportedTrackState(
+            "phone",
+            [new TrackStateDto(a.Id.ToKey(), 3), new TrackStateDto(b.Id.ToKey(), 1, Starred: true)],
+            callerIsAdmin: true);
+
+        var changed = Assert.Single(events);
+        Assert.Equal(ChangeSource.Remote, changed.Source);
+        Assert.Equal(new[] { a, b }, changed.Tracks);
+        Assert.Equal(TrackChange.PlayFinished | TrackChange.Starred, changed.Change);
+    }
+
+    [Fact]
+    public void Recording_a_resume_position_announces_it_and_recording_the_same_one_does_not()
+    {
+        var track = new Track { Title = "Episode", Path = "/music/e.mp3", RememberPlaybackPosition = true };
+        var library = new Library(new List<Track> { track });
+        var events = new List<TrackChangedEventArgs>();
+        library.TrackChanged += (_, e) => events.Add(e);
+        var token = library.ChangeToken;
+
+        library.RecordResumePosition(track, TimeSpan.FromMinutes(12));
+        library.RecordResumePosition(track, TimeSpan.FromMinutes(12));
+
+        Assert.Equal(TrackChange.ResumePosition, Assert.Single(events).Change);
+        Assert.NotEqual(token, library.ChangeToken);
+    }
+
+    // A later report from the sitting the server already has moves the
+    // position on without moving the listen - how a pause on a phone gets here.
+    [Fact]
+    public void A_report_from_the_same_listen_moves_the_resume_position_on()
+    {
+        var listenedAt = DateTimeOffset.UtcNow;
+        var track = new Track
+        {
+            Title = "Episode", Path = "/music/e.mp3",
+            LastPlayedAt = listenedAt, ResumePosition = TimeSpan.FromSeconds(120),
+        };
+        var library = new Library(new List<Track> { track });
+        var events = new List<TrackChangedEventArgs>();
+        library.TrackChanged += (_, e) => events.Add(e);
+
+        var applied = library.MergeReportedTrackState(
+            "phone",
+            [new TrackStateDto(track.Id.ToKey(), 0, LastPlayedAt: listenedAt, ResumePositionSeconds: 754)],
+            callerIsAdmin: true);
+
+        Assert.Equal(1, applied);
+        Assert.Equal(TimeSpan.FromSeconds(754), track.ResumePosition);
+        Assert.Equal(listenedAt, track.LastPlayedAt);
+        Assert.Equal(TrackChange.ResumePosition, Assert.Single(events).Change);
     }
 
     [Fact]
@@ -1471,7 +1575,7 @@ public class LibraryTests
         // ...then let a download set one in place, as LibraryDownloadService
         // does, and announce it the way that service does.
         placeholder.Path = "/music/a.mp3";
-        library.NotifyTrackChanged();
+        library.NotifyTrackChanged(placeholder, TrackChange.File);
 
         var incremented = library.IncrementPlayCount(new Track { Title = "A", Path = "/music/a.mp3" });
 
@@ -1550,8 +1654,18 @@ public class LibraryTests
         // A placeholder gaining a Path after a download is an in-place
         // mutation with no list replacement - the one case a naive
         // "did the list change" check would miss.
-        library.NotifyTrackChanged();
-        Assert.True(seen.Add(library.ChangeToken), "NotifyTrackChanged must move the token");
+        library.NotifyTrackChanged(track, TrackChange.File);
+        Assert.True(seen.Add(library.ChangeToken), "A download landing must move the token");
+
+        library.SetStarred(StarTarget.Song, track.Id.ToString(), starred: true);
+        Assert.True(seen.Add(library.ChangeToken), "A star rides along in the manifest");
+
+        track.VolumeAdjustment = 5;
+        library.NotifyTrackChanged(track, TrackChange.Options);
+        Assert.True(seen.Add(library.ChangeToken), "Playback options ride along in the manifest");
+
+        library.NotifyLibraryChanged();
+        Assert.True(seen.Add(library.ChangeToken), "NotifyLibraryChanged must move the token");
     }
 
     [Fact]

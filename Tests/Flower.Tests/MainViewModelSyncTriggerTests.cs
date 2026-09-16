@@ -667,4 +667,79 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
 
         Assert.Equal(2, parts.StubLibrarySync.PushedLogsTo.Count);
     }
+
+    // ── Track-state push ──────────────────────────────────────────────────────
+
+    private static void DrainTrackState(LibrarySyncService sync)
+    {
+        while (sync.TakeTrackStateCandidates() != null)
+        {
+        }
+    }
+
+    // Recorded as playback stops, which is when a listener picks the track up
+    // somewhere else - so it does not wait for the tick.
+    [AvaloniaFact]
+    public void Recording_a_resume_position_pushes_track_state_straight_away()
+    {
+        var parts = StubbedPairedClient(out var server);
+        var track = new Track { Title = "Episode", Path = "/music/episode.mp3", RememberPlaybackPosition = true };
+
+        parts.Library.RecordResumePosition(track, TimeSpan.FromMinutes(12));
+        PumpUntil(() => parts.StubLibrarySync!.PushedTrackStateTo.Count > 0);
+
+        Assert.Equal(server.Fingerprint, parts.StubLibrarySync!.PushedTrackStateTo[0].Fingerprint);
+    }
+
+    // A star waits for the tick but is marked for it; a tag edit is nothing a
+    // server is told this way; and with nothing marked there is nothing to look at.
+    [AvaloniaFact]
+    public void Only_track_state_changes_are_marked_for_the_next_push()
+    {
+        var parts = StubbedPairedClient(out _);
+        var sync = parts.StubLibrarySync!;
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        parts.Library.UpdateTracks([track]);
+        DrainTrackState(sync);
+
+        parts.Library.NotifyTrackChanged(track, TrackChange.Tags);
+        Assert.Null(sync.TakeTrackStateCandidates());
+
+        parts.Library.SetStarred(StarTarget.Song, track.Id.ToString(), starred: true);
+
+        var candidates = sync.TakeTrackStateCandidates();
+        Assert.NotNull(candidates);
+        Assert.False(candidates.Everything);
+        Assert.Same(track, Assert.Single(candidates.Tracks));
+        Assert.Null(sync.TakeTrackStateCandidates());
+        Assert.Empty(sync.PushedTrackStateTo);
+    }
+
+    // A rescan replaces every Track, so whatever was marked no longer names
+    // what is in the library - the next push looks at all of it.
+    [AvaloniaFact]
+    public void A_library_change_marks_every_track()
+    {
+        var parts = StubbedPairedClient(out _);
+        var sync = parts.StubLibrarySync!;
+        DrainTrackState(sync);
+
+        parts.Library.UpdateTracks([new Track { Title = "A", Path = "/music/a.mp3" }]);
+
+        Assert.True(sync.TakeTrackStateCandidates()!.Everything);
+    }
+
+    [AvaloniaFact]
+    public void A_push_that_failed_hands_its_tracks_back()
+    {
+        var parts = StubbedPairedClient(out _);
+        var sync = parts.StubLibrarySync!;
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        DrainTrackState(sync);
+        sync.MarkTrackStateChanged([track]);
+
+        sync.ReturnTrackStateCandidates(sync.TakeTrackStateCandidates()!);
+
+        Assert.Same(track, Assert.Single(sync.TakeTrackStateCandidates()!.Tracks));
+    }
 }

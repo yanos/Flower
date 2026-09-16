@@ -169,21 +169,24 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     // of blanks.
     public string StarredDisplay => Track.Starred ? "\u2605" : "";
 
-    // Track is not INotifyPropertyChanged and these two read straight off it,
-    // so a play-count/LastPlayedAt bump has to be pushed in from outside. Rows
-    // used to be rebuilt wholesale on every play, which is what made that
-    // unnecessary - and is exactly the cost Tier 1.1 removed. Called from
-    // MainViewModel's Library.TrackStatsChanged handler, on the UI thread.
-    public void NotifyStatsChanged()
+    // Track is not INotifyPropertyChanged and these read straight off it, so a
+    // play, a star, or anything else Library.TrackChanged announces without
+    // reshaping the list has to be pushed in from outside. Rows used to be
+    // rebuilt wholesale on every play, which is what made that unnecessary -
+    // and is exactly the cost Tier 1.1 removed. Called from MainViewModel's
+    // Library.TrackChanged handler, on the UI thread.
+    public void NotifyTrackChanged()
     {
         OnPropertyChanged(nameof(PlayCountDisplay));
         OnPropertyChanged(nameof(LastPlayedDisplay));
+        OnPropertyChanged(nameof(StarredDisplay));
+        OnPropertyChanged(nameof(ResumePositionDisplay));
     }
 
     // Not yet downloaded (see LibrarySyncService/LibraryDownloadService,
     // SYNC-PLAN.md Phase 3) - mobile-only for v1, see MobileMainView's row
     // template. Track itself isn't INotifyPropertyChanged, but that's fine here:
-    // a successful download fires Library.TracksUpdated, which rebuilds Rows
+    // a successful download fires Library.TrackChanged, which rebuilds Rows
     // entirely (see MainViewModel.PopulateTracks), so the placeholder row this
     // property was read from is simply replaced by a fresh non-placeholder one -
     // this value never needs to change out from under a still-alive instance.

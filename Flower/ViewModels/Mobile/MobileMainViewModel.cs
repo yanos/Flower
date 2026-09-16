@@ -1030,6 +1030,25 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // LibraryBrowserViewModel.IsRowsRebuildPending.
         (IsShowingTrackList && Main.Rows.Count == 0 && !Main.Browser.IsRowsRebuildPending);
 
+    // What mobile derives from the library as a whole rather than from the rows
+    // Main keeps: the album grids, search results, the album header and the
+    // Download All indicator.
+    private void RebuildLibraryDerivedState()
+    {
+        RebuildRecentlyAddedAlbums();
+        RebuildAlbumGrid();
+        RebuildArtistAlbumGrid();
+        if (SelectedTab == MobileTab.Search)
+            RefreshSearchResultsNow();
+        // Forces CurrentAlbumHeader to rebuild even though the album name
+        // itself hasn't changed - a download/rescan can still change which
+        // track is "most recently added" (representative art) or the
+        // computed artist/year underneath it.
+        _currentAlbumHeaderName = null;
+        OnPropertyChanged(nameof(CurrentAlbumHeader));
+        RefreshDownloadAllIndicator();
+    }
+
     public MaterialIconKind EmptyStateIcon => IsShowingSearchPrompt ? MaterialIconKind.Magnify : MaterialIconKind.MusicNoteOff;
 
     public string EmptyStateTitle
@@ -1118,22 +1137,17 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
         _subscriptions.Add<NotifyCollectionChangedEventHandler>((_, _) => RebuildPlaylistPicker(),
             h => Main.SidebarItems.CollectionChanged += h, h => Main.SidebarItems.CollectionChanged -= h);
-        _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
+        _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(RebuildLibraryDerivedState),
+            h => Main.Library.LibraryChanged += h, h => Main.Library.LibraryChanged -= h);
+        // Only a change that can move a track between albums, or change its
+        // art or whether it is on the device - a play or a star changes none
+        // of what this rebuilds.
+        _subscriptions.Add<EventHandler<TrackChangedEventArgs>>((_, e) =>
         {
-            RebuildRecentlyAddedAlbums();
-            RebuildAlbumGrid();
-            RebuildArtistAlbumGrid();
-            if (SelectedTab == MobileTab.Search)
-                RefreshSearchResultsNow();
-            // Forces CurrentAlbumHeader to rebuild even though the album name
-            // itself hasn't changed - a download/rescan can still change which
-            // track is "most recently added" (representative art) or the
-            // computed artist/year underneath it.
-            _currentAlbumHeaderName = null;
-            OnPropertyChanged(nameof(CurrentAlbumHeader));
-            RefreshDownloadAllIndicator();
-        }),
-            h => Main.Library.TracksUpdated += h, h => Main.Library.TracksUpdated -= h);
+            if (e.Reshapes)
+                Dispatcher.UIThread.Post(RebuildLibraryDerivedState);
+        },
+            h => Main.Library.TrackChanged += h, h => Main.Library.TrackChanged -= h);
         _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
             // Songs/Albums/Artists picker empty-states only - Search has its

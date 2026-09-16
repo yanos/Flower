@@ -24,13 +24,14 @@ namespace Flower.Importer;
 // its own, so its counts are already home.
 public interface IPlayReporter
 {
-    // A play, or a half of one, that just happened locally. Called from
-    // Library.TrackStatsChanged, which is the one signal raised by both
-    // moments Flower distinguishes - see Library.TrackStatsChange.
+    // Handed every Library.TrackChanged, and reports the plays in it - either
+    // half, see TrackChange - that this head made itself. Everything else the
+    // event carries is ignored: a star or an option is not a listen, and a
+    // Remote change is one this head was told about in the first place.
     //
     // Never blocks the caller: this runs off a playback callback, and the
     // report is a network round trip.
-    void Report(Track track, TrackStatsChange change);
+    void Report(TrackChangedEventArgs change);
 
     // Completes when nothing scheduled is still in flight.
     Task InFlight { get; }

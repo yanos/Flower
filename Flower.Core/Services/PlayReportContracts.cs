@@ -21,7 +21,7 @@ namespace Flower.Services;
 // happened to reach", silently discarding everything after it.
 
 // One play, at one moment. Started and Completed are the two halves Flower
-// keeps deliberately separate (see Library.TrackStatsChange): a skipped track
+// keeps deliberately separate (see Library.TrackChange): a skipped track
 // reports a start and never a completion, so the far side's History matches
 // what the user actually put on without its play count claiming they listened.
 //

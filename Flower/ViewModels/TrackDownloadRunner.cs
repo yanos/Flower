@@ -116,7 +116,7 @@ public sealed class TrackDownloadRunner : ViewModelBase
     // album.
     //
     // Captures SyncKeys, not TrackRowViewModel instances - a download
-    // completing mid-batch fires Library.TracksUpdated, which (via
+    // completing mid-batch fires Library.TrackChanged, which (via
     // MainViewModel's own debounced ScheduleFilter) eventually replaces the
     // row list wholesale with a fresh set of TrackRowViewModel objects.
     // Holding onto row objects from a snapshot taken before that swap meant

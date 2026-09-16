@@ -11,7 +11,7 @@ namespace Flower.Services;
 // The track list got this treatment (see TrackRowMerge) and the tile grids did
 // not, which left the album tile's own download button unable to finish an
 // animation: clicking it starts a batch, the first track to arrive fires
-// Library.TracksUpdated, and the rebuild that follows swapped in a brand-new
+// Library.TrackChanged, and the rebuild that follows swapped in a brand-new
 // tile with IsDownloading false while the download carried on against the
 // discarded one. On screen that read as the spinner appearing for a moment,
 // reverting to the download icon, and then vanishing when the batch finished

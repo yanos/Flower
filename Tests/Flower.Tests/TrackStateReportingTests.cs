@@ -239,7 +239,7 @@ public class TrackStateReportingTests
 
     // The steady state, and the whole point of keeping a baseline: an admin
     // client that agrees with its server about a track says nothing about it,
-    // on every one of the twelve ticks a minute this runs on.
+    // every time a push looks at it.
     [Fact]
     public void An_admin_device_says_nothing_about_a_track_it_agrees_with_the_server_on()
     {
@@ -335,9 +335,29 @@ public class TrackStateReportingTests
         Assert.Null(reported.LastPlayedAt);
     }
 
-    // ResumePosition is the one that does not travel on its own: where a
-    // sitting got to is only meaningful attached to the sitting, so a
-    // difference in it alone is something the server would refuse.
+    // Where a sitting the server already knows about has got to - a pause, a
+    // track change, quitting. The listen is the same one, so only the position
+    // is news.
+    [Fact]
+    public void An_admin_device_reports_where_the_same_listen_has_got_to()
+    {
+        var served = Played("Second Song", "server-track-7", 0);
+        served.LastPlayedAt = DateTimeOffset.UtcNow;
+        served.ResumePosition = TimeSpan.FromSeconds(120);
+
+        var track = Played("Second Song", "server-track-7", 0);
+        track.LastPlayedAt = served.LastPlayedAt;
+        track.ResumePosition = TimeSpan.FromSeconds(754);
+
+        var report = LibrarySyncService.UnreportedTrackState(
+            [track], new Dictionary<string, int>(),
+            ServerSaid("server-track-7", served), includeOwnerState: true);
+
+        Assert.Equal(754, Assert.Single(report).ResumePositionSeconds);
+    }
+
+    // Where an older sitting got to only means something attached to that
+    // sitting, and the server would refuse it.
     [Fact]
     public void An_admin_device_says_nothing_about_a_resume_position_from_an_older_listen()
     {
@@ -346,8 +366,28 @@ public class TrackStateReportingTests
         served.ResumePosition = TimeSpan.FromSeconds(120);
 
         var track = Played("Second Song", "server-track-7", 0);
-        track.LastPlayedAt = served.LastPlayedAt;
+        track.LastPlayedAt = served.LastPlayedAt.Value.AddHours(-1);
         track.ResumePosition = TimeSpan.FromSeconds(4);
+
+        var report = LibrarySyncService.UnreportedTrackState(
+            [track], new Dictionary<string, int>(),
+            ServerSaid("server-track-7", served), includeOwnerState: true);
+
+        Assert.Empty(report);
+    }
+
+    // A catalog serves a position in whole seconds, so a difference below one
+    // is the same position - not a change to send again after every pull.
+    [Fact]
+    public void A_resume_position_differing_by_less_than_a_second_is_not_reported()
+    {
+        var served = Played("Second Song", "server-track-7", 0);
+        served.LastPlayedAt = DateTimeOffset.UtcNow;
+        served.ResumePosition = TimeSpan.FromSeconds(91);
+
+        var track = Played("Second Song", "server-track-7", 0);
+        track.LastPlayedAt = served.LastPlayedAt;
+        track.ResumePosition = TimeSpan.FromSeconds(91.5);
 
         var report = LibrarySyncService.UnreportedTrackState(
             [track], new Dictionary<string, int>(),

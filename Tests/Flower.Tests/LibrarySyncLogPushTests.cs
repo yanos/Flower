@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Importer;
@@ -59,13 +60,29 @@ public class LibrarySyncLogPushTests : IDisposable
     // One archive per service, over this test's own temp home, so a case can
     // restart "the client" against the same on-disk week.
     private LibrarySyncService MakeService(DeviceSigningKey key) =>
+        MakeService(key, NullLogger<LibrarySyncService>.Instance);
+
+    private LibrarySyncService MakeService(DeviceSigningKey key, ILogger<LibrarySyncService> logger) =>
         new(new Library([]),
             new DeviceIdentity { Fingerprint = key.Fingerprint, Alias = "Client" },
             key,
             new AppSettings { ShareLogsWithPairedServer = true },
             new DeviceLogArchive(new ClientLogStore(Path.Combine(_tempHome, "logs", "devices")), InMemoryLogStore.Instance),
-            NullLogger<LibrarySyncService>.Instance,
+            logger,
             NullLogger<RemoteLibraryImporter>.Instance);
+
+    // Writes into the live ring the way the app's Serilog sink does, so the
+    // service's own failure lines are there to be mistaken for news.
+    private sealed class RingLogger : ILogger<LibrarySyncService>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            InMemoryLogStore.Instance.Add(new InMemoryLogEntry(
+                DateTimeOffset.Now, logLevel.ToString(), nameof(LibrarySyncService), formatter(state, exception), null));
+    }
 
     // InMemoryLogStore.Instance is a process-wide singleton shared with every
     // other test in the run, so a report's entry list contains far more than
@@ -256,8 +273,40 @@ public class LibrarySyncLogPushTests : IDisposable
         Assert.False(await PushAsync(service, device));
         Assert.Empty(peer.Reports);
 
+        LogMarker();
         Assert.True(await PushAsync(service, device));
         Assert.Equal(1, CountMarker(peer.Reports, marker));
+    }
+
+    // A server that is down used to be retried every tick, and every retry
+    // logged that it had failed - which was itself the something-new the next
+    // tick went out for. Nothing is sent until something else has been logged.
+    [Fact]
+    public async Task A_failed_push_waits_for_something_new_before_trying_again()
+    {
+        var posts = 0;
+        using var peer = StartPeer(request =>
+        {
+            posts = request + 1;
+            return request == 0 ? HttpStatusCode.InternalServerError : HttpStatusCode.OK;
+        });
+        using var key = TestSigningKey.Create();
+        var service = MakeService(key, new RingLogger());
+        var device = DeviceFor(peer.Server);
+
+        var pending = LogMarker();
+        Assert.False(await PushAsync(service, device));
+
+        // Only the failure's own line has been logged since.
+        Assert.False(await PushAsync(service, device));
+        Assert.False(await PushAsync(service, device));
+        Assert.Equal(1, posts);
+
+        var fresh = LogMarker();
+        Assert.True(await PushAsync(service, device));
+        Assert.Equal(2, posts);
+        Assert.Equal(1, CountMarker(peer.Reports, pending));
+        Assert.Equal(1, CountMarker(peer.Reports, fresh));
     }
 
     // The point of asking rather than remembering: a restarted client knows

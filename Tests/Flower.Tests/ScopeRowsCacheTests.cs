@@ -72,8 +72,8 @@ public class ScopeRowsCacheTests : PinnedDataDirectory
         Assert.DoesNotContain(vm.Rows, row => songsRows.Any(songsRow => ReferenceEquals(songsRow, row)));
     }
 
-    // A play changes a track in place and raises TrackStatsChanged, not
-    // TracksUpdated, so the track list the cache compares by reference never
+    // A play changes a track in place and raises TrackChanged, not
+    // LibraryChanged, so the track list the cache compares by reference never
     // moves. Library.ChangeToken does.
     [AvaloniaFact]
     public async Task A_play_while_away_reorders_a_scope_sorted_by_play_count()

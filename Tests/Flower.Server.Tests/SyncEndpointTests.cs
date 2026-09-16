@@ -800,6 +800,42 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
+    // The same session reported again - a pause, the app going away - moves
+    // the position on without moving the listen.
+    [Fact]
+    public async Task A_later_report_from_the_same_session_moves_the_resume_position_on()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await AdminDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        var listenedAt = DateTimeOffset.UtcNow;
+        track.LastPlayedAt = listenedAt;
+        track.ResumePosition = TimeSpan.FromSeconds(120);
+
+        try
+        {
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/track-state", "10.0.4.3",
+                body: JsonSerializer.Serialize(new TrackStateReportDto(
+                [
+                    new TrackStateDto(
+                        track.Id.ToKey(), Count: 0,
+                        LastPlayedAt: listenedAt, ResumePositionSeconds: 754),
+                ])));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(listenedAt, track.LastPlayedAt);
+            Assert.Equal(TimeSpan.FromSeconds(754), track.ResumePosition);
+        }
+        finally
+        {
+            track.LastPlayedAt = null;
+            track.ResumePosition = null;
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // RememberPlaybackPosition, IgnoreWhenShuffling and VolumeAdjustment are
     // settings an owner edits in the track info window, not state a sitting
     // leaves behind. They used to ride with LastPlayedAt, which made them

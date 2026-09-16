@@ -17,7 +17,7 @@ namespace Flower.Tests;
 
 // The chain a play actually travels on the browser head, wired exactly as
 // App.axaml.cs wires it: playback moves a counter on Library, Library raises
-// TrackStatsChanged saying which half moved, and the reporter forwards it to
+// TrackChanged saying which half moved, and the reporter forwards it to
 // the origin server. OriginPlayReporterTests covers the far end of that (the
 // HTTP), and SyncEndpointTests the server's; this covers the join, which is
 // where "the play reached the reporter at all" is decided.
@@ -26,11 +26,20 @@ public class BrowserPlayReportingTests : PinnedDataDirectory
 {
     private sealed class RecordingReporter : IPlayReporter
     {
-        public List<(Track Track, TrackStatsChange Change)> Reported { get; } = new();
+        public List<(Track Track, TrackChange Change)> Reported { get; } = new();
 
         public Task InFlight => Task.CompletedTask;
 
-        public void Report(Track track, TrackStatsChange change) => Reported.Add((track, change));
+        // Plays only, as OriginPlayReporter keeps - OriginPlayReporterTests
+        // covers that filter; this covers whether a play gets here at all.
+        public void Report(TrackChangedEventArgs change)
+        {
+            if (!change.IsPlay)
+                return;
+
+            foreach (var track in change.Tracks)
+                Reported.Add((track, change.Change));
+        }
     }
 
     private sealed class ImmediateStreamUrls : IStreamUrlResolver
@@ -47,7 +56,7 @@ public class BrowserPlayReportingTests : PinnedDataDirectory
         var reporter = new RecordingReporter();
 
         // The one line App.axaml.cs adds for a head that registers a reporter.
-        library.TrackStatsChanged += (_, e) => reporter.Report(e.Track, e.Change);
+        library.TrackChanged += (_, e) => reporter.Report(e);
 
         var audio = new FakeAudioManager();
         var playback = new PlaylistControlViewModel(
@@ -78,7 +87,7 @@ public class BrowserPlayReportingTests : PinnedDataDirectory
         playback.Play(placeholder);
 
         var (track, change) = Assert.Single(reporter.Reported);
-        Assert.Equal(TrackStatsChange.Started, change);
+        Assert.Equal(TrackChange.PlayStarted, change);
         Assert.Equal("tr-42", track.OriginTrackId);
     }
 
@@ -92,7 +101,7 @@ public class BrowserPlayReportingTests : PinnedDataDirectory
         audio.RaiseEndReached();
 
         var (track, change) = Assert.Single(reporter.Reported);
-        Assert.Equal(TrackStatsChange.Finished, change);
+        Assert.Equal(TrackChange.PlayFinished, change);
         Assert.Equal("tr-42", track.OriginTrackId);
     }
 

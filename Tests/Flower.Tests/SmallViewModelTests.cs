@@ -71,19 +71,20 @@ public class TrackRowViewModelTests
         Assert.NotEqual("", Row(new Track { LastPlayedAt = DateTimeOffset.UtcNow }).LastPlayedDisplay);
     }
 
-    // Both display strings read straight off Track, which is not
-    // INotifyPropertyChanged, so a play-count bump has to be pushed in.
+    // The display strings read straight off Track, which is not
+    // INotifyPropertyChanged, so a play or a star has to be pushed in.
     [Fact]
-    public void NotifyStatsChanged_raises_both_derived_display_properties()
+    public void NotifyTrackChanged_raises_every_in_place_display_property()
     {
         var row = Row(new Track());
         var raised = new List<string?>();
         row.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
-        row.NotifyStatsChanged();
+        row.NotifyTrackChanged();
 
         Assert.Contains(nameof(TrackRowViewModel.PlayCountDisplay), raised);
         Assert.Contains(nameof(TrackRowViewModel.LastPlayedDisplay), raised);
+        Assert.Contains(nameof(TrackRowViewModel.StarredDisplay), raised);
     }
 
     [Theory]

@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -263,6 +264,9 @@ public class LibrarySyncService
         // this" from "this device simply has a value", so a push that ran
         // first would have nothing to compare against.
         SeedKnownServerState(device.Fingerprint, placeholders);
+        // A fresh baseline makes every track worth another look, including any
+        // a push since launch passed over for having none.
+        MarkAllTrackStateChanged();
         await PushTrackStateAsync(device);
 
         if (_appSettings.ShareLogsWithPairedServer)
@@ -295,6 +299,13 @@ public class LibrarySyncService
         if (string.IsNullOrEmpty(device.Fingerprint))
             return true;
 
+        // Only the tracks marked since the last push that got through, or every
+        // track when something says to restate the lot. Nothing marked is
+        // nothing to do - not a pass over the whole library that finds nothing,
+        // which is what every five-second tick used to cost.
+        if (TakeTrackStateCandidates() is not { } candidates)
+            return true;
+
         try
         {
             var sentCounts = _sentCounts.GetOrAdd(device.Fingerprint, _ => new ConcurrentDictionary<string, int>());
@@ -306,7 +317,7 @@ public class LibrarySyncService
             // from the /info answer, kept here so a phone that is only a
             // listener does not spend a request stating what will be dropped.
             var reportOwnerState = device.WeAreAdmin;
-            var report = UnreportedTrackState(_library.Tracks, sentCounts, known, reportOwnerState);
+            var report = UnreportedTrackState(candidates.Tracks, sentCounts, known, reportOwnerState);
 
             if (report.Count == 0)
                 return true;
@@ -357,6 +368,7 @@ public class LibrarySyncService
             // there, and nothing is lost - it is all still in the library, and
             // still the truth to be stated next time.
             _logger.LogDebug(ex, "Could not report track state to {Alias} ({Fingerprint})", device.Alias, device.Fingerprint);
+            ReturnTrackStateCandidates(candidates);
             return false;
         }
     }
@@ -382,6 +394,10 @@ public class LibrarySyncService
         // and absolute paths, so neither door may open without it.
         if (!_appSettings.ShareLogsWithPairedServer || string.IsNullOrEmpty(device.Fingerprint))
             return Task.FromResult(true);
+
+        // Still pending, so reported as not done - but not attempted either.
+        if (_logPushParkedAt.TryGetValue(device.Fingerprint, out var parkedAt) && _logArchive.LiveSequence <= parkedAt)
+            return Task.FromResult(false);
 
         return PushLogSnapshotAsync(device);
     }
@@ -427,16 +443,29 @@ public class LibrarySyncService
             || RememberPlaybackPosition != served.RememberPlaybackPosition
             || IgnoreWhenShuffling != served.IgnoreWhenShuffling
             || VolumeAdjustment != served.VolumeAdjustment
-            || MovesListeningForward(served);
+            || MovesListeningForward(served)
+            || MovesPositionWithinTheSameListen(served);
 
         // LastPlayedAt is a high-water mark there, so only a later one is
         // news - and a device that has never played the track has no opinion
-        // at all rather than an early one. ResumePosition is not asked about
-        // separately because it rides with the listen on both sides (see
-        // ApplyReportedOwnerState): where in the file a sitting got to is only
-        // meaningful attached to the sitting.
+        // at all rather than an early one. A later listen carries its resume
+        // position with it.
         private bool MovesListeningForward(TrackStateSnapshot served) =>
             LastPlayedAt is { } mine && (served.LastPlayedAt is not { } theirs || mine > theirs);
+
+        // Where a sitting the server already knows about has since got to - a
+        // pause, a track change, the app going away. Only for that same
+        // sitting: where an older one got to is refused (see
+        // ApplyReportedOwnerState), since a position only means something
+        // attached to its own listen. Whole seconds, because that is what a
+        // catalog serves it in (LibraryDtoMapper), and a finer difference would
+        // read as news after every pull and go out again each time.
+        private bool MovesPositionWithinTheSameListen(TrackStateSnapshot served) =>
+            LastPlayedAt is { } mine && served.LastPlayedAt == mine
+            && WholeSeconds(ResumePosition) != WholeSeconds(served.ResumePosition);
+
+        private static int? WholeSeconds(TimeSpan? position) =>
+            position is { } p ? (int)p.TotalSeconds : null;
     }
 
     // What this device would say about the server's tracks that the server has
@@ -538,6 +567,53 @@ public class LibrarySyncService
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, int>> _sentCounts = new();
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, TrackStateSnapshot>> _knownServerState = new();
 
+    // What PushTrackStateAsync has to look at next: the tracks marked since the
+    // last push that got through, or all of them. Starts at all of them - a
+    // launch restates every total once, which a max-merge makes harmless - and
+    // goes back to all of them whenever the library itself changes, since a
+    // rescan replaces every Track and a pull re-seeds the baseline.
+    private readonly ConcurrentDictionary<Guid, Track> _unreportedTracks = new();
+    private int _restateAllTrackState = 1;
+
+    internal sealed record TrackStateCandidates(IReadOnlyList<Track> Tracks, bool Everything, IReadOnlyList<Track> Marked);
+
+    // A play, a star, an option or a resume position on these tracks - see
+    // PeerSyncCoordinator's Library.TrackChanged handler.
+    public void MarkTrackStateChanged(IEnumerable<Track> tracks)
+    {
+        foreach (var track in tracks)
+            _unreportedTracks[track.Id] = track;
+    }
+
+    public void MarkAllTrackStateChanged() => Interlocked.Exchange(ref _restateAllTrackState, 1);
+
+    // Takes whatever is pending, leaving nothing behind for a concurrent push
+    // to send twice; null when nothing is. A push that fails hands it back.
+    internal TrackStateCandidates? TakeTrackStateCandidates()
+    {
+        var everything = Interlocked.Exchange(ref _restateAllTrackState, 0) == 1;
+        var marked = new List<Track>();
+        foreach (var id in _unreportedTracks.Keys)
+        {
+            if (_unreportedTracks.TryRemove(id, out var track))
+                marked.Add(track);
+        }
+
+        if (!everything && marked.Count == 0)
+            return null;
+
+        return new TrackStateCandidates(everything ? _library.Tracks : marked, everything, marked);
+    }
+
+    // TryAdd, so a newer mark made while the push was out is not replaced.
+    internal void ReturnTrackStateCandidates(TrackStateCandidates candidates)
+    {
+        if (candidates.Everything)
+            MarkAllTrackStateChanged();
+        foreach (var track in candidates.Marked)
+            _unreportedTracks.TryAdd(track.Id, track);
+    }
+
     private const string TrackStateReportPath = "/api/flower/v1/track-state";
 
     private const string LogReportPath = "/api/flower/v1/log/report";
@@ -561,6 +637,14 @@ public class LibrarySyncService
     // for the same reason: these lines land in the very archive being pushed,
     // so a chatty failure path floods out the content it exists to deliver.
     private readonly ConcurrentDictionary<string, int> _logPushFailures = new();
+
+    // Where the live ring stood just after a peer's push failed and said so.
+    // The next push waits until something has been logged past it: retrying a
+    // down server every tick meant a device with nothing to say kept sending,
+    // each time on the strength of the line its own last failure had written.
+    // Whatever gets logged next - discovery noticing the server come back,
+    // most likely - is what lets the pending lines go out, with it.
+    private readonly ConcurrentDictionary<string, long> _logPushParkedAt = new();
 
     // Move everything newly logged out of the memory ring and onto disk, where
     // it survives the restart and the week. Runs on its own tick rather than as
@@ -637,12 +721,14 @@ public class LibrarySyncService
                     device.Alias, device.Url(LogReportPath));
             else
                 _logger.LogDebug(ex, "Log push to {Alias} still failing ({Failures} consecutive)", device.Alias, failures);
+            _logPushParkedAt[device.Fingerprint] = _logArchive.LiveSequence;
             return false;
         }
     }
 
     private void ClearLogPushFailures(DiscoveredDevice device)
     {
+        _logPushParkedAt.TryRemove(device.Fingerprint, out _);
         if (_logPushFailures.TryRemove(device.Fingerprint, out var failures))
             _logger.LogInformation("Log push to {Alias} recovered after {Failures} failed attempt(s)", device.Alias, failures);
     }

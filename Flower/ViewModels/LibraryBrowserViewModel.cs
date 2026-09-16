@@ -304,7 +304,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 
     // ── Tile grids ────────────────────────────────────────────────────────
 
-    // Rebuilt in Repopulate (every TracksUpdated) - see AlbumGridBuilder/
+    // Rebuilt in Repopulate (every LibraryChanged, and every TrackChanged that reshapes) - see AlbumGridBuilder/
     // RecentlyAddedAlbumsBuilder, the same shared builders mobile's own grids
     // use. Alphabetical for Albums, by-recency for Recently Added. Reassigned
     // wholesale rather than Clear()+Add() in a loop - same reasoning as
@@ -521,7 +521,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // ── Rebuild pipeline ──────────────────────────────────────────────────
 
     // Re-snapshots the library and rebuilds everything derived from it - called
-    // on every Library.TracksUpdated.
+    // on every Library.LibraryChanged, and every TrackChanged that can move a
+    // track between albums or sort positions.
     public void Repopulate()
     {
         _allTracks = new List<Track>(_library.Tracks);
@@ -830,17 +831,19 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             row.IsCurrentlyPlaying = playing != null && row.Track.Id == playing.Id;
     }
 
-    // A play-count / LastPlayedAt bump only affects two columns on one row -
-    // re-raise exactly those rather than rebuilding every row.
-    public void NotifyTrackStatsChanged(Track track)
+    // A play, a star or an option changes a cell or two on the rows showing
+    // those tracks - re-raise exactly those rather than rebuilding every row.
+    // Every row, not the first: a playlist can hold the same track twice.
+    public void NotifyTracksChanged(IReadOnlyList<Track> tracks)
     {
+        var ids = new HashSet<Guid>(tracks.Count);
+        foreach (var track in tracks)
+            ids.Add(track.Id);
+
         foreach (var row in _rows)
         {
-            if (row.Track.Id == track.Id)
-            {
-                row.NotifyStatsChanged();
-                break;
-            }
+            if (ids.Contains(row.Track.Id))
+                row.NotifyTrackChanged();
         }
     }
 

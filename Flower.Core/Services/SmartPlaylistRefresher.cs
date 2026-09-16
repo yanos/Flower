@@ -32,8 +32,8 @@ public sealed class SmartPlaylistRefresher : IDisposable
     // PeerSyncCoordinator.ContentSyncCooldown uses and for the same reason.
     //
     // Half a second because the triggers arrive in bursts, not singly:
-    // TrackStatsChanged fires twice per track change, and a sync merge or a
-    // star across an album raises its event once per track touched. Long enough
+    // a play raises TrackChanged twice per track change, once as it starts and
+    // once as it ends, and a rescan or a sync merge lands in a burst. Long enough
     // to collapse a burst, short enough that a song finishing has updated
     // "Recently Played" before anyone looks.
     internal static TimeSpan Cooldown = TimeSpan.FromMilliseconds(500);
@@ -69,19 +69,22 @@ public sealed class SmartPlaylistRefresher : IDisposable
     // back to the dispatcher.
     public event EventHandler<SmartPlaylistsRefreshedEventArgs>? Refreshed;
 
-    // Every door a smart-playlist input can come through. TracksUpdated alone
-    // is not enough and it is the trap this design is easiest to get wrong at:
-    // play count, LastPlayedAt and skip count deliberately do *not* raise it
-    // (they were split onto TrackStatsChanged because a play used to mean a
-    // full track-list rebuild plus a peer sync, twice per track change - see
-    // ARCHITECTURE-REVIEW.md Tier 1.1), and those three are exactly what the
-    // flagship playlists are built on. Hang this off TracksUpdated only and
-    // "Recently Played" never updates until the next rescan.
+    // Every door a smart-playlist input can come through:
     //
-    //   TracksUpdated     - rescan, download, import, a tag edit, and the two
-    //                       merge paths that land a pulled catalog.
-    //   TrackStatsChanged - a play, here or reported in by a paired device.
-    //   TrackStarsChanged - a star, from Track Info or over Subsonic.
+    //   LibraryChanged    - rescan, reload, import, and the merge paths that
+    //                       land a pulled catalog.
+    //   TrackChanged      - anything about a known track: a play (here, or
+    //                       reported in by a paired device or a browser tab),
+    //                       a star, a tag edit, a download, a playback option.
+    //                       Every kind but a resume position on its own,
+    //                       which no rule reads and which arrives on every
+    //                       pause - IgnoreWhenShuffling and IsLocallyDownloaded
+    //                       are rule inputs too.
+    //                       Plays are the ones easiest to miss: they were kept
+    //                       off the library-wide event because a play used to
+    //                       mean a full track-list rebuild plus a peer sync
+    //                       (ARCHITECTURE-REVIEW.md Tier 1.1), and they are
+    //                       exactly what the flagship playlists are built on.
     //   PlaylistsChanged  - a membership rule makes another playlist's contents
     //                       an input, so a playlist edit is a track-set change
     //                       for everything that references it. (The refresher's
@@ -96,9 +99,8 @@ public sealed class SmartPlaylistRefresher : IDisposable
 
         _started = true;
 
-        _library.TracksUpdated += OnLibraryChanged;
-        _library.TrackStatsChanged += OnStatsChanged;
-        _library.TrackStarsChanged += OnLibraryChanged;
+        _library.LibraryChanged += OnLibraryChanged;
+        _library.TrackChanged += OnTrackChanged;
         _library.PlaylistsChanged += OnLibraryChanged;
 
         // Straight away rather than debounced: at startup the stored contents
@@ -108,7 +110,11 @@ public sealed class SmartPlaylistRefresher : IDisposable
 
     private void OnLibraryChanged(object? sender, EventArgs e) => Schedule();
 
-    private void OnStatsChanged(object? sender, TrackStatsChangedEventArgs e) => Schedule();
+    private void OnTrackChanged(object? sender, TrackChangedEventArgs e)
+    {
+        if (e.Change != TrackChange.ResumePosition)
+            Schedule();
+    }
 
     // Restarts the cooldown rather than queuing another pass, so a burst of
     // triggers costs one recomputation and it is the one that sees all of them.
@@ -272,9 +278,8 @@ public sealed class SmartPlaylistRefresher : IDisposable
 
         if (_started)
         {
-            _library.TracksUpdated -= OnLibraryChanged;
-            _library.TrackStatsChanged -= OnStatsChanged;
-            _library.TrackStarsChanged -= OnLibraryChanged;
+            _library.LibraryChanged -= OnLibraryChanged;
+            _library.TrackChanged -= OnTrackChanged;
             _library.PlaylistsChanged -= OnLibraryChanged;
         }
 

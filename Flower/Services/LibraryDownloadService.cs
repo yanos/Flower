@@ -72,7 +72,7 @@ public class LibraryDownloadService
             // Track.IsLocallyDownloaded and Library.UpdateTracks.
             track.IsLocallyDownloaded = true;
             ReadTechnicalProperties(track);
-            _library.NotifyTrackChanged(track);
+            _library.NotifyTrackChanged(track, TrackChange.File);
 
             _logger.LogInformation("Downloaded {Title} ({OriginTrackId}) from {Alias} to {Destination}",
                 track.Title, originTrackId, peer.Alias, destination);
@@ -219,7 +219,7 @@ public class LibraryDownloadService
 
         track.Path = null;
         track.IsLocallyDownloaded = false;
-        _library.NotifyTrackChanged(track);
+        _library.NotifyTrackChanged(track, TrackChange.File);
     }
 
     // Test-only override, checked first below. Unlike AppDataDirectory (see

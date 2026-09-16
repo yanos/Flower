@@ -309,7 +309,7 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 
 **Key classes:**
 - `Track` — immutable metadata record, plus `DateAdded` (first-seen date, carried forward across rescans by `Library.UpdateTracks` matching on `Path`).
-- `Library` — canonical track list; fires `TracksUpdated` after each background rescan.
+- `Library` — canonical track list; fires `LibraryChanged` after each background rescan or sync merge, and `TrackChanged` for any in-place change to known tracks (a play, a star, a tag edit, a download, a playback option).
 - `MainPlaylist : Playlist` — the play queue.
 - `IAudioManager` / `GaplessAudioManager` — playback abstraction and implementation; raises playback events ViewModels subscribe to.
 - `MainViewModel` — track list, sidebar navigation, search, columns, status bar, and the Cmd/Ctrl+L "scroll to now playing" flow. Recently Added has its own independent sort state from Songs/Albums/Artists.

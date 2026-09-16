@@ -1278,13 +1278,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         BuildSidebarItems();
         Browser.Repopulate();
 
-        // Everything here runs on the UI thread, not just PopulateTracks.
-        // TracksUpdated can be raised from a LibVLC decode-callback thread (see
-        // Library's own _lock comment; PlaylistControlViewModel's EndReached
-        // handler gets there via NotifyTrackChanged), and ScheduleContentSync's
-        // continuation goes on to enumerate _sidebarItems - a plain
-        // ObservableCollection the UI thread mutates through
-        // AddOrUpdateDeviceSidebarItem/RemoveDeviceItem.
+        // Everything here runs on the UI thread, not just the rebuilds. Both
+        // events can be raised off it - a play count bumped as a track ends,
+        // a rescan's Task.Run - and ScheduleContentSync's continuation goes on
+        // to enumerate _sidebarItems, a plain ObservableCollection the UI
+        // thread mutates through AddOrUpdateDeviceSidebarItem/RemoveDeviceItem.
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
         {
             Browser.Repopulate();
@@ -1294,21 +1292,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             if (!Sync.IsMergingOwnSync)
                 ScheduleContentSync();
             else
-                _logger.LogDebug("TracksUpdated fired mid-sync - not scheduling a resync");
+                _logger.LogDebug("LibraryChanged fired mid-sync - not scheduling a resync");
         }),
-            h => library.TracksUpdated += h, h => library.TracksUpdated -= h);
-        // A play-count / LastPlayedAt bump used to arrive as TracksUpdated, so
-        // playing a song cost a full PopulateTracks (16k row allocations, a
-        // full album regroup) plus a peer sync, twice. Only two columns can
-        // actually have changed, and only on one row, so re-raise exactly those
-        // - and don't schedule a content sync at all: another device does not
-        // need to hear about a local play count the moment it happens (the next
-        // genuine library change carries it along anyway).
-        _subscriptions.Add<EventHandler<TrackStatsChangedEventArgs>>(
-            (_, e) => Dispatcher.UIThread.Post(() => Browser.NotifyTrackStatsChanged(e.Track)),
-            h => library.TrackStatsChanged += h, h => library.TrackStatsChanged -= h);
+            h => library.LibraryChanged += h, h => library.LibraryChanged -= h);
+        _subscriptions.Add<EventHandler<TrackChangedEventArgs>>(
+            (_, e) => Dispatcher.UIThread.Post(() => OnTrackChanged(e)),
+            h => library.TrackChanged += h, h => library.TrackChanged -= h);
 
-        // Same reasoning as TracksUpdated above - PlaylistsUpdated is raised
+        // Same reasoning as LibraryChanged above - PlaylistsUpdated is raised
         // from the sync path, off the UI thread.
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
         {
@@ -1731,6 +1722,30 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     internal void TriggerSyncIfPeerPlaylistsChanged(DiscoveredDevice device) => Sync.TriggerSyncIfPeerPlaylistsChanged(device);
 
     internal void TriggerSyncIfReady(DiscoveredDevice device) => Sync.TriggerSyncIfReady(device);
+
+    // What a change to known tracks costs this view depends on what moved.
+    //
+    // A tag edit, new artwork or a download can move a row to another album
+    // group or sort position, or change how it draws, so the list is rebuilt
+    // and the paired server offered the change - the same as a rescan.
+    //
+    // A play, a star or a playback option changes a cell or two on the rows
+    // showing those tracks, so only those are re-raised. None of them
+    // schedules a content sync either: the periodic track-state push
+    // (PeerSyncCoordinator.LogPushTick) already carries play counts, stars and
+    // options to the server within seconds, without a catalog pull.
+    private void OnTrackChanged(TrackChangedEventArgs e)
+    {
+        if (e.Reshapes)
+        {
+            Browser.Repopulate();
+            if (e.Source == ChangeSource.Local && !Sync.IsMergingOwnSync)
+                ScheduleContentSync();
+            return;
+        }
+
+        Browser.NotifyTracksChanged(e.Tracks);
+    }
 
     // Playlist CRUD, membership and the sidebar's Playlists section all live
     // in PlaylistManagementViewModel; these forward because MainView's context

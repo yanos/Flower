@@ -131,7 +131,7 @@ Mobile first (desktop was assumed to have enough storage not to need it); **desk
 
 - **Album art sync — done, and the key has since changed meaning.** `Track.OriginAlbumArtId` is the cache key `AlbumArtLoader`'s remote-fetch path uses against `GET /rest/getCoverArt`. It was `OriginAlbumArtHash`, a SHA-256 of the origin's art bytes stamped by the app's own embedded host, so replacing a cover was self-invalidating. That host is gone and `Flower.Server` sends the *album id*, which is the better key: one entry per album rather than one per version of every cover the library has ever had, and it can address art that changed since the last sync, which a byte-derived key cannot. Noticing a change is revalidation's job — `AlbumArtLoader.Invalidate` deletes the entry outright rather than relying on the key to move. Renamed to match in September 2026. Art decoding was moved to a background thread after it was found to stall UI scrolling on the main thread.
 - **Play count sync — done, not originally scoped.** `Track.RemotePlayCounts` (`Dictionary<fingerprint, count>`) is a small G-Counter CRDT — each device stamps its own contribution, receivers merge by per-key max (safe under repeats/reordering/relay). A device never accepts a peer's report of its own key back. Rides the existing bulk-catalog sync.
-- **Resync on local change — done.** `MainViewModel.ScheduleContentSync` debounces (5s, restarts on every call) and re-syncs on `Library.TracksUpdated`/`PlaylistsUpdated`, guarded by an in-flight counter to avoid a merge's own events triggering an infinite resync loop.
+- **Resync on local change — done.** `MainViewModel.ScheduleContentSync` debounces (5s, restarts on every call) and re-syncs on `Library.LibraryChanged`/`PlaylistsUpdated`, guarded by an in-flight counter to avoid a merge's own events triggering an infinite resync loop.
 - **A real data-corruption bug, found and fixed.** Four call sites (play-count-on-end, tag edits, iTunes import) called `UpdateTracks(Library.Tracks)` just to fire the refresh event, which doubled every sync placeholder each time (already-present + carried-forward again) — produced a multi-GB `library.json` in practice. Fixed by switching those sites to `Library.NotifyTrackChanged()`.
 - **Device sidebar dedup by fingerprint** — matching was by raw mDNS instance name, which collides for two devices sharing a default computer name; now matches by `Fingerprint` once resolved.
 
@@ -770,8 +770,8 @@ does have storage, keeps the running total.
 Collapsing them into one scrobble-shaped event — which is what `/rest/scrobble`
 does, reasonably, for a single request — would have made a tab's History and the
 server's disagree in *content*: a skipped track would appear in one and not the
-other. `Library.TrackStatsChange` is a `[Flags]` enum carried on
-`TrackStatsChanged`, so the reporter can tell them apart and `Library.RecordPlay`
+other. `Library.TrackChange` is a `[Flags]` enum carried on
+`TrackChanged`, so the reporter can tell them apart and `Library.RecordPlay`
 can apply whichever halves a request names.
 
 Three things the reporter has to get right that a POST-per-play would not:
@@ -867,11 +867,13 @@ downloaded file, and a local file of this device's own that the server also has:
 that song is a play of that song in that shared library.
 
 **It rides the log-push tick, not the catalog sync.** A play does not move the
-catalog — `TrackStatsChanged` deliberately does not schedule a sync (that was
+catalog — a play's `TrackChanged` deliberately does not schedule a sync (that was
 ARCHITECTURE-REVIEW Tier 1.1) — so counts pushed only from `SyncWithAsync` would
 sit on the device until something else happened to change the library. The push
-sends no request at all when it has nothing new to state, so joining the
-five-second tick costs nothing when nobody is listening. What it does need is a
+looks only at tracks a `Library.TrackChanged` marked since the last one got
+through, so joining the five-second tick costs nothing when nothing happened. A
+resume position does not wait for it: it is pushed as soon as playback stops,
+and a desktop gives that push two seconds on quit. What it does need is a
 per-peer memory of the highest total already acknowledged, or a library with
 thousands of played tracks re-states all of them every tick. In memory only, like
 `_lastSeenTokens`: a restart re-sends, the far side takes the max, and nothing is

@@ -207,8 +207,8 @@ public class SmartPlaylistRefresherTests
     }
 
     // The trap the trigger list exists for. Play count and LastPlayedAt
-    // deliberately do not raise TracksUpdated - they were split onto
-    // TrackStatsChanged (ARCHITECTURE-REVIEW Tier 1.1) - and they are exactly
+    // deliberately do not raise LibraryChanged - they arrive as a
+    // TrackChanged (ARCHITECTURE-REVIEW Tier 1.1) - and they are exactly
     // what "Recently Played" and "Most Played" are built on.
     [Fact]
     public async Task A_play_triggers_a_pass()
@@ -226,8 +226,7 @@ public class SmartPlaylistRefresherTests
         await Eventually(() => playlist.Tracks.Count == 1);
     }
 
-    // SetStarred reaches neither TracksUpdated nor TrackStatsChanged - it is
-    // why Library.TrackStarsChanged exists.
+    // A star is a TrackChanged like a play, and an input like one.
     [Fact]
     public async Task A_star_triggers_a_pass()
     {
@@ -241,6 +240,26 @@ public class SmartPlaylistRefresherTests
         Assert.Empty(playlist.Tracks);
 
         library.SetStarred(StarTarget.Song, track.Id.ToString(), starred: true);
+
+        await Eventually(() => playlist.Tracks.Count == 1);
+    }
+
+    // A playback option is a rule input too (IgnoreWhenShuffling), and used to
+    // be persisted without announcing anything at all.
+    [Fact]
+    public async Task A_playback_option_triggers_a_pass()
+    {
+        var track = T("A");
+        var (library, _) = NewLibrary(track);
+        var playlist = Smart("Kept out of shuffle", SmartPlaylistRules.MatchAll(
+            new SmartCondition(SmartField.IgnoreWhenShuffling, SmartOperator.Is, new SmartValue.Bool(true))));
+        library.ResetPlaylists([playlist]);
+
+        using var refresher = Started(library);
+        Assert.Empty(playlist.Tracks);
+
+        track.IgnoreWhenShuffling = true;
+        library.NotifyTrackChanged(track, TrackChange.Options);
 
         await Eventually(() => playlist.Tracks.Count == 1);
     }

@@ -51,7 +51,7 @@ public abstract class DownloadIndicatorViewModel : ViewModelBase, IDisposable
     //
     // The pushed value goes on saying "downloadable" for as long as it takes
     // whoever pushes it to notice - a rebuild of the rows off
-    // Library.TracksUpdated, which is debounced, so a good fraction of a
+    // Library.TrackChanged, which is debounced, so a good fraction of a
     // second. For that whole window the spinner had stopped and nothing had
     // hidden the icon yet, so the control fell back through its idle
     // "click to download" state on the way out: a visible flash of the

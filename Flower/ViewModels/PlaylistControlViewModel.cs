@@ -252,11 +252,10 @@ namespace Flower.ViewModels
                         Dispatcher.UIThread.Post(() => Play(next.Track, next.Index, immediate: false));
                     }
 
-                    // IncrementPlayCount raises Library.TrackStatsChanged and
-                    // persists the new count itself. Deliberately *not* NotifyTrackChanged: the track
-                    // list hasn't changed, only one track's counter, and
-                    // TracksUpdated means a full UI rebuild plus a peer library
-                    // sync - twice per song. See ARCHITECTURE-REVIEW Tier 1.1.
+                    // IncrementPlayCount raises Library.TrackChanged as a
+                    // PlayFinished and persists the new count itself - a row
+                    // refresh, not the full UI rebuild plus peer library sync
+                    // a library change means. See ARCHITECTURE-REVIEW Tier 1.1.
                     // Caught rather than propagated: this is bookkeeping
                     // running on a pool thread with nobody to hand an
                     // exception to, where an unobserved one takes the process
@@ -619,7 +618,7 @@ namespace Flower.ViewModels
             // Drives the History sidebar view - see Track.LastPlayedAt/
             // Library.RecordPlayed for why this stamps here rather than
             // alongside IncrementPlayCount in the EndReached handler below.
-            // Raises TrackStatsChanged, not TracksUpdated - same reasoning as
+            // Raises TrackChanged as a PlayStarted - same reasoning as
             // the EndReached handler above.
             _library.RecordPlayed(track);
         }

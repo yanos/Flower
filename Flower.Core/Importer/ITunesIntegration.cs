@@ -66,7 +66,7 @@ public static class ITunesIntegration
     // Runs whichever of the two the settings ask for, over tracks the caller
     // holds. Both mutate Track objects in place and neither persists anything -
     // the caller decides how to publish that (the server: one
-    // Library.NotifyTrackChanged after both).
+    // Library.NotifyLibraryChanged after both).
     //
     // Returns whether anything ran, so a caller can skip that publish entirely
     // rather than issuing a whole-table rewrite for two no-ops.
