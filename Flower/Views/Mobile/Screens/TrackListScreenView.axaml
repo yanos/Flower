@@ -25,9 +25,20 @@
            Neither carries a size of its own: SquareAlbumArtView takes whatever
            width it is given and stays square (see that control), so each use
            site sets a Width and the art follows. -->
+      <!-- Lifted off the page by a shadow, which is drawn by a Border round
+           the art rather than by the art itself: AlbumArtView clips its
+           content to its corners, and a shadow is outside them. Same 4px
+           radius as AlbumArtView's own outer Border, so the shadow follows the
+           rounded corners instead of squaring them off. Both ContentControls
+           that host this template turn ClipToBounds off: a ContentControl
+           clips by default, at exactly the art's square, which left the
+           shadow showing only in the four rounded corners. -->
       <DataTemplate x:Key="AlbumArtTemplate" x:DataType="vm:AlbumTileViewModel">
-        <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}"
-                                     Classes.dimmed="{Binding IsUnavailable}" />
+        <Border CornerRadius="4"
+                BoxShadow="0 4 16 0 #40000000">
+          <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}"
+                                       Classes.dimmed="{Binding IsUnavailable}" />
+        </Border>
       </DataTemplate>
 
       <!-- Under the name and artist, a pill of the album's own actions:
@@ -179,6 +190,7 @@
                       IsVisible="{Binding #Root.IsWideAlbumLayout}"
                       Content="{Binding #Root.DisplayHeader}"
                       ContentTemplate="{StaticResource AlbumArtTemplate}"
+                      ClipToBounds="False"
                       Width="{Binding #Root.PinnedArtSize}"
                       Margin="16,68,16,16"
                       VerticalAlignment="Center" />
@@ -216,6 +228,7 @@
           <ContentControl IsVisible="{Binding !#Root.IsWideAlbumLayout}"
                           Content="{Binding #Root.DisplayHeader}"
                           ContentTemplate="{StaticResource AlbumArtTemplate}"
+                          ClipToBounds="False"
                           Width="240" Margin="24,4,24,12"
                           HorizontalAlignment="Center" />
           <!-- Inset by the .albumText styles above, which is where the two
