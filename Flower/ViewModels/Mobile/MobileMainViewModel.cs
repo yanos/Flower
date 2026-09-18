@@ -615,9 +615,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         var header = new AlbumTileViewModel
         {
             Name = playlist.Name,
-            // The same line the playlist's own row shows in the picker, from
-            // the same place - how many songs, and how long they run.
-            Artist = PlaylistSummaryText.For(tracks),
+            // What the playlist's own row says in the picker, from the same
+            // place - how many songs, and how long they run, here in words.
+            Artist = PlaylistSummaryText.ForHeader(tracks),
             RepresentativeTrack = null,
             MostRecentlyAdded = tracks.Count == 0 ? default : tracks.Max(t => t.DateAdded),
             Tracks = tracks,

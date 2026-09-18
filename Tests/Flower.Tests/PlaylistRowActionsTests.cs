@@ -69,6 +69,18 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         Assert.Equal("2 songs  ·  1:13:00", TheRow(vm).PlaylistSummary);
     }
 
+    // The playlist's own screen has the room the row does not, and nothing
+    // beside it to be read against, so it says the same total in words.
+    [AvaloniaFact]
+    public void The_playlist_screen_says_how_long_it_runs_in_words()
+    {
+        var vm = Build(out _, T("A", 40), T("B", 33));
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Playlists));
+        vm.SelectPlaylistCommand.Execute(TheRow(vm));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("2 songs  ·  1 hour 13 minutes", vm.CurrentPlaylistHeader?.Artist);
+    }
+
     // A playlist of tracks not downloaded yet has no durations to add up, and
     // says nothing rather than claiming it is empty of time.
     [AvaloniaFact]
@@ -110,7 +122,7 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         Assert.Equal(MobileSheet.AlbumActions, vm.ActiveSheet);
         Assert.True(vm.IsActingOnAPlaylist);
         Assert.Equal("Road trip", vm.AlbumActionTarget?.Name);
-        Assert.Equal("2 songs  ·  7:00", vm.AlbumActionTarget?.Artist);
+        Assert.Equal("2 songs  ·  7 minutes", vm.AlbumActionTarget?.Artist);
         // The playlist's songs, so Play/Shuffle/Add to Playlist act on them.
         Assert.Equal(new[] { "A", "B" }, vm.AlbumActionTarget!.Tracks.Select(t => t.Title));
     }

@@ -23,15 +23,25 @@ public static class PlaylistSummaryText
     /// has been downloaded, so a playlist of them is silent about its length
     /// rather than claiming to be 0:00 long.
     /// </summary>
-    public static string Runtime(IEnumerable<Track> tracks)
+    public static string Runtime(IEnumerable<Track> tracks) => Runtime(tracks, DurationText.Compact);
+
+    public static string For(IReadOnlyCollection<Track> tracks) => Join(tracks, Runtime(tracks));
+
+    /// <summary>
+    /// The playlist screen's own header, which has the width a row does not
+    /// and nothing beside it to line up with, so it says the total in words
+    /// (<see cref="DurationText.Spoken"/>) - "2 hours 13 minutes" rather than
+    /// "2:13:07". Same silence as the row about a length it cannot measure.
+    /// </summary>
+    public static string ForHeader(IReadOnlyCollection<Track> tracks) =>
+        Join(tracks, Runtime(tracks, DurationText.Spoken));
+
+    private static string Runtime(IEnumerable<Track> tracks, Func<TimeSpan, string> format)
     {
         var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
-        return total <= TimeSpan.Zero ? "" : DurationText.Compact(total);
+        return total <= TimeSpan.Zero ? "" : format(total);
     }
 
-    public static string For(IReadOnlyCollection<Track> tracks)
-    {
-        var runtime = Runtime(tracks);
-        return runtime.Length == 0 ? Songs(tracks.Count) : $"{Songs(tracks.Count)}  ·  {runtime}";
-    }
+    private static string Join(IReadOnlyCollection<Track> tracks, string runtime) =>
+        runtime.Length == 0 ? Songs(tracks.Count) : $"{Songs(tracks.Count)}  ·  {runtime}";
 }
