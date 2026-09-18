@@ -315,12 +315,19 @@
       <Panel x:Name="EmptyStateHost">
         <!-- The search prompt sits well above centre: the keyboard comes up
              under it, and the box it is about is at the top of the screen. -->
-        <StackPanel IsVisible="{Binding IsContentEmpty}"
-                    Classes.searchPrompt="{Binding IsShowingSearchPrompt}"
+        <StackPanel Classes.searchPrompt="{Binding IsShowingSearchPrompt}"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Spacing="10"
                     MaxWidth="280">
+          <!-- Out of the way of the recent-searches dropdown, which it would
+               otherwise be drawn over - see IsSearchDropdownOpen. -->
+          <StackPanel.IsVisible>
+            <MultiBinding Converter="{x:Static BoolConverters.And}">
+              <Binding Path="IsContentEmpty" />
+              <Binding Path="!IsSearchDropdownOpen" />
+            </MultiBinding>
+          </StackPanel.IsVisible>
           <materialIcons:MaterialIcon Kind="{Binding EmptyStateIcon}" Width="40" Height="40" Opacity="0.35" HorizontalAlignment="Center" />
           <TextBlock Text="{Binding EmptyStateTitle}"
                      FontSize="17"

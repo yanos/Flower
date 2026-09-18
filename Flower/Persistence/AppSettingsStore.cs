@@ -41,6 +41,11 @@ namespace Flower.Persistence
         public double? WindowY           { get; set; }
         public bool    WindowIsMaximized { get; set; }
 
+        // What was searched for on the phone's Search tab, most recent first -
+        // offered under the box as it is typed into. See
+        // MainViewModel.RememberSearch, which is the only thing that writes it.
+        public List<string> RecentSearches { get; set; } = [];
+
         // Repeat/shuffle toggles in the currently-playing control, remembered between launches.
         public bool IsRepeatEnabled  { get; set; }
         public bool IsShuffleEnabled { get; set; }

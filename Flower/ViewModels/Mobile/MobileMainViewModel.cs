@@ -509,8 +509,81 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsShowingSearchPrompt));
             OnPropertyChanged(nameof(IsShowingSearchResults));
+            RefreshSearchSuggestions();
             ScheduleSearchResultsRebuild();
         }
+    }
+
+    // ── Recent searches ───────────────────────────────────────────────
+    //
+    // The dropdown under the search box: past searches containing what has
+    // been typed so far, or all of them while nothing has - see ScreenSlot,
+    // which shows it only while the box has focus. A search is remembered when
+    // the box is left with something in it (RememberSearch): a result tapped,
+    // the keyboard put away, the tab changed. Not on each keystroke, or every
+    // prefix of a word would be kept as a search of its own.
+
+    // At most this many rows under the box - past it the dropdown would reach
+    // down under the keyboard, where nobody can tap it.
+    public const int MaxSearchSuggestions = 5;
+
+    private IReadOnlyList<string> _searchSuggestions = [];
+
+    public IReadOnlyList<string> SearchSuggestions
+    {
+        get => _searchSuggestions;
+        private set
+        {
+            _searchSuggestions = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasSearchSuggestions));
+            OnPropertyChanged(nameof(IsSearchDropdownOpen));
+        }
+    }
+
+    public bool HasSearchSuggestions => _searchSuggestions.Count > 0;
+
+    // Whether the search box has focus - view state, set by ScreenSlot, and
+    // here only for MobileMainView: the search prompt there is drawn over
+    // every screen, the recent-searches dropdown included, so it has to step
+    // aside while that is open.
+    private bool _isSearchBoxFocused;
+
+    public bool IsSearchBoxFocused
+    {
+        get => _isSearchBoxFocused;
+        set
+        {
+            if (_isSearchBoxFocused == value)
+                return;
+            _isSearchBoxFocused = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSearchDropdownOpen));
+        }
+    }
+
+    public bool IsSearchDropdownOpen => _isSearchBoxFocused && HasSearchSuggestions;
+
+    public ICommand ApplySearchSuggestionCommand { get; }
+
+    // Every past search, not only the ones the dropdown is showing for what
+    // has been typed - it is the history being cleared, not the filter.
+    public ICommand ClearRecentSearchesCommand { get; }
+
+    // The suggestions follow on their own, off Main's RecentSearches change.
+    public void RememberSearch() => Main.RememberSearch(SearchQuery);
+
+    // What is typed matching a past search exactly is left out: offering the
+    // box its own contents back is a row that does nothing.
+    private void RefreshSearchSuggestions()
+    {
+        var typed = SearchQuery?.Trim() ?? "";
+        SearchSuggestions = Main.RecentSearches
+            .Where(q => typed.Length == 0
+                || (q.Contains(typed, StringComparison.OrdinalIgnoreCase)
+                    && !q.Equals(typed, StringComparison.OrdinalIgnoreCase)))
+            .Take(MaxSearchSuggestions)
+            .ToList();
     }
 
     // Shown instead of the track list on the Search tab until something is
@@ -1470,6 +1543,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (e.PropertyName is nameof(MainViewModel.PairingCodeError)
                 or nameof(MainViewModel.IsPairedServerTrustConfirmed))
                 SettleCodePairing();
+            if (e.PropertyName == nameof(MainViewModel.RecentSearches))
+                RefreshSearchSuggestions();
         },
             h => Main.PropertyChanged += h, h => Main.PropertyChanged -= h);
         // SearchSongResults is a separate TrackRowViewModel list from
@@ -1495,6 +1570,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         RebuildAlbumGrid();
         RebuildArtistAlbumGrid();
         ApplyTabSelection();
+
+        RefreshSearchSuggestions();
+        ClearRecentSearchesCommand = new RelayCommand(Main.ClearRecentSearches);
+        ApplySearchSuggestionCommand = new RelayCommand<string>(query =>
+        {
+            SearchQuery = query;
+            RememberSearch();
+        });
 
         SelectTabCommand = new RelayCommand<string>(name =>
         {

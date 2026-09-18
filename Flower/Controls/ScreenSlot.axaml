@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.Controls.ScreenSlot"
              x:DataType="vm:MobileMainViewModel"
              x:Name="Root"
@@ -49,7 +50,80 @@
                           Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
                           IsVisible="{Binding #Root.Frame.IsSearchScreen}"
                           PlaceholderText="Search your library"
-                          VerticalAlignment="Center" />
+                          VerticalAlignment="Center"
+                          KeyDown="SearchTabBox_KeyDown"
+                          GotFocus="SearchTabBox_GotFocus"
+                          LostFocus="SearchTabBox_LostFocus" />
     </Grid>
+
+    <!-- Recent searches, dropped down under the box while it has focus - see
+         MobileMainViewModel.SearchSuggestions for which ones. The width of the
+         box, and after the screen's content so it is drawn over the results
+         rather than under them. The rows cannot take focus: a press on one
+         would otherwise take it from the box, which closes this dropdown
+         under the finger before the tap has landed. -->
+    <Border Grid.Row="1"
+            Margin="60,2,60,0"
+            VerticalAlignment="Top"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+            BorderBrush="{DynamicResource AppPrimaryBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="12"
+            BoxShadow="0 4 16 0 #33000000"
+            ClipToBounds="True">
+      <!-- This slot's own box, not IsSearchDropdownOpen: the screen kept alive
+           beside this one for a swipe is a ScreenSlot too, and would open its
+           own copy off-screen. -->
+      <Border.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.And}">
+          <Binding ElementName="SearchTabBox" Path="IsFocused" />
+          <Binding Path="HasSearchSuggestions" />
+        </MultiBinding>
+      </Border.IsVisible>
+      <StackPanel Margin="0,0,0,4">
+      <!-- Clear forgets every past search, not only the ones showing. Not
+           focusable, like the rows, so the box keeps the keyboard up: what
+           was being typed is still being typed. -->
+      <Grid ColumnDefinitions="*,Auto" Margin="12,4,4,0">
+        <TextBlock Text="Recent Searches"
+                   FontSize="12"
+                   FontWeight="SemiBold"
+                   Opacity="0.5"
+                   VerticalAlignment="Center" />
+        <Button Grid.Column="1"
+                Classes="pickerRow"
+                HorizontalAlignment="Right"
+                Focusable="False"
+                Padding="8,6"
+                Command="{Binding ClearRecentSearchesCommand}">
+          <TextBlock Text="Clear"
+                     FontSize="13"
+                     Foreground="{DynamicResource AppAccentBrush}" />
+        </Button>
+      </Grid>
+      <ItemsControl ItemsSource="{Binding SearchSuggestions}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="x:String">
+            <Button Classes="pickerRow"
+                    Focusable="False"
+                    Padding="12,9"
+                    Click="Suggestion_Click">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                <materialIcons:MaterialIcon Kind="History"
+                                            Width="18" Height="18"
+                                            Opacity="0.5"
+                                            VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Text="{Binding}"
+                           FontSize="15"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      </StackPanel>
+    </Border>
   </Grid>
 </UserControl>
