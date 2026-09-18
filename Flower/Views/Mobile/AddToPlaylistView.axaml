@@ -29,9 +29,15 @@
             HorizontalAlignment="Stretch"
             VerticalAlignment="Stretch" />
 
-    <!-- Playlist picker card -->
+    <!-- Playlist picker card. Lifted clear of the keyboard, which comes up
+         over the bottom of the screen where this sheet sits and covered the
+         New Playlist name box the moment a tap on that row focused it. The
+         lift squeezes the card rather than pushing it off the top: the height
+         left above the keyboard is what it gets, and the list scrolls in it.
+         See Flower.Controls.SoftKeyboard. -->
     <Border VerticalAlignment="Bottom"
             controls:SlidingSheet.IsCard="True"
+            controls:SoftKeyboard.AvoidOcclusion="True"
             MaxHeight="420"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             CornerRadius="12,12,0,0"
