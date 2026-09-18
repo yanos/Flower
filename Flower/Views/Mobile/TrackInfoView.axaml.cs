@@ -87,6 +87,14 @@ public partial class TrackInfoView : UserControl
 
         LyricsBox.Text = track.Lyrics ?? "";
 
+        // The same two numbers the desktop window shows - see its
+        // UpdateListening for why a play count with no last-played date is
+        // right (an iTunes import brings the count and no date).
+        PlayCountValue.Text  = track.TotalPlayCount.ToString(CultureInfo.CurrentCulture);
+        LastPlayedValue.Text = track.LastPlayedAt is { } at
+            ? $"{at.LocalDateTime.ToString("MMM d, yyyy", CultureInfo.CurrentCulture)} {at.LocalDateTime.ToShortTimeString()}"
+            : "—";
+
         DurationValue.Text   = _durationConverter.Convert(track.Duration, typeof(string), null, CultureInfo.CurrentCulture) as string ?? "—";
         CodecValue.Text      = track.Codec ?? "—";
         BitrateValue.Text    = track.Bitrate > 0 ? $"{track.Bitrate} kbps" : "—";

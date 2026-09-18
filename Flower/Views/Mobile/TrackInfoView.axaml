@@ -133,6 +133,15 @@
         <TextBlock Text="LYRICS" Classes="sectionHeader" />
         <controls:TextInput x:Name="LyricsBox" Classes="val" AcceptsReturn="True" MinHeight="80" TextWrapping="Wrap" />
 
+        <!-- Flower's own record of what has been listened to rather than
+             tags, so read-only, as in the desktop window's Listening section. -->
+        <TextBlock Text="LISTENING" Classes="sectionHeader" />
+        <TextBlock Text="Play Count" Classes="lbl" />
+        <TextBlock x:Name="PlayCountValue" Classes="val" />
+
+        <TextBlock Text="Last Played" Classes="lbl" />
+        <TextBlock x:Name="LastPlayedValue" Classes="val" />
+
         <TextBlock Text="TECHNICAL" Classes="sectionHeader" />
         <TextBlock Text="Duration" Classes="lbl" />
         <TextBlock x:Name="DurationValue" Classes="val" />
