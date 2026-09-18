@@ -5,8 +5,9 @@ using Flower.ViewModels;
 
 namespace Flower.Views;
 
-// The rule editor. Everything it decides lives in
-// SmartPlaylistEditorViewModel; this is the four clicks that reach it.
+// The rule editor's window. Everything it decides lives in
+// SmartPlaylistEditorViewModel and the controls in SmartPlaylistEditorView;
+// this is the two clicks that end an edit.
 //
 // Modal (ShowDialog), unlike the Equalizer and Log windows: those are things
 // you leave open while the music plays, and this one has an OK button whose
@@ -38,17 +39,5 @@ public partial class SmartPlaylistEditorWindow : Window
     {
         ViewModel?.Cancel();
         Close(false);
-    }
-
-    private void AddRow_Click(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Control { DataContext: SmartConditionRowViewModel row })
-            ViewModel?.AddCondition(row);
-    }
-
-    private void RemoveRow_Click(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Control { DataContext: SmartConditionRowViewModel row })
-            ViewModel?.RemoveCondition(row);
     }
 }

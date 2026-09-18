@@ -349,6 +349,42 @@ the user tries.
 "Convert to ordinary playlist" (freeze the current contents, drop the rules)
 is a one-liner and worth having; the reverse is not offered.
 
+**The phone has the same editor.** `SmartPlaylistEditorView` is the controls
+without the buttons that end an edit; desktop's `SmartPlaylistEditorWindow`
+puts OK/Cancel under it, and the phone's `SmartPlaylistEditorSheetView` (a
+pushed sheet reached from "New Smart Playlist" under "New Playlist" on the
+Playlists tab) puts a back arrow and a check above it. `IsCompact` is the
+one difference: a rule on two lines instead of one, and the whole page
+scrolling rather than only the rules. Both heads open it by answering
+`MainViewModel.SmartPlaylistEditorRequested`, so creation is
+`MainViewModel.NewSmartPlaylist` on both. On the phone, leaving the sheet any
+way but the check is a cancel (`MobileMainViewModel.ActiveSheet`), which
+removes a playlist created only to be edited. The phone has no way to edit
+an existing playlist's rules yet; that would be an "Edit Rules" entry in the
+playlist's actions sheet calling `MainViewModel.EditSmartPlaylist`.
+
+**The editor shows what the rules pick while they are typed.**
+`SmartPlaylistEditorViewModel.PreviewTracks` re-evaluates on every change to a
+rule, the match mode or the limit - off the UI thread, and for typed values
+only once typing has paused for a second (`TypingPause`; a pick from a list
+goes at once) - through `SmartPlaylistRefresher.Preview` -
+the same resolution `RefreshOne` uses, without storing anything - so the
+preview and the saved playlist are one answer. A row nobody has typed into yet
+is left out rather than read as "title is empty", and a random limit uses one
+seed per editor so the list holds still under the user's fingers. The phone
+lists the preview under the rules in the Songs tab's own row
+(`TrackRowTemplate`), every match, in a `VirtualizingStackPanel` inside the
+page's scroller. Evaluating was never the slow part - a 20,000-track library
+takes ~15ms - laying out rows was: 200 unvirtualized rows cost ~850ms of UI
+thread per keystroke, which is what froze the text box;
+tapping one plays it with the preview as the queue. Desktop computes it too
+but does not show it yet.
+
+Changing a rule's field never resets its operator: fields of one kind share
+one operator list instance, and an operator the new kind lacks is stood in for
+("contains" reads as "is" on a Year) while the user's pick is remembered for
+when the field goes back.
+
 ## Phases
 
 1. **Engine.** ✅ Done. `Flower.Core/Models/SmartPlaylistRules.cs` (rules,

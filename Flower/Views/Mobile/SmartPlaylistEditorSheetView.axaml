@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:views="clr-namespace:Flower.Views"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="Flower.Views.Mobile.SmartPlaylistEditorSheetView"
+             x:DataType="vm:MobileMainViewModel"
+             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+             Padding="{DynamicResource SheetBottomInset}">
+
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://Flower/Views/Mobile/Screens/TrackRowTemplate.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <!-- The smart playlist rule editor as a pushed screen: the same controls as
+       desktop's window (views:SmartPlaylistEditorView, in its compact layout)
+       under the header Settings uses, and the songs the rules pick under
+       those. Back is Cancel, as leaving any other way is - see
+       MobileMainViewModel.ActiveSheet - and the check is OK. -->
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- The back arrow and a round check facing it where the floating overlay
+         keeps its gear: 40px circles 12 in from either edge. The title is not
+         here but on its own line under them, as every screen's is (see
+         controls:ScreenTitle). -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="52" Margin="12,4,12,4">
+      <Border Grid.Column="0" Classes="floating" Width="40">
+        <Button Classes="pill"
+                Command="{Binding CloseSheetCommand}"
+                HorizontalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
+        </Button>
+      </Border>
+      <Border Grid.Column="2" Classes="floating" Width="40">
+        <Button Classes="pill"
+                Command="{Binding SaveSmartPlaylistCommand}"
+                HorizontalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="Check" Width="20" Height="20" />
+        </Button>
+      </Border>
+    </Grid>
+
+    <!-- The whole page scrolls rather than only the rules, so the name box and
+         the limit line are not pinned over what the keyboard leaves, and the
+         song list runs on below them. -->
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                  controls:SoftKeyboard.AvoidOcclusion="True">
+      <StackPanel Margin="0,0,0,20">
+        <TextBlock Text="{Binding SmartPlaylistEditor.Title, FallbackValue=''}"
+                   FontSize="22"
+                   FontWeight="SemiBold"
+                   Margin="20,0,20,8"
+                   TextTrimming="CharacterEllipsis" />
+
+        <views:SmartPlaylistEditorView DataContext="{Binding SmartPlaylistEditor}"
+                                       IsCompact="True"
+                                       Margin="20,8,20,0" />
+
+        <!-- What the rules as typed would pick, in the Songs tab's own rows -
+             tapping one plays it, with the preview as the queue. -->
+        <TextBlock Text="{Binding SmartPlaylistEditor.PreviewSummary, FallbackValue=''}"
+                   FontSize="13"
+                   FontWeight="SemiBold"
+                   Opacity="0.6"
+                   Margin="20,20,20,6" />
+        <!-- Virtualized inside the page's own scroller, as the album grids
+             are (RecentlyAddedScreenView): a loose rule matches most of a
+             library, and laying out every row of that froze the page. -->
+        <ItemsControl ItemsSource="{Binding SmartPlaylistPreviewRows}"
+                      ItemTemplate="{StaticResource TrackRowTemplate}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <VirtualizingStackPanel Orientation="Vertical" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

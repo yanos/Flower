@@ -26,6 +26,21 @@
 
       <controls:NewPlaylistEntry />
 
+      <!-- Under New Playlist, and drawn the same way so the two read as a
+           pair. Only here, not in the add-to-playlist sheet: a smart playlist
+           holds what its rules say, so there is nothing to add a song to. -->
+      <Button Classes="pickerRow"
+              IsVisible="{Binding CanCreateSmartPlaylist}"
+              Command="{Binding NewSmartPlaylistCommand}">
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
+          <Border Classes="floating" Width="26" Height="26" CornerRadius="13" BoxShadow="0 1 4 0 #28000000">
+            <materialIcons:MaterialIcon Kind="PlaylistStar" Width="16" Height="16"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <TextBlock Text="New Smart Playlist" FontSize="16" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+
       <ItemsControl ItemsSource="{Binding PlaylistPickerItems}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="svm:SidebarItem">

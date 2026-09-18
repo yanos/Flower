@@ -38,7 +38,7 @@ public enum MobileNavigationTransition { None, FromRight, FromLeft }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist }
+public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -700,9 +700,15 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     }
 
     private void SyncPlayQueueToCurrentView() =>
-        Main.SetPlayQueue(IsShowingSearchResults
-            ? SearchSongResults.Select(r => r.Track)
-            : Main.Rows.Select(r => r.Track));
+        Main.SetPlayQueue(CurrentTrackRows.Select(r => r.Track));
+
+    // The rows a tapped song was tapped in: the smart playlist editor's
+    // preview while it is up (it covers every screen), Search's own songs on
+    // Search, and Main.Rows on everything else.
+    private IList<TrackRowViewModel> CurrentTrackRows =>
+        IsShowingSmartPlaylistEditor ? SmartPlaylistPreviewRows
+        : IsShowingSearchResults ? SearchSongResults
+        : Main.Rows;
 
     // Non-null only while drilled into a specific playlist's track list, which is the
     // one place mobile allows reordering (Songs/Albums/Artists have no persisted order).
@@ -719,6 +725,11 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         {
             if (_activeSheet == value)
                 return;
+            // Leaving the rule editor by any door but its check - the back
+            // arrow, a swipe, a tab change - is a cancel, and a cancel is what
+            // removes a playlist that was only created to be edited.
+            if (_activeSheet == MobileSheet.SmartPlaylistEditor)
+                FinishSmartPlaylistEdit(saved: false);
             _activeSheet = value;
             if (value == MobileSheet.None)
             {
@@ -749,6 +760,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingTrackInfo));
             OnPropertyChanged(nameof(IsShowingAddToPlaylist));
             OnPropertyChanged(nameof(IsShowingSettings));
+            OnPropertyChanged(nameof(IsShowingSmartPlaylistEditor));
             OnPropertyChanged(nameof(IsShowingConfirmPairServer));
             OnPropertyChanged(nameof(IsShowingConfirmDeleteFile));
             OnPropertyChanged(nameof(IsShowingConfirmDeletePlaylist));
@@ -814,6 +826,103 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public bool IsShowingTrackInfo => ActiveSheet == MobileSheet.TrackInfo;
     public bool IsShowingAddToPlaylist => ActiveSheet == MobileSheet.AddToPlaylist;
     public bool IsShowingSettings => ActiveSheet == MobileSheet.Settings;
+    public bool IsShowingSmartPlaylistEditor => ActiveSheet == MobileSheet.SmartPlaylistEditor;
+
+    // ── Smart playlists ───────────────────────────────────────────────────────
+
+    // The rule editor the sheet is showing, the same ViewModel desktop's window
+    // binds. Opened by MainViewModel.SmartPlaylistEditorRequested, which both
+    // heads answer - so creating one here is MainViewModel.NewSmartPlaylist,
+    // exactly as it is from the desktop sidebar. Not cleared when the sheet
+    // closes: it is what the sheet is still showing while it slides away.
+    private SmartPlaylistEditorViewModel? _smartPlaylistEditor;
+    public SmartPlaylistEditorViewModel? SmartPlaylistEditor
+    {
+        get => _smartPlaylistEditor;
+        private set
+        {
+            if (_smartPlaylistEditor != null)
+                _smartPlaylistEditor.PropertyChanged -= OnSmartPlaylistEditorChanged;
+            _smartPlaylistEditor = value;
+            if (_smartPlaylistEditor != null)
+                _smartPlaylistEditor.PropertyChanged += OnSmartPlaylistEditorChanged;
+            OnPropertyChanged();
+            RebuildSmartPlaylistPreviewRows();
+        }
+    }
+
+    // The editor's preview (SmartPlaylistEditorViewModel.PreviewTracks) as the
+    // Songs tab's own rows. Every match, not a sample: the sheet lays them out
+    // in a VirtualizingStackPanel, so only the rows on screen cost anything.
+    // Replaced whole rather than cleared and refilled - a list of thousands
+    // added one at a time is thousands of change notifications per keystroke.
+    private List<TrackRowViewModel> _smartPlaylistPreviewRows = [];
+    public List<TrackRowViewModel> SmartPlaylistPreviewRows
+    {
+        get => _smartPlaylistPreviewRows;
+        private set
+        {
+            _smartPlaylistPreviewRows = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void OnSmartPlaylistEditorChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SmartPlaylistEditorViewModel.PreviewTracks))
+            RebuildSmartPlaylistPreviewRows();
+    }
+
+    private void RebuildSmartPlaylistPreviewRows()
+    {
+        var tracks = _smartPlaylistEditor?.PreviewTracks ?? [];
+
+        // In the rules' own order - a limit's "most played" picks in that
+        // order, and it is the order the saved playlist will have.
+        SmartPlaylistPreviewRows = TrackListBuilder.Build(tracks, null, "PlaylistOrder", true,
+            PlaylistControl.CurrentlyPlayingTrack,
+            pairedServerFingerprint: Main.PairedServerFingerprint,
+            pairedServerReachable: Main.IsPairedServerReachable);
+    }
+
+    // Whether the editor on screen has yet to be saved or cancelled - see
+    // FinishSmartPlaylistEdit, which is reached from both.
+    private bool _smartPlaylistEditPending;
+
+    // Hidden rather than inert when there is nothing to recompute a playlist
+    // with - the same condition desktop leaves its menu item out on.
+    public bool CanCreateSmartPlaylist => Main.SmartPlaylists != null;
+
+    public ICommand NewSmartPlaylistCommand { get; }
+    public ICommand SaveSmartPlaylistCommand { get; }
+
+    private void OpenSmartPlaylistEditor(SmartPlaylistEditorEventArgs e)
+    {
+        if (Main.SmartPlaylists is not { } refresher)
+            return;
+
+        // Anything already open goes first, so a pending editor is cancelled
+        // before its replacement takes the field.
+        ActiveSheet = MobileSheet.None;
+        SmartPlaylistEditor = new SmartPlaylistEditorViewModel(e.Playlist, Main.Library, refresher, e.IsNew);
+        _smartPlaylistEditPending = true;
+        ActiveSheet = MobileSheet.SmartPlaylistEditor;
+    }
+
+    private void FinishSmartPlaylistEdit(bool saved)
+    {
+        if (!_smartPlaylistEditPending)
+            return;
+        _smartPlaylistEditPending = false;
+
+        if (!saved)
+            SmartPlaylistEditor?.Cancel();
+
+        // Both outcomes move the list: a save can rename the playlist, and a
+        // cancel on a new one deletes its row outright. Desktop's window does
+        // the same once it closes.
+        Main.Playlists.RefreshSidebarItems();
+    }
     public bool IsShowingConfirmPairServer => ActiveSheet == MobileSheet.ConfirmPairServer;
     public bool IsShowingConfirmDeleteFile => ActiveSheet == MobileSheet.ConfirmDeleteFile;
     public bool IsShowingConfirmDeletePlaylist => ActiveSheet == MobileSheet.ConfirmDeletePlaylist;
@@ -1319,6 +1428,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // Mobile's answer to "really delete this playlist?" - desktop's is a
         // dialog raised from MainView. Something has to answer, or the delete
         // waits forever; see AskToDeletePlaylist.
+        _subscriptions.Add<EventHandler<SmartPlaylistEditorEventArgs>>((_, e) => OpenSmartPlaylistEditor(e),
+            h => Main.SmartPlaylistEditorRequested += h, h => Main.SmartPlaylistEditorRequested -= h);
         _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>((_, e) => AskToDeletePlaylist(e),
             h => Main.DeletePlaylistConfirmationRequested += h, h => Main.DeletePlaylistConfirmationRequested -= h);
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(RebuildLibraryDerivedState),
@@ -1361,6 +1472,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         _subscriptions.Add<EventHandler>((_, _) =>
         {
             TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+            TrackAvailability.Apply(SmartPlaylistPreviewRows, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
             ApplyAlbumTileAvailability();
             RefreshDownloadAllIndicator();
         },
@@ -1433,9 +1545,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             // list (Songs/album/playlist/search) the tapped track actually
             // came from - confirmed on a real device as Next/Previous
             // advancing through what looked like an arbitrary/random order.
-            var queueIndex = IsShowingSearchResults
-                ? SearchSongResults.IndexOf(row!)
-                : Main.Rows.IndexOf(row!);
+            var queueIndex = CurrentTrackRows.IndexOf(row!);
 
             SyncPlayQueueToCurrentView();
             // The not-yet-downloaded case (Path == null) is handled inside
@@ -1654,6 +1764,16 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             await Main.CreatePlaylistNamed(name, tracks);
         });
         CancelNewPlaylistCommand = new RelayCommand(EndNamingNewPlaylist);
+        NewSmartPlaylistCommand = new RelayCommand(Main.NewSmartPlaylist);
+        // Stays open on a rejected save, the reason under the rules - the same
+        // as desktop's OK.
+        SaveSmartPlaylistCommand = new RelayCommand(() =>
+        {
+            if (SmartPlaylistEditor?.Save() != true)
+                return;
+            FinishSmartPlaylistEdit(saved: true);
+            ActiveSheet = MobileSheet.None;
+        });
         OpenSettingsCommand = new RelayCommand(() =>
         {
             OnPropertyChanged(nameof(HasMediaPermission));

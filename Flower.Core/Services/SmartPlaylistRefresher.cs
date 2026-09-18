@@ -261,6 +261,23 @@ public sealed class SmartPlaylistRefresher : IDisposable
         }
     }
 
+    // What these rules would pick right now, without storing it anywhere - the
+    // editor's live list of songs under the rules being edited. Resolved the
+    // way RefreshOne resolves them, so the preview and the saved playlist are
+    // the same answer. `random` is the caller's, so a random limit holds still
+    // while the user types rather than reshuffling on every keystroke.
+    public List<Track> Preview(SmartPlaylistRules rules, Random? random = null)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+
+        lock (_gate)
+        {
+            var byId = _library.Playlists.ToDictionary(p => p.Id);
+            var context = new SmartPlaylistContext(_clock.GetUtcNow(), id => Membership(byId, id), random);
+            return SmartPlaylistEvaluator.Evaluate(rules, _library.Tracks, context);
+        }
+    }
+
     // What a membership rule sees when it names a playlist that is not part of
     // this pass: an ordinary one, a frozen smart one, or - by returning null -
     // one this device does not have at all, which resolves to empty rather than

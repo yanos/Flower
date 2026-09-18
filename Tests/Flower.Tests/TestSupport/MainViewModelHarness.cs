@@ -203,7 +203,8 @@ public static class MainViewModelHarness
         MainPlaylist mainPlaylist,
         AppSettings? appSettings = null,
         bool stubSyncServices = false,
-        HttpClient? discoveryHttpClient = null)
+        HttpClient? discoveryHttpClient = null,
+        SmartPlaylistRefresher? smartPlaylists = null)
     {
         appSettings ??= new AppSettings();
         var audio = new FakeAudioManager();
@@ -260,15 +261,19 @@ public static class MainViewModelHarness
             new SidebarRenameService(deviceNicknameStore, NullLogger<SidebarRenameService>.Instance),
             NullLogger<MainViewModel>.Instance,
             networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
-            peerPairingService, peerTrackResolver, deviceIdentity, signingKey);
+            peerPairingService, peerTrackResolver, deviceIdentity, signingKey,
+            smartPlaylists: smartPlaylists);
 
         return new Parts(main, playlistControl, currentlyPlaying, audio, appSettings, library, mainPlaylist,
             networkDiscovery, reachability, mdnsBackend, stubLibrarySync, stubPlaylistSync);
     }
 
-    public static MobileParts BuildMobile(Library library, MainPlaylist mainPlaylist)
+    // smartPlaylists is the caller's to dispose, like any other service it
+    // hands in - it is what lets the rule editor open at all.
+    public static MobileParts BuildMobile(Library library, MainPlaylist mainPlaylist,
+        SmartPlaylistRefresher? smartPlaylists = null)
     {
-        var parts = BuildParts(library, mainPlaylist);
+        var parts = BuildParts(library, mainPlaylist, smartPlaylists: smartPlaylists);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
         return new MobileParts(mobile, parts);
     }

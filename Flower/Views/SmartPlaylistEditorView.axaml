@@ -1,0 +1,225 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:vm="using:Flower.ViewModels"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="820" d:DesignHeight="400"
+             x:Class="Flower.Views.SmartPlaylistEditorView"
+             x:DataType="vm:SmartPlaylistEditorViewModel">
+
+  <!-- The rule editor's controls, without the buttons that end an edit: the
+       desktop window puts OK/Cancel under this, the phone's sheet puts a back
+       arrow and a check above it. One view so the two editors cannot drift -
+       only the row layout differs, chosen by IsCompact (see the code-behind),
+       because a desktop row is one line five controls wide and a phone is not
+       that wide. -->
+  <UserControl.Styles>
+    <Style Selector="Border.rowButton">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="CornerRadius" Value="16" />
+    </Style>
+    <Style Selector="Border.rowButton > Button.pill">
+      <Setter Property="Padding" Value="7" />
+    </Style>
+  </UserControl.Styles>
+
+  <UserControl.Resources>
+    <!-- Every value control lives in the same cell and only the ones matching
+         the current field/operator pairing are visible - see
+         SmartConditionRowViewModel's Show* properties. A typed value takes the
+         whole cell, up to the -/+ buttons, one box or a "between" pair sharing
+         it; the date and relative controls keep their own widths and wrap, so
+         a pair that fits beside itself on a desktop drops to a second line on
+         a phone rather than off its edge. -->
+    <DataTemplate x:Key="ValueControls" x:DataType="vm:SmartConditionRowViewModel">
+      <Panel>
+        <controls:TextInput Text="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            ToolTip.Tip="{Binding ValueHint}"
+                            IsVisible="{Binding ShowSingleValueBox}"
+                            HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+
+        <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="6"
+              IsVisible="{Binding ShowSecondValueBox}">
+          <controls:TextInput Grid.Column="0"
+                              Text="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              ToolTip.Tip="{Binding ValueHint}"
+                              VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1" Text="and" VerticalAlignment="Center" Opacity="0.75"/>
+          <controls:TextInput Grid.Column="2"
+                              Text="{Binding SecondValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              ToolTip.Tip="{Binding ValueHint}"
+                              VerticalAlignment="Center"/>
+        </Grid>
+
+        <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6"
+                   IsVisible="{Binding ShowWrappedValues}">
+          <DatePicker SelectedDate="{Binding DateValue, Mode=TwoWay}"
+                      IsVisible="{Binding ShowDateBox}"
+                      VerticalAlignment="Center"/>
+
+          <TextBlock Text="and" IsVisible="{Binding ShowSecondDateBox}"
+                     VerticalAlignment="Center" Opacity="0.75"/>
+
+          <DatePicker SelectedDate="{Binding SecondDateValue, Mode=TwoWay}"
+                      IsVisible="{Binding ShowSecondDateBox}"
+                      VerticalAlignment="Center"/>
+
+          <NumericUpDown Value="{Binding RelativeAmount, Mode=TwoWay}"
+                         Minimum="1" Maximum="100000" Increment="1"
+                         FormatString="0" Width="110"
+                         IsVisible="{Binding ShowRelative}"
+                         VerticalAlignment="Center"/>
+
+          <ComboBox ItemsSource="{Binding RelativeUnits}"
+                    SelectedItem="{Binding SelectedRelativeUnit, Mode=TwoWay}"
+                    IsVisible="{Binding ShowRelative}"
+                    MinWidth="110" VerticalAlignment="Center"/>
+
+          <ComboBox ItemsSource="{Binding BoolValues}"
+                    SelectedItem="{Binding BoolValue, Mode=TwoWay}"
+                    IsVisible="{Binding ShowBoolBox}"
+                    MinWidth="90" VerticalAlignment="Center"/>
+        </WrapPanel>
+
+        <ComboBox ItemsSource="{Binding Playlists}"
+                  SelectedItem="{Binding Playlist, Mode=TwoWay}"
+                  IsVisible="{Binding ShowPlaylistBox}"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+      </Panel>
+    </DataTemplate>
+
+    <!-- The same round, ringed button as the phone sheet's check (Border.floating
+         around a Button.pill, Styles/IconButtons.axaml), a size down so a pair
+         of them sits beside a text box without making the row taller. -->
+    <DataTemplate x:Key="RowButtons" x:DataType="vm:SmartConditionRowViewModel">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <Border Classes="floating rowButton"
+                Opacity="{Binding $parent[ItemsControl].((vm:SmartPlaylistEditorViewModel)DataContext).RemoveButtonOpacity}">
+          <Button Classes="pill" Click="RemoveRow_Click"
+                  HorizontalAlignment="Center"
+                  IsEnabled="{Binding $parent[ItemsControl].((vm:SmartPlaylistEditorViewModel)DataContext).CanRemoveConditions}"
+                  ToolTip.Tip="Remove this rule">
+            <materialIcons:MaterialIcon Kind="Minus" Width="16" Height="16"/>
+          </Button>
+        </Border>
+        <Border Classes="floating rowButton">
+          <Button Classes="pill" Click="AddRow_Click"
+                  HorizontalAlignment="Center"
+                  ToolTip.Tip="Add a rule below this one">
+            <materialIcons:MaterialIcon Kind="Plus" Width="16" Height="16"/>
+          </Button>
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+
+    <!-- Desktop: the whole condition on one line, field and operator in fixed
+         columns so every row's value starts at the same x. -->
+    <DataTemplate x:Key="WideRow" x:DataType="vm:SmartConditionRowViewModel">
+      <Grid ColumnDefinitions="170,190,*,Auto" Margin="0,0,0,6">
+        <ComboBox Grid.Column="0" Margin="0,0,6,0" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding Fields}"
+                  SelectedItem="{Binding Field, Mode=TwoWay}"/>
+
+        <ComboBox Grid.Column="1" Margin="0,0,6,0" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding Operators}"
+                  SelectedItem="{Binding Operator, Mode=TwoWay}"/>
+
+        <ContentControl Grid.Column="2" Content="{Binding}"
+                        ContentTemplate="{StaticResource ValueControls}"/>
+
+        <ContentControl Grid.Column="3" Content="{Binding}" VerticalAlignment="Center"
+                        ContentTemplate="{StaticResource RowButtons}"/>
+      </Grid>
+    </DataTemplate>
+
+    <!-- Phone: field and operator share the first line, the value takes the
+         second with the -/+ pair at its end, and a rule is set off from the
+         next by a hairline rather than by spacing alone. -->
+    <DataTemplate x:Key="CompactRow" x:DataType="vm:SmartConditionRowViewModel">
+      <Border BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+              BorderThickness="0,0,0,1" Padding="0,8">
+        <Grid ColumnDefinitions="*,*,Auto" RowDefinitions="Auto,Auto"
+              ColumnSpacing="6" RowSpacing="6">
+          <ComboBox Grid.Row="0" Grid.Column="0" HorizontalAlignment="Stretch"
+                    ItemsSource="{Binding Fields}"
+                    SelectedItem="{Binding Field, Mode=TwoWay}"/>
+
+          <ComboBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
+                    ItemsSource="{Binding Operators}"
+                    SelectedItem="{Binding Operator, Mode=TwoWay}"/>
+
+          <ContentControl Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                          Content="{Binding}"
+                          ContentTemplate="{StaticResource ValueControls}"/>
+
+          <ContentControl Grid.Row="1" Grid.Column="2" Content="{Binding}" VerticalAlignment="Center"
+                          ContentTemplate="{StaticResource RowButtons}"/>
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <DockPanel>
+
+    <!-- Name + "Match all/any of the following rules", the sentence the rows
+         below finish. -->
+    <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+      <Grid ColumnDefinitions="Auto,*">
+        <TextBlock Grid.Column="0" Text="Name" VerticalAlignment="Center" Margin="0,0,10,0" Opacity="0.75"/>
+        <controls:TextInput Grid.Column="1" Text="{Binding Name, Mode=TwoWay}"
+                            PlaceholderText="Playlist Name"
+                            controls:SoftKeyboard.ReopenOnTap="True"/>
+      </Grid>
+
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="Match" VerticalAlignment="Center" Opacity="0.75"/>
+        <ComboBox ItemsSource="{Binding MatchModes}"
+                  SelectedItem="{Binding MatchMode, Mode=TwoWay}"
+                  MinWidth="80"/>
+        <TextBlock Text="of the following rules:" VerticalAlignment="Center" Opacity="0.75"/>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Footer: the limit line, live updating and whatever stopped the last
+         save. Docked before the rows so the rows take the leftover height and
+         scroll. -->
+    <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,12,0,0">
+
+      <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
+        <CheckBox Content="Limit to" IsChecked="{Binding LimitEnabled, Mode=TwoWay}" VerticalAlignment="Center"/>
+        <NumericUpDown Value="{Binding LimitAmount, Mode=TwoWay}"
+                       IsEnabled="{Binding LimitEnabled}"
+                       Minimum="1" Maximum="100000" Increment="1"
+                       FormatString="0" Width="110" VerticalAlignment="Center"/>
+        <ComboBox ItemsSource="{Binding LimitUnits}"
+                  SelectedItem="{Binding LimitUnit, Mode=TwoWay}"
+                  IsEnabled="{Binding LimitEnabled}"
+                  MinWidth="100" VerticalAlignment="Center"/>
+        <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding LimitEnabled}">
+          <TextBlock Text="selected by" VerticalAlignment="Center" Opacity="0.75"/>
+          <ComboBox ItemsSource="{Binding LimitSelectors}"
+                    SelectedItem="{Binding LimitSelector, Mode=TwoWay}"
+                    MinWidth="180" VerticalAlignment="Center"/>
+        </StackPanel>
+      </WrapPanel>
+
+      <CheckBox Content="Live updating" IsChecked="{Binding LiveUpdating, Mode=TwoWay}"
+                ToolTip.Tip="Keep re-evaluating these rules as the library changes. Off means fill the playlist in once, now, and then leave it alone."/>
+
+      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}"
+                 Foreground="{DynamicResource AppErrorBrush}" TextWrapping="Wrap"/>
+    </StackPanel>
+
+    <!-- Scrolls on a desktop, where the window is a fixed height. Compact turns
+         it off: the phone's sheet scrolls the whole page instead, and a
+         ScrollViewer that can scroll would take the finger for itself. -->
+    <ScrollViewer x:Name="RulesScroller" HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl x:Name="RulesList"
+                    ItemsSource="{Binding Conditions}"
+                    ItemTemplate="{StaticResource WideRow}"/>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

@@ -614,6 +614,14 @@
                             DismissCommand="{Binding CloseSheetCommand}">
       <views:SettingsView />
     </controls:SlidingSheet>
+    <!-- The smart playlist rule editor, a pushed screen for the same reason
+         Settings is: it is a page of its own, reached from the Playlists tab's
+         New Smart Playlist row. -->
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            IsOpen="{Binding IsShowingSmartPlaylistEditor}"
+                            DismissCommand="{Binding CloseSheetCommand}">
+      <views:SmartPlaylistEditorSheetView />
+    </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingConfirmPairServer}">

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Flower.Models;
 using Flower.Services;
@@ -70,7 +72,11 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
         _refresher = refresher;
         _isNew = isNew;
 
-        _name = playlist.Name;
+        // A new playlist opens with an empty box reading "Playlist Name", as a
+        // new ordinary one does, rather than asking the user to select and
+        // delete a placeholder first. Saving it empty keeps the name it was
+        // created under - see Save.
+        _name = isNew ? string.Empty : playlist.Name;
         PlaylistCandidates = BuildCandidates();
 
         var rules = playlist.Rules;
@@ -94,7 +100,18 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
         // anything about itself.
         if (Conditions.Count == 0)
             Conditions.Add(new SmartConditionRowViewModel(this));
+
+        foreach (var row in Conditions)
+            row.PropertyChanged += OnRowChanged;
+        Conditions.CollectionChanged += OnConditionsChanged;
+        PropertyChanged += OnEditorChanged;
+
+        SchedulePreview(afterTypingPause: false);
     }
+
+    public bool IsNew => _isNew;
+
+    public string Title => _isNew ? "New Smart Playlist" : "Edit Smart Playlist";
 
     // ── Header ────────────────────────────────────────────────────────────────
 
@@ -171,6 +188,7 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
         var index = after != null ? Conditions.IndexOf(after) + 1 : Conditions.Count;
         Conditions.Insert(index < 0 ? Conditions.Count : index, row);
         OnPropertyChanged(nameof(CanRemoveConditions));
+        OnPropertyChanged(nameof(RemoveButtonOpacity));
     }
 
     // The last row is never removable: rules with no conditions match the whole
@@ -183,9 +201,14 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
 
         Conditions.Remove(row);
         OnPropertyChanged(nameof(CanRemoveConditions));
+        OnPropertyChanged(nameof(RemoveButtonOpacity));
     }
 
     public bool CanRemoveConditions => Conditions.Count > 1;
+
+    // The ring around a disabled - is not the button's own, so it does not dim
+    // with it; the view dims the whole circle by this instead.
+    public double RemoveButtonOpacity => CanRemoveConditions ? 1.0 : 0.4;
 
     // ── The playlists a membership rule may point at ──────────────────────────
 
@@ -208,6 +231,178 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
             .Where(byId.ContainsKey)
             .Select(id => new SmartConditionRowViewModel.PlaylistOption(id, byId[id].Name))
             .OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)];
+    }
+
+    // ── Preview ───────────────────────────────────────────────────────────────
+
+    // The songs the rules as currently typed would pick, recomputed on every
+    // change to them, so the user sees what a rule does while writing it
+    // rather than after saving. Rows that do not say anything yet - an empty
+    // text box, a number that does not parse - are left out instead of
+    // emptying the list: half a rule is what a rule looks like while typed.
+    private IReadOnlyList<Track> _previewTracks = [];
+    public IReadOnlyList<Track> PreviewTracks
+    {
+        get => _previewTracks;
+        private set
+        {
+            _previewTracks = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PreviewSummary));
+        }
+    }
+
+    private bool _hasPreviewRules;
+
+    public string PreviewSummary => !_hasPreviewRules
+        ? "Songs matching these rules will be listed here."
+        : _previewTracks.Count switch
+        {
+            0 => "No songs match these rules.",
+            1 => "1 song matches these rules.",
+            var n => $"{n:N0} songs match these rules.",
+        };
+
+    // One seed per editor, and a fresh Random from it per pass: a random limit
+    // then picks the same songs for the same rules, instead of reshuffling
+    // the list on every keystroke.
+    private readonly int _previewSeed = Random.Shared.Next();
+
+    // How long typing has to pause before the preview follows it. A pass is a
+    // walk of the whole library and a rebuild of the rows under the rules, and
+    // doing that per keystroke made the text box stutter on a phone.
+    public static readonly TimeSpan TypingPause = TimeSpan.FromSeconds(1);
+
+    private CancellationTokenSource? _previewCts;
+    private Task _previewPass = Task.CompletedTask;
+
+    private bool _refreshingPreview;
+
+    // Text waits for the typing to pause; a pick from a list (a field, an
+    // operator, a row added or removed) is a finished thought and goes now.
+    // Either way the evaluation itself runs off the UI thread, and a pass
+    // overtaken by a newer one is dropped rather than shown.
+    private void SchedulePreview(bool afterTypingPause)
+    {
+        _previewCts?.Cancel();
+        _previewCts?.Dispose();
+        _previewCts = new CancellationTokenSource();
+        _previewPass = RunPreviewAsync(afterTypingPause ? TypingPause : TimeSpan.Zero, _previewCts.Token);
+    }
+
+    // The editor is closing: a pass still waiting out a pause has nobody to
+    // show its songs to.
+    private void StopPreview()
+    {
+        _previewCts?.Cancel();
+        _previewCts?.Dispose();
+        _previewCts = null;
+    }
+
+    // Skips any typing pause still pending and returns once the preview shows
+    // the rules as they stand. For tests; the UI never needs to wait on it.
+    public Task RefreshPreviewNowAsync()
+    {
+        SchedulePreview(afterTypingPause: false);
+        return _previewPass;
+    }
+
+    private async Task RunPreviewAsync(TimeSpan delay, CancellationToken token)
+    {
+        try
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, token);
+
+            // Read the rows here, on the UI thread, and hand the pass only the
+            // immutable rules built from them.
+            var (rules, hasRules) = BuildPreviewRules();
+            var seed = _previewSeed;
+            var tracks = hasRules
+                ? await Task.Run<IReadOnlyList<Track>>(() => _refresher.Preview(rules, new Random(seed)), token)
+                : [];
+
+            if (token.IsCancellationRequested)
+                return;
+
+            _refreshingPreview = true;
+            try
+            {
+                _hasPreviewRules = hasRules;
+                PreviewTracks = tracks;
+            }
+            finally
+            {
+                _refreshingPreview = false;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer change restarted the pass; its own run will show the result.
+        }
+    }
+
+    private (SmartPlaylistRules Rules, bool HasRules) BuildPreviewRules()
+    {
+        var conditions = new List<SmartCondition>(Conditions.Count);
+        foreach (var row in Conditions)
+        {
+            if (row.IsBlank || !row.TryBuild(out var condition, out _))
+                continue;
+            conditions.Add(condition!);
+        }
+
+        SmartLimit? limit = LimitEnabled && LimitAmount > 0
+            ? new SmartLimit(LimitAmount, LimitUnit.Unit, LimitSelector.Selector)
+            : null;
+        var rules = new SmartPlaylistRules(MatchMode.Mode, conditions, limit, LiveUpdating);
+
+        // Validate before evaluating: a shape the evaluator does not accept
+        // throws, and a preview is no place for that to surface.
+        var hasRules = conditions.Count > 0 && SmartPlaylistEvaluator.Validate(rules) is { Count: 0 };
+        return (rules, hasRules);
+    }
+
+    // Only what a row would build from: a field change alone raises a dozen
+    // layout notifications, each of which would otherwise be a library pass.
+    private void OnRowChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SmartConditionRowViewModel.ValueText)
+            or nameof(SmartConditionRowViewModel.SecondValueText)
+            or nameof(SmartConditionRowViewModel.RelativeAmount))
+            SchedulePreview(afterTypingPause: true);
+        else if (e.PropertyName is nameof(SmartConditionRowViewModel.Field)
+            or nameof(SmartConditionRowViewModel.Operator)
+            or nameof(SmartConditionRowViewModel.DateValue)
+            or nameof(SmartConditionRowViewModel.SecondDateValue)
+            or nameof(SmartConditionRowViewModel.SelectedRelativeUnit)
+            or nameof(SmartConditionRowViewModel.BoolValue)
+            or nameof(SmartConditionRowViewModel.Playlist))
+            SchedulePreview(afterTypingPause: false);
+    }
+
+    private void OnConditionsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        foreach (SmartConditionRowViewModel row in e.OldItems ?? Array.Empty<SmartConditionRowViewModel>())
+            row.PropertyChanged -= OnRowChanged;
+        foreach (SmartConditionRowViewModel row in e.NewItems ?? Array.Empty<SmartConditionRowViewModel>())
+            row.PropertyChanged += OnRowChanged;
+
+        SchedulePreview(afterTypingPause: false);
+    }
+
+    // Everything on the editor itself that changes what the rules pick. Name
+    // and Error do not, and the preview's own properties are what a pass sets.
+    private void OnEditorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_refreshingPreview)
+            return;
+
+        if (e.PropertyName is nameof(LimitAmount))
+            SchedulePreview(afterTypingPause: true);
+        else if (e.PropertyName is nameof(MatchMode) or nameof(LimitEnabled)
+            or nameof(LimitUnit) or nameof(LimitSelector))
+            SchedulePreview(afterTypingPause: false);
     }
 
     // ── Save / cancel ─────────────────────────────────────────────────────────
@@ -278,6 +473,7 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
         // evaluated exactly once, at the moment it is defined.
         _refresher.RefreshOne(_playlist);
         _refresher.Schedule();
+        StopPreview();
 
         return true;
     }
@@ -287,6 +483,7 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
     // Playlist" in the sidebar, which is the one outcome nobody wanted.
     public void Cancel()
     {
+        StopPreview();
         if (_isNew)
             _library.RemovePlaylist(_playlist);
     }

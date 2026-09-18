@@ -77,6 +77,7 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
         _field = AllFields.FirstOrDefault(f => f.Field == condition?.Field) ?? AllFields[0];
         _operators = OperatorsFor(_field.Field);
         _operator = _operators.FirstOrDefault(o => o.Operator == condition?.Operator) ?? _operators[0];
+        _chosenOperator = _operator.Operator;
 
         if (condition != null)
             Load(condition.Value);
@@ -98,15 +99,33 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
             _field = value;
             OnPropertyChanged();
 
-            // The operator list is per-kind, so changing Title to Year can
-            // leave the current operator unavailable. Keep it when it survives
-            // the move (Is/IsNot exist for everything) rather than resetting
-            // the row for no reason.
-            Operators = OperatorsFor(_field.Field);
-            if (Operators.All(o => o.Operator != _operator.Operator))
-                Operator = Operators[0];
-            else
-                Operator = Operators.First(o => o.Operator == _operator.Operator);
+            // Changing the field never resets the operator the user picked.
+            // Between two fields of one kind (Title to Artist) the list is the
+            // very same instance, so the operator box is not even handed a new
+            // one. Across kinds the picked operator is kept when the new kind
+            // has it, and otherwise stood in for by its nearest relative
+            // ("contains" becomes "is" on a Year) - while the pick itself is
+            // remembered, so going back to Title brings "contains" back.
+            //
+            // Worked out before the list is swapped: a box handed a new list
+            // can write a selection of its own back through Operator on the
+            // way, and that is not the user's pick.
+            var chosen = _chosenOperator;
+            var operators = OperatorsFor(_field.Field);
+            var next = operators.FirstOrDefault(o => o.Operator == chosen)
+                       ?? operators.FirstOrDefault(o => o.Operator == StandIn(chosen))
+                       ?? operators[0];
+
+            if (operators != _operators)
+                Operators = operators;
+            _chosenOperator = chosen;
+
+            // Assigned and announced unconditionally: a new list holds new
+            // option records, and one can be equal to the old, which
+            // Operator's own setter would swallow while the box, handed a fresh
+            // ItemsSource, may have let go of its selection.
+            _operator = next;
+            OnPropertyChanged(nameof(Operator));
 
             RefreshPlaylists();
             NotifyLayoutChanged();
@@ -130,17 +149,45 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
                 return;
 
             _operator = value;
+            _chosenOperator = value.Operator;
             OnPropertyChanged();
             NotifyLayoutChanged();
         }
     }
 
+    // The operator the user last picked, which a field change works from
+    // rather than from whatever that change had to fall back to.
+    private SmartOperator _chosenOperator;
+
+    // What an operator becomes on a kind that does not have it: the text
+    // matches read as "is" on a number or a date, their negation as "is not".
+    private static SmartOperator StandIn(SmartOperator op) => op switch
+    {
+        SmartOperator.Contains or SmartOperator.StartsWith or SmartOperator.EndsWith => SmartOperator.Is,
+        SmartOperator.DoesNotContain => SmartOperator.IsNot,
+        SmartOperator.InTheLast => SmartOperator.GreaterThan,
+        SmartOperator.NotInTheLast => SmartOperator.LessThan,
+        _ => SmartOperator.Is,
+    };
+
     private SmartValueKind Kind => SmartPlaylistFields.KindOf(_field.Field);
+
+    // One list per kind, shared by every row, so fields of the same kind hand
+    // the operator box the same instance - see Field.
+    private static readonly Dictionary<SmartValueKind, ImmutableArray<OperatorOption>> OperatorLists = [];
 
     private static ImmutableArray<OperatorOption> OperatorsFor(SmartField field)
     {
         var kind = SmartPlaylistFields.KindOf(field);
-        return [.. SmartPlaylistFields.OperatorsFor(kind).Select(op => new OperatorOption(op, SmartPlaylistLabels.Name(op, kind)))];
+        lock (OperatorLists)
+        {
+            if (!OperatorLists.TryGetValue(kind, out var list))
+            {
+                list = [.. SmartPlaylistFields.OperatorsFor(kind).Select(op => new OperatorOption(op, SmartPlaylistLabels.Name(op, kind)))];
+                OperatorLists[kind] = list;
+            }
+            return list;
+        }
     }
 
     // ── The typed values, one per shape ───────────────────────────────────────
@@ -244,7 +291,12 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
 
     public bool ShowSecondDateBox => IsBetween && ShowDateBox;
 
-    public bool ShowRangeSeparator => ShowSecondValueBox || ShowSecondDateBox;
+    // The typed box on its own, which takes the whole value cell - see the
+    // editor view's ValueControls, where a range gets a pair instead.
+    public bool ShowSingleValueBox => ShowValueBox && !IsBetween;
+
+    // The controls that keep their own widths and wrap as a group.
+    public bool ShowWrappedValues => ShowDateBox || ShowRelative || ShowBoolBox;
 
     // Told rather than shown for a duration, since the row is already three
     // controls wide and has no space for a format label. Null everywhere else,
@@ -260,7 +312,8 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowPlaylistBox));
         OnPropertyChanged(nameof(ShowSecondValueBox));
         OnPropertyChanged(nameof(ShowSecondDateBox));
-        OnPropertyChanged(nameof(ShowRangeSeparator));
+        OnPropertyChanged(nameof(ShowSingleValueBox));
+        OnPropertyChanged(nameof(ShowWrappedValues));
         OnPropertyChanged(nameof(ValueHint));
     }
 
@@ -315,6 +368,11 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
     }
 
     // ── Turning the row back into a condition ─────────────────────────────────
+
+    // A text or number row nobody has typed into yet: it says nothing about
+    // which songs it wants, so the preview leaves it out rather than reading
+    // it as "title is empty". Save still takes it at its word.
+    public bool IsBlank => ShowValueBox && string.IsNullOrWhiteSpace(ValueText);
 
     public bool TryBuild(out SmartCondition? condition, out string? error)
     {
