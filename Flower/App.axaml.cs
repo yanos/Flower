@@ -197,6 +197,7 @@ public partial class App : Application
             .AddSingleton<SidebarRenameService>()
             .AddSingleton<TrustedPeerStore>()
             .AddSingleton<PlaylistSyncStateStore>()
+            .AddSingleton<ServerStarBaselineStore>()
             .AddSingleton(InMemoryLogStore.Instance)
             // A week of this device's own logs on disk, so what gets pushed to
             // the paired server is not limited to what one process's memory

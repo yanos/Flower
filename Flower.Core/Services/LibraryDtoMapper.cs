@@ -123,7 +123,10 @@ public static class LibraryDtoMapper
             ResumePositionSeconds: track.ResumePosition is { } resume ? (int)resume.TotalSeconds : null,
             IgnoreWhenShuffling: track.IgnoreWhenShuffling,
             VolumeAdjustment: track.VolumeAdjustment,
-            EncoderProfile: track.EncoderProfile);
+            EncoderProfile: track.EncoderProfile,
+            DiscNumber: track.DiscNumber > 0 ? (int)track.DiscNumber : null,
+            DiscCount: track.DiscCount > 0 ? (int)track.DiscCount : null,
+            StarredAt: track.Starred ? track.StarredAt : null);
     }
 
     // The part of the file's path below whichever configured library folder it

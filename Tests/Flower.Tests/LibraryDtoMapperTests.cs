@@ -157,4 +157,23 @@ public class LibraryDtoMapperTests
         Assert.Equal(CatalogIdentity.ArtistId("Various Artists"), song.ArtistId);
         Assert.Equal("Various Artists", song.DisplayAlbumArtist);
     }
+
+    // The receiving end of LibrarySyncMapperTests' disc and star cases: a field
+    // the mapper does not send is one no placeholder can have.
+    [Fact]
+    public void Serves_the_disc_number_and_when_the_track_was_starred()
+    {
+        var starredAt = new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero);
+        var track = RealTrack("Helter Skelter", "Beatles", "The Beatles");
+        track.DiscNumber = 2;
+        track.DiscCount = 2;
+        track.Starred = true;
+        track.StarredAt = starredAt;
+
+        var dto = LibraryDtoMapper.ToTrackDto(track);
+
+        Assert.Equal(2, dto.DiscNumber);
+        Assert.Equal(2, dto.DiscCount);
+        Assert.Equal(starredAt, dto.StarredAt);
+    }
 }

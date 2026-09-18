@@ -131,6 +131,7 @@ public class LibrarySyncService
     private readonly DeviceIdentity _deviceIdentity;
     private readonly IPeerCredentials _credentials;
     private readonly AppSettings _appSettings;
+    private readonly ServerStarBaselineStore _starBaselines;
     private readonly DeviceLogArchive _logArchive;
     private readonly ILogger _logger;
 
@@ -144,7 +145,7 @@ public class LibrarySyncService
     // same meaning here.
     public event EventHandler<PeerTrustRejectedEventArgs>? PeerTrustRejected;
 
-    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, DeviceLogArchive logArchive, ILogger<LibrarySyncService> logger, ILogger<RemoteLibraryImporter> importerLogger)
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, ServerStarBaselineStore starBaselines, DeviceLogArchive logArchive, ILogger<LibrarySyncService> logger, ILogger<RemoteLibraryImporter> importerLogger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
@@ -153,6 +154,7 @@ public class LibrarySyncService
         // already hands this service.
         _credentials = new SignedDeviceCredentials(deviceIdentity, signingKey);
         _appSettings = appSettings;
+        _starBaselines = starBaselines;
         _logArchive = logArchive;
         _logger = logger;
         _importerLogger = importerLogger;
@@ -222,7 +224,14 @@ public class LibrarySyncService
         // yet) must still prune every not-yet-downloaded placeholder this
         // device previously learned from it - see Library.MergeSyncedTracks.
         var beforeCount = _library.Tracks.Count;
-        var removedCount = _library.MergeSyncedTracks(device.Fingerprint, placeholders);
+        var removedCount = _library.MergeSyncedTracks(
+            device.Fingerprint, placeholders, _starBaselines.Load(device.Fingerprint));
+        // What the server said, now the baseline for the next pull - including
+        // the tracks just merged the other way, whose local star the push below
+        // is about to report and ApplyAsync will then record as agreed.
+        await _starBaselines.ReplaceAsync(device.Fingerprint, placeholders
+            .Where(t => t.Starred && t.OriginTrackId is { Length: > 0 })
+            .Select(t => t.OriginTrackId!));
         var addedCount = _library.Tracks.Count - beforeCount + removedCount;
         _logger.LogInformation("Library sync with {Alias}: merged catalog, {AddedCount} new placeholder(s) added, {RemovedCount} stale placeholder(s) pruned ({TotalBefore} -> {TotalAfter})",
             device.Alias, addedCount, removedCount, beforeCount, _library.Tracks.Count);
@@ -357,6 +366,14 @@ public class LibrarySyncService
                 if (reportOwnerState)
                     known[entry.TrackId] = TrackStateSnapshot.Of(entry);
             }
+
+            // The server took these stars as stated, so they are what the two
+            // sides now agree on - the baseline the next pull's merge needs.
+            // Left for that pull to record instead, a star unstarred here and
+            // restarred elsewhere before it would read as this device's own
+            // change and be reported back over the other one.
+            if (reportOwnerState)
+                await _starBaselines.ApplyAsync(device.Fingerprint, report.Select(e => (e.TrackId, e.Starred)));
 
             _logger.LogDebug("Reported {Count} track state(s) to {Alias}", report.Count, device.Alias);
             return true;

@@ -265,6 +265,64 @@ public class LibrarySyncMapperTests
         Assert.Equal("Beatles", track.EffectiveAlbumArtist);
     }
 
+    // A compilation whose AlbumArtists tag names the one artist on it - a
+    // tribute or anthology album flagged as a compilation but tagged with a
+    // single album artist. The sender resolves that to the tag, which here
+    // happens to equal the track's own artist; dropping it as "redundant"
+    // left the receiver with the flag alone, which it resolves to "Various
+    // Artists". Four albums on a real library filed under the wrong artist on
+    // the phone, and nowhere near the tile the server shows.
+    [Fact]
+    public void ToPlaceholderTrack_keeps_a_compilations_album_artist_even_when_it_repeats_the_track_artist()
+    {
+        var song = new TrackDto(
+            Id: "some-id", Title: "La Bastringue", Album: "Anthologie", Artist: "La Bottine Souriante",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 2001, Genre: null,
+            Size: null, ContentType: null, Suffix: "m4a", Duration: 200, BitRate: null, CoverArt: null,
+            DisplayAlbumArtist: "La Bottine Souriante", IsCompilation: true);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.True(track.IsCompilation);
+        Assert.Equal("La Bottine Souriante", track.EffectiveAlbumArtist);
+    }
+
+    // Disc numbers never crossed the wire, so every placeholder landed on disc
+    // 0 and a multi-disc album sorted its discs into one another - disc 2's
+    // track 1 straight after disc 1's.
+    [Fact]
+    public void ToPlaceholderTrack_carries_the_disc_number_and_count()
+    {
+        var song = new TrackDto(
+            Id: "some-id", Title: "Helter Skelter", Album: "The Beatles", Artist: "Beatles",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 6, Year: 1968, Genre: null,
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 269, BitRate: null, CoverArt: null,
+            DiscNumber: 2, DiscCount: 2);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.Equal(2u, track.DiscNumber);
+        Assert.Equal(2u, track.DiscCount);
+    }
+
+    // The server's own StarredAt, so "Date Starred" agrees across devices
+    // instead of reading as blank on every one that learned the star by sync.
+    [Fact]
+    public void ToPlaceholderTrack_carries_when_the_track_was_starred()
+    {
+        var at = new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero);
+        var song = new TrackDto(
+            Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "Beatles",
+            AlbumId: "al:1", ArtistId: "ar:1", Track: 1, Year: 1969, Genre: "Rock",
+            Size: null, ContentType: null, Suffix: "mp3", Duration: 259, BitRate: null, CoverArt: null,
+            Starred: true, StarredAt: at);
+
+        var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
+
+        Assert.True(track.Starred);
+        Assert.Equal(at, track.StarredAt);
+    }
+
     // A third-party OpenSubsonic server that sends neither field must still map
     // cleanly, the same way a missing DateAdded/LastPlayed already does.
     [Fact]

@@ -32,16 +32,22 @@ public static class LibrarySyncMapper
         // various-artists compilation into one album tile per contributor. See
         // TrackDto.DisplayAlbumArtist.
         //
-        // Only stored when it actually differs from this song's own artist. The
-        // sender's fallback ends at Artists for an ordinary single-artist album,
-        // so copying it unconditionally would stamp a redundant AlbumArtists tag
-        // identical to Artists onto the overwhelming majority of a library, for
-        // no change in grouping. Assigning only the differing case reproduces the
-        // sender's EffectiveAlbumArtist exactly in every branch: a real
-        // AlbumArtists tag comes back verbatim, a blank-tagged compilation comes
-        // back as the "Various Artists" its flag stands for, and an ordinary
-        // album falls through to Artists here the same way it did there.
-        AlbumArtists = string.IsNullOrWhiteSpace(song.DisplayAlbumArtist) || song.DisplayAlbumArtist == song.Artist
+        // Only stored when it actually differs from this song's own artist, or
+        // when the song is a compilation. The sender's fallback ends at Artists
+        // for an ordinary single-artist album, so copying it unconditionally
+        // would stamp a redundant AlbumArtists tag identical to Artists onto the
+        // overwhelming majority of a library, for no change in grouping. A
+        // compilation is the exception, because its fallback does not end at
+        // Artists: left blank here, the flag below resolves it to "Various
+        // Artists" - which is wrong for a compilation tagged with the one artist
+        // on it, and filed four such albums on a real phone under a tile the
+        // server never showed. With both cases covered this reproduces the
+        // sender's EffectiveAlbumArtist in every branch: a real AlbumArtists tag
+        // comes back verbatim, a blank-tagged compilation comes back as the
+        // "Various Artists" its flag stands for, and an ordinary album falls
+        // through to Artists here the same way it did there.
+        AlbumArtists = string.IsNullOrWhiteSpace(song.DisplayAlbumArtist)
+                       || (song.DisplayAlbumArtist == song.Artist && !song.IsCompilation)
             ? null
             : song.DisplayAlbumArtist,
         IsCompilation = song.IsCompilation,
@@ -49,6 +55,8 @@ public static class LibrarySyncMapper
         Duration = TimeSpan.FromSeconds(song.Duration ?? 0),
         Genre = song.Genre,
         TrackNumber = (uint)(song.Track is > 0 ? song.Track.Value : 0),
+        DiscNumber = (uint)(song.DiscNumber is > 0 ? song.DiscNumber.Value : 0),
+        DiscCount = (uint)(song.DiscCount is > 0 ? song.DiscCount.Value : 0),
         Year = song.Year?.ToString(),
         Path = null,
         OriginDeviceFingerprint = originDeviceFingerprint,
@@ -79,10 +87,10 @@ public static class LibrarySyncMapper
         // Part of the real OpenSubsonic spec, unlike the two above, and served
         // by this project's own server all along (LibraryDtoMapper.ToTrackDto) - it
         // was simply never read here, so a star set on the server or from any
-        // third-party client was invisible to every Flower client. There is no
-        // StarredAt on the wire: `starred` is a bare flag in TrackDto, and the
-        // timestamp is local bookkeeping for ordering a liked-songs view.
+        // third-party client was invisible to every Flower client. See
+        // Library.MergeStar for how it reaches a track this device already has.
         Starred = song.Starred,
+        StarredAt = song.Starred ? song.StarredAt : null,
         // What Track Info's Technical tab reads. A placeholder has no file to
         // scan, so these can only ever be what the origin's own scan found;
         // without them a library made entirely of synced placeholders showed an

@@ -666,7 +666,12 @@ namespace Flower.Models
         // logging (see LibrarySyncService.SyncWithAsync) - visibility that
         // would have made the bug this was built to fix obvious immediately
         // instead of needing a manual device-log investigation.
-        public int MergeSyncedTracks(string sourceDeviceFingerprint, IReadOnlyList<Track> incoming)
+        //
+        // starBaseline is which of the source's tracks it said were starred
+        // the last time this device and it agreed - see MergeStar. Null when
+        // there has never been a pull from it, in which case its stars win.
+        public int MergeSyncedTracks(
+            string sourceDeviceFingerprint, IReadOnlyList<Track> incoming, IReadOnlySet<string>? starBaseline = null)
         {
             int removedCount;
             lock (_lock)
@@ -690,7 +695,12 @@ namespace Flower.Models
                         existing.DateAdded = remote.DateAdded;
                         MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
                         RefreshPlaceholderMetadata(existing, remote);
+                        // Before MergeLastPlayed: which side played last is
+                        // what decides the options, and that has to be read
+                        // before the server's date is taken.
                         MergePlaybackOptions(existing, remote);
+                        MergeLastPlayed(existing, remote);
+                        MergeStar(existing, remote, starBaseline);
                         continue; // Already known locally, real file or placeholder - only
                                   // the bookkeeping above needed updating, not a whole new Track.
                     }
@@ -755,6 +765,8 @@ namespace Flower.Models
             existing.Genre = remote.Genre;
             existing.Year = remote.Year;
             existing.TrackNumber = remote.TrackNumber;
+            existing.DiscNumber = remote.DiscNumber;
+            existing.DiscCount = remote.DiscCount;
             existing.Bitrate = remote.Bitrate;
             existing.SampleRate = remote.SampleRate;
             existing.Channels = remote.Channels;
@@ -803,6 +815,46 @@ namespace Flower.Models
             existing.ResumePosition = remote.ResumePosition;
             existing.IgnoreWhenShuffling = remote.IgnoreWhenShuffling;
             existing.VolumeAdjustment = remote.VolumeAdjustment;
+        }
+
+        // A listen somewhere else. This used to be missing: a pull merged the
+        // play *count* of a track this device already had and left its date
+        // wherever the first pull had put it, so a song played on the desktop
+        // gained a play on the phone and stayed out of its History - 71 tracks
+        // on a real phone, 47 of them "never played". Forward only, the same
+        // high-water mark the server keeps (ApplyReportedOwnerState): a later
+        // listen of this device's own is on its way up, not something for a
+        // pull to walk back.
+        private static void MergeLastPlayed(Track existing, Track remote)
+        {
+            if (remote.LastPlayedAt is { } theirs && (existing.LastPlayedAt is not { } mine || theirs > mine))
+                existing.LastPlayedAt = theirs;
+        }
+
+        // A three-way merge, because a star is a toggle and has nothing to
+        // order two values by. The baseline is what the server said last
+        // time: if it says something else now, the server moved and its value
+        // wins; if not, any difference is this device's own, not yet reported,
+        // and is kept for the push that follows the pull to carry up.
+        //
+        // Taking neither, which is what this used to do, was worse than taking
+        // either. The push compares this device's value against what the
+        // server just served, so a star set on the desktop or in the browser
+        // read as a local unstar here and was reported back as one - an admin
+        // phone quietly undoing every star made anywhere else.
+        private static void MergeStar(Track existing, Track remote, IReadOnlySet<string>? starBaseline)
+        {
+            if (existing.Starred == remote.Starred)
+                return;
+
+            var serverMoved = starBaseline is null
+                || remote.OriginTrackId is not { } id
+                || starBaseline.Contains(id) != remote.Starred;
+            if (!serverMoved)
+                return;
+
+            existing.Starred = remote.Starred;
+            existing.StarredAt = remote.StarredAt;
         }
 
         // Per-key max, not overwrite - see Track.RemotePlayCounts' own doc

@@ -77,7 +77,7 @@ public class CompositionRootTests : PinnedDataDirectory
         {
             typeof(LibraryStore), typeof(AppSettingsStore), typeof(PlaylistStore),
             typeof(DeviceKeyStore), typeof(DeviceIdentityStore), typeof(DeviceNicknameStore),
-            typeof(TrustedPeerStore), typeof(PlaylistSyncStateStore),
+            typeof(TrustedPeerStore), typeof(PlaylistSyncStateStore), typeof(ServerStarBaselineStore),
             typeof(InMemoryLogStore),
             typeof(AppSettings), typeof(Library), typeof(MainPlaylist),
             typeof(Importer.IMusicImporter), typeof(ColumnManager), typeof(AlbumArtLoader),

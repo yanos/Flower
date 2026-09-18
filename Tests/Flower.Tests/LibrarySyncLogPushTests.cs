@@ -67,6 +67,7 @@ public class LibrarySyncLogPushTests : IDisposable
             new DeviceIdentity { Fingerprint = key.Fingerprint, Alias = "Client" },
             key,
             new AppSettings { ShareLogsWithPairedServer = true },
+            new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
             new DeviceLogArchive(new ClientLogStore(Path.Combine(_tempHome, "logs", "devices")), InMemoryLogStore.Instance),
             logger,
             NullLogger<RemoteLibraryImporter>.Instance);

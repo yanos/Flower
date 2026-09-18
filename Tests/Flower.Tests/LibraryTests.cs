@@ -1678,4 +1678,139 @@ public class LibraryTests
 
         Assert.NotEqual(new Library(tracks).ChangeToken, new Library(tracks).ChangeToken);
     }
+
+    // One track as this device knows it and as the server serves it back,
+    // matched by SyncKey the way every pull matches them.
+    private static (Library library, Track mine, Track served) SyncedPair(
+        Action<Track>? mine = null, Action<Track>? served = null)
+    {
+        var local = new Track
+        {
+            Title = "Pirsomnia", Artists = "Ichiko Aoba", Album = "Luminescent Creatures",
+            Duration = TimeSpan.FromSeconds(200), Path = null,
+            OriginDeviceFingerprint = "peer-1", OriginTrackId = "t1",
+        };
+        mine?.Invoke(local);
+        var incoming = new Track
+        {
+            Title = "Pirsomnia", Artists = "Ichiko Aoba", Album = "Luminescent Creatures",
+            Duration = TimeSpan.FromSeconds(200), Path = null,
+            OriginDeviceFingerprint = "peer-1", OriginTrackId = "t1",
+        };
+        served?.Invoke(incoming);
+        return (new Library(new List<Track> { local }), local, incoming);
+    }
+
+    // A listen on another device reached this one as a play count and never as
+    // a date: the pull merged RemotePlayCounts for a track it already had and
+    // left LastPlayedAt at whatever the first pull put there. 71 tracks on a
+    // real phone, 47 of them reading "never played" in History.
+    [Fact]
+    public void MergeSyncedTracks_takes_a_later_listen_the_server_knows_about()
+    {
+        var later = new DateTimeOffset(2026, 9, 14, 16, 40, 0, TimeSpan.Zero);
+        var (library, _, served) = SyncedPair(
+            mine: t => t.LastPlayedAt = later.AddDays(-1),
+            served: t => t.LastPlayedAt = later);
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { served });
+
+        Assert.Equal(later, library.Tracks.Single().LastPlayedAt);
+    }
+
+    [Fact]
+    public void MergeSyncedTracks_takes_the_servers_listen_for_a_track_this_device_never_played()
+    {
+        var at = new DateTimeOffset(2026, 9, 7, 2, 8, 0, TimeSpan.Zero);
+        var (library, _, served) = SyncedPair(served: t => t.LastPlayedAt = at);
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { served });
+
+        Assert.Equal(at, library.Tracks.Single().LastPlayedAt);
+    }
+
+    // Forward only, the same high-water mark the server keeps: this device's
+    // own later listen has not reached the server yet, and a pull must not
+    // walk it back before the push that carries it gets there.
+    [Fact]
+    public void MergeSyncedTracks_keeps_a_later_listen_of_this_devices_own()
+    {
+        var mine = new DateTimeOffset(2026, 9, 17, 20, 0, 0, TimeSpan.Zero);
+        var (library, _, served) = SyncedPair(
+            mine: t => t.LastPlayedAt = mine,
+            served: t => t.LastPlayedAt = mine.AddDays(-3));
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { served });
+
+        Assert.Equal(mine, library.Tracks.Single().LastPlayedAt);
+    }
+
+    // The star the server moved since the last pull - starred from the desktop
+    // or the browser. It used to be ignored here, and then the push, finding
+    // this device's value different from the server's, reported it back as a
+    // change and unstarred the track for everyone.
+    [Fact]
+    public void MergeSyncedTracks_takes_a_star_the_server_set_since_the_last_pull()
+    {
+        var at = new DateTimeOffset(2026, 9, 17, 9, 0, 0, TimeSpan.Zero);
+        var (library, _, served) = SyncedPair(served: t => { t.Starred = true; t.StarredAt = at; });
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { served }, starBaseline: new HashSet<string>());
+
+        var merged = library.Tracks.Single();
+        Assert.True(merged.Starred);
+        Assert.Equal(at, merged.StarredAt);
+    }
+
+    [Fact]
+    public void MergeSyncedTracks_takes_an_unstar_the_server_made_since_the_last_pull()
+    {
+        var (library, _, served) = SyncedPair(
+            mine: t => { t.Starred = true; t.StarredAt = DateTimeOffset.UtcNow; });
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { served }, starBaseline: new HashSet<string> { "t1" });
+
+        var merged = library.Tracks.Single();
+        Assert.False(merged.Starred);
+        Assert.Null(merged.StarredAt);
+    }
+
+    // The other half of the three-way merge: the server says what it said
+    // last time, so the difference is this device's own and not yet reported
+    // - starred offline, say. Kept, so the push that follows the pull carries
+    // it up instead of the pull erasing it first.
+    [Fact]
+    public void MergeSyncedTracks_keeps_a_star_of_this_devices_own_the_server_has_not_heard_about()
+    {
+        var (library, _, served) = SyncedPair(
+            mine: t => { t.Starred = true; t.StarredAt = DateTimeOffset.UtcNow; });
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { served }, starBaseline: new HashSet<string>());
+
+        Assert.True(library.Tracks.Single().Starred);
+    }
+
+    // No baseline is a first pull from this server: nothing to tell a local
+    // change from a local value, and the library being mirrored wins.
+    [Fact]
+    public void MergeSyncedTracks_takes_the_servers_star_when_it_has_no_baseline()
+    {
+        var (library, _, served) = SyncedPair(served: t => t.Starred = true);
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { served });
+
+        Assert.True(library.Tracks.Single().Starred);
+    }
+
+    [Fact]
+    public void MergeSyncedTracks_refreshes_a_placeholders_disc_number()
+    {
+        var (library, _, served) = SyncedPair(served: t => { t.DiscNumber = 2; t.DiscCount = 3; });
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { served });
+
+        var merged = library.Tracks.Single();
+        Assert.Equal(2u, merged.DiscNumber);
+        Assert.Equal(3u, merged.DiscCount);
+    }
 }

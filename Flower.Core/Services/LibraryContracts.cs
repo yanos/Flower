@@ -144,4 +144,14 @@ public sealed record TrackDto(
     // Track.EncoderProfile. Flower-specific; nothing in the spec covers it, and
     // like the other technical fields above it is the only way a device that
     // has the catalog but not the file can show it at all.
-    string? EncoderProfile = null);
+    string? EncoderProfile = null,
+    // Which disc of how many. Never sent until a phone was found filing every
+    // synced track on disc 0, so a multi-disc album interleaved its discs -
+    // disc 2's track 1 straight after disc 1's. Null when the tag is absent,
+    // the same as Track above.
+    int? DiscNumber = null,
+    int? DiscCount = null,
+    // When the star was set, alongside the bare flag above, so "Date Starred"
+    // reads the same on a device that learned the star by sync as on the one
+    // it was clicked on. Null when not starred.
+    System.DateTimeOffset? StarredAt = null);

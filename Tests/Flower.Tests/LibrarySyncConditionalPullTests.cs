@@ -55,6 +55,7 @@ public class LibrarySyncConditionalPullTests : IDisposable
             new DeviceIdentity { Fingerprint = key.Fingerprint, Alias = "Client" },
             key,
             new AppSettings(),
+            new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
             TestLogArchive.InTempDirectory(),
             NullLogger<LibrarySyncService>.Instance,
             NullLogger<RemoteLibraryImporter>.Instance);
