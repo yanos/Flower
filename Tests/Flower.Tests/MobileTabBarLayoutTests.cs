@@ -320,6 +320,18 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
         Assert.True(box.IsFocused, $"focus ended on {h.Window.FocusManager?.GetFocusedElement()}");
     }
 
+    // The prompt is its title alone now - the box is right above it.
+    [AvaloniaFact]
+    public void The_search_prompt_has_no_line_under_its_title()
+    {
+        using var h = new Harness(NarrowPhone);
+        OpenSearch(h);
+
+        var message = ((Panel)h.Window.GetVisualDescendants().OfType<TextBlock>()
+            .Single(t => t.Text == h.Vm.EmptyStateTitle).Parent!).Children.OfType<TextBlock>().Last();
+        Assert.False(message.IsVisible);
+    }
+
     private static TextBox OpenSearch(Harness h)
     {
         h.Vm.SelectTabCommand.Execute(nameof(MobileTab.Search));

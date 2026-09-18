@@ -286,6 +286,9 @@
     <Style Selector="Button.trackRow.placeholder TextBlock.placeholderGlyph, StackPanel.dimmed TextBlock.placeholderGlyph">
       <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
     </Style>
+    <Style Selector="StackPanel.searchPrompt">
+      <Setter Property="Margin" Value="0,0,0,300" />
+    </Style>
   </UserControl.Styles>
 
   <Grid x:Name="Root" RowDefinitions="*,Auto,Auto">
@@ -310,7 +313,10 @@
            in the code-behind): this sits over the stack, not inside a screen, so it would
            otherwise stay put over a screen sliding away and describe the wrong one. -->
       <Panel x:Name="EmptyStateHost">
+        <!-- The search prompt sits well above centre: the keyboard comes up
+             under it, and the box it is about is at the top of the screen. -->
         <StackPanel IsVisible="{Binding IsContentEmpty}"
+                    Classes.searchPrompt="{Binding IsShowingSearchPrompt}"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Spacing="10"
@@ -323,6 +329,7 @@
                      HorizontalAlignment="Center"
                      TextAlignment="Center" />
           <TextBlock Text="{Binding EmptyStateMessage}"
+                     IsVisible="{Binding EmptyStateMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                      FontSize="14"
                      Opacity="0.5"
                      HorizontalAlignment="Center"

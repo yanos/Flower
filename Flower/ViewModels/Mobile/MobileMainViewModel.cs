@@ -1368,8 +1368,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     {
         get
         {
+            // The title says it all, with the box right above it.
             if (IsShowingSearchPrompt)
-                return "Find songs by title, artist, album, or genre.";
+                return "";
             if (IsShowingSearchResults)
                 return $"No matches for \"{SearchQuery}\".";
             if (Main.Library.Tracks.Count > 0)
