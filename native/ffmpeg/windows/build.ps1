@@ -41,9 +41,13 @@ $out = Join-Path $root "native/ffmpeg/artifacts/windows"
 # the façade needs to compile, and this says what it was last known to compile
 # against. The checksum is the whole point of pinning - without it this is a
 # script that runs whatever a download gave it.
-$release = "autobuild-2026-09-04-14-01"
+#
+# Always pin a month-end build. BtbN deletes daily autobuilds after about two
+# weeks but keeps the last one of each month indefinitely, and a pin to a daily
+# one (autobuild-2026-09-04-14-01) turned into a 404 that failed Windows CI.
+$release = "autobuild-2026-08-31-13-27"
 $asset = "ffmpeg-n8.1.2-50-g1a748fe2cd-win64-lgpl-shared-8.1.zip"
-$sha256 = "d4a0db2e182e6d1535a022523d329daf8daff9d69db88d5aa569732005cffa91"
+$sha256 = "e9712ffbdb03ef71bbab660c75b835bfe698ef6fad0247c76d8d394a39a3db63"
 
 if (-not $Prefix) {
     $downloads = Join-Path $here "ffmpeg"

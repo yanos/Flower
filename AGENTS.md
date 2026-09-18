@@ -2,13 +2,13 @@
 
 ## Project Structure & Module Organization
 
-Flower is a .NET 10, C# cross-platform music player and self-hosted music server. `Flower/` contains shared Avalonia UI, view models, services, and persistence. Platform launchers live in `Flower.Desktop/`, `Flower.Android/`, and `Flower.iOS/`. `Flower.Core/` holds shared server/client domain code; `Flower.Server/` exposes the web API, while `Flower.Web/` contains its browser UI. Tests are in `Flower.Tests/` and `Flower.Server.Tests/`. Keep design records in `docs/` and native audio dependencies under `native/miniaudio/`.
+Flower is a .NET 10, C# cross-platform music player and self-hosted music server. `Flower/` contains shared Avalonia UI, view models, services, and persistence. Platform launchers live in `Flower.Desktop/`, `Flower.Android/`, and `Flower.iOS/`. `Flower.Core/` holds shared server/client domain code; `Flower.Server/` exposes the web API, while `Flower.Web/` contains its browser UI. Tests are in `Tests/Flower.Tests/` and `Tests/Flower.Server.Tests/`. Keep design records in `docs/` and native audio dependencies under `native/miniaudio/`.
 
 ## Build, Test, and Development Commands
 
 - `dotnet build Flower.sln` builds all managed projects.
-- `dotnet test Flower.Tests/Flower.Tests.csproj` runs client and shared-library xUnit tests.
-- `dotnet test Flower.Server.Tests/Flower.Server.Tests.csproj` runs in-process server/API tests.
+- `dotnet test Tests/Flower.Tests/Flower.Tests.csproj` runs client and shared-library xUnit tests.
+- `dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj` runs in-process server/API tests.
 - `dotnet run --project Flower.Server` starts the server and hosts its browser UI. Use a scratch data directory for experiments: `--Flower:DataDirectory=/tmp/flower-server`.
 - `docker compose up --build` builds and starts the containerized server when working on deployment.
 

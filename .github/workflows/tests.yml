@@ -36,7 +36,7 @@ jobs:
           cache: true
           cache-dependency-path: |
             Flower/Flower.csproj
-            Flower.Tests/Flower.Tests.csproj
+            Tests/Flower.Tests/Flower.Tests.csproj
 
       # The RequiresFfmpeg tests fail rather than skip without the façade -
       # deliberately, since a decoder silently not under test is the failure
@@ -80,7 +80,7 @@ jobs:
       - name: Run tests
         env:
           FLOWER_REQUIRE_DECODERS: FFmpeg
-        run: dotnet test Flower.Tests/Flower.Tests.csproj --configuration Release
+        run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release
 
       # Flower.Desktop is the one project no test job reaches - the test jobs
       # get to Flower/Flower.Core through Flower.Tests, and the server through
@@ -118,7 +118,7 @@ jobs:
           cache-dependency-path: |
             Flower.Core/Flower.Core.csproj
             Flower.Server/Flower.Server.csproj
-            Flower.Server.Tests/Flower.Server.Tests.csproj
+            Tests/Flower.Server.Tests/Flower.Server.Tests.csproj
 
       # Flower.Server was previously never compiled by CI at all, let alone
       # tested - `dotnet test Flower.Tests` only ever builds
@@ -128,7 +128,7 @@ jobs:
       # case-insensitive filesystems) without anyone noticing the server could
       # not build from a clean checkout - which is exactly what this job does.
       - name: Run server tests
-        run: dotnet test Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
+        run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
 
   # Both Apple heads in one job. They share a runner because the macOS
   # runners are the scarce and expensive ones, and the second head is a few
@@ -251,7 +251,7 @@ jobs:
           cache: true
           cache-dependency-path: |
             Flower/Flower.csproj
-            Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj
+            Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj
 
       - name: Install iOS workload
         run: dotnet workload install ios
@@ -310,7 +310,7 @@ jobs:
           cache: true
           cache-dependency-path: |
             Flower/Flower.csproj
-            Flower.DeviceChecks.Android/Flower.DeviceChecks.Android.csproj
+            Tests/Flower.DeviceChecks.Android/Flower.DeviceChecks.Android.csproj
 
       - name: Install Android workload
         run: dotnet workload install android

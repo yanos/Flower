@@ -23,9 +23,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PROJECT="Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj"
+PROJECT="Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj"
 BUNDLE_ID="com.yanos.flower.devicechecks"
-APP="Flower.DeviceChecks.iOS/bin/Debug/net10.0-ios26.5/iossimulator-arm64/Flower.DeviceChecks.iOS.app"
+APP="Tests/Flower.DeviceChecks.iOS/bin/Debug/net10.0-ios26.5/iossimulator-arm64/Flower.DeviceChecks.iOS.app"
 TRANSCRIPT="flower-checks.log"
 TIMEOUT_SECONDS=180
 DEVICE="${1:-}"
@@ -48,8 +48,8 @@ xcrun simctl bootstatus "$DEVICE" -b >/dev/null
 # always fixes. Costs a few minutes; the alternative is a crash that reads
 # exactly like a failing check.
 echo "==> Cleaning"
-rm -rf Flower.DeviceChecks.iOS/obj Flower.DeviceChecks.iOS/bin \
-       Flower.DeviceChecks/obj Flower.DeviceChecks/bin \
+rm -rf Tests/Flower.DeviceChecks.iOS/obj Tests/Flower.DeviceChecks.iOS/bin \
+       Tests/Flower.DeviceChecks/obj Tests/Flower.DeviceChecks/bin \
        Flower/obj Flower/bin
 
 echo "==> Building"

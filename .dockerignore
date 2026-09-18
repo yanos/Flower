@@ -14,8 +14,7 @@
 Flower.Desktop/
 Flower.Android/
 Flower.iOS/
-Flower.Tests/
-Flower.Server.Tests/
+Tests/
 
 # Vendored miniaudio sources and their compiled .so/.framework outputs, for the
 # mobile heads' audio sink. Nothing the server links against.

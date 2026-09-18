@@ -22,7 +22,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PROJECT="Flower.DeviceChecks.Android/Flower.DeviceChecks.Android.csproj"
+PROJECT="Tests/Flower.DeviceChecks.Android/Flower.DeviceChecks.Android.csproj"
 PACKAGE="com.yanos.flower.devicechecks"
 ACTIVITY="$PACKAGE/.MainActivity"
 TRANSCRIPT="flower-checks.log"
@@ -87,9 +87,9 @@ if ! dotnet build "$PROJECT" -c Debug >"$BUILD_LOG" 2>&1; then
 fi
 # The signed one, specifically: the build drops both next to each other and
 # the unsigned APK installs with INSTALL_PARSE_FAILED_NO_CERTIFICATES.
-APK=$(find Flower.DeviceChecks.Android/bin/Debug -name "$PACKAGE-Signed.apk" | head -1)
+APK=$(find Tests/Flower.DeviceChecks.Android/bin/Debug -name "$PACKAGE-Signed.apk" | head -1)
 if [ -z "$APK" ]; then
-  APK=$(find Flower.DeviceChecks.Android/bin/Debug -name "$PACKAGE.apk" | head -1)
+  APK=$(find Tests/Flower.DeviceChecks.Android/bin/Debug -name "$PACKAGE.apk" | head -1)
 fi
 rm -f "$BUILD_LOG"
 if [ -z "$APK" ]; then

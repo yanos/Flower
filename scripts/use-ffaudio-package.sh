@@ -314,7 +314,7 @@ echo "Note: Flower.Android still loads its checked-in façade, which predates th
 echo "      package's metadata calls - run that one switched off."
 echo
 echo "Try it:"
-echo "  dotnet test Flower.Tests/Flower.Tests.csproj --filter Category=RequiresFfmpeg"
+echo "  dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter Category=RequiresFfmpeg"
 echo "  dotnet run --project Flower.MacOS/Flower.MacOS.csproj"
 if [ -n "$ios_package" ]; then
     echo "  scripts/ios-device-checks.sh"

@@ -69,7 +69,7 @@ Without it, the `RequiresFfmpeg` tests fail rather than skip - filter them out
 on a machine that has not built it:
 
 ```
-dotnet test Flower.Tests/Flower.Tests.csproj --filter "Category!=RequiresFfmpeg"
+dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter "Category!=RequiresFfmpeg"
 ```
 
 ## Licensing - the constraint on every shipping build
