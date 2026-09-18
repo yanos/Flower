@@ -12,7 +12,7 @@
              x:Class="Flower.Views.Mobile.NowPlayingView"
              x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
-             Padding="{DynamicResource SheetBottomInset}">
+             Padding="{DynamicResource NowPlayingBottomInset}">
 
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
@@ -46,6 +46,9 @@
     </Style>
   </UserControl.Styles>
 
+  <!-- The bottom padding is not the safe area, as on the other whole-screen
+       sheets, but the tab oval MobileMainView keeps floating over this one -
+       which already clears the safe area itself. -->
   <!-- No horizontal padding on the root: the top bar has to line up with the
        fixed overlay in MobileMainView, which sets its own inset from
        the window edge, so the 24px inset belongs to the rows below it rather
@@ -135,57 +138,63 @@
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
 
-        <!-- Seek slider + times, flanked by shuffle/repeat toggles (same
-             placement convention as desktop's CurrentlyPlayingControl). The
-             slider is given a height because the default template reserves
-             room for a tick bar it hasn't got, which reads as a gap. -->
+        <!-- Seek slider + times. The slider is given a height because the
+             default template reserves room for a tick bar it hasn't got,
+             which reads as a gap. -->
         <StackPanel Grid.Row="2" Margin="0,8,0,0">
           <Slider Classes="tight"
                   Minimum="0" Maximum="1"
                   Value="{Binding CurrentlyPlaying.SeekPosition}" />
-          <Grid ColumnDefinitions="Auto,*,*,Auto">
-            <Button Grid.Column="0"
-                    Command="{Binding ToggleShuffleCommand}"
-                    Background="Transparent" BorderThickness="0" Padding="6">
-              <materialIcons:MaterialIcon Kind="Shuffle" Width="18" Height="18"
-                                           Classes="transportToggle"
-                                           Classes.active="{Binding CurrentlyPlaying.IsShuffleEnabled}" />
-            </Button>
-            <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="12" Opacity="0.65" VerticalAlignment="Center" Margin="8,0,0,0" />
-            <TextBlock Grid.Column="2" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="12" Opacity="0.65" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0" />
-            <Button Grid.Column="3"
-                    Command="{Binding ToggleRepeatCommand}"
-                    Background="Transparent" BorderThickness="0" Padding="6">
-              <materialIcons:MaterialIcon Kind="Repeat" Width="18" Height="18"
-                                           Classes="transportToggle"
-                                           Classes.active="{Binding CurrentlyPlaying.IsRepeatEnabled}" />
-            </Button>
+          <Grid ColumnDefinitions="*,*">
+            <TextBlock Grid.Column="0" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="12" Opacity="0.65" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="12" Opacity="0.65" HorizontalAlignment="Right" VerticalAlignment="Center" />
           </Grid>
         </StackPanel>
 
-        <!-- Transport controls -->
-        <Grid Grid.Row="3" ColumnDefinitions="*,*,*" Margin="0,4,0,0">
+        <!-- Transport controls: previous, play and next gathered close in the
+             middle, where one thumb reaches all three, with the shuffle and
+             repeat toggles on the same line out at either edge. The two
+             toggles are the same button, so the middle column is centred on
+             the sheet as well as between them. -->
+        <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
           <Button Grid.Column="0"
-                  Command="{Binding PreviousTrackCommand}"
-                  Background="Transparent" BorderThickness="0"
-                  HorizontalAlignment="Center">
-            <materialIcons:MaterialIcon Kind="Rewind" Width="32" Height="32" />
+                  Command="{Binding ToggleShuffleCommand}"
+                  Background="Transparent" BorderThickness="0" Padding="6"
+                  VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="Shuffle" Width="18" Height="18"
+                                         Classes="transportToggle"
+                                         Classes.active="{Binding CurrentlyPlaying.IsShuffleEnabled}" />
           </Button>
-          <Button Grid.Column="1"
-                  Classes="pill circle"
-                  Command="{Binding ToggleMiniPlayerCommand}"
-                  Width="64" Height="64"
-                  HorizontalAlignment="Center">
-            <Border Classes="ring">
-              <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                           Width="32" Height="32" />
-            </Border>
-          </Button>
+          <StackPanel Grid.Column="1"
+                      Orientation="Horizontal"
+                      Spacing="12"
+                      HorizontalAlignment="Center">
+            <Button Command="{Binding PreviousTrackCommand}"
+                    Background="Transparent" BorderThickness="0"
+                    VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="Rewind" Width="32" Height="32" />
+            </Button>
+            <Button Classes="pill circle"
+                    Command="{Binding ToggleMiniPlayerCommand}"
+                    Width="64" Height="64">
+              <Border Classes="ring">
+                <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
+                                             Width="32" Height="32" />
+              </Border>
+            </Button>
+            <Button Command="{Binding NextTrackCommand}"
+                    Background="Transparent" BorderThickness="0"
+                    VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="FastForward" Width="32" Height="32" />
+            </Button>
+          </StackPanel>
           <Button Grid.Column="2"
-                  Command="{Binding NextTrackCommand}"
-                  Background="Transparent" BorderThickness="0"
-                  HorizontalAlignment="Center">
-            <materialIcons:MaterialIcon Kind="FastForward" Width="32" Height="32" />
+                  Command="{Binding ToggleRepeatCommand}"
+                  Background="Transparent" BorderThickness="0" Padding="6"
+                  VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="Repeat" Width="18" Height="18"
+                                         Classes="transportToggle"
+                                         Classes.active="{Binding CurrentlyPlaying.IsRepeatEnabled}" />
           </Button>
         </Grid>
 

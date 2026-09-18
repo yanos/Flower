@@ -242,6 +242,49 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
         Assert.Equal(Math.Round(h.Oval.Bounds.Width), Math.Round(mini.Bounds.Width));
     }
 
+    // Now Playing keeps the tab oval: it is drawn over the sheet, and the
+    // sheet's own controls stop above it rather than running on underneath.
+    // The mini player goes, being only a smaller copy of the sheet it opens:
+    // down under the tab oval, where it ends up wholly behind it.
+    [AvaloniaTheory]
+    [InlineData(NarrowPhone)]
+    [InlineData(LargePhone)]
+    public void Now_playing_keeps_the_tab_oval_clear_of_its_controls(double width)
+    {
+        using var h = new Harness(width);
+        h.Vm.PlaylistControl.Play(h.Vm.Main.Library.Tracks[0]);
+        h.Vm.OpenNowPlayingCommand.Execute(null);
+        Harness.Pump(500);
+        h.Layout(width);
+
+        var sheet = h.View.FindControl<Flower.Controls.SlidingSheet>("NowPlayingSheet")!;
+        var root = h.View.FindControl<Grid>("Root")!;
+        var chrome = h.View.FindControl<StackPanel>("BottomChrome")!;
+        Assert.True(sheet.IsVisible);
+        Assert.True(root.Children.IndexOf(chrome) > root.Children.IndexOf(sheet),
+            "the tab oval is drawn under the Now Playing sheet");
+
+        var body = h.Window.GetVisualDescendants().OfType<Flower.Controls.NowPlayingBodyPanel>().Single();
+        Assert.True(h.InWindow(body).Bottom <= h.InWindow(h.Oval).Top,
+            $"the sheet's controls ({h.InWindow(body)}) run under the tab oval ({h.InWindow(h.Oval)})");
+
+        var mini = (Control)h.MiniPlayer.Parent!;
+        Assert.Equal(0, mini.Opacity);
+        Assert.False(mini.IsHitTestVisible);
+        var tucked = h.MiniPlayer.TranslatePoint(default, h.Window)!.Value;
+        var oval = h.InWindow(h.Oval);
+        Assert.True(tucked.Y >= oval.Top && tucked.Y + h.MiniPlayer.Bounds.Height <= oval.Bottom,
+            $"the mini player came to rest at y={tucked.Y}, not behind the tab oval ({oval})");
+
+        // And back up out of it when the sheet closes.
+        h.Vm.CloseSheetCommand.Execute(null);
+        Harness.Pump(500);
+        Assert.Equal(1, mini.Opacity);
+        Assert.True(mini.IsHitTestVisible);
+        Assert.True(h.InWindow(h.MiniPlayer).Bottom <= oval.Top,
+            $"the mini player ({h.InWindow(h.MiniPlayer)}) never came back out from under the tab oval ({oval})");
+    }
+
     // The two floating buttons face each other across the same 52px band, and
     // with Search gone the settings one is a single circle like the back one -
     // not the stadium the two of them used to share.

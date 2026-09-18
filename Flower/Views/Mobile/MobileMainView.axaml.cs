@@ -5,8 +5,10 @@ using Avalonia.Controls;
 using Avalonia.Controls.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml.MarkupExtensions;
+using Avalonia.Media;
 
 using Flower.Controls;
+using Flower.Services;
 using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile;
@@ -22,6 +24,75 @@ public partial class MobileMainView : UserControl
             EmptyStateHost.IsVisible = true;
         };
         ScreenStack.Moving += (_, _) => EmptyStateHost.IsVisible = false;
+
+        MiniPlayerHost.RenderTransform = _miniPlayerTransform;
+        NowPlayingSheet.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == SlidingSheet.IsOpenProperty)
+                TuckMiniPlayer(NowPlayingSheet.IsOpen);
+        };
+    }
+
+    // ── The mini player under the tab oval ────────────────────────────────
+    //
+    // Now Playing keeps the tab oval over it but not the mini player, which is
+    // only a smaller copy of the sheet. So the mini player slides down behind
+    // the tab oval as the sheet opens and back up out of it as the sheet
+    // closes, both alongside the sheet's own slide rather than after it: the
+    // oval is drawn over the sheet, so there is nothing to wait for.
+    //
+    // It comes to rest centred on the tab oval, which is taller and the same
+    // length, so it is wholly behind it. Faded out over the end of the way down
+    // and in over the start of the way up, or its shadow would still ring the
+    // tab oval while it sits there. A RenderTransform rather than a margin, so
+    // BottomChrome keeps its height and ScreenScrollInset does not move under
+    // the sheet.
+    //
+    // A manual AnimationClock tween, like SlidingSheet's, and for its reason:
+    // an Avalonia Animation of a TranslateTransform throws on real iOS.
+    private const double MiniPlayerTuckMs = 280;
+
+    // The share of the slide the fade takes, at the end going down and at the
+    // start coming up - by then or from then on, most of it is behind the oval.
+    private const double MiniPlayerFadeShare = 0.35;
+
+    private readonly TranslateTransform _miniPlayerTransform = new();
+
+    // From where the mini player sits to centred on the tab oval. Both are
+    // children of BottomChrome, so their bounds share one origin.
+    private double MiniPlayerTuckDepth => TabBar.Bounds.Center.Y - MiniPlayerHost.Bounds.Center.Y;
+
+    private IDisposable? _miniPlayerEasing;
+
+    private void TuckMiniPlayer(bool tucked)
+    {
+        _miniPlayerEasing?.Dispose();
+        MiniPlayerHost.IsHitTestVisible = !tucked;
+
+        var from = _miniPlayerTransform.Y;
+
+        _miniPlayerEasing = AnimationClock.Current.Subscribe(elapsed =>
+        {
+            // Read every frame rather than once: a mini player that has only
+            // just appeared (a track started a moment ago) has not been laid
+            // out yet when the sheet opens, and its bounds say it is nowhere.
+            var depth = MiniPlayerTuckDepth;
+            var to = tucked ? depth : 0;
+            var t = Math.Min(1.0, elapsed.TotalMilliseconds / MiniPlayerTuckMs);
+            var p = 1 - Math.Pow(1 - t, 3);
+            _miniPlayerTransform.Y = from + (to - from) * p;
+
+            // Opacity off how far down it is rather than off time, so a reversal
+            // halfway through picks up the fade where the slide actually is.
+            var down = depth > 0 ? _miniPlayerTransform.Y / depth : (tucked ? 1 : 0);
+            MiniPlayerHost.Opacity = Math.Clamp((1 - down) / MiniPlayerFadeShare, 0, 1);
+
+            if (t >= 1.0)
+            {
+                _miniPlayerEasing?.Dispose();
+                _miniPlayerEasing = null;
+            }
+        });
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -47,8 +118,26 @@ public partial class MobileMainView : UserControl
     // screenScroll style), which has to follow the floating stack's height as
     // the mini player appears and the safe area changes. The top is the
     // see-through header band plus the gap after it, neither of which moves.
-    private void BottomChrome_SizeChanged(object? sender, SizeChangedEventArgs e) =>
+    //
+    // A mini player tucked under the tab oval follows it too, or one that
+    // appeared while the sheet was up would be left where the stack used to be.
+    private void BottomChrome_SizeChanged(object? sender, SizeChangedEventArgs e)
+    {
         Resources["ScreenScrollInset"] = new Thickness(0, ScreenSlot.HeaderHeight + ScreenSlot.ContentGap, 0, e.NewSize.Height + BottomChromeClearance);
+        if (NowPlayingSheet.IsOpen && _miniPlayerEasing == null)
+            _miniPlayerTransform.Y = MiniPlayerTuckDepth;
+    }
+
+    // The Now Playing sheet runs under the tab oval, so its content stops this
+    // far above it. More than a list's last row gets: a list scrolls on under
+    // the oval anyway, where the volume slider is the end of the sheet and
+    // wants room to read as the end rather than as crowded against the tabs.
+    private const double NowPlayingTabBarClearance = 28;
+
+    private void TabBar_SizeChanged(object? sender, SizeChangedEventArgs e) => UpdateNowPlayingInset();
+
+    private void UpdateNowPlayingInset() =>
+        Resources["NowPlayingBottomInset"] = new Thickness(0, 0, 0, TabBar.Bounds.Height + TabBar.Margin.Bottom + NowPlayingTabBarClearance);
 
     private IInsetsManager? _insets;
 
@@ -105,11 +194,13 @@ public partial class MobileMainView : UserControl
         // same length, which takes the same margin as well as the same star
         // columns - see MobileMainView.axaml's comment on either of them.
         TabBar.Margin = new Thickness(12, 0, 12, Math.Max(TabBarMinimumBottomMargin, safeArea.Bottom - TabBarInsetOverlap));
+        UpdateNowPlayingInset();
 
         // Every sheet's background runs down to the very bottom edge, under
         // the home indicator, and only what is on it keeps clear of the inset -
         // SheetBottomInset, which a card puts on its content and a whole-screen
-        // sheet (Now Playing, Settings, Track Info) takes as its own Padding.
+        // sheet (Settings, Track Info) takes as its own Padding. Now Playing
+        // takes NowPlayingBottomInset instead, the tab oval over it.
         Resources["SheetBottomInset"] = new Thickness(0, 0, 0, safeArea.Bottom);
     }
 

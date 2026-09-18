@@ -24,6 +24,9 @@
       <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
       <!-- Replaced from the code-behind as BottomChrome's height changes. -->
       <Thickness x:Key="ScreenScrollInset">0,64,0,100</Thickness>
+      <!-- The tab oval's height and bottom margin, which the Now Playing
+           sheet keeps its content clear of - replaced from the code-behind. -->
+      <Thickness x:Key="NowPlayingBottomInset">0,0,0,84</Thickness>
       <conv:EqualsConverter x:Key="EqualsConverter" />
     </ResourceDictionary>
   </UserControl.Resources>
@@ -386,11 +389,49 @@
       </Grid>
     </Grid>
 
+    <!-- Every sheet slides rather than blinking in and out - see SlidingSheet,
+         which is why these take IsOpen instead of an IsVisible binding (the
+         closing slide has to outlive ActiveSheet going back to None). They
+         come up from the bottom, the direction each one's own ChevronDown
+         dismiss or bottom-anchored card already promises; now-playing and
+         settings are the exceptions, arriving from the right like a pushed
+         screen and dismissing with that screen's back arrow.
+         The four drawn as a card over a dimmed backdrop mark that card with
+         SlidingSheet.IsCard, so the card slides while the dimming fades in
+         behind it rather than sweeping up the screen with it.
+         The two that arrive from the right are pushed screens with a back
+         arrow, so they take DismissCommand as well and go back to a rightward
+         swipe the way every screen underneath them does - see
+         SlidingSheet's own "Swipe to dismiss" section. -->
+
+    <!-- Now-playing sheet: full-screen overlay above everything else. Arrives
+         from the right, like Settings below and for the same reason - it is a
+         whole screen reached from a persistent bar, not something raised over
+         the list you were reading. Leaves the same way, except when the
+         dismissal is itself a push - tapping the album art - and it is shoved
+         off to the left by the album coming in behind it. The tab oval stays
+         over it (BottomChrome is declared after it, and before every other
+         sheet), so the tabs are one tap away from the song too. -->
+    <controls:SlidingSheet x:Name="NowPlayingSheet"
+                            Grid.Row="0" Grid.RowSpan="3"
+                            IsOpen="{Binding IsShowingNowPlaying}"
+                            DismissCommand="{Binding CloseSheetCommand}"
+                            ExitsForward="{Binding NowPlayingExitsForward}"
+                            EntersBackward="{Binding NowPlayingEntersBackward}">
+      <views:NowPlayingView />
+    </controls:SlidingSheet>
+
     <!-- The mini player over the tab oval, both floating over the bottom of
          the screens rather than taking rows of their own, so a list scrolls on
          behind and around them. No Background on the stack, so the gap between
          the two passes touches through to the list. The screens' scrollers
-         keep their height clear past the end - see screenScroll above. -->
+         keep their height clear past the end - see screenScroll above.
+
+         Declared after the Now Playing sheet and before the rest, so the tab
+         oval is drawn over that sheet and under every other one. The mini
+         player is not kept: it would only repeat the sheet it opens, so while
+         the sheet is open it slides down under the tab oval, and comes back up
+         out of it when the sheet closes - see TuckMiniPlayer. -->
     <StackPanel x:Name="BottomChrome"
                 Grid.Row="0" Grid.RowSpan="3"
                 VerticalAlignment="Bottom"
@@ -407,6 +448,7 @@
          take a shadow with no offset, rather than the floating pill's downward
          one, so it rings the whole oval over the list scrolling behind it. -->
     <Grid IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+          x:Name="MiniPlayerHost"
           Margin="12,0"
           ColumnDefinitions="3*,194*,3*">
     <Border Grid.Column="1"
@@ -482,6 +524,7 @@
          at that width whatever the circles did - see Button.tab above. -->
     <Grid x:Name="TabBar"
           Margin="12,0"
+          SizeChanged="TabBar_SizeChanged"
           ColumnDefinitions="3*,194*,3*">
     <Border Grid.Column="1"
             Classes="floating"
@@ -551,35 +594,6 @@
     </Border>
     </Grid>
     </StackPanel>
-
-    <!-- Every sheet slides rather than blinking in and out - see SlidingSheet,
-         which is why these take IsOpen instead of an IsVisible binding (the
-         closing slide has to outlive ActiveSheet going back to None). They
-         come up from the bottom, the direction each one's own ChevronDown
-         dismiss or bottom-anchored card already promises; now-playing and
-         settings are the exceptions, arriving from the right like a pushed
-         screen and dismissing with that screen's back arrow.
-         The four drawn as a card over a dimmed backdrop mark that card with
-         SlidingSheet.IsCard, so the card slides while the dimming fades in
-         behind it rather than sweeping up the screen with it.
-         The two that arrive from the right are pushed screens with a back
-         arrow, so they take DismissCommand as well and go back to a rightward
-         swipe the way every screen underneath them does - see
-         SlidingSheet's own "Swipe to dismiss" section. -->
-
-    <!-- Now-playing sheet: full-screen overlay above everything else. Arrives
-         from the right, like Settings below and for the same reason - it is a
-         whole screen reached from a persistent bar, not something raised over
-         the list you were reading. Leaves the same way, except when the
-         dismissal is itself a push - tapping the album art - and it is shoved
-         off to the left by the album coming in behind it. -->
-    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            IsOpen="{Binding IsShowingNowPlaying}"
-                            DismissCommand="{Binding CloseSheetCommand}"
-                            ExitsForward="{Binding NowPlayingExitsForward}"
-                            EntersBackward="{Binding NowPlayingEntersBackward}">
-      <views:NowPlayingView />
-    </controls:SlidingSheet>
 
     <!-- Track actions (row "..." menu) and Track Info sheets -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"

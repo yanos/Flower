@@ -393,9 +393,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // Lands on the last of a tab's screens with the rest under it in the
     // history, so Back walks down through that tab before leaving it. Arrives
     // the way the tab tap says (PushHistory just set it), and without the
-    // sheet the screen was left under: a tab is tapped with no sheet up, and
-    // the one sheet a navigation carries is Now Playing, which was being
-    // dismissed on the way out rather than something to reopen here.
+    // sheet the screen was left under: the one sheet a navigation carries is
+    // Now Playing, which was being dismissed on the way out (a tab tapped over
+    // it, or its album art) rather than something to reopen here.
     private void RestoreTab(IReadOnlyList<MobileNavigationFrame> screens)
     {
         foreach (var screen in screens.Take(screens.Count - 1))
@@ -1499,6 +1499,24 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         {
             if (name == null || !System.Enum.TryParse<MobileTab>(name, out var tab))
                 return;
+            // The tab oval stays up over Now Playing, so a tap there leaves the
+            // sheet. On the tab it was raised from, that is all it does - the
+            // sheet retreats and uncovers the screen under it. On another, it
+            // is a tab switch that carries the sheet off, the way the album
+            // art's drill-in does: the frame pushed remembers Now Playing, so
+            // Back brings it back, and the sheet leaves by the side the new
+            // tab's screen is not arriving from.
+            if (IsShowingNowPlaying)
+            {
+                if (tab != SelectedTab)
+                {
+                    var forward = tab > SelectedTab;
+                    SelectedTab = tab;
+                    NowPlayingExitsForward = forward;
+                }
+                ActiveSheet = MobileSheet.None;
+                return;
+            }
             if (tab == SelectedTab)
                 ReselectTab();
             else

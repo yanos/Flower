@@ -168,6 +168,53 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         Assert.False(scope.Mobile.NowPlayingExitsForward);
     }
 
+    // The tab oval stays up over Now Playing, so a tab tapped there leaves the
+    // sheet. Another tab is a tab switch that carries the sheet off with it,
+    // the way the album art's drill-in does: out to the left ahead of a tab
+    // arriving from the right, and back again on Back.
+    [AvaloniaFact]
+    public void A_tab_tapped_over_now_playing_switches_to_it_and_takes_the_sheet_away()
+    {
+        using var scope = Build();
+        scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
+        scope.Mobile.OpenNowPlayingCommand.Execute(null);
+        scope.Mobile.ConsumePendingTransition();
+
+        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(MobileTab.Albums, scope.Mobile.SelectedTab);
+        Assert.False(scope.Mobile.IsShowingNowPlaying);
+        Assert.True(scope.Mobile.NowPlayingExitsForward);
+        Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
+
+        scope.Mobile.BackCommand.Execute(null);
+        WaitUntil(() => scope.Mobile.IsShowingNowPlaying);
+        Assert.Equal(MobileTab.RecentlyAdded, scope.Mobile.SelectedTab);
+    }
+
+    // The tab the sheet was raised from is the screen already under it, so
+    // tapping that one is only a dismissal - not a reselect, which would also
+    // have scrolled or popped the tab behind the sheet's back.
+    [AvaloniaFact]
+    public void The_current_tab_tapped_over_now_playing_only_dismisses_it()
+    {
+        using var scope = Build();
+        scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
+        scope.Mobile.OpenNowPlayingCommand.Execute(null);
+        scope.Mobile.ConsumePendingTransition();
+
+        var navigations = 0;
+        scope.Mobile.NavigationChanged += (_, _) => navigations++;
+
+        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.RecentlyAdded));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(scope.Mobile.IsShowingNowPlaying);
+        Assert.Equal(0, navigations);
+        Assert.False(scope.Mobile.NowPlayingExitsForward);
+    }
+
     // One forward exit must not colour the next ordinary dismissal - reopening
     // the sheet puts it back to leaving by the edge it arrived from.
     [AvaloniaFact]
