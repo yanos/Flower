@@ -119,6 +119,35 @@ public class MobileSmartPlaylistEditorTests : PinnedDataDirectory
         Assert.Contains(scope.Parts.Parts.Main.SidebarItems, i => i.Playlist == saved);
     }
 
+    // A smart playlist's own screen has a pencil beside play and shuffle, and
+    // it opens the same editor over the playlist that is already there -
+    // the phone had no other way back into its rules.
+    [AvaloniaFact]
+    public void The_pencil_on_a_smart_playlist_s_screen_edits_its_rules()
+    {
+        using var scope = Build();
+        scope.Mobile.NewSmartPlaylistCommand.Execute(null);
+        var editor = scope.Mobile.SmartPlaylistEditor!;
+        editor.Name = "Tractors";
+        var row = editor.Conditions[0];
+        row.Field = row.Fields.First(f => f.Field == SmartField.Title);
+        row.Operator = row.Operators.First(o => o.Operator == SmartOperator.Contains);
+        row.ValueText = "Tractor";
+        scope.Mobile.SaveSmartPlaylistCommand.Execute(null);
+        var saved = scope.Library.Playlists.Single(p => p.Name == "Tractors");
+
+        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Playlists));
+        scope.Mobile.SelectPlaylistCommand.Execute(scope.Mobile.PlaylistPickerItems.Single(i => i.Playlist == saved));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(scope.Mobile.CanEditCurrentPlaylist);
+        scope.Mobile.EditCurrentPlaylistCommand.Execute(null);
+
+        Assert.True(scope.Mobile.IsShowingSmartPlaylistEditor);
+        Assert.Same(saved, scope.Mobile.SmartPlaylistEditor!.Playlist);
+        Assert.False(scope.Mobile.CurrentPlaylistItem!.IsEditing);
+    }
+
     [AvaloniaFact]
     public void A_rejected_save_keeps_the_sheet_up_and_says_why()
     {

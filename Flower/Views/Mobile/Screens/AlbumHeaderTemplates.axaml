@@ -8,7 +8,7 @@
   <!-- What a track list of one thing's songs says about that thing, above the
        songs: its cover, its name, what it is by, and the handful of buttons
        that act on the whole of it. One definition for the two screens that
-       have such a thing - an album's tracks and a playlist's - so the pill of
+       have such a thing - an album's tracks and a playlist's - so the row of
        actions, the type and the spacing can only ever be changed for both.
        A playlist arrives here as an AlbumTileViewModel like any album (see
        MobileMainViewModel.CurrentPlaylistHeader), with how many songs it
@@ -40,32 +40,41 @@
     </Border>
   </DataTemplate>
 
-  <!-- Under the name and artist, a pill of the album's own actions:
-       play, shuffle, add to playlist, download - play on a round button
-       of its own, the other three grouped in a pill beside it. The download is
-       the same button download-all always was - the screen-wide indicator and
-       command, so it spins while the batch runs and leaves once there is
-       nothing left to fetch - and the other three act on the same rows it
-       does. Play comes first, a bare glyph in a round button of its own,
-       standing apart from the pill: it is what the actions are for. Download
-       goes last because it is the one that leaves, so nothing shifts when it
-       does. All of them are reached through the screen's DataContext, since
+  <!-- Under the name and artist, a row of the album's own actions: play,
+       shuffle, add to playlist (a pencil instead, on a playlist's screen),
+       download - each a round button of its own,
+       the same circle play always was, rather than the last three grouped in
+       a pill beside it. The download is the same button download-all always
+       was - the screen-wide indicator and command, so it spins while the
+       batch runs and leaves once there is nothing left to fetch - and the
+       other three act on the same rows it does. Play comes first: it is what
+       the actions are for. Download goes last because it is the one that
+       leaves, so nothing shifts when it does - and its circle leaves with it,
+       following the button's own IsVisible rather than asking the indicator
+       again. All of them are reached through the screen's DataContext, since
        this template's own is the album tile - and all of them are already
        written in terms of the rows on screen, which is what lets a playlist
        use them unchanged.
 
-       The pill is the floating one MobileMainView puts over its screens
-       (Border.floating, Button.pill), which reaches here because the
-       screens are hosted inside that view. Centred under the art, ranged
-       left beside it (.albumText styles, in TrackListScreenView). Drawn a
-       fifth larger than the floating pill's own 40px: 24px glyphs in 44px
-       buttons, 48 tall, and play's round button 48 across to match. -->
+       Each circle is the floating one MobileMainView puts over its screens
+       (Border.floating, Button.pill), which reaches here because the screens
+       are hosted inside that view. Centred under the art, ranged left beside
+       it (.albumText styles, in TrackListScreenView). Drawn a fifth larger
+       than the floating pill's own 40px: 24px glyphs in 44px buttons, in
+       circles 48 across. -->
   <DataTemplate x:Key="AlbumTextTemplate" x:DataType="vm:AlbumTileViewModel">
     <StackPanel Spacing="2" Classes.dimmed="{Binding IsUnavailable}">
+      <!-- A playlist's name turns into a box in place when its pencil is
+           pressed (see controls:PlaylistNameEditor); an album's never does,
+           since it has no row to be renamed through. -->
       <TextBlock Classes="albumName"
                  Text="{Binding Name}"
+                 IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CurrentPlaylistItem.IsEditing, Converter={x:Static BoolConverters.Not}, FallbackValue=True}"
                  FontSize="20" FontWeight="Bold"
                  TextWrapping="Wrap" />
+      <controls:PlaylistNameEditor DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CurrentPlaylistItem}"
+                                   IsVisible="{Binding IsEditing, FallbackValue=False}"
+                                   CommitCommand="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CommitPlaylistRenameCommand}" />
       <TextBlock Text="{Binding Artist}"
                  FontSize="15" Opacity="0.7"
                  TextWrapping="Wrap" />
@@ -76,27 +85,43 @@
             <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" />
           </Button>
         </Border>
-        <Border Classes="floating" Height="48" CornerRadius="24" Padding="2,0">
-          <StackPanel Orientation="Horizontal">
-            <Button Classes="pill" Padding="10"
-                    Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShuffleAlbumCommand}">
-              <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24" />
-            </Button>
-            <Button Classes="pill" Padding="10"
-                    Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).OpenAlbumAddToPlaylistCommand}">
-              <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="24" Height="24" />
-            </Button>
-            <!-- Its own IsVisible is the indicator's answer, so the server
-                 gate goes on a wrapper - the two are different questions. -->
-            <Panel IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">
-              <controls:TrackDownloadButton DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllIndicator}"
-                                            IconSize="24"
-                                            IconPadding="10"
-                                            Label="Download all"
-                                            Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
-            </Panel>
-          </StackPanel>
+        <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
+          <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShuffleAlbumCommand}">
+            <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24" />
+          </Button>
         </Border>
+        <!-- An album's songs go into a playlist from here; a playlist's
+             are already in one, so its screen offers the pencil instead:
+             its rules if it is smart, its name if it is not. -->
+        <Border Classes="floating" Width="48" Height="48" CornerRadius="24"
+                IsVisible="{Binding !$parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).IsShowingPlaylistTracks}">
+          <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).OpenAlbumAddToPlaylistCommand}">
+            <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="24" Height="24" />
+          </Button>
+        </Border>
+        <Border Classes="floating" Width="48" Height="48" CornerRadius="24"
+                IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CanEditCurrentPlaylist}">
+          <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).EditCurrentPlaylistCommand}">
+            <materialIcons:MaterialIcon Kind="Pencil" Width="24" Height="24" />
+          </Button>
+        </Border>
+        <!-- Its own IsVisible is the indicator's answer, so the server gate
+             goes on a wrapper - the two are different questions. -->
+        <Panel IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">
+          <Border Classes="floating" Width="48" Height="48" CornerRadius="24"
+                  IsVisible="{Binding #DownloadAllButton.IsVisible}">
+            <controls:TrackDownloadButton x:Name="DownloadAllButton"
+                                          DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllIndicator}"
+                                          HorizontalAlignment="Center"
+                                          IconSize="24"
+                                          IconPadding="10"
+                                          Label="Download all"
+                                          Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).DownloadAllVisibleCommand}" />
+          </Border>
+        </Panel>
       </StackPanel>
     </StackPanel>
   </DataTemplate>

@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:vm="clr-namespace:Flower.ViewModels"
+             x:Class="Flower.Controls.PlaylistNameEditor"
+             x:DataType="vm:SidebarItem">
+
+  <!-- A playlist screen's own name, as a box - what the pencil in its header
+       turns the title into. Bound live to the same SidebarItem the picker's
+       row renames, and committed by the same command on the same two
+       gestures (see the code-behind), so the two ways of renaming a playlist
+       differ only in where the box is drawn. Centred, like the title it
+       stands in for under the art. -->
+  <controls:TextInput x:Name="Box"
+                      Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      PlaceholderText="Playlist Name"
+                      FontSize="20" FontWeight="Bold"
+                      TextAlignment="Center"
+                      HorizontalAlignment="Stretch"
+                      KeyDown="Box_KeyDown"
+                      LostFocus="Box_LostFocus" />
+</UserControl>

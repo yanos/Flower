@@ -166,6 +166,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand OpenPlaylistActionsCommand { get; }
     public ICommand RenamePlaylistActionTargetCommand { get; }
     public ICommand CommitPlaylistRenameCommand { get; }
+    // The pencil in a playlist screen's own header, beside play and shuffle:
+    // a smart playlist's rules, or an ordinary one's name, edited right there.
+    public ICommand EditCurrentPlaylistCommand { get; }
     public ICommand DeletePlaylistActionTargetCommand { get; }
     public ICommand ConfirmDeletePlaylistCommand { get; }
     public ICommand CancelDeletePlaylistCommand { get; }
@@ -604,6 +607,15 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             return _currentPlaylistHeader;
         }
     }
+
+    // The row behind the playlist on screen, which is what renaming it from
+    // its header edits - the same SidebarItem its row in the picker is, so
+    // the two boxes are one name, committed by one command.
+    public SidebarItem? CurrentPlaylistItem => CurrentPlaylist != null ? Main.SelectedSidebarItem : null;
+
+    // Hidden rather than inert, like New Smart Playlist: rules with nothing to
+    // recompute them are rules the pencil cannot open.
+    public bool CanEditCurrentPlaylist => CurrentPlaylist is { } playlist && (!playlist.IsSmart || CanCreateSmartPlaylist);
 
     // Whichever of the two the screen is showing - one of them at most, since
     // a track list is one album's or one playlist's or the whole library's.
@@ -1659,6 +1671,21 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             if (item is { IsEditing: true })
                 await Main.Rename.CommitAsync(item, Main);
         });
+        EditCurrentPlaylistCommand = new RelayCommand(() =>
+        {
+            if (CurrentPlaylist is not { } playlist)
+                return;
+            if (playlist.IsSmart)
+            {
+                Main.EditSmartPlaylist(playlist);
+                return;
+            }
+            if (CurrentPlaylistItem is not { } item)
+                return;
+            foreach (var other in PlaylistPickerItems)
+                other.IsEditing = false;
+            item.IsEditing = true;
+        });
         // Closes the menu and asks. What asks is the delete itself - see
         // AskToDeletePlaylist - so this cannot forget to.
         DeletePlaylistActionTargetCommand = new RelayCommand(async () =>
@@ -1967,6 +1994,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(CurrentAlbumHeader));
         OnPropertyChanged(nameof(CurrentPlaylistHeader));
         OnPropertyChanged(nameof(CurrentDetailHeader));
+        OnPropertyChanged(nameof(CurrentPlaylistItem));
+        OnPropertyChanged(nameof(CanEditCurrentPlaylist));
     }
 
     private void ApplyAlbumTileAvailability()

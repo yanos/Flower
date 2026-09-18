@@ -142,9 +142,10 @@ public class PlaylistDetailLayoutTests : PinnedDataDirectory
     }
 
     // The point of the exercise: the same buttons the album screen has, from
-    // the same markup, acting on the same rows.
+    // the same markup, acting on the same rows - except adding to a playlist,
+    // which a playlist's songs already are in. A pencil takes its place.
     [AvaloniaFact]
-    public void It_offers_the_album_screen_s_own_play_shuffle_and_add_to_playlist()
+    public void It_offers_play_shuffle_and_a_pencil_but_not_add_to_playlist()
     {
         using var harness = new Harness(3);
         var window = harness.Window;
@@ -156,8 +157,36 @@ public class PlaylistDetailLayoutTests : PinnedDataDirectory
 
         Assert.Contains(MaterialIconKind.Play, kinds);
         Assert.Contains(MaterialIconKind.Shuffle, kinds);
-        Assert.Contains(MaterialIconKind.PlaylistPlus, kinds);
+        Assert.Contains(MaterialIconKind.Pencil, kinds);
+        Assert.DoesNotContain(MaterialIconKind.PlaylistPlus, kinds);
 
+    }
+
+    // On an ordinary playlist the pencil turns the name in the header into a
+    // box, focused, and what is typed there is the playlist's new name once
+    // Enter ends it - the rename the row's own menu offers, from its screen.
+    [AvaloniaFact]
+    public void The_pencil_renames_the_playlist_in_its_header()
+    {
+        using var harness = new Harness(3);
+        var window = harness.Window;
+
+        harness.Vm.EditCurrentPlaylistCommand.Execute(null);
+        Harness.Pump();
+
+        var editor = Assert.Single(Screen(window).GetVisualDescendants().OfType<PlaylistNameEditor>(), e => e.IsEffectivelyVisible);
+        var box = editor.GetVisualDescendants().OfType<TextInput>().Single();
+        Assert.True(box.IsFocused, "the name box never took focus");
+        Assert.DoesNotContain(Screen(window).GetVisualDescendants().OfType<TextBlock>(),
+            t => t.Classes.Contains("albumName") && t.IsEffectivelyVisible);
+
+        box.Text = "Songs to hum well";
+        window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+        Harness.Pump();
+
+        Assert.Equal("Songs to hum well", harness.Vm.CurrentPlaylist?.Name);
+        Assert.False(editor.IsEffectivelyVisible);
+        TextBlockSaying(window, "Songs to hum well");
     }
 
     // Empty rather than borrowing the first song's cover: a playlist is not an
@@ -226,8 +255,8 @@ public class PlaylistDetailLayoutTests : PinnedDataDirectory
         Tap(window, HeaderButton(window, MaterialIconKind.Shuffle));
         Assert.True(harness.Vm.PlaylistControl.IsShuffleEnabled, "shuffle did not answer the tap");
 
-        Tap(window, HeaderButton(window, MaterialIconKind.PlaylistPlus));
-        Assert.True(harness.Vm.IsShowingAddToPlaylist, "add to playlist did not answer the tap");
+        Tap(window, HeaderButton(window, MaterialIconKind.Pencil));
+        Assert.True(harness.Vm.CurrentPlaylistItem?.IsEditing, "the pencil did not answer the tap");
     }
 
     private static Button HeaderButton(Window window, MaterialIconKind kind) =>
