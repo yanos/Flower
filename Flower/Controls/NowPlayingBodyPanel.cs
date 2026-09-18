@@ -41,6 +41,13 @@ public class NowPlayingBodyPanel : Panel
     // a short window still leaves the title, seek bar and transport row theirs.
     private const double MaxPortraitArtShare = 0.6;
 
+    // Portrait only: how far down the cover sits, as a share of its own height.
+    // It used to start at the very top of the body, hard under the back button,
+    // which left the sheet top-heavy and the slack pooled below the transport.
+    // A share of the art rather than of the sheet, so the drop stays in
+    // proportion to the thing being dropped on a small screen as on a large one.
+    private const double PortraitArtDrop = 0.15;
+
     protected override Size MeasureOverride(Size availableSize)
     {
         if (Children.Count < 2)
@@ -60,7 +67,8 @@ public class NowPlayingBodyPanel : Panel
         if (double.IsInfinity(availableSize.Width) || double.IsInfinity(availableSize.Height))
         {
             var desiredWidth = Math.Max(Children[0].DesiredSize.Width, Children[1].DesiredSize.Width);
-            return new Size(desiredWidth, Children[0].DesiredSize.Height + Gap + Children[1].DesiredSize.Height);
+            return new Size(desiredWidth,
+                Children[0].DesiredSize.Height * (1 + PortraitArtDrop) + Gap + Children[1].DesiredSize.Height);
         }
 
         return availableSize;
@@ -99,13 +107,15 @@ public class NowPlayingBodyPanel : Panel
             portraitSide = Math.Min(portraitSide, size.Height * MaxPortraitArtShare);
         portraitSide = Math.Max(0, portraitSide);
 
+        var portraitTop = portraitSide * PortraitArtDrop;
+
         var contentHeight = double.IsInfinity(size.Height)
             ? double.PositiveInfinity
-            : Math.Max(0, size.Height - portraitSide - Gap);
+            : Math.Max(0, size.Height - portraitTop - portraitSide - Gap);
 
         // Centred across the width, the way the fixed square used to be.
         var left = Math.Max(0, (size.Width - portraitSide) / 2);
-        return (new Rect(left, 0, portraitSide, portraitSide),
-                new Rect(0, portraitSide + Gap, size.Width, contentHeight));
+        return (new Rect(left, portraitTop, portraitSide, portraitSide),
+                new Rect(0, portraitTop + portraitSide + Gap, size.Width, contentHeight));
     }
 }

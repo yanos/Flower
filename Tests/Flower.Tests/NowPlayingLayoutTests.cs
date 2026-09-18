@@ -33,6 +33,10 @@ public class NowPlayingLayoutTests
         public required Window Window { get; init; }
         public required Rect Art { get; init; }
         public required Rect Controls { get; init; }
+
+        // The song's name and its album, in the body's own coordinates the way
+        // Art and Controls are.
+        public required Rect Names { get; init; }
     }
 
     private static Laid LayOut(double width, double height)
@@ -57,11 +61,13 @@ public class NowPlayingLayoutTests
         var body = window.GetVisualDescendants().OfType<Flower.Controls.NowPlayingBodyPanel>().Single();
         var art = body.Children[0];
         var controls = body.Children[1];
+        var names = ((Grid)controls).Children.OfType<StackPanel>().First(c => Grid.GetRow(c) == 0);
         return new Laid
         {
             Window = window,
             Art = art.Bounds,
             Controls = controls.Bounds,
+            Names = names.Bounds.Translate(controls.Bounds.Position - default(Point)),
         };
     }
 
@@ -74,6 +80,28 @@ public class NowPlayingLayoutTests
         Assert.True(laid.Art.Bottom <= laid.Controls.Top, $"art {laid.Art} overlaps controls {laid.Controls}");
         Assert.True(laid.Art.Width > 200, $"cover only {laid.Art.Width} wide upright");
         laid.Window.Close();
+    }
+
+    // The cover used to start at the very top of the body, hard under the back
+    // button. It hangs a little lower now - a share of its own height, so the
+    // drop is in proportion to the cover on any screen.
+    [AvaloniaFact]
+    public void Upright_the_cover_hangs_below_the_top_of_the_sheet()
+    {
+        var laid = LayOut(390, 844);
+
+        Assert.Equal(laid.Art.Height * 0.15, laid.Art.Top, 1);
+    }
+
+    // What the words are about is the picture directly above them, so they go
+    // right under it rather than floating up off the seek bar: the only thing
+    // between the two is the panel's own gap.
+    [AvaloniaFact]
+    public void Upright_the_names_go_directly_under_the_cover()
+    {
+        var laid = LayOut(390, 844);
+
+        Assert.Equal(laid.Art.Bottom + 16, laid.Names.Top, 1);
     }
 
     [AvaloniaFact]

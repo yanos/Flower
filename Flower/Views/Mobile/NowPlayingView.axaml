@@ -56,11 +56,12 @@
          content already makes that obvious. The back button is the round one
          MobileMainView floats over its screens (Border.floating and
          Button.pill are styled there), and the margin mirrors that overlay's
-         (12 in from the left; the route picker's own 10 on top of this 16
-         keeps it 26 in from the right), with Height="52" starting at y=0
-         putting both on the same 26px centre line, so the circle doesn't jump
-         when the sheet opens. -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Height="52" Margin="12,0,16,0">
+         (12 in from either side), with Height="52" starting at y=0 putting
+         every circle on the same 26px centre line, so neither the back arrow
+         nor the gear jumps when the sheet opens. The gear is this sheet's own
+         copy of the overlay's: the sheet is drawn over that overlay, so
+         without one here settings could not be reached while a song plays. -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="52" Margin="12,0,12,0">
       <Border Grid.Column="0" Classes="floating" Width="40">
         <Button Classes="pill"
                 Command="{Binding CloseSheetCommand}"
@@ -75,9 +76,17 @@
            intrinsic size of its own to measure. -->
       <controls:RoutePickerControl Grid.Column="1"
                                    Width="30" Height="30"
-                                   Margin="0,0,10,0"
+                                   Margin="0,0,14,0"
                                    HorizontalAlignment="Right"
                                    VerticalAlignment="Center" />
+
+      <Border Grid.Column="2" Classes="floating" Width="40">
+        <Button Classes="pill"
+                Command="{Binding OpenSettingsCommand}"
+                HorizontalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="Cog" Width="20" Height="20" />
+        </Button>
+      </Border>
     </Grid>
 
     <!-- Album art and the controls, laid out by NowPlayingBodyPanel: stacked
@@ -106,11 +115,12 @@
         </Border>
       </Button>
 
-      <!-- Title, seek bar and transport, bottom-aligned by the leading star
-           row: whatever slack there is goes above them rather than between
-           them, so the block stays as tight sideways as it is upright. -->
-      <Grid RowDefinitions="*,Auto,Auto,Auto,Auto" VerticalAlignment="Stretch">
-        <StackPanel Grid.Row="1" Spacing="2" HorizontalAlignment="Center">
+      <!-- The song's name and its album go first, hard under the cover, which
+           is what they are about - the star row is under them now rather than
+           above, so the slack falls between the names and the seek bar and the
+           transport block stays bottom-aligned as it was. -->
+      <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" VerticalAlignment="Stretch">
+        <StackPanel Grid.Row="0" Spacing="2" HorizontalAlignment="Center">
           <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
                      FontSize="20"
                      FontWeight="SemiBold"

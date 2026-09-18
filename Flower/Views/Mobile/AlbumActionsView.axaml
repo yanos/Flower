@@ -110,7 +110,7 @@
         <Button Classes="action" Command="{Binding RenamePlaylistActionTargetCommand}"
                 IsVisible="{Binding IsActingOnAPlaylist}">
           <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="RenameBox" Width="22" Height="22" />
+            <materialIcons:MaterialIcon Kind="PencilOutline" Width="22" Height="22" />
             <TextBlock Text="Rename" FontSize="16" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
