@@ -3,9 +3,11 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Platform;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 
 using Flower.Controls;
 using Flower.Services;
@@ -25,12 +27,42 @@ public partial class MobileMainView : UserControl
         };
         ScreenStack.Moving += (_, _) => EmptyStateHost.IsVisible = false;
 
+        // handledEventsToo: the screens' swipe gesture takes the press for
+        // itself, and a tap on the empty part of a screen still has to reach
+        // this.
+        AddHandler(PointerPressedEvent, DismissKeyboardOnEmptyTap, RoutingStrategies.Bubble, handledEventsToo: true);
+
         MiniPlayerHost.RenderTransform = _miniPlayerTransform;
         NowPlayingSheet.PropertyChanged += (_, e) =>
         {
             if (e.Property == SlidingSheet.IsOpenProperty)
                 TuckMiniPlayer(NowPlayingSheet.IsOpen);
         };
+    }
+
+    // A tap on empty space puts a screen's text box down - the search box,
+    // or a playlist's name - and the keyboard with it: a phone keyboard has
+    // no key of its own for that, and it covers the bottom of the results.
+    // Only the screens' boxes, not a sheet's, and only a tap on nothing:
+    // a press on a control goes to that control. A row, a tab or the box's
+    // own clear button keeps the focus - the Search tab in particular hands
+    // it straight back (SearchTab_Click), which would flicker the keyboard
+    // down and up again. With no call to hide the keyboard in Avalonia,
+    // clearing focus is what drops it on both phones.
+    private void DismissKeyboardOnEmptyTap(object? sender, PointerPressedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this)?.FocusManager is not { } focus
+            || focus.GetFocusedElement() is not TextBox box
+            || !ScreenStack.IsVisualAncestorOf(box))
+            return;
+
+        for (var v = e.Source as Visual; v != null; v = v.GetVisualParent())
+        {
+            if (v is Button or TextBox)
+                return;
+        }
+
+        focus.Focus(null);
     }
 
     // ── The mini player under the tab oval ────────────────────────────────

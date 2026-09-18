@@ -5,6 +5,7 @@ using System.Threading;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Themes.Fluent;
@@ -283,6 +284,52 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
         Assert.True(mini.IsHitTestVisible);
         Assert.True(h.InWindow(h.MiniPlayer).Bottom <= oval.Top,
             $"the mini player ({h.InWindow(h.MiniPlayer)}) never came back out from under the tab oval ({oval})");
+    }
+
+    // The search box's keyboard has no key to put it away, so a tap on the
+    // empty part of the screen does it: the box loses focus, which is what
+    // drops the keyboard on a phone.
+    [AvaloniaFact]
+    public void A_tap_on_empty_space_puts_the_search_box_down()
+    {
+        using var h = new Harness(NarrowPhone);
+        var box = OpenSearch(h);
+
+        var empty = new Point(NarrowPhone / 2, 560);
+        h.Window.MouseDown(empty, Avalonia.Input.MouseButton.Left);
+        h.Window.MouseUp(empty, Avalonia.Input.MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(box.IsFocused);
+    }
+
+    // A tap on a control is that control's, not empty space: the Search tab
+    // hands the focus back to the box (SearchTab_Click), and ends with it
+    // there rather than with the keyboard put away.
+    [AvaloniaFact]
+    public void A_tap_on_the_search_tab_leaves_the_search_box_up()
+    {
+        using var h = new Harness(NarrowPhone);
+        var box = OpenSearch(h);
+
+        var tab = h.InWindow(h.Tabs.Single(t => Harness.LabelOf(t).Text == "Search")).Center;
+        h.Window.MouseDown(tab, Avalonia.Input.MouseButton.Left);
+        h.Window.MouseUp(tab, Avalonia.Input.MouseButton.Left);
+        Harness.Pump(200);
+
+        Assert.True(box.IsFocused, $"focus ended on {h.Window.FocusManager?.GetFocusedElement()}");
+    }
+
+    private static TextBox OpenSearch(Harness h)
+    {
+        h.Vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
+        Harness.Pump(400);
+        h.Layout(NarrowPhone);
+        var box = h.Window.GetVisualDescendants().OfType<TextBox>().Single(b => b.IsEffectivelyVisible);
+        box.Focus();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(box.IsFocused);
+        return box;
     }
 
     // The two floating buttons face each other across the same 52px band, and
