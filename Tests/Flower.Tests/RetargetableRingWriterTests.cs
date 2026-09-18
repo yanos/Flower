@@ -262,4 +262,57 @@ public class RetargetableRingWriterTests
 
         Assert.Equal(0, writer.BackpressureWaits);
     }
+
+    // A promotion drains a minute of staged audio at playback speed, holding
+    // the writer's gate throughout. A skip in that minute retires the
+    // decoder, and a seek resets its target - and both used to wait for the
+    // gate, inside GaplessCoordinator's own lock, on the UI thread. One phone
+    // log shows a tap on another song answered 32 seconds later.
+    private static (RetargetableRingWriter Writer, GaplessRingBuffer Shared, Task<PromotionSplice> Drain)
+        StartSlowDrain()
+    {
+        var staging = new GaplessRingBuffer(4096);
+        var shared = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(staging);
+        writer.Write(Ramp(4096));
+
+        // Nobody reads the shared ring, so the drain fills it and waits for
+        // room, as it does behind a playing track.
+        var drain = Task.Run(() => writer.PromoteTarget(shared));
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (shared.AvailableBytes < shared.Capacity && DateTime.UtcNow < deadline)
+            Thread.Sleep(1);
+        Assert.False(drain.IsCompleted, "expected the drain to be waiting for room in the shared ring");
+
+        return (writer, shared, drain);
+    }
+
+    [Fact]
+    public void Waking_and_resetting_do_not_wait_for_a_promotion_in_progress()
+    {
+        var (writer, shared, drain) = StartSlowDrain();
+
+        AssertCompletes(writer.Wake, "Wake waited for the promotion's drain");
+        AssertCompletes(writer.ResetTarget, "ResetTarget waited for the promotion's drain");
+
+        shared.Reset();
+        Assert.True(drain.Wait(TimeSpan.FromSeconds(5)), "the drain did not stop when its destination was reset");
+    }
+
+    [Fact]
+    public void A_promotion_stops_draining_when_its_destination_is_reset()
+    {
+        var (writer, shared, drain) = StartSlowDrain();
+
+        // A skip or a seek: what is in the shared ring now belongs to
+        // whatever plays next, and the rest of the backlog must not follow.
+        shared.Reset();
+
+        Assert.True(drain.Wait(TimeSpan.FromSeconds(5)), "the drain did not stop when its destination was reset");
+        Assert.Equal(0, shared.AvailableBytes);
+        Assert.Same(shared, writer.Target);
+
+        writer.Write(Ramp(8, start: 100));
+        Assert.Equal(Ramp(8, start: 100), DrainAll(shared));
+    }
 }

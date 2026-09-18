@@ -54,7 +54,7 @@ namespace Flower.Audio
     public sealed class GaplessRingBuffer
     {
         // How long a writer blocked on backpressure sleeps between retries.
-        private const int WriterPollMs = 1;
+        internal const int WriterPollMs = 1;
 
         private readonly byte[] _buffer;
         private readonly int _capacity;

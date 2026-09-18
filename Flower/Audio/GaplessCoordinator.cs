@@ -675,6 +675,7 @@ namespace Flower.Audio
             // handover can go audibly wrong.
             long underrunsAtCompletion = 0;
             long bufferedAtPromotion = 0;
+            var ringGenerationAtPromotion = 0;
 
             lock (_gate)
             {
@@ -754,6 +755,7 @@ namespace Flower.Audio
                     // this replaces the old decoder-BytesProduced-based
                     // baseline.
                     _currentTrackReadSplit = _sharedRing.TotalBytesWritten;
+                    ringGenerationAtPromotion = _sharedRing.Generation;
                     promotedAlreadyDrained = _armedAlreadyDrained;
 
                     // Wired again here (harmless no-op if it never fires,
@@ -815,47 +817,68 @@ namespace Flower.Audio
             // the Dispatcher-posted Play() from PlaylistControlViewModel's
             // own EndReached handler above. _current/_currentPath are
             // already updated, so a concurrent manual Play()/Seek() sees the
-            // right decoder immediately; if a manual skip races in and
-            // Retire()s/Resets the shared ring while this drain is still
-            // running, GaplessRingBuffer's own generation check makes the
-            // rest of the drain a harmless no-op rather than corrupting
-            // anything.
+            // right decoder immediately; a skip, seek or stop Resets the
+            // shared ring, which makes a drain still running give up rather
+            // than go on appending the old track behind the new one.
             decoder.Retire();
 
             if (promoted != null)
             {
-                var splice = promoted.PromoteTarget(_sharedRing);
-
-                // One handover, measured across both halves: the staged total
-                // and elapsed time add up, and the first byte belongs to
-                // whichever half actually moved it - the prime when it had
-                // room, the drain otherwise.
-                var prime = primeSplice ?? default;
-                var seam = new PromotionSplice(
-                    prime.MovedAnything ? prime.StagedBytes : splice.StagedBytes,
-                    prime.BytesMoved + splice.BytesMoved,
-                    prime.MovedAnything ? prime.MillisecondsToFirstByte : splice.MillisecondsToFirstByte,
-                    prime.MovedAnything ? prime.DestinationUnderrunsAtFirstByte : splice.DestinationUnderrunsAtFirstByte,
-                    prime.TotalMilliseconds + splice.TotalMilliseconds);
-
-                ReportHandoverSeam(finishedTrack, promoted.Track, seam, underrunsAtCompletion, bufferedAtPromotion);
-
-                // The just-promoted decoder already reached Drained while
-                // it was still armed (see _armedAlreadyDrained's remarks) -
-                // its own Drained event fired once already, with nobody
-                // listening, and a decoder never drains twice, so nothing
-                // will ever call this again for it unless we do it
-                // ourselves right now. Recursing here (rather than looping)
-                // correctly cascades through any number of already-finished
-                // tracks queued back to back. Found via
-                // GaplessCoordinatorRealDecodeTests, where a 1-second armed
-                // track reliably finished decoding before its 1-second
-                // "current" track did.
-                if (promotedAlreadyDrained)
+                // On a thread of its own, not this one. This one is the
+                // finished decoder's decode thread (Drained is raised from
+                // it), and its Retire() just above joins it with a
+                // five-second budget: a drain paced by a minute of playback
+                // ran that budget out on every handover, and each one leaked
+                // its native decoder and the file it had open.
+                var drain = new Thread(() => DrainPromoted(finishedTrack, promoted, primeSplice, underrunsAtCompletion, bufferedAtPromotion, promotedAlreadyDrained, ringGenerationAtPromotion))
                 {
-                    _logger?.LogInformation("{Path} had already finished decoding while armed - handling its completion immediately", LogPath.Short(promoted.Track.Path));
-                    HandleDrainedOrFaulted(promoted, faulted: false);
-                }
+                    IsBackground = true,
+                    Name = "Flower promotion drain",
+                };
+                drain.Start();
+            }
+        }
+
+        private void DrainPromoted(Track finishedTrack, ITrackDecoder promoted, PromotionSplice? primeSplice,
+                                   long underrunsAtCompletion, long bufferedAtPromotion, bool promotedAlreadyDrained,
+                                   int ringGenerationAtPromotion)
+        {
+            var splice = promoted.PromoteTarget(_sharedRing);
+
+            // One handover, measured across both halves: the staged total
+            // and elapsed time add up, and the first byte belongs to
+            // whichever half actually moved it - the prime when it had
+            // room, the drain otherwise.
+            var prime = primeSplice ?? default;
+            var seam = new PromotionSplice(
+                prime.MovedAnything ? prime.StagedBytes : splice.StagedBytes,
+                prime.BytesMoved + splice.BytesMoved,
+                prime.MovedAnything ? prime.MillisecondsToFirstByte : splice.MillisecondsToFirstByte,
+                prime.MovedAnything ? prime.DestinationUnderrunsAtFirstByte : splice.DestinationUnderrunsAtFirstByte,
+                prime.TotalMilliseconds + splice.TotalMilliseconds);
+
+            ReportHandoverSeam(finishedTrack, promoted.Track, seam, underrunsAtCompletion, bufferedAtPromotion);
+
+            // The just-promoted decoder already reached Drained while
+            // it was still armed (see _armedAlreadyDrained's remarks) -
+            // its own Drained event fired once already, with nobody
+            // listening, and a decoder never drains twice, so nothing
+            // will ever call this again for it unless we do it
+            // ourselves right now. Recursing here (rather than looping)
+            // correctly cascades through any number of already-finished
+            // tracks queued back to back. Found via
+            // GaplessCoordinatorRealDecodeTests, where a 1-second armed
+            // track reliably finished decoding before its 1-second
+            // "current" track did.
+            //
+            // Not when the shared ring was reset in the meantime: that was a
+            // seek (a skip also retires the decoder, which the stale check
+            // there catches), and a seek wakes a parked decoder to decode
+            // again, so it is no longer finished and will say so itself.
+            if (promotedAlreadyDrained && _sharedRing.Generation == ringGenerationAtPromotion)
+            {
+                _logger?.LogInformation("{Path} had already finished decoding while armed - handling its completion immediately", LogPath.Short(promoted.Track.Path));
+                HandleDrainedOrFaulted(promoted, faulted: false);
             }
         }
 

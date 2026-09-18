@@ -18,7 +18,10 @@ namespace Flower.Audio
     public sealed class RetargetableRingWriter
     {
         private readonly object _gate = new();
-        private GaplessRingBuffer _target;
+
+        // Volatile rather than read under _gate: ResetTarget reads it without
+        // the lock - see there.
+        private volatile GaplessRingBuffer _target;
         private long _backpressureWaits;
 
         public RetargetableRingWriter(GaplessRingBuffer target) => _target = target;
@@ -32,14 +35,7 @@ namespace Flower.Audio
         // this window waiting for room?" - with no race to lose.
         public long BackpressureWaits => Interlocked.Read(ref _backpressureWaits);
 
-        public GaplessRingBuffer Target
-        {
-            get
-            {
-                lock (_gate)
-                    return _target;
-            }
-        }
+        public GaplessRingBuffer Target => _target;
 
         // Writes all of data to the current target, blocking while it's
         // full (that backpressure is what paces decode to playback).
@@ -184,34 +180,64 @@ namespace Flower.Audio
         // actually fail: between the old track's last byte being consumed and
         // this method putting the new track's first byte in front of the
         // render callback. See PromotionSplice.
+        //
+        // Paced by playback, so it holds _gate for as long as the backlog
+        // takes to play - up to a minute. Two things follow. It gives up as
+        // soon as the audio it is moving stops being wanted, which is when
+        // newTarget is Reset() - a skip, a seek or a stop all do that. Not
+        // when the decoder is retired: a decoder is also retired for having
+        // finished, and a short track can finish while its own backlog is
+        // still being moved, which must not cut that backlog off. And nothing a caller needs promptly - Wake, ResetTarget - may
+        // wait on _gate, because a skip during that minute is exactly when
+        // they are called: Wake used to lock, and a tap on another song froze
+        // the UI thread for the rest of the drain, 32s in one phone log.
         public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget)
         {
             lock (_gate)
             {
                 var startedAt = Stopwatch.GetTimestamp();
                 var stagedBytes = _target.AvailableBytes;
+                var generation = newTarget.Generation;
 
                 long movedBytes = 0;
                 var millisecondsToFirstByte = -1.0;
                 var underrunsAtFirstByte = -1L;
 
                 Span<byte> chunk = stackalloc byte[4096];
+                var superseded = false;
                 int read;
-                while ((read = _target.Read(chunk)) > 0)
+                while (!superseded && (read = _target.Read(chunk)) > 0)
                 {
-                    newTarget.Write(chunk[..read]);
-                    movedBytes += read;
-
-                    // Sampled after the first chunk lands and never again:
-                    // everything past this point is the new track playing
-                    // normally, paced by backpressure over as much as
-                    // DefaultStagingCapacityBytes of backlog. Underruns out
-                    // there are not the handover's fault and folding them in
-                    // would make this number useless.
-                    if (millisecondsToFirstByte < 0)
+                    var remaining = chunk[..read];
+                    while (remaining.Length > 0)
                     {
-                        millisecondsToFirstByte = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
-                        underrunsAtFirstByte = newTarget.UnderrunCount;
+                        if (newTarget.Generation != generation)
+                        {
+                            superseded = true;
+                            break;
+                        }
+
+                        var written = newTarget.TryWrite(remaining);
+                        if (written == 0)
+                        {
+                            Thread.Sleep(GaplessRingBuffer.WriterPollMs);
+                            continue;
+                        }
+
+                        remaining = remaining[written..];
+                        movedBytes += written;
+
+                        // Sampled after the first bytes land and never again:
+                        // everything past this point is the new track playing
+                        // normally, paced by backpressure over as much as
+                        // DefaultStagingCapacityBytes of backlog. Underruns out
+                        // there are not the handover's fault and folding them in
+                        // would make this number useless.
+                        if (millisecondsToFirstByte < 0)
+                        {
+                            millisecondsToFirstByte = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+                            underrunsAtFirstByte = newTarget.UnderrunCount;
+                        }
                     }
                 }
 
@@ -240,23 +266,42 @@ namespace Flower.Audio
         // listener has not heard yet. Discarding a flush's worth of it is a
         // decision only the coordinator is in a position to make, and it makes
         // it directly - see the _sharedRing.Reset() calls in Play and Stop.
-        public void Wake()
-        {
-            lock (_gate)
-            {
-                Monitor.PulseAll(_gate);
-            }
-        }
+        //
+        // Skipped rather than waited for when _gate is busy: whoever holds it
+        // is either PromoteTarget, whose drain a parked Write is waiting out
+        // anyway, or a Write between two of its 20ms turns, which re-checks
+        // on the next one.
+        public void Wake() => TryPulse();
 
         // Discards whatever is buffered in the current target - a flush or
         // seek, which also makes any parked Write drop the rest of its
         // pre-flush chunk (see Write).
+        //
+        // Without _gate, for Wake's reason: a seek arriving while PromoteTarget
+        // drains must not wait out the drain. Reset() is a lock-free
+        // generation bump, and if it lands on the staging ring a moment before
+        // the drain swaps it out, the drain stops anyway - the coordinator
+        // resets the shared ring before asking for a seek - and the decoder's
+        // own reset after the seek lands (FfmpegTrackDecoder.ApplySeek) is
+        // read off the new target.
         public void ResetTarget()
         {
-            lock (_gate)
+            _target.Reset();
+            TryPulse();
+        }
+
+        private void TryPulse()
+        {
+            if (!Monitor.TryEnter(_gate))
+                return;
+
+            try
             {
-                _target.Reset();
                 Monitor.PulseAll(_gate);
+            }
+            finally
+            {
+                Monitor.Exit(_gate);
             }
         }
     }

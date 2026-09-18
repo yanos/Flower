@@ -152,6 +152,36 @@ thread. That is no longer a mitigation available to anyone: LibVLC is gone and
   generation change; an `isAbandoned`-style predicate, or a deadline, would stop
   it depending on someone else to notice.
 
+**Fixed**, after it happened on a phone without any pause at all. A handover
+drains at playback speed, so the gate is held for the whole of the promoted
+track's staged minute even while audio plays normally, and a tap on another
+song in that minute waited for the rest of it: 32 seconds of frozen UI in the
+log, ending the millisecond `PromoteTarget` reported `TotalMs=59983`. A seek in
+that minute took the same path, through `ResetTarget`. The same log showed a
+second cost nobody had predicted - "did not stop within 5s; leaking its
+decoder" on every handover, because the drain ran on the *finished* decoder's
+thread, which that decoder's `Retire()` joins with a five-second budget. Each
+handover leaked a native decoder and its open file.
+
+What changed, rather than the two changes suggested above:
+
+- `Wake` and `ResetTarget` no longer wait for the writer's gate. `Wake` pulses
+  only if the gate is free (a parked `Write` re-checks every 20ms anyway), and
+  `ResetTarget` bumps the generation lock-free. So `Retire()` cannot block,
+  whatever order `Play`/`Stop` call it and `Reset()` in.
+- `PromoteTarget` drains with `TryWrite` and stops when the destination's
+  generation changes before any further chunk, rather than calling the blocking
+  `Write` once per chunk, which only noticed a reset *within* a chunk and
+  carried on with the next. Not on retirement: a decoder is also retired for
+  having finished, and a short promoted track that finishes mid-drain must keep
+  its backlog - `GaplessCoordinatorRealDecodeTests` lost track B one run in five
+  while that check was in.
+- The drain runs on a thread of its own (`GaplessCoordinator.DrainPromoted`), so
+  the finished decoder's thread returns and is joined.
+
+`GaplessHandoverResponsivenessTests` is the coordinator-level regression and
+fails on the old code.
+
 ---
 
 ## B. Correctness and resource handling
