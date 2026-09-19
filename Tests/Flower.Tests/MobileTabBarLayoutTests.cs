@@ -12,6 +12,7 @@ using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
+using Flower.Controls;
 using Flower.Models;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels.Mobile;
@@ -96,8 +97,9 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
         public Border Oval => Window.GetVisualDescendants().OfType<Border>().Single(b => b.Height == 64);
 
         // The mini player's, which is 56 tall. Still in the tree while nothing
-        // is playing, just not visible.
-        public Border MiniPlayer => Window.GetVisualDescendants().OfType<Border>().Single(b => b.Height == 56);
+        // is playing, just not visible. So is the filter oval, drawn to the
+        // same shape.
+        public Border MiniPlayer => Window.GetVisualDescendants().OfType<Border>().Single(b => b.Height == 56 && b.Name != "FilterOval");
 
         public Rect InWindow(Visual control) =>
             new(control.TranslatePoint(default, Window) ?? default, control.Bounds.Size);
@@ -351,17 +353,18 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     public void The_settings_button_is_the_size_of_the_back_button()
     {
         using var h = new Harness(NarrowPhone);
-        var back = h.View.FindControl<Border>("BackPill")!;
-        var settings = h.View.FindControl<Border>("SettingsPill")!;
-
-        // The back button only appears once there is somewhere to go back to,
-        // and only once the screen has settled - see UpdateBackPill.
+        // The back button only appears on a screen with somewhere to go back
+        // to - each screen carries its own (ScreenSlot).
         h.Vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         Harness.Pump(400);
         h.Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
         MainViewModelHarness.WaitForTheDrillIn(h.Vm, "Album 0");
         Harness.Pump(600);
         h.Layout(NarrowPhone);
+
+        var slot = h.Window.GetVisualDescendants().OfType<ScreenSlot>().Single(s => s.IsLive);
+        var back = slot.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "BackPill");
+        var settings = slot.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "SettingsPill");
 
         Assert.True(back.IsVisible, "the back button never appeared");
         Assert.Equal(back.Bounds.Size, settings.Bounds.Size);

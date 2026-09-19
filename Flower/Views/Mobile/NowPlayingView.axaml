@@ -50,19 +50,20 @@
        sheets, but the tab oval MobileMainView keeps floating over this one -
        which already clears the safe area itself. -->
   <!-- No horizontal padding on the root: the top bar has to line up with the
-       fixed overlay in MobileMainView, which sets its own inset from
-       the window edge, so the 24px inset belongs to the rows below it rather
-       than to the whole sheet. -->
+       back and settings buttons over every screen (ScreenSlot's header band),
+       inset from the window edge, so the 24px inset belongs to the rows below
+       it rather than to the whole sheet. -->
   <Grid RowDefinitions="Auto,*" Margin="0,0,0,10">
 
     <!-- Top bar: collapse only - no "Now Playing" label, the sheet's own
          content already makes that obvious. The back button is the round one
-         MobileMainView floats over its screens (Border.floating and
-         Button.pill are styled there), and the margin mirrors that overlay's
+         every screen carries in its header band (ScreenSlot; Border.floating
+         and Button.pill are styled in Styles/IconButtons.axaml), and the
+         margin mirrors that band's
          (12 in from either side), with Height="52" starting at y=0 putting
          every circle on the same 26px centre line, so neither the back arrow
          nor the gear jumps when the sheet opens. The gear is this sheet's own
-         copy of the overlay's: the sheet is drawn over that overlay, so
+         copy of the screens': the sheet is drawn over them, so
          without one here settings could not be reached while a song plays. -->
     <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="52" Margin="12,0,12,0">
       <Border Grid.Column="0" Classes="floating" Width="40">

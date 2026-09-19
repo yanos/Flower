@@ -26,7 +26,13 @@ namespace Flower.Tests;
 // down over the seek slider - which is the bug these are about. Geometry only:
 // the art is square, it never overlaps the block below or beside it, and it is
 // worth looking at in both.
-public class NowPlayingLayoutTests
+//
+// Pinned like every class that builds a MainViewModel: it opens the library
+// database, and unpinned it opened it wherever another collection had pinned
+// the directory - which that collection then deleted under it, and Ubuntu CI
+// failed on SQLite's 'disk I/O error'.
+[Collection("PlatformDataDirectory")]
+public class NowPlayingLayoutTests : PinnedDataDirectory
 {
     private sealed class Laid
     {

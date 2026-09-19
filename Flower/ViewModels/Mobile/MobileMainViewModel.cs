@@ -56,13 +56,19 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
     // Rows of tiles rather than a flat tile list - see AlbumGridRow for why
     // (virtualization), and AlbumGridColumns below for how wide a row is.
-    public ObservableCollection<AlbumGridRow> RecentlyAddedAlbumRows { get; } = new();
-    public ObservableCollection<AlbumGridRow> AlbumGridRows { get; } = new();
+    // Each held with every tile it has under whatever the screen's filter
+    // shows of them - see FilterableAlbumGrid.
+    private readonly FilterableAlbumGrid _recentlyAddedGrid = new();
+    private readonly FilterableAlbumGrid _albumGrid = new();
+    private readonly FilterableAlbumGrid _artistAlbumGrid = new();
+
+    public ObservableCollection<AlbumGridRow> RecentlyAddedAlbumRows => _recentlyAddedGrid.Rows;
+    public ObservableCollection<AlbumGridRow> AlbumGridRows => _albumGrid.Rows;
 
     // One artist's own albums (Artists tab, one level in - see IsShowingArtistAlbumGrid),
     // rebuilt by RebuildArtistAlbumGrid whenever _selectedArtistName changes or the
     // library updates while it's set.
-    public ObservableCollection<AlbumGridRow> ArtistAlbumGridRows { get; } = new();
+    public ObservableCollection<AlbumGridRow> ArtistAlbumGridRows => _artistAlbumGrid.Rows;
 
     // How many tiles the three grids above put on a row, pushed in from the
     // views by AlbumGridColumnSizing as their measured width changes - a phone
@@ -80,21 +86,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 return;
 
             _albumGridColumns = value;
-            Rechunk(RecentlyAddedAlbumRows);
-            Rechunk(AlbumGridRows);
-            Rechunk(ArtistAlbumGridRows);
+            _recentlyAddedGrid.Rechunk(value);
+            _albumGrid.Rechunk(value);
+            _artistAlbumGrid.Rechunk(value);
         }
-    }
-
-    private void Rechunk(ObservableCollection<AlbumGridRow> rows)
-    {
-        if (rows.Count == 0)
-            return;
-
-        var tiles = AlbumTilesIn(rows).ToList();
-        rows.Clear();
-        foreach (var row in AlbumGridRow.Chunk(tiles, _albumGridColumns))
-            rows.Add(row);
     }
 
     // Search tab results - see RebuildSearchResultsAsync. Albums matching by
@@ -232,6 +227,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         Main.SelectedSidebarItem,
         Main.SelectedSubItem,
         _searchQuery,
+        _screenFilter,
         // Only captured leaving a track-list screen - see
         // MobileNavigationFrame's own doc comment for why a kept-alive
         // one-back TrackListScreenView needs these instead of the live,
@@ -267,6 +263,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         RememberTab(frame);
         _navigationHistory.Push(frame);
         _forwardHistory.Clear();
+        // Wherever this is going starts with nothing filtered out. Main's half
+        // goes now, before the rows the destination is about to build.
+        ClearScreenFilter();
         _pendingTransition = transition;
         _restoredFrame = null;
     }
@@ -338,6 +337,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         Main.SelectedSidebarItem,
         Main.SelectedSubItem,
         _searchQuery,
+        _screenFilter,
         null,
         null,
         ActiveSheet);
@@ -426,6 +426,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         _forwardHistory.Clear();
         _pendingTransition = MobileNavigationTransition.FromLeft;
         _restoredFrame = null;
+        ClearScreenFilter();
         SetSelectedTabCore(_selectedTab);
     }
 
@@ -486,6 +487,172 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public bool IsShowingArtistAlbumGrid => SelectedTab == MobileTab.Artists && _hasDrilledIn && !_hasDrilledIntoArtistAlbum;
     public bool IsShowingPlaylistPicker => SelectedTab == MobileTab.Playlists && !_hasDrilledIn;
     public bool IsShowingRecentlyAddedAlbums => SelectedTab == MobileTab.RecentlyAdded && !_hasDrilledIn;
+
+    // ── Pull-down filter ──────────────────────────────────────────────
+    //
+    // What the oval opened by pulling a screen down past its top narrows that
+    // screen to (see ScreenSlot, which draws it, and RubberBandScroll,
+    // which notices the pull). Null is the oval closed; "" is the oval open
+    // with nothing typed yet. One screen's, not the app's: every navigation forward
+    // lands on a screen with none, and Back, Forward and a tab tap put back
+    // whatever the screen had when it was left - it is part of
+    // MobileNavigationFrame, like the Search tab's query.
+    //
+    // Not the Search tab's query either, which is a lookup across the whole
+    // library rather than a narrowing of what is already on screen - see
+    // SearchQuery below, and the Search screen, which has no pull-down box.
+    private string? _screenFilter;
+    public string? ScreenFilter
+    {
+        get => _screenFilter;
+        set
+        {
+            if (_screenFilter == value)
+                return;
+            SetScreenFilterCore(value);
+            // A track list's rows go through Main's own debounced rebuild; the
+            // grids and pickers are this view model's to cut, and get the
+            // same cooldown so a word typed quickly is one rebuild, not five.
+            SyncMainFilterText(IsShowingTrackList);
+            ScheduleScreenFilter();
+        }
+    }
+
+    // The filter as matched: trimmed, and null for nothing at all, so a box
+    // holding a stray space filters nothing out.
+    public string? ActiveScreenFilter => NormalizeFilter(_screenFilter);
+
+    private static string? NormalizeFilter(string? filter) =>
+        string.IsNullOrWhiteSpace(filter) ? null : filter.Trim();
+
+    private void SetScreenFilterCore(string? value)
+    {
+        _screenFilter = value;
+        OnPropertyChanged(nameof(ScreenFilter));
+        OnPropertyChanged(nameof(ActiveScreenFilter));
+        OnPropertyChanged(nameof(IsScreenFilterOpen));
+    }
+
+    // Open from the pull until its x is tapped, whether or not anything is
+    // typed in it - putting the keyboard away leaves it up, and the screen
+    // still cut by it.
+    public bool IsScreenFilterOpen => _screenFilter != null;
+
+    // The pull. False on the Search screen, which has its own box and whose
+    // results a filter would only be a search of.
+    public bool OpenScreenFilter()
+    {
+        if (CurrentFrame.IsSearchScreen)
+            return false;
+        if (_screenFilter == null)
+            ScreenFilter = "";
+        return true;
+    }
+
+    // The x: the oval goes, and with it the filtering - at once rather than
+    // after the typing cooldown, since there is no more typing to wait for.
+    public ICommand CloseScreenFilterCommand { get; }
+
+    private void CloseScreenFilter()
+    {
+        ScreenFilter = null;
+        ApplyScreenFilter();
+    }
+
+    // Main.Rows is what every track list shows, so Main.FilterText narrows
+    // them - and only them: on any other screen it is left empty, so the rows
+    // a drill-in builds next are never cut by a word typed somewhere else.
+    private void SyncMainFilterText(bool landingOnTrackList)
+    {
+        var wanted = landingOnTrackList ? ActiveScreenFilter : null;
+        if (Main.FilterText != wanted)
+            Main.FilterText = wanted;
+    }
+
+    private CancellationTokenSource? _screenFilterCts;
+
+    private void ScheduleScreenFilter()
+    {
+        _screenFilterCts?.Cancel();
+        _screenFilterCts = new CancellationTokenSource();
+        DebouncedApplyScreenFilterAsync(_screenFilterCts.Token).Forget(_logger, "Screen filter");
+    }
+
+    private async Task DebouncedApplyScreenFilterAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(150, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        ApplyScreenFilter();
+    }
+
+    // Cuts whichever grid or picker is on screen by the current filter. Only
+    // that one: the screen left behind keeps the filter it had, because it is
+    // kept alive for a swipe back to reveal, and one that un-filtered itself
+    // the moment it was left would slide back in showing a different list at
+    // the scroll position of the filtered one. It takes its own filter again
+    // when it is next the screen showing - an empty one if that is by a new
+    // navigation, its old one if by Back.
+    private void ApplyScreenFilter()
+    {
+        _screenFilterCts?.Cancel();
+        var filter = ActiveScreenFilter;
+        if (IsShowingRecentlyAddedAlbums)
+            _recentlyAddedGrid.ApplyFilter(filter, AlbumGridColumns);
+        else if (IsShowingAlbumGrid)
+            _albumGrid.ApplyFilter(filter, AlbumGridColumns);
+        else if (IsShowingArtistAlbumGrid)
+            _artistAlbumGrid.ApplyFilter(filter, AlbumGridColumns);
+        else if (IsShowingArtistPicker)
+            FilterArtistPicker(filter);
+        else if (IsShowingPlaylistPicker && _playlistPickerFilter != filter)
+        {
+            _playlistPickerFilter = filter;
+            RebuildPlaylistPicker();
+        }
+        RaiseEmptyStateChanged();
+    }
+
+    // The artist names the Artists tab lists - Main.SubListItems, or those of
+    // them the filter lets through. An artist is found by name, and by
+    // anything one of their songs would be found by.
+    private string? _artistPickerFilter;
+    private IReadOnlyList<string> _filteredArtistPickerItems = [];
+
+    public IReadOnlyList<string> ArtistPickerItems =>
+        _artistPickerFilter == null ? Main.SubListItems : _filteredArtistPickerItems;
+
+    private void FilterArtistPicker(string? filter)
+    {
+        _artistPickerFilter = filter;
+        RefreshArtistPickerItems();
+    }
+
+    private void RefreshArtistPickerItems()
+    {
+        if (_artistPickerFilter is { } filter)
+        {
+            var matching = Main.Library.Tracks
+                .Where(t => t.Artists != null && TrackListBuilder.Matches(t, filter))
+                .Select(t => t.Artists!)
+                .ToHashSet();
+            _filteredArtistPickerItems = Main.SubListItems.Where(matching.Contains).ToList();
+        }
+        OnPropertyChanged(nameof(ArtistPickerItems));
+    }
+
+    // Same for the Playlists tab: by name, or by anything one of its songs
+    // would be found by. See RebuildPlaylistPicker.
+    private string? _playlistPickerFilter;
+
+    private static bool PlaylistMatches(SidebarItem item, string filter) =>
+        SearchText.Contains(item.Name, filter) ||
+        item.Playlist?.Tracks.Any(t => TrackListBuilder.Matches(t, filter)) == true;
 
     // The Search tab's own query - deliberately its own field, not
     // Main.FilterText. Search is a one-off lookup across the whole library,
@@ -602,6 +769,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingArtistAlbumGrid
         && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums && SelectedTab != MobileTab.Search;
     public bool CanGoBack => _navigationHistory.Count > 0;
+
+    // Whether the screen one back (PeekOneBack) has one behind it in turn -
+    // which is whether it shows a back button while kept alive for a swipe.
+    public bool CanGoBackTwice => _navigationHistory.Count > 1;
     public bool CanGoForward => _forwardHistory.Count > 0;
 
     // The track list is showing one specific album's songs - true whether
@@ -1367,6 +1538,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // Answers at most once: the sheet's own two buttons both close it, and
     // closing it comes back through here (see ActiveSheet) with the answer
     // already given.
+    private void ClearScreenFilter()
+    {
+        _screenFilterCts?.Cancel();
+        SetScreenFilterCore(null);
+        SyncMainFilterText(landingOnTrackList: false);
+    }
+
     private void ResolvePendingPlaylistDeletion(bool confirmed)
     {
         var pending = _pendingPlaylistDelete;
@@ -1385,7 +1563,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
     public bool IsContentEmpty =>
         (IsShowingAlbumGrid && AlbumGridRows.Count == 0) ||
-        (IsShowingArtistPicker && Main.SubListItems.Count == 0) ||
+        (IsShowingArtistPicker && ArtistPickerItems.Count == 0) ||
         (IsShowingArtistAlbumGrid && ArtistAlbumGridRows.Count == 0) ||
         (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0 && !IsNamingNewPlaylist) ||
         (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbumRows.Count == 0) ||
@@ -1431,6 +1609,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 return "Search Your Library";
             if (IsShowingSearchResults)
                 return "No Results";
+            if (ActiveScreenFilter != null)
+                return "No Matches";
             if (Main.Library.Tracks.Count == 0)
                 return "No Music Yet";
             return "Nothing Here";
@@ -1446,6 +1626,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 return "";
             if (IsShowingSearchResults)
                 return $"No matches for \"{SearchQuery}\".";
+            if (ActiveScreenFilter is { } filter)
+                return $"Nothing here matches \"{filter}\".";
             if (Main.Library.Tracks.Count > 0)
                 return "Nothing to show here yet.";
             if (System.OperatingSystem.IsAndroid())
@@ -1534,6 +1716,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             // Songs/Albums/Artists picker empty-states only - Search has its
             // own SearchQuery-driven path (see that property's setter) and no
             // longer touches Main.Rows at all.
+            if (e.PropertyName == nameof(MainViewModel.SubListItems))
+                RefreshArtistPickerItems();
             if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems)
                 or nameof(LibraryBrowserViewModel.IsRowsRebuildPending))
             {
@@ -1578,6 +1762,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             SearchQuery = query;
             RememberSearch();
         });
+
+        CloseScreenFilterCommand = new RelayCommand(CloseScreenFilter);
 
         SelectTabCommand = new RelayCommand<string>(name =>
         {
@@ -2083,7 +2269,10 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     {
         PlaylistPickerItems.Clear();
         foreach (var item in Main.SidebarItems.Where(i => i.Kind == SidebarItemKind.Playlist))
-            PlaylistPickerItems.Add(item);
+        {
+            if (_playlistPickerFilter == null || PlaylistMatches(item, _playlistPickerFilter))
+                PlaylistPickerItems.Add(item);
+        }
         RaiseEmptyStateChanged();
     }
 
@@ -2104,22 +2293,21 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     {
         var fingerprint = Main.PairedServerFingerprint;
         var reachable = Main.IsPairedServerReachable;
-        TrackAvailability.Apply(AlbumTilesIn(RecentlyAddedAlbumRows), fingerprint, reachable);
-        TrackAvailability.Apply(AlbumTilesIn(AlbumGridRows), fingerprint, reachable);
-        TrackAvailability.Apply(AlbumTilesIn(ArtistAlbumGridRows), fingerprint, reachable);
+        // Every tile, not only the ones a filter is showing: one filtered out
+        // now is on screen again the moment the filter is cleared.
+        TrackAvailability.Apply(_recentlyAddedGrid.Tiles, fingerprint, reachable);
+        TrackAvailability.Apply(_albumGrid.Tiles, fingerprint, reachable);
+        TrackAvailability.Apply(_artistAlbumGrid.Tiles, fingerprint, reachable);
         TrackAvailability.Apply(SearchAlbumResults, fingerprint, reachable);
         if (CurrentDetailHeader is { } header)
             TrackAvailability.Apply([header], fingerprint, reachable);
     }
 
-    private static IEnumerable<AlbumTileViewModel> AlbumTilesIn(IEnumerable<AlbumGridRow> rows) =>
-        rows.SelectMany(row => row.Tiles);
-
     private void RebuildRecentlyAddedAlbums() =>
-        RefillAlbumRows(RecentlyAddedAlbumRows, RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks));
+        RefillAlbumRows(_recentlyAddedGrid, RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks));
 
     private void RebuildAlbumGrid() =>
-        RefillAlbumRows(AlbumGridRows, AlbumGridBuilder.Build(Main.Library.Tracks));
+        RefillAlbumRows(_albumGrid, AlbumGridBuilder.Build(Main.Library.Tracks));
 
     // Re-chunks a grid from freshly built tiles, keeping the tile instances
     // that are still on screen - these grids are rebuilt on every library
@@ -2127,14 +2315,12 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // tiles wholesale abandoned the very spinner the album's own download
     // button had just started. See AlbumTileMerge; desktop's own grids go
     // through the same merge from LibraryBrowserViewModel.
-    private void RefillAlbumRows(ObservableCollection<AlbumGridRow> rows, List<AlbumTileViewModel> built)
+    private void RefillAlbumRows(FilterableAlbumGrid grid, List<AlbumTileViewModel> built)
     {
-        var tiles = AlbumTileMerge.Apply(AlbumTilesIn(rows).ToList(), built, out var retired);
+        var tiles = AlbumTileMerge.Apply(grid.Tiles, built, out var retired);
         TrackAvailability.Apply(tiles, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
 
-        rows.Clear();
-        foreach (var row in AlbumGridRow.Chunk(tiles, AlbumGridColumns))
-            rows.Add(row);
+        grid.Replace(tiles, AlbumGridColumns);
 
         foreach (var tile in retired)
             tile.Dispose();
@@ -2151,15 +2337,15 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     {
         if (_selectedArtistName == null)
         {
-            foreach (var tile in AlbumTilesIn(ArtistAlbumGridRows))
+            foreach (var tile in _artistAlbumGrid.Tiles)
                 tile.Dispose();
-            ArtistAlbumGridRows.Clear();
+            _artistAlbumGrid.Replace(new List<AlbumTileViewModel>(), AlbumGridColumns);
             RaiseEmptyStateChanged();
             return;
         }
 
         RefillAlbumRows(
-            ArtistAlbumGridRows,
+            _artistAlbumGrid,
             AlbumGridBuilder.Build(Main.Library.Tracks.Where(t => t.Artists == _selectedArtistName)));
     }
 
@@ -2534,6 +2720,13 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             _searchQuery = frame.SearchQuery;
             OnPropertyChanged(nameof(SearchQuery));
         }
+        // The screen's own filter too, and before the rows below are rebuilt,
+        // so a filtered track list comes back filtered rather than whole and
+        // then cut a moment later. The grids and pickers take theirs in
+        // RaiseNavigationChanged.
+        _screenFilterCts?.Cancel();
+        SetScreenFilterCore(frame.ScreenFilter);
+        SyncMainFilterText(frame.ScreenKind == MobileScreenKind.TrackList);
         // Unlike the 4 forward-drill-in call sites (which always land on a
         // TrackList screen by definition), Back/Forward can land on ANY
         // screen kind - and only TrackList actually reads Main.Rows (every
@@ -2665,7 +2858,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             RefreshSearchResultsNow();
         else
             _searchResultsCts?.Cancel();
-        RaiseEmptyStateChanged();
+        // Before NavigationChanged, so the screen is already cut by its own
+        // filter when ScreenStackPanel puts its scroll position back.
+        ApplyScreenFilter();
         NavigationChanged?.Invoke(this, EventArgs.Empty);
     }
 

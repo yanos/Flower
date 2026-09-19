@@ -1,8 +1,11 @@
+using System.ComponentModel;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using Flower.ViewModels.Mobile;
 
@@ -41,6 +44,8 @@ public partial class ScreenSlot : UserControl
     public ScreenSlot()
     {
         InitializeComponent();
+        AddHandler(RubberBandScroll.PulledDownEvent, Screen_PulledDown);
+        AddHandler(RubberBandScroll.PullingDownEvent, Screen_PullingDown);
     }
 
     // Inserts the wrapped screen control into this slot's content area.
@@ -53,6 +58,195 @@ public partial class ScreenSlot : UserControl
         if (content.Parent is ContentControl oldHost && !ReferenceEquals(oldHost, ContentHost))
             oldHost.Content = null;
         ContentHost.Content = content;
+    }
+
+    // ── The filter oval ───────────────────────────────────────────────────
+
+    public static readonly StyledProperty<bool> IsLiveProperty =
+        AvaloniaProperty.Register<ScreenSlot, bool>(nameof(IsLive));
+
+    /// <summary>
+    /// Whether this slot is the screen being used, and so shows the filter as
+    /// it is now (MobileMainViewModel.ScreenFilter) and takes what is typed.
+    /// Every other slot - the one kept alive behind it for a swipe back, and
+    /// the one being left while the next screen gets ready and slides over it
+    /// - shows the filter its Frame was left with, unchanging.
+    /// </summary>
+    public bool IsLive
+    {
+        get => GetValue(IsLiveProperty);
+        set => SetValue(IsLiveProperty, value);
+    }
+
+    public static readonly StyledProperty<bool> ShowsBackButtonProperty =
+        AvaloniaProperty.Register<ScreenSlot, bool>(nameof(ShowsBackButton));
+
+    /// <summary>
+    /// Whether this screen has one behind it to go back to - set by
+    /// ScreenStackPanel for each slot, since the screen kept alive behind the
+    /// current one for a swipe has its own answer.
+    /// </summary>
+    public bool ShowsBackButton
+    {
+        get => GetValue(ShowsBackButtonProperty);
+        set => SetValue(ShowsBackButtonProperty, value);
+    }
+
+    // Plays the same slide-off a swipe back does rather than cutting straight
+    // to the screen underneath - see ScreenStackPanel.AnimateGoBack.
+    private void BackButton_Click(object? sender, RoutedEventArgs e) =>
+        this.FindAncestorOfType<ScreenStackPanel>()?.AnimateGoBack();
+
+    public static readonly StyledProperty<bool> IsFilterShownProperty =
+        AvaloniaProperty.Register<ScreenSlot, bool>(nameof(IsFilterShown));
+
+    public bool IsFilterShown
+    {
+        get => GetValue(IsFilterShownProperty);
+        private set => SetValue(IsFilterShownProperty, value);
+    }
+
+    public static readonly StyledProperty<bool> IsOvalShownProperty =
+        AvaloniaProperty.Register<ScreenSlot, bool>(nameof(IsOvalShown));
+
+    /// <summary>
+    /// Whether the oval in the header shows at all: with the filter in it
+    /// while that is open or being pulled open, and always on Search, where it
+    /// holds the search box.
+    /// </summary>
+    public bool IsOvalShown
+    {
+        get => GetValue(IsOvalShownProperty);
+        private set => SetValue(IsOvalShownProperty, value);
+    }
+
+    // Set while the box's text is being written from the view model or the
+    // frame, so that the write is not taken for typing and sent straight back.
+    private bool _showingFilter;
+
+    private MobileMainViewModel? _vm;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        WatchViewModel(DataContext as MobileMainViewModel);
+        ShowFilter();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        WatchViewModel(null);
+    }
+
+    protected override void OnDataContextChanged(System.EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        if (VisualRoot != null)
+            WatchViewModel(DataContext as MobileMainViewModel);
+        ShowFilter();
+    }
+
+    private void WatchViewModel(MobileMainViewModel? vm)
+    {
+        if (_vm != null)
+            _vm.PropertyChanged -= Vm_PropertyChanged;
+        _vm = vm;
+        if (_vm != null)
+            _vm.PropertyChanged += Vm_PropertyChanged;
+    }
+
+    private void Vm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (IsLive && e.PropertyName == nameof(MobileMainViewModel.ScreenFilter))
+            ShowFilter();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == IsLiveProperty || change.Property == FrameProperty)
+            ShowFilter();
+    }
+
+    // Null is the oval closed; "" is open with nothing typed yet.
+    private string? ShownFilter => IsLive ? _vm?.ScreenFilter : Frame?.ScreenFilter;
+
+    // How far the pull under way has gone towards opening the filter, 0 to 1
+    // (RubberBandScroll.PullingDownEvent). While the filter is closed, the
+    // oval shows at that much opacity - the more the pull, the more it is
+    // there - and takes no touches, being only a preview of what letting go
+    // opens.
+    private double _pullProgress;
+
+    private void ShowFilter()
+    {
+        var filter = ShownFilter;
+        var isSearch = Frame is { IsSearchScreen: true };
+        var isOpen = filter != null && Frame is { IsSearchScreen: false };
+        var isPeeking = !isOpen && IsLive && Frame is { IsSearchScreen: false } && _pullProgress > 0;
+        IsFilterShown = isOpen || isPeeking;
+        IsOvalShown = IsFilterShown || isSearch;
+        FilterOval.IsVisible = IsOvalShown;
+        FilterOval.Opacity = isPeeking ? _pullProgress : 1;
+        FilterOval.IsHitTestVisible = !isPeeking;
+        FilterBox.PlaceholderText = PlaceholderFor(Frame?.ScreenKind);
+
+        if ((FilterBox.Text ?? "") == (filter ?? ""))
+            return;
+        _showingFilter = true;
+        FilterBox.Text = filter;
+        _showingFilter = false;
+    }
+
+    private static string PlaceholderFor(MobileScreenKind? kind) => kind switch
+    {
+        MobileScreenKind.ArtistPicker => "Filter artists",
+        MobileScreenKind.PlaylistPicker => "Filter playlists",
+        MobileScreenKind.TrackList => "Filter songs",
+        _ => "Filter albums",
+    };
+
+    // Opened by pulling this screen down from its top, ready to type in:
+    // posted, because the box cannot take focus until the layout pass that
+    // shows it has run, and focus is what raises the keyboard. A pull with the
+    // oval already open puts the keyboard back up for it.
+    //
+    // The oval sits in the header band, so opening it moves nothing below.
+    private void Screen_PulledDown(object? sender, RoutedEventArgs e)
+    {
+        if (!IsLive || _vm == null || !_vm.OpenScreenFilter())
+            return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            FilterBox.Focus();
+            FilterBox.CaretIndex = FilterBox.Text?.Length ?? 0;
+        });
+    }
+
+    private void Screen_PullingDown(object? sender, PullingDownEventArgs e)
+    {
+        if (e.Progress == _pullProgress)
+            return;
+        _pullProgress = e.Progress;
+        ShowFilter();
+    }
+
+    private void FilterBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_showingFilter || !IsLive || _vm == null || _vm.ScreenFilter == null)
+            return;
+        _vm.ScreenFilter = FilterBox.Text ?? "";
+    }
+
+    // Return puts the keyboard away. The oval stays, and the list stays cut
+    // by what is in it - only the x closes it.
+    private void FilterBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+            return;
+        e.Handled = true;
+        TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
     }
 
     public void FocusSearchBox() => Dispatcher.UIThread.Post(() => SearchTabBox.Focus());
@@ -72,6 +266,10 @@ public partial class ScreenSlot : UserControl
         if (DataContext is MobileMainViewModel vm)
             vm.IsSearchBoxFocused = true;
     }
+
+    // The oval's x, on Search: empties the box, and leaves the keyboard as it
+    // was - it takes no focus, so a box being typed in stays that way.
+    private void ClearSearch_Click(object? sender, RoutedEventArgs e) => SearchTabBox.Text = "";
 
     // Return is the keyboard's own "that is what I am looking for": it puts the
     // keyboard away, and the results are already showing underneath.

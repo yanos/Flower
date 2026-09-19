@@ -50,7 +50,7 @@
                           CommandParameter="{Binding Name}"
                           controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
                           controls:LongPress.CommandParameter="{Binding}">
-                    <StackPanel Spacing="6" HorizontalAlignment="Stretch"
+                    <StackPanel Spacing="3" HorizontalAlignment="Stretch"
                                 Classes.dimmed="{Binding IsUnavailable}">
                       <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" />
                       <!-- Explicit LineHeights, not the font default: Inter has no CJK
@@ -61,8 +61,10 @@
                            caption 39px whatever script it is in - 39 rather than the 37
                            these were first set to because that was the tallest fallback on
                            one Mac, and a CI runner's is two pixels taller still. See
-                           AlbumTileCaptionTests. -->
-                      <StackPanel>
+                           AlbumTileCaptionTests. The lines overlap by 3px: each pinned height
+                           leaves room above and below a Latin glyph, and the gap that made
+                           between the name and the artist read as two separate captions. -->
+                      <StackPanel Spacing="-3">
                         <TextBlock Text="{Binding Name}" FontSize="13" LineHeight="21" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding Artist}" FontSize="11" LineHeight="18" Opacity="0.6" TextTrimming="CharacterEllipsis" />
                       </StackPanel>

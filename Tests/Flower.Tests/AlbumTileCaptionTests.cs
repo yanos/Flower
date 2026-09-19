@@ -28,10 +28,11 @@ public sealed class AlbumTileCaptionTests
 {
     private const double TitleLineHeight = 21;
     private const double ArtistLineHeight = 18;
+    private const double LineOverlap = 3;
 
     private static StackPanel Caption(string name, string artist)
     {
-        var caption = new StackPanel();
+        var caption = new StackPanel { Spacing = -LineOverlap };
         caption.Children.Add(new TextBlock
         {
             Text = name,
@@ -64,7 +65,7 @@ public sealed class AlbumTileCaptionTests
     [AvaloniaFact]
     public void A_caption_is_a_fixed_height_whatever_it_says()
     {
-        const double expected = TitleLineHeight + ArtistLineHeight;
+        const double expected = TitleLineHeight + ArtistLineHeight - LineOverlap;
 
         Assert.Equal(expected, Caption("Noble and Godlike in Ruin", "Deerhoof").DesiredSize.Height);
         Assert.Equal(expected, Caption("星間性交", "telepathテレパシー能力者").DesiredSize.Height);

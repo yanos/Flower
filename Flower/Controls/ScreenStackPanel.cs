@@ -133,6 +133,16 @@ public sealed class ScreenStackPanel : Panel
                     _scrollOffsets.AddOrUpdate(leavingFrame, new StrongBox<Vector>(scroller.Offset));
                 if (_currentInner is TrackListScreenView currentTrackList)
                     currentTrackList.Freeze(leavingFrame);
+                // Its filter oval too: navigating clears the live filter at
+                // once, and the screen stays up until the next one is ready to
+                // slide over it - which for a drill-in is a rows rebuild away.
+                // Left live, the oval would vanish first and the screen move
+                // a moment later.
+                if (_current != null)
+                {
+                    _current.Frame = leavingFrame;
+                    _current.IsLive = false;
+                }
             };
             vm.NavigationChanged += (_, _) => SyncToCurrentFrame(vm);
             SyncToCurrentFrame(vm);
@@ -142,9 +152,6 @@ public sealed class ScreenStackPanel : Panel
     // Raised once the screen a navigation lands on is at rest: straight away
     // when it cuts, or when its entrance slide ends. A back step has already
     // done its sliding before the navigation commits, so it lands at rest too.
-    // MobileMainView shows and hides its back button off this rather than off
-    // CanGoBack, which changes as the navigation starts - so the button would
-    // otherwise pop in over a screen still sliding into place.
     public event EventHandler? Settled;
 
     // Raised as a screen starts to move: a drag uncovering the one behind it,
@@ -193,6 +200,8 @@ public sealed class ScreenStackPanel : Panel
         var forward = forwardInner != null ? WrapSlot(_oneForward, _oneForwardInner, forwardInner, vm) : null;
 
         current.Frame = currentFrame;
+        current.IsLive = true;
+        current.ShowsBackButton = vm.CanGoBack;
         current.IsVisible = true;
         current.IsHitTestVisible = true;
         // A brand new transform every sync, never a reused/shared one - this
@@ -220,6 +229,8 @@ public sealed class ScreenStackPanel : Panel
         if (back != null)
         {
             back.Frame = backFrame;
+            back.IsLive = false;
+            back.ShowsBackButton = vm.CanGoBackTwice;
             back.IsVisible = true;
             back.IsHitTestVisible = false;
             back.RenderTransform = null;
@@ -227,6 +238,9 @@ public sealed class ScreenStackPanel : Panel
         if (forward != null)
         {
             forward.Frame = forwardFrame;
+            forward.IsLive = false;
+            // The current screen is behind it.
+            forward.ShowsBackButton = true;
             forward.IsVisible = false;
             forward.IsHitTestVisible = false;
             forward.RenderTransform = null;
@@ -430,7 +444,7 @@ public sealed class ScreenStackPanel : Panel
             _current.FocusSearchBox();
     }
 
-    // Lets the fixed back button (MobileMainView's own overlay) play the
+    // Lets a slot's back button (see ScreenSlot) play the
     // same slide-off animation as an interactive swipe-back, instead of
     // calling MobileMainViewModel.BackCommand directly and cutting straight
     // to the destination screen - reuses CommitInteractive exactly as a

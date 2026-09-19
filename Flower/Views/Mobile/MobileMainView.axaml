@@ -303,9 +303,9 @@
            swipe gesture - live-drag reveal on a rightward swipe (when
            there's history to reveal), easing to commit/cancel on release,
            discrete tab-paging otherwise - see that class's own doc comment.
-           Each slot carries its own sliding header, which is the Search
-           tab's box and nothing else (see ScreenSlot) - only the back button
-           and the settings button below stay fixed on top of it. -->
+           Each slot carries its own sliding header - the back and settings
+           buttons, and the Search tab's box (see ScreenSlot) - so all of it
+           moves with its screen. -->
       <controls:ScreenStackPanel x:Name="ScreenStack" />
 
       <!-- Empty state: shown instead of a blank screen when the current list has nothing in it.
@@ -345,62 +345,6 @@
         </StackPanel>
       </Panel>
 
-      <!-- Fixed back/settings overlay: unlike the title/search/create-
-           playlist/download-all controls (now part of each ScreenSlot's own
-           sliding header), these two never slide - they stay pinned on top
-           of everything, including mid-gesture. No Background, so its empty
-           middle column doesn't intercept the swipe gesture underneath it
-           (Avalonia doesn't hit-test an unpainted Panel/Grid's empty area -
-           same technique AlbumArtView/AlbumGridRowControl already rely on).
-           Margin/button sizing here must stay in sync with ScreenSlot.axaml's
-           own header Margin="60,4,60,4" and with NowPlayingView's top bar,
-           which draws its own back arrow over this one - see those files'
-           comments for the pixel math. Both sides are a 40px circle now, so
-           both come to the same number: outer margin 12 -> edge 52, +8px gap
-           -> 60. Settings used to share a pill with Search, which made that
-           side 78px wide and the header's right margin 100 - Search is a tab
-           in the oval at the bottom now.
-           Vertically the two must share a band, not a margin: this Grid and
-           ScreenSlot's 52px header row are siblings both starting at y=0, and
-           Margin sits *outside* Height - so any top margin here would push
-           these icons that many px below the title and download button. Keep
-           it 0 and let Height="52" alone define the band, which centres these
-           buttons on 26 - the same centre ScreenSlot's own Margin="...,4,...,4"
-           inside its 52px row produces. -->
-      <Grid ColumnDefinitions="Auto,*,Auto" Height="52" Margin="12,0,12,0" VerticalAlignment="Top">
-        <!-- The pill below with one button in it, so a circle. Shown and
-             hidden from code rather than bound to CanGoBack, which changes
-             as a navigation starts - see UpdateBackPill. -->
-        <Border x:Name="BackPill"
-                Grid.Column="0"
-                Classes="floating"
-                Width="40"
-                BoxShadow="0 0 16 1.6 #4D000000"
-                IsVisible="False">
-          <Button Classes="pill"
-                  Click="BackButton_Click"
-                  HorizontalAlignment="Center">
-            <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
-          </Button>
-        </Border>
-
-        <!-- Settings, in a pill of its own with one button in it - so a
-             circle, the size of the back button facing it across the band.
-             Search used to share this pill, which made it a stadium; it is a
-             tab in the oval at the bottom now, where it is marked .current
-             like every other tab rather than tinted with the accent. -->
-        <Border x:Name="SettingsPill"
-                Grid.Column="2"
-                Classes="floating"
-                Width="40"
-                BoxShadow="0 0 16 1.6 #4D000000">
-          <Button Classes="pill"
-                  Command="{Binding OpenSettingsCommand}"
-                  HorizontalAlignment="Center">
-            <materialIcons:MaterialIcon Kind="Cog" Width="20" Height="20" />
-          </Button>
-        </Border>
-      </Grid>
     </Grid>
 
     <!-- Every sheet slides rather than blinking in and out - see SlidingSheet,

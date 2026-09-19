@@ -38,6 +38,11 @@ public enum MobileScreenKind
 // realize the whole library's rows in the background) - see
 // TrackListScreenView.Freeze/ObserveLive.
 //
+// ScreenFilter is what the screen's pull-down filter box held when it was
+// left (MobileMainViewModel.ScreenFilter), put back by Back/Forward/a tab tap
+// and drawn by that screen's own ScreenTitle, so a kept-alive screen revealed
+// by a swipe shows its own filter rather than the live one.
+//
 // Sheet is the one part of a frame that isn't a screen at all. Almost every
 // sheet is raised and dismissed without touching the history, but one is
 // itself a navigation: tapping Now Playing's album art pushes that album AND
@@ -53,6 +58,7 @@ public sealed record MobileNavigationFrame(
     SidebarItem? SidebarItem,
     string? SubItem,
     string? SearchQuery,
+    string? ScreenFilter,
     IReadOnlyList<TrackRowViewModel>? FrozenRows,
     AlbumTileViewModel? FrozenHeader,
     MobileSheet Sheet)

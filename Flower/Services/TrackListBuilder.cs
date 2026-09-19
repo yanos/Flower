@@ -54,14 +54,18 @@ public static class TrackListBuilder
     {
         if (string.IsNullOrWhiteSpace(text))
             return tracks;
-        // Accent-insensitive as well as case-insensitive - see SearchText for
-        // why the fold is written out rather than left to the framework.
-        return tracks.Where(t =>
-            SearchText.Contains(t.Title,   text) ||
-            SearchText.Contains(t.Artists, text) ||
-            SearchText.Contains(t.Album,   text) ||
-            SearchText.Contains(t.Genre,   text));
+        return tracks.Where(t => Matches(t, text));
     }
+
+    // Accent-insensitive as well as case-insensitive - see SearchText for
+    // why the fold is written out rather than left to the framework. Public
+    // for mobile's pull-down filter, which asks it of an album's or an
+    // artist's or a playlist's tracks rather than of a list of rows.
+    public static bool Matches(Track t, string text) =>
+        SearchText.Contains(t.Title,   text) ||
+        SearchText.Contains(t.Artists, text) ||
+        SearchText.Contains(t.Album,   text) ||
+        SearchText.Contains(t.Genre,   text);
 
     // Sorts on each field's "sort as" value rather than the field itself - the
     // tag's own sort override when it has one, the displayed text otherwise

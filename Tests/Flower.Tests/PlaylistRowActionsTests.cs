@@ -77,7 +77,16 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         var vm = Build(out _, T("A", 40), T("B", 33));
         vm.SelectTabCommand.Execute(nameof(MobileTab.Playlists));
         vm.SelectPlaylistCommand.Execute(TheRow(vm));
-        Dispatcher.UIThread.RunJobs();
+
+        // The playlist lands once its rows have been rebuilt off the UI
+        // thread, which one pass of the dispatcher does not wait for - a slow
+        // CI runner read the header before there was one.
+        var deadline = Environment.TickCount64 + 2000;
+        while (vm.CurrentPlaylistHeader == null && Environment.TickCount64 < deadline)
+        {
+            Dispatcher.UIThread.RunJobs();
+            System.Threading.Thread.Sleep(10);
+        }
         Assert.Equal("2 songs  ·  1 hour 13 minutes", vm.CurrentPlaylistHeader?.Artist);
     }
 

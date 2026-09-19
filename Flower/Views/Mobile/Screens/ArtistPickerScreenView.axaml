@@ -9,7 +9,7 @@
 
   <!-- Artist name picker -->
   <ListBox Classes="screenScroll" Background="Transparent"
-           ItemsSource="{Binding Main.SubListItems}"
+           ItemsSource="{Binding ArtistPickerItems}"
            controls:RubberBandScroll.IsEnabled="True"
            SelectionMode="Single">
     <ListBox.ItemTemplate>

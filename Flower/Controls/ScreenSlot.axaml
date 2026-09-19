@@ -9,7 +9,7 @@
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Wraps one materialized screen control together with that screen's own
-       header row (the Search tab's box; nothing at all on the rest), so
+       header (back and settings buttons, and the oval between them), so
        ScreenStackPanel's existing swipe transform - applied to this whole
        control - carries the header along with the screen content instead of
        leaving it behind in a static bar. Frame is reassigned wholesale on
@@ -19,51 +19,174 @@
        comment for why this works correctly even for a kept-alive
        back/forward preview.
 
-       Margin below (60,4,60,4) must stay in sync with the fixed back/settings
-       overlay's own margin in MobileMainView.axaml - see that file's comment
-       for the pixel math, horizontal and vertical both. The 52px row here is
-       what that overlay aligns its own 52px band to, so neither the row height
-       nor the 4px vertical margin can move on its own (HeaderHeight in the
-       code-behind says the same 52 to the code that needs it).
+       The band is the 52px first row, which HeaderHeight in the code-behind
+       says to the code that needs it - the two cannot move apart.
 
        The header has no background: the screen runs up under it, so a list
        scrolls on behind the title rather than vanishing at the band's edge.
        At rest nothing sits there, because every screen's scroller starts its
-       content below the band - ScreenScrollInset, in MobileMainView.axaml. -->
+       content below the band - ScreenScrollInset, in MobileMainView.axaml.
+       The filter oval (and Search's box, which is the same oval) sits in the
+       band too, so opening it moves nothing below. -->
+  <UserControl.Styles>
+    <!-- The filter oval's box: the oval is its border, so the box itself draws
+         none, in any state - Fluent paints a different background and outline
+         for hover and focus from inside its template. -->
+    <Style Selector="TextBox.inOval">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontSize" Value="15" />
+    </Style>
+    <Style Selector="TextBox.inOval /template/ Border#PART_BorderElement, TextBox.inOval:pointerover /template/ Border#PART_BorderElement, TextBox.inOval:focus /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+  </UserControl.Styles>
+
   <Grid RowDefinitions="52,*">
     <ContentControl Grid.Row="0" Grid.RowSpan="2" x:Name="ContentHost" />
 
-    <Grid Grid.Row="0" Margin="60,4,60,4">
-      <!-- No title here: it is the first line of the screen's own scroller,
-           under the back button, and moves with the list (ScreenTitle). -->
+    <!-- No title in the band: it is the first line of the screen's own
+         scroller, under the back button, and moves with the list
+         (ScreenTitle). -->
 
-      <!-- Search tab's own always-visible box, bound to SearchQuery on the
-           shared DataContext (genuinely live/global state, not per-frame -
-           see ScreenSlot.axaml.cs's own doc comment). The app's own box
-           (controls:TextInput), so the x that empties it is the one every
-           other field has rather than one written out here - which is also
-           what retired ClearSearchQueryCommand: clearing the text is the
-           whole of what it did. PropertyChanged so the results follow each
-           keystroke, and so clearing reaches the query without waiting for
-           the box to lose focus. -->
-      <controls:TextInput x:Name="SearchTabBox"
-                          Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
-                          IsVisible="{Binding #Root.Frame.IsSearchScreen}"
-                          PlaceholderText="Search your library"
-                          VerticalAlignment="Center"
-                          KeyDown="SearchTabBox_KeyDown"
-                          GotFocus="SearchTabBox_GotFocus"
-                          LostFocus="SearchTabBox_LostFocus" />
+    <!-- The back and settings buttons, in this slot's own header band so they
+         go wherever the screen goes: a screen sliding in brings its back
+         button with it, and a swipe back takes it away and uncovers the one
+         underneath with its own. Whether there is a back button is the slot's
+         to say (ShowsBackButton, from ScreenStackPanel), since the screen kept
+         behind for a swipe has its own answer to that, not the live one.
+         No Background, so its empty middle column doesn't intercept the swipe
+         gesture underneath it (Avalonia doesn't hit-test an unpainted
+         Panel/Grid's empty area). Both are a 40px circle, centred on 26 by
+         the 52px row itself.
+         NowPlayingView's top bar draws its own back arrow in this same place. -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="12,0,12,0">
+      <Border x:Name="BackPill"
+              Grid.Column="0"
+              Classes="floating"
+              Width="40"
+              BoxShadow="0 0 16 1.6 #4D000000"
+              IsVisible="{Binding #Root.ShowsBackButton}">
+        <Button Classes="pill"
+                Click="BackButton_Click"
+                HorizontalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
+        </Button>
+      </Border>
+
+      <!-- The screen's filter, pulled down from the top of its list (see
+           RubberBandScroll.PulledDownEvent and MobileMainViewModel's
+           "Pull-down filter"), between the back and settings buttons and as
+           tall as they are. Part of the slot rather than fixed over the
+           stack, so it slides with its screen: a screen being left keeps its
+           oval until the next one has slid over it, and Back brings a
+           filtered screen in with its oval on. The pull itself fades it in
+           (RubberBandScroll.PullingDownEvent - see ShowFilter), fully there
+           at the point letting go would open it. It stays until its x is
+           tapped, which is also what turns the filtering off. Visibility,
+           opacity and hit-testing are the code-behind's. -->
+      <Border x:Name="FilterOval"
+              Grid.Column="1"
+              Classes="floating"
+              Height="40"
+              Margin="10,0"
+              BoxShadow="0 0 16 1.6 #4D000000"
+              CornerRadius="20"
+              Padding="14,0,2,0">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+          <materialIcons:MaterialIcon Grid.Column="0"
+                                      Kind="FilterVariant"
+                                      IsVisible="{Binding #Root.IsFilterShown}"
+                                      Width="18" Height="18"
+                                      Opacity="0.6"
+                                      VerticalAlignment="Center" />
+          <materialIcons:MaterialIcon Grid.Column="0"
+                                      Kind="Magnify"
+                                      IsVisible="{Binding #Root.Frame.IsSearchScreen, FallbackValue=False}"
+                                      Width="18" Height="18"
+                                      Opacity="0.6"
+                                      VerticalAlignment="Center" />
+          <!-- No clear button of its own: the x at the end is the one way
+               out, and a second x beside it would be two for one job. Its
+               text is written from the code-behind rather than bound, so a
+               screen kept alive for a swipe shows the filter it was left with
+               rather than the live one. -->
+          <controls:TextInput x:Name="FilterBox"
+                              Grid.Column="1"
+                              Classes="inOval"
+                              IsVisible="{Binding #Root.IsFilterShown}"
+                              ShowsClearButton="False"
+                              TextChanged="FilterBox_TextChanged"
+                              KeyDown="FilterBox_KeyDown" />
+          <!-- Bound to SearchQuery on the shared DataContext (genuinely
+               live/global state, not per-frame - see ScreenSlot.axaml.cs's own
+               doc comment). PropertyChanged so the results follow each
+               keystroke, and so the x emptying it reaches the query without
+               waiting for the box to lose focus. -->
+          <controls:TextInput x:Name="SearchTabBox"
+                              Grid.Column="1"
+                              Classes="inOval"
+                              IsVisible="{Binding #Root.Frame.IsSearchScreen, FallbackValue=False}"
+                              ShowsClearButton="False"
+                              Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                              PlaceholderText="Search your library"
+                              KeyDown="SearchTabBox_KeyDown"
+                              GotFocus="SearchTabBox_GotFocus"
+                              LostFocus="SearchTabBox_LostFocus" />
+          <Button Grid.Column="2"
+                  Classes="pill"
+                  IsVisible="{Binding #Root.IsFilterShown}"
+                  Command="{Binding CloseScreenFilterCommand}"
+                  Padding="7"
+                  VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="Close" Width="20" Height="20" />
+          </Button>
+          <Button Grid.Column="2"
+                  Classes="pill"
+                  Focusable="False"
+                  Click="ClearSearch_Click"
+                  Padding="7"
+                  VerticalAlignment="Center">
+            <Button.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding ElementName="Root" Path="Frame.IsSearchScreen" FallbackValue="False" />
+                <Binding ElementName="SearchTabBox" Path="Text" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+              </MultiBinding>
+            </Button.IsVisible>
+            <materialIcons:MaterialIcon Kind="Close" Width="20" Height="20" />
+          </Button>
+        </Grid>
+      </Border>
+
+      <!-- Settings, in a pill of its own with one button in it - so a circle,
+           the size of the back button facing it across the band. -->
+      <Border x:Name="SettingsPill"
+              Grid.Column="2"
+              Classes="floating"
+              Width="40"
+              BoxShadow="0 0 16 1.6 #4D000000">
+        <Button Classes="pill"
+                Command="{Binding OpenSettingsCommand}"
+                HorizontalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="Cog" Width="20" Height="20" />
+        </Button>
+      </Border>
     </Grid>
 
     <!-- Recent searches, dropped down under the box while it has focus - see
          MobileMainViewModel.SearchSuggestions for which ones. The width of the
-         box, and after the screen's content so it is drawn over the results
+         box (the buttons' 12 + 40, and its own 10, in from each side), and after the screen's content so it is drawn over the results
          rather than under them. The rows cannot take focus: a press on one
          would otherwise take it from the box, which closes this dropdown
          under the finger before the tap has landed. -->
-    <Border Grid.Row="1"
-            Margin="60,2,60,0"
+    <Border Grid.Row="0"
+            Grid.RowSpan="2"
+            Margin="62,50,62,0"
             VerticalAlignment="Top"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             BorderBrush="{DynamicResource AppPrimaryBorderBrush}"

@@ -20,11 +20,7 @@ public partial class MobileMainView : UserControl
     public MobileMainView()
     {
         InitializeComponent();
-        ScreenStack.Settled += (_, _) =>
-        {
-            UpdateBackPill();
-            EmptyStateHost.IsVisible = true;
-        };
+        ScreenStack.Settled += (_, _) => EmptyStateHost.IsVisible = true;
         ScreenStack.Moving += (_, _) => EmptyStateHost.IsVisible = false;
 
         // handledEventsToo: the screens' swipe gesture takes the press for
@@ -126,18 +122,6 @@ public partial class MobileMainView : UserControl
             }
         });
     }
-
-    protected override void OnDataContextChanged(EventArgs e)
-    {
-        base.OnDataContextChanged(e);
-        UpdateBackPill();
-    }
-
-    // Only once the screen has finished arriving: CanGoBack changes as a
-    // navigation starts, so a binding to it would pop the button in over a
-    // screen still sliding into place. See ScreenStackPanel.Settled.
-    private void UpdateBackPill() =>
-        BackPill.IsVisible = DataContext is MobileMainViewModel { CanGoBack: true };
 
     private const double TabBarInsetOverlap = 14;
     private const double TabBarMinimumBottomMargin = 12;
@@ -250,10 +234,4 @@ public partial class MobileMainView : UserControl
         if (DataContext is MobileMainViewModel { SelectedTab: MobileTab.Search })
             ScreenStack.FocusSearchBoxIfShowing();
     }
-
-    // Plays the same slide-off animation an interactive swipe-back gesture
-    // does, rather than calling BackCommand directly and cutting straight to
-    // the destination screen with no transition - see
-    // ScreenStackPanel.AnimateGoBack.
-    private void BackButton_Click(object? sender, RoutedEventArgs e) => ScreenStack.AnimateGoBack();
 }
