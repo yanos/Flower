@@ -124,6 +124,22 @@ else
                     --workflow CI --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
         [ -n "$run_id" ] && [ "$run_id" != null ] \
             || { echo "No successful CI run on $branch to take a package from." >&2; exit 1; }
+
+        # The newest green run is not necessarily the newest commit: when the
+        # tip of the branch failed, or is still building, what gets taken is
+        # an older package, and a change expected to be in it may not be.
+        head_sha="$(gh api "repos/$source_repo/commits/$branch" --jq .sha)"
+        green_sha="$(gh run view --repo "$source_repo" "$run_id" --json headSha --jq .headSha)"
+        if [ "$head_sha" != "$green_sha" ]; then
+            head_run="$(gh run list --repo "$source_repo" --branch "$branch" --workflow CI \
+                          --commit "$head_sha" --limit 1 \
+                          --json status,conclusion,url \
+                          --jq '.[0] | if . == null then "" else "\(if .conclusion == "" then .status else .conclusion end) (\(.url))" end')"
+            echo >&2
+            echo "WARNING: $branch is not green - CI on its tip, ${head_sha:0:8}: ${head_run:-not run}." >&2
+            echo "         Taking the newest green build instead, ${green_sha:0:8}, which is behind it." >&2
+            echo >&2
+        fi
     fi
     gh run view --repo "$source_repo" "$run_id" --json displayTitle,headSha \
         --jq '"\(.displayTitle)  \(.headSha[0:8])"'
