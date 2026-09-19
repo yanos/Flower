@@ -8,6 +8,7 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
+using Flower.Audio.Ffmpeg;
 using Flower.Services;
 
 namespace Flower.Views.Mobile;
@@ -20,7 +21,11 @@ public partial class SettingsView : UserControl
     {
         InitializeComponent();
 
-        VersionTextBlock.Text = $"Version {AppVersion.Display}";
+        // The decoder's own versions under the app's: which FFmpeg is playing
+        // is the first thing to ask about a track that will not.
+        VersionTextBlock.Text = DecoderVersion.Display is { } decoder
+            ? $"Version {AppVersion.Display}\n{decoder}"
+            : $"Version {AppVersion.Display}";
 
         AttachedToVisualTree += (_, _) => Hook();
         DetachedFromVisualTree += (_, _) => Unhook();

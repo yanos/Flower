@@ -98,28 +98,10 @@
     </NativeReference>
   </ItemGroup>
 
-  <!-- ffaudio is the same arrangement for the same reasons
-       (native/ffmpeg/ios/build.sh), with one difference worth knowing: FFmpeg
-       itself is linked into it statically, because a phone has no package
-       manager to find one and shipping four more libraries per slice to reach
-       an eight-function façade is not a trade worth making. That is also where
-       the LGPL obligation lands - see native/ffmpeg/README.md.
-
-       It stands down when scripts/use-ffaudio-package.sh is in force, the way
-       the macOS head's copy does: that switch brings FFAudio.NET.iOS, whose
-       own targets file declares the same two slices out of the package.
-       Declaring both would put two ffaudio.frameworks in one app, which is
-       either a duplicate-symbol failure or, worse, the wrong one silently
-       winning - and the one checked in here is the one that predates the
-       package's metadata calls, so winning is the bad outcome. -->
-  <ItemGroup Condition="'$(FFAudioPackageVersion)' == '' And (('$(Platform)' == 'iPhoneSimulator') OR $(RuntimeIdentifier.StartsWith('iossimulator')))">
-    <NativeReference Include="Frameworks\ios-simulator\ffaudio.framework">
-      <Kind>Framework</Kind>
-    </NativeReference>
-  </ItemGroup>
-  <ItemGroup Condition="'$(FFAudioPackageVersion)' == '' And (('$(Platform)' == 'iPhone') OR ('$(RuntimeIdentifier)' == 'ios') OR $(RuntimeIdentifier.StartsWith('ios-')) OR $(RuntimeIdentifier.StartsWith('ios.')))">
-    <NativeReference Include="Frameworks\ios-device\ffaudio.framework">
-      <Kind>Framework</Kind>
-    </NativeReference>
+  <!-- ffaudio comes from FFAudio.NET.iOS, whose own targets file declares the
+       device or simulator framework off the RuntimeIdentifier - the same
+       arrangement as miniaudio above, done by the package. -->
+  <ItemGroup>
+    <PackageReference Include="FFAudio.NET.iOS" Version="$(FFAudioPackageVersion)" />
   </ItemGroup>
 </Project>

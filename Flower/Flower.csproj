@@ -42,4 +42,17 @@
     <PackageReference Include="System.Diagnostics.EventLog" Version="10.0.10" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
   </ItemGroup>
+
+  <!-- The decoder, and its native payload for the desktop building this. The
+       payload is runtimes/<rid>/native/, which the SDK copies beside every
+       binary downstream (and the macOS head bundles into MonoBundle), so it
+       reaches the desktop heads and the tests alike. Chosen by host because
+       the package set is fixed here, where no RuntimeIdentifier is known yet.
+       The phone heads bring their own payloads; this one lands nowhere there. -->
+  <ItemGroup>
+    <PackageReference Include="FFAudio.NET" Version="$(FFAudioPackageVersion)" />
+    <PackageReference Include="FFAudio.NET.macOS" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
+    <PackageReference Include="FFAudio.NET.Linux" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+    <PackageReference Include="FFAudio.NET.Windows" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+  </ItemGroup>
 </Project>

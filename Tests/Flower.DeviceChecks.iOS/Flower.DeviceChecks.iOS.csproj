@@ -45,27 +45,13 @@
     <ProjectReference Include="..\Flower.DeviceChecks\Flower.DeviceChecks.csproj" />
   </ItemGroup>
 
-  <!-- The FFmpeg façade, out of Flower.iOS's Frameworks rather than a copy of
-       its own: it is the app's binary, and a runner checking a different one
-       would be checking the wrong thing. The checks run once per decoder the
-       platform has, so embedding this is what makes an iOS run check anything
-       at all - without it AvailableDecoders finds nothing loadable and every
-       check is skipped.
+  <!-- The same FFAudio.NET.iOS payload Flower.iOS ships: a runner checking a
+       different binary would be checking the wrong thing. Without it
+       AvailableDecoders finds nothing loadable and every check is skipped.
 
-       No miniaudio here: this runner decodes and never plays.
-
-       Stands down when scripts/use-ffaudio-package.sh is in force, exactly as
-       Flower.iOS's does and for the same reason: the switch brings
-       FFAudio.NET.iOS, which declares these two slices itself. -->
-  <ItemGroup Condition="'$(FFAudioPackageVersion)' == '' And (('$(Platform)' == 'iPhoneSimulator') OR $(RuntimeIdentifier.StartsWith('iossimulator')))">
-    <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-simulator\ffaudio.framework">
-      <Kind>Framework</Kind>
-    </NativeReference>
-  </ItemGroup>
-  <ItemGroup Condition="'$(FFAudioPackageVersion)' == '' And (('$(Platform)' == 'iPhone') OR ('$(RuntimeIdentifier)' == 'ios') OR $(RuntimeIdentifier.StartsWith('ios-')) OR $(RuntimeIdentifier.StartsWith('ios.')))">
-    <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-device\ffaudio.framework">
-      <Kind>Framework</Kind>
-    </NativeReference>
+       No miniaudio here: this runner decodes and never plays. -->
+  <ItemGroup>
+    <PackageReference Include="FFAudio.NET.iOS" Version="$(FFAudioPackageVersion)" />
   </ItemGroup>
 
 </Project>

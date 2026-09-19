@@ -74,21 +74,15 @@
     <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
   </ItemGroup>
 
-  <!-- libs/<abi>/libffaudio.so is the FFmpeg decoder's facade, self-built
-       the same way and for the same reason (native/ffmpeg/android/build.sh).
-       FFmpeg itself is linked in statically rather than shipped as four more
-       libraries per ABI, which is also where the LGPL obligation lands for a
-       phone build - there is no distro FFmpeg here to point at or replace. See
-       native/ffmpeg/README.md.
+  <!-- ffaudio comes from FFAudio.NET.Android, whose own targets file adds
+       libffaudio.so for all three ABIs. Without it there is no decoder at all:
+       App.axaml.cs logs one critical line at startup and the app browses,
+       edits and syncs without being able to play anything.
 
-       Without it there is no decoder at all on that ABI: App.axaml.cs logs one
-       critical line at startup and the app browses, edits and syncs without
-       being able to play anything.
-
-       Neither it nor libminiaudio.so is listed as an AndroidNativeLibrary item.
-       The Android SDK already globs libs/<abi>/*.so and reads the ABI off the
-       directory name, so naming them again packaged each one twice (XA4301,
-       "APK already contains the item ... ignoring"). Dropping the items changed
-       nothing about what ships - the APK carries the same libraries at the same
-       sizes - only how many times the build is asked to add them. -->
+       libminiaudio.so is not listed as an AndroidNativeLibrary item. The
+       Android SDK already globs libs/<abi>/*.so and reads the ABI off the
+       directory name, so naming it again packages it twice (XA4301). -->
+  <ItemGroup>
+    <PackageReference Include="FFAudio.NET.Android" Version="$(FFAudioPackageVersion)" />
+  </ItemGroup>
 </Project>

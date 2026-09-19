@@ -32,7 +32,9 @@ public static class AppVersion
     // to someone who just wants to know they are on 0.1.0.
     public static string Display { get; } = StripBuildMetadata(Full);
 
-    private static string StripBuildMetadata(string version)
+    // Also for another assembly's version - the decoder's, when it comes from
+    // the FFAudio.NET package (see DecoderVersion).
+    public static string StripBuildMetadata(string version)
     {
         var plusIndex = version.IndexOf('+');
         return plusIndex >= 0 ? version[..plusIndex] : version;

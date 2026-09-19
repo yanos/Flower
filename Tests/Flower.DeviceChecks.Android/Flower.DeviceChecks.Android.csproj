@@ -48,27 +48,15 @@
     <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
   </ItemGroup>
 
-  <!-- The FFmpeg façade out of Flower.Android's libs rather than a copy of its
-       own: it is the app's binary, and a runner checking a different one would
-       be checking the wrong thing. The checks run once per decoder the
-       platform has, so embedding this is what makes an Android run check
-       anything at all - without it AvailableDecoders finds nothing loadable,
-       and FLOWER_REQUIRE_DECODERS is what turns that into a failure rather
-       than a green run of no checks.
-
-       All three ABIs, because which one is exercised is a property of the
-       hardware: an emulator on Apple silicon is arm64-v8a, one on a CI runner
-       is x86_64, and armeabi-v7a is what an older phone would load. -->
+  <!-- The same FFAudio.NET.Android payload Flower.Android ships: a runner
+       checking a different binary would be checking the wrong thing. Without
+       it AvailableDecoders finds nothing loadable, and FLOWER_REQUIRE_DECODERS
+       is what turns that into a failure rather than a green run of no checks.
+       The package carries all three ABIs, because which one is exercised is a
+       property of the hardware: arm64-v8a on Apple silicon, x86_64 on a CI
+       runner. -->
   <ItemGroup>
-    <AndroidNativeLibrary Include="..\..\Flower.Android\libs\arm64-v8a\libffaudio.so">
-      <Abi>arm64-v8a</Abi>
-    </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="..\..\Flower.Android\libs\x86_64\libffaudio.so">
-      <Abi>x86_64</Abi>
-    </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="..\..\Flower.Android\libs\armeabi-v7a\libffaudio.so">
-      <Abi>armeabi-v7a</Abi>
-    </AndroidNativeLibrary>
+    <PackageReference Include="FFAudio.NET.Android" Version="$(FFAudioPackageVersion)" />
   </ItemGroup>
 
 </Project>

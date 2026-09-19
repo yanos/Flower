@@ -5,6 +5,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
+using FFAudio;
+
 using Flower.Audio;
 using Flower.Audio.Ffmpeg;
 using Flower.Models;
@@ -78,7 +80,7 @@ public static class DecodeChecks
     {
         var decoders = new List<DecoderUnderTest>();
 
-        if (FfmpegDecoder.IsAvailable)
+        if (Decoder.IsAvailable)
             decoders.Add(new("FFmpeg", PcmSampleFormat.S24,
                 (track, ring) => new FfmpegTrackDecoder(track, ring, sampleFormat: PcmSampleFormat.S24)));
 

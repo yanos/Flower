@@ -13,6 +13,8 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.DependencyInjection;
 
 
+using FFAudio;
+
 using Flower.Controls;
 using Flower.Logging;
 using Flower.Audio;
@@ -467,9 +469,9 @@ public partial class App : Application
     // The one platform fork the audio pipeline needs.
     //
     // Decoding is ffaudio and rendering is MiniaudioSink, on every
-    // platform. Android and iOS use their vendored native miniaudio and
-    // ffaudio builds (native/miniaudio, native/ffmpeg); the desktops
-    // build the façade from source.
+    // platform. ffaudio comes from the FFAudio.NET packages everywhere;
+    // miniaudio is the Miniaudio-CS NuGet on the desktops and vendored
+    // builds (native/miniaudio) on Android and iOS.
     //
     // Neither of those ships a browser/WASM build (see SYNC-PLAN.md's
     // Flower.Web section), so Flower.Web gets WebAudioManager instead, driving
@@ -494,10 +496,10 @@ public partial class App : Application
                 // is not fatal on purpose: browsing a library, editing tags
                 // and running a sync all still work, and refusing to start
                 // would take those away too.
-                if (!FfmpegDecoder.IsAvailable)
+                if (!Decoder.IsAvailable)
                 {
                     sp.GetRequiredService<ILogger<GaplessAudioManager>>().LogCritical(
-                        "ffaudio is not loadable here, so nothing can be decoded. See native/ffmpeg/README.md");
+                        "ffaudio is not loadable here, so nothing can be decoded.");
                 }
 
                 return new GaplessAudioManager(

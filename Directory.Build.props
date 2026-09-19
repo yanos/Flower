@@ -29,12 +29,15 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
   </ItemGroup>
-  <!-- The FFAudio.NET package switch, when one is in force. Written and removed
-       by scripts/use-ffaudio-package.sh, gitignored, and absent by default - so
-       a clean clone builds Flower/Audio/Ffmpeg/ exactly as it always has. It is
-       imported here rather than named in each csproj because it has to reach
-       the source globs, and Directory.Build.props is the one file every project
-       already reads. See docs/DECODER-LIBRARY-PLAN.md Phase 2. -->
-  <Import Project="$(MSBuildThisFileDirectory)FFAudioPackage.props" Condition="Exists('$(MSBuildThisFileDirectory)FFAudioPackage.props')" />
+  <!-- FFAudio.NET, the FFmpeg decoder, pinned here once for every project that
+       references it (Flower and the two phone heads, plus their device-check
+       runners). A gitignored FFAudioPackage.local.props may override the
+       version and add a local feed - that is what scripts/use-ffaudio-package.sh
+       writes, to try a CI or locally packed build before it is published. -->
+  <Import Project="$(MSBuildThisFileDirectory)FFAudioPackage.local.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)FFAudioPackage.local.props')" />
+  <PropertyGroup>
+    <FFAudioPackageVersion Condition="'$(FFAudioPackageVersion)' == ''">1.0.0</FFAudioPackageVersion>
+  </PropertyGroup>
 
 </Project>

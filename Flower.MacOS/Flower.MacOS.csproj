@@ -68,35 +68,4 @@
   <ItemGroup>
     <ProjectReference Include="..\Flower\Flower.csproj" />
   </ItemGroup>
-
-  <!-- The FFmpeg facade, copied in beside the managed assemblies so it is
-       found the way a packaged app is meant to find it.
-
-       FfmpegNative.Resolve tries AppContext.BaseDirectory first and then walks
-       six directories up looking for native/ffmpeg/artifacts/macos - a
-       development convenience that carries Flower.Desktop, whose base
-       directory is four levels below the repo root. It does not reach from
-       here: an app bundle puts the assemblies in
-       bin/<cfg>/<tfm>/<rid>/Flower.MacOS.app/Contents/MonoBundle, which is
-       eight levels down, so this head found no facade at all and logged the one
-       critical line at startup that means it can browse and sync but not
-       decode. Copying it in makes the first candidate hit, which is also the
-       arrangement a distributed .app needs.
-
-       Conditional because the facade is built rather than restored
-       (native/ffmpeg/build-all.sh) and no CI job that compiles this head
-       builds it - see native/ffmpeg/README.md. A missing dylib is a head that
-       cannot decode, which the startup line already says clearly; it is not a
-       build failure.
-
-       Stands down when scripts/use-ffaudio-package.sh is in force: that switch
-       supplies the facade from the FFAudio.NET checkout instead, and two items
-       copying different files to the same name in one bundle is an
-       install_name_tool failure rather than a duplicate-item error. -->
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\native\ffmpeg\artifacts\macos\libffaudio.dylib') And '$(FFAudioPackageVersion)' == ''">
-    <None Include="..\native\ffmpeg\artifacts\macos\libffaudio.dylib">
-      <Link>libffaudio.dylib</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
 </Project>

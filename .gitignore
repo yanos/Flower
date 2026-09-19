@@ -486,27 +486,9 @@ Flower.Server/[Dd]ata/*.db-wal
 Flower.Server/[Dd]ata/*.json
 Flower.Server/[Dd]ata/logs/
 
-# flower-ffmpeg build output. The façade is built, not restored - see
-# native/ffmpeg/README.md.
-native/ffmpeg/build/
-native/ffmpeg/*/build/
-native/ffmpeg/artifacts/
-
-# FFmpeg's own source and the static prefixes the mobile build-ffmpeg.sh
-# scripts cross-compile it into, and on Windows the published FFmpeg build
-# windows/build.ps1 downloads. Not checked in: tens of MB that a script
-# reproduces from a version number and a checksum, and the thing worth
-# committing - the binary it ends up inside, or beside - lives in
-# Flower.iOS/Frameworks/ and Flower.Android/libs/.
-native/ffmpeg/ios/ffmpeg/
-native/ffmpeg/android/ffmpeg/
-native/ffmpeg/windows/ffmpeg/
-
-# Which FFAudio.NET package a particular machine is pointed at, written by
-# scripts/use-ffaudio-package.sh: a version and a local feed path, both facts
-# about one developer's disk rather than about the repo. The switch it drives
-# is FFAudioPackage.props, which is tracked - see its own header for why the
-# two are separate files.
+# An unpublished FFAudio.NET version and the local feed holding it, written
+# by scripts/use-ffaudio-package.sh: facts about one developer's disk, not
+# about the repo.
 FFAudioPackage.local.props
 
 ##

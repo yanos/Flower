@@ -52,7 +52,6 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server. Also holds the two decisions that shaped what the server is: the OpenSubsonic adapter's removal, and that a device never serves — music reaches another device *through* the server, never around it.
 - `AIRPLAY-BLUETOOTH-PLAN.md` — Bluetooth device picker + AirPlay output routing.
 - `AUDIOPHILE-PLAN.md` — EQ, gapless playback, DSD/APE, hi-res passthrough.
-- `DECODER-LIBRARY-PLAN.md` — extracting `native/ffmpeg/` into a general-purpose, audio-only decode library of its own: separate repo, NuGet with static natives, all four sample formats exposed. Flower stays on S24 throughout.
 - `AUDIO-QUALITY-PLAN.md` — render-path defect audit (clicks, looped fragments, truncated tails) and the PCM-level test suite that should prove them fixed.
 - `MEDIA-KEYS-PLAN.md` — hardware media keys + OS now-playing integration.
 - `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack, and the versioning (MinVer, git tags) it consumes. Cutting the first `v*` tag is Phase 1's one remaining task and gates the rest.
@@ -80,7 +79,7 @@ dotnet build Flower.Desktop/Flower.Desktop.csproj                               
 dotnet build Flower.MacOS/Flower.MacOS.csproj                                   # macOS head, needs `sudo dotnet workload install macos`
 dotnet run --project Flower.MacOS/Flower.MacOS.csproj                           # launches it — or just hit Run in the IDE, see below
 dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
-dotnet test Tests/Flower.Tests/Flower.Tests.csproj                                    # full run, needs ffaudio built
+dotnet test Tests/Flower.Tests/Flower.Tests.csproj                                    # full run
 dotnet run --project Flower.Server                                              # server + its browser UI
 ```
 
@@ -97,11 +96,9 @@ No IDE run configuration is checked in, and none should need to be — if one
 does, the project file is the thing to fix, since `.idea/` and `.vscode/` are
 both gitignored and a config in them does not survive a clone.
 
-Decoding is the one thing a fresh clone does not get for free, on any head:
-`native/ffmpeg/artifacts/` is gitignored because the façade is built rather than
-restored, so until `native/ffmpeg/build-all.sh` has been run once the app
-launches, browses and syncs but logs `ffaudio is not loadable here` and
-plays nothing.
+Decoding comes with the restore too: the FFmpeg façade is the FFAudio.NET
+NuGet, native payload included, so a fresh clone plays music on every head
+with nothing built first.
 
 The browser UI (`Flower.Web`) has no run configuration of its own — building
 `Flower.Server` publishes it and drops it in beside the binary, so running the
@@ -125,7 +122,7 @@ lsof -nP -iTCP -sTCP:LISTEN | grep -i flower   # expect no output
 Also pass `--Flower:DataDirectory=<scratch>` to anything throwaway, so a test
 instance never writes to `~/Library/Application Support/Flower/Server`.
 
-`Tests/Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `FfmpegTrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no native decoder), real-decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresFfmpeg`, need the façade built same as the app itself), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Tests/Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
+`Tests/Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `FfmpegTrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no native decoder), real-decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresFfmpeg`, slower, and decoding through the same FFAudio.NET payload the app ships), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Tests/Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
 
 `GaplessCoordinator` used to give the armed (decode-ahead) role its own independent LibVLC core, because two `MediaPlayer`s sharing one core silently dropped `OnDrain`/`EndReached` under real decode load. That went out with LibVLC — two `FfmpegTrackDecoder`s share nothing to contend over. The bug that fix exposed did not: a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`, and still what `GaplessCoordinatorRealDecodeTests`' class comment is about.
 
@@ -249,8 +246,8 @@ middle of a long one. A run that decoded everything and reported two thirds of
 its tally is indistinguishable from a failing one.
 
 Which ABI an Android run exercises is a property of the host - arm64-v8a on a
-developer's Mac, x86_64 on a CI runner - and `Flower.Android/libs/` carries a
-built façade for both. Three Android-specific things are load-bearing and none
+developer's Mac, x86_64 on a CI runner - and FFAudio.NET.Android carries a
+façade for both. Three Android-specific things are load-bearing and none
 is obvious: `EmbedAssembliesIntoApk`, because Fast Deployment keeps the managed
 assemblies out of a Debug APK and pushes them over adb separately, so an APK
 installed by the script aborts at startup; the `INTERNET` permission, which
@@ -326,7 +323,7 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 
 **Album art is fetched in batches** (`CoverArtBatch`, `POST /api/flower/v1/cover-art/batch`): a grid asks for one cover per tile, and a library of 1400 albums is 1400 requests during one cold scroll - more than any per-source budget worth having, and when that budget ran out what got refused was playback. `AlbumArtLoader` coalesces a viewport's worth of misses over a 40ms debounce into one request of up to 32 ids; a peer that cannot answer one degrades to the old request-per-album path. It went on Flower's own surface rather than the OpenSubsonic adapter, because a batch is not an OpenSubsonic idea and that was a published protocol — an argument that outlived the adapter itself. See `docs/OPEN-INTERNET-REVIEW.md` #2b.
 
-**FFmpeg façade** (`native/ffmpeg/`): `ffaudio`, an eight-function C façade over `avformat`/`avcodec`/`avutil`/`swresample`, plus `Flower/Audio/Ffmpeg/`'s `FfmpegDecoder` and `FfmpegTrackDecoder : ITrackDecoder`. It began as the answer to LibVLC's `amem` seam truncating every track to 16 bits whatever format was requested (see `docs/AUDIOPHILE-PLAN.md`), and is now the only decoder. Built, not restored, and never by `dotnet build` — run `native/ffmpeg/build-all.sh` (everything this host can build; `macos/build.sh`, `linux/build.sh` or `windows/build.ps1` for one) before the `RequiresFfmpeg` tests, or filter them out — CI builds it on all three desktops and requires it, via `FLOWER_REQUIRE_DECODERS`, so a façade that stops building shows up as a failing check rather than a shorter suite. Windows downloads a pinned LGPL FFmpeg build rather than compiling one, having neither a package manager to ask nor a reason to cross-compile. Mobile is two scripts instead of one, per platform — `<ios|android>/build-ffmpeg.sh` cross-compiles FFmpeg itself, then `build.sh` links it statically into `ffaudio.framework` per slice or `libffaudio.so` per ABI, checked in under `Flower.iOS/Frameworks/` and `Flower.Android/libs/` like miniaudio's. A phone has no package manager to find an FFmpeg in, which is also where the LGPL obligation stops being someone else's build to point at. Read `native/ffmpeg/README.md` before touching it: the per-platform status and the LGPL-only constraint on any shipping build are both there.
+**FFmpeg façade** (FFAudio.NET): `ffaudio`, a small C façade over `avformat`/`avcodec`/`avutil`/`swresample`, consumed as the `FFAudio.NET` NuGet (managed `FFAudio.Decoder`) plus one native payload package per platform — `.macOS`/`.Linux`/`.Windows` chosen by host in `Flower.csproj`, `.iOS`/`.Android` referenced by the phone heads. The version is pinned once, `FFAudioPackageVersion` in `Directory.Build.props`. Flower's own code is `Flower/Audio/Ffmpeg/FfmpegTrackDecoder : ITrackDecoder`. It began as the answer to LibVLC's `amem` seam truncating every track to 16 bits whatever format was requested (see `docs/AUDIOPHILE-PLAN.md`), and is now the only decoder. It used to live in-tree under `native/ffmpeg/`, and was extracted into its own repo (`../FFAudio.NET`); the build scripts, the static LGPL-only FFmpeg builds and the licence constraints all live there now. To try an unpublished library change against Flower, `scripts/use-ffaudio-package.sh` (`--help`) points the build at a CI build or a local pack. CI requires the decoder via `FLOWER_REQUIRE_DECODERS`, so a payload that stops loading shows up as a failing check rather than a shorter suite.
 
 **One decoder, and it sets the bit depth** (`FfmpegTrackDecoder`, `GaplessFormat`, `PcmSampleFormat`): there used to be an election between LibVLC and FFmpeg, with `AppSettings.AudioDecoder`, a `FLOWER_DECODER` override and a fallback for a head with no built artifact. All five heads have an artifact, LibVLC was permanently 16-bit, and a fallback whose whole job is to play something at a ceiling nobody chose is not worth the second code path — so it is gone, along with ~1,500 lines and the coordinator's dual-core machinery. A façade that will not load now logs one critical line at startup instead of a per-track fault; the app still browses, edits and syncs, it just cannot decode.
 

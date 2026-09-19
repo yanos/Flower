@@ -7,10 +7,10 @@ jobs:
   # Build, test and decode-check, once per desktop platform.
   #
   # The decode checks used to be a second job with the same three-OS matrix,
-  # duplicating this one's checkout, restore and ffaudio build, because
-  # they needed a VLC install that a package mirror could fail on its own. With
-  # LibVLC gone they are simply another filter of an assembly this job has
-  # already built, so the duplicate runner has no reason to exist.
+  # duplicating this one's checkout and restore, because they needed a VLC
+  # install that a package mirror could fail on its own. With LibVLC gone they
+  # are simply another filter of an assembly this job has already built, so
+  # the duplicate runner has no reason to exist.
   test:
     strategy:
       fail-fast: false
@@ -38,44 +38,15 @@ jobs:
             Flower/Flower.csproj
             Tests/Flower.Tests/Flower.Tests.csproj
 
-      # The RequiresFfmpeg tests fail rather than skip without the façade -
-      # deliberately, since a decoder silently not under test is the failure
-      # mode this whole area keeps hitting - so every platform builds it. That
-      # is new for Windows, which used to filter those tests out by name for
-      # want of a façade to run them against.
-      - name: Build ffaudio (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev libswresample-dev
-          native/ffmpeg/linux/build.sh
-
-      - name: Build ffaudio (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install ffmpeg
-          native/ffmpeg/macos/build.sh
-
-      # Windows has neither an FFmpeg to find nor a pkg-config to ask, so its
-      # script downloads a published LGPL build instead of compiling one - see
-      # native/ffmpeg/windows/build.ps1. That is why this step is a one-liner
-      # where the mobile equivalents would be tens of minutes, and why the
-      # RequiresFfmpeg tests are no longer filtered out below.
-      - name: Build ffaudio (Windows)
-        if: runner.os == 'Windows'
-        run: ./native/ffmpeg/windows/build.ps1
-        shell: pwsh
-
       # No filter. This used to exclude the RequiresLibVLC tests, because no
       # hosted runner image ships VLC and installing it was flaky enough to be
       # worth keeping out of the fast suite. There is no VLC any more: the one
-      # decoder is ffaudio, built two steps up, and everything that
-      # decodes for real needs only that.
+      # decoder is ffaudio, restored from the FFAudio.NET packages, and
+      # everything that decodes for real needs only that.
       #
       # FLOWER_REQUIRE_DECODERS is what stops this going green having checked
-      # nothing. A facade that did not build, or built and would not load,
-      # otherwise just makes DecodeChecks report an empty decoder list and
-      # every check quietly not happen - which is the exact failure this whole
+      # nothing. A façade that would not load otherwise just makes DecodeChecks
+      # report an empty decoder list and every check quietly not happen - which is the exact failure this whole
       # area keeps hitting.
       - name: Run tests
         env:
@@ -229,8 +200,9 @@ jobs:
   # transcript into its own Documents container, the script boots a simulator,
   # installs it, waits up to 180s for a tally and turns that into an exit
   # code. The simulator frameworks it links are committed under
-  # Flower.iOS/Frameworks/, so there is nothing for this job to install beyond
-  # the workload.
+  # Flower.iOS/Frameworks/ (miniaudio) or restored from FFAudio.NET.iOS
+  # (ffaudio), so there is nothing for this job to install beyond the
+  # workload.
   #
   # It runs on every push rather than on master or a schedule. Work in this
   # repo happens on master directly, so a branch gate would save nothing, and
@@ -331,8 +303,8 @@ jobs:
       # fighting over one AVD lock is a failure with no useful error.
       #
       # x86_64 here and arm64-v8a on a developer's Mac: which ABI gets
-      # exercised is a property of the host, and Flower.Android carries a
-      # built façade for both.
+      # exercised is a property of the host, and FFAudio.NET.Android carries
+      # a façade for both.
       - name: Run the decode checks on an emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:

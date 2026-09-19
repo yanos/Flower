@@ -3,6 +3,8 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
+using FFAudio;
+
 using Microsoft.Extensions.Logging;
 
 using Flower.Logging;
@@ -58,7 +60,7 @@ namespace Flower.Audio.Ffmpeg
         private readonly PcmSampleFormat _sampleFormat;
         private readonly int _bytesPerFrame;
 
-        private FfmpegDecoder? _decoder;
+        private Decoder? _decoder;
         private SeekableHttpStream? _remoteStream;
         private Thread? _thread;
 
@@ -192,7 +194,7 @@ namespace Flower.Audio.Ffmpeg
                 // pinned client.
                 _remoteStream = new SeekableHttpStream(AudioHttpClient, new Uri(path), logger: _logger);
                 _remoteStream.ProbeAsync(cancellationToken).GetAwaiter().GetResult();
-                _decoder = FfmpegDecoder.OpenStream(
+                _decoder = Decoder.OpenStream(
                     _remoteStream,
                     FormatFor(_sampleFormat),
                     (int)GaplessFormat.SampleRate,
@@ -202,7 +204,7 @@ namespace Flower.Audio.Ffmpeg
             }
             else
             {
-                _decoder = FfmpegDecoder.OpenPath(
+                _decoder = Decoder.OpenPath(
                     path,
                     FormatFor(_sampleFormat),
                     (int)GaplessFormat.SampleRate,
@@ -225,8 +227,8 @@ namespace Flower.Audio.Ffmpeg
         // This used to live next to the decoder election, so the mapping
         // between the pipeline's format and FFmpeg's own sat beside the choice
         // that produced it; with one decoder left it belongs to the decoder.
-        public static FfmpegSampleFormat FormatFor(PcmSampleFormat format) =>
-            format == PcmSampleFormat.S24 ? FfmpegSampleFormat.S24 : FfmpegSampleFormat.S16;
+        public static SampleFormat FormatFor(PcmSampleFormat format) =>
+            format == PcmSampleFormat.S24 ? SampleFormat.S24 : SampleFormat.S16;
 
         public void StartDecoding()
         {
@@ -559,7 +561,7 @@ namespace Flower.Audio.Ffmpeg
             }
         }
 
-        private void ApplySeek(FfmpegDecoder decoder, long requestedMs)
+        private void ApplySeek(Decoder decoder, long requestedMs)
         {
             try
             {
@@ -716,7 +718,7 @@ namespace Flower.Audio.Ffmpeg
         // The MP4 family stays because there the hint buys something a probe
         // cannot: a moov atom at the end of a stream that cannot be seeked.
         // Even there the force is a preference rather than a verdict - see
-        // FfmpegDecoder.OpenStream, which falls back to probing when a forced
+        // Decoder.OpenStream, which falls back to probing when a forced
         // demuxer will not open the stream.
         internal static string? DemuxerHintFor(Track track)
         {

@@ -22,6 +22,7 @@
                      Padding="0"
                      HorizontalAlignment="Center"/>
     <TextBlock x:Name="VersionTextBlock"
+               TextAlignment="Center"
                FontSize="11"
                Opacity="0.5"
                HorizontalAlignment="Center"/>

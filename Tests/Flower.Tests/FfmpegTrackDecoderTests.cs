@@ -4,6 +4,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
+using FFAudio;
+
 using Flower.Audio;
 using Flower.Audio.Ffmpeg;
 using Flower.DeviceChecks;
@@ -298,8 +300,8 @@ public class FfmpegTrackDecoderTests : IDisposable
         var wav = SyntheticWav.Build(TimeSpan.FromSeconds(1), SyntheticWav.Ramp());
         using var stream = new MemoryStream(wav);
 
-        using var decoder = FfmpegDecoder.OpenStream(
-            stream, FfmpegSampleFormat.S16, formatHint: "mp4");
+        using var decoder = Decoder.OpenStream(
+            stream, SampleFormat.S16, formatHint: "mp4");
 
         // Opened by probing, so it found what the bytes actually are rather
         // than what the caller claimed they were.

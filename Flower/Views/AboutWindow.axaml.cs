@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Flower.Audio.Ffmpeg;
 using Flower.Services;
 
 namespace Flower.Views;
@@ -10,7 +11,11 @@ public partial class AboutWindow : Window
     {
         InitializeComponent();
 
-        VersionTextBlock.Text = $"Version {AppVersion.Display}";
+        // The decoder's own versions under the app's: which FFmpeg is playing
+        // is the first thing to ask about a track that will not.
+        VersionTextBlock.Text = DecoderVersion.Display is { } decoder
+            ? $"Version {AppVersion.Display}\n{decoder}"
+            : $"Version {AppVersion.Display}";
     }
 
     // No button here to hang IsCancel="True" off of (unlike SettingsWindow/
