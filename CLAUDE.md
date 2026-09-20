@@ -46,8 +46,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `SELF-HOSTING.md` — the one user-facing document here: running your own server and reaching it remotely. `SYNC-PLAN.md` holds the reasoning behind it.
 - `REMOTE-ACCESS-PLAN.md` — the client-side half of remote access: how a paired server stays reachable off the LAN (candidate addresses, LAN↔tailnet handover).
 - `REMOTE-TRANSPORT-PLAN.md` — who carries the traffic when neither end has a public address: Tailscale vs Cloudflare Tunnel vs embedding `tsnet`.
-- `OPEN-INTERNET-REVIEW.md` — the `LanGuard`/rate-limit/signature read-through that gates turning any remote transport on.
-- `ARCHITECTURE-REVIEW.md` — the August 2026 structural review. Every tier in it is done; it stays because ~115 source comments cite its tier numbers as the reasoning behind the code they sit on. `CODE-REVIEW-2026-09.md` is the live backlog now.
+- `CITED-DECISIONS.md` — the index for three retired documents: the August 2026 structural review (`ARCHITECTURE-REVIEW.md`), the trust-boundary read-through that gated remote transport (`OPEN-INTERNET-REVIEW.md`), and `SMART-PLAYLIST-PLAN.md`. All three were finished, and deleted once they were; ~140 source comments still cite their tier and finding numbers, and this is what those citations resolve against. One line per item, with the full text recoverable from git. `CODE-REVIEW-2026-09.md` is the live backlog now.
 - `CODE-REVIEW-2026-09.md` — the standing backlog. September 2026 review pass: audio-quality and deadlock defects, security/trust-boundary gaps, allocation hot spots, dead code. Findings only, with the evidence for each; nothing in it is fixed yet.
 - `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server. Also holds the two decisions that shaped what the server is: the OpenSubsonic adapter's removal, and that a device never serves — music reaches another device *through* the server, never around it.
 - `AIRPLAY-BLUETOOTH-PLAN.md` — Bluetooth device picker + AirPlay output routing.
@@ -59,7 +58,6 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `STORE-DEPLOYMENT-PLAN.md` — submitting iOS/Android to app stores, and the real-device verification still owed before that.
 - `PERFORMANCE-TRACKING-PLAN.md` — CI benchmark regression tracking + runtime timing.
 - `STREAMING-SERVICES-PLAN.md` — feasibility of streaming Spotify/Apple Music/YouTube Music.
-- `SMART-PLAYLIST-PLAN.md` — rule-based self-updating playlists (iTunes-style smart playlists).
 
 ## Agent skills
 
@@ -169,7 +167,7 @@ about the samples:
 ```bash
 dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter FullyQualifiedName~DeviceChecksTests  # here
 scripts/ios-device-checks.sh                                                                # iOS Simulator
-scripts/android-device-checks.sh                                                            # Android emulator
+scripts/android-device-checks.sh                                                            # Android emulator — local only, see below
 ```
 
 Two checks are not about decoding at all. The first is authentication:
@@ -183,7 +181,7 @@ stream URL was signed once, at resolve time, and then fetched several times
 as a replay. The track got a correct length and ~130 bytes of JSON for audio.
 Nothing here could catch it while the loopback authenticated nothing, which is
 the general lesson: a check that cannot refuse a request cannot find a bug about
-being refused. See `PeerCredentialsHandler` and docs/OPEN-INTERNET-REVIEW.md #2c.
+being refused. See `PeerCredentialsHandler` and docs/CITED-DECISIONS.md #2c.
 
 The second is a server answering 429. Being throttled
 is not a track failing, and the difference between waiting it out and treating
@@ -193,7 +191,7 @@ across browsing, cover art and audio, and a cover-art burst spent it.
 `LoopbackMediaServer.RefuseBodiesWith429` reproduces it (bodies only - the
 cheap `bytes=0-0` probe got through in the real failure, which is why the
 symptom was "the track has a length and plays nothing"). See
-docs/OPEN-INTERNET-REVIEW.md #2b for the whole chain and the three places it is
+docs/CITED-DECISIONS.md #2b for the whole chain and the three places it is
 fixed.
 
 The whole suite runs **once per decoder this platform has** (`DecoderUnderTest`,
@@ -226,10 +224,9 @@ names only the MP4 family (where a hint buys something a probe cannot: a moov
 atom at the end of an unseekable stream), and `FfmpegDecoder.OpenStream` rewinds
 and probes when even that hint will not open the stream.
 
-CI runs the same checks on every platform Flower has a head for: per-OS inside
-the `test` job on the three desktops - they need nothing the fast suite does
-not already build - on an iOS Simulator in `ios-device-checks`, and on an
-Android emulator in `android-device-checks`. The mobile two are a head apiece
+CI runs these per-OS inside the `test` job on the three desktops - they need
+nothing the fast suite does not already build - and on an iOS Simulator in
+`ios-device-checks`. The mobile two are a head apiece
 (`Flower.DeviceChecks.iOS`, `Flower.DeviceChecks.Android`) driven by a script
 apiece, written to be twins: a runner with no Avalonia, no audio output and no
 UI beyond a text view, reporting the same `FLOWER-CHECK`/`FLOWER-CHECKS` lines
@@ -237,6 +234,29 @@ to a transcript in its own container, which the script reads back and turns
 into an exit code. The runs are meant to be comparable line for line: when they
 disagree, the difference is the platform - and iOS is the platform where the
 answer has actually been no twice.
+
+**Only iOS runs in CI; Android is local-only** (September 2026).
+`android-device-checks` was a job here and was removed rather than left red.
+It was failing for a real bug it found honestly: `Flower.csproj` picks a
+desktop ffaudio payload by host, that flows transitively to the Android heads,
+and `android-x64` falls back to `linux-x64` in the RID graph - so on a Linux
+runner the glibc `libffaudio.so` wins `lib/x86_64/` and the real one from
+`FFAudio.NET.Android` is dropped with `XA4301: APK already contains the item
+lib/x86_64/libffaudio.so; ignoring`. `dlopen` then fails on the emulator and
+`AvailableDecoders` comes back empty, which `FLOWER_REQUIRE_DECODERS` turns
+into `0 passed, 1 failed`. The fix is an `ExcludeAssets="native"` on that host
+package in both Android heads, the same way `Miniaudio-CS` already carries one
+and for the same RID-fallback reason.
+
+Two consequences worth knowing. The checks still run on a developer's Mac via
+`scripts/android-device-checks.sh`, where the host payload is
+`FFAudio.NET.macOS` and no Android RID falls back to `osx-*`, so the collision
+cannot happen and the suite passes - which is exactly why it went unnoticed
+until a Linux runner built it. And nothing in CI compiles
+`Tests/Flower.DeviceChecks.Android` any more (`build-android` builds
+`Flower.Android`, not the runner), so it is now a project CI never compiles -
+the thing the `Build Flower.Desktop` step in `tests.yml` exists to prevent.
+Both go away when the job comes back.
 
 The transcript is a file rather than the obvious console, on both, for the same
 reason arrived at separately: `Console.WriteLine` from a .NET iOS app does not
@@ -271,6 +291,25 @@ remembered address, and an mDNS announcement, which is worth checking because
 multicast DNS authenticates nothing and anything on the segment can announce a
 server at a public address. `LanGuard` is the same predicate from the server's
 side.
+
+## Releasing
+
+One workflow, `.github/workflows/tests.yml`, on every push. Tagging `v*`
+additionally runs `publish-image`, which pushes the server image to GHCR for
+both architectures — and it is a job in that file rather than a workflow of its
+own **because that is the only way it can wait**. A tag push fires every
+`on: push` workflow at once, and `needs` reaches only jobs in the same
+workflow, so `publish-server-image.yml` had no relationship to the suite: v0.2.0
+pushed `latest` in five minutes off a tree whose macOS, Windows and
+Android-emulator jobs all went on to fail. Keep the publish here, and keep
+every job in its `needs` — a tag is a claim about the whole commit, not about
+the server image.
+
+Two things that follow. `build-image` builds the same Dockerfile on every push
+without pushing, so a broken image surfaces then rather than at a release; the
+tag build proves the arm64 half. And the desktop auto-update
+(`docs/AUTO-UPDATE-PLAN.md`) consumes the same tags through MinVer, so a tag is
+not a private act.
 
 ## Git Workflow
 
@@ -319,11 +358,11 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 
 **Miniaudio native libraries** (`native/miniaudio/`): the `Miniaudio-CS` NuGet only ships desktop binaries, so Android (`android/build.sh`, NDK/CMake → `Flower.Android/libs/<abi>/libminiaudio.so`) and iOS (`ios/build.sh`, Xcode → `Flower.iOS/Frameworks/ios-{device,simulator}/miniaudio.framework`) are compiled and vendored directly in-repo instead — no NuGet package, see `native/miniaudio/README.md` to rebuild. Pinned to the exact miniaudio commit `Miniaudio-CS`'s own bindings were generated against (0.11.22), not the latest upstream release, to avoid an ABI mismatch. iOS additionally needs a `DllImportResolver` in `MiniaudioSink`'s static constructor — unlike Android, where naming the output `libminiaudio.so` alone is enough, .NET-for-iOS's default P/Invoke probing doesn't know to look inside an embedded framework's nested bundle path. `App.axaml.cs` routes every platform, including Android/iOS, to `MiniaudioSink`.
 
-**Flower speaks one protocol, its own** (`MediaEndpoints`, `SyncEndpoints`): the catalog is `GET /api/flower/v1/library`, playback is `/api/flower/v1/stream`, downloads `/download`, art `/cover-art` and `/cover-art/batch`. There used to be a second surface, `/rest/*`, mapping the same handlers for third-party OpenSubsonic clients; it was removed in September 2026 along with the password that was the only guessable credential in the system — see `docs/SYNC-PLAN.md`, "OpenSubsonic, built and removed", for what that bought and what it gave up. Every route now takes a device signature, or a stream ticket scoped to the two media routes (what the browser's `<audio>` element presents). The surface budgets bulk, art and media separately, because a cover-art burst sharing one budget with audio is how an album once stopped playing — see `docs/OPEN-INTERNET-REVIEW.md` #2b.
+**Flower speaks one protocol, its own** (`MediaEndpoints`, `SyncEndpoints`): the catalog is `GET /api/flower/v1/library`, playback is `/api/flower/v1/stream`, downloads `/download`, art `/cover-art` and `/cover-art/batch`. There used to be a second surface, `/rest/*`, mapping the same handlers for third-party OpenSubsonic clients; it was removed in September 2026 along with the password that was the only guessable credential in the system — see `docs/SYNC-PLAN.md`, "OpenSubsonic, built and removed", for what that bought and what it gave up. Every route now takes a device signature, or a stream ticket scoped to the two media routes (what the browser's `<audio>` element presents). The surface budgets bulk, art and media separately, because a cover-art burst sharing one budget with audio is how an album once stopped playing — see `docs/CITED-DECISIONS.md` #2b.
 
-**Album art is fetched in batches** (`CoverArtBatch`, `POST /api/flower/v1/cover-art/batch`): a grid asks for one cover per tile, and a library of 1400 albums is 1400 requests during one cold scroll - more than any per-source budget worth having, and when that budget ran out what got refused was playback. `AlbumArtLoader` coalesces a viewport's worth of misses over a 40ms debounce into one request of up to 32 ids; a peer that cannot answer one degrades to the old request-per-album path. It went on Flower's own surface rather than the OpenSubsonic adapter, because a batch is not an OpenSubsonic idea and that was a published protocol — an argument that outlived the adapter itself. See `docs/OPEN-INTERNET-REVIEW.md` #2b.
+**Album art is fetched in batches** (`CoverArtBatch`, `POST /api/flower/v1/cover-art/batch`): a grid asks for one cover per tile, and a library of 1400 albums is 1400 requests during one cold scroll - more than any per-source budget worth having, and when that budget ran out what got refused was playback. `AlbumArtLoader` coalesces a viewport's worth of misses over a 40ms debounce into one request of up to 32 ids; a peer that cannot answer one degrades to the old request-per-album path. It went on Flower's own surface rather than the OpenSubsonic adapter, because a batch is not an OpenSubsonic idea and that was a published protocol — an argument that outlived the adapter itself. See `docs/CITED-DECISIONS.md` #2b.
 
-**FFmpeg façade** (FFAudio.NET): `ffaudio`, a small C façade over `avformat`/`avcodec`/`avutil`/`swresample`, consumed as the `FFAudio.NET` NuGet (managed `FFAudio.Decoder`) plus one native payload package per platform — `.macOS`/`.Linux`/`.Windows` chosen by host in `Flower.csproj`, `.iOS`/`.Android` referenced by the phone heads. The version is pinned once, `FFAudioPackageVersion` in `Directory.Build.props`. Flower's own code is `Flower/Audio/Ffmpeg/FfmpegTrackDecoder : ITrackDecoder`. It began as the answer to LibVLC's `amem` seam truncating every track to 16 bits whatever format was requested (see `docs/AUDIOPHILE-PLAN.md`), and is now the only decoder. It used to live in-tree under `native/ffmpeg/`, and was extracted into its own repo (`../FFAudio.NET`); the build scripts, the static LGPL-only FFmpeg builds and the licence constraints all live there now. To try an unpublished library change against Flower, `scripts/use-ffaudio-package.sh` (`--help`) points the build at a CI build or a local pack. CI requires the decoder via `FLOWER_REQUIRE_DECODERS`, so a payload that stops loading shows up as a failing check rather than a shorter suite.
+**FFmpeg façade** (FFAudio.NET): `ffaudio`, a small C façade over `avformat`/`avcodec`/`avutil`/`swresample`, consumed as the `FFAudio.NET` NuGet (managed `FFAudio.Decoder`) plus one native payload package per platform — `.macOS`/`.Linux`/`.Windows` chosen by host in `Flower.csproj`, `.iOS`/`.Android` referenced by the phone heads. The version is pinned once, `FFAudioPackageVersion` in `Directory.Build.props`. Flower's own code is `Flower/Audio/Ffmpeg/FfmpegTrackDecoder : ITrackDecoder`. It began as the answer to LibVLC's `amem` seam truncating every track to 16 bits whatever format was requested (see `docs/AUDIOPHILE-PLAN.md`), and is now the only decoder. It used to live in-tree under `native/ffmpeg/`, and was extracted into its own repo (`../FFAudio.NET`); the build scripts, the static LGPL-only FFmpeg builds and the licence constraints all live there now. To try an unpublished library change against Flower, `scripts/use-latest-main-ffaudio-package.sh` (`--help`) points the build at a CI build or a local pack. CI requires the decoder via `FLOWER_REQUIRE_DECODERS`, so a payload that stops loading shows up as a failing check rather than a shorter suite.
 
 **One decoder, and it sets the bit depth** (`FfmpegTrackDecoder`, `GaplessFormat`, `PcmSampleFormat`): there used to be an election between LibVLC and FFmpeg, with `AppSettings.AudioDecoder`, a `FLOWER_DECODER` override and a fallback for a head with no built artifact. All five heads have an artifact, LibVLC was permanently 16-bit, and a fallback whose whole job is to play something at a ceiling nobody chose is not worth the second code path — so it is gone, along with ~1,500 lines and the coordinator's dual-core machinery. A façade that will not load now logs one critical line at startup instead of a per-track fault; the app still browses, edits and syncs, it just cannot decode.
 

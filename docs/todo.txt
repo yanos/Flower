@@ -90,7 +90,7 @@ Lock-free synchronisation — correct in shape, but (A) is a bug in the
 GC pauses / ArrayPool — the RT callback already allocates nothing;
     TrackDecoder.OnPlay's _scratch (:396-399) is grow-only and reused. The
     useful artifact here is a regression test asserting zero allocation.
-
+    
 
 ----
 why is star a special case?

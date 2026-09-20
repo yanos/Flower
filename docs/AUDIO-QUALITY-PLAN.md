@@ -1,12 +1,23 @@
 # Audio quality: fix the render-path defects, then prove it with PCM-level tests
 
-**Status: Phases 1–5 are built. Findings A–H and J are fixed; I is deferred to
-`AUDIOPHILE-PLAN.md` §5, which now owns it. Phase 5 (below) is the mobile-only
-one, added after device logs showed a defect none of A–J covers. What is left is
-listening: the suite (1572 tests) including the real-decode tests is green, but "does it still click" is a question only ears answer — see
-Verification below. Phase 6 is Phase 5's fork collapsed back into one render
-path across every platform; it is not started, and deliberately waits on that
-listening.**
+**Status: Phases 1–5 are built, and the listening pass they gated on is done —
+no clicks on the desktop, and sustained everyday listening on a real iPhone with
+no blips. Findings A–H and J are fixed; I is deferred to `AUDIOPHILE-PLAN.md`
+§5, which now owns it. Phase 5 (below) is the mobile-only one, added after
+device logs showed a defect none of A–J covers, and the phone listening is what
+confirms its native render callback — the one part of this plan no automated
+test can reach.
+
+Phase 6 is not started, and it was rescoped while writing this status down.
+It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
+that fork costs turned up **finding M — every interactive control on mobile
+lags by the render buffer's depth, today, because Phase 5 put that buffer on
+the far side of the output stage.** The fork is a symptom of an ordering
+mistake, so Phase 6 is now: move the output stage into the render callback,
+carry float end to end, and let the desktop/mobile collapse fall out of that
+rather than be the goal. M is real but mild in practice (the phone's hardware
+volume buttons bypass it), so none of this is urgent — see Phase 6's own
+sequencing.**
 
 Findings A–J below were read out of the code, not reproduced from logs; A, B, C
 and D each map onto a symptom that was actually reported. They are kept in the
@@ -500,6 +511,14 @@ every byte-conservation and flush-ordering rule against `FakeAudioBridge`, which
 keeps the same refuse-writes-until-acknowledged contract, but no test on a
 desktop can exercise a callback that only exists in an iOS/Android binary.
 
+What stands in for that test is use. The bridge has since had sustained everyday
+listening on a real iPhone with no blips — which is the right shape of evidence
+for the defect it fixes, since a GC stop-the-world pause is intermittent and
+shows up over hours rather than in a run. It is not equivalent to a test, and
+Phase 6 is partly about not needing it to be: once one render path ships
+everywhere, `AudioFeederTests` covers the path desktop actually runs, and the C
+stops being the only implementation of its own contract.
+
 ### K. Decode-ahead never armed for a streamed track — fixed
 
 Found while reading a phone's pushed log for something else: 32 tracks played,
@@ -565,61 +584,290 @@ finishes with nobody reading a byte — the same shape as decode-ahead having
 filled the ring long before the track is over. Against the old code it fails
 with a timeout.
 
-## Phase 6 — the same path everywhere (not started)
+## Phase 6 — put the output stage where the controls are (not started)
 
-Phase 5 left a fork: pure-C render callback on Android and iOS, managed
-callback on desktop. That was scoped by evidence — a full day of macOS client
-logs contains no late render callback at all, against seven on the phone, and
-CoreCLR does not suspend a thread the way Mono does — but the fork itself has a
-cost the evidence does not weigh. Two render paths means the one covered by
-`AudioFeederTests` is not the one desktop ships, and `MiniaudioSink` carries a
-`_bridge is { } bridge / else` branch through `Resume`, `Pause`,
-`FadeOutAndWait` and the watchdog. Collapsing to one path deletes the managed
-`DataCallback` and its fingerprint helper outright, along with every branch.
+Phase 5 left a fork: pure-C render callback on Android and iOS, managed callback
+on desktop. This phase was originally scoped as collapsing that fork — one
+render path, six more RIDs, delete the managed `DataCallback` — and that framing
+was wrong. Reading the two paths against each other turned up what the fork is
+actually hiding.
 
-**The bridge does not depend on miniaudio.** This is the fact that makes it
-affordable, and it was checked rather than assumed: the bridge takes
-`ma_device*` purely as an opaque key for its device registry and never
-dereferences it, and `ma_uint32` is `uint32_t`. Extracted into a standalone
-file and compiled against nothing but its own header, it builds clean, exports
-all 17 `flower_audio_bridge_*` symbols, and links against `libSystem` alone.
+**The fork is a symptom. The defect underneath it is an ordering one:** Phase 5
+put the render buffer on the far side of the output stage, so everything
+interactive — the volume slider, every EQ band — is computed *before* it is
+queued and reaches the speaker a buffer-depth late.
 
-So desktop does *not* mean rebuilding miniaudio from source and dropping the
-`Miniaudio-CS` NuGet, which is what made this look expensive. Split the bridge
-out of `impl.c` into its own `flower_audio_bridge.c`, ship it as a small
-standalone `libflowerbridge` alongside the NuGet's `libminiaudio`, and hand
-miniaudio a `dataCallback` pointer that lives in a different library — it has no
-opinion about that. Mobile keeps compiling the same source into its existing
-single library, so there is no second variant to hold in sync.
+### M. Interactive controls lag by the render buffer's depth — mobile, shipping today
 
-What it takes:
+`MiniaudioSink.Volume` writes `_outputStage.TargetGain` (`:450`) and
+`ApplyEqualizer` swaps `_outputStage.Equalizer` (`:454`). Both are read by
+`OutputStage.Process`, and on the bridge path `Process` runs on the **feeder**
+(`AudioFeeder.cs:216`), immediately before `_bridge.Write`. So everything queued
+in the bridge has already been gained and filtered: up to `NativeBufferMs` (300)
+of audio that cannot reflect the knob just turned.
 
-- Split `flower_audio_bridge.c` out of `impl.c`; both mobile builds pick it up
-  as a second translation unit.
-- A desktop build script producing six RIDs. `osx-arm64` and `osx-x64` both
-  build on a Mac today (the x64 cross was verified). `linux-x64`/`linux-arm64`
-  need a container. `win-x64`/`win-arm64` are the real snag: MSVC only supports
-  C11 `stdatomic` on VS 17.5+ behind `/experimental:c11atomics`, so it is clang
-  or a recent-VS floor, and neither Linux nor Windows can be produced from a
-  Mac without extra tooling. This is the whole cost of the phase, and it is
-  build infrastructure rather than code.
-- `NativeAudioBridge`'s `DllImport("miniaudio")` becomes
-  `DllImport("flowerbridge")`. The `IsAvailable` probe needs no change and
-  keeps its value: a RID nobody built for degrades to the managed callback
-  instead of failing to start — which is also what makes this landable one
-  platform at a time.
-- Delete the managed `DataCallback` once every shipped RID has a binary.
+Desktop does not have this. There `useBridge` is false — the `Miniaudio-CS`
+NuGet exports none of the bridge symbols, so `NativeAudioBridge.IsAvailable` is
+false and the managed `DataCallback` runs `Process` on the device buffer itself
+(`MiniaudioSink.cs:1153`), where a change applies to the very next callback.
+Confirmed by ear on both: desktop volume and EQ are immediate, the phone's lag.
 
-**`NativeBufferMs` should not stay at 300 on desktop.** That number is sized to
-survive a Mono GC pause and buys nothing on CoreCLR, while costing 300ms of lag
-on the volume slider and every EQ change, because both are applied on the
-feeder. Desktop wants something like 60–80ms: the same architecture without the
-insurance premium.
+It went unnoticed because the control anyone reaches for on a phone is the
+hardware volume button, which drives the *system* mixer and never touches
+`OutputStage` — `ma_device_set_master_volume` is pinned to 1.0
+(`MiniaudioSink.cs:711`) and all of Flower's gain goes through the output stage.
+The in-app slider is the laggy one, and on a phone it is rarely the one used.
 
-**Sequencing.** After mobile listening testing settles, not before. If more
-testing turns up a bridge bug it is worth fixing in one place rather than after
-the bridge is the only path on six more RIDs — and unlike the phone, desktop
-has no defect waiting on this. `Flower.Web` is out of scope permanently.
+Two notes on severity, because they cut against each other. It is not a playback
+defect: nothing clicks, drops or mistimes, and A–L's symptoms are genuinely
+gone. But it is worst where it is least expected. Tuning an EQ band is a
+listen-adjust-listen loop, and 300ms breaks the link between the gesture and the
+result — you cannot tell whether what you are hearing came from the last
+movement or the one before. That is more disruptive than the same lag on volume,
+where loudness is monotonic and you can navigate by direction alone.
+
+### The rule this is an instance of
+
+> **A buffer's depth costs control latency only when the processing happens
+> before the buffer.**
+
+Which is what makes the depths in this pipeline look paradoxical until it is
+applied:
+
+| Buffer | Depth | Holds | Control latency it costs |
+|---|---|---|---|
+| `GaplessRingBuffer` | 2s (`GaplessAudioManager.cs:109`) | raw decoded PCM | none |
+| staging ring, per armed track | 60s (`GaplessCoordinator.DefaultStagingCapacityBytes`) | raw decoded PCM | none |
+| bridge (`NativeBufferMs`) | 300ms | gained, filtered PCM | all 300ms |
+
+The gapless ring is nearly seven times deeper and free. The bridge is shallow
+and costs everything, because it is the only buffer downstream of the
+processing.
+
+**So the depth is not the thing to tune.** 300 is not arbitrary — it is the
+measured Mono stall distribution on a real iPhone: seven stalls over 100ms
+across a full day, exactly one over 250ms. The generic recommendation for a
+render buffer is 10–50ms, and it assumes a runtime that does not suspend the
+audio thread. Adopting it here would trade the lag back for seven audible
+dropouts a day, which is the trade Phase 5 deliberately made in the other
+direction. Reordering gets both.
+
+### The fix: the output stage belongs in the callback
+
+Move `OutputStage` to the consumer end and have the bridge carry **raw** PCM.
+Then the bridge's depth becomes ordinary decode-side runway like the ring's and
+can stay at 300 or go higher for free; every knob applies to the next device
+buffer on every platform; and desktop can adopt the C callback with no
+regression to trade away — which is what the original framing of this phase was
+missing entirely.
+
+**This is not a violation of the "boring callback" rule.** That rule's
+prohibitions — decode, allocate, lock, open files, wait on events, run async,
+trigger GC — are all either unbounded or unpredictable. A biquad is neither:
+fixed multiply-adds per sample, pre-allocated state, no branches worth naming.
+It is the same class of work as the final format conversion every version of
+that advice explicitly permits, with a larger constant.
+
+And the cost is already measured, on the platform that matters. The desktop
+callback runs the whole output stage today, and Phase 5's iPhone logs — captured
+from the *managed* callback, before any of this — record it never exceeding
+**~3ms against a 42.7ms period**. That number was taken during the failure: the
+callbacks that arrived 66, 84, 189 and 668ms late each ran in under 3ms, with
+the ring full and `Underruns=0`. The workload was never the problem; a managed
+thread being suspended was. A pure-C callback is immune to that *regardless of
+how much work it does*, which is the point the original scoping missed —
+trivial-ness and GC-immunity were being treated as one property, and only the
+second is load-bearing.
+
+### Float end to end
+
+Do this at the same time, because it touches the same buffers and the same
+conversion points, and because the callback-side stage wants float anyway
+(`ma_peak2` — the same RBJ peaking biquad `Equalizer.BuildFrom` constructs, and
+miniaudio's own — is f32-native).
+
+Today `ffaudio` converts the codec's output to packed S24, `Widen` converts S24
+back to float, the stage works in float, `Requantise` converts to S24, and the
+OS mixer converts it to float again — CoreAudio and WASAPI shared mode are both
+float32 internally. Most of a real library is AAC/MP3/Vorbis/Opus, all of which
+decode to `AV_SAMPLE_FMT_FLTP` natively, so two of those conversions are a round
+trip through integer that happens *before the EQ ever sees the signal*.
+
+Carrying float from decoder to one conversion at the device write collapses
+that, and deletes:
+
+- **The format negotiation and its freeze.** `GaplessFormat`'s format is
+  negotiated from the decoder capped by the device and then frozen for the
+  session, because a decoder already open cannot change format — which is why
+  `MiniaudioSink.OpenDevice` carries `_hasNegotiatedFormat`, why a device
+  refusing `ma_format_s24` narrows the pipeline and reopens, and why a
+  mid-session device change is stuck with the first device's answer. With float
+  the decoder never needs to know what the device takes. (The sample *rate*
+  stays negotiated and frozen. That one is real, because resampling.)
+- **`Widen`**, and the packed-S24 sign-extension trap inside it.
+- **`MaxBytesPerSample`**, and `flower_audio_bridge_create`'s `bytesPerSample`
+  contract — the 2-or-3 refusal that exists only because the transport envelope
+  reads samples rather than bytes.
+
+`PcmSampleFormat`'s own comment rejects F32, but it rejects it as a *third*
+format alongside S16 and S24, on the grounds that it "means giving `OutputStage`
+a double path". As the single canonical format it removes a path rather than
+adding one, so that reasoning does not carry. The note about S32 still does, and
+for the same reason: a float mantissa holds exactly 24 bits.
+
+Three costs, none fatal:
+
+- **`ffaudio` must emit float, and it lives in another repo now**
+  (`../FFAudio.NET`, currently producing `pack_s24`). This is the one genuine
+  external dependency in the phase. `scripts/use-ffaudio-package.sh` exists for
+  exactly this: testing an unpublished library change against Flower before it
+  is published.
+- **Dither loses its integer-units trick.** `Widen` deliberately does not
+  normalise, so the dither's one-LSB triangle, the full-scale clamp and the
+  "already an exact integer, do not dither it" test are all the same code at 16
+  and 24 bits. Normalised float means scaling to the destination LSB first — one
+  multiply, with the transparency test becoming "is `value × fullScale` exact?".
+  Rework, not redesign.
+- **Bit-exactness must be re-proved rather than assumed.**
+  `GaplessCoordinatorRealDecodeTests` asserts a decoded track is byte-identical
+  to the file it came from, and `PcmOracle` holds lossless-at-pipeline-rate to
+  byte for byte. Scaling by 2^15 or 2^23 is a pure exponent change and should
+  round-trip exactly — which is a claim those tests should make, not one to
+  reason about.
+
+### Does the bridge survive?
+
+Once it carries raw PCM it holds the same thing `GaplessRingBuffer` holds, and
+`AudioFeeder` becomes a thread whose entire job is copying between two rings of
+identical content. Collapsing to one would delete the feeder, a memcpy of every
+sample, `NativeBufferMs`, the bridge's request/acknowledge/120ms-timeout flush
+handshake (the ring's generation protocol already solves that problem, and
+solves it better — it was built after a real corruption window and handles the
+mid-flight write the handshake papers over with a timeout), the second prime
+latch, and `IAudioSink.BufferedBytes`, which exists only because of the bridge
+(`MiniaudioSink.cs:1291`) and leaks into position arithmetic
+(`GaplessAudioManager.cs:250`) and end-of-queue detection (`:354`).
+
+**Not first, though, and possibly not at all.** It needs the ring's storage and
+indices in native memory, and the *reader* half of its generation/rebase
+protocol reimplemented in C. That protocol is finding A — the one whose failure
+*is* the looped-fragment symptom this whole plan started from — and its
+correctness argument runs fifty lines of class comment. Rewriting it in a
+language with none of its tests is the riskiest single change available in this
+codebase, and it buys no latency and negligible CPU. Move the output stage
+first, prove it on hardware, and treat the collapse as a separate question asked
+later, if ever.
+
+### What it costs, honestly
+
+- **The exception net goes.** `DataCallback` wraps `Render` in a try/catch that
+  clears the buffer to silence and increments a counter the watchdog surfaces a
+  second later, turning an invisible dropout into a logged error. C has no
+  equivalent: a bug there is garbage samples or a crash, in a real-time context,
+  on a phone.
+- **Headroom shrinks if the period ever does.** 3ms against 42.7ms is
+  comfortable because miniaudio's *conservative* profile is in use. On the
+  low-latency profile the same work stops being free. That is an argument
+  against also shrinking the period, not against the work.
+- **The coefficient swap is the genuinely delicate piece.** `ApplyEqualizer`
+  crossfades from the outgoing filter's output to the incoming one's across a
+  single buffer, because dropping new coefficients onto a zeroed delay line
+  clicks — an accepted defect in `AUDIOPHILE-PLAN.md` until this fixed it. In C
+  that becomes an atomic swap to a pre-built coefficient set plus the same
+  crossfade: lock-free and bounded, but it is the one place another thread hands
+  the callback new state, so it is where the care goes.
+- **64-bit atomics on `armeabi-v7a`.** `GaplessRingBuffer`'s comment flags this
+  as why it uses `Interlocked` rather than `Volatile.Read`. The bridge already
+  does 64-bit atomics and ships on that ABI, so this is probably fine — but
+  "probably" should become a check before anything is designed around it, since
+  a non-lock-free atomic on the render thread is finding B over again.
+
+**The mitigation for the first of those is the C# stage itself.** Keep
+`OutputStage` and `Equalizer` as a reference implementation and hold the C to
+matching them sample for sample — the same arrangement `PcmOracle` already uses
+to hold a decoder to its fixture. It is stronger than either alone, it keeps
+`OutputStageTests`, `EqualizerTests` and `Pcm.cs`'s Goertzel/step-discontinuity
+harness earning their keep, and it belongs in `Flower.DeviceChecks`, which runs
+on the phone where the C actually executes and today has no render-path coverage
+at all.
+
+### Steps
+
+Each is landable on its own. `NativeAudioBridge.IsAvailable` probes for symbols
+rather than switching on `OperatingSystem`, so a platform with no binary
+degrades to the managed path instead of failing to start. Nothing here is a flag
+day.
+
+1. **Check the `armeabi-v7a` 64-bit atomics question.** Cheap, and it can
+   invalidate the shape before any of it is designed.
+2. **Float through the managed pipeline first** — `ffaudio` emitting float, the
+   ring carrying it, `Widen` deleted, `Requantise` scaling to the destination
+   LSB, the format negotiation removed. Entirely in C#, on every platform, with
+   the existing tests as the proof. Desktop gets the fidelity win here and
+   mobile's lag is untouched, which makes this independently worth shipping.
+3. **Move the output stage into the C callback**, bridge carrying raw float.
+   Mobile only, since mobile is where the bridge runs. This is the step that
+   fixes M.
+4. **Verify by ear on the phone**: drag the volume slider, sweep an EQ band.
+   Plus the sample-for-sample oracle above, in `Flower.DeviceChecks`.
+5. **Split `flower_audio_bridge.c` out of `impl.c`** so both mobile builds take
+   it as a second translation unit. No observable change — the refactor the
+   desktop half rests on, and where to stop if the phase is interrupted.
+
+   **The bridge does not depend on miniaudio**, which is what makes the rest
+   affordable and was checked rather than assumed: it takes `ma_device*` purely
+   as an opaque key for its device registry and never dereferences it, and
+   `ma_uint32` is `uint32_t`. Extracted and compiled against nothing but its own
+   header it builds clean, exports all 17 `flower_audio_bridge_*` symbols, and
+   links against `libSystem` alone. So desktop does *not* mean rebuilding
+   miniaudio from source or dropping the `Miniaudio-CS` NuGet — ship a small
+   standalone `libflowerbridge` beside it and hand miniaudio a `dataCallback`
+   pointer that lives in a different library, which it has no opinion about.
+6. **Build `libflowerbridge` for the six desktop RIDs.** `osx-arm64`/`osx-x64`
+   build on a Mac today (the x64 cross was verified); `linux-x64`/`linux-arm64`
+   need a container; `win-x64`/`win-arm64` need clang or a VS 17.5+ floor, since
+   MSVC only supports C11 `stdatomic` behind `/experimental:c11atomics`. Neither
+   Linux nor Windows can be produced from a Mac without extra tooling, so this
+   wants CI — which makes it a natural companion to `AUTO-UPDATE-PLAN.md` Phase
+   4, standing up a matrixed `windows-latest`/`macos-latest`/`ubuntu-latest` job
+   over the same six RIDs. Doing them together is the strongest argument for the
+   timing of either.
+7. **Point `NativeAudioBridge`'s `DllImport("miniaudio")` at `"flowerbridge"`**,
+   and land one RID at a time, listening on each.
+8. **Delete the managed `DataCallback`** once every shipped RID has a binary —
+   with the caveat that keeping `OutputStage` in C# as the oracle is the point,
+   so what goes is the *callback*, not the stage.
+
+### Sequencing, and how urgent this is
+
+Not urgent. Desktop's controls are responsive today and it has no defect waiting
+on any of this. Mobile's lag is real but reported as not a problem in practice,
+for the good reason that the phone's own volume buttons bypass it entirely.
+
+Steps 1–2 are worth doing on their own merits whenever the FFAudio.NET side is
+convenient: a fidelity and simplification win with no native work and no build
+infrastructure. Step 3 is the one that fixes a defect. Steps 5–7 are gated on
+build infrastructure more than on anything audio, and should ride along with
+`AUTO-UPDATE-PLAN.md` Phase 4 rather than justify a CI matrix by themselves.
+
+### What not to adopt
+
+Two things that appear in every generic version of this pipeline and are wrong
+here:
+
+- **A resampler between the decode ring and the render buffer.** There is
+  deliberately none. `GaplessFormat` takes the output device's native rate and
+  makes the decoder produce it, so nothing resamples on the way out —
+  `MiniaudioSink` replaces the session rate with the opened device's before any
+  decoder is constructed. That is finding I, and re-inserting a resample stage
+  walks it back.
+- **A 5–20ms device period.** The conservative profile's larger period is
+  protective twice over: more slack for a stall to hide in, and the headroom
+  that makes output-stage work in the callback comfortable. Shrinking it
+  squeezes both at once.
+
+`Flower.Web` is out of scope permanently — `WebAudioManager` drives an `<audio>`
+element and has no render callback of either kind.
 
 ## Files
 
@@ -667,22 +915,36 @@ Phase 5 adds `AudioFeederTests` (11 tests) and `TestSupport/FakeAudioBridge.cs`.
 The native callback it feeds has no automated coverage — see that phase's last
 paragraph.
 
-Still to do, and only ears can do it:
+By ear, and done — which is the part that could not be automated:
 
-1. `dotnet build Flower.Desktop/Flower.Desktop.csproj` and listen: seek
-   repeatedly mid-track, press Next hard, let an album auto-advance, play the
-   last track of a queue to its end, drag the volume slider during playback,
-   toggle EQ bands while playing. None of these should click, loop a fragment,
-   or cut the end of a song.
-2. Check the volume taper feels right. It is a real change: the slider used to
-   be raw linear amplitude, so 50% was -6dB; it is now cubic, so 50% is about
-   -18dB. That is the point — linear spent most of the travel in a range the ear
-   barely separates — but it will feel different, and the curve is one line in
-   `OutputStage.GainForVolumePercent` if it wants adjusting.
-3. Set `AudioTiming.PrebufferMs` to 50 and `TransportFadeMs` to 5 in
-   `settings.json`, relaunch, and confirm the snappier profile still behaves —
-   that the knobs are real. Note the default 200ms prebuffer is added latency on
-   a manual skip, deliberately: it is what replaces the starved trickle that
-   used to play there.
-4. Watch the log at Debug for `Render watchdog`, `Handover was not gapless` and
-   `no armed successor` warnings — they should stop appearing.
+1. **Desktop: no more clicks.** Seeking mid-track, hard Next presses, album
+   auto-advance, a queue played to its end, the volume slider dragged during
+   playback, EQ bands toggled while playing. None of it clicks, loops a
+   fragment, or cuts the end of a song. That is A, B, C, D and E confirmed
+   where they were reported, rather than only where they were tested.
+2. **The volume taper is fine as it stands.** It was a real change — the slider
+   used to be raw linear amplitude, so 50% was -6dB; it is now cubic, so 50% is
+   about -18dB — and the question was whether the new travel feels right rather
+   than whether it works. It does. `OutputStage.GainForVolumePercent` is the one
+   line to revisit if that ever changes.
+3. **Mobile: sustained everyday listening on a real iPhone, no blips.** This is
+   the one that matters most, because it is the only evidence Phase 5's native
+   render callback has. The C in `flower_audio_bridge.h` is exercised by no test
+   on any desktop (see Phase 5's last paragraph for why), and the defect it
+   fixes — a Mono GC stop-the-world suspending the audio thread — is by nature
+   intermittent and mobile-only. Hours of ordinary listening without a blip is
+   the shape of evidence that defect actually admits. It is what Phase 6's
+   sequencing was waiting for.
+
+Two checks from the original list were dropped rather than done, both because
+what they would have told us arrived by a better road:
+
+- Re-running with `AudioTiming.PrebufferMs` at 50 and `TransportFadeMs` at 5 was
+  there to prove the knobs are real, not to change the defaults. A unit test
+  over `AudioTimingSettings`' clamping and its use in `MiniaudioSink`/
+  `AudioFeeder` would pin that better than ears can, and is worth writing if the
+  question ever comes up again.
+- Watching the Debug log for `Render watchdog`, `Handover was not gapless` and
+  `no armed successor` was the pipeline reporting its own failures. "No clicks"
+  is the same information arriving through the ear the warnings exist to
+  protect, so it corroborates rather than adds.

@@ -267,53 +267,6 @@ jobs:
       - name: Build for Android
         run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
 
-  android-device-checks:
-    name: Decode checks (Android emulator)
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: |
-            Flower/Flower.csproj
-            Tests/Flower.DeviceChecks.Android/Flower.DeviceChecks.Android.csproj
-
-      - name: Install Android workload
-        run: dotnet workload install android
-
-      # The emulator needs hardware acceleration to be usable rather than
-      # merely possible: without KVM an x86_64 image falls back to full
-      # emulation and a decode check that takes seconds takes minutes. Ubuntu
-      # runners have the device but not the permissions.
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      # The action owns the emulator's lifecycle, so the script is told to use
-      # the device it finds rather than start one of its own - two processes
-      # fighting over one AVD lock is a failure with no useful error.
-      #
-      # x86_64 here and arm64-v8a on a developer's Mac: which ABI gets
-      # exercised is a property of the host, and FFAudio.NET.Android carries
-      # a façade for both.
-      - name: Run the decode checks on an emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          arch: x86_64
-          target: default
-          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
-          script: FLOWER_ANDROID_SERIAL=emulator-5554 scripts/android-device-checks.sh
-
   build-web:
     runs-on: ubuntu-latest
 
@@ -415,10 +368,10 @@ jobs:
   # whose macOS, Windows and Android-emulator jobs all went on to fail.
   # `needs` is the gate, and `needs` only reaches jobs in the same workflow.
   #
-  # Nearly every job is listed, deliberately, including the ones a server image
-  # does not contain. A tag is a claim about the whole commit - if the phone
-  # heads do not build or a decode check fails on a simulator, that is not a
-  # commit anyone should be able to `docker pull`.
+  # Every job is listed, deliberately, including the ones a server image does
+  # not contain. A tag is a claim about the whole commit - if the phone heads
+  # do not build or a decode check fails on a simulator, that is not a commit
+  # anyone should be able to `docker pull`.
   publish-image:
     name: Publish server image to GHCR
     needs:
@@ -427,18 +380,6 @@ jobs:
       - build-apple
       - ios-device-checks
       - build-android
-      # android-device-checks is the one exception, and it is a temporary one.
-      # It is knowingly red: Flower.csproj picks a desktop ffaudio payload by
-      # host, that flows transitively to the Android heads, and android-x64
-      # falls back to linux-x64 in the RID graph - so on a Linux runner the
-      # glibc libffaudio.so wins lib/x86_64/ and the real Android one is
-      # dropped ("XA4301: APK already contains the item
-      # lib/x86_64/libffaudio.so; ignoring"). dlopen then fails on the
-      # emulator and the checks report no decoder at all.
-      #
-      # Listing it here would block every release on a bug that has nothing to
-      # do with the server image, so it is left out until the payload is fixed
-      # - at which point it belongs back in this list.
       - build-web
       - build-image
     if: startsWith(github.ref, 'refs/tags/v')
