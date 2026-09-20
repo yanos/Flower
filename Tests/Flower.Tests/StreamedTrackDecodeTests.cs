@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Audio;
 using Flower.Audio.Ffmpeg;
+using Flower.DeviceChecks;
 using Flower.Models;
 using Flower.Tests.TestSupport;
 
@@ -33,10 +34,6 @@ public class StreamedTrackDecodeTests : IDisposable
     private readonly HttpListener _listener;
     private readonly string _prefix;
     private byte[] _content = [];
-
-    // Cuts every response body short at this offset, standing in for a
-    // connection that goes away for good mid-track.
-    private long? _cutBodyAt;
 
     public bool ServesRanges { get; set; } = true;
 
@@ -113,14 +110,6 @@ public class StreamedTrackDecodeTests : IDisposable
         response.ContentLength64 = _content.Length - from;
 
         var count = _content.Length - (int)from;
-        if (_cutBodyAt is { } cut)
-        {
-            response.OutputStream.Write(_content, (int)from, (int)Math.Max(0, Math.Min(count, cut - from)));
-            response.OutputStream.Flush();
-            response.Abort();
-            return;
-        }
-
         response.OutputStream.Write(_content, (int)from, count);
         response.Close();
     }
@@ -251,11 +240,39 @@ public class StreamedTrackDecodeTests : IDisposable
     // HttpMediaInput.Read - so the fault has to arrive by its own route, and
     // this is what proves it does. Without it the track would end quietly and
     // collect a play count for audio nobody heard.
+    //
+    // The one test here that does not use this class's HttpListener, because
+    // cutting a body is the one thing HttpListener cannot be made to do the
+    // same way twice. It used to call HttpListenerResponse.Abort() after a
+    // partial write, which the managed listener on macOS and Linux turns into
+    // the truncated body this test wants - and which http.sys on Windows turns
+    // into a connection left unfinished, so that the *reopen* that follows
+    // never gets answered at all. SeekableHttpStream then reads that as the
+    // server having gone away rather than the stream having been cut, and
+    // waits it out against its 60s UnreachableBudget (see its comment, and
+    // "Follow the phone off the Wi-Fi") - which is correct behaviour for a
+    // phone leaving the house, and which this test's own 60s wait then lost a
+    // dead heat against. Windows only, every time, for a minute.
+    //
+    // StreamingNetworkOutageTests' ServeWholeFile has the same lesson from the
+    // other direction, and names the two servers that learned it before it.
+    // LoopbackMediaServer is a raw TcpListener, so CutBodyAt is a real short
+    // write followed by a real close on every platform.
     [Fact]
     public void A_stream_that_dies_mid_track_faults_rather_than_ending_quietly()
     {
-        var track = Serve(TimeSpan.FromSeconds(10), SyntheticWav.Ramp());
-        _cutBodyAt = _content.Length / 4;
+        var content = SyntheticWav.Build(TimeSpan.FromSeconds(10), SyntheticWav.Ramp());
+        using var server = new LoopbackMediaServer();
+        var url = server.Serve(content);
+        server.CutBodyAt = content.Length / 4;
+
+        var track = new Track
+        {
+            Title = "A streamed track",
+            Path = url,
+            OriginFileExtension = "wav",
+            Duration = TimeSpan.FromSeconds(10),
+        };
 
         var ring = new GaplessRingBuffer(8 * 1024 * 1024);
         using var decoder = new FfmpegTrackDecoder(track, ring, NullLogger<FfmpegTrackDecoder>.Instance);

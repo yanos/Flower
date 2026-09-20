@@ -37,7 +37,7 @@
   <Import Project="$(MSBuildThisFileDirectory)FFAudioPackage.local.props"
           Condition="Exists('$(MSBuildThisFileDirectory)FFAudioPackage.local.props')" />
   <PropertyGroup>
-    <FFAudioPackageVersion Condition="'$(FFAudioPackageVersion)' == ''">1.0.0</FFAudioPackageVersion>
+    <FFAudioPackageVersion Condition="'$(FFAudioPackageVersion)' == ''">1.0.2</FFAudioPackageVersion>
   </PropertyGroup>
 
 </Project>
