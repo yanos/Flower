@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -123,7 +124,7 @@ public class MobileSmartPlaylistEditorTests : PinnedDataDirectory
     // it opens the same editor over the playlist that is already there -
     // the phone had no other way back into its rules.
     [AvaloniaFact]
-    public void The_pencil_on_a_smart_playlist_s_screen_edits_its_rules()
+    public async Task The_pencil_on_a_smart_playlist_s_screen_edits_its_rules()
     {
         using var scope = Build();
         scope.Mobile.NewSmartPlaylistCommand.Execute(null);
@@ -138,7 +139,7 @@ public class MobileSmartPlaylistEditorTests : PinnedDataDirectory
 
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Playlists));
         scope.Mobile.SelectPlaylistCommand.Execute(scope.Mobile.PlaylistPickerItems.Single(i => i.Playlist == saved));
-        Dispatcher.UIThread.RunJobs();
+        await UiWait.Until(() => scope.Mobile.CurrentPlaylist == saved, "never drilled into the saved playlist");
 
         Assert.True(scope.Mobile.CanEditCurrentPlaylist);
         scope.Mobile.EditCurrentPlaylistCommand.Execute(null);

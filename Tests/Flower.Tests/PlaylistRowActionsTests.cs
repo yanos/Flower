@@ -72,7 +72,7 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
     // The playlist's own screen has the room the row does not, and nothing
     // beside it to be read against, so it says the same total in words.
     [AvaloniaFact]
-    public void The_playlist_screen_says_how_long_it_runs_in_words()
+    public async Task The_playlist_screen_says_how_long_it_runs_in_words()
     {
         var vm = Build(out _, T("A", 40), T("B", 33));
         vm.SelectTabCommand.Execute(nameof(MobileTab.Playlists));
@@ -80,13 +80,10 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
 
         // The playlist lands once its rows have been rebuilt off the UI
         // thread, which one pass of the dispatcher does not wait for - a slow
-        // CI runner read the header before there was one.
-        var deadline = Environment.TickCount64 + 2000;
-        while (vm.CurrentPlaylistHeader == null && Environment.TickCount64 < deadline)
-        {
-            Dispatcher.UIThread.RunJobs();
-            System.Threading.Thread.Sleep(10);
-        }
+        // CI runner read the header before there was one. This used to sleep
+        // on the dispatcher thread between pumps, which is the one thread the
+        // rebuild's continuation needs; see UiWait.
+        await UiWait.Until(() => vm.CurrentPlaylistHeader != null, "the playlist screen never got a header");
         Assert.Equal("2 songs  ·  1 hour 13 minutes", vm.CurrentPlaylistHeader?.Artist);
     }
 

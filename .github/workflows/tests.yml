@@ -345,12 +345,12 @@ jobs:
 
   # The server image, built but not published.
   #
-  # publish-server-image.yml is the only workflow that touches the Dockerfile,
-  # and it runs on `v*` tags alone - so a change that breaks the image (a moved
-  # csproj in the restore layer, a base image that stops carrying something,
-  # a workload that stops installing) surfaced as "the release produced no
-  # image", at the worst possible moment. This job asks the same question on
-  # every push, for about the price of the publish minus the push.
+  # The publish below runs on `v*` tags alone - so a change that breaks the
+  # image (a moved csproj in the restore layer, a base image that stops
+  # carrying something, a workload that stops installing) surfaced as "the
+  # release produced no image", at the worst possible moment. This job asks the
+  # same question on every push, for about the price of the publish minus the
+  # push.
   #
   # linux/amd64 only, and that is not a gap: this is a framework-dependent
   # publish whose payload is architecture-neutral IL plus SQLitePCLRaw's
@@ -402,3 +402,104 @@ jobs:
           docker run --rm --entrypoint sh flower-server:ci \
             -c 'test -s /app/wwwroot/index.html' \
             || { echo "::error::/app/wwwroot/index.html is missing - the wasm-tools build was skipped, so this image would serve the 'not deployed' placeholder"; exit 1; }
+
+  # The same image, pushed to GHCR - on a `v*` tag, and only once everything
+  # above it is green.
+  #
+  # It lives in this workflow rather than one of its own because that is the
+  # only way it can wait. Tag pushes fire every `on: push` workflow at once, so
+  # a separate publish workflow had no relationship to this one at all: it
+  # signed in, built both architectures and pushed `latest` in about five
+  # minutes, while the suite that decides whether the commit works was still a
+  # quarter of an hour from finishing. v0.2.0 published an image off a tree
+  # whose macOS, Windows and Android-emulator jobs all went on to fail.
+  # `needs` is the gate, and `needs` only reaches jobs in the same workflow.
+  #
+  # Nearly every job is listed, deliberately, including the ones a server image
+  # does not contain. A tag is a claim about the whole commit - if the phone
+  # heads do not build or a decode check fails on a simulator, that is not a
+  # commit anyone should be able to `docker pull`.
+  publish-image:
+    name: Publish server image to GHCR
+    needs:
+      - test
+      - server-test
+      - build-apple
+      - ios-device-checks
+      - build-android
+      # android-device-checks is the one exception, and it is a temporary one.
+      # It is knowingly red: Flower.csproj picks a desktop ffaudio payload by
+      # host, that flows transitively to the Android heads, and android-x64
+      # falls back to linux-x64 in the RID graph - so on a Linux runner the
+      # glibc libffaudio.so wins lib/x86_64/ and the real Android one is
+      # dropped ("XA4301: APK already contains the item
+      # lib/x86_64/libffaudio.so; ignoring"). dlopen then fails on the
+      # emulator and the checks report no decoder at all.
+      #
+      # Listing it here would block every release on a bug that has nothing to
+      # do with the server image, so it is left out until the payload is fixed
+      # - at which point it belongs back in this list.
+      - build-web
+      - build-image
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    # Scoped to this job rather than the workflow: every other job here needs
+    # nothing but the checkout, and this is the only one handed a token that
+    # can write packages.
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # Shallow, unlike every other job here: MinVer never runs in this one.
+      # The Dockerfile's own build stamps the version, and VERSION below hands
+      # it the tag directly so the image's version matches the release exactly.
+      # build-image covers the other half - a full-history checkout where MinVer
+      # derives it from the tags itself.
+      - uses: actions/checkout@v4
+
+      # Both architectures, so arm64 is emulated through QEMU - the one thing
+      # this job does that build-image does not. The amd64 half comes back out
+      # of the gha cache that build-image just filled.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/yanos/flower-server
+          # A stable v1.2.3 tag publishes 1.2.3, 1.2, 1, and latest. A
+          # prerelease only publishes its full version; major-zero releases do
+          # not create a misleading floating `0` tag.
+          tags: |
+            type=semver,pattern={{version}},priority=1000
+            type=semver,pattern={{major}}.{{minor}},priority=900
+            type=semver,pattern={{major}},priority=800,enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=raw,value=latest,priority=700,enable=${{ !contains(github.ref_name, '-') }}
+          flavor: |
+            latest=false
+
+      - name: Build and publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
