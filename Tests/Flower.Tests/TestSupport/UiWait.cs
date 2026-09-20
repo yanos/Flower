@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Avalonia.Threading;
@@ -59,4 +60,35 @@ public static class UiWait
 
         Dispatcher.UIThread.RunJobs();
     }
+
+    // The same wait for anything driven by an *animation* rather than by a
+    // continuation: a screen easing in, a list scrolling itself to the top.
+    // Those need the real dispatcher loop, because what advances them is the
+    // render timer rather than a queued job, so Until's RunJobs never moves
+    // them at all.
+    //
+    // The pattern this replaces is a fixed Pump(500) followed by an assertion
+    // about where the animation ended up. That is a clock, and a loaded macOS
+    // runner outruns it: the easing was still at Y=144 on its way to 0 when
+    // the assertion read it. Slicing the loop and re-checking costs nothing
+    // when the animation has already landed - the common case exits on the
+    // first check - and only spends the budget when something is genuinely
+    // stuck.
+    //
+    // Synchronous, unlike Until, so it can be used from a plain [AvaloniaFact]:
+    // MainLoop pumps on this thread rather than needing it yielded.
+    public static void Settle(Func<bool> condition, string because)
+    {
+        var deadline = DateTime.UtcNow + Budget;
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+                Assert.Fail($"{because} (still false after {Budget.TotalSeconds:F0}s)");
+
+            using var slice = new CancellationTokenSource(PumpSlice);
+            Dispatcher.UIThread.MainLoop(slice.Token);
+        }
+    }
+
+    private static readonly TimeSpan PumpSlice = TimeSpan.FromMilliseconds(50);
 }

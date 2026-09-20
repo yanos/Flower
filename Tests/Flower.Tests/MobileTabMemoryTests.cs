@@ -211,7 +211,9 @@ public class MobileTabMemoryTests : PinnedDataDirectory
         h.SelectTab(MobileTab.Artists);
 
         Assert.True(h.Vm.IsShowingArtistPicker);
-        Assert.Equal(0, h.Scroller.Offset.Y);
+        // Scrolling back to the top is animated, so SelectTab's fixed pump is
+        // a race against it rather than a wait for it - see UiWait.Settle.
+        UiWait.Settle(() => h.Scroller.Offset.Y == 0, "the tab never scrolled back to the top");
     }
 
     [AvaloniaTheory]
