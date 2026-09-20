@@ -151,7 +151,8 @@ public static class RubberBandScroll
         public double ReportedProgress;
 
         // A finger that landed on the list, while it might still turn into a
-        // pull from the top, and where it landed. IsPulling once it has.
+        // pull from the top, and where it landed - in root coordinates, see
+        // FingerPosition. IsPulling once it has.
         public IPointer? PullPointer;
         public Point PullStart;
         public bool IsPulling;
@@ -251,7 +252,7 @@ public static class RubberBandScroll
     private static void OnPointerPressed(State state, PointerPressedEventArgs e)
     {
         state.PullPointer = e.Pointer.Type is PointerType.Touch or PointerType.Pen ? e.Pointer : null;
-        state.PullStart = e.GetPosition(state.Owner);
+        state.PullStart = FingerPosition(e);
         state.IsPulling = false;
     }
 
@@ -264,7 +265,7 @@ public static class RubberBandScroll
             if (e.Pointer != state.PullPointer || state.LogicalOffset != null || state.ScrollViewer is not { } sv)
                 return;
 
-            var position = e.GetPosition(state.Owner);
+            var position = FingerPosition(e);
             var dx = position.X - state.PullStart.X;
             var dy = position.Y - state.PullStart.Y;
 
@@ -303,6 +304,14 @@ public static class RubberBandScroll
             Logger.LogWarning(ex, "Rubber-band pull from the top failed, skipping");
         }
     }
+
+    // Where the finger is, measured against the window rather than against
+    // Owner - because Owner is what the stretch moves. Measured against it, each
+    // step of stretch read back as the finger having travelled up by as much,
+    // the next move undid it, and a slow pull flickered the list between two or
+    // more positions under a finger moving steadily down. Root coordinates are
+    // what ScrollGestureRecognizer measures in too, for the same reason.
+    private static Point FingerPosition(PointerEventArgs e) => e.GetPosition(null);
 
     // The finger letting go (or losing the pointer some other way) ends a
     // pull the same way the end of a scroll gesture ends an overscroll.

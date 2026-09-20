@@ -442,7 +442,7 @@ public sealed class SlidingSheet : ContentControl
 
         _capturedForSwipe = false;
         _swipeStart = CanSwipeToDismiss && !StartedOnADraggableControl(e.Source as Visual)
-            ? e.GetPosition(this)
+            ? FingerPosition(e)
             : null;
     }
 
@@ -463,12 +463,20 @@ public sealed class SlidingSheet : ContentControl
         return false;
     }
 
+    // Where the finger is, measured against the window rather than against
+    // this sheet - because this sheet is what the swipe moves. Measured against
+    // itself, each step of travel read back as the finger having moved the
+    // other way by as much, and the next move undid it: the sheet flickered
+    // between positions under a finger moving steadily right. See
+    // RubberBandScroll.FingerPosition, which had the same mistake.
+    private static Point FingerPosition(PointerEventArgs e) => e.GetPosition(null);
+
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
         if (_swipeStart is not { } start)
             return;
 
-        var current = e.GetPosition(this);
+        var current = FingerPosition(e);
         var dx = current.X - start.X;
         var dy = current.Y - start.Y;
 
@@ -512,7 +520,7 @@ public sealed class SlidingSheet : ContentControl
 
         e.Handled = true;
 
-        var dx = e.GetPosition(this).X - start.X;
+        var dx = FingerPosition(e).X - start.X;
         if (dx > SwipeThreshold && DismissCommand is { } dismiss && dismiss.CanExecute(null))
         {
             dismiss.Execute(null);

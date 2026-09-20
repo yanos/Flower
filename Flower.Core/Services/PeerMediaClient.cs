@@ -25,7 +25,7 @@ namespace Flower.Services;
 // own class rather than as fields on this one. Nothing asks yet.
 public class PeerMediaClient
 {
-    private const string StreamPath = "/api/flower/v1/stream";
+    public const string StreamPath = "/api/flower/v1/stream";
     private const string DownloadPath = "/api/flower/v1/download";
 
     private readonly HttpClient _http;

@@ -73,13 +73,14 @@ public sealed record MobileNavigationFrame(
     // Blank over one album's or one playlist's tracks: both draw their own
     // name in large type in the header right below (see
     // AlbumHeaderTemplates.axaml), and the only name this line had to give an
-    // album was the sidebar item's, "Albums". Under Artists the artist's name
-    // still wins.
+    // album was the sidebar item's, "Albums". That holds for an album reached
+    // from an artist too: the artist's name is on the grid it was picked from,
+    // and above the album it only repeated what the header already says.
     public string Title =>
-        Tab == MobileTab.Artists && SelectedArtistName != null
-            ? SelectedArtistName
-            : IsSearchScreen || IsTrackList
-                ? string.Empty
+        IsSearchScreen || IsTrackList
+            ? string.Empty
+            : Tab == MobileTab.Artists && SelectedArtistName != null
+                ? SelectedArtistName
                 : HasDrilledIn
                     ? (SidebarItem?.Name ?? Tab.ToString())
                     : Tab == MobileTab.RecentlyAdded ? "Recently Added" : Tab.ToString();

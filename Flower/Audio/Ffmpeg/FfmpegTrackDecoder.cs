@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -192,7 +193,8 @@ namespace Flower.Audio.Ffmpeg
                 // of having built it before this: range requests, a known
                 // length, a real seek, and every byte fetched on Flower's own
                 // pinned client.
-                _remoteStream = new SeekableHttpStream(AudioHttpClient, new Uri(path), logger: _logger);
+                _remoteStream = new SeekableHttpStream(AudioHttpClient, new Uri(path), logger: _logger, route: RouteStream);
+                LiveStreams.TryAdd(_remoteStream, 0);
                 _remoteStream.ProbeAsync(cancellationToken).GetAwaiter().GetResult();
                 _decoder = Decoder.OpenStream(
                     _remoteStream,
@@ -661,6 +663,8 @@ namespace Flower.Audio.Ffmpeg
             var stream = _remoteStream;
             _decoder = null;
             _remoteStream = null;
+            if (stream != null)
+                LiveStreams.TryRemove(stream, out _);
 
             // Off the caller's thread: this is called from the coordinator
             // during a skip, and joining a decode thread that is mid-read of a
@@ -739,6 +743,30 @@ namespace Flower.Audio.Ffmpeg
         // pool for nothing; that decoder is gone and the reasoning still
         // holds for the one that is left.
         private static readonly HttpClient AudioHttpClient = CreateAudioHttpClient();
+
+        // Where a stream URL should be dialled right now, asked before every
+        // request a remote track makes. A URL is resolved against whichever
+        // address reached the server at play time, and a phone leaving the
+        // house mid-track takes that address with it - see
+        // SeekableHttpStream.UnreachableBudget. Set once at startup
+        // (App.axaml.cs), and static for the reason AudioHttpClient's
+        // credentials are: nothing constructs a decoder with a container in
+        // hand. Null dials every URL as given.
+        public static Func<Uri, Uri>? RouteStream { get; set; }
+
+        // Every remote stream a decoder currently has open, so a route change
+        // can reach the one playing rather than waiting for its connection to
+        // go quiet - see RerouteStreams.
+        private static readonly ConcurrentDictionary<SeekableHttpStream, byte> LiveStreams = new();
+
+        // The route to the server has changed: every open stream whose
+        // connection is on the old address drops it and resumes, from the
+        // byte it had reached, on the new one. Call on any thread.
+        public static void RerouteStreams()
+        {
+            foreach (var stream in LiveStreams.Keys)
+                stream.Reroute();
+        }
 
         private static HttpClient CreateAudioHttpClient()
         {

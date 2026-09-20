@@ -142,8 +142,8 @@
            TrackListScreenView.axaml.cs's ObserveLive/Freeze). -->
       <ScrollViewer Grid.Column="1" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
         <StackPanel>
-          <!-- An artist's album keeps the artist's name as its title; one
-               reached from Albums has none, and this collapses. -->
+          <!-- Blank over an album, however it was reached, and this
+               collapses - see MobileNavigationFrame.Title. -->
           <controls:ScreenTitle />
           <!-- Stacked, the art and the words are one thing (the same one a
                playlist shows); pinned, the art is out of this scroller

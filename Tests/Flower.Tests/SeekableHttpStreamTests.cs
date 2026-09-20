@@ -68,6 +68,20 @@ public class SeekableHttpStreamTests
         // were: a proxy or captive portal answering with a sign-in page.
         public bool RefusesBodiesWithHtml { get; init; }
 
+        // Body requests that get no answer at all - refused, unroutable -
+        // before one finally does. The network under a phone moving from
+        // Wi-Fi to cellular, for the few seconds it takes to settle.
+        public int UnreachableFor { get; set; }
+
+        // Every request to this host fails to connect: the LAN address of a
+        // server the phone has just walked away from.
+        public string? DeadHost { get; set; }
+        public int RequestsToOtherHosts { get; private set; }
+
+        // The first body opens and then never delivers another byte, and
+        // never fails either - a socket whose network has gone away.
+        public bool StallsFirstBody { get; set; }
+
         public const string SubsonicErrorMessage = "Wrong username or password.";
 
         private static HttpResponseMessage SubsonicError() =>
@@ -128,6 +142,17 @@ public class SeekableHttpStreamTests
             if (FailsEverything)
                 throw new IOException("connection reset");
 
+            if (DeadHost != null && request.RequestUri!.Host == DeadHost)
+                throw new HttpRequestException(HttpRequestError.ConnectionError, "No route to host");
+            if (DeadHost != null)
+                RequestsToOtherHosts++;
+
+            if (UnreachableFor > 0)
+            {
+                UnreachableFor--;
+                throw new HttpRequestException(HttpRequestError.ConnectionError, "Network is unreachable");
+            }
+
             var probe = request.Headers.Range?.Ranges.FirstOrDefault() is { From: 0, To: 0 };
             if (!probe && RefusesBodiesWithSubsonicError)
                 return SubsonicError();
@@ -156,9 +181,16 @@ public class SeekableHttpStreamTests
 
             var body = _content.AsSpan((int)from, (int)length).ToArray();
             var partial = ServesRanges && ranged != null;
+            HttpContent content = new ByteArrayContent(body);
+            if (StallsFirstBody)
+            {
+                StallsFirstBody = false;
+                content = new StreamContent(new SilentStream());
+            }
+
             var response = new HttpResponseMessage(partial ? HttpStatusCode.PartialContent : HttpStatusCode.OK)
             {
-                Content = new ByteArrayContent(body),
+                Content = content,
             };
 
             if (partial)
@@ -173,11 +205,38 @@ public class SeekableHttpStreamTests
             Task.FromResult(Respond(request));
     }
 
-    private static async Task<(SeekableHttpStream Stream, FakeServer Server)> OpenAsync(byte[] content, Action<FakeServer>? configure = null, FakeServer? server = null)
+    // A body that is open and says nothing: every read waits until it is
+    // cancelled, and only then.
+    private sealed class SilentStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
+
+    private static async Task<(SeekableHttpStream Stream, FakeServer Server)> OpenAsync(
+        byte[] content, Action<FakeServer>? configure = null, FakeServer? server = null, Func<Uri, Uri>? route = null)
     {
         server ??= new FakeServer(content);
         configure?.Invoke(server);
-        var stream = await SeekableHttpStream.OpenAsync(new HttpClient(server), new Uri("https://server/rest/stream?id=abc"));
+        var stream = await SeekableHttpStream.OpenAsync(
+            new HttpClient(server), new Uri("https://server/rest/stream?id=abc"), route: route);
         return (stream, server);
     }
 
@@ -359,6 +418,7 @@ public class SeekableHttpStreamTests
         var content = Content(20_000);
         var server = new FakeServer(content) { FailsEverything = true };
         var (stream, _) = await OpenAsync(content, server: server);
+        stream.UnreachableBudget = TimeSpan.FromMilliseconds(500);
         var afterProbe = server.Requests;
 
         for (var i = 0; i < 20; i++)
@@ -500,5 +560,108 @@ public class SeekableHttpStreamTests
         var (stream, _) = await OpenAsync(content);
 
         Assert.Equal(content, ReadFully(stream, content.Length));
+    }
+
+    // Walking out of the house. The phone leaves Wi-Fi, and for the several
+    // seconds before anything notices, every reopen fails to connect. That
+    // used to be three attempts 250ms apart and a dead track; a server that
+    // cannot be reached is now waited out, and the read carries on from the
+    // byte it stopped at once one gets through.
+    [Fact]
+    public async Task A_server_unreachable_for_longer_than_the_reopen_attempts_is_waited_out()
+    {
+        var content = Content(20_000);
+        var (stream, server) = await OpenAsync(content, s => s.TruncateAt = 5_000);
+
+        var head = ReadFully(stream, 5_000);
+        server.UnreachableFor = 4;
+        var tail = ReadFully(stream, 15_000);
+
+        Assert.Equal(content, head.Concat(tail).ToArray());
+        Assert.Equal(0, server.UnreachableFor);
+    }
+
+    // The reason the track stopped for good rather than for a while: a
+    // connection whose network has gone away neither delivers nor fails, and
+    // the audio client has no timeout. A read that has heard nothing for the
+    // stall timeout is a dead connection, and is reopened.
+    [Fact]
+    public async Task A_body_that_goes_silent_is_reopened_rather_than_waited_on_forever()
+    {
+        var content = Content(20_000);
+        var (stream, server) = await OpenAsync(content, s => s.StallsFirstBody = true);
+        stream.StallTimeout = TimeSpan.FromMilliseconds(200);
+
+        var read = await Task.Run(() => ReadFully(stream, 20_000)).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(content, read);
+    }
+
+    // The address a track was opened against is not the one that works after
+    // a network change: a stream opened on the LAN has to finish over the
+    // tailnet. Every reopen asks the route where to dial, and picks up from
+    // the same offset at the new address.
+    [Fact]
+    public async Task A_reopen_follows_the_route_to_the_servers_new_address()
+    {
+        var content = Content(20_000);
+        var moved = false;
+        var (stream, server) = await OpenAsync(
+            content,
+            s => s.TruncateAt = 5_000,
+            route: uri => moved ? new UriBuilder(uri) { Host = "tailnet" }.Uri : uri);
+
+        var head = ReadFully(stream, 5_000);
+        server.DeadHost = "server";
+        moved = true;
+        var tail = ReadFully(stream, 15_000);
+
+        Assert.Equal(content, head.Concat(tail).ToArray());
+        Assert.True(server.RequestsToOtherHosts >= 1, "the reopen should have gone to the new address");
+    }
+
+    // The route moving while a read is waiting on a connection that has gone
+    // quiet. Reroute abandons it then and there, rather than after the stall
+    // timeout's ten seconds of dead air, and the read carries on at the new
+    // address from the same offset.
+    [Fact]
+    public async Task Rerouting_abandons_a_silent_connection_at_once()
+    {
+        var content = Content(20_000);
+        var moved = false;
+        var (stream, server) = await OpenAsync(
+            content,
+            s => s.StallsFirstBody = true,
+            route: uri => moved ? new UriBuilder(uri) { Host = "tailnet" }.Uri : uri);
+        stream.StallTimeout = TimeSpan.FromMinutes(5);
+
+        var reading = Task.Run(() => ReadFully(stream, 20_000));
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+        Assert.False(reading.IsCompleted);
+
+        server.DeadHost = "server";
+        moved = true;
+        stream.Reroute();
+
+        Assert.Equal(content, await reading.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        Assert.True(server.RequestsToOtherHosts >= 1, "the reopen should have gone to the new address");
+    }
+
+    // A route that has not moved leaves a healthy connection alone - every
+    // benign change the OS reports (a DHCP renewal, an IPv6 address rotating)
+    // must not cost the track a reconnect.
+    [Fact]
+    public async Task Rerouting_to_the_same_address_leaves_the_connection_alone()
+    {
+        var content = Content(20_000);
+        var (stream, server) = await OpenAsync(content, route: uri => uri);
+
+        var head = ReadFully(stream, 5_000);
+        var before = server.Requests;
+        stream.Reroute();
+        var tail = ReadFully(stream, 15_000);
+
+        Assert.Equal(content, head.Concat(tail).ToArray());
+        Assert.Equal(before, server.Requests);
     }
 }

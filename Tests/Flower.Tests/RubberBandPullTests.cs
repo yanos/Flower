@@ -88,6 +88,34 @@ public class RubberBandPullTests
         rig.Window.Close();
     }
 
+    // A slow pull, a pixel at a time, has to stretch the list steadily. The
+    // finger used to be measured against the very control the stretch moves,
+    // so each step of stretch read back as the finger having moved up by as
+    // much - and the next step undid it: the list flickered between two or
+    // more positions under a finger that was only ever moving down. Held
+    // still, it has to stay still too.
+    [AvaloniaFact]
+    public void A_slow_pull_stretches_steadily_rather_than_flickering()
+    {
+        var rig = Show();
+        var finger = new Pointer(Pointer.GetNextFreeId(), PointerType.Touch, true);
+
+        Press(rig, finger, new Point(200, 100));
+        Move(rig, finger, new Point(200, 115));
+
+        var previous = rig.StretchY;
+        for (var y = 116; y <= 200; y++)
+        {
+            Move(rig, finger, new Point(200, y));
+            Assert.True(rig.StretchY >= previous, $"at y={y} the stretch went back from {previous} to {rig.StretchY}");
+            previous = rig.StretchY;
+        }
+
+        Move(rig, finger, new Point(200, 200));
+        Assert.Equal(previous, rig.StretchY);
+        rig.Window.Close();
+    }
+
     [AvaloniaFact]
     public void A_long_pull_raises_pulled_down_on_release()
     {

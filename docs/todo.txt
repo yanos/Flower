@@ -2,7 +2,6 @@ long term:
  album mode
  artist / playlist icon instead of album art
  localisation
- export playlist with actual songs
  on each startup, choose an flower emoji and make that the app icon. show it in the about box and in the ios splash screen. different flower species in  dark mode
  Currently playing controls that looks like an lcd panel
  visualizers
@@ -15,19 +14,14 @@ external services
  lyric service
  
 short term
- pulling down the view in mobile should reveal a filter field
- push library sync events instead of polling
- a way to only see downloaded music
- back / forward arrows
  recent icon without the plus sign
  option to toggle each log category (level, category, timestamp) 
- SubSonic vs our own endpoints
  Event bus?
  no utf on the web version
  add an issue link in about box
  write a readme
  folder in playlist
- download spinner still not centred on mobile
+ 
  
 build:
  dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
@@ -36,33 +30,11 @@ build:
   
 details:
  queue song:
-  when reaching the end of an album, the queued song should be the first song from this album
   lock screen widget should stay with the queue song
   
  mobile:
   do an investigation as to why there's almost always a problem with a stale build on ios when launching through Rider. We made a script to build and launch on my device because of that, but it would be much simplier if i could just use rider.
   ios editing not native 
-  only a single note icon on ios
-  
-  
-  The short version: right now the client refuses to listen to the server about stars and last-played, because listening would sometimes eat your own change before it got out the door.
-
-Alice in chains
-Nirvana
-Peal Jam
-Oasis
-Green Day
-Radiohead 
-The Breeders
-Smashing Pumpkins
-NIN
-Soundgarden
-STP
-Cranberries
-RHCP
-?
-Counting Crows
-Korn
 
 ----
 1. The identity guard — and a second copy of it
@@ -96,8 +68,7 @@ Also added to the Playback snapshot log line: CpuPercent, ProcessMemoryMb,
 ManagedHeapMb, Gen0/1/2, Threads — beside the decode counters, so "CPU pinned wh
 the ring stayed full" is readable in one line.
                                                                                 
-3. Mobile settings readout
-                                                                                
+3. Mobile settings readout             
 ResourceUsageViewModel + a Diagnostics block in SettingsView.axaml: CPU, Memory (148
 MB of 3814 MB), Heap, GC, Threads. Polls once a second and only while the settin
 sheet is open — MobileMainViewModel.ActiveSheet starts and stops it. A diagnostics
@@ -107,19 +78,6 @@ investigate.
 I also wrapped the settings content in a ScrollViewer. It had none, so on a 13 mini
 the new block would simply have been unreachable.                               
 
-4. AbruptFrames — I was wrong about this                                        
-
-I need to correct what I told you earlier. I said MaxSampleDelta=32768 was "a full-scale jump — a click" and that those were "discontinuities in the PCM itself." That was overconfident.
-
-The threshold is FLOWER_COREAUDIO_ABRUPT_SAMPLE_DELTA 24576 — 75% of full scale between adjacent samples. A full-scale sine at frequency f has a maximum adjacent delta of 32768 × 2sin(πf/48000), which reaches 24576 at about 5.9kHz. So any loud content above ~6kHz trips it legitimately, and cymbals and sibilance on a modern master do it constantly. 1–6 frames per 480,000 is ordinary percussion. There is no defect there to chase, and I've written that reasoning into impl.c next to the constant so it isn't misread again.
-
-The real glitch evidence was the 1,153 dropped buffers, whose cause is fixed in item 1.
-
-I also found a genuine problem while checking: those PCM-shape counters are computed in the vendored ma_on_output__coreaudio, which inspects only s16 and f32 buffers. Flower opens at s16 or s24. So on the phone I just switched to FFmpeg, all four counters will read 0 forever — and 0 reads as "found no discontinuities" when it means "never looked." They now print n/a instead. Closing it properly needs an s24 path in the native code and a rebuild of the vendored binaries; I did not do that.
-
-One correction on my own process: I briefly concluded nothing called those functions at all, because I'd excluded vendor/ from the grep. The call sites are in native/miniaudio/vendor/miniaudio.h, and binary and source are in sync.
-
-Nothing is committed. Worth testing on the phone first — particularly whether the FFmpeg façade loads at all on real hardware, which nothing has ever exercised.
 
 
 ----
@@ -133,15 +91,6 @@ GC pauses / ArrayPool — the RT callback already allocates nothing;
     TrackDecoder.OnPlay's _scratch (:396-399) is grow-only and reused. The
     useful artifact here is a regression test asserting zero allocation.
 
-----
-Float internally: worth doing inside the render callback only. The ring
-    should stay S16 — LibVLC 3.0's amem hardcodes S16N and never honours a
-    requested fourcc (GaplessFormat.cs:9-18), so a float ring would store an
-    exact widening of S16 at twice the memory for zero benefit.
-
-----
-long ring indices are read with Volatile.Read, which is not atomic on
-   32-bit runtimes — Flower.Android still ships an armeabi-v7a
 
 ----
 why is star a special case?

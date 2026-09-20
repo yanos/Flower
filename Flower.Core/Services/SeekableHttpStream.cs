@@ -66,9 +66,40 @@ public sealed class SeekableHttpStream : Stream
     // A stream cut mid-track is the ordinary case on a phone changing
     // networks, not an exceptional one. Reopening at the current offset is
     // exactly what a range request is for.
+    //
+    // Counted only for a server that answered and then failed again - one
+    // that keeps accepting the request and cutting the body is not going to
+    // start behaving on the fourth try. A server that cannot be reached at
+    // all is the other case, below.
     private const int MaxReopenAttempts = 3;
 
     private const int RetryBackoffMs = 250;
+    private const int MaxRetryBackoffMs = 2000;
+
+    // Walking out of the house. The phone leaves Wi-Fi, the LAN address this
+    // stream was opened against stops existing as far as the phone is
+    // concerned, and until PairedServerReachability notices and promotes the
+    // tailnet address - a few polls, ~5-15s - every reopen fails to connect.
+    // Three attempts 250ms apart were spent long before that, and the track
+    // was declared dead in the one situation remote access was built for.
+    //
+    // So a reopen that cannot reach the server at all is waited out, against
+    // a clock rather than a count, re-asking the route each time (see
+    // _route). The ring buffer runs dry and playback goes quiet meanwhile,
+    // which is the honest symptom; once a request gets through it carries on
+    // from the byte it stopped at.
+    private static readonly TimeSpan DefaultUnreachableBudget = TimeSpan.FromSeconds(60);
+
+    // A connection whose network has gone away does not fail - it goes
+    // silent. Nothing resets it, no FIN arrives, and with the audio client's
+    // infinite timeout a read on it simply never returned: the decoder thread
+    // parked in ReadAsync for good, the ring drained, and pause/play could do
+    // nothing because only the output was being toggled. Both halves of a
+    // request are therefore bounded: getting headers back, and each read of
+    // the body. Neither applies while nobody is reading, so a long pause with
+    // a full ring does not trip it.
+    private static readonly TimeSpan DefaultResponseTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultStallTimeout = TimeSpan.FromSeconds(10);
 
     // Being throttled is not the stream failing. 429 means "ask again later",
     // and the difference between honouring that and treating it as an I/O
@@ -93,9 +124,13 @@ public sealed class SeekableHttpStream : Stream
     // in real seconds to see what happens at the end of it. Per-instance
     // rather than a static so setting it cannot leak into another test.
     internal TimeSpan ThrottleWaitBudget { get; set; } = DefaultThrottleWaitBudget;
+    internal TimeSpan UnreachableBudget { get; set; } = DefaultUnreachableBudget;
+    internal TimeSpan ResponseTimeout { get; set; } = DefaultResponseTimeout;
+    internal TimeSpan StallTimeout { get; set; } = DefaultStallTimeout;
 
     private readonly HttpClient _client;
     private readonly Uri _uri;
+    private readonly Func<Uri, Uri>? _route;
     private readonly ILogger? _logger;
     private readonly bool _ownsClient;
 
@@ -118,6 +153,17 @@ public sealed class SeekableHttpStream : Stream
     private long _position;
     private bool _disposed;
 
+    // Reused across body reads rather than allocated per read; see
+    // ReadBodyWithin. Guarded by _stallLock because Reroute cancels it from
+    // another thread while the reading thread may be replacing it.
+    private CancellationTokenSource _stall = new();
+    private readonly Lock _stallLock = new();
+
+    // The origin the open body was requested from, and whether Reroute has
+    // asked for it to be abandoned for a better one.
+    private string? _bodyOrigin;
+    private volatile bool _rerouteRequested;
+
     // Construction costs nothing and asks the server nothing.
     //
     // That matters because of who opens these: LibVLC calls MediaInput.Open on
@@ -126,12 +172,59 @@ public sealed class SeekableHttpStream : Stream
     // whichever thread happened to build the decoder - the UI thread, for a
     // track the user just double-clicked. Probing on first use puts it where
     // the reading already is.
-    public SeekableHttpStream(HttpClient client, Uri uri, bool ownsClient = false, ILogger? logger = null)
+    //
+    // `route` is asked, before every request, where this URL should be dialled
+    // right now. The same track at the same path, but the address it was
+    // resolved against at play time need not be the one that works a minute
+    // later - see UnreachableBudget. Null dials `uri` as given, always.
+    public SeekableHttpStream(HttpClient client, Uri uri, bool ownsClient = false, ILogger? logger = null, Func<Uri, Uri>? route = null)
     {
         _client = client;
         _uri = uri;
+        _route = route;
         _logger = logger;
         _ownsClient = ownsClient;
+    }
+
+    // The route may have moved - the network changed, and the server is now
+    // reached somewhere else. If it has moved away from the address the open
+    // body is being read from, that body is abandoned now and the next read
+    // reopens at the new one, from the same offset.
+    //
+    // Why not simply let the old connection fail: it does not fail, it goes
+    // silent, and waiting out StallTimeout is ten seconds of dead air for a
+    // server that was reachable the whole time. Safe from any thread, and a
+    // no-op when the route has not moved or nothing is open.
+    public void Reroute()
+    {
+        if (_route == null || _disposed || Volatile.Read(ref _bodyOrigin) is not { } open)
+            return;
+
+        var now = _route(_uri).GetLeftPart(UriPartial.Authority);
+        if (now.Equals(open, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _logger?.LogInformation(
+            "{Uri} moves from {From} to {To}; abandoning the open connection",
+            LogPath.Short(_uri.ToString()), open, now);
+
+        _rerouteRequested = true;
+        lock (_stallLock)
+        {
+            if (!_disposed)
+                _stall.Cancel();
+        }
+    }
+
+    private Uri CurrentUri()
+    {
+        if (_route == null)
+            return _uri;
+
+        var routed = _route(_uri);
+        if (routed.GetLeftPart(UriPartial.Authority) != _uri.GetLeftPart(UriPartial.Authority))
+            _logger?.LogDebug("{Uri} is now dialled at {Origin}", LogPath.Short(_uri.ToString()), routed.GetLeftPart(UriPartial.Authority));
+        return routed;
     }
 
     // For callers that would rather find out now whether the track is
@@ -141,9 +234,10 @@ public sealed class SeekableHttpStream : Stream
         Uri uri,
         bool ownsClient = false,
         ILogger? logger = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<Uri, Uri>? route = null)
     {
-        var stream = new SeekableHttpStream(client, uri, ownsClient, logger);
+        var stream = new SeekableHttpStream(client, uri, ownsClient, logger, route);
         await stream.ProbeAsync(cancellationToken);
         return stream;
     }
@@ -157,7 +251,7 @@ public sealed class SeekableHttpStream : Stream
         if (Volatile.Read(ref _facts) != null)
             return;
 
-        var (length, acceptsRanges) = await ProbeServerAsync(_client, _uri, _logger, ThrottleWaitBudget, cancellationToken);
+        var (length, acceptsRanges) = await ProbeServerAsync(_client, CurrentUri(), _logger, ThrottleWaitBudget, ResponseTimeout, cancellationToken);
         Adopt(length, acceptsRanges);
     }
 
@@ -171,7 +265,7 @@ public sealed class SeekableHttpStream : Stream
             if (Volatile.Read(ref _facts) is { } raced)
                 return raced;
 
-            var (length, acceptsRanges) = ProbeServerAsync(_client, _uri, _logger, ThrottleWaitBudget, CancellationToken.None).GetAwaiter().GetResult();
+            var (length, acceptsRanges) = ProbeServerAsync(_client, CurrentUri(), _logger, ThrottleWaitBudget, ResponseTimeout, CancellationToken.None).GetAwaiter().GetResult();
             return Adopt(length, acceptsRanges);
         }
     }
@@ -209,6 +303,7 @@ public sealed class SeekableHttpStream : Stream
         Func<HttpRequestMessage> build,
         ILogger? logger,
         TimeSpan budget,
+        TimeSpan responseTimeout,
         CancellationToken cancellationToken)
     {
         var waited = TimeSpan.Zero;
@@ -217,7 +312,21 @@ public sealed class SeekableHttpStream : Stream
         while (true)
         {
             var request = build();
-            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            HttpResponseMessage response;
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                timeout.CancelAfter(responseTimeout);
+                try
+                {
+                    response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+                }
+                catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new HttpRequestException(
+                        $"{LogPath.Short(uri.ToString())} did not answer within {responseTimeout.TotalSeconds:F0}s", ex);
+                }
+            }
+
             if (response.StatusCode != HttpStatusCode.TooManyRequests)
             {
                 if (await ProtocolErrorFor(response, cancellationToken) is { } complaint)
@@ -380,10 +489,10 @@ public sealed class SeekableHttpStream : Stream
         return null;
     }
 
-    private static async Task<(long Length, bool AcceptsRanges)> ProbeServerAsync(HttpClient client, Uri uri, ILogger? logger, TimeSpan budget, CancellationToken cancellationToken)
+    private static async Task<(long Length, bool AcceptsRanges)> ProbeServerAsync(HttpClient client, Uri uri, ILogger? logger, TimeSpan budget, TimeSpan responseTimeout, CancellationToken cancellationToken)
     {
         using var response = await SendAsync(
-            client, uri, () => new HttpRequestMessage(HttpMethod.Head, uri), logger, budget, cancellationToken);
+            client, uri, () => new HttpRequestMessage(HttpMethod.Head, uri), logger, budget, responseTimeout, cancellationToken);
 
         if (response.IsSuccessStatusCode)
         {
@@ -400,7 +509,7 @@ public sealed class SeekableHttpStream : Stream
             var probe = new HttpRequestMessage(HttpMethod.Get, uri);
             probe.Headers.Range = new RangeHeaderValue(0, 0);
             return probe;
-        }, logger, budget, cancellationToken);
+        }, logger, budget, responseTimeout, cancellationToken);
         probed.EnsureSuccessStatusCode();
 
         if (probed.StatusCode == HttpStatusCode.PartialContent && probed.Content.Headers.ContentRange is { Length: { } total })
@@ -444,13 +553,16 @@ public sealed class SeekableHttpStream : Stream
         if (facts.Length > 0 && _position >= facts.Length)
             return 0;
 
-        for (var attempt = 0; ; attempt++)
-        {
-            var lastAttempt = attempt >= MaxReopenAttempts;
+        var attempts = 0;
+        DateTime? unreachableSince = null;
+        var backoffMs = RetryBackoffMs;
 
+        while (true)
+        {
             try
             {
                 EnsureBodyAt(_position);
+                unreachableSince = null;
                 var read = ReadBody(buffer);
 
                 if (read > 0)
@@ -467,8 +579,12 @@ public sealed class SeekableHttpStream : Stream
                 if (facts.Length == 0 || _position >= facts.Length)
                     return 0;
 
-                if (lastAttempt)
-                    break;
+                if (++attempts > MaxReopenAttempts)
+                {
+                    _broken = true;
+                    DropBody();
+                    throw new IOException($"The stream for {LogPath.Short(_uri.ToString())} stopped at {_position} of {facts.Length} bytes and could not be resumed");
+                }
 
                 _logger?.LogWarning(
                     "Stream for {Uri} ended at {Position} of {Length} bytes; reopening from there",
@@ -498,9 +614,36 @@ public sealed class SeekableHttpStream : Stream
                 DropBody();
                 throw;
             }
+            // The request never got an answer: the network moved, or the
+            // server is not at this address any more. Waited out against a
+            // clock rather than counted - see UnreachableBudget.
+            // Not a failure at all: Reroute abandoned the connection because
+            // the server is now reached somewhere else. Reopen at once - no
+            // attempt spent, no backoff.
+            catch (StreamReroutedException)
+            {
+                DropBody();
+                continue;
+            }
+            catch (ServerUnreachableException ex)
+            {
+                unreachableSince ??= DateTime.UtcNow;
+                if (DateTime.UtcNow - unreachableSince > UnreachableBudget)
+                {
+                    _broken = true;
+                    DropBody();
+                    throw new IOException(
+                        $"The stream for {LogPath.Short(_uri.ToString())} could not reach its server for {UnreachableBudget.TotalSeconds:F0}s at offset {_position}",
+                        ex.InnerException);
+                }
+
+                _logger?.LogWarning(
+                    "Cannot reach the server for {Uri} at {Position}: {Reason}; retrying",
+                    LogPath.Short(_uri.ToString()), _position, ex.InnerException?.Message);
+            }
             catch (Exception ex) when (ex is IOException or HttpRequestException)
             {
-                if (lastAttempt)
+                if (++attempts > MaxReopenAttempts)
                 {
                     _broken = true;
                     DropBody();
@@ -509,7 +652,7 @@ public sealed class SeekableHttpStream : Stream
 
                 _logger?.LogWarning(ex,
                     "Read of {Uri} failed at {Position}; reopening (attempt {Attempt} of {Max})",
-                    LogPath.Short(_uri.ToString()), _position, attempt + 1, MaxReopenAttempts);
+                    LogPath.Short(_uri.ToString()), _position, attempts, MaxReopenAttempts);
             }
 
             DropBody();
@@ -517,11 +660,9 @@ public sealed class SeekableHttpStream : Stream
             // A connection that has just been reset is rarely ready again in
             // the same millisecond, and a hot retry loop is the shape that
             // takes a struggling server down rather than riding it out.
-            Thread.Sleep(RetryBackoffMs);
+            Thread.Sleep(backoffMs);
+            backoffMs = Math.Min(backoffMs * 2, MaxRetryBackoffMs);
         }
-
-        _broken = true;
-        throw new IOException($"The stream for {LogPath.Short(_uri.ToString())} stopped at {_position} of {facts.Length} bytes and could not be resumed");
     }
 
     public override long Seek(long offset, SeekOrigin origin)
@@ -555,6 +696,12 @@ public sealed class SeekableHttpStream : Stream
     // why Seek above only moves a number.
     private void EnsureBodyAt(long position)
     {
+        if (_rerouteRequested)
+        {
+            _rerouteRequested = false;
+            DropBody();
+        }
+
         if (_body != null)
         {
             if (_bodyPosition == position)
@@ -568,13 +715,24 @@ public sealed class SeekableHttpStream : Stream
         }
 
         var seekable = EnsureProbed().CanSeek;
-        var response = SendAsync(_client, _uri, () =>
+        var uri = CurrentUri();
+        HttpResponseMessage response;
+        try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, _uri);
-            if (seekable && position > 0)
-                request.Headers.Range = new RangeHeaderValue(position, null);
-            return request;
-        }, _logger, ThrottleWaitBudget, CancellationToken.None).GetAwaiter().GetResult();
+            response = SendAsync(_client, uri, () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                if (seekable && position > 0)
+                    request.Headers.Range = new RangeHeaderValue(position, null);
+                return request;
+            }, _logger, ThrottleWaitBudget, ResponseTimeout, CancellationToken.None).GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is (IOException or HttpRequestException)
+                                   and not HttpThrottledException and not HttpProtocolErrorException)
+        {
+            throw new ServerUnreachableException(ex);
+        }
+
         response.EnsureSuccessStatusCode();
 
         // A server that answers a ranged request with 200 is serving from
@@ -586,6 +744,7 @@ public sealed class SeekableHttpStream : Stream
         {
             _body = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult();
             _bodyPosition = 0;
+            Volatile.Write(ref _bodyOrigin, uri.GetLeftPart(UriPartial.Authority));
             if (!SkipForward(position))
                 throw new IOException($"Could not reach offset {position} in a response that ignored the range request");
             return;
@@ -593,6 +752,7 @@ public sealed class SeekableHttpStream : Stream
 
         _body = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult();
         _bodyPosition = position;
+        Volatile.Write(ref _bodyOrigin, uri.GetLeftPart(UriPartial.Authority));
     }
 
     // The response body is read through ReadAsync for the same reason the
@@ -604,7 +764,7 @@ public sealed class SeekableHttpStream : Stream
         var scratch = ArrayPool<byte>.Shared.Rent(destination.Length);
         try
         {
-            var read = _body!.ReadAsync(scratch, 0, destination.Length).GetAwaiter().GetResult();
+            var read = ReadBodyWithin(scratch, destination.Length);
             if (read > 0)
                 scratch.AsSpan(0, read).CopyTo(destination);
             return read;
@@ -632,7 +792,7 @@ public sealed class SeekableHttpStream : Stream
     {
         while (count > 0)
         {
-            var read = _body!.ReadAsync(scratch, 0, (int)Math.Min(count, scratch.Length)).GetAwaiter().GetResult();
+            var read = ReadBodyWithin(scratch, (int)Math.Min(count, scratch.Length));
             if (read <= 0)
                 return false;
 
@@ -643,8 +803,47 @@ public sealed class SeekableHttpStream : Stream
         return true;
     }
 
+    // One read of the open body, bounded by StallTimeout. Cancelling a read
+    // on an HttpClient response stream aborts its connection, which is what
+    // is wanted: the connection is dead, and the caller reopens a new one.
+    private int ReadBodyWithin(byte[] scratch, int count)
+    {
+        CancellationToken token;
+        lock (_stallLock)
+        {
+            if (!_stall.TryReset())
+            {
+                _stall.Dispose();
+                _stall = new CancellationTokenSource();
+            }
+
+            // Checked under the lock, after the reset: a Reroute that landed
+            // between reads cancelled a source the reset has just cleared.
+            if (_rerouteRequested)
+                throw new StreamReroutedException();
+
+            _stall.CancelAfter(StallTimeout);
+            token = _stall.Token;
+        }
+
+        try
+        {
+            return _body!.ReadAsync(scratch.AsMemory(0, count), token).AsTask().GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException) when (_rerouteRequested)
+        {
+            throw new StreamReroutedException();
+        }
+        catch (OperationCanceledException ex)
+        {
+            throw new IOException(
+                $"No data from {LogPath.Short(_uri.ToString())} for {StallTimeout.TotalSeconds:F0}s at offset {_position}", ex);
+        }
+    }
+
     private void DropBody()
     {
+        Volatile.Write(ref _bodyOrigin, null);
         _body?.Dispose();
         _body = null;
         _bodyPosition = -1;
@@ -663,6 +862,8 @@ public sealed class SeekableHttpStream : Stream
         {
             _disposed = true;
             DropBody();
+            lock (_stallLock)
+                _stall.Dispose();
             if (_ownsClient)
                 _client.Dispose();
         }
@@ -683,3 +884,13 @@ public sealed class HttpThrottledException(string message) : IOException(message
 // than as a finished one, but distinct so SeekableHttpStream's own read loop
 // can refuse to retry it - see the catch there.
 public sealed class HttpProtocolErrorException(string message) : IOException(message);
+
+// Reroute abandoned the open connection for a better address - not a failure,
+// and never counted as one; see the catch in SeekableHttpStream.Read.
+internal sealed class StreamReroutedException() : IOException("The stream moved to another address");
+
+// A request that got no answer at all - refused, unroutable, timed out -
+// as opposed to one that got an answer and then broke. SeekableHttpStream's
+// read loop waits the first out and counts the second; see UnreachableBudget.
+internal sealed class ServerUnreachableException(Exception inner)
+    : IOException(inner.Message, inner);

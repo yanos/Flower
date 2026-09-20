@@ -312,6 +312,34 @@ public class NetworkDiscoveryServiceTests : IDisposable
         Assert.Equal(0, NetworkDiscoveryService.ReachRank(device));
     }
 
+    // Walking out of the house with the server seen over mDNS, which is how
+    // it is seen at home. An ordinary poll forgives a discovered peer three
+    // misses, so for 15-25s the dead LAN sighting kept outranking a tailnet
+    // address that was answering the whole time. Told the network changed,
+    // one miss is enough, and the tailnet takes over at once.
+    [Fact]
+    public async Task After_a_network_change_a_sighting_that_stops_answering_gives_way_at_once()
+    {
+        const string info = """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""";
+        _handler.RespondWith(4533, info);
+        _handler.RespondWith(4534, info);
+        _service.NetworkChangeFollowUp = TimeSpan.Zero;
+
+        _backend.RaiseInstanceFound(InstanceName("Basement"), Routable(40));
+        WaitUntil(() => _service.KnownDevices.Count == 1, "the discovered peer should resolve");
+        await _service.AddRememberedAsync("100.101.102.103:4534", TestContext.Current.CancellationToken);
+        Assert.Equal("192.168.1.40", _service.EndpointFor("server-fp")!.BaseUri.Host);
+
+        _handler.StopResponding(4533);
+
+        // Without being told, one poll changes nothing.
+        await Task.WhenAll(_service.PollOnce(TestContext.Current.CancellationToken));
+        Assert.Equal("192.168.1.40", _service.EndpointFor("server-fp")!.BaseUri.Host);
+
+        await _service.RecheckAfterNetworkChangeAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("100.101.102.103", _service.EndpointFor("server-fp")!.BaseUri.Host);
+    }
+
     [Fact]
     public async Task A_lan_address_outranks_a_tailnet_one_and_the_tailnet_takes_over_when_it_stops_answering()
     {

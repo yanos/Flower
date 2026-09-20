@@ -497,6 +497,35 @@ public class SlidingSheetTests
         }
     }
 
+    // A slow swipe, a pixel at a time, has to carry the sheet exactly with the
+    // finger. It used to measure the finger against itself - the thing the
+    // swipe moves - so each step of travel read back as the finger having
+    // gone back by as much, and the sheet flickered between positions.
+    [AvaloniaFact]
+    public void A_slow_swipe_carries_the_sheet_steadily_with_the_finger()
+    {
+        var host = Show(dismiss: new RecordingCommand());
+        try
+        {
+            host.Sheet.IsOpen = true;
+            host.Advance();
+
+            host.Window.MouseDown(new Point(100, 400), MouseButton.Left);
+            host.Window.MouseMove(new Point(120, 400), RawInputModifiers.LeftMouseButton);
+            for (var x = 121; x <= 200; x++)
+            {
+                host.Window.MouseMove(new Point(x, 400), RawInputModifiers.LeftMouseButton);
+                Assert.Equal(x - 100, host.SheetOffsetX);
+            }
+
+            host.Window.MouseUp(new Point(200, 400), MouseButton.Left);
+        }
+        finally
+        {
+            host.Window.Close();
+        }
+    }
+
     [AvaloniaFact]
     public void A_swipe_that_does_not_go_far_enough_springs_back()
     {

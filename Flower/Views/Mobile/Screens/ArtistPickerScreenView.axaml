@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
-             xmlns:system="clr-namespace:System;assembly=System.Runtime"
              x:Class="Flower.Views.Mobile.Screens.ArtistPickerScreenView"
              x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource AppBackgroundBrush}">
@@ -13,13 +12,21 @@
            controls:RubberBandScroll.IsEnabled="True"
            SelectionMode="Single">
     <ListBox.ItemTemplate>
-      <DataTemplate x:DataType="system:String">
+      <DataTemplate x:DataType="vm:ArtistPickerRow">
         <Button Classes="pickerRow"
                 Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistCommand}"
-                CommandParameter="{Binding}"
+                CommandParameter="{Binding Name}"
                 controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}"
-                controls:LongPress.CommandParameter="{Binding}">
-          <TextBlock Text="{Binding}" FontSize="16" TextTrimming="CharacterEllipsis" />
+                controls:LongPress.CommandParameter="{Binding Name}">
+          <!-- The album count, right-aligned: how many tiles a tap opens. -->
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding AlbumCountText}"
+                       FontSize="14"
+                       Opacity="0.5"
+                       VerticalAlignment="Center" />
+          </Grid>
         </Button>
       </DataTemplate>
     </ListBox.ItemTemplate>

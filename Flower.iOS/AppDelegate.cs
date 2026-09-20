@@ -60,6 +60,11 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // PlatformPermissions wiring in MainActivity.
         PlatformMdns.Current = new BonjourMdnsBackend();
 
+        // Wi-Fi giving way to cellular, reported as it happens rather than
+        // discovered from a request to an address that is gone - see
+        // INetworkChangeSource. Same before-Avalonia-starts timing.
+        PlatformNetworkChange.Current = new AppleNetworkChange();
+
         // Lock Screen / Control Center "Now Playing" card + transport
         // commands - see AppleNowPlaying.cs / docs/MEDIA-KEYS-PLAN.md Phase
         // 2. Same before-Avalonia-starts timing as PlatformMdns above, since

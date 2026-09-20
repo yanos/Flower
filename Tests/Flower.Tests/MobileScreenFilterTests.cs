@@ -5,6 +5,7 @@ using System.Threading;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
 using Avalonia.Themes.Fluent;
@@ -112,10 +113,49 @@ public class MobileScreenFilterTests : PinnedDataDirectory
 
         mobile.ScreenFilter = "bjork";
         WaitUntil(() => mobile.ArtistPickerItems.Count == 1, "the artists narrowing by name");
-        Assert.Equal(["Björk"], mobile.ArtistPickerItems);
+        Assert.Equal(["Björk"], mobile.ArtistPickerItems.Select(r => r.Name));
 
         mobile.ScreenFilter = "airbag";
-        WaitUntil(() => mobile.ArtistPickerItems.SequenceEqual(["Radiohead"]), "the artists narrowing by song");
+        WaitUntil(() => mobile.ArtistPickerItems.Select(r => r.Name).SequenceEqual(["Radiohead"]), "the artists narrowing by song");
+    }
+
+    // Each artist row says how many albums a tap on it opens onto - counted
+    // by album name, the way that artist's grid groups them, so two songs off
+    // one album are one.
+    [AvaloniaFact]
+    public void An_artist_row_counts_the_albums_behind_it()
+    {
+        var tracks = new List<Track>
+        {
+            Song("Heroes", "Heroes", "David Bowie"),
+            Song("Sons of the Silent Age", "Heroes", "David Bowie"),
+            Song("Warszawa", "Low", "David Bowie"),
+            Song("Karma Police", "OK Computer", "Radiohead"),
+        };
+        using var scope = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+        var mobile = scope.Mobile;
+        mobile.SelectTabCommand.Execute(nameof(MobileTab.Artists));
+        WaitUntil(() => mobile.ArtistPickerItems.Count == 2, "the artist list");
+
+        Assert.Equal(
+            [new ArtistPickerRow("David Bowie", 2), new ArtistPickerRow("Radiohead", 1)],
+            mobile.ArtistPickerItems);
+
+        // Said in words, not as a bare number beside the name.
+        Assert.Equal("2 albums", mobile.ArtistPickerItems[0].AlbumCountText);
+        Assert.Equal("1 album", mobile.ArtistPickerItems[1].AlbumCountText);
+        Assert.Equal("No albums", new ArtistPickerRow("Loose Singles", 0).AlbumCountText);
+
+        // Right-aligned: the count ends at the row's right edge, not after the name.
+        var window = ShowView(mobile);
+        var count = window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "2 albums");
+        var countRight = count.TranslatePoint(new Point(count.Bounds.Width, 0), window)!.Value.X;
+        Assert.InRange(countRight, window.Width - 40, window.Width);
+        window.Close();
+
+        mobile.ScreenFilter = "radio";
+        WaitUntil(() => mobile.ArtistPickerItems.Count == 1, "the artists narrowing");
+        Assert.Equal(new ArtistPickerRow("Radiohead", 1), mobile.ArtistPickerItems[0]);
     }
 
     [AvaloniaFact]
@@ -218,6 +258,96 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         Assert.False(mobile.IsScreenFilterOpen);
         Assert.Null(mobile.ScreenFilter);
         Assert.Equal(3, GridAlbums(mobile.AlbumGridRows).Count);
+    }
+
+    // Pulled open and then left with nothing in it, the filter was not wanted:
+    // it goes without its x. With something typed, it is a cut screen, and
+    // stays until the x.
+    [AvaloniaFact]
+    public void A_filter_left_empty_closes_and_one_with_text_stays()
+    {
+        using var scope = Build();
+        var mobile = scope.Mobile;
+        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+
+        Assert.True(mobile.OpenScreenFilter());
+        mobile.CloseScreenFilterIfEmpty();
+        Assert.False(mobile.IsScreenFilterOpen);
+
+        // A stray space is nothing typed, too.
+        Assert.True(mobile.OpenScreenFilter());
+        mobile.ScreenFilter = " ";
+        mobile.CloseScreenFilterIfEmpty();
+        Assert.False(mobile.IsScreenFilterOpen);
+
+        Assert.True(mobile.OpenScreenFilter());
+        mobile.ScreenFilter = "karma";
+        mobile.CloseScreenFilterIfEmpty();
+        Assert.True(mobile.IsScreenFilterOpen);
+        Assert.Equal("karma", mobile.ScreenFilter);
+    }
+
+    // The same, from the screen: a press anywhere but the oval - a tile here -
+    // takes an empty filter away, even with the box never having had focus to
+    // lose (a row or tile keeps it off the box on a real phone). A press in the
+    // oval itself does not, and neither does anything once text is in it.
+    [AvaloniaFact]
+    public void A_press_elsewhere_closes_an_empty_filter_but_not_one_in_use()
+    {
+        using var scope = Build();
+        var mobile = scope.Mobile;
+        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+        var window = ShowView(mobile);
+        TextBlock Tile() => window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "OK Computer");
+
+        Assert.True(mobile.OpenScreenFilter());
+        Settle(window);
+        Assert.False(BoxOf(LiveSlot(window)).IsFocused);
+        PressOn(window, Tile());
+        Assert.False(mobile.IsScreenFilterOpen);
+
+        Assert.True(mobile.OpenScreenFilter());
+        Settle(window);
+        PressOn(window, BoxOf(LiveSlot(window)));
+        Assert.True(mobile.IsScreenFilterOpen);
+
+        mobile.ScreenFilter = "karma";
+        Settle(window);
+        PressOn(window, Tile());
+        Assert.True(mobile.IsScreenFilterOpen);
+        window.Close();
+    }
+
+    // And the box being let go of with nothing in it - a tap on empty space,
+    // or Return - closes it the same way.
+    [AvaloniaFact]
+    public void Leaving_an_empty_filter_box_closes_it()
+    {
+        using var scope = Build();
+        var mobile = scope.Mobile;
+        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+        var window = ShowView(mobile);
+
+        Assert.True(mobile.OpenScreenFilter());
+        Settle(window);
+        BoxOf(LiveSlot(window)).Focus();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(mobile.IsScreenFilterOpen);
+
+        window.FocusManager!.Focus(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(mobile.IsScreenFilterOpen);
+        window.Close();
+    }
+
+    private static void PressOn(Window window, Visual target)
+    {
+        var centre = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window)!.Value;
+        // Released away from it, so a press on a tile is only a press: a click
+        // would open the album, and a new screen lands unfiltered anyway.
+        window.MouseDown(centre, Avalonia.Input.MouseButton.Left);
+        window.MouseUp(new Point(-100, -100), Avalonia.Input.MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
     }
 
     [AvaloniaFact]

@@ -211,6 +211,32 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     // Wi-Fi hiccup or one slow response shouldn't drop a peer that's
     // actually still there.
     private const int MaxConsecutiveResolveFailures = 3;
+
+    // Right after the network changes, one miss is enough. Three misses exist
+    // to forgive a Wi-Fi hiccup on a network that is still there; when the OS
+    // has just said the network is *not* still there, forgiving a LAN address
+    // three times over is exactly what kept a phone dialling its home server's
+    // 192.168 address from cellular for 15-25s while the tailnet address sat
+    // answering. A discovered peer pruned too eagerly this way costs nothing:
+    // its next announcement brings it straight back. See NotifyNetworkChanged.
+    private static readonly TimeSpan NetworkChangeWindow = TimeSpan.FromSeconds(10);
+    // Environment.TickCount64 at the last change, or 0 for never:
+    // the tick count starts at boot, so no real change is ever stamped 0.
+    private long _networkChangedAtMs;
+
+    // How long a burst of change events is let settle before acting on it -
+    // one change arrives as several (interface, routes, DNS), and the first of
+    // them can precede the new route actually carrying traffic.
+    private static readonly TimeSpan NetworkChangeSettle = TimeSpan.FromMilliseconds(300);
+
+    // A second look, a little after the first. A tunnel the OS has just moved
+    // onto another interface - Tailscale going from Wi-Fi to cellular - can
+    // refuse the first probe while it re-handshakes, and without this the
+    // server would wait out a whole poll interval to be tried again.
+    // Settable only so a test need not sit through it.
+    internal TimeSpan NetworkChangeFollowUp { get; set; } = TimeSpan.FromSeconds(2);
+
+    private int _networkChangePending;
     private readonly ConcurrentDictionary<string, int> _consecutiveResolveFailures = new();
 
     // How often a peer that keeps missing is dialled again. Consulted for
@@ -300,6 +326,52 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         _retries.ResetAll();
         _backend.Browse(ServiceType);
     }
+
+    // The network this device is on has changed - see INetworkChangeSource.
+    // Safe to call from any thread and as often as the platform likes: a
+    // burst is coalesced into one re-check.
+    public void NotifyNetworkChanged()
+    {
+        if (Interlocked.Exchange(ref _networkChangePending, 1) == 1)
+            return;
+
+        var token = _pollCts?.Token ?? CancellationToken.None;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(NetworkChangeSettle, token);
+                Volatile.Write(ref _networkChangePending, 0);
+                await RecheckAfterNetworkChangeAsync(token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Stop() was called.
+            }
+        }, token);
+    }
+
+    // Every peer, now, rather than on the next tick - and with the first miss
+    // counting as final for a discovered peer (NetworkChangeWindow). That is
+    // what turns "the server's LAN address is gone" into the tailnet address
+    // taking over within a second or two instead of after three polls.
+    internal async Task RecheckAfterNetworkChangeAsync(CancellationToken token)
+    {
+        _logger.LogInformation("Network changed; checking every peer again now");
+        Volatile.Write(ref _networkChangedAtMs, Environment.TickCount64);
+
+        _retries.ResetAll();
+        _backend.Browse(ServiceType);
+        await Task.WhenAll(PollOnce(token));
+
+        await Task.Delay(NetworkChangeFollowUp, token);
+        _retries.ResetAll();
+        await Task.WhenAll(PollOnce(token));
+    }
+
+    private bool NetworkJustChanged() =>
+        Volatile.Read(ref _networkChangedAtMs) is var at and not 0
+        && Environment.TickCount64 - at < NetworkChangeWindow.TotalMilliseconds;
 
     // See AliasPollInterval for why this exists alongside the event-driven
     // discovery path above.
@@ -796,7 +868,8 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             return;
         }
 
-        if (failures >= MaxConsecutiveResolveFailures && _knownDevices.TryRemove(device.InstanceName, out _))
+        var limit = NetworkJustChanged() ? 1 : MaxConsecutiveResolveFailures;
+        if (failures >= limit && _knownDevices.TryRemove(device.InstanceName, out _))
         {
             _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
             _retries.Forget(device.InstanceName);

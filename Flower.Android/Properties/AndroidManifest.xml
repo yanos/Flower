@@ -4,6 +4,8 @@
 	<uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 	<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+	<!-- ConnectivityManager.RegisterDefaultNetworkCallback - see AndroidNetworkChange. -->
+	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 	<uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 	<!-- networkSecurityConfig, not usesCleartextTraffic: the flag is one bit
 	     and the file can be read, so the reasoning for permitting cleartext at

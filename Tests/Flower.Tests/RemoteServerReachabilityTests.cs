@@ -149,6 +149,45 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
         Assert.Equal(ServerRoute.LocalNetwork, _reachability.Route);
     }
 
+    // The same walk, for a track already playing. Its stream URL was built
+    // against the LAN address; once that stops answering, a reopen has to go
+    // to the tailnet one, at the same path and query - see
+    // SeekableHttpStream.UnreachableBudget.
+    [Fact]
+    public async Task A_stream_opened_on_the_LAN_is_routed_to_the_tailnet_once_the_LAN_stops_answering()
+    {
+        _handler.RespondWith(4533, ServerInfo);
+        _handler.RespondWith(4534, ServerInfo);
+        _appSettings.PairedServerAddresses = ["http://192.168.1.40:4533", "http://100.101.102.103:4534"];
+        await _reachability.RestoreRememberedAsync();
+
+        var opened = new Uri("http://192.168.1.40:4533/api/flower/v1/stream?id=abc&X-Flower-Nonce=1");
+        Assert.Equal(opened, _reachability.RouteStream(opened));
+
+        _handler.StopResponding(4533);
+        await _discovery.AddRememberedAsync("http://192.168.1.40:4533", TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            new Uri("http://100.101.102.103:4534/api/flower/v1/stream?id=abc&X-Flower-Nonce=1"),
+            _reachability.RouteStream(opened));
+
+        // Anything that is not a stream stays where it was pointed.
+        var art = new Uri("http://192.168.1.40:4533/api/flower/v1/cover-art?id=abc");
+        Assert.Equal(art, _reachability.RouteStream(art));
+    }
+
+    // With nothing answering there is nowhere better to send it, so it is
+    // left alone and the reopen is simply retried.
+    [Fact]
+    public async Task A_stream_is_left_where_it_was_while_no_address_answers()
+    {
+        _appSettings.PairedServerAddresses = ["http://192.168.1.40:4533", "http://100.101.102.103:4534"];
+        await _reachability.RestoreRememberedAsync();
+
+        var opened = new Uri("http://192.168.1.40:4533/api/flower/v1/stream?id=abc");
+        Assert.Equal(opened, _reachability.RouteStream(opened));
+    }
+
     [Fact]
     public async Task A_server_that_answers_nowhere_is_unreachable_but_not_forgotten()
     {

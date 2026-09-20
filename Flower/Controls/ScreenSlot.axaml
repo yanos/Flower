@@ -122,7 +122,8 @@
                               IsVisible="{Binding #Root.IsFilterShown}"
                               ShowsClearButton="False"
                               TextChanged="FilterBox_TextChanged"
-                              KeyDown="FilterBox_KeyDown" />
+                              KeyDown="FilterBox_KeyDown"
+                              LostFocus="FilterBox_LostFocus" />
           <!-- Bound to SearchQuery on the shared DataContext (genuinely
                live/global state, not per-frame - see ScreenSlot.axaml.cs's own
                doc comment). PropertyChanged so the results follow each

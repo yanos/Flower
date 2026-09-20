@@ -233,6 +233,29 @@ Verified: `Flower.Tests` 1068/1068, `Flower.Server.Tests` 165/165, iOS builds
 for the simulator. A live server was confirmed to report its own LAN and ULA
 addresses at the bound port, with no loopback or link-local entry.
 
+**Network changes are now heard, not inferred** (September 2026). The first
+real walk out of the house with a track playing lost it for good: the stream's
+connection to the LAN address went silent rather than failing, the audio client
+had no timeout, and even a clean failure would have reopened the same LAN URL
+three times in 750ms and given up - long before the three-miss pruning above let
+the tailnet address take over. The server was reachable the whole time. Four
+changes, together:
+
+- `INetworkChangeSource` (`PlatformNetworkChange`): `NWPathMonitor` on iOS,
+  `ConnectivityManager`'s default-network callback on Android, .NET's
+  `NetworkChange` on the desktops. The optimisation described above as "worth
+  adding", now the primary signal - the polls remain the fallback.
+- `NetworkDiscoveryService.NotifyNetworkChanged` re-checks every peer at once
+  (and again two seconds later, for a tunnel re-handshaking on its new
+  interface), and for ten seconds after a change one miss prunes a discovered
+  peer instead of three.
+- `PairedServerReachability.RouteStream` moves a stream URL onto whichever
+  address answers now; `SeekableHttpStream` asks it before every reopen, and
+  `FfmpegTrackDecoder.RerouteStreams` makes a playing stream drop its old
+  connection the moment the route changes.
+- `SeekableHttpStream` bounds headers and each body read (10s), and waits out an
+  unreachable server for 60s rather than three attempts.
+
 **Not yet verified against a real tailnet or a real phone.** There is no
 Tailscale on the development machine, so the `100.64/10` branch of `ReachRank`
 and the whole LAN↔tailnet handover are covered by tests rather than by

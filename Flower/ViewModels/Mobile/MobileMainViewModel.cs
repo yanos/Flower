@@ -553,6 +553,16 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // after the typing cooldown, since there is no more typing to wait for.
     public ICommand CloseScreenFilterCommand { get; }
 
+    // A filter opened and then left with nothing in it - the box let go of,
+    // or something else on screen tapped - was not wanted after all, so it
+    // goes without needing its x. One with something typed stays: that is a
+    // screen the user has cut, and only the x uncuts it.
+    public void CloseScreenFilterIfEmpty()
+    {
+        if (_screenFilter != null && ActiveScreenFilter == null)
+            CloseScreenFilter();
+    }
+
     private void CloseScreenFilter()
     {
         ScreenFilter = null;
@@ -618,14 +628,31 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         RaiseEmptyStateChanged();
     }
 
-    // The artist names the Artists tab lists - Main.SubListItems, or those of
-    // them the filter lets through. An artist is found by name, and by
-    // anything one of their songs would be found by.
+    // The artists the Artists tab lists - Main.SubListItems, each with how
+    // many albums a tap on it shows, or those of them the filter lets
+    // through. An artist is found by name, and by anything one of their songs
+    // would be found by.
     private string? _artistPickerFilter;
-    private IReadOnlyList<string> _filteredArtistPickerItems = [];
+    private IReadOnlyList<ArtistPickerRow> _artistPickerRows = [];
+    private IReadOnlyList<ArtistPickerRow> _filteredArtistPickerItems = [];
 
-    public IReadOnlyList<string> ArtistPickerItems =>
-        _artistPickerFilter == null ? Main.SubListItems : _filteredArtistPickerItems;
+    public IReadOnlyList<ArtistPickerRow> ArtistPickerItems =>
+        _artistPickerFilter == null ? _artistPickerRows : _filteredArtistPickerItems;
+
+    // Counted the way RebuildArtistAlbumGrid groups them - the artist's
+    // tracks with an album, by album name alone - so the number on the row
+    // is the number of tiles behind it.
+    private void RebuildArtistPickerRows()
+    {
+        var albumCounts = Main.Library.Tracks
+            .Where(t => t.Artists != null && !string.IsNullOrEmpty(t.Album))
+            .GroupBy(t => t.Artists!)
+            .ToDictionary(g => g.Key, g => g.Select(t => t.Album).Distinct().Count());
+        _artistPickerRows = Main.SubListItems
+            .Select(name => new ArtistPickerRow(name, albumCounts.GetValueOrDefault(name)))
+            .ToList();
+        RefreshArtistPickerItems();
+    }
 
     private void FilterArtistPicker(string? filter)
     {
@@ -641,7 +668,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 .Where(t => t.Artists != null && TrackListBuilder.Matches(t, filter))
                 .Select(t => t.Artists!)
                 .ToHashSet();
-            _filteredArtistPickerItems = Main.SubListItems.Where(matching.Contains).ToList();
+            _filteredArtistPickerItems = _artistPickerRows.Where(r => matching.Contains(r.Name)).ToList();
         }
         OnPropertyChanged(nameof(ArtistPickerItems));
     }
@@ -1587,6 +1614,9 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         RebuildRecentlyAddedAlbums();
         RebuildAlbumGrid();
         RebuildArtistAlbumGrid();
+        // An edit can move a song to another album without changing which
+        // artists there are, so the counts are not only SubListItems' to redo.
+        RebuildArtistPickerRows();
         if (SelectedTab == MobileTab.Search)
             RefreshSearchResultsNow();
         // Forces CurrentAlbumHeader to rebuild even though the album name
@@ -1717,7 +1747,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             // own SearchQuery-driven path (see that property's setter) and no
             // longer touches Main.Rows at all.
             if (e.PropertyName == nameof(MainViewModel.SubListItems))
-                RefreshArtistPickerItems();
+                RebuildArtistPickerRows();
             if (e.PropertyName is nameof(MainViewModel.Rows) or nameof(MainViewModel.SubListItems)
                 or nameof(LibraryBrowserViewModel.IsRowsRebuildPending))
             {

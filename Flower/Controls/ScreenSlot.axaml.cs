@@ -239,8 +239,24 @@ public partial class ScreenSlot : UserControl
         _vm.ScreenFilter = FilterBox.Text ?? "";
     }
 
-    // Return puts the keyboard away. The oval stays, and the list stays cut
-    // by what is in it - only the x closes it.
+    // Leaving the box with nothing typed in it closes the oval - see
+    // MobileMainViewModel.CloseScreenFilterIfEmpty. Only the live screen's:
+    // a kept-alive one shows the filter its frame was left with, and is not
+    // this box's to close.
+    private void FilterBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (IsLive)
+            _vm?.CloseScreenFilterIfEmpty();
+    }
+
+    // Whether `visual` is part of this slot's filter oval - the box, its x.
+    // A press anywhere else, while the filter is empty, closes it; see
+    // MobileMainView.CloseEmptyFilterOnPressElsewhere.
+    public bool IsInFilterOval(Visual? visual) =>
+        visual != null && (ReferenceEquals(visual, FilterOval) || FilterOval.IsVisualAncestorOf(visual));
+
+    // Return puts the keyboard away. The oval stays if something is typed,
+    // and the list stays cut by it - only the x closes it then.
     private void FilterBox_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter)

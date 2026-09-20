@@ -552,6 +552,20 @@ public partial class App : Application
         // costs nothing here and is always the registered implementation.
         PeerHttpClient.SigningCredentials = () => Ioc.Default.GetService<IPeerCredentials>();
 
+        // Where the audio pipeline's stream requests go, for the same reason:
+        // a decoder is built without a container, and asks per request so a
+        // track playing across a network change follows the server to its
+        // new address - see PairedServerReachability.RouteStream. Absent on
+        // the browser head, which streams through an <audio> element instead.
+        //
+        // And when the route changes under a track that is playing, it moves
+        // then, rather than when its old connection finally goes quiet.
+        if (provider.GetService<PairedServerReachability>() is { } reachability)
+        {
+            FfmpegTrackDecoder.RouteStream = reachability.RouteStream;
+            reachability.Changed += (_, _) => FfmpegTrackDecoder.RerouteStreams();
+        }
+
         var appSettings = provider.GetRequiredService<AppSettings>();
         // Before any window is created, so the very first frame already
         // renders in the saved variant instead of flashing OS-default then
@@ -736,6 +750,12 @@ public partial class App : Application
             // at all (see AndroidMulticastLockHolder).
             PlatformMulticastLock.Current?.Acquire();
             networkDiscovery.Start();
+
+            // Told the moment the network moves - Wi-Fi to cellular walking
+            // out of the house - rather than finding out from a request to
+            // an address that no longer exists. See INetworkChangeSource.
+            (PlatformNetworkChange.Current ?? new DotNetNetworkChangeSource()).Changed +=
+                networkDiscovery.NotifyNetworkChanged;
 
             // Every address the paired server has told us about, registered as
             // a peer so the ordinary poll loop starts probing them. This is

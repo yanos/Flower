@@ -200,6 +200,32 @@ public class PairedServerReachability : IDisposable
         Dispatcher.UIThread.Post(() => Changed?.Invoke(this, EventArgs.Empty));
     }
 
+    // Where a stream URL should be dialled right now: the same path and
+    // query, at whichever address reaches the paired server now. A stream URL
+    // is resolved against the address that won at play time, and a track
+    // outlives that address whenever the phone changes network mid-song -
+    // LAN to tailnet walking out of the house, and back walking in.
+    // SeekableHttpStream asks this before every reopen, via
+    // FfmpegTrackDecoder.RouteStream.
+    //
+    // Only stream URLs are moved, and only onto the paired server: that is
+    // the one server a client ever streams from (PeerTrackResolver), and the
+    // request is re-signed per send (PeerCredentialsHandler), so nothing baked
+    // into the URL is tied to the address it was built for. With no paired
+    // server answering right now the URL is left as it was - the reopen then
+    // fails, and is retried until one answers.
+    public Uri RouteStream(Uri uri)
+    {
+        if (PairedServerDevice is not { } device
+            || !uri.AbsolutePath.Equals(PeerMediaClient.StreamPath, StringComparison.Ordinal)
+            || uri.GetLeftPart(UriPartial.Authority).Equals(device.Origin, StringComparison.OrdinalIgnoreCase))
+        {
+            return uri;
+        }
+
+        return device.Url(uri.PathAndQuery);
+    }
+
     private static ServerRoute RouteOf(DiscoveredDevice? device) => device switch
     {
         null => ServerRoute.Unreachable,

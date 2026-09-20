@@ -27,6 +27,7 @@ public partial class MobileMainView : UserControl
         // itself, and a tap on the empty part of a screen still has to reach
         // this.
         AddHandler(PointerPressedEvent, DismissKeyboardOnEmptyTap, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(PointerPressedEvent, CloseEmptyFilterOnPressElsewhere, RoutingStrategies.Tunnel, handledEventsToo: true);
 
         MiniPlayerHost.RenderTransform = _miniPlayerTransform;
         NowPlayingSheet.PropertyChanged += (_, e) =>
@@ -59,6 +60,23 @@ public partial class MobileMainView : UserControl
         }
 
         focus.Focus(null);
+    }
+
+    // A filter pulled open and left empty goes as soon as anything else is
+    // pressed - a row, a tile, a tab, or nothing at all. The box keeps its
+    // focus through a press on a row (above), so its losing focus is not
+    // enough on its own to notice one. The press itself is left alone: the
+    // row still opens, the tab still switches.
+    private void CloseEmptyFilterOnPressElsewhere(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is not MobileMainViewModel { IsScreenFilterOpen: true, ActiveScreenFilter: null } vm)
+            return;
+
+        var source = e.Source as Visual;
+        if (source?.FindAncestorOfType<ScreenSlot>(includeSelf: true) is { } slot && slot.IsInFilterOval(source))
+            return;
+
+        vm.CloseScreenFilterIfEmpty();
     }
 
     // ── The mini player under the tab oval ────────────────────────────────

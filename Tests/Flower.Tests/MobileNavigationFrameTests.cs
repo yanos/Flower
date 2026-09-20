@@ -97,17 +97,23 @@ public class MobileNavigationFrameTests
     }
 
     [Fact]
-    public void Title_uses_artist_name_over_sidebar_item_for_both_artist_sub_screens()
+    public void Title_uses_artist_name_over_sidebar_item_on_an_artists_album_grid()
     {
         var artistsItem = new SidebarItem(SidebarItemKind.Artists, "Artists");
-        var albumsItem = new SidebarItem(SidebarItemKind.Albums, "Albums");
 
         // Artist's own album grid: HasDrilledIn true, SidebarItem still "Artists".
         Assert.Equal("Nova", Frame(MobileTab.Artists, hasDrilledIn: true, artistName: "Nova", sidebarItem: artistsItem).Title);
+    }
 
-        // One of that artist's albums' tracks: SelectArtistAlbum re-points SidebarItem to "Albums",
-        // but the artist's name should still win.
-        Assert.Equal("Nova", Frame(MobileTab.Artists, hasDrilledIn: true, artistName: "Nova", hasDrilledIntoArtistAlbum: true, sidebarItem: albumsItem, subItem: "Dawn").Title);
+    // An album's details never carry the artist's name above them, however
+    // the album was reached - its own header already names both.
+    [Fact]
+    public void Title_is_blank_over_an_album_reached_from_an_artist()
+    {
+        var albumsItem = new SidebarItem(SidebarItemKind.Albums, "Albums");
+
+        // SelectArtistAlbum re-points SidebarItem to "Albums".
+        Assert.Equal("", Frame(MobileTab.Artists, hasDrilledIn: true, artistName: "Nova", hasDrilledIntoArtistAlbum: true, sidebarItem: albumsItem, subItem: "Dawn").Title);
     }
 
     [Fact]

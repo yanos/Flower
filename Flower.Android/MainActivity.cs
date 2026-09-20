@@ -40,6 +40,7 @@ public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
         PlatformDataDirectory.Current = FilesDir!.AbsolutePath;
         PlatformPermissions.Current = new AndroidMediaPermissionStatus(this);
         PlatformMulticastLock.Current = new AndroidMulticastLockHolder(this);
+        PlatformNetworkChange.Current = new AndroidNetworkChange(this);
 
         PlatformCrashInfo.PendingAndroidExitReasons = CollectCrashExitReasons();
 
