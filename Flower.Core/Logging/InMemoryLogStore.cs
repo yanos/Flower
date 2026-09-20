@@ -43,7 +43,15 @@ namespace Flower.Logging
 
         public event EventHandler<InMemoryLogEntry>? EntryAdded;
 
-        private InMemoryLogStore()
+        // Internal rather than private so a test can own one. The app has
+        // exactly one store and reaches it through Instance, but Instance is
+        // fed by a Serilog sink (AppLogging) that every line in the process
+        // goes through - so in a test run it is a shared mutable singleton
+        // that any test class logging anything writes to, from its own thread,
+        // at any moment. A test that needs "this store holds what I put in it
+        // and nothing else" cannot use Instance at all; see
+        // DeviceLogArchiveTests.
+        internal InMemoryLogStore()
         {
         }
 

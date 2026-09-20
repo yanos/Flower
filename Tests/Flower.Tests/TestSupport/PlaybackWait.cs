@@ -47,9 +47,20 @@ public static class PlaybackWait
     // Waits for `progress` to reach `target`, tolerating any amount of slowness
     // so long as it keeps moving.
     public static void UntilReaches(Func<long> progress, long target, string because)
+        => UntilReaches(progress, target, () => because, DefaultStallTimeout);
+
+    // For a reason that is only worth assembling if the wait actually fails,
+    // and that must describe the moment it failed rather than the moment it
+    // started - a captured log, a snapshot of state. Passing a string here
+    // instead would read correctly and report the state *before* the wait,
+    // which for a stall is the one moment that explains nothing.
+    public static void UntilReaches(Func<long> progress, long target, Func<string> because)
         => UntilReaches(progress, target, because, DefaultStallTimeout);
 
     public static void UntilReaches(Func<long> progress, long target, string because, TimeSpan stallTimeout)
+        => UntilReaches(progress, target, () => because, stallTimeout);
+
+    public static void UntilReaches(Func<long> progress, long target, Func<string> because, TimeSpan stallTimeout)
     {
         var started = DateTime.UtcNow;
         var lastMoved = started;
@@ -70,14 +81,14 @@ public static class PlaybackWait
             if (DateTime.UtcNow - lastMoved > stallTimeout)
             {
                 Assert.Fail(
-                    $"{because} (stopped at {seen} of {target} and produced nothing for " +
+                    $"{because()} (stopped at {seen} of {target} and produced nothing for " +
                     $"{stallTimeout.TotalSeconds:F0}s)");
             }
 
             if (DateTime.UtcNow - started > OverallCap)
             {
                 Assert.Fail(
-                    $"{because} (still only at {seen} of {target} after {OverallCap.TotalMinutes:F0} minutes)");
+                    $"{because()} (still only at {seen} of {target} after {OverallCap.TotalMinutes:F0} minutes)");
             }
         }
     }

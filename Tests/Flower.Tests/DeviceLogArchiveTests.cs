@@ -20,13 +20,24 @@ public class DeviceLogArchiveTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "flower-archive-" + Guid.NewGuid());
 
+    // This class's own store, deliberately not InMemoryLogStore.Instance.
+    // Instance is behind a Serilog sink that every line in the process goes
+    // through (AppLogging), so in a test run any other class that logs
+    // anything - on its own thread, at any moment - adds entries to it. The
+    // tests below mostly tolerated that by tagging their entries with a GUID
+    // and filtering, but one cannot: a drain that must write nothing has no
+    // way to be sure nothing arrived, and a line logged by a parallel test
+    // between its two Ingest calls made the second drain real work. It failed
+    // on CI as a 5ms difference in a file's last-write time.
+    private readonly InMemoryLogStore _logs = new();
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
     private DeviceLogArchive NewArchive() =>
-        new(new ClientLogStore(Path.Combine(_root, "logs", "devices")), InMemoryLogStore.Instance);
+        new(new ClientLogStore(Path.Combine(_root, "logs", "devices")), _logs);
 
     private static LogEntryDto Entry(DateTimeOffset at, string message) =>
         new(at, "Information", "Flower.Test", message, null);
@@ -41,8 +52,8 @@ public class DeviceLogArchiveTests : IDisposable
         // One timestamp, two lines - what a burst looks like on a coarse clock.
         var at = DateTimeOffset.UtcNow;
         var marker = Guid.NewGuid().ToString();
-        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(at, "Information", "Flower.Test", marker + "-a", null));
-        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(at, "Information", "Flower.Test", marker + "-b", null));
+        _logs.Add(new InMemoryLogEntry(at, "Information", "Flower.Test", marker + "-a", null));
+        _logs.Add(new InMemoryLogEntry(at, "Information", "Flower.Test", marker + "-b", null));
 
         var archive = NewArchive();
         archive.Ingest("fp", "Client");
@@ -115,10 +126,10 @@ public class DeviceLogArchiveTests : IDisposable
         var marker = Guid.NewGuid().ToString();
         var archive = NewArchive();
 
-        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-first", null));
+        _logs.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-first", null));
         archive.Ingest("fp", "Client");
 
-        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-second", null));
+        _logs.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-second", null));
         archive.Ingest("fp", "Client");
 
         var mine = archive.EntriesAfter(null)
@@ -138,10 +149,10 @@ public class DeviceLogArchiveTests : IDisposable
         var marker = Guid.NewGuid().ToString();
         var archive = NewArchive();
 
-        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-first", null));
+        _logs.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-first", null));
         archive.Ingest("fp", "Client");
 
-        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-second", null));
+        _logs.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", marker + "-second", null));
         archive.Ingest("fp", "Client");
 
         var reopened = new ClientLogStore(Path.Combine(_root, "logs", "devices")).Get("fp");
@@ -158,7 +169,7 @@ public class DeviceLogArchiveTests : IDisposable
     public void A_drain_with_nothing_new_leaves_the_archive_alone()
     {
         var archive = NewArchive();
-        InMemoryLogStore.Instance.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", Guid.NewGuid().ToString(), null));
+        _logs.Add(new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", "Flower.Test", Guid.NewGuid().ToString(), null));
         archive.Ingest("fp", "Client");
 
         var directory = Directory.EnumerateDirectories(Path.Combine(_root, "logs", "devices")).Single();

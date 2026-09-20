@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -270,7 +271,18 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "exact-b.wav", durationB, SyntheticWav.Marker(markerB)), durationB);
 
         var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
+        // Recording rather than Null, so a stall here arrives with the
+        // coordinator's own account of the handover attached. This stalled
+        // once on a loaded CI runner - stopped at exactly 192000 bytes, which
+        // is exactly all of A and none of B, the signature of the armed track
+        // never being told to start. That is the shape of bug 2 in this
+        // class's header, whose fix is in ArmAsync and is still there, so it
+        // is some other window - and "produced nothing for 8s" on its own
+        // names none of them. It has not reproduced in 37 local runs, 12 of
+        // them under load, so the next occurrence is the evidence and it
+        // should not arrive empty-handed.
+        var log = new RecordingLogger<GaplessCoordinator>();
+        var coordinator = new GaplessCoordinator(sharedRing, log);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
         sink.Resume();
@@ -279,7 +291,9 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         coordinator.SetUpcoming(trackB);
 
         var targetBytes = (long)((durationA.TotalSeconds + 0.3) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        PlaybackWait.UntilReaches(() => sink.CapturedCount, targetBytes, "playback never reached the splice");
+        PlaybackWait.UntilReaches(() => sink.CapturedCount, targetBytes,
+            () => "playback never reached the splice; the coordinator said:\n  "
+                + string.Join("\n  ", log.Entries.Select(e => $"[{e.Level}] {e.Message}")));
         sink.Pause();
 
         var captured = sink.Captured;
