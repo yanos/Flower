@@ -408,6 +408,52 @@ if (publicAccess)
     }
 }
 
+// Two ways the address this server hands out can be wrong, both of which fail
+// entirely on the client and leave nothing here to find. A client discards an
+// address it cannot use before it dials it, so the server's own log is silent
+// and the symptom is "unreachable" with no cause anywhere - which is the whole
+// reason these are worth saying at startup, where somebody is looking.
+{
+    var advertised = app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value.AdvertisedHost;
+
+    // A .mdns name is the tempting value here - it survives a DHCP move, which
+    // is the very problem an operator is usually trying to solve - and it is
+    // the one that cannot work. A client resolves a remembered address with
+    // Dns.GetHostAddressesAsync (NetworkDiscoveryService) and drops it when
+    // that returns nothing; on iOS a .local name is resolved by mDNSResponder
+    // rather than through that path, so the address is discarded in silence.
+    if (!string.IsNullOrWhiteSpace(advertised)
+        && ServerAddressAdvice.LooksLikeMulticastDnsName(advertised))
+    {
+        app.Logger.LogWarning(
+            "Flower:AdvertisedHost is {AdvertisedHost}, an mDNS (.local) name. Clients resolve a remembered address "
+            + "through the system resolver, which on iOS does not answer for .local - the address is dropped without "
+            + "being tried and the server reads as unreachable with nothing logged here. Use an IP address, or a name "
+            + "that ordinary DNS answers for.",
+            advertised);
+    }
+
+    // Bridge networking in a container: every address this process can see
+    // belongs to the container, answers from nowhere else, and is the whole of
+    // what /info offers. Deliberately narrow - a host-networked container sees
+    // the real LAN address too, so the "all of them" test is what keeps this
+    // quiet there - and worded as a suspicion, since a machine genuinely on a
+    // 172.16/12 LAN is indistinguishable from here.
+    if (string.IsNullOrWhiteSpace(advertised) && ServerAddressAdvice.LooksContainerised())
+    {
+        var own = LocalAddresses.Own();
+        if (own.Count > 0 && own.TrueForAll(ServerAddressAdvice.IsDockerBridgeAddress))
+        {
+            app.Logger.LogWarning(
+                "Every address this server can see of itself is {Addresses}, which looks like Docker bridge networking. "
+                + "Those are reachable only from inside the container, and they are all that /info offers a client - so "
+                + "a device pairs and then cannot get back. Set Flower:AdvertisedHost to an address clients can dial, or "
+                + "use host networking. See docs/SELF-HOSTING.md.",
+                string.Join(", ", own));
+        }
+    }
+}
+
 // Behind UseForwardedHeaders, so RemoteIpAddress is already whatever a trusted
 // hop said it was - which is what makes "still not a trusted proxy" mean an
 // undeclared one. A hop that was believed also consumes its entry from the
