@@ -256,8 +256,81 @@ changes, together:
 - `SeekableHttpStream` bounds headers and each body read (10s), and waits out an
   unreachable server for 60s rather than three attempts.
 
-**Not yet verified against a real tailnet or a real phone.** There is no
-Tailscale on the development machine, so the `100.64/10` branch of `ReachRank`
-and the whole LAN↔tailnet handover are covered by tests rather than by
-observation. The hand-run in "Verification" above is what closes that, and it is
-the thing to do before trusting any of this away from home.
+**Not yet verified against a real tailnet.** There is no Tailscale on the
+development machine, so the `100.64/10` branch of `ReachRank` and the whole
+LAN↔tailnet handover are still covered by tests rather than by observation. The
+hand-run in "Verification" above is what closes that.
+
+**The remote half is verified against a real phone** (September 2026), by the
+other route: a port-forwarded `4534` and an `AdvertisedHost` naming the public
+address, with the server in a container. A physical iPhone paired at home,
+learned the address from `/info`, and stayed reachable on cellular with Wi-Fi
+off. What that exercises is everything in this document except the ranking
+between two live candidates - one address, not a handover.
+
+Getting there took three wrong turns, and since every one of them fails the same
+way - the client discards a candidate and reports the server unreachable, with
+nothing whatever in the server log - they are worth naming.
+
+### The address a server cannot check for itself
+
+Two of the three were the operator handing the server an address that cannot
+work, which the server then reported and every client then threw away.
+
+- **A `.local` name.** It is the obvious choice, because it is what survives a
+  DHCP move - and it is the one that cannot work. A client resolves a remembered
+  address with `Dns.GetHostAddressesAsync`; on iOS `.local` is answered by
+  mDNSResponder rather than through that path, so the address is dropped before
+  it is dialled.
+- **Bridge networking in a container.** Every address the process can see is the
+  container's own `172.x`, reachable from nowhere else, and that is the whole of
+  what `/info` offers. A device pairs against the address a human typed, then
+  replaces its candidate list with addresses that answer from nowhere.
+
+`ServerAddressAdvice` plus two startup warnings in `Program.cs` now name both at
+the one moment somebody is reading the console. The bridge check is deliberately
+narrow - containerised, and *every* enumerated address inside `172.16/12`, which
+a host-networked container fails because it also sees the real LAN address - and
+worded as a suspicion, since a machine genuinely on a `172.16/12` LAN is
+indistinguishable from inside.
+
+A warning rather than a refusal, for the same reason `MdnsAdvertiser` logs
+instead of failing: a server nobody can find is degraded, not broken, and an
+operator mid-setup should not be locked out by advice.
+
+### Learning an address requires already having one
+
+The third is structural rather than a mistake, and it is worth stating because
+it makes every fix above feel like it did not work.
+
+A client learns addresses **only** from a successful `/info`. So once every
+candidate it holds is dead, it cannot learn the replacement - correcting the
+server changes nothing, because nothing reaches the client to tell it. The way
+out is to hand it a working address from outside the loop: put the device back
+on the LAN briefly, or add one by hand, since `ManualServerAddresses` is unioned
+into `Candidates()` and never withdrawn on the server's say-so.
+
+Worth keeping in mind before adding a *fourth* thing the server reports: the
+recovery path is out-of-band by construction.
+
+### Unpairing has to take the addresses with it
+
+Found while reading the above, and unrelated to any of it: `UnpairServer`
+cleared the fingerprint, the alias, the trust flag, the origin's tracks and the
+TLS pin, and left `PairedServerAddresses` untouched.
+
+Nothing but `RememberAddresses` ever writes that list, so an entry left behind
+was left behind for good: `RestoreRememberedAsync` re-registered it at every
+launch and the poll loop probed it forever. On a server that had been reached
+from outside, one of those is a public address - a client going on dialling a
+host on the internet for a relationship that ended. Not a breach, since the pin
+is revoked and nothing would be trusted, but not something to leave running.
+
+`PairedServerReachability.ForgetReportedAddresses` now drops them and
+unregisters each, and `UnpairServer` calls it. Manual addresses are deliberately
+left alone, the same way `RememberAddresses` leaves them: the user typed those,
+and an unpair is no more entitled to withdraw one than a server is.
+
+The regression test is on the unpair path rather than on the new method, because
+the bug was never that forgetting did the wrong thing - it was that nothing
+asked. A test of the method alone passes while nothing calls it.
