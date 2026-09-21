@@ -17,6 +17,11 @@ namespace Flower.Tests;
 // deferred item. Everything here goes through TrackListBuilder.Plan +
 // TrackRowMerge.Apply, the pair LibraryBrowserViewModel.RebuildRowsAsync
 // actually uses, rather than through an extracted copy of the matching rule.
+// Same collection as AlbumTileMergeTests, and for the reason its header gives:
+// both redirect the process-wide AlbumArtLoader.Current at a counter of their
+// own, so running them at the same time means one class counting the other's
+// loads.
+[Collection("AlbumArtLoader")]
 public class TrackRowMergeTests : IDisposable
 {
     // Counts how often a row asks for its art, which is the whole cost reuse

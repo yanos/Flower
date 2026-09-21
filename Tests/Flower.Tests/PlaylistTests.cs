@@ -150,8 +150,14 @@ public class PlaylistTests
         var a = T("A");
         var b = T("B");
         var c = T("C");
-        var playlist = new Playlist("p", new List<Track> { a, b, c });
-        var before = playlist.UpdatedAt;
+        // An explicit stale UpdatedAt rather than "now", so the assertion below
+        // cannot depend on the clock's granularity - the same reason
+        // Setting_Rules_is_an_edit_and_bumps_UpdatedAt does it. Constructing
+        // with "now" and asserting strictly greater is a coin toss the moment
+        // two UtcNow reads land in one tick, and it came up tails on a macOS CI
+        // runner.
+        var before = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var playlist = new Playlist(Guid.NewGuid(), "p", new List<Track> { a, b, c }, before);
 
         Assert.True(playlist.MoveTrack(c, a));
 
@@ -164,8 +170,9 @@ public class PlaylistTests
     {
         var a = T("A");
         var b = T("B");
-        var playlist = new Playlist("p", new List<Track> { a, b });
-        var before = playlist.UpdatedAt;
+        // Stale rather than "now", for the same reason as the test above.
+        var before = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var playlist = new Playlist(Guid.NewGuid(), "p", new List<Track> { a, b }, before);
 
         Assert.True(playlist.MoveTrack(a, null));
 

@@ -20,6 +20,13 @@ namespace Flower.Tests;
 // on screen loses whatever transient state it was holding. On a tile that is
 // most visibly the album download button's own spinner, and the rebuild is
 // triggered by the very download it is animating.
+// Serialised against TrackRowMergeTests, which redirects the same process-wide
+// AlbumArtLoader.Current at a counter of its own. xUnit runs separate classes in
+// parallel, so without this the two take turns owning the static and each one's
+// loads land on whichever counter happened to be installed - which is how a
+// macOS CI runner read 2 loads where the test had caused 1. Nothing about
+// either class is slow enough for the serialisation to cost anything.
+[Collection("AlbumArtLoader")]
 public class AlbumTileMergeTests : IDisposable
 {
     private sealed class CountingArtLoader : AlbumArtLoader
