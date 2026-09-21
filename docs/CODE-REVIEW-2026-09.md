@@ -358,6 +358,51 @@ before the general clause and latch immediately, mirroring the
 
 ---
 
+### B6. A late arm is dropped, and the gapless handover with it
+
+`Flower/Audio/GaplessCoordinator.cs:737-786` (the `_armed == null` branch of
+`HandleDrainedOrFaulted`), `:424` (`SetUpcoming`)
+
+Promotion happens in exactly one place: `HandleDrainedOrFaulted`, when the
+current decoder reports it has drained. If nothing is armed at that instant, the
+branch sets `_current = null` and logs `"drained - nothing armed, stopping"`.
+An arm that arrives *afterwards* has no path to promotion — `SetUpcoming` does
+not check whether the current track has already finished, so the decoder is
+built, starts filling its staging ring, and is never asked to take over.
+
+"Afterwards" is not as narrow as it sounds, because **drained means the decoder
+finished producing, not that the ring emptied**. The coordinator warns about
+precisely this a few lines earlier:
+
+> Decoder completed with no armed successor while {BufferedMs}ms of PCM remains
+> buffered; a stop or hard Play now can cut off the track tail
+
+So for a track short enough to fit inside the four-second ring, the decoder can
+finish within milliseconds of `Play` while ~all of the audio is still queued —
+and any arm during that window is lost.
+
+**Evidence.** A macOS CI runner stalled
+`GaplessCoordinatorRealDecodeTests.A_handover_puts_Bs_first_frame_exactly_where_As_last_one_ended`
+at exactly 192000 bytes, all of A and none of B, with the ordering visible in
+the coordinator's own log: `Armed=(null)` at completion, `drained - nothing
+armed, stopping`, and only then `SetUpcoming(exact-b.wav)`. The test now sizes
+its ring below the track so the decoder is paced by playback, which removes the
+trigger but not this.
+
+**Why it has never been heard.** `Play`'s `preserveTail` path (`:358`) already
+handles "current is already null and audio is still buffered" by appending
+instead of flushing, so the queue advances and the tail survives. The cost is a
+seam where a gapless splice should have been — on a short track, after a slow
+arm, which is a rare enough pairing that nobody has reported it.
+
+**Fix.** Either have `SetUpcoming` promote immediately when `_current == null`
+and the ring still holds audio, or keep the finished decoder's slot alive until
+the ring actually drains and let the existing promotion path fire. The second is
+closer to what the surrounding code already believes, and would also let the
+tail-truncation warning above go away rather than be documented.
+
+---
+
 ## C. Security and the trust boundary
 
 `CLAUDE.md` is explicit that this is the one area where "it's just for me"
@@ -947,7 +992,9 @@ review does not spend its time here.
    single win in the cold-scroll path.
 8. **B3** — version the snapshot invalidation.
 9. **C2** — a per-device log quota.
-10. **B5**, **D3**, **D4**, **D5**, **E6**, **E7**, **E8** — when convenient.
-    (**E1** is resolved: both files are deleted.)
+10. **B5**, **B6**, **D3**, **D4**, **D5**, **E6**, **E7**, **E8** — when
+    convenient. (**E1** is resolved: both files are deleted.) **B6** is the one
+    with a known reproduction attached, and closing it would retire a warning
+    the coordinator currently only logs.
 11. **C1**, **E2**, **E3** — genuine design questions rather than fixes, and
     worth a decision recorded here rather than a patch.

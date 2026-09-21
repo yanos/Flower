@@ -270,17 +270,46 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var trackA = MakeTrack(SyntheticWav.CreateFile(_tempDir, "exact-a.wav", durationA, SyntheticWav.Marker(markerA)), durationA);
         var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "exact-b.wav", durationB, SyntheticWav.Marker(markerB)), durationB);
 
-        var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
-        // Recording rather than Null, so a stall here arrives with the
-        // coordinator's own account of the handover attached. This stalled
-        // once on a loaded CI runner - stopped at exactly 192000 bytes, which
-        // is exactly all of A and none of B, the signature of the armed track
-        // never being told to start. That is the shape of bug 2 in this
-        // class's header, whose fix is in ArmAsync and is still there, so it
-        // is some other window - and "produced nothing for 8s" on its own
-        // names none of them. It has not reproduced in 37 local runs, 12 of
-        // them under load, so the next occurrence is the evidence and it
-        // should not arrive empty-handed.
+        // Half of A, deliberately, and this is the load-bearing line.
+        //
+        // Every other test here gives the shared ring four seconds and a track
+        // of one or two, so the whole track fits and the decoder is never
+        // throttled by playback: it writes all of A in milliseconds and
+        // announces it has drained. Real playback is the other way round - the
+        // ring is four seconds and the track is minutes - so the decoder is
+        // paced by the render callback from the first buffer to the last.
+        //
+        // That difference is what made this test flaky, and the recording
+        // logger below is how we know. It stalled on a macOS CI runner at
+        // exactly 192000 bytes - all of A, none of B - and the log said why:
+        //
+        //   Current decoder completed: ... PlayedMs=21.3 DecodedMs=1000
+        //                              SharedRead=4096 Armed=(null)
+        //   ... no armed successor while 978.6ms of PCM remains buffered
+        //   exact-a.wav drained - nothing armed, stopping
+        //   SetUpcoming(exact-b.wav)          <- after the stop, not before
+        //
+        // The arm lost a race with the whole of A decoding. Play() and
+        // SetUpcoming() are consecutive statements here, so the window is
+        // normally microseconds - but nothing bounds it, and a loaded runner
+        // descheduled the test thread long enough for the decode thread to
+        // finish A outright. Promotion only ever happens inside
+        // HandleDrainedOrFaulted, which by then had already taken its
+        // "nothing armed, stopping" branch, so B armed into a coordinator with
+        // no current track and was never promoted.
+        //
+        // A ring smaller than the track removes the precondition rather than
+        // widening the window: A's decoder now blocks on a full ring after
+        // 500ms and cannot complete until playback has consumed that much, so
+        // the arm has half a second of real time instead of a scheduling
+        // coincidence. It is also simply what the shipped configuration looks
+        // like.
+        //
+        // The race it exposed is real and is *not* fixed by this - see
+        // docs/CODE-REVIEW-2026-09.md, "A late arm is dropped". In the app it
+        // degrades to a seam rather than silence, because Play's preserveTail
+        // path keeps the buffered tail, which is why it has never been heard.
+        var sharedRing = new GaplessRingBuffer((int)GaplessFormat.SampleRate / 2 * GaplessFormat.BytesPerFrame);
         var log = new RecordingLogger<GaplessCoordinator>();
         var coordinator = new GaplessCoordinator(sharedRing, log);
         var sink = new FakeAudioSink();
