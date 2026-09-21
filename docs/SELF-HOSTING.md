@@ -171,23 +171,41 @@ still win over both.
 
 ## Running it in Docker
 
-The repository ships a `Dockerfile` and a `docker-compose.yml`, plus two
-override files for the remote-access paths that need an extra container. Nothing
-has to
-be installed on the host first — no .NET runtime, no SQLite, no ffmpeg. The
+The repository ships a `Dockerfile` and a `docker-compose.yml`, plus three
+override files: two for the remote-access paths that need an extra container,
+and one for bridge networking (required on macOS and Windows). Nothing has to be
+installed on the host first — no .NET runtime, no SQLite, no ffmpeg. The
 server does not decode audio either (that is the client's job), so no decoder is
 involved on this side at all.
 
-Point the music path in `docker-compose.yml` at your library, then:
+Tell it where your music is, and start it:
 
 ```bash
-mkdir -p data && sudo chown 1654:1654 data
+echo "FLOWER_MUSIC=/srv/music" > .env
 docker compose up -d
 docker compose logs flower
 ```
 
+That is the whole install. Nothing to create first, no ownership to fix, no
+`sudo` — the compose file pulls the published image and keeps the server's data
+in a named volume, which Docker creates with the right owner on its own.
+
 The log carries the first pairing code, exactly as it does when the server is
 run directly. Spend it as described above.
+
+If you would rather edit the file than keep a `.env`, replace the left-hand side
+of the `/music` line in `docker-compose.yml` with your path. What you cannot do
+is leave it unset: the compose file gives it no default and refuses to start
+without one, because a default that was wrong would be created as an empty
+directory and the server would come up healthy, pair devices, and serve a
+library of nothing.
+
+Prefer the `.env` file over exporting the variable in your shell, for a reason
+that shows up later: *every* compose command interpolates it, so a shell without
+it set cannot run `docker compose down` or `docker compose logs` either. A file
+beside the compose file is always there. (The two override files below take
+`FLOWER_HOSTNAME` and `TUNNEL_TOKEN` the same way, and belong in the same
+place — it is gitignored, which matters for the token.)
 
 Two directories matter:
 
@@ -196,9 +214,48 @@ Two directories matter:
 | `/data` | Everything the server owns: `flower.db`, the device key, the trusted-device list, the logs, `flower-server.json`. Back this up — lose it and every paired device unpairs. |
 | `/music` | Your library, mounted read-only. The server scans and streams; it never writes here. |
 
-`1654` is the non-root user the .NET base image runs as, and `/data` has to be
-writable by it. If your music sits somewhere that user cannot read, uncomment
-`user:` in the compose file and give it a uid that can.
+### Why `/data` is a named volume
+
+The server runs as uid `1654` — the non-root user the .NET base images ship —
+and that one fact decides how `/data` is mounted.
+
+A bind mount (`./data:/data`) to a path that does not exist yet is created by
+the Docker daemon as **root**. The server then starts, finds its data directory
+already there, and dies on the first write to `flower.db`. That is why this used
+to open with a `mkdir` and a `sudo chown 1654:1654`, and why forgetting them
+failed in a way that read like a bug.
+
+Docker treats a *named* volume differently: a fresh one is initialised from the
+image's own `/data`, ownership included, and the `Dockerfile` has already
+chowned that to `1654`. So the volume arrives writable by the process that has
+to write it, without anyone being told to make it so.
+
+It is still a plain directory on the host — `docker volume inspect` prints
+where, under `/var/lib/docker/volumes`. Two things to know about reaching it:
+
+```bash
+docker compose cp flower:/data ./flower-backup          # back it up
+docker compose cp flower:/data/flower-server.json .     # edit the settings file
+docker compose cp ./flower-server.json flower:/data/    # …and put it back
+docker compose restart flower
+```
+
+Editing that file by hand is the third way to change a setting, behind the
+settings page and the compose `environment:` block, and it is the one that got
+slightly less convenient in the trade. `docker compose down` leaves the volume
+alone; only `down -v` destroys it, and that unpairs every device.
+
+If your music sits somewhere uid `1654` cannot read — a home directory that is
+not world-readable, typically — you have two ways out, and making the music
+readable is the cheaper one. The other is to uncomment `user:` in the compose
+file and give the server a uid that can read it, which costs a one-time step:
+Docker initialises the data volume from the image, owned by `1654`, whatever
+`user:` says and even on the first `up`. So the new uid cannot write `flower.db`
+until the volume is handed over:
+
+```bash
+docker compose run --rm --user root --entrypoint chown flower -R 1000:1000 /data
+```
 
 ### Host networking, and when bridge is right instead
 
@@ -227,29 +284,131 @@ an announcement (`PairedServerReachability`). Bridge costs that deployment
 nothing, which is why the compose file carries the settings for it rather than
 warning you off them.
 
-If you genuinely want a bridge — a server only ever reached through a reverse
-proxy or a tailnet, where nothing is supposed to discover it on a LAN — the
-compose file carries the settings for it, commented out: map `4533`/`4534`, set
-`Flower__AdvertiseOnLan=false` so it stops trying, and set
-`Flower__AdvertisedHost` if you remapped the port, so pairing invites name the
-address a device should actually dial.
+If you genuinely want a bridge, there is an override file for it:
 
-Host networking is a Linux feature. On Docker Desktop for macOS or Windows it
-does not do what it says, and a container there will not be discoverable however
-it is configured. Run the server directly on those.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
+```
+
+It publishes `4533`/`4534` (remap with `FLOWER_HTTP_PORT`/`FLOWER_HTTPS_PORT`),
+sets `Flower__AdvertiseOnLan=false` so the server stops trying to announce what
+cannot leave, and passes `FLOWER_ADVERTISED_HOST` through.
+
+**Set that last one for anything another device pairs with**, though it is a
+smaller deal than it looks. Behind a bridge, what the server can see of itself
+is the container's own `172.x` address, and that is what it reports in the
+`/info` handshake. A client persists those and probes them forever, and none of
+them will ever answer.
+
+That is not how a device gets home, though. An address you typed at pairing time
+is kept separately as a *manual* address, and `PairedServerReachability` unions
+the two — manual entries are never withdrawn on the server's say-so, because
+"they are not this server's to withdraw". So a device pointed at a real address
+keeps working on a bridge; it just carries some dead entries it retries for
+nothing.
+
+What `AdvertisedHost` buys is **self-healing**. A host-networked server that
+changes address reports the new one and every paired device follows it. A
+bridged server cannot, so its devices stay pinned to whatever was typed, and
+someone retypes it by hand the day DHCP moves the box.
+
+```bash
+echo "FLOWER_ADVERTISED_HOST=192.168.1.40" >> .env
+```
+
+### Handing the container its own LAN address
+
+Typing an IP into a file is the thing most likely to go stale, so compute it
+instead. The container cannot work this out for itself — behind a bridge it can
+see only its own `172.x` interface, and `host.docker.internal` resolves to the
+Docker gateway, which is a private address that means nothing to a phone. It has
+to be handed in from outside:
+
+```bash
+# Linux
+echo "FLOWER_ADVERTISED_HOST=$(hostname -I | awk '{print $1}')" >> .env
+
+# macOS (en0 is usually Wi-Fi; en1/en2 for wired)
+echo "FLOWER_ADVERTISED_HOST=$(ipconfig getifaddr en0)" >> .env
+```
+
+**Do not reach for `$(hostname).local` here**, tempting as it is — an `.mdns`
+name looks like the value that survives a DHCP change, and it is the one that
+fails on a phone. A client resolves a remembered address with
+`Dns.GetHostAddressesAsync` (`NetworkDiscoveryService`), and when that comes
+back empty the address is discarded before it is ever dialled. On iOS a `.local`
+name resolves through mDNSResponder rather than through that path, so the entry
+is silently dropped and the server is marked unreachable with every candidate
+exhausted. The failure is one `Could not resolve remembered address` line in the
+client's log and nothing at all on the server.
+
+A name is still better than an IP where it genuinely resolves for every client —
+a tailnet name, or something your router's DNS serves. `.local` is not that, and
+a plain LAN IP is the safe answer.
+
+### Host networking is a Linux feature
+
+On macOS and Windows — Docker Desktop, colima, Rancher, Podman Desktop — the
+containers run inside a Linux VM, and "host" means *that* VM. So
+`network_mode: host` binds to the VM's network stack rather than your machine's,
+and publishes nothing for the VM to forward outward: the server comes up, and
+nothing on your desktop can reach it, not even `localhost`.
+
+That is also why the mDNS announcement cannot work there. It is emitted onto the
+VM's network, and your LAN is on the other side of a NAT the multicast will not
+cross.
+
+For a real deployment, run the server directly on those machines, or put it on a
+Linux box. For **trying it out**, the bridge override is the way — published
+ports are forwarded out of the VM to your `localhost`, so the browser UI and
+pairing both work:
+
+```bash
+echo "FLOWER_MUSIC=$HOME/Music" > .env
+docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
+docker compose logs flower
+open http://localhost:4533
+```
+
+`http://localhost` counts as a secure context, so the browser UI can generate
+its key and pair normally. What you cannot test this way is LAN discovery.
+
+> **Don't forward a router port straight at a bridge on a VM runtime.** Those
+> runtimes relay every request through the VM's proxy, so it arrives from the
+> Docker gateway and the original address is lost. Three things are keyed on
+> that address: the LAN allow-list (`172.16.0.0/12` reads as local, so it admits
+> whatever can reach the port), the rate-limit bucket (shared by everyone — the
+> failure in `docs/CITED-DECISIONS.md` #2b), and the per-address pairing
+> throttle. A device signature is still required on every route, so this is the
+> second layer going quiet rather than the door opening — but it goes quiet
+> without saying so. Use the Caddy or Cloudflare override, which put a proxy
+> in front that sets `X-Forwarded-For`, with a matching `TrustedProxies`.
 
 ### Settings, and updating
 
 Anything in `appsettings.json` can be set as an environment variable, a double
 underscore per level — `Flower__HttpsPort=0` to turn the TLS listener off.
 Settings that are yours rather than the deployment's are better left in
-`data/flower-server.json`, which survives every rebuild; the compose file's
-`environment:` block still wins over it.
+`flower-server.json` on the data volume, which survives every rebuild; the
+compose file's `environment:` block still wins over it.
 
-Updating is `docker compose pull && docker compose up -d` against a published
-image, or `docker compose up -d --build` while you are building it yourself.
-`/data` is untouched either way, so the server comes back with the same identity
-and the same paired devices.
+Updating is `docker compose pull && docker compose up -d`, or
+`docker compose up -d --build` if you switched the compose file to `build: .`.
+The data volume is untouched either way, so the server comes back with the same
+identity and the same paired devices.
+
+The shipped compose file tracks `ghcr.io/yanos/flower-server:latest`, which is
+less alarming than it sounds: nothing re-pulls on its own, so the image moves
+only when you run `docker compose pull`, and a pre-release tag never takes
+`latest`. It means "the newest stable release as of the moment I asked", which
+is what you want for a server you update deliberately.
+
+Pin a full version instead — `image: ghcr.io/yanos/flower-server:0.2.1` — if you
+want that moment written down in the file, and an exact tag to go back to when
+an update disagrees with a client you have not updated yet. That is worth doing
+while Flower's protocol is still changing between releases: the server updates
+when you pull, the phone app updates when its store says so, and pinning is what
+keeps those two from moving independently.
 
 ### Reaching it from outside, without a second compose file
 
@@ -266,13 +425,20 @@ on top of it rather than a copy of it:
 | Port forwarding, with a browser among the listeners | `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d` |
 | Cloudflare Tunnel | `docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d` |
 
+`docker-compose.bridge.yml` is not in this table, because it answers a different
+question. These four are about who carries traffic from outside; that one is
+about whether the container shares your machine's network stack, which is
+decided by the OS you are on rather than by where your listeners are. It
+composes with any row here — add it as a third `-f` — and it is required on
+macOS and Windows, where host networking cannot work at all.
+
 Two of the four need nothing added, for unrelated reasons.
 
 **Port forwarding needs no override when every listener is a paired Flower app**,
 because the port you forward is then `4534` — the server's own TLS port, whose
 certificate those clients validate against a key they already hold. No proxy, so
 nothing to run beside the server and no `TrustedProxies`; give it its outside
-address in `data/flower-server.json` and that is the whole of it:
+address in `flower-server.json` on the data volume and that is the whole of it:
 
 ```json
 { "Flower": { "AdvertisedHost": "https://music.example.com:4534" } }
@@ -302,20 +468,22 @@ export FLOWER_HOSTNAME=music.example.com
 export TUNNEL_TOKEN=…                      # cloudflared only
 ```
 
-The Caddy override binds two more directories beside `./data` —
+The Caddy override binds two more directories beside the server's volume —
 `./caddy-data` and `./caddy-config`, for its certificates and ACME account keys.
-Docker creates them, and keeping them matters: lose `caddy-data` and Caddy
-re-issues on every restart, which Let's Encrypt rate-limits after a handful of
-attempts. All three are gitignored, being a running deployment's state rather
-than the repository's.
+Caddy runs as root, so those are ordinary bind mounts that Docker creates and
+Caddy can write — the uid problem that decided the server's own volume does not
+arise. Keeping them matters: lose `caddy-data` and Caddy re-issues on every
+restart, which Let's Encrypt rate-limits after a handful of attempts. Both are
+gitignored, as is the `.env` these variables belong in, being a running
+deployment's state rather than the repository's.
 
 Each sets `TrustedProxies` and `AdvertisedHost`, which belong to the deployment.
 Neither sets **`AllowPublicAccess`**, which this deployment does need on — and
 the omission is deliberate. It is the one setting that is also a switch on the
-settings page, the page persists it to `data/flower-server.json`, and the compose
-`environment:` outranks that file. Set it in the override and the switch still
-moves and still does nothing. So turn it on from the settings page, or in
-`data/flower-server.json`, and it stays yours:
+settings page, the page persists it to `flower-server.json` on the data volume,
+and the compose `environment:` outranks that file. Set it in the override and the
+switch still moves and still does nothing. So turn it on from the settings page,
+and it stays yours:
 
 ```json
 { "Flower": { "AllowPublicAccess": true } }

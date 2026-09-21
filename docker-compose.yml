@@ -1,18 +1,24 @@
 # Flower.Server, the way it is meant to run on a Linux box.
 #
-#   mkdir -p data && sudo chown 1654:1654 data
+#   echo "FLOWER_MUSIC=/srv/music" > .env     # wherever your library actually is
 #   docker compose up -d
 #
 # Then read the pairing code out of the log:
 #
 #   docker compose logs flower
 #
-# See docs/SELF-HOSTING.md for what to do with it, and for reaching the server
-# from outside. Two of those paths add a container, so each has an override file
-# to merge on top of this one rather than a copy of it:
+# That is the whole install: no directories to create first, no ownership to
+# fix, no sudo. See docs/SELF-HOSTING.md for what to do with the code, and for
+# reaching the server from outside. Two of those paths add a container, so each
+# has an override file to merge on top of this one rather than a copy of it:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.caddy.yml       up -d
 #   docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d
+#
+# And one more that is not about remote access at all: docker-compose.bridge.yml
+# swaps host networking for published ports. Required on macOS and Windows,
+# where containers live in a Linux VM and host networking binds to that VM
+# rather than to your machine. It composes with either of the two above.
 #
 # Tailscale needs neither, which is part of why it is the one to prefer: install
 # it on the host, and `network_mode: host` below means the container is already
@@ -26,10 +32,18 @@
 
 services:
   flower:
-    build: .
-    # Once a release image is published, swap the line above for this one and
-    # update with `docker compose pull && docker compose up -d`.
-    # image: ghcr.io/yanos/flower-server:latest
+    # Published on every release tag, for linux/amd64 and linux/arm64.
+    #
+    # `latest` is not an auto-update: nothing here re-pulls, so the image moves
+    # only when you run `docker compose pull`, and pre-release tags never take
+    # `latest` - it is always the newest stable release as of the moment you
+    # asked. Pin a full version (`:0.2.1`) if you would rather that moment be
+    # written down, and to have an exact tag to roll back to.
+    image: ghcr.io/yanos/flower-server:latest
+    # To build it yourself instead, comment the line above and uncomment this
+    # one; update with `docker compose up -d --build`. See SELF-HOSTING.md,
+    # "Building the image", for what the build does with git tags.
+    # build: .
     container_name: flower
     restart: unless-stopped
 
@@ -40,34 +54,59 @@ services:
     # correctly, and simply never appears in the sidebar of any Flower client on
     # the LAN - a failure with no error anywhere to explain it.
     #
-    # Host networking is a Linux-only feature; on Docker Desktop for macOS or
-    # Windows it does nothing useful. Those are not the deployment target here.
-    # If you do need bridge networking anyway - a remote-only server behind a
-    # reverse proxy, where nothing is meant to discover it on a LAN - then say
-    # so explicitly rather than leaving it broken:
+    # Host networking is a Linux-only feature. On macOS and Windows the
+    # containers live in a Linux VM, so this binds to the VM rather than to your
+    # machine and nothing reaches the server at all - not even from a browser on
+    # the same desktop.
     #
-    #   network_mode: bridge
-    #   ports:
-    #     - "4533:4533"
-    #     - "4534:4534"
-    #   environment:
-    #     - Flower__AdvertiseOnLan=false
-    #     - Flower__AdvertisedHost=flower.example.com   # if the port is remapped
+    # So if you are not on Linux, or you want a bridge anyway (a server reached
+    # only through a proxy or a tailnet, with nothing meant to discover it on a
+    # LAN), do not edit this line - add the override, which carries the ports
+    # and the two settings that go with them:
+    #
+    #   docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
     network_mode: host
 
     volumes:
       # Everything the server owns and must keep across an image rebuild:
       # flower.db, the device key, the trusted-device list, the logs, and
       # flower-server.json. Lose this and every paired device unpairs.
-      - ./data:/data
-      # Your music. Read-only: the server scans and streams, it never writes
-      # here. Point it at wherever the library actually lives.
-      - /srv/music:/music:ro
+      #
+      # A named volume rather than a ./data bind mount, and that is what makes
+      # the install a single command. The server runs as uid 1654 (the non-root
+      # user the .NET base image ships), and a bind mount to a path that does
+      # not exist yet is created by the daemon as root - so the server starts,
+      # creates nothing, and dies on the first write to flower.db unless you
+      # chown it first. Docker initialises a *named* volume from the image's own
+      # /data instead, which the Dockerfile has already chowned, so it is
+      # correct without anyone being told to make it correct.
+      #
+      # It is still a plain directory on this machine - `docker volume inspect`
+      # prints where, under /var/lib/docker/volumes - and the backup is
+      # `docker compose cp flower:/data ./flower-backup`.
+      - flower-data:/data
 
-    # The uid the .NET base image ships and the Dockerfile chowns /data to.
-    # If the music lives under a home directory that isn't world-readable,
-    # override this with the uid:gid that can read it instead - the app
-    # directory in the image is readable by anyone.
+      # Your music. Read-only: the server scans and streams, it never writes
+      # here. Set FLOWER_MUSIC in a .env file beside this one, or just replace
+      # the whole left-hand side with the path.
+      #
+      # Deliberately has no default. A default that pointed somewhere plausible
+      # would be created empty by the daemon when it was wrong, and the server
+      # would come up healthy, pair devices, and serve a library of nothing -
+      # with no error to find. Better to refuse to start and say which variable
+      # is missing.
+      - ${FLOWER_MUSIC:?set FLOWER_MUSIC to your music folder, e.g. in a .env file beside this one}:/music:ro
+
+    # Only needed if your library sits somewhere uid 1654 cannot read - a home
+    # directory that is not world-readable, typically. Making the music readable
+    # instead is the easier half of that fork, because overriding the uid here
+    # does not move the data volume with it: Docker initialises that volume from
+    # the image, owned by 1654, whatever this says - even on the very first
+    # `up`. So a uid set here cannot write flower.db until the volume is handed
+    # over once:
+    #
+    #   docker compose run --rm --user root --entrypoint chown flower -R 1000:1000 /data
+    #
     #   user: "1000:1000"
 
     environment:
@@ -79,5 +118,12 @@ services:
       # Anything else in Flower.Server/appsettings.json can be set the same
       # way, double underscore for each level (Flower__HttpsPort=0 to turn the
       # TLS listener off). Settings that belong to the operator rather than the
-      # deployment are better placed in data/flower-server.json, which this
-      # file's environment still outranks - see Program.cs on the layering.
+      # deployment are better placed in flower-server.json on the data volume,
+      # which this file's environment still outranks - see Program.cs on the
+      # layering, and SELF-HOSTING.md for editing it through `docker compose cp`.
+
+volumes:
+  # Named rather than declared external, so `docker compose up -d` creates it.
+  # `docker compose down` leaves it alone; only `down -v` destroys it, and that
+  # unpairs every device this server has ever paired.
+  flower-data:

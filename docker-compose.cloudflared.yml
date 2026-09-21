@@ -23,8 +23,8 @@ services:
 
     # AllowPublicAccess is deliberately not set here either, and for the same
     # reason: the settings page owns it, this file would silently outrank the
-    # page. Turn it on there, or in data/flower-server.json. Without it every
-    # listener is dropped with the tunnel working perfectly.
+    # page. Turn it on there. Without it every listener is dropped with the
+    # tunnel working perfectly.
 
   cloudflared:
     image: cloudflare/cloudflared:latest

@@ -1,0 +1,135 @@
+# Bridge networking with published ports, for the machines where host
+# networking is not available or not wanted.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
+#
+# An override, not a replacement - the same shape as the caddy and cloudflared
+# files. Everything about the server itself stays in docker-compose.yml; all
+# this changes is how its ports reach the outside, and the two settings that
+# become true because of it.
+#
+# Use it when:
+#
+#   - You are on Docker Desktop, colima, Podman Desktop, Rancher, or any other
+#     macOS or Windows runtime. Containers there run inside a Linux VM, so
+#     `network_mode: host` binds to the VM rather than to your machine and
+#     nothing reaches you at all. This file is how the server is reachable on a
+#     Mac or a Windows box.
+#   - You are on Linux but want the server on a bridge anyway - reached only
+#     through a reverse proxy or a tailnet, with nothing expected to discover it
+#     on a LAN.
+#
+# Do not use it for the LAN case on Linux. The base file's host networking is
+# not a preference there, it is what lets the server be *found*; see below.
+
+services:
+  flower:
+    network_mode: bridge
+
+    ports:
+      # Plain and TLS. Remap the left-hand side if something already has these
+      # ports - and if you do, set FLOWER_ADVERTISED_HOST too, because nothing
+      # inside the container can know its port was rewritten on the way in.
+      - "${FLOWER_HTTP_PORT:-4533}:4533"
+      - "${FLOWER_HTTPS_PORT:-4534}:4534"
+
+    environment:
+      # mDNS is multicast and Docker's bridge drops it, so the announcement
+      # cannot leave this container no matter how long it tries. Off, rather
+      # than left on to fail quietly: the log then says the server is not
+      # advertising, which is true and findable, instead of saying it is while
+      # no client ever hears it.
+      #
+      # The cost is that the server stops appearing in the sidebar on its own.
+      # Clients reach it by being given an address once, at pairing time, and
+      # remember it from then on.
+      #
+      # Nothing below brings that back. FLOWER_ADVERTISED_HOST is a different
+      # channel: it is carried in the /info handshake, to a device that has
+      # already found this server, and never reaches the mDNS record at all -
+      # MdnsAdvertiser passes Makaretu a name, a service type and a port, and
+      # the addresses in the announcement come from the interfaces the
+      # container can see. Discovery on a bridge is not a setting away; it is
+      # host networking on Linux or nothing.
+      - Flower__AdvertiseOnLan=false
+
+      # The address a device should actually dial. Worth setting on a bridge,
+      # though not as load-bearing as it first looks.
+      #
+      # What the server can see of itself behind a bridge is the container's own
+      # 172.x address, and that is what it reports in the /info handshake
+      # (LocalAddresses.Reachable). A client persists those as
+      # PairedServerAddresses and probes them forever, and none of them will
+      # ever answer.
+      #
+      # It is not, however, how a device gets home. An address typed at pairing
+      # time is kept separately as a manual address, and
+      # PairedServerReachability.Candidates() unions the two - manual entries
+      # are explicitly never withdrawn on the server's say-so. So a device that
+      # was pointed at a real address keeps working on a bridge; it just also
+      # carries a handful of dead 172.x entries it retries for nothing.
+      #
+      # What setting this buys is the self-healing case. A host-networked server
+      # that changes address reports the new one and every paired device follows
+      # it; a bridged server cannot, so its devices are pinned to whatever was
+      # typed and someone has to retype it by hand the day DHCP moves. Set this
+      # and that works again.
+      #
+      # Use whatever a client would type - an IP, a hostname, a tailnet name -
+      # with the port if you remapped it and the scheme if something in front
+      # speaks TLS:
+      #
+      #   FLOWER_ADVERTISED_HOST=192.168.1.40
+      #   FLOWER_ADVERTISED_HOST=https://music.example.com
+      #
+      # Not a .local name, however much it looks like the durable choice. A
+      # client resolves a remembered address with Dns.GetHostAddressesAsync and
+      # drops it when that returns nothing, and on iOS a .local name resolves
+      # through mDNSResponder rather than that path - so the entry disappears
+      # and the server reads as unreachable with no candidates left. Seen in
+      # the wild: reported as "MacBookPro.local", one "Could not resolve
+      # remembered address" line on the phone, and nothing on the server.
+      #
+      # Empty is honoured, which is why this has a default and does not refuse
+      # to start: for a trial on the machine you are sitting at,
+      # http://localhost:4533 needs none of it. To fill it in automatically,
+      # see "Handing the container its own LAN address" in SELF-HOSTING.md.
+      - Flower__AdvertisedHost=${FLOWER_ADVERTISED_HOST:-}
+
+    # AllowPublicAccess is deliberately not set here, the same as in the caddy
+    # and cloudflared overrides and for the same reason: it is also a switch on
+    # the settings page, the page persists it to flower-server.json, and this
+    # file's environment would silently outrank the page. Turn it on there if
+    # this server is meant to be reachable from outside.
+    #
+    # ── One thing to know before putting this on an open port ────────────────
+    #
+    # A bridge can hide who is calling, and three things here are keyed on that.
+    # Published ports are NAT'd, and whether the original source address
+    # survives depends on the runtime rather than on anything Flower chooses:
+    #
+    #   - Linux, dockerd: usually preserved. Traffic from other machines hits an
+    #     iptables DNAT rule that rewrites the destination only.
+    #   - Docker Desktop, colima, Rancher, Podman Desktop - anything with a VM:
+    #     never preserved. Every request has been relayed by the VM's proxy and
+    #     arrives from the Docker gateway, 172.17.0.1 or nearby.
+    #
+    # When it is not preserved, every caller looks like one private address, and
+    # 172.16.0.0/12 is inside the range LanGuard treats as LAN. So:
+    #
+    #   - the LAN allow-list admits whatever can reach the port, because
+    #     everything reaching it now looks local;
+    #   - every client shares one rate-limit bucket (Program.cs keys it on
+    #     RemoteIpAddress), which is the failure docs/CITED-DECISIONS.md #2b is
+    #     about - one busy listener, and an album stops playing for everyone;
+    #   - pairing attempts are throttled per address too (PairingEndpoints), so
+    #     one caller guessing codes throttles everybody's pairing.
+    #
+    # None of that is an open door - every route still needs a device signature,
+    # and that is the lock. It is the second layer that goes quiet, and it goes
+    # quiet without saying so, which is the part worth knowing in advance.
+    #
+    # So: bridge on a LAN, or behind a proxy that sets X-Forwarded-For and a
+    # matching Flower__TrustedProxies, is fine. Bridge on a VM runtime with a
+    # router port forwarded straight at it is the combination to avoid - use
+    # the caddy or cloudflared override, or host networking on Linux.

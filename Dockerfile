@@ -100,10 +100,19 @@ EXPOSE 4533 4534
 COPY --from=build /app /app
 WORKDIR /app
 
-# $APP_UID is the non-root uid the .NET base images ship (1654). The bind mount
-# behind /data has to be writable by it; docker-compose.yml and SELF-HOSTING.md
-# both cover that. Declared as a volume so that a `docker run` without an
-# explicit mount keeps its database instead of discarding it with the container.
+# $APP_UID is the non-root uid the .NET base images ship (1654). This chown is
+# what lets docker-compose.yml ask for nothing before `up`: Docker initialises a
+# fresh *named* volume from this directory, ownership included, so /data arrives
+# writable by the uid that has to write it. A bind mount gets no such treatment
+# - the daemon creates the host path as root and the first write to flower.db
+# fails - which is why the compose file does not use one. Declared as a volume
+# so that a `docker run` without an explicit mount keeps its database instead of
+# discarding it with the container.
+#
+# These two lines are in this order on purpose, and swapping them breaks the
+# install with nothing to show for it: a filesystem change to a path already
+# declared as VOLUME is discarded at the end of the layer, so a chown after it
+# would build fine, report nothing, and hand every fresh volume back to root.
 RUN mkdir -p /data /music && chown $APP_UID:$APP_UID /data
 VOLUME /data
 USER $APP_UID

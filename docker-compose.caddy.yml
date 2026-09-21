@@ -37,10 +37,10 @@ services:
 
     # AllowPublicAccess is deliberately NOT set here, though this deployment
     # needs it on. It is the one server setting that is also a switch on the
-    # settings page, and the page persists it to data/flower-server.json - which
-    # an environment variable outranks. Set it here and the switch still moves
-    # and still does nothing. So turn it on once, from the settings page or in
-    # data/flower-server.json, and leave the operator holding it:
+    # settings page, and the page persists it to flower-server.json on the data
+    # volume - which an environment variable outranks. Set it here and the
+    # switch still moves and still does nothing. So turn it on once, from the
+    # settings page, and leave the operator holding it:
     #
     #   { "Flower": { "AllowPublicAccess": true } }
     #

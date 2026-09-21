@@ -492,15 +492,24 @@ Flower.Server/[Dd]ata/logs/
 FFAudioPackage.local.props
 
 ##
-## What `docker compose up` writes beside the compose files. The base file binds
-## ./data as the server's DataDirectory - the database, the device key, the
-## trusted-peer list - and the caddy override binds ./caddy-data and
-## ./caddy-config for Caddy's certificates and ACME account keys. All three are
-## a running deployment's state, not the repository's: these are anchored with a
-## leading slash so they match only the repo root, and spelled [Dd] for the same
-## reason the Flower.Server rule above is - a case-insensitive filesystem would
-## otherwise let a future source folder named Data/ disappear the same way.
+## What `docker compose up` writes beside the compose files. The server's own
+## state is on a named volume and so never lands here, but /[Dd]ata/ stays: the
+## compose file carries a commented-out bind mount for anyone who wants the
+## files in the tree, and a database that only becomes ignorable after someone
+## edits .gitignore is a database that gets committed once. The caddy override
+## does bind ./caddy-data and ./caddy-config, for its certificates and ACME
+## account keys. All of it is a running deployment's state, not the
+## repository's: these are anchored with a leading slash so they match only the
+## repo root, and spelled [Dd] for the same reason the Flower.Server rule above
+## is - a case-insensitive filesystem would otherwise let a future source folder
+## named Data/ disappear the same way.
 ##
 /[Dd]ata/
 /caddy-data/
 /caddy-config/
+
+## The compose files read FLOWER_MUSIC from here, and the cloudflared override
+## reads TUNNEL_TOKEN - which is a credential for someone's Cloudflare account.
+## Anchored, so a future .env fixture inside a test project is unaffected.
+/.env
+/.env.*
