@@ -40,11 +40,11 @@ because no device can administer it yet:
 
 ```
   No device can administer this server yet.
-  Pair one with this code (valid until 14:32:07): 384-915
-  Or open: flower://pair?host=<this-server>:4533&code=384-915&fp=...
+  Pair one with this code (valid until 14:32:07): G6RJR
+  Or open: flower://pair?host=<this-server>:4533&code=G6RJR&fp=...
 
   Or set it up in a browser (same code, valid just as long):
-  http://localhost:4533/#pair=384-915&page=settings
+  http://localhost:4533/#pair=G6RJR&page=settings
 ```
 
 One code, two ways to spend it. Enter it in a Flower client's **Pairing code**
