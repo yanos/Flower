@@ -164,6 +164,50 @@ public class PairedServerReachability : IDisposable
             _ = _networkDiscovery.AddRememberedAsync(address);
     }
 
+    // Unpairing. The addresses in PairedServerAddresses are claims a server
+    // made about itself while we were paired with it, and the moment that
+    // pairing ends they are claims by a stranger - so they go the same way the
+    // TLS pin and the origin's tracks do (see PeerSyncCoordinator.UnpairServer).
+    //
+    // They used to survive it, and survive it permanently: nothing else ever
+    // writes this list except RememberAddresses, so an unpaired client went on
+    // re-registering its ex-server's addresses from RestoreRememberedAsync at
+    // every launch and probing them for the rest of the install's life. On a
+    // server that had been reached from outside, one of those is a public
+    // address, which makes it a client quietly dialling a host on the internet
+    // for a relationship that ended - not a breach, since the pin is revoked
+    // and nothing would be trusted, but not something to leave running either.
+    //
+    // Manual addresses are deliberately untouched, the same way RememberAddresses
+    // leaves them alone: the user typed those, they are not a server's to
+    // withdraw and not an unpair's either, and RemoveManualServer is where they
+    // are removed. One that overlaps the reported set therefore stays
+    // registered, which is why the unregister list subtracts them.
+    public void ForgetReportedAddresses()
+    {
+        if (_appSettings.PairedServerAddresses.Count == 0)
+            return;
+
+        var dropped = _appSettings.PairedServerAddresses
+            .Except(_appSettings.ManualServerAddresses, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _logger.LogInformation(
+            "Unpaired; forgetting {Count} address(es) reported by that server: {Addresses}",
+            _appSettings.PairedServerAddresses.Count,
+            string.Join(", ", _appSettings.PairedServerAddresses));
+
+        _appSettings.PairedServerAddresses = [];
+        _ = _appSettingsStore.SaveAsync(_appSettings);
+
+        // Unregistered, not merely forgotten - a remembered peer is exempt from
+        // the ordinary staleness pruning, so a cleared list on its own would
+        // leave one never-resolving row per address for the rest of the
+        // session. Same reasoning as RememberAddresses' own dropped loop.
+        foreach (var address in dropped)
+            _networkDiscovery.RemoveRemembered(address);
+    }
+
     // Call after any AppSettings mutation that can change PairedServerFingerprint
     // or IsServer (pairing, unpairing, a role flip) - AppSettings itself isn't
     // observable, so this is the one place callers must nudge explicitly rather

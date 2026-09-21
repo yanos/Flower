@@ -281,6 +281,54 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         Assert.False(SingleDeviceRow(vm).IsPairedServer);
     }
 
+    // The addresses go with the pairing. Asserted here, on the unpair path
+    // itself, rather than only on PairedServerReachability.ForgetReportedAddresses:
+    // the bug this covers was not that forgetting them did the wrong thing, it
+    // was that UnpairServer never asked. A test of the helper alone passes
+    // happily while nothing calls it.
+    [AvaloniaFact]
+    public void Unpairing_forgets_the_addresses_that_server_reported()
+    {
+        var settings = new AppSettings
+        {
+            PairedServerAddresses = ["http://192.168.1.40:4533", "https://38.133.38.247:4534"],
+        };
+        var vm = Make(settings);
+        var device = Device("desk", "fp-desk", "Desktop");
+        vm.AddOrUpdateDeviceSidebarItem(device);
+        vm.PairWithServer(device, "code-1");
+
+        vm.UnpairServer();
+
+        // Left behind, these are re-registered from RestoreRememberedAsync at
+        // every launch and probed forever - including the public one, which is
+        // this device going on dialling a host on the internet for a pairing
+        // that no longer exists.
+        Assert.Empty(settings.PairedServerAddresses);
+    }
+
+    // The counterpart: an address the user typed is theirs, and an unpair is
+    // not a claim over it. RememberAddresses already refuses to withdraw one on
+    // the server's say-so; this keeps the two rules agreeing.
+    [AvaloniaFact]
+    public void Unpairing_leaves_an_address_the_user_typed()
+    {
+        var settings = new AppSettings
+        {
+            PairedServerAddresses = ["http://192.168.1.40:4533"],
+            ManualServerAddresses = ["http://192.168.1.40:4533"],
+        };
+        var vm = Make(settings);
+        var device = Device("desk", "fp-desk", "Desktop");
+        vm.AddOrUpdateDeviceSidebarItem(device);
+        vm.PairWithServer(device, "code-1");
+
+        vm.UnpairServer();
+
+        Assert.Empty(settings.PairedServerAddresses);
+        Assert.Equal(["http://192.168.1.40:4533"], settings.ManualServerAddresses);
+    }
+
     // The paired server's row is pinned for the whole session rather than
     // disappearing the moment mDNS loses sight of it - it flips to
     // unreachable instead, so the user can see it is paired but offline.

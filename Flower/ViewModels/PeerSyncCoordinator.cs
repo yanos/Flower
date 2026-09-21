@@ -775,6 +775,13 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         if (_appSettings.PairedServerFingerprint is { } paired && _trustedPeerStore != null)
             _ = _trustedPeerStore.RevokeAsync(paired);
 
+        // Before the save below, so one write covers both this and the fields
+        // cleared underneath it. The addresses are that server's account of
+        // itself, kept only because we were paired with it - see
+        // PairedServerReachability.ForgetReportedAddresses for what leaving
+        // them behind costs.
+        _reachability?.ForgetReportedAddresses();
+
         _appSettings.PairedServerFingerprint = null;
         _appSettings.PairedServerAlias = null;
         _appSettings.PairedServerTrustConfirmed = false;

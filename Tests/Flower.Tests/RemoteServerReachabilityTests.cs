@@ -300,6 +300,69 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
         Assert.Contains(_handler.Requested, u => u.Host == "localhost");
     }
 
+    // Unpairing has to take the address list with it. These are the server's
+    // own claims about where it lives, kept only for as long as we are paired
+    // with it - and because nothing but RememberAddresses ever writes the list,
+    // one left behind is left behind for good: RestoreRememberedAsync
+    // re-registers it at every launch and the poll loop probes it forever. When
+    // the server had been reached from outside, that is a client still dialling
+    // a public address on behalf of a pairing that no longer exists.
+    [Fact]
+    public async Task Unpairing_forgets_the_addresses_that_server_reported()
+    {
+        _handler.RespondWith(4533, ServerInfo);
+        await _discovery.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+        WaitUntil(() => _appSettings.PairedServerAddresses.Contains("http://100.101.102.103:4534"),
+            "the server's reported addresses should have been remembered first");
+
+        // DeviceLost rather than KnownDevices: that view is deduped by
+        // fingerprint, so one surviving registration for the same server hides
+        // every other one's removal. This is per-address and therefore the
+        // thing actually being asserted.
+        List<string> unregistered = [];
+        _discovery.DeviceLost += (_, instanceName) => unregistered.Add(instanceName);
+
+        _reachability.ForgetReportedAddresses();
+
+        Assert.Empty(_appSettings.PairedServerAddresses);
+        Assert.Contains(unregistered, n => n.EndsWith("http://100.101.102.103:4534", StringComparison.Ordinal));
+        Assert.Contains(unregistered, n => n.EndsWith("http://192.168.1.40:4533", StringComparison.Ordinal));
+    }
+
+    // The other half of the same rule, and the reason unpairing cannot simply
+    // clear the list: an address the user typed is theirs. RememberAddresses
+    // already refuses to withdraw one on the server's say-so ("they are not
+    // this server's to withdraw"), and an unpair is not a better claim - the
+    // user removes those from the server picker.
+    [Fact]
+    public async Task Unpairing_leaves_an_address_the_user_typed()
+    {
+        _handler.RespondWith(4533, ServerInfo);
+        _appSettings.ManualServerAddresses.Add("http://192.168.1.40:4533");
+        await _discovery.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
+        WaitUntil(() => _appSettings.PairedServerAddresses.Count > 0,
+            "the server's reported addresses should have been remembered first");
+
+        List<string> unregistered = [];
+        _discovery.DeviceLost += (_, instanceName) => unregistered.Add(instanceName);
+
+        _reachability.ForgetReportedAddresses();
+
+        Assert.Empty(_appSettings.PairedServerAddresses);
+        Assert.Equal(["http://192.168.1.40:4533"], _appSettings.ManualServerAddresses);
+        // Left registered, because it is still a manual address - only the
+        // reported entries that were *not* also typed get unregistered.
+        Assert.DoesNotContain(unregistered, n => n.EndsWith("http://192.168.1.40:4533", StringComparison.Ordinal));
+        Assert.Contains(unregistered, n => n.EndsWith("http://100.101.102.103:4534", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Forgetting_reported_addresses_is_a_no_op_when_there_are_none()
+    {
+        _reachability.ForgetReportedAddresses();
+
+        Assert.Empty(_appSettings.PairedServerAddresses);
+    }
 }
 
 // What a server says about where it can be reached. The client half of this is
@@ -405,4 +468,5 @@ public class LocalAddressesTests
 
         Assert.Equal(addresses.Count, addresses.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
+
 }
