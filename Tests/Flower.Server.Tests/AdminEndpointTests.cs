@@ -34,17 +34,30 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         return new DeviceSigningKey(ecdsa, publicKeyRaw);
     }
 
-    private async Task<DeviceSigningKey> NewAdminAsync(string alias = "Admin Device")
+    private Task<DeviceSigningKey> NewAdminAsync(string alias = "Admin Device") =>
+        NewAdminOnAsync(server, alias);
+
+    // The fixture is a parameter rather than the captured one because a test
+    // that writes settings cannot share a server with the tests that read them
+    // - see Writing_settings_persists_them_to_the_data_directorys_settings_file.
+    private static async Task<DeviceSigningKey> NewAdminOnAsync(
+        FlowerServerFixture target, string alias = "Admin Device")
     {
         var device = NewDevice();
-        await server.Services.GetRequiredService<TrustedPeerStore>()
+        await target.Services.GetRequiredService<TrustedPeerStore>()
             .ApproveAsync(device.Fingerprint, alias, device.PublicKeyBase64, isAdmin: true);
         return device;
     }
 
     // A signed admin request, exactly as ServerAdminClient builds one: identity in
     // headers, the signature over method + path + query + a hash of the body.
-    private async Task<HttpContext> SignedAsync(
+    private Task<HttpContext> SignedAsync(
+        DeviceSigningKey device, string method, string path, string? query = null, string? body = null,
+        string? remoteIp = null, string? host = null) =>
+        SignedOnAsync(server, device, method, path, query, body, remoteIp, host);
+
+    private static async Task<HttpContext> SignedOnAsync(
+        FlowerServerFixture target,
         DeviceSigningKey device, string method, string path, string? query = null, string? body = null,
         string? remoteIp = null, string? host = null)
     {
@@ -57,7 +70,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         };
         var (signature, timestamp, nonce) = device.Sign(method, path, queryPairs.Concat(identity), bodyBytes);
 
-        return await server.Server.SendAsync(c =>
+        return await target.Server.SendAsync(c =>
         {
             c.Request.Method = method;
             c.Request.Path = path;
@@ -250,41 +263,52 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
 
     // The one thing that has to hold for the settings page to be worth anything:
     // what it writes survives, in the file an operator owns.
+    //
+    // On a server of its own, because this is the only test here that changes
+    // the server's configuration and the change is exactly as durable as the
+    // test asserts it is: the write lands in flower-server.json, which is
+    // registered with reloadOnChange, so on the shared fixture every later test
+    // in this class sees "Basement NAS" as the alias. xUnit fixes no order
+    // within a class, so that surfaced as
+    // The_settings_page_is_told_the_name_the_server_actually_answers_to passing
+    // alone and failing in the suite - depending on which of the two ran first.
+    // A test whose subject is persistence has to own what it persists to.
     [Fact]
     public async Task Writing_settings_persists_them_to_the_data_directorys_settings_file()
     {
-        using var admin = await NewAdminAsync();
-        try
-        {
-            var context = await SignedAsync(
-                admin, "PUT", "/api/admin/settings",
-                body: """{"alias":"Basement NAS","advertiseOnLan":false,"allowedCidrs":["10.8.0.0/24"]}""");
+        await using var isolated = new FlowerServerFixture();
+        await isolated.InitializeAsync();
 
-            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-            var settings = await ReadAsync<ServerSettingsDto>(context);
-            Assert.Equal("Basement NAS", settings.Alias);
-            Assert.False(settings.AdvertiseOnLan);
-            Assert.Equal(["10.8.0.0/24"], settings.AllowedCidrs);
+        using var admin = await NewAdminOnAsync(isolated);
 
-            // Both of these are read once by MdnsAdvertiser when the hosted
-            // service starts, so the page has to be told they are not live yet.
-            Assert.NotNull(settings.RestartRequired);
-            Assert.Contains(nameof(FlowerServerOptions.Alias), settings.RestartRequired!);
-            Assert.Contains(nameof(FlowerServerOptions.AdvertiseOnLan), settings.RestartRequired!);
+        // No revoke in a finally, unlike every other test here: that exists to
+        // hand the *shared* fixture back unchanged, and this server is thrown
+        // away entire a few lines below.
+        var context = await SignedOnAsync(
+            isolated,
+            admin, "PUT", "/api/admin/settings",
+            body: """{"alias":"Basement NAS","advertiseOnLan":false,"allowedCidrs":["10.8.0.0/24"]}""");
 
-            var written = await File.ReadAllTextAsync(
-                Path.Combine(settings.DataDirectory, ServerDataDirectory.SettingsFileName), TestContext.Current.CancellationToken);
-            Assert.Contains("Basement NAS", written);
-            Assert.Contains("10.8.0.0/24", written);
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var settings = await ReadAsync<ServerSettingsDto>(context);
+        Assert.Equal("Basement NAS", settings.Alias);
+        Assert.False(settings.AdvertiseOnLan);
+        Assert.Equal(["10.8.0.0/24"], settings.AllowedCidrs);
 
-            // The seeded file is mostly underscore-prefixed documentation an
-            // operator may have added to - a settings write must not flatten it.
-            Assert.Contains("_LibraryPaths", written);
-        }
-        finally
-        {
-            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
-        }
+        // Both of these are read once by MdnsAdvertiser when the hosted
+        // service starts, so the page has to be told they are not live yet.
+        Assert.NotNull(settings.RestartRequired);
+        Assert.Contains(nameof(FlowerServerOptions.Alias), settings.RestartRequired!);
+        Assert.Contains(nameof(FlowerServerOptions.AdvertiseOnLan), settings.RestartRequired!);
+
+        var written = await File.ReadAllTextAsync(
+            Path.Combine(settings.DataDirectory, ServerDataDirectory.SettingsFileName), TestContext.Current.CancellationToken);
+        Assert.Contains("Basement NAS", written);
+        Assert.Contains("10.8.0.0/24", written);
+
+        // The seeded file is mostly underscore-prefixed documentation an
+        // operator may have added to - a settings write must not flatten it.
+        Assert.Contains("_LibraryPaths", written);
     }
 
     [Fact]
