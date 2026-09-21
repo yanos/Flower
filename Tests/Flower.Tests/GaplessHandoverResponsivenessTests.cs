@@ -128,7 +128,15 @@ public class GaplessHandoverResponsivenessTests
         Assert.True(first!.Joined.Task.Result, "the finished decoder's thread was still busy with the handover when its retire joined it");
 
         var play = Task.Run(() => coordinator.Play(T("picked")), TestContext.Current.CancellationToken);
-        Assert.True(play.Wait(TimeSpan.FromSeconds(2)), "Play waited for the handover's drain");
+        // Ten seconds for something that takes microseconds, because the number
+        // is not measuring the drain - a Play that waited for it would not
+        // finish at all here, since nothing drains the 64-byte shared ring while
+        // this assertion is the thing waiting. So the only job of the budget is
+        // to clear scheduling noise, and the 2 seconds it used to allow was the
+        // tightest in this file (WaitFor above gives 5) and the one that failed
+        // a full parallel run on a busy machine. A larger number does not make
+        // the assertion weaker; it makes it about what it says it is about.
+        Assert.True(play.Wait(TimeSpan.FromSeconds(10)), "Play waited for the handover's drain");
 
         // What the picked song hears is the picked song, not the rest of the
         // promoted one's backlog arriving behind it.
