@@ -389,17 +389,36 @@ armed, stopping`, and only then `SetUpcoming(exact-b.wav)`. The test now sizes
 its ring below the track so the decoder is paced by playback, which removes the
 trigger but not this.
 
-**Why it has never been heard.** `Play`'s `preserveTail` path (`:358`) already
-handles "current is already null and audio is still buffered" by appending
-instead of flushing, so the queue advances and the tail survives. The cost is a
-seam where a gapless splice should have been — on a short track, after a slow
-arm, which is a rare enough pairing that nobody has reported it.
+**Why it has never been heard — and what the defect actually is.** Reading the
+subscriber settles it. `PlaylistControlViewModel`'s `EndReached` handler
+advances the queue with `Play(next, immediate: false)`, which is exactly `Play`'s
+`preserveTail` branch (`:358`): it appends behind the buffered tail instead of
+flushing it. So the handover in this case is carried by `Play`, not by the armed
+slot, and no audio is lost or gapped.
 
-**Fix.** Either have `SetUpcoming` promote immediately when `_current == null`
-and the ring still holds audio, or keep the finished decoder's slot alive until
-the ring actually drains and let the existing promotion path fire. The second is
-closer to what the surrounding code already believes, and would also let the
-tail-truncation warning above go away rather than be documented.
+What is lost is the arm itself, and it is not free. `ArmAsync` runs
+`PrepareAsync` — a network stream open for a streamed track — and allocates a
+staging ring holding tens of seconds of PCM. All of it is torn down milliseconds
+later by that same `Play`, via `ClearArmedSlot(retireDecoder: true)`. So the cost
+is a wasted stream open and allocation on every handover of this shape, on a
+phone, over somebody's cellular connection.
+
+So this is **wasted work, not lost audio** — a smaller finding than it first
+looked, and the severity above should be read accordingly.
+
+**Fixed**, by declining rather than promoting. `SetUpcoming` now returns early
+when `_current == null` and the shared ring still holds audio, logging why:
+nothing can promote the arm, and the `Play` that carries the case is already on
+its way. Covered by `SetUpcoming_is_ignored_once_the_current_track_finished_with_audio_still_buffered`
+and its `_still_arms_when_nothing_is_buffered` counterpart, which pin the
+boundary; the first fails without the guard.
+
+The promotion path itself is deliberately untouched. Building a second one — so
+a late arm could be promoted behind a finished decoder — would duplicate the
+most delicate block in this class to win back a decode-ahead in a case
+`preserveTail` already handles, and this is the class where conflating "decoder
+finished" with "audio done" has already cost a bug (see A2's note on retirement
+losing track B one run in five).
 
 ---
 
@@ -992,9 +1011,8 @@ review does not spend its time here.
    single win in the cold-scroll path.
 8. **B3** — version the snapshot invalidation.
 9. **C2** — a per-device log quota.
-10. **B5**, **B6**, **D3**, **D4**, **D5**, **E6**, **E7**, **E8** — when
-    convenient. (**E1** is resolved: both files are deleted.) **B6** is the one
-    with a known reproduction attached, and closing it would retire a warning
-    the coordinator currently only logs.
+10. **B5**, **D3**, **D4**, **D5**, **E6**, **E7**, **E8** — when convenient.
+    (**E1** is resolved: both files are deleted. **B6** is resolved too, and
+    turned out to be wasted work rather than lost audio.)
 11. **C1**, **E2**, **E3** — genuine design questions rather than fixes, and
     worth a decision recorded here rather than a patch.

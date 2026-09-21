@@ -217,6 +217,60 @@ public class GaplessCoordinatorTests
         Assert.False(armedB.RetireCalled);
     }
 
+    // Promotion happens in one place - the current decoder draining - so an arm
+    // that arrives after that has missed it, and will sit in its staging ring
+    // until something clears it. Declining costs nothing: the queue advances
+    // through Play's preserveTail branch, which is what carries this case.
+    //
+    // Worth declining because arming is not free. ArmAsync prepares the decoder,
+    // which for a streamed track opens the network stream, and the staging ring
+    // holds tens of seconds of PCM - all torn down a moment later by the very
+    // Play that PlaylistControlViewModel's EndReached handler is on its way to
+    // make. See docs/CODE-REVIEW-2026-09.md B6.
+    [Fact]
+    public void SetUpcoming_is_ignored_once_the_current_track_finished_with_audio_still_buffered()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = T("B");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+
+        // Drained means the decoder stopped producing, not that the ring
+        // emptied - so this is a track whose audio is still entirely queued.
+        var decoderA = h.LatestDecoderFor(a);
+        decoderA.BytesProduced = 512;
+        h.SharedRing.TryWrite(new byte[512]);
+        decoderA.RaiseDrained();
+        WaitUntil(() => h.Coordinator.CurrentTrack == null, "A should have left the current slot");
+
+        h.Coordinator.SetUpcoming(b);
+
+        Assert.Empty(h.DecodersFor(b));
+    }
+
+    // The other side of that boundary: with the ring drained too, there is no
+    // tail for Play to append behind and nothing to be late for, so arming
+    // behaves exactly as it always has.
+    [Fact]
+    public void SetUpcoming_still_arms_when_nothing_is_buffered()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = T("B");
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+
+        var decoderA = h.LatestDecoderFor(a);
+        decoderA.BytesProduced = 512;
+        decoderA.RaiseDrained();
+        WaitUntil(() => h.Coordinator.CurrentTrack == null, "A should have left the current slot");
+
+        h.Coordinator.SetUpcoming(b);
+
+        Assert.NotEmpty(h.DecodersFor(b));
+    }
+
     [Fact]
     public void SetUpcoming_null_clears_the_armed_slot()
     {

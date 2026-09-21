@@ -441,6 +441,43 @@ namespace Flower.Audio
                 if (_armedTrack != null && _armedTrack.Id == next.Id)
                     return;
 
+                // Nothing can promote an arm once the current decoder has gone.
+                // Promotion happens in exactly one place - HandleDrainedOrFaulted,
+                // on the current decoder draining - so a decoder armed after that
+                // has already happened sits in its staging ring until something
+                // clears it, which is never a handover.
+                //
+                // That window is not as narrow as it sounds, because drained
+                // means the decoder stopped producing rather than the ring
+                // emptying: for a track shorter than the shared ring, or for any
+                // re-arm in the last couple of seconds of one (a shuffle or
+                // repeat toggle does exactly that), the current slot is already
+                // empty while most of the audio is still queued.
+                //
+                // Arming anyway is not free and not harmless. ArmAsync runs
+                // PrepareAsync, which for a streamed track opens the network
+                // stream, and the staging ring it allocates first holds tens of
+                // seconds of PCM. All of it is torn down a moment later by the
+                // Play that PlaylistControlViewModel's own EndReached handler is
+                // already on its way to make - so the cost is a wasted stream
+                // open per handover of this shape, on the phone, over somebody's
+                // cellular connection.
+                //
+                // Nothing is lost by declining. The audio still arrives: that
+                // Play takes its preserveTail branch, which is what actually
+                // carries this case today, appending the new decoder's output
+                // behind the tail still buffered here rather than flushing it.
+                //
+                // See docs/CODE-REVIEW-2026-09.md B6.
+                if (_current == null && _sharedRing.AvailableBytes > 0)
+                {
+                    _logger?.LogDebug(
+                        "SetUpcoming({Path}) ignored: nothing is playing and {BufferedMs}ms of the finished track is still buffered, "
+                        + "so there is no current decoder for it to be promoted behind. Play will carry it instead.",
+                        LogPath.Short(next.Path), BytesToMilliseconds(_sharedRing.AvailableBytes));
+                    return;
+                }
+
                 _logger?.LogTrace("SetUpcoming({Path})", LogPath.Short(next.Path));
 
                 ClearArmedSlot(retireDecoder: true);
