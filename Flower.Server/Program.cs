@@ -534,15 +534,34 @@ using (var scope = app.Services.CreateScope())
     // version at all and left a self-hoster with a silently stale table and no
     // upgrade path but deleting flower.db (ARCHITECTURE-REVIEW Tier 2.5); a
     // schema change is now an appended script in Flower.Core's Schema.
-    var importService = scope.ServiceProvider.GetRequiredService<LibraryImportService>();
-    importService.LoadStored();
-    await importService.RescanAsync();
+    scope.ServiceProvider.GetRequiredService<LibraryImportService>().LoadStored();
 }
 
-// After the first rescan, so the opening pass runs against the real catalog
-// rather than recomputing every smart playlist twice at startup - the rescan
-// raises LibraryChanged, which this subscribes to.
-app.Services.GetRequiredService<SmartPlaylistRefresher>().Start();
+// The rescan is started, not awaited, so the listener opens on the stored
+// catalog instead of after a full scan of the library folders - which is what
+// LoadStored's own comment has always said this does. Awaiting it meant a
+// 16k-track NAS share spent 6m35s refusing connections at every single start,
+// with the container reporting healthy throughout and nothing in the log after
+// "Loaded 0 stored track(s)" to say why. It also outlived the admin pairing
+// code printed above, which is issued before this and expires ten minutes
+// later: on a first run, the one credential that can adopt the server could be
+// dead before the server would accept it.
+//
+// Through the coordinator rather than a bare Task.Run, because it already owns
+// the three things this needs: a DI scope of its own (LibraryImportService is
+// scoped, and the request scope that used to be borrowed here is gone by the
+// time a scan ends), the "a scan is running" flag the admin API and the
+// browser already poll, and the guard against two importers over the same
+// folders - which is exactly what an operator pressing Rescan during the
+// startup scan would otherwise start.
+app.Services.GetRequiredService<LibraryRescanCoordinator>().TryStart(
+    // Still after the first rescan, for the reason it always was: the opening
+    // pass should run against the real catalog rather than recomputing every
+    // smart playlist twice at startup. Nothing is missed by subscribing this
+    // late - Start()'s first pass is immediate and sees whatever landed while
+    // the scan was running, including plays reported by a device that paired
+    // during it, which is newly possible now that the server is listening.
+    onCompleted: () => app.Services.GetRequiredService<SmartPlaylistRefresher>().Start());
 
 app.MapAdminEndpoints();
 app.MapPairingEndpoints();
