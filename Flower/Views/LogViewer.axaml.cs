@@ -123,5 +123,24 @@ public partial class LogViewer : UserControl
     private void ScrollToEndAfterLayout() =>
         Dispatcher.UIThread.Post(() => LogTextEditor.ScrollToLine(LogTextEditor.Document.LineCount), DispatcherPriority.Background);
 
-    private void CopyMenuItem_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => LogTextEditor.Copy();
+    // Copies the whole document when nothing is selected, rather than doing
+    // nothing - which is what TextEditor.Copy() alone does, and what made the
+    // one line most worth copying uncopyable. A failure this pane reports is a
+    // single line of placeholder text (see LogViewerViewModel.ShowPlaceholder),
+    // and reaching for Copy on it is not a request for the empty selection.
+    private void CopyMenuItem_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (LogTextEditor.SelectionLength > 0)
+        {
+            LogTextEditor.Copy();
+            return;
+        }
+
+        // Through the editor's own selection rather than the clipboard
+        // directly: AvaloniaEdit's Copy is what knows how to put text on the
+        // clipboard on every host it runs on, the browser included.
+        LogTextEditor.SelectAll();
+        LogTextEditor.Copy();
+        LogTextEditor.SelectionLength = 0;
+    }
 }

@@ -48,7 +48,13 @@ public sealed record CoverArtWriteDto(int Written, int Total);
 // Raised for any non-success response, so callers can surface the server's own
 // message instead of a bare status code - "A device cannot revoke itself." is
 // worth showing verbatim.
-public sealed class ServerAdminException(HttpStatusCode status, string message) : Exception(message)
+//
+// inner carries the underlying parse failure when there was one - see
+// ServerAdminClient.ReadJsonAsync. It is there to be logged, not shown: the
+// message is what a reader can act on, and the JsonException under it says
+// nothing they could.
+public sealed class ServerAdminException(HttpStatusCode status, string message, Exception? inner = null)
+    : Exception(message, inner)
 {
     public HttpStatusCode Status { get; } = status;
 
@@ -140,24 +146,65 @@ public sealed class ServerAdminClient(
     {
         var response = await SendAsync(
             HttpMethod.Put, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}", bytes, mimeType, ct);
-        return await response.Content.ReadFromJsonAsync(TypeInfo<CoverArtWriteDto>(), ct)
-               ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
+        return await ReadJsonAsync<CoverArtWriteDto>(response, "PUT", "/api/admin/cover-art", ct);
     }
 
     public async Task<CoverArtWriteDto> RemoveCoverArtAsync(string id, CancellationToken ct = default)
     {
         var response = await SendAsync(
             HttpMethod.Delete, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}", [], null, ct);
-        return await response.Content.ReadFromJsonAsync(TypeInfo<CoverArtWriteDto>(), ct)
-               ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
+        return await ReadJsonAsync<CoverArtWriteDto>(response, "DELETE", "/api/admin/cover-art", ct);
     }
 
     private async Task<T> SendAsync<T>(HttpMethod method, string pathAndQuery, object? body, CancellationToken ct)
     {
         var response = await SendAsync(method, pathAndQuery, body, ct);
-        return await response.Content.ReadFromJsonAsync(TypeInfo<T>(), ct)
-               ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
+        return await ReadJsonAsync<T>(response, method.Method, pathAndQuery, ct);
     }
+
+    // A 2xx is not on its own a promise that this was the admin API answering.
+    //
+    // DescribeFailureAsync below has always allowed for a *failure* body that is
+    // not JSON - "a proxy's HTML error page" is the case it names - and a
+    // success body deserves the same doubt for the same reason: a reverse proxy,
+    // a tunnel, a captive portal or a single-page fallback that forgot to
+    // exclude /api can all answer 200 with HTML, and a client that hands that
+    // straight to the deserializer reports it as a JSON syntax error. On the
+    // browser head that error does not even have its text: Flower.Web is
+    // trimmed, which strips the resource strings, so the reader gets the bare
+    // resource key - "ExpectedStartOfValueNotFound, <" - about a request nothing
+    // names. So say what was asked for and what came back instead, and keep the
+    // parse error as the cause.
+    private async Task<T> ReadJsonAsync<T>(
+        HttpResponseMessage response, string method, string path, CancellationToken ct)
+    {
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        if (mediaType != null && !mediaType.EndsWith("/json", StringComparison.OrdinalIgnoreCase)
+                              && !mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ServerAdminException(response.StatusCode, NotTheApi(method, path, response.StatusCode, mediaType));
+        }
+
+        try
+        {
+            return await response.Content.ReadFromJsonAsync(TypeInfo<T>(), ct)
+                   ?? throw new ServerAdminException(response.StatusCode, "The server returned an empty response.");
+        }
+        catch (JsonException ex)
+        {
+            // A body that claimed to be JSON and was not - the same story as
+            // above, from a server that got its Content-Type right and its body
+            // wrong. The parse error is kept as the inner exception; it is the
+            // sentence above it that a reader can act on.
+            throw new ServerAdminException(
+                response.StatusCode, NotTheApi(method, path, response.StatusCode, mediaType ?? "no content type"), ex);
+        }
+    }
+
+    private static string NotTheApi(string method, string path, HttpStatusCode status, string mediaType) =>
+        $"{method} {path} was answered with {mediaType} ({(int)status}), not this server's API. "
+        + "Something between this device and the server answered instead of the server itself - "
+        + "a proxy, a tunnel, or a captive portal.";
 
     private Task<HttpResponseMessage> SendAsync(HttpMethod method, string pathAndQuery, object? body, CancellationToken ct)
     {

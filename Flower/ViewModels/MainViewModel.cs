@@ -565,9 +565,19 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool IsShowingAlbumGrid => _selectedSidebarItem?.Kind == SidebarItemKind.Albums;
     public bool IsShowingRecentlyAddedGrid => _selectedSidebarItem?.Kind == SidebarItemKind.RecentlyAdded;
 
-    public bool IsShowingTrackList => !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingRecentlyAddedGrid;
+    public bool IsShowingTrackList =>
+        !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingRecentlyAddedGrid && !IsShowingServerSettings;
 
     public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
+
+    // The browser's Server Settings page, shown in the content area beside the
+    // sidebar rather than over the whole view - so the top bar's transport,
+    // seek and volume stay where they are and a track keeps playing while its
+    // server is being configured. The panel itself is built by
+    // MainView.axaml.cs, which is where the other server's-settings pane
+    // (ServerSettingsHost) is filled in too and for the same reason:
+    // SettingsPanel takes its ViewModel through a constructor.
+    public bool IsShowingServerSettings => _selectedSidebarItem?.Kind == SidebarItemKind.ServerSettings;
     public DiscoveredDevice? SelectedDevice => _selectedSidebarItem?.Device;
 
     // The selected server's own settings, administered in place: the same
@@ -1617,6 +1627,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             });
         }
 
+        // The browser's way into Settings, and its only one: a single-view
+        // lifetime has no app menu and no second Window, so the row that would
+        // be a menu item on desktop is a place here. Last, under everything the
+        // library offers, because it is not part of the library - and shown
+        // only on the one host that needs it, since a desktop head reaches the
+        // same screen from its menu and administers a *selected* server through
+        // the device-detail pane instead. What it opens is the server this tab
+        // was served from (App.CreateOriginServerSettings), which is the only
+        // server a tab has.
+        if (OperatingSystem.IsBrowser())
+        {
+            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Server"));
+            _sidebarItems.Add(new SidebarItem(SidebarItemKind.ServerSettings, "Server Settings", MaterialIconKind.Cog));
+        }
+
         // Restores whichever view (see AppSettings.LastSidebarKind/
         // LastPlaylistName's own doc comment) the user was on when the app
         // last closed, falling back to Songs the same way this always did -
@@ -1862,6 +1887,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsShowingRecentlyAddedGrid));
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
+        OnPropertyChanged(nameof(IsShowingServerSettings));
         OnPropertyChanged(nameof(SelectedDevice));
         // A code typed for one server must never be submitted against
         // another, so the box empties whenever the selection moves.

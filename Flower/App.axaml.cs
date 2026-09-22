@@ -901,6 +901,11 @@ public partial class App : Application
     // The settings shown are then the *server's*, not this app's: a
     // RemoteServerSettingsBackend over the origin the page was served from, which
     // is the server itself.
+    //
+    // It lands the reader on the sidebar's Server Settings row rather than
+    // opening a screen of its own, so arriving from that button and finding the
+    // page yourself are the same place - and so the top bar's transport stays
+    // on screen either way.
     private static void OpenServerSettingsFromUrl(MainView mainView, Microsoft.Extensions.Logging.ILogger logger)
     {
         try
@@ -912,29 +917,10 @@ public partial class App : Application
             if (!string.Equals(session.Page, "settings", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            // The fourth argument is why this page is worth special-casing at
-            // all: a tab served over plain http to anything but localhost has no
-            // crypto.subtle, so it holds no key, so every request it makes is
-            // unsigned and comes back 401 - which the settings panel would
-            // otherwise report as "not paired", sending the user to pair again
-            // and again. BrowserPeerCredentials knows the real reason; this
-            // hands it to whoever shows the error.
-            var browserCredentials = Ioc.Default.GetRequiredService<BrowserPeerCredentials>();
-            var client = new ServerAdminClient(
-                Ioc.Default.GetRequiredService<HttpClient>(), BrowserLocation.Origin,
-                ServerAdminClient.SignWith(browserCredentials),
-                () => browserCredentials.UnauthenticatedReason,
-                AppLogging.CreateTypedLogger<ServerAdminClient>());
-            var settings = new SettingsViewModel(
-                new RemoteServerSettingsBackend(client),
-                Ioc.Default.GetRequiredService<AppSettings>(),
-                Ioc.Default.GetRequiredService<AppSettingsStore>(),
-                AppLogging.CreateTypedLogger<SettingsViewModel>());
-
             // Posted rather than called inline: the view is not attached to a
             // visual tree yet at this point in OnFrameworkInitializationCompleted,
             // and SettingsPanel's own load path expects to be.
-            Dispatcher.UIThread.Post(() => mainView.ShowSettingsOverlay(settings, mainViewModel: null));
+            Dispatcher.UIThread.Post(mainView.SelectServerSettingsPage);
         }
         catch (Exception ex)
         {
@@ -943,5 +929,47 @@ public partial class App : Application
             // themselves, they just will not be administering the server.
             logger.LogWarning(ex, "Could not open the server settings page");
         }
+    }
+
+    // The settings of the server this tab was served from. Browser-only: every
+    // service it resolves is registered on RegisterBrowserServices' branch and
+    // nowhere else.
+    //
+    // Built by MainView's Server Settings page (UpdateServerSettingsPage),
+    // however the reader got to it - the sidebar row, Cmd/Ctrl+, or the desktop
+    // client's "Server Settings..." handoff above. One screen per tab rather
+    // than one per route in.
+    //
+    // The settings shown are the server's, never the tab's own. MainView's
+    // no-Window branch used to build a LocalSettingsBackend, and a WASM tab's
+    // own settings are nearly all inapplicable (no library folders, no
+    // Music.app, no app-data folder to reveal) and written to an in-memory
+    // filesystem a refresh empties.
+    //
+    // Not gated on this tab actually being an administrator, for the same reason
+    // the desktop button isn't: nothing client-side can know that without
+    // asking, and the panel showing the server's own refusal is a better answer
+    // than a row that isn't there.
+    internal static SettingsViewModel CreateOriginServerSettings()
+    {
+        // The fourth argument is why this page is worth special-casing at all: a
+        // tab served over plain http to anything but localhost has no
+        // crypto.subtle, so it holds no key, so every request it makes is
+        // unsigned and comes back 401 - which the settings panel would otherwise
+        // report as "not paired", sending the user to pair again and again.
+        // BrowserPeerCredentials knows the real reason; this hands it to whoever
+        // shows the error.
+        var browserCredentials = Ioc.Default.GetRequiredService<BrowserPeerCredentials>();
+        var client = new ServerAdminClient(
+            Ioc.Default.GetRequiredService<HttpClient>(), BrowserLocation.Origin,
+            ServerAdminClient.SignWith(browserCredentials),
+            () => browserCredentials.UnauthenticatedReason,
+            AppLogging.CreateTypedLogger<ServerAdminClient>());
+
+        return new SettingsViewModel(
+            new RemoteServerSettingsBackend(client),
+            Ioc.Default.GetRequiredService<AppSettings>(),
+            Ioc.Default.GetRequiredService<AppSettingsStore>(),
+            AppLogging.CreateTypedLogger<SettingsViewModel>());
     }
 }

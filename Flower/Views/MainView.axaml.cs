@@ -17,6 +17,7 @@ using CommunityToolkit.Mvvm.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 using Flower.Controls;
+using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
@@ -255,6 +256,9 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.SelectedServerSettings):
             case nameof(MainViewModel.IsSelectedDevicePaired):
                 UpdateServerSettingsPane();
+                break;
+            case nameof(MainViewModel.IsShowingServerSettings):
+                UpdateServerSettingsPage();
                 break;
         }
     }
@@ -1221,36 +1225,30 @@ public partial class MainView : UserControl
 
     private void OpenSettingsWindow()
     {
-        if (_viewModel == null)
-            return;
-
         if (TopLevel.GetTopLevel(this) is Window owner)
         {
-            new SettingsWindow(_viewModel).ShowDialog(owner);
+            if (_viewModel != null)
+                new SettingsWindow(_viewModel).ShowDialog(owner);
             return;
         }
 
-        // No Window to own a dialog - this is the browser (Avalonia.Browser is a
-        // single-view lifetime). Same screen, laid over the view instead.
-        ShowSettingsOverlay(new SettingsViewModel(new LocalSettingsBackend(_viewModel)), _viewModel);
+        // No Window to own a dialog - this is the browser (Avalonia.Browser is
+        // a single-view lifetime), where Settings is a place rather than a
+        // dialog. Cmd/Ctrl+, therefore navigates to it, the same row the
+        // sidebar offers; the page itself is built by
+        // UpdateServerSettingsPage below.
+        SelectServerSettingsPage();
     }
 
-    // Shown over the whole view, and dismissed by the panel's own OK/Cancel. Public
-    // because App.axaml.cs opens it directly at startup when the page was opened
-    // with page=settings in its URL fragment - the settings shown then are
-    // a remote server's, not this app's, so it hands in its own SettingsViewModel
-    // rather than letting this build a local one.
-    public void ShowSettingsOverlay(SettingsViewModel viewModel, MainViewModel? mainViewModel)
+    // Selects the sidebar's Server Settings row, if this host has one. Public
+    // because App.axaml.cs calls it at startup when the page was opened with
+    // page=settings in its URL fragment - the desktop client's "Server
+    // Settings..." button, which wants the reader to land on that page and not
+    // merely to be able to find it.
+    public void SelectServerSettingsPage()
     {
-        var panel = new SettingsPanel(viewModel, mainViewModel);
-        panel.CloseRequested += (_, _) =>
-        {
-            SettingsOverlay.IsVisible = false;
-            SettingsOverlayHost.Content = null;
-        };
-
-        SettingsOverlayHost.Content = panel;
-        SettingsOverlay.IsVisible = true;
+        if (_viewModel?.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.ServerSettings) is { } row)
+            _viewModel.SelectedSidebarItem = row;
     }
 
     private void OpenColumnSelectorWindow()
@@ -1605,6 +1603,47 @@ public partial class MainView : UserControl
         }
 
         UpdateServerSettingsMessage();
+    }
+
+    // The browser's Server Settings page, built the first time its sidebar row
+    // is chosen and kept afterwards.
+    //
+    // Kept rather than rebuilt so moving to Songs and back does not throw away
+    // the tab the reader was on or a half-typed edit, and because
+    // SettingsPanel stops its own log poll when it leaves the visual tree (see
+    // SetLogTabActive) - so an instance nobody is looking at costs nothing.
+    //
+    // Built lazily for a reason that is not performance: constructing it is
+    // what starts the admin requests, and a tab that never opens this page
+    // should never make one - an ordinary listener's tab is not an
+    // administrator's and would only collect refusals.
+    private SettingsPanel? _serverSettingsPage;
+
+    private void UpdateServerSettingsPage()
+    {
+        if (_viewModel is not { IsShowingServerSettings: true } || _serverSettingsPage != null)
+            return;
+
+        try
+        {
+            // No MainViewModel, and inline chrome, for the same reasons the
+            // device-detail pane's panel has neither: this administers the
+            // server rather than this device, so the Devices tab's own server
+            // picker does not belong in it, and a page has nothing to cancel
+            // back to - only a Save. See UpdateServerSettingsPane.
+            _serverSettingsPage = new SettingsPanel(App.CreateOriginServerSettings());
+            _serverSettingsPage.UseInlineChrome();
+            ServerSettingsPageHost.Content = _serverSettingsPage;
+        }
+        catch (Exception ex)
+        {
+            // Selecting a sidebar row must not take the tab down with it. The
+            // page is then empty, which is worse than a message and better than
+            // a crash; the same failure at startup is only logged too (see
+            // App.OpenServerSettingsFromUrl).
+            AppLogging.CreateTypedLogger<MainView>()
+                .LogWarning(ex, "Could not build the server settings page");
+        }
     }
 
     private void OnServerSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)

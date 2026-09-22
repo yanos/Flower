@@ -5,7 +5,11 @@ using Material.Icons;
 
 namespace Flower.ViewModels;
 
-public enum SidebarItemKind { Header, RecentlyAdded, History, Songs, Albums, Artists, Playlist, Device }
+// ServerSettings is the browser's row and only the browser's: a tab has no app
+// menu and no second Window to put Settings in, so the settings of the server
+// it was served from are a place in the sidebar instead - see
+// MainViewModel.BuildSidebarItems and MainView's ServerSettingsPage.
+public enum SidebarItemKind { Header, RecentlyAdded, History, Songs, Albums, Artists, Playlist, Device, ServerSettings }
 
 public class SidebarItem : ViewModelBase
 {

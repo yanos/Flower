@@ -323,6 +323,29 @@
                                 IsVisible="{Binding IsShowingTrackList}"
                                 SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
 
+        <!-- The browser's Server Settings page: the same SettingsPanel the
+             device-detail pane above hosts, shown here because a tab's sidebar
+             has a row for it (see MainViewModel.IsShowingServerSettings).
+
+             A page in the content area rather than the full-view overlay this
+             replaced, so the top bar stays on screen - what is being
+             administered is the server a track is streaming from, and taking
+             away pause and the seek bar to configure it was the wrong trade.
+             Scrolls, because the panel is taller than a short window and the
+             OK/Cancel row lives at its bottom.
+
+             Filled in from code-behind (UpdateServerSettingsPage) for the same
+             reason ServerSettingsHost is: SettingsPanel takes its ViewModel
+             through a constructor. -->
+        <ScrollViewer Grid.Column="0" Grid.ColumnSpan="2"
+                      IsVisible="{Binding IsShowingServerSettings}"
+                      HorizontalScrollBarVisibility="Disabled">
+          <ContentControl x:Name="ServerSettingsPageHost"
+                          Margin="24"
+                          MaxWidth="620"
+                          HorizontalAlignment="Left"/>
+        </ScrollViewer>
+
         <!-- Device detail: shown instead of the track list when a Devices/Server
              sidebar row is selected. The server itself - who it is, pairing, the
              codes it hands out - and then its own settings, administered in
@@ -477,19 +500,6 @@
       </Border>
     </Grid>
 
-    <!-- Full-page settings, for a single-view host. On desktop Settings is a
-         SettingsWindow; Avalonia.Browser has no second Window to open at all, so
-         the same SettingsPanel is laid over the whole view instead. Opaque, not a
-         scrim - it is a screen, not a dialog. See MainView.axaml.cs's
-         ShowSettingsOverlay, which is also how the server's own settings page is
-         shown when the client's "Server Settings..." button opens this app with
-         page=settings in the URL fragment. -->
-    <Border x:Name="SettingsOverlay"
-            Grid.Row="0" Grid.RowSpan="3"
-            IsVisible="False"
-            Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
-      <ContentControl x:Name="SettingsOverlayHost" MaxWidth="620"/>
-    </Border>
   </Grid>
 
 </UserControl>
