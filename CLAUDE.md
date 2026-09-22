@@ -98,6 +98,24 @@ Decoding comes with the restore too: the FFmpeg façade is the FFAudio.NET
 NuGet, native payload included, so a fresh clone plays music on every head
 with nothing built first.
 
+**Deploying to a physical iPhone is `scripts/deploy-ios-device.sh`, and it takes
+no device id.** Both identifiers a deploy needs belong to one specific phone and
+go stale silently when that phone is replaced, and neither failure names the
+phone: a pinned CoreDevice id resolves to a paired-but-absent device, which
+devicectl reports as a usage-assertion failure (CoreDeviceError 4016), and a
+provisioning profile issued before the phone existed fails install verification
+with 0xe8008012 — after the whole four-minute build has already run. So the
+device is whichever one is plugged in, and `scripts/register-ios-device.sh` runs
+first, as a no-op unless the phone is new. Registration is `xcodebuild
+-allowProvisioningUpdates -allowProvisioningDeviceRegistration` against a
+throwaway Xcode project generated on the spot, for two reasons: the signing
+account is a free Personal Team, so the portal/App Store Connect API route needs
+a paid membership it does not have, and `ProvisioningType=automatic` in
+`Flower.iOS.csproj` is a hint to Rider and Visual Studio rather than something
+MSBuild acts on — the .NET-for-iOS build signs with the best profile already
+installed and will never create one. Xcode's UI is not involved, but its
+Accounts settings are: the account it signs as is the one added there.
+
 The browser UI (`Flower.Web`) has no run configuration of its own — building
 `Flower.Server` publishes it and drops it in beside the binary, so running the
 server is all it takes to have it served. That needs the `wasm-tools` workload;

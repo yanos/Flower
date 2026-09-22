@@ -29,9 +29,13 @@
 # picking up a source change, which is exactly the case the clean above
 # exists for.
 #
-# Usage: deploy.sh [--no-build] [--optimized] [device-id]
+# The connected device is found automatically; the optional device-id is for
+# when more than one is plugged in.
+#
+# Usage: scripts/deploy-ios-device.sh [--no-build] [--optimized] [device-id]
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. scripts/lib/ios-device.sh
 
 BUILD=1
 LLVM=0
@@ -61,8 +65,22 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-DEVICE_ID="${DEVICE_ID:-C015F3A7-5133-5D6B-9DBF-F6E85FC2A230}"
-BUNDLE_ID="com.yanos.flower"
+# No device id pinned here. A CoreDevice identifier belongs to one phone, so a
+# hardcoded default outlives the phone it was written for, and what devicectl
+# says when it resolves to an absent one names neither the phone nor the
+# staleness - see scripts/lib/ios-device.sh, which has both failures and the
+# reasoning. The device is whichever one is plugged in; the argument is only
+# for choosing between several.
+ios_resolve_device "$DEVICE_ID"
+DEVICE_ID="$IOS_DEVICE_ID"
+
+# Before the build, never after. The other thing a new phone needs is to be in
+# the provisioning profile, and it is not: the install fails verification with
+# 0xe8008012, which is the last step of the run rather than the first, so
+# getting a new phone wrong costs the entire build first. This is a no-op when
+# the device is already covered, which is every run but the first for a phone.
+scripts/register-ios-device.sh "$IOS_DEVICE_UDID"
+
 APP_PATH="Flower.iOS/bin/Release/net10.0-ios26.5/ios-arm64/Flower.iOS.app"
 
 if [ "$BUILD" -eq 1 ]; then
@@ -93,6 +111,6 @@ echo "==> Installing to device $DEVICE_ID"
 xcrun devicectl device install app \
   --device "$DEVICE_ID" "$APP_PATH"
 
-echo "==> Launching $BUNDLE_ID"
+echo "==> Launching $FLOWER_BUNDLE_ID"
 xcrun devicectl device process launch \
-  --device "$DEVICE_ID" --console "$BUNDLE_ID"
+  --device "$DEVICE_ID" --console "$FLOWER_BUNDLE_ID"

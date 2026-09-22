@@ -18,7 +18,7 @@ Goal: get `Flower.iOS`/`Flower.Android` from runnable to submitted and approved.
 
 ## Phase 0: Accounts, signing, legal — mostly done
 
-Enroll in Apple Developer Program ($99/yr) + Google Play Console ($25 one-time). iOS: Distribution cert + provisioning profile (project already scaffolds `ProvisioningType=automatic`/`ios-arm64`). Android: let Play App Signing manage the signing key. Write/host a one-page privacy policy (GitHub Pages off this repo works). `LICENSE`/`NOTICE` — done.
+Enroll in Apple Developer Program ($99/yr) + Google Play Console ($25 one-time). iOS: Distribution cert + provisioning profile (project already scaffolds `ProvisioningType=automatic`/`ios-arm64` — though note `ProvisioningType` is read by Rider and Visual Studio, not by MSBuild, which simply signs with the best profile already installed; `scripts/register-ios-device.sh` exists because nothing in the build itself will create one). Android: let Play App Signing manage the signing key. Write/host a one-page privacy policy (GitHub Pages off this repo works). `LICENSE`/`NOTICE` — done.
 
 ## Phase 1: Fix the two build-config blockers — open
 
