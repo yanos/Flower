@@ -344,8 +344,13 @@ public class GaplessCoordinatorTests
 
         Assert.Same(a, endReachedTrack);
         Assert.Same(b, h.Coordinator.CurrentTrack);
-        Assert.Same(h.SharedRing, h.LatestDecoderFor(b).PromotedTo);
         Assert.True(h.LatestDecoderFor(a).RetireCalled);
+
+        // Waited for rather than asserted: PromoteTarget runs on the promotion
+        // drain thread HandleDrainedOrFaulted starts, not on the one that
+        // raised Drained - so it has usually happened by now, and on the iOS
+        // interpreter it had not.
+        WaitUntil(() => h.LatestDecoderFor(b).PromotedTo == h.SharedRing, "B should be promoted into the shared ring");
     }
 
     // A faulted current track advances the pipeline exactly like a drained one
