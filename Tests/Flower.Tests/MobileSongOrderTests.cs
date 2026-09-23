@@ -57,8 +57,9 @@ public class MobileSongOrderTests : PinnedDataDirectory
         var vm = Build();
         vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
         await WaitForRows(vm, 3);
+        await WaitForOrder(vm, Alphabetical);
 
-        Assert.Equal(new[] { "Apple Tree", "Maps", "Zero Hour" }, vm.Main.Rows.Select(r => r.Track.Title));
+        Assert.Equal(Alphabetical, vm.Main.Rows.Select(r => r.Track.Title));
     }
 
     // An album is still its own order - the alphabetical rule is about the
@@ -94,9 +95,20 @@ public class MobileSongOrderTests : PinnedDataDirectory
         await WaitFor(() => !vm.IsShowingAlbumTrackList);
         vm.BackCommand.Execute(null);
         await WaitForRows(vm, 3);
+        await WaitForOrder(vm, Alphabetical);
 
-        Assert.Equal(new[] { "Apple Tree", "Maps", "Zero Hour" }, vm.Main.Rows.Select(r => r.Track.Title));
+        Assert.Equal(Alphabetical, vm.Main.Rows.Select(r => r.Track.Title));
     }
+
+    private static readonly string[] Alphabetical = ["Apple Tree", "Maps", "Zero Hour"];
+
+    // Three rows is not the same as three rows in the new order. The count can
+    // already be right from a build in the previous order - album order, here -
+    // with the re-sort the tab asked for still to land, and a macOS CI runner
+    // asserted in between: "Maps" first. So wait for the order itself; the
+    // assertion after it is what reports a wrong one.
+    private static Task WaitForOrder(MobileMainViewModel vm, string[] titles) =>
+        WaitFor(() => vm.Main.Rows.Select(r => r.Track.Title).SequenceEqual(titles));
 
     private static async Task WaitFor(Func<bool> condition, int timeoutMs = 3000)
     {
