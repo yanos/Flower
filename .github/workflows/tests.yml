@@ -244,13 +244,17 @@ jobs:
       - name: Build Flower.MacOS
         run: dotnet build Flower.MacOS/Flower.MacOS.csproj --configuration Release
 
-      # The decode-checks runner no job runs any more - test (ios-latest) runs the same
-      # checks inside the suite - but it is still the one to put on a physical
-      # phone (no Avalonia, a two-minute build, readable on screen with no
-      # cable), and a project CI never compiles is a project that silently
-      # rots. So it is compiled here, where the workload is already installed.
+      # The decode-checks runner no job runs any more - test (ios-latest) runs
+      # the same checks inside the suite - but it is still the one to put on a
+      # physical phone (no Avalonia, readable on screen with no cable), and a
+      # project CI never compiles is a project that silently rots. So it is
+      # compiled here, where the workload is already installed.
+      #
+      # Debug and interpreted, because all this asks is whether it compiles. A
+      # Release build compiles the whole runner ahead of time, and made this
+      # the slowest job in the workflow at 32 minutes.
       - name: Build Flower.DeviceChecks.iOS
-        run: dotnet build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj --configuration Release -p:ValidateXcodeVersion=false
+        run: dotnet build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj --configuration Debug -p:MtouchInterpreter=all -p:ValidateXcodeVersion=false
 
   build-web:
     runs-on: ubuntu-latest

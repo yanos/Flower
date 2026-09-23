@@ -152,7 +152,14 @@ CI's `test (ios-latest)` leg is that script. `Flower.Tests` stays plain `net10.0
 `Tests/Flower.Tests.iOS` is an app that references it the way `Flower.iOS`
 references `Flower` and runs xunit in-process, so what differs from the desktop
 run is exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
-builds of ffaudio, miniaudio and Skia. About two minutes on an Apple Silicon Mac.
+builds of ffaudio, miniaudio and Skia. About two minutes of tests on an Apple
+Silicon Mac, after a build of about two more.
+
+Most of a CI run of it is that build, not the tests: with nothing linked away,
+the whole BCL, Avalonia and the suite are compiled ahead of time, about
+fourteen minutes on a hosted runner. `MtouchInterpreter=all` cuts that to a
+fraction and was tried; it is left off so the leg runs AOT-compiled code, which
+is what a phone runs.
 
 Three things in that project are load-bearing and none is obvious. xunit's
 `buildTransitive` targets are excluded, because they demand an app host and

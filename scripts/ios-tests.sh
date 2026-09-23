@@ -48,9 +48,9 @@ summarize() {
 export SIMCTL_CHILD_FLOWER_REQUIRE_DECODERS=FFmpeg
 export SIMCTL_CHILD_FLOWER_TEST_ARGS="${FLOWER_TEST_ARGS:-}"
 
-# About two minutes on an Apple Silicon Mac. The ceiling is for a CI runner,
-# which is slower, and is there to turn a hang into a failure rather than to
-# be reached.
+# About two minutes of tests on an Apple Silicon Mac. The ceiling is for a
+# CI runner, which is slower, and is there to turn a hang into a failure rather
+# than to be reached.
 ios_simulator_run \
   Tests/Flower.Tests.iOS/bin/Debug/net10.0-ios26.5/iossimulator-arm64/Flower.Tests.iOS.app \
   com.yanos.flower.tests flower-tests.log 'FLOWER-TESTS ' 1200 summarize
