@@ -193,9 +193,24 @@ namespace Flower.Audio
         // Writes as much of data as currently fits without blocking. Returns
         // the number of bytes actually written (may be less than data.Length,
         // or 0, if the buffer is full).
-        public int TryWrite(ReadOnlySpan<byte> data)
+        public int TryWrite(ReadOnlySpan<byte> data) => TryWrite(data, Volatile.Read(ref _generation));
+
+        // The same, but only into the generation the caller captured: 0, and
+        // nothing written, once Reset() has moved the ring past it.
+        //
+        // For every writer that captures a generation to notice a flush by -
+        // and so for every writer: a check of Generation followed by the
+        // one-argument TryWrite leaves a window between the two in which a
+        // Reset() is adopted by the write, whose bytes then go through into
+        // the room that reset just freed. That is up to a whole chunk of the
+        // track a skip or seek left, in front of the one it started. It
+        // surfaced as RetargetableRingWriterTests' promotion leaving 64 bytes
+        // behind a reset, on an optimized iOS build whose timing hit the window.
+        public int TryWrite(ReadOnlySpan<byte> data, int generation)
         {
-            var generation = Volatile.Read(ref _generation);
+            if (Volatile.Read(ref _generation) != generation)
+                return 0;
+
             if (generation != _writerGeneration)
             {
                 // Index before generation - see Read().
@@ -241,7 +256,7 @@ namespace Flower.Audio
 
             while (remaining.Length > 0)
             {
-                var written = TryWrite(remaining);
+                var written = TryWrite(remaining, generation);
                 if (written > 0)
                 {
                     remaining = remaining[written..];

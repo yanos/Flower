@@ -99,6 +99,24 @@ public class GaplessRingBufferTests
         Assert.Equal(new byte[] { 9, 9 }, dest);
     }
 
+    // A writer checks the generation, then writes - and a Reset() landing
+    // between the two used to be adopted by the write, which then went through
+    // into the room the reset had just freed. That is the old track's audio in
+    // front of whatever a skip or seek started, up to a whole chunk of it. A
+    // write for the generation the caller captured refuses instead.
+    [Fact]
+    public void A_write_for_a_generation_that_has_since_been_reset_writes_nothing()
+    {
+        var ring = new GaplessRingBuffer(16);
+        var generation = ring.Generation;
+
+        ring.Reset();
+
+        Assert.Equal(0, ring.TryWrite([1, 2, 3, 4], generation));
+        Assert.Equal(0, ring.AvailableBytes);
+        Assert.Equal(4, ring.TryWrite([1, 2, 3, 4], ring.Generation));
+    }
+
     [Fact]
     public async Task Write_blocks_until_space_frees_up_then_completes()
     {

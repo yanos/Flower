@@ -71,7 +71,7 @@ namespace Flower.Audio
                     if (isAbandoned?.Invoke() == true)
                         return;
 
-                    var written = target.TryWrite(remaining);
+                    var written = target.TryWrite(remaining, generation);
                     if (written > 0)
                     {
                         remaining = remaining[written..];
@@ -131,6 +131,7 @@ namespace Flower.Audio
             {
                 var startedAt = Stopwatch.GetTimestamp();
                 var stagedBytes = _target.AvailableBytes;
+                var generation = newTarget.Generation;
 
                 long movedBytes = 0;
                 var millisecondsToFirstByte = -1.0;
@@ -147,7 +148,7 @@ namespace Flower.Audio
                     if (read <= 0)
                         break;
 
-                    var written = newTarget.TryWrite(chunk[..read]);
+                    var written = newTarget.TryWrite(chunk[..read], generation);
                     movedBytes += written;
 
                     if (movedBytes > 0 && millisecondsToFirstByte < 0)
@@ -157,7 +158,10 @@ namespace Flower.Audio
                     }
 
                     // Short only if a Reset() raced us, in which case those
-                    // bytes belong to a stream nobody wants anymore.
+                    // bytes belong to a stream nobody wants anymore - and
+                    // short it is, because the write is for the generation
+                    // captured above. Without it a reset would free the room
+                    // for this chunk rather than refuse it.
                     if (written < read)
                         break;
                 }
@@ -217,7 +221,10 @@ namespace Flower.Audio
                             break;
                         }
 
-                        var written = newTarget.TryWrite(remaining);
+                        // For the generation captured above, not whichever one
+                        // is current - a reset between the check just made
+                        // and this write would otherwise be adopted by it.
+                        var written = newTarget.TryWrite(remaining, generation);
                         if (written == 0)
                         {
                             Thread.Sleep(GaplessRingBuffer.WriterPollMs);
