@@ -143,8 +143,28 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         }
 
         // Waits out ScreenStackPanel's 280ms commit easing plus its final
-        // navigation callback.
-        public void LetEasingFinish() => Pump(600);
+        // navigation callback - until it has finished, not for a fixed time.
+        // This used to pump 600ms, which is twice the easing on a desktop and
+        // was not enough on a CI iOS simulator running under the interpreter:
+        // An_abandoned_right_swipe_cancels_and_springs_back caught the spring
+        // back mid-flight, 20.6px out. The easing unsubscribes from the clock
+        // in the same tick that runs the callback, so an idle clock is the
+        // finish line; the ceiling is only there to turn a stuck easing into a
+        // failure.
+        public void LetEasingFinish()
+        {
+            var deadline = Environment.TickCount64 + 10_000;
+            do
+            {
+                Pump(20);
+            }
+            while (AnimationClock.Current.SubscriberCount > 0 && Environment.TickCount64 < deadline);
+
+            Assert.Equal(0, AnimationClock.Current.SubscriberCount);
+
+            // Whatever that final callback posted.
+            Pump();
+        }
 
         // The track list actually hosted by the topmost (current) slot, or
         // null if that slot is hosting nothing - which is what an emptied

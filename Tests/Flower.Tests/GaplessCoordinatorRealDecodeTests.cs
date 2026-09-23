@@ -392,6 +392,14 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         var captured = sink.Captured;
 
+        // Before the assertions, not after. With the shared ring smaller than a
+        // track, B's decoder is still mid-file here, parked on a full ring the
+        // paused sink will never drain - and Windows will not delete a file
+        // something has open, so an undisposed coordinator fails this test in
+        // the class's Dispose instead, 5s later and naming ramp-b.wav.
+        coordinator.Dispose();
+        sink.Dispose();
+
         // Every frame of a ramp fixture is exactly one more than the frame
         // before it, per channel - in Int16 arithmetic, so the ramp crossing
         // 32767 into -32768 is still a step of +1 and not a discontinuity.
