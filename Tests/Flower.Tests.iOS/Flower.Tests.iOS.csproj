@@ -43,8 +43,15 @@
          reference one. Only its assembly is wanted, never its app host. -->
     <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
 
-    <!-- xunit finds tests by reflection, which the linker cannot see. -->
-    <MtouchLink>None</MtouchLink>
+    <!-- The framework trimmed, everything else kept whole. xunit finds tests
+         by reflection the linker cannot see, and SdkOnly never touches
+         Flower.Tests, xunit, Flower or Avalonia - only the BCL and the iOS
+         bindings, trimmed to what those reference. It is the difference
+         between an optimized build that takes six minutes and one that takes
+         half an hour on an Apple Silicon Mac and over two hours on a CI
+         runner: with nothing linked away, LLVM compiled the whole BCL. The
+         suite passes either way; the app ships trimmed too. -->
+    <MtouchLink>SdkOnly</MtouchLink>
   </PropertyGroup>
 
   <ItemGroup>

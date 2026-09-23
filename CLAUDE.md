@@ -153,14 +153,16 @@ CI's `build and test Flower.Tests (ios-26)` leg is that script, held to an iOS
 `Tests/Flower.Tests.iOS` is an app that references it the way `Flower.iOS`
 references `Flower` and runs xunit in-process, so what differs from the desktop
 run is exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
-builds of ffaudio, miniaudio and Skia. About two minutes of tests on an Apple
-Silicon Mac, after a build of about two more.
+builds of ffaudio, miniaudio and Skia. It is a Release build, optimized and
+compiled ahead of time with LLVM, because that is what a release runs: about six
+minutes to build on an Apple Silicon Mac and under two to run.
 
-Most of a CI run of it is that build, not the tests: with nothing linked away,
-the whole BCL, Avalonia and the suite are compiled ahead of time, about
-fourteen minutes on a hosted runner. `MtouchInterpreter=all` cuts that to a
-fraction and was tried; it is left off so the leg runs AOT-compiled code, which
-is what a phone runs.
+Most of that is the build, and the linker is what keeps it there. With
+`MtouchLink=None` LLVM compiled the whole BCL too - 28 minutes locally, 2h07m on
+a CI runner, for three minutes of tests. `SdkOnly` trims only the framework and
+leaves the suite, xunit, Flower and Avalonia whole, so reflection still finds
+every test. Interpreting everything (`MtouchInterpreter=all`) is faster still
+and was tried; it is off so the leg runs the code a phone runs.
 
 Three things in that project are load-bearing and none is obvious. xunit's
 `buildTransitive` targets are excluded, because they demand an app host and
