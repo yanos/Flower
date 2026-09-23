@@ -1,5 +1,6 @@
 # Flower.Server, the way it is meant to run on a Linux box.
 #
+#   cd docker
 #   echo "FLOWER_MUSIC=/srv/music" > .env     # wherever your library actually is
 #   docker compose up -d
 #
@@ -30,6 +31,14 @@
 # a key they already hold. The caddy override is for the case where one of the
 # listeners is a browser, which cannot pin and so needs a real certificate.
 
+# Pinned rather than taken from the directory, which is what compose does
+# otherwise. The project name prefixes the data volume's name, so a server
+# started from a directory called anything else would come up on a new, empty
+# volume - and every paired device would be unpaired. This is also the name
+# these files ran under when they sat at the root of a checkout called Flower,
+# so moving them into docker/ kept the volume.
+name: flower
+
 services:
   flower:
     # Published on every release tag, for linux/amd64 and linux/arm64.
@@ -41,9 +50,12 @@ services:
     # written down, and to have an exact tag to roll back to.
     image: ghcr.io/yanos/flower-server:latest
     # To build it yourself instead, comment the line above and uncomment this
-    # one; update with `docker compose up -d --build`. See SELF-HOSTING.md,
+    # one; update with `docker compose up -d --build`. The context is the
+    # repository root, because the build needs the source. See SELF-HOSTING.md,
     # "Building the image", for what the build does with git tags.
-    # build: .
+    # build:
+    #   context: ..
+    #   dockerfile: docker/Dockerfile
     container_name: flower
     restart: unless-stopped
 

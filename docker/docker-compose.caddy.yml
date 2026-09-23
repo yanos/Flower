@@ -58,7 +58,7 @@ services:
     depends_on:
       - flower
     volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Certificates and ACME account keys. Lose this and Caddy re-issues on
       # every restart, which Let's Encrypt rate-limits after a handful of tries.
       - ./caddy-data:/data

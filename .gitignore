@@ -492,24 +492,26 @@ Flower.Server/[Dd]ata/logs/
 FFAudioPackage.local.props
 
 ##
-## What `docker compose up` writes beside the compose files. The server's own
-## state is on a named volume and so never lands here, but /[Dd]ata/ stays: the
-## compose file carries a commented-out bind mount for anyone who wants the
-## files in the tree, and a database that only becomes ignorable after someone
-## edits .gitignore is a database that gets committed once. The caddy override
-## does bind ./caddy-data and ./caddy-config, for its certificates and ACME
-## account keys. All of it is a running deployment's state, not the
-## repository's: these are anchored with a leading slash so they match only the
-## repo root, and spelled [Dd] for the same reason the Flower.Server rule above
-## is - a case-insensitive filesystem would otherwise let a future source folder
-## named Data/ disappear the same way.
+## What `docker compose up` writes beside the compose files in docker/. The
+## server's own state is on a named volume and so never lands here, but
+## [Dd]ata/ stays: a bind mount is one edit away for anyone who wants the files
+## in the tree, and a database that only becomes ignorable after someone edits
+## .gitignore is a database that gets committed once. The caddy override does
+## bind ./caddy-data and ./caddy-config, for its certificates and ACME account
+## keys. All of it is a running deployment's state, not the repository's: these
+## are anchored so they match only that directory, and spelled [Dd] for the same
+## reason the Flower.Server rule above is - a case-insensitive filesystem would
+## otherwise let a future source folder named Data/ disappear the same way.
 ##
+/docker/[Dd]ata/
+## ...and the server's own ./data, when run from the repo root rather than the
+## project directory - which `dotnet run --project Flower.Server` does.
 /[Dd]ata/
-/caddy-data/
-/caddy-config/
+/docker/caddy-data/
+/docker/caddy-config/
 
 ## The compose files read FLOWER_MUSIC from here, and the cloudflared override
 ## reads TUNNEL_TOKEN - which is a credential for someone's Cloudflare account.
 ## Anchored, so a future .env fixture inside a test project is unaffected.
-/.env
-/.env.*
+/docker/.env
+/docker/.env.*

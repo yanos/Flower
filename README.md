@@ -13,13 +13,15 @@ short version.
 ## The server, in Docker
 
 ```bash
+cd docker
 echo "FLOWER_MUSIC=/srv/music" > .env    # where your music is
 docker compose up -d
 docker compose logs flower               # prints the pairing code
 ```
 
 That is the whole install — no directories to create, no ownership to fix, no
-`sudo`.
+`sudo`. Every `docker compose` command runs from `docker/`, where the compose
+files and that `.env` live.
 
 **On macOS or Windows, add the bridge override.** Containers there run in a
 Linux VM, so host networking binds to the VM and nothing reaches you:
@@ -95,7 +97,7 @@ remember only the first:
 } }
 ```
 
-In Docker, `AdvertisedHost` is `FLOWER_ADVERTISED_HOST` in `.env`.
+In Docker, `AdvertisedHost` is `FLOWER_ADVERTISED_HOST` in `docker/.env`.
 
 Both are required, and they fail differently:
 

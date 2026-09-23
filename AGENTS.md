@@ -10,7 +10,7 @@ Flower is a .NET 10, C# cross-platform music player and self-hosted music server
 - `dotnet test Tests/Flower.Tests/Flower.Tests.csproj` runs client and shared-library xUnit tests.
 - `dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj` runs in-process server/API tests.
 - `dotnet run --project Flower.Server` starts the server and hosts its browser UI. Use a scratch data directory for experiments: `--Flower:DataDirectory=/tmp/flower-server`.
-- `docker compose up -d` starts the containerized server from the published image; it needs `FLOWER_MUSIC` set (a `.env` beside the compose file is enough). To exercise a local build instead, swap `image:` for `build: .` in `docker-compose.yml` and use `docker compose up -d --build`.
+- `docker compose up -d`, run from `docker/`, starts the containerized server from the published image; it needs `FLOWER_MUSIC` set (a `.env` beside the compose file is enough). To exercise a local build instead, swap `image:` for the commented-out `build:` block in `docker/docker-compose.yml` and use `docker compose up -d --build`.
 
 Stop locally started servers when finished: they advertise over mDNS and can interfere with other Flower clients.
 

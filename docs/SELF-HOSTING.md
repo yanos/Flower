@@ -171,16 +171,17 @@ still win over both.
 
 ## Running it in Docker
 
-The repository ships a `Dockerfile` and a `docker-compose.yml`, plus three
-override files: two for the remote-access paths that need an extra container,
-and one for bridge networking (required on macOS and Windows). Nothing has to be
-installed on the host first — no .NET runtime, no SQLite, no ffmpeg. The
-server does not decode audio either (that is the client's job), so no decoder is
-involved on this side at all.
+The repository's `docker/` directory holds a `Dockerfile` and a
+`docker-compose.yml`, plus three override files: two for the remote-access
+paths that need an extra container, and one for bridge networking (required on
+macOS and Windows). Nothing has to be installed on the host first — no .NET
+runtime, no SQLite, no ffmpeg. The server does not decode audio either (that is
+the client's job), so no decoder is involved on this side at all.
 
 Tell it where your music is, and start it:
 
 ```bash
+cd docker
 echo "FLOWER_MUSIC=/srv/music" > .env
 docker compose up -d
 docker compose logs flower
@@ -192,6 +193,10 @@ in a named volume, which Docker creates with the right owner on its own.
 
 The log carries the first pairing code, exactly as it does when the server is
 run directly. Spend it as described above.
+
+Every `docker compose` command in this document runs from that `docker/`
+directory, the same as these three. That is where compose looks for the
+`.env`, and what the relative paths in the override files are relative to.
 
 If you would rather edit the file than keep a `.env`, replace the left-hand side
 of the `/music` line in `docker-compose.yml` with your path. What you cannot do
@@ -364,6 +369,7 @@ ports are forwarded out of the VM to your `localhost`, so the browser UI and
 pairing both work:
 
 ```bash
+cd docker
 echo "FLOWER_MUSIC=$HOME/Music" > .env
 docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
 docker compose logs flower
@@ -393,7 +399,8 @@ Settings that are yours rather than the deployment's are better left in
 compose file's `environment:` block still wins over it.
 
 Updating is `docker compose pull && docker compose up -d`, or
-`docker compose up -d --build` if you switched the compose file to `build: .`.
+`docker compose up -d --build` if you switched the compose file to its `build:`
+block.
 The data volume is untouched either way, so the server comes back with the same
 identity and the same paired devices.
 
@@ -469,10 +476,10 @@ export TUNNEL_TOKEN=…                      # cloudflared only
 ```
 
 The Caddy override binds two more directories beside the server's volume —
-`./caddy-data` and `./caddy-config`, for its certificates and ACME account keys.
-Caddy runs as root, so those are ordinary bind mounts that Docker creates and
-Caddy can write — the uid problem that decided the server's own volume does not
-arise. Keeping them matters: lose `caddy-data` and Caddy re-issues on every
+`docker/caddy-data` and `docker/caddy-config`, for its certificates and ACME
+account keys. Caddy runs as root, so those are ordinary bind mounts that Docker
+creates and Caddy can write — the uid problem that decided the server's own
+volume does not arise. Keeping them matters: lose `caddy-data` and Caddy re-issues on every
 restart, which Let's Encrypt rate-limits after a handful of attempts. Both are
 gitignored, as is the `.env` these variables belong in, being a running
 deployment's state rather than the repository's.
@@ -510,7 +517,21 @@ intentional.
 
 ### Building the image
 
-`docker build .` is enough. Two things it does are worth knowing:
+`docker build -f docker/Dockerfile .`, from the repository root, is enough —
+the context is the root because the build needs the source — provided `docker
+build` is BuildKit. Wherever the buildx plugin is missing it is still the
+legacy builder, which fails on the Dockerfile's first line with `failed to parse
+platform : "" is an invalid OS component`: the legacy builder does not define
+`$BUILDPLATFORM`. Docker Desktop ships buildx; a CLI assembled from packages may
+not (on MacPorts it is `sudo port install docker-buildx-plugin`). Building
+through compose works either way, since compose carries its own BuildKit
+client.
+
+That `$BUILDPLATFORM` is not given a default to make the legacy builder happy,
+because a default wins over the value BuildKit supplies — every build would then
+run the SDK stage as amd64, under emulation on an arm64 host.
+
+Two things the build does are worth knowing:
 
 - **The version comes from the git tags.** `.git` is deliberately left in the
   build context so MinVer can read it; without it every image would claim
@@ -527,7 +548,7 @@ architecture-neutral and only the runtime base image differs — the SDK stage
 runs natively even when the target is arm64, rather than under emulation:
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t flower-server .
+docker buildx build --platform linux/amd64,linux/arm64 -t flower-server -f docker/Dockerfile .
 ```
 
 ---

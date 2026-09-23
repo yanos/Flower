@@ -21,11 +21,12 @@ ARG INCLUDE_WEB_UI=true
 
 # Normally empty. .git is deliberately *not* excluded by .dockerignore (it is
 # ~40 MB), so MinVer computes the version from the tags here exactly as it does
-# on a local build and a bare `docker build .` produces a correctly stamped
-# image with no flags at all. Set this when building from a shallow clone or an
-# exported tarball, where MinVer would otherwise fall back to 0.1.0-alpha.0
-# without saying so. It maps to MinVerVersionOverride rather than Version
-# because MinVer's own target assigns Version and would overwrite a -p:Version.
+# on a local build, and a bare `docker build -f docker/Dockerfile .` produces a
+# correctly stamped image with no other flags. Set this when building from a
+# shallow clone or an exported tarball, where MinVer would otherwise fall back
+# to 0.1.0-alpha.0 without saying so. It maps to MinVerVersionOverride rather
+# than Version because MinVer's own target assigns Version and would overwrite
+# a -p:Version.
 ARG VERSION=
 
 WORKDIR /src

@@ -1,3 +1,10 @@
+# The one Docker file not in docker/, and it cannot be. The build context is the
+# repository root, because the build needs the source, and the root of the
+# context is the only place every builder looks. BuildKit would also take
+# docker/Dockerfile.dockerignore, but the legacy builder - what `docker build`
+# still is wherever the buildx plugin is not installed - reads nothing else, and
+# would then ship the whole tree, docker/.env and its TUNNEL_TOKEN included.
+
 # Build output, everywhere. Without this the context is ~8 GB instead of ~200 MB.
 **/bin/
 **/obj/
@@ -5,7 +12,8 @@
 # Note what is NOT here: .git. MinVer derives the version from the tags during
 # `dotnet publish`, so excluding the history would make every image claim
 # 0.1.0-alpha.0 - and do it silently. At ~40 MB it is the cheapest way to have
-# `docker build .` produce a correctly versioned image with no extra flags.
+# `docker build -f docker/Dockerfile .` produce a correctly versioned image with
+# no other flags.
 # The Dockerfile's VERSION arg covers the shallow-clone case where it can't.
 
 # Heads the server image has no use for. The publish only ever walks
@@ -27,17 +35,14 @@ docs/
 .claude/
 *.DotSettings.user
 .DS_Store
-Dockerfile
-.dockerignore
-docker-compose*.yml
-# The sidecar configuration the override files mount. Read by Caddy at run time,
-# never by the build.
+
+# This directory: the Dockerfile, the compose files, the Caddyfile they mount -
+# and, when the compose files are run from here, a running deployment's state:
+# the .env holding TUNNEL_TOKEN, and caddy-data with Caddy's certificates and
+# ACME account keys. Nothing the build reads, and the last thing that should be
+# shipped into a build context.
 docker/
 
-# A running deployment's state, if the compose files were used from this
-# checkout: ./data is the server's DataDirectory and holds the device key, and
-# the caddy-* pair holds Caddy's certificates. Nothing the build reads, and the
-# last thing that should be shipped into a build context.
+# The server's DataDirectory, if it was run straight from a checkout - it holds
+# the device key.
 data/
-caddy-data/
-caddy-config/
