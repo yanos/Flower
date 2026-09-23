@@ -55,11 +55,18 @@ public class AppDelegate : UIApplicationDelegate
         RunnerTranscript.WriteLine($"{TallyPrefix}exit {exit}");
     }
 
-    // xunit command-line arguments: the fixed exclusions below, then whatever
-    // FLOWER_TEST_ARGS adds (a -class, a -method, -verbose to name every test as
-    // it runs - which is how a hang gets found).
+    // xunit command-line arguments: the fixed ones below, then whatever
+    // FLOWER_TEST_ARGS adds (a -class, a -method).
     private static string[] Arguments()
     {
+        // Every test's start and finish, always, so the transcript of a run that
+        // hangs names the test that never came back. A quiet reporter prints
+        // nothing until the end, and a run that stopped reporting is then all
+        // there is: this has hung once, and that transcript was three lines.
+        // scripts/ios-tests.sh prints the failures and the summary of a
+        // finished run, and the unfinished tests of a stuck one.
+        string[] verbose = ["-verbose"];
+
         // MusicListViewGestureTests drive a real headless Avalonia window through
         // full layout and Skia render per gesture, and under the simulator's
         // interpreter that took 1116s of a 1312s run - one to three minutes a
@@ -69,8 +76,8 @@ public class AppDelegate : UIApplicationDelegate
 
         var extra = Environment.GetEnvironmentVariable("FLOWER_TEST_ARGS");
         return string.IsNullOrWhiteSpace(extra)
-            ? excluded
-            : [.. excluded, .. extra.Split(' ', StringSplitOptions.RemoveEmptyEntries)];
+            ? [.. verbose, .. excluded]
+            : [.. verbose, .. excluded, .. extra.Split(' ', StringSplitOptions.RemoveEmptyEntries)];
     }
 
     // ConsoleRunner.EntryPoint - what xunit's generated Main calls - minus the

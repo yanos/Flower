@@ -4,22 +4,34 @@ on:
   push:
 
 jobs:
-  # Build, test and decode-check, once per desktop platform - and test the
-  # server there too, since it runs on all three.
+  # One leg per platform the app runs on. `os` is the platform, which is what
+  # the job is named for; `runner` is the machine it runs on, which for the two
+  # phones is not the same thing - iOS runs on a Mac's simulator, and Android
+  # is built on Linux.
   #
-  # The decode checks used to be a second job with the same three-OS matrix,
-  # duplicating this one's checkout and restore, because they needed a VLC
-  # install that a package mirror could fail on its own. With LibVLC gone they
-  # are simply another filter of an assembly this job has already built, so
-  # the duplicate runner has no reason to exist. They get a step of their own
-  # anyway, so a run shows them per platform rather than folded invisibly into
-  # the suite.
+  # The desktops build, test and decode-check, and test the server, which runs
+  # on all three. The decode checks used to be a second job with the same
+  # three-OS matrix, duplicating this one's checkout and restore, because they
+  # needed a VLC install that a package mirror could fail on its own. With
+  # LibVLC gone they are simply another filter of an assembly this job has
+  # already built, so the duplicate runner has no reason to exist. They get a
+  # step of their own anyway, so a run shows them per platform rather than
+  # folded invisibly into the suite.
+  #
+  # iOS runs the same suite on the iOS runtime, and Android is build-only - its
+  # decode checks are local-only for now, see CLAUDE.md, "Device Checks".
   test:
+    name: ${{ matrix.job }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - { job: test,  os: ubuntu-latest,  runner: ubuntu-latest,  desktop: true }
+          - { job: test,  os: windows-latest, runner: windows-latest, desktop: true }
+          - { job: test,  os: macos-latest,   runner: macos-latest,   desktop: true }
+          - { job: test,  os: ios-latest,     runner: macos-latest,   desktop: false }
+          - { job: build, os: android-latest, runner: ubuntu-latest,  desktop: false }
+    runs-on: ${{ matrix.runner }}
 
     steps:
       # Full history, so MinVer sees the tags and commit height it versions
@@ -42,6 +54,8 @@ jobs:
             Tests/Flower.Tests/Flower.Tests.csproj
             Flower.Server/Flower.Server.csproj
             Tests/Flower.Server.Tests/Flower.Server.Tests.csproj
+            Tests/Flower.Tests.iOS/Flower.Tests.iOS.csproj
+            Flower.Android/Flower.Android.csproj
 
       # The whole suite, RequiresFfmpeg included - the only filter is the decode
       # checks, split into the next step. This used to exclude the
@@ -56,12 +70,14 @@ jobs:
       # report an empty decoder list and every check quietly not happen - which
       # is the exact failure this whole area keeps hitting.
       - name: Run tests
+        if: matrix.desktop
         env:
           FLOWER_REQUIRE_DECODERS: FFmpeg
         run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --filter 'FullyQualifiedName!~DeviceChecksTests'
 
       # The same assembly, already built by the step above.
       - name: Run decode checks
+        if: matrix.desktop
         env:
           FLOWER_REQUIRE_DECODERS: FFmpeg
         run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --no-build --filter 'FullyQualifiedName~DeviceChecksTests'
@@ -78,6 +94,7 @@ jobs:
       # created it was a case-insensitive filesystem - which is macOS and
       # Windows, the two platforms that job never ran on.
       - name: Run server tests
+        if: matrix.desktop
         run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
 
       # Flower.Desktop is the one project no test job reaches - the test jobs
@@ -95,8 +112,54 @@ jobs:
       # After the tests rather than before, so a compile break in the head
       # never delays the answer to the question this job is mostly asked.
       - name: Build Flower.Desktop
-        if: runner.os == 'Linux'
+        if: matrix.os == 'ubuntu-latest'
         run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
+
+      # The test suite, on an actual iOS runtime.
+      #
+      # This asks "does this work" of the one platform where the answer has
+      # twice been no while every desktop said yes: VLC's mp4 demuxer refusing
+      # an unseekable stream, then .NET's mobile HttpClientHandler having no
+      # synchronous path at all. Both were invisible to a green desktop suite
+      # and both were found by a person listening to a phone.
+      #
+      # Flower.Tests, unchanged: Flower.Tests.iOS is an app that references it
+      # and runs xunit in-process, so what differs from the desktop legs is
+      # exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
+      # builds of ffaudio, miniaudio and Skia. The decode checks are part of the
+      # suite (DeviceChecksTests), so this replaced the job that ran only those.
+      #
+      # The app writes a transcript into its own Documents container, and
+      # scripts/ios-tests.sh boots a simulator, installs it, waits for the tally
+      # and turns it into an exit code. MusicListViewGestureTests are left out
+      # because they alone took seventeen minutes - see
+      # Flower.Tests.iOS/AppDelegate.cs.
+      - name: Install iOS workload
+        if: matrix.os == 'ios-latest'
+        run: dotnet workload install ios
+
+      # Flower.Tests.iOS targets net10.0-ios26.5, same as Flower.iOS, so it
+      # hits the same _ValidateXcodeVersion equality check that build-apple
+      # disables - see the long note there. The script takes no build
+      # arguments, but MSBuild reads environment variables as properties, so
+      # this reaches its `dotnet build` unchanged.
+      #
+      # The script's `rm -rf obj bin` costs nothing on a fresh runner; it is
+      # there for a developer's incremental build, which reliably launches
+      # into a Mono AOT crash that reads exactly like a failing test.
+      - name: Run tests on a simulator
+        if: matrix.os == 'ios-latest'
+        env:
+          ValidateXcodeVersion: 'false'
+        run: scripts/ios-tests.sh
+
+      - name: Install Android workload
+        if: matrix.os == 'android-latest'
+        run: dotnet workload install android
+
+      - name: Build for Android
+        if: matrix.os == 'android-latest'
+        run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
 
   # Both Apple heads in one job. They share a runner because the macOS
   # runners are the scarce and expensive ones, and the second head is a few
@@ -126,7 +189,7 @@ jobs:
         run: dotnet workload install ios macos
 
       # Build-only: this catches the app head's compile breaks. What runs on
-      # the iOS runtime is ios-test, which runs the whole suite there.
+      # the iOS runtime is test (ios-latest), which runs the whole suite there.
       #
       # ValidateXcodeVersion=false is what keeps this job at a couple of
       # minutes instead of fifteen, and the chain behind it is worth writing
@@ -181,99 +244,13 @@ jobs:
       - name: Build Flower.MacOS
         run: dotnet build Flower.MacOS/Flower.MacOS.csproj --configuration Release
 
-      # The decode-checks runner no job runs any more - ios-test runs the same
+      # The decode-checks runner no job runs any more - test (ios-latest) runs the same
       # checks inside the suite - but it is still the one to put on a physical
       # phone (no Avalonia, a two-minute build, readable on screen with no
       # cable), and a project CI never compiles is a project that silently
       # rots. So it is compiled here, where the workload is already installed.
       - name: Build Flower.DeviceChecks.iOS
         run: dotnet build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj --configuration Release -p:ValidateXcodeVersion=false
-
-  # The test suite, on an actual iOS runtime.
-  #
-  # The test job answers "does this work" for the three desktops. This asks it
-  # of the one platform where the answer has twice been no while every desktop
-  # said yes: VLC's mp4 demuxer refusing an unseekable stream, then .NET's
-  # mobile HttpClientHandler having no synchronous path at all. Both were
-  # invisible to a green desktop suite and both were found by a person
-  # listening to a phone.
-  #
-  # Flower.Tests, unchanged: Flower.Tests.iOS is an app that references it and
-  # runs xunit in-process, so what differs from the desktop run is exactly the
-  # platform - Mono with no JIT, a sandboxed filesystem, the iOS builds of
-  # ffaudio, miniaudio and Skia. The decode checks are part of the suite
-  # (DeviceChecksTests), so this replaced the job that ran only those, and
-  # covers the other two thousand tests besides.
-  #
-  # The app writes a transcript into its own Documents container, and
-  # scripts/ios-tests.sh boots a simulator, installs it, waits for the tally
-  # and turns it into an exit code. About two minutes of tests on an Apple
-  # Silicon Mac; MusicListViewGestureTests are left out because they alone
-  # took seventeen - see Flower.Tests.iOS/AppDelegate.cs.
-  #
-  # It runs on every push rather than on master or a schedule. Work in this
-  # repo happens on master directly, so a branch gate would save nothing, and
-  # a suite that only runs nightly finds a phone bug the morning after the
-  # commit that caused it has been built on top of.
-  ios-test:
-    name: Test (iOS Simulator)
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: |
-            Flower/Flower.csproj
-            Tests/Flower.Tests/Flower.Tests.csproj
-            Tests/Flower.Tests.iOS/Flower.Tests.iOS.csproj
-
-      - name: Install iOS workload
-        run: dotnet workload install ios
-
-      # Flower.Tests.iOS targets net10.0-ios26.5, same as Flower.iOS, so it
-      # hits the same _ValidateXcodeVersion equality check that build-apple
-      # disables - see the long note there. The script takes no build
-      # arguments, but MSBuild reads environment variables as properties, so
-      # this reaches its `dotnet build` unchanged.
-      #
-      # The script's `rm -rf obj bin` costs nothing on a fresh runner; it is
-      # there for a developer's incremental build, which reliably launches
-      # into a Mono AOT crash that reads exactly like a failing test.
-      - name: Run the tests on a simulator
-        env:
-          ValidateXcodeVersion: 'false'
-        run: scripts/ios-tests.sh
-
-  build-android:
-    runs-on: ubuntu-latest
-
-    steps:
-      # Full history, so MinVer sees the tags and commit height it versions
-      # these binaries from. actions/checkout defaults to depth 1, which
-      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: |
-            Flower/Flower.csproj
-            Flower.Android/Flower.Android.csproj
-
-      - name: Install Android workload
-        run: dotnet workload install android
-
-      - name: Build for Android
-        run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
 
   build-web:
     runs-on: ubuntu-latest
@@ -304,69 +281,8 @@ jobs:
       - name: Build for browser-wasm
         run: dotnet build Flower.Web/Flower.Web.csproj --configuration Release
 
-  # The server image, built but not published.
-  #
-  # The publish below runs on `v*` tags alone - so a change that breaks the
-  # image (a moved csproj in the restore layer, a base image that stops
-  # carrying something, a workload that stops installing) surfaced as "the
-  # release produced no image", at the worst possible moment. This job asks the
-  # same question on every push, for about the price of the publish minus the
-  # push.
-  #
-  # linux/amd64 only, and that is not a gap: this is a framework-dependent
-  # publish whose payload is architecture-neutral IL plus SQLitePCLRaw's
-  # runtimes/ folder, so the arm64 image differs from this one only in its
-  # runtime base layer. Building both here would mean QEMU and most of an hour
-  # for no new signal; the tag build proves the pair.
-  build-image:
-    name: Build Docker image
-    runs-on: ubuntu-latest
-
-    steps:
-      # Full history, for the same reason as every other job here: the
-      # Dockerfile deliberately keeps .git in the build context so MinVer stamps
-      # the image from the tags, and a depth-1 checkout would have it silently
-      # fall back to 0.1.0-alpha.0. That path is exercised here rather than
-      # patched over with the VERSION build-arg the publish workflow needs
-      # (which does check out shallow) - between them both halves are covered.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: docker/setup-buildx-action@v3
-
-      # Loaded into the daemon rather than discarded, so the step below can look
-      # inside it. No QEMU and no registry login: nothing here leaves the runner.
-      - name: Build the image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile
-          platforms: linux/amd64
-          push: false
-          load: true
-          tags: flower-server:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # The browser UI is built into the image by Flower.Server's own targets,
-      # which copy the bundle *if* the Emscripten toolchain is present and say
-      # nothing at all when it is not (see "The browser UI" in
-      # Flower.Server.csproj, and _BuildFlowerWebUi's condition on
-      # @(_EmscriptenPack)). So an image whose `dotnet workload install
-      # wasm-tools` quietly stopped working still builds, still runs, still
-      # serves the API, and serves WebUiHosting's "not deployed" placeholder to
-      # anyone opening the settings page - with nothing anywhere reporting a
-      # failure. A green build is therefore not enough on its own; this asserts
-      # the bundle actually landed where WebUiHosting looks for it.
-      - name: Check the browser UI is in the image
-        run: |
-          docker run --rm --entrypoint sh flower-server:ci \
-            -c 'test -s /app/wwwroot/index.html' \
-            || { echo "::error::/app/wwwroot/index.html is missing - the wasm-tools build was skipped, so this image would serve the 'not deployed' placeholder"; exit 1; }
-
-  # The same image, pushed to GHCR - on a `v*` tag, and only once everything
-  # above it is green.
+  # The server image, built and pushed to GHCR - on a `v*` tag only, and only
+  # once everything above it is green.
   #
   # It lives in this workflow rather than one of its own because that is the
   # only way it can wait. Tag pushes fire every `on: push` workflow at once, so
@@ -379,17 +295,19 @@ jobs:
   #
   # Every job is listed, deliberately, including the ones a server image does
   # not contain. A tag is a claim about the whole commit - if the phone heads
-  # do not build or a decode check fails on a simulator, that is not a commit
-  # anyone should be able to `docker pull`.
-  publish-image:
-    name: Publish Docker image to GHCR
+  # do not build or a test fails on a simulator, that is not a commit anyone
+  # should be able to `docker pull`.
+  #
+  # The image used to be built on every push as well, by a job of its own, so
+  # that a change breaking the Dockerfile surfaced then rather than as "the
+  # release produced no image". That was dropped as not worth a job on every
+  # push: a broken image now shows up here, at the tag.
+  image:
+    name: Build and publish Docker image
     needs:
       - test
       - build-apple
-      - ios-test
-      - build-android
       - build-web
-      - build-image
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
@@ -401,28 +319,23 @@ jobs:
       packages: write
 
     steps:
-      # Shallow, unlike every other job here: MinVer never runs in this one.
-      # The Dockerfile's own build stamps the version, and VERSION below hands
-      # it the tag directly so the image's version matches the release exactly.
-      # build-image covers the other half - a full-history checkout where MinVer
-      # derives it from the tags itself.
+      # Full history, for the same reason as every other job here: the
+      # Dockerfile deliberately keeps .git in the build context so MinVer can
+      # stamp the image from the tags. VERSION below overrides it with the tag
+      # itself, so the image's version matches the release exactly.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # Both architectures, so arm64 is emulated through QEMU - the one thing
-      # this job does that build-image does not. The amd64 half comes back out
-      # of the gha cache that build-image just filled.
+      # Both architectures, so arm64 is emulated through QEMU. Cheap anyway:
+      # the payload is architecture-neutral IL plus SQLitePCLRaw's runtimes/
+      # folder, built once on the build platform, and only the runtime base
+      # layer differs between the two.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Sign in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate image metadata
         id: meta
@@ -440,7 +353,48 @@ jobs:
           flavor: |
             latest=false
 
-      - name: Build and publish
+      # amd64 first, loaded into the daemon rather than pushed, so the step
+      # below can look inside it before anything leaves the runner. The push
+      # after it takes this half back out of the cache.
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: flower-server:ci
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The browser UI is built into the image by Flower.Server's own targets,
+      # which copy the bundle *if* the Emscripten toolchain is present and say
+      # nothing at all when it is not (see "The browser UI" in
+      # Flower.Server.csproj, and _BuildFlowerWebUi's condition on
+      # @(_EmscriptenPack)). So an image whose `dotnet workload install
+      # wasm-tools` quietly stopped working still builds, still runs, still
+      # serves the API, and serves WebUiHosting's "not deployed" placeholder to
+      # anyone opening the settings page - with nothing anywhere reporting a
+      # failure. A green build is therefore not enough on its own; this asserts
+      # the bundle actually landed where WebUiHosting looks for it, before the
+      # image is published rather than after.
+      - name: Check the browser UI is in the image
+        run: |
+          docker run --rm --entrypoint sh flower-server:ci \
+            -c 'test -s /app/wwwroot/index.html' \
+            || { echo "::error::/app/wwwroot/index.html is missing - the wasm-tools build was skipped, so this image would serve the 'not deployed' placeholder"; exit 1; }
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish
         uses: docker/build-push-action@v6
         with:
           context: .

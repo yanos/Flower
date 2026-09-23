@@ -148,7 +148,7 @@ Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is drive
 ### The suite on iOS
 
 `scripts/ios-tests.sh` runs `Flower.Tests`, unchanged, on an iOS Simulator, and
-CI's `ios-test` job is that script. `Flower.Tests` stays plain `net10.0`:
+CI's `test (ios-latest)` leg is that script. `Flower.Tests` stays plain `net10.0`:
 `Tests/Flower.Tests.iOS` is an app that references it the way `Flower.iOS`
 references `Flower` and runs xunit in-process, so what differs from the desktop
 run is exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
@@ -165,7 +165,10 @@ throws `PlatformNotSupportedException` on iOS before running anything.
 `MusicListViewGestureTests` are excluded in that app: headless Avalonia layout
 and render under the simulator's interpreter took 1116s of a 1312s run. They
 pass there, just not in a time a push can afford. `FLOWER_TEST_ARGS` passes
-extra xunit arguments through (`-class`, `-method`, `-verbose` to find a hang).
+extra xunit arguments through (`-class`, `-method`). The app always reports
+verbosely, so a run that hangs names the tests that started and never finished -
+the script prints those instead of the per-test lines, because the one hang so
+far left a three-line transcript that named nothing.
 
 The first run found a real race the desktop never lost:
 `GaplessCoordinatorTests` asserted on a promotion that happens on the promotion
@@ -280,7 +283,7 @@ and probes when even that hint will not open the stream.
 
 CI runs these per-OS inside the `test` job on the three desktops - they need
 nothing the fast suite does not already build - and on an iOS Simulator inside
-`ios-test`, which runs the whole suite there (see "The suite on iOS" above);
+`test (ios-latest)`, which runs the whole suite there (see "The suite on iOS" above);
 `Flower.DeviceChecks.iOS` is only compiled in CI now, and stays the runner to
 put on a physical phone. The mobile two are a head apiece
 (`Flower.DeviceChecks.iOS`, `Flower.DeviceChecks.Android`) driven by a script
@@ -309,7 +312,7 @@ Two consequences worth knowing. The checks still run on a developer's Mac via
 `FFAudio.NET.macOS` and no Android RID falls back to `osx-*`, so the collision
 cannot happen and the suite passes - which is exactly why it went unnoticed
 until a Linux runner built it. And nothing in CI compiles
-`Tests/Flower.DeviceChecks.Android` any more (`build-android` builds
+`Tests/Flower.DeviceChecks.Android` any more (`build (android-latest)` builds
 `Flower.Android`, not the runner), so it is now a project CI never compiles -
 the thing the `Build Flower.Desktop` step in `tests.yml` exists to prevent.
 Both go away when the job comes back.
@@ -351,7 +354,7 @@ side.
 ## Releasing
 
 One workflow, `.github/workflows/tests.yml`, on every push. Tagging `v*`
-additionally runs `publish-image`, which pushes the server image to GHCR for
+additionally runs `image`, which builds the server image and pushes it to GHCR for
 both architectures — and it is a job in that file rather than a workflow of its
 own **because that is the only way it can wait**. A tag push fires every
 `on: push` workflow at once, and `needs` reaches only jobs in the same
@@ -361,9 +364,11 @@ Android-emulator jobs all went on to fail. Keep the publish here, and keep
 every job in its `needs` — a tag is a claim about the whole commit, not about
 the server image.
 
-Two things that follow. `build-image` builds the same Dockerfile on every push
-without pushing, so a broken image surfaces then rather than at a release; the
-tag build proves the arm64 half. And the desktop auto-update
+Two things that follow. The image is built on tags only - there used to be a
+build-without-push on every push, dropped as not worth a job each time - so a
+change that breaks the Dockerfile surfaces at the release, and
+`docker compose build` from `docker/` is the way to check one before tagging.
+And the desktop auto-update
 (`docs/AUTO-UPDATE-PLAN.md`) consumes the same tags through MinVer, so a tag is
 not a private act.
 

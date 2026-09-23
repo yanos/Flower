@@ -58,13 +58,16 @@ ios_simulator_build() {
 # Installs and launches a runner, waits for its tally, prints the transcript,
 # and sets IOS_TALLY to the tally line:
 #
-#   ios_simulator_run <app> <bundle id> <transcript> <tally prefix> <timeout s>
+#   ios_simulator_run <app> <bundle id> <transcript> <tally prefix> <timeout s> [summarize]
+#
+# The transcript is printed through `summarize <file>` - `cat` unless another
+# function is named - both for a finished run and for one that timed out.
 #
 # Exits 1 when no tally arrives in time - a run that did not finish, which is
 # neither a pass nor any particular failure. Anything exported as
 # SIMCTL_CHILD_<NAME> reaches the app as <NAME>.
 ios_simulator_run() {
-  local app="$1" bundle_id="$2" transcript="$3" tally_prefix="$4" timeout="$5"
+  local app="$1" bundle_id="$2" transcript="$3" tally_prefix="$4" timeout="$5" summarize="${6:-cat}"
 
   echo "==> Installing"
   xcrun simctl install "$IOS_SIMULATOR" "$app"
@@ -92,10 +95,14 @@ ios_simulator_run() {
 
   if [ ! -f "$log" ] || ! grep -q "^$tally_prefix" "$log"; then
     echo "==> No tally after ${timeout}s - the run did not finish. What there was:"
-    cat "$log" 2>/dev/null || echo "(the app wrote nothing at all)"
+    if [ -f "$log" ]; then
+      "$summarize" "$log"
+    else
+      echo "(the app wrote nothing at all)"
+    fi
     exit 1
   fi
 
-  cat "$log"
+  "$summarize" "$log"
   IOS_TALLY=$(grep "^$tally_prefix" "$log" | tail -1)
 }
