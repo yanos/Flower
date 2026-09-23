@@ -78,7 +78,9 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var trackA = MakeTrack(SyntheticWav.CreateFile(_tempDir, "a.wav", durationA, SyntheticWav.Marker(markerA)), durationA);
         var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "b.wav", durationB, SyntheticWav.Marker(markerB)), durationB);
 
-        var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        // Smaller than A, so playback paces A's decoder and it cannot finish
+        // before SetUpcoming arms B - see A_handover_puts_Bs_first_frame_exactly_where_As_last_one_ended.
+        var sharedRing = new GaplessRingBuffer((int)GaplessFormat.SampleRate / 2 * GaplessFormat.BytesPerFrame);
         var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
@@ -159,7 +161,9 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // A tenth of a second of staging against a two-second current
         // track: B's decode-ahead fills it and parks long before A ends.
         var stagingCapacity = (int)GaplessFormat.SampleRate / 10 * GaplessFormat.BytesPerFrame;
-        var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        // Smaller than A, so playback paces A's decoder and it cannot finish
+        // before SetUpcoming arms B - see A_handover_puts_Bs_first_frame_exactly_where_As_last_one_ended.
+        var sharedRing = new GaplessRingBuffer((int)GaplessFormat.SampleRate / 2 * GaplessFormat.BytesPerFrame);
         var coordinator = new GaplessCoordinator(
             sharedRing,
             NullLogger<GaplessCoordinator>.Instance,
@@ -371,7 +375,9 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var trackA = MakeTrack(SyntheticWav.CreateFile(_tempDir, "ramp-a.wav", duration, SyntheticWav.Ramp()), duration);
         var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "ramp-b.wav", duration, SyntheticWav.Ramp()), duration);
 
-        var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        // Smaller than A, so playback paces A's decoder and it cannot finish
+        // before SetUpcoming arms B - see A_handover_puts_Bs_first_frame_exactly_where_As_last_one_ended.
+        var sharedRing = new GaplessRingBuffer((int)GaplessFormat.SampleRate / 2 * GaplessFormat.BytesPerFrame);
         var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
