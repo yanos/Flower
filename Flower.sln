@@ -31,6 +31,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks.iOS", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.DeviceChecks.Android", "Tests\Flower.DeviceChecks.Android\Flower.DeviceChecks.Android.csproj", "{3C21F583-ADCC-4575-91AF-565DA47D6675}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Tests.iOS", "Tests\Flower.Tests.iOS\Flower.Tests.iOS.csproj", "{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -197,6 +199,18 @@ Global
 		{3C21F583-ADCC-4575-91AF-565DA47D6675}.Release|x64.Build.0 = Release|Any CPU
 		{3C21F583-ADCC-4575-91AF-565DA47D6675}.Release|x86.ActiveCfg = Release|Any CPU
 		{3C21F583-ADCC-4575-91AF-565DA47D6675}.Release|x86.Build.0 = Release|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Debug|x64.Build.0 = Debug|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Debug|x86.Build.0 = Debug|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Release|x64.ActiveCfg = Release|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Release|x64.Build.0 = Release|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Release|x86.ActiveCfg = Release|Any CPU
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -207,6 +221,7 @@ Global
 		{07235102-BFB2-4048-8B97-0C567C323278} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{48D09F0D-8E98-40C9-B7CE-AB4BA77B101F} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{3C21F583-ADCC-4575-91AF-565DA47D6675} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{BB3938A1-BA1F-4A9C-A265-7A88B69AFDA0} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {9FE20B88-9024-4850-9110-752D9E5F6EEB}

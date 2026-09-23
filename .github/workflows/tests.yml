@@ -4,13 +4,16 @@ on:
   push:
 
 jobs:
-  # Build, test and decode-check, once per desktop platform.
+  # Build, test and decode-check, once per desktop platform - and test the
+  # server there too, since it runs on all three.
   #
   # The decode checks used to be a second job with the same three-OS matrix,
   # duplicating this one's checkout and restore, because they needed a VLC
   # install that a package mirror could fail on its own. With LibVLC gone they
   # are simply another filter of an assembly this job has already built, so
-  # the duplicate runner has no reason to exist.
+  # the duplicate runner has no reason to exist. They get a step of their own
+  # anyway, so a run shows them per platform rather than folded invisibly into
+  # the suite.
   test:
     strategy:
       fail-fast: false
@@ -37,21 +40,45 @@ jobs:
           cache-dependency-path: |
             Flower/Flower.csproj
             Tests/Flower.Tests/Flower.Tests.csproj
+            Flower.Server/Flower.Server.csproj
+            Tests/Flower.Server.Tests/Flower.Server.Tests.csproj
 
-      # No filter. This used to exclude the RequiresLibVLC tests, because no
-      # hosted runner image ships VLC and installing it was flaky enough to be
-      # worth keeping out of the fast suite. There is no VLC any more: the one
-      # decoder is ffaudio, restored from the FFAudio.NET packages, and
-      # everything that decodes for real needs only that.
+      # The whole suite, RequiresFfmpeg included - the only filter is the decode
+      # checks, split into the next step. This used to exclude the
+      # RequiresLibVLC tests, because no hosted runner image ships VLC and
+      # installing it was flaky enough to be worth keeping out of the fast
+      # suite. There is no VLC any more: the one decoder is ffaudio, restored
+      # from the FFAudio.NET packages, and everything that decodes for real
+      # needs only that.
       #
       # FLOWER_REQUIRE_DECODERS is what stops this going green having checked
       # nothing. A façade that would not load otherwise just makes DecodeChecks
-      # report an empty decoder list and every check quietly not happen - which is the exact failure this whole
-      # area keeps hitting.
+      # report an empty decoder list and every check quietly not happen - which
+      # is the exact failure this whole area keeps hitting.
       - name: Run tests
         env:
           FLOWER_REQUIRE_DECODERS: FFmpeg
-        run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release
+        run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --filter 'FullyQualifiedName!~DeviceChecksTests'
+
+      # The same assembly, already built by the step above.
+      - name: Run decode checks
+        env:
+          FLOWER_REQUIRE_DECODERS: FFmpeg
+        run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --no-build --filter 'FullyQualifiedName~DeviceChecksTests'
+
+      # Flower.Server was once never compiled by CI at all, let alone tested -
+      # Flower.Tests only ever builds Flower -> Flower.Core
+      # (ARCHITECTURE-REVIEW Tier 5.1). That is how four entity source files
+      # under Flower.Server/Data/ stayed uncommitted - a .gitignore rule matched
+      # the source folder on case-insensitive filesystems - without anyone
+      # noticing the server could not build from a clean checkout.
+      #
+      # It used to be a job of its own, on Linux only. It runs here instead
+      # because the server is supported on all three desktops, and the bug that
+      # created it was a case-insensitive filesystem - which is macOS and
+      # Windows, the two platforms that job never ran on.
+      - name: Run server tests
+        run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
 
       # Flower.Desktop is the one project no test job reaches - the test jobs
       # get to Flower/Flower.Core through Flower.Tests, and the server through
@@ -70,36 +97,6 @@ jobs:
       - name: Build Flower.Desktop
         if: runner.os == 'Linux'
         run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
-
-  server-test:
-    runs-on: ubuntu-latest
-
-    steps:
-      # Full history, so MinVer sees the tags and commit height it versions
-      # these binaries from. actions/checkout defaults to depth 1, which
-      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: |
-            Flower.Core/Flower.Core.csproj
-            Flower.Server/Flower.Server.csproj
-            Tests/Flower.Server.Tests/Flower.Server.Tests.csproj
-
-      # Flower.Server was previously never compiled by CI at all, let alone
-      # tested - `dotnet test Flower.Tests` only ever builds
-      # Flower.Tests -> Flower -> Flower.Core (ARCHITECTURE-REVIEW Tier 5.1).
-      # That is how four entity source files under Flower.Server/Data/ stayed
-      # uncommitted (a .gitignore rule matched the source folder on
-      # case-insensitive filesystems) without anyone noticing the server could
-      # not build from a clean checkout - which is exactly what this job does.
-      - name: Run server tests
-        run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
 
   # Both Apple heads in one job. They share a runner because the macOS
   # runners are the scarce and expensive ones, and the second head is a few
@@ -128,9 +125,8 @@ jobs:
       - name: Install iOS and macOS workloads
         run: dotnet workload install ios macos
 
-      # Build-only: Flower.Tests has no iOS-specific code, so there's nothing
-      # for an on-simulator test run to exercise that this doesn't already
-      # cover - this just catches platform-specific compile breaks.
+      # Build-only: this catches the app head's compile breaks. What runs on
+      # the iOS runtime is ios-test, which runs the whole suite there.
       #
       # ValidateXcodeVersion=false is what keeps this job at a couple of
       # minutes instead of fifteen, and the chain behind it is worth writing
@@ -185,31 +181,42 @@ jobs:
       - name: Build Flower.MacOS
         run: dotnet build Flower.MacOS/Flower.MacOS.csproj --configuration Release
 
-  # The decode checks, on an actual iOS runtime.
+      # The decode-checks runner no job runs any more - ios-test runs the same
+      # checks inside the suite - but it is still the one to put on a physical
+      # phone (no Avalonia, a two-minute build, readable on screen with no
+      # cable), and a project CI never compiles is a project that silently
+      # rots. So it is compiled here, where the workload is already installed.
+      - name: Build Flower.DeviceChecks.iOS
+        run: dotnet build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj --configuration Release -p:ValidateXcodeVersion=false
+
+  # The test suite, on an actual iOS runtime.
   #
-  # decode-checks answers "does this platform turn a track into the right
-  # audio" for the three desktops. This asks the same question of the one
-  # platform where the answer has twice been no: VLC's mp4 demuxer refusing an
-  # unseekable stream, then .NET's mobile HttpClientHandler having no
-  # synchronous path at all. Both were invisible to a green desktop suite and
-  # both were found by a person listening to a phone.
+  # The test job answers "does this work" for the three desktops. This asks it
+  # of the one platform where the answer has twice been no while every desktop
+  # said yes: VLC's mp4 demuxer refusing an unseekable stream, then .NET's
+  # mobile HttpClientHandler having no synchronous path at all. Both were
+  # invisible to a green desktop suite and both were found by a person
+  # listening to a phone.
   #
-  # Nothing here is new machinery - Flower.DeviceChecks.iOS and
-  # scripts/ios-device-checks.sh already existed and were already written to
-  # be driven by a script rather than read by a human: the app writes a
-  # transcript into its own Documents container, the script boots a simulator,
-  # installs it, waits up to 180s for a tally and turns that into an exit
-  # code. The simulator frameworks it links are committed under
-  # Flower.iOS/Frameworks/ (miniaudio) or restored from FFAudio.NET.iOS
-  # (ffaudio), so there is nothing for this job to install beyond the
-  # workload.
+  # Flower.Tests, unchanged: Flower.Tests.iOS is an app that references it and
+  # runs xunit in-process, so what differs from the desktop run is exactly the
+  # platform - Mono with no JIT, a sandboxed filesystem, the iOS builds of
+  # ffaudio, miniaudio and Skia. The decode checks are part of the suite
+  # (DeviceChecksTests), so this replaced the job that ran only those, and
+  # covers the other two thousand tests besides.
+  #
+  # The app writes a transcript into its own Documents container, and
+  # scripts/ios-tests.sh boots a simulator, installs it, waits for the tally
+  # and turns it into an exit code. About two minutes of tests on an Apple
+  # Silicon Mac; MusicListViewGestureTests are left out because they alone
+  # took seventeen - see Flower.Tests.iOS/AppDelegate.cs.
   #
   # It runs on every push rather than on master or a schedule. Work in this
   # repo happens on master directly, so a branch gate would save nothing, and
-  # a check that only runs nightly finds a phone bug the morning after the
+  # a suite that only runs nightly finds a phone bug the morning after the
   # commit that caused it has been built on top of.
-  ios-device-checks:
-    name: Decode checks (iOS Simulator)
+  ios-test:
+    name: Test (iOS Simulator)
     runs-on: macos-latest
 
     steps:
@@ -223,24 +230,25 @@ jobs:
           cache: true
           cache-dependency-path: |
             Flower/Flower.csproj
-            Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj
+            Tests/Flower.Tests/Flower.Tests.csproj
+            Tests/Flower.Tests.iOS/Flower.Tests.iOS.csproj
 
       - name: Install iOS workload
         run: dotnet workload install ios
 
-      # Flower.DeviceChecks.iOS targets net10.0-ios26.5, same as Flower.iOS,
-      # so it hits the same _ValidateXcodeVersion equality check that
-      # build-apple disables - see the long note there. The script takes no
-      # build arguments, but MSBuild reads environment variables as
-      # properties, so this reaches its `dotnet build` unchanged.
+      # Flower.Tests.iOS targets net10.0-ios26.5, same as Flower.iOS, so it
+      # hits the same _ValidateXcodeVersion equality check that build-apple
+      # disables - see the long note there. The script takes no build
+      # arguments, but MSBuild reads environment variables as properties, so
+      # this reaches its `dotnet build` unchanged.
       #
       # The script's `rm -rf obj bin` costs nothing on a fresh runner; it is
       # there for a developer's incremental build, which reliably launches
-      # into a Mono AOT crash that reads exactly like a failing check.
-      - name: Run the decode checks on a simulator
+      # into a Mono AOT crash that reads exactly like a failing test.
+      - name: Run the tests on a simulator
         env:
           ValidateXcodeVersion: 'false'
-        run: scripts/ios-device-checks.sh
+        run: scripts/ios-tests.sh
 
   build-android:
     runs-on: ubuntu-latest
@@ -311,7 +319,7 @@ jobs:
   # runtime base layer. Building both here would mean QEMU and most of an hour
   # for no new signal; the tag build proves the pair.
   build-image:
-    name: Build server image
+    name: Build Docker image
     runs-on: ubuntu-latest
 
     steps:
@@ -374,12 +382,11 @@ jobs:
   # do not build or a decode check fails on a simulator, that is not a commit
   # anyone should be able to `docker pull`.
   publish-image:
-    name: Publish server image to GHCR
+    name: Publish Docker image to GHCR
     needs:
       - test
-      - server-test
       - build-apple
-      - ios-device-checks
+      - ios-test
       - build-android
       - build-web
       - build-image

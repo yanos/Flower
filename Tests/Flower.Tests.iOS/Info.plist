@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Flower Checks</string>
+	<string>Flower Tests</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.yanos.flower.devicechecks</string>
+	<string>com.yanos.flower.tests</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>MinimumOSVersion</key>
@@ -19,12 +19,12 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
-	<!-- The checks talk to a loopback server this app starts itself. That is
+	<!-- The tests talk to loopback servers this app starts itself. That is
 	     still the local network as far as iOS is concerned. -->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>The checks decode audio from a server running inside this app.</string>
-	<!-- Plain http, to 127.0.0.1 only: the loopback server exists to be the
-	     Subsonic /stream endpoint without a certificate. -->
+	<string>The tests talk to servers running inside this app.</string>
+	<!-- Plain http, to loopback only: the fake servers the streaming tests
+	     start have no certificate. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

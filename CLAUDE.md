@@ -78,6 +78,7 @@ dotnet build Flower.MacOS/Flower.MacOS.csproj                                   
 dotnet run --project Flower.MacOS/Flower.MacOS.csproj                           # launches it — or just hit Run in the IDE, see below
 dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
 dotnet test Tests/Flower.Tests/Flower.Tests.csproj                                    # full run
+scripts/ios-tests.sh                                                                  # the suite again, on an iOS Simulator
 dotnet run --project Flower.Server                                              # server + its browser UI
 ```
 
@@ -144,6 +145,37 @@ instance never writes to `~/Library/Application Support/Flower/Server`.
 
 Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is driven off `GaplessCoordinator.CurrentTrackBytesProduced`, which is computed from the shared ring's actual bytes-*read* (real playback consumption), not a decoder's own `BytesProduced` (decode progress) — a decoder that finished decoding ahead before its track was promoted stops producing any new bytes at all, so a decode-side counter reads as permanently frozen at zero for that whole track. See `_currentTrackReadSplit`'s remarks on `GaplessCoordinator`.
 
+### The suite on iOS
+
+`scripts/ios-tests.sh` runs `Flower.Tests`, unchanged, on an iOS Simulator, and
+CI's `ios-test` job is that script. `Flower.Tests` stays plain `net10.0`:
+`Tests/Flower.Tests.iOS` is an app that references it the way `Flower.iOS`
+references `Flower` and runs xunit in-process, so what differs from the desktop
+run is exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
+builds of ffaudio, miniaudio and Skia. About two minutes on an Apple Silicon Mac.
+
+Three things in that project are load-bearing and none is obvious. xunit's
+`buildTransitive` targets are excluded, because they demand an app host and
+generate a `Main` of their own. The VSTest packages `dotnet test` uses are
+excluded, because `Microsoft.VisualStudio.TestPlatform.Common` does not
+AOT-compile. And it drives xunit's public runner pieces itself rather than
+`ConsoleRunner.EntryPoint`, which subscribes to `Console.CancelKeyPress` and
+throws `PlatformNotSupportedException` on iOS before running anything.
+
+`MusicListViewGestureTests` are excluded in that app: headless Avalonia layout
+and render under the simulator's interpreter took 1116s of a 1312s run. They
+pass there, just not in a time a push can afford. `FLOWER_TEST_ARGS` passes
+extra xunit arguments through (`-class`, `-method`, `-verbose` to find a hang).
+
+The first run found a real race the desktop never lost:
+`GaplessCoordinatorTests` asserted on a promotion that happens on the promotion
+drain thread, not the one that raised `Drained`.
+
+Both iOS runners adopt the scene lifecycle (`Tests/iOSRunner`, linked into
+each), because iOS 27 kills an app that does not at launch - an
+`EXC_BREAKPOINT` in `UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`
+before a line of output, which reads exactly like a hung run.
+
 ## Device Checks
 
 `Tests/Flower.DeviceChecks/` answers one question — *does this platform actually turn
@@ -178,13 +210,17 @@ held to `PcmOracle.ToneMismatch` - audible, in tune, right length. That is a
 real bar rather than a lowered one, and `PcmOracleTests` is what says so: it
 rejects silence, noise, and a wrong tone at the same loudness.
 
-So the checks carry no test framework, no `HttpListener` (iOS has none — hence
-`LoopbackMediaServer` on a raw `TcpListener`), and no assertion that is not
-about the samples:
+So the checks carry no test framework, no `HttpListener`, and no assertion that
+is not about the samples. `LoopbackMediaServer` sits on a raw `TcpListener`
+because iOS was believed to have no `HttpListener` - which the whole suite
+running on an iOS 26.5 simulator in September 2026 disproved, every
+`HttpListener`-backed streaming test passing there. Unchecked on a physical
+device and on Android, so the raw listener stays:
 
 ```bash
 dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter FullyQualifiedName~DeviceChecksTests  # here
 scripts/ios-device-checks.sh                                                                # iOS Simulator
+scripts/ios-tests.sh                                                                        # iOS Simulator, as part of the whole suite
 scripts/android-device-checks.sh                                                            # Android emulator — local only, see below
 ```
 
@@ -243,8 +279,10 @@ atom at the end of an unseekable stream), and `FfmpegDecoder.OpenStream` rewinds
 and probes when even that hint will not open the stream.
 
 CI runs these per-OS inside the `test` job on the three desktops - they need
-nothing the fast suite does not already build - and on an iOS Simulator in
-`ios-device-checks`. The mobile two are a head apiece
+nothing the fast suite does not already build - and on an iOS Simulator inside
+`ios-test`, which runs the whole suite there (see "The suite on iOS" above);
+`Flower.DeviceChecks.iOS` is only compiled in CI now, and stays the runner to
+put on a physical phone. The mobile two are a head apiece
 (`Flower.DeviceChecks.iOS`, `Flower.DeviceChecks.Android`) driven by a script
 apiece, written to be twins: a runner with no Avalonia, no audio output and no
 UI beyond a text view, reporting the same `FLOWER-CHECK`/`FLOWER-CHECKS` lines
@@ -349,6 +387,8 @@ not a private act.
 | `Flower.Android/` | Android entry point |
 | `Flower.iOS/` | iOS entry point |
 | `Tests/Flower.Tests/` | xUnit tests for the shared library |
+| `Tests/Flower.Tests.iOS/` | iOS app that runs `Flower.Tests` on a simulator or a device |
+| `Tests/iOSRunner/` | Shell shared by the two iOS runners: transcript contract and scene delegate |
 | `Tests/Flower.DeviceChecks/` | Functional decode checks that run on any platform, phone included |
 | `Tests/Flower.DeviceChecks.iOS/` | iOS head that runs them on a simulator or a device |
 | `Tests/Flower.DeviceChecks.Android/` | Android head that runs them on an emulator or a device |

@@ -1,0 +1,93 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A test runner, not an app: Flower.Tests, unchanged, run on the iOS
+       runtime. Flower.Tests stays plain net10.0 - an iOS app references a
+       net10.0 library the way Flower.iOS references Flower - so what differs
+       from `dotnet test` on a Mac is exactly the platform: Mono instead of
+       CoreCLR, no JIT, a sandboxed filesystem, and the iOS builds of every
+       native library. scripts/ios-tests.sh drives it on a simulator and turns
+       its last line into an exit code.
+
+       It shares its shell with Flower.DeviceChecks.iOS (Tests/iOSRunner):
+       the transcript contract and the scene delegate iOS 27 requires. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-ios26.5</TargetFramework>
+    <!-- 13, not Flower.iOS's 12.2: the scene lifecycle this runner adopts
+         starts there, and nothing runs a test runner on iOS 12. -->
+    <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+
+    <!-- Off for the reason Flower.iOS gives: the 26.5 workload refuses any
+         Xcode but 26.6. -->
+    <ValidateXcodeVersion>false</ValidateXcodeVersion>
+
+    <!-- Simulator by default, like Flower.DeviceChecks.iOS: run far more often
+         from a script than from a device, and a simulator build needs no
+         signing. -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">iossimulator-arm64</RuntimeIdentifier>
+    <ProvisioningType Condition="'$(RuntimeIdentifier)' == 'ios-arm64'">automatic</ProvisioningType>
+    <ProvisioningType Condition="'$(RuntimeIdentifier)' != 'ios-arm64'">manual</ProvisioningType>
+
+    <!-- The HTTP stack Flower.iOS ships, and it has to be: the streaming tests
+         would otherwise check a handler the app never uses. -->
+    <UseNativeHttpHandler>false</UseNativeHttpHandler>
+
+    <ApplicationVersion>1</ApplicationVersion>
+    <NoWarn>$(NoWarn);IL2104</NoWarn>
+
+    <!-- Flower.Tests is an executable (xunit v3 test projects are) that is not
+         self-contained, and the SDK refuses to let a self-contained app
+         reference one. Only its assembly is wanted, never its app host. -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+
+    <!-- xunit finds tests by reflection, which the linker cannot see. -->
+    <MtouchLink>None</MtouchLink>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\iOSRunner\*.cs" Link="iOSRunner\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flower.Tests\Flower.Tests.csproj" />
+
+    <!-- Flows in from Flower.Tests with buildTransitive targets that demand an
+         app host and generate a Main of their own, which collides with this
+         one. The assemblies are wanted; the targets are not. -->
+    <PackageReference Include="xunit.v3.core.mtp-off" Version="3.2.2" ExcludeAssets="buildTransitive" />
+
+    <!-- The VSTest host and adapter `dotnet test` drives Flower.Tests through.
+         This app runs xunit in-process and never loads them, and
+         Microsoft.VisualStudio.TestPlatform.Common does not AOT-compile - it
+         references a DoesNotReturnAttribute in an assembly that has none. -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.TestPlatform.TestHost" Version="18.8.1" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="18.8.1" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.CodeCoverage" Version="18.8.1" ExcludeAssets="all" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" ExcludeAssets="all" />
+    <PackageReference Include="coverlet.collector" Version="10.0.1" ExcludeAssets="all" />
+
+    <!-- The iOS builds of the native libraries Flower.iOS ships, which the
+         desktop suite reaches through host packages: the ffaudio façade, and
+         Skia for the Avalonia.Headless tests. -->
+    <PackageReference Include="FFAudio.NET.iOS" Version="$(FFAudioPackageVersion)" />
+    <PackageReference Include="SkiaSharp.NativeAssets.iOS" Version="3.119.4" />
+  </ItemGroup>
+
+  <!-- And miniaudio, from where Flower.iOS ships it - see that project for why
+       these are two framework folders rather than one .xcframework. -->
+  <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator'))">
+    <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-simulator\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+  <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('ios-'))">
+    <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-device\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+
+</Project>
