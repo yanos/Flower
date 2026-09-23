@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 using Flower.Audio;
 
 using Miniaudio;
@@ -6,6 +8,18 @@ namespace Flower.Tests;
 
 public class MiniaudioIosAudioSessionTests
 {
+    // These call miniaudio directly (ma.context_config_init) before touching
+    // MiniaudioSink - and on iOS it is MiniaudioSink's static constructor that
+    // registers the resolver finding miniaudio inside its embedded framework.
+    // So they passed only when an earlier test had already touched the sink,
+    // and a CI simulator ordering them first failed both with
+    // DllNotFoundException. The app is not exposed: MiniaudioSink is the only
+    // caller of ma.*, so its constructor always runs first.
+    public MiniaudioIosAudioSessionTests()
+    {
+        RuntimeHelpers.RunClassConstructor(typeof(MiniaudioSink).TypeHandle);
+    }
+
     [Fact]
     public void IosContextConfiguration_leavesTheSharedAudioSessionToFlower()
     {

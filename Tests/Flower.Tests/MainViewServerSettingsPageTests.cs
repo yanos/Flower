@@ -21,7 +21,13 @@ namespace Flower.Tests;
 // on that host reaches SettingsPanel at all. A row that stopped being built,
 // or a view that stopped making room for it, would take Settings away in the
 // browser while every desktop head stayed green.
-public class MainViewServerSettingsPageTests
+//
+// Pinned like every other MainViewModelHarness caller. It was not, so it opened
+// flower.db in the developer's real data directory on a desktop run, and on
+// the iOS simulator - in whatever directory a concurrently running pinned test
+// had just set - it failed with SQLite's 'disk I/O error'.
+[Collection("PlatformDataDirectory")]
+public class MainViewServerSettingsPageTests : PinnedDataDirectory
 {
     // MusicListView service-locates its ColumnManager out of Ioc.Default at
     // construction - the one container read left in that layer, deliberately

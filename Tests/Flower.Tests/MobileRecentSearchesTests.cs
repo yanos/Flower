@@ -201,9 +201,10 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
         Assert.False(Prompt().IsEffectivelyVisible);
 
         window.FocusManager!.Focus(null);
-        Pump(100);
-        Assert.Null(Row(window, "radiohead"));
-        Assert.True(Prompt().IsEffectivelyVisible);
+
+        // Waited for rather than pumped a fixed 100ms: a CI iOS simulator under
+        // the interpreter had not laid the prompt back out by then.
+        PumpUntil(() => Row(window, "radiohead") == null && Prompt().IsEffectivelyVisible, 5000);
 
         Pump(300);
         window.Close();
@@ -245,5 +246,13 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
     {
         using var cts = new CancellationTokenSource(milliseconds);
         Dispatcher.UIThread.MainLoop(cts.Token);
+    }
+
+    private static void PumpUntil(Func<bool> condition, int timeoutMs)
+    {
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (!condition() && Environment.TickCount64 < deadline)
+            Pump(20);
+        Assert.True(condition(), "the expected layout never settled");
     }
 }
