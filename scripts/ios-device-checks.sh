@@ -8,8 +8,9 @@
 # green desktop suite and cost a person listening to a phone and reporting
 # that an album played silence.
 #
-#   scripts/ios-device-checks.sh                 # newest iPhone simulator
-#   scripts/ios-device-checks.sh "iPhone 17 Pro" # by name
+#   scripts/ios-device-checks.sh                           # newest iPhone, newest iOS
+#   scripts/ios-device-checks.sh "iPhone 17 Pro"           # by name
+#   IOS_SIMULATOR_RUNTIME=26 scripts/ios-device-checks.sh  # newest iPhone on iOS 26
 #
 # The simulator plumbing - boot, clean build, install, read the transcript -
 # is scripts/lib/ios-simulator.sh, shared with scripts/ios-tests.sh.
@@ -35,7 +36,7 @@ ios_simulator_build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj
 export SIMCTL_CHILD_FLOWER_REQUIRE_DECODERS=FFmpeg
 
 ios_simulator_run \
-  Tests/Flower.DeviceChecks.iOS/bin/Debug/net10.0-ios26.5/iossimulator-arm64/Flower.DeviceChecks.iOS.app \
+  Tests/Flower.DeviceChecks.iOS/bin/Release/net10.0-ios26.5/iossimulator-arm64/Flower.DeviceChecks.iOS.app \
   com.yanos.flower.devicechecks flower-checks.log 'FLOWER-CHECKS ' 180
 
 if ! echo "$IOS_TALLY" | grep -q ', 0 failed'; then

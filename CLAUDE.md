@@ -148,7 +148,8 @@ Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is drive
 ### The suite on iOS
 
 `scripts/ios-tests.sh` runs `Flower.Tests`, unchanged, on an iOS Simulator, and
-CI's `test (ios-latest)` leg is that script. `Flower.Tests` stays plain `net10.0`:
+CI's `build and test Flower.Tests (ios-26)` leg is that script, held to an iOS
+26 simulator by `IOS_SIMULATOR_RUNTIME`. `Flower.Tests` stays plain `net10.0`:
 `Tests/Flower.Tests.iOS` is an app that references it the way `Flower.iOS`
 references `Flower` and runs xunit in-process, so what differs from the desktop
 run is exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
@@ -288,9 +289,9 @@ names only the MP4 family (where a hint buys something a probe cannot: a moov
 atom at the end of an unseekable stream), and `FfmpegDecoder.OpenStream` rewinds
 and probes when even that hint will not open the stream.
 
-CI runs these per-OS inside the `test` job on the three desktops - they need
+CI runs these per-OS in the three desktop test legs - they need
 nothing the fast suite does not already build - and on an iOS Simulator inside
-`test (ios-latest)`, which runs the whole suite there (see "The suite on iOS" above);
+`build and test Flower.Tests (ios-26)`, which runs the whole suite there (see "The suite on iOS" above);
 `Flower.DeviceChecks.iOS` is only compiled in CI now, and stays the runner to
 put on a physical phone. The mobile two are a head apiece
 (`Flower.DeviceChecks.iOS`, `Flower.DeviceChecks.Android`) driven by a script
@@ -319,7 +320,7 @@ Two consequences worth knowing. The checks still run on a developer's Mac via
 `FFAudio.NET.macOS` and no Android RID falls back to `osx-*`, so the collision
 cannot happen and the suite passes - which is exactly why it went unnoticed
 until a Linux runner built it. And nothing in CI compiles
-`Tests/Flower.DeviceChecks.Android` any more (`build (android-latest)` builds
+`Tests/Flower.DeviceChecks.Android` any more (`build Flower.Android (android-36)` builds
 `Flower.Android`, not the runner), so it is now a project CI never compiles -
 the thing the `Build Flower.Desktop` step in `tests.yml` exists to prevent.
 Both go away when the job comes back.

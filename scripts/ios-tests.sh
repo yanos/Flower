@@ -7,8 +7,9 @@
 # of that suite (DeviceChecksTests), so this covers everything
 # ios-device-checks.sh does and the rest of the suite besides.
 #
-#   scripts/ios-tests.sh                   # newest iPhone simulator
-#   scripts/ios-tests.sh "iPhone 17 Pro"   # by name
+#   scripts/ios-tests.sh                           # newest iPhone, newest iOS
+#   scripts/ios-tests.sh "iPhone 17 Pro"           # by name
+#   IOS_SIMULATOR_RUNTIME=26 scripts/ios-tests.sh  # newest iPhone on iOS 26
 #   FLOWER_TEST_ARGS="-class Flower.Tests.PlaylistTests" scripts/ios-tests.sh
 #
 # FLOWER_TEST_ARGS is passed to xunit as extra command-line arguments.
@@ -52,7 +53,7 @@ export SIMCTL_CHILD_FLOWER_TEST_ARGS="${FLOWER_TEST_ARGS:-}"
 # CI runner, which is slower, and is there to turn a hang into a failure rather
 # than to be reached.
 ios_simulator_run \
-  Tests/Flower.Tests.iOS/bin/Debug/net10.0-ios26.5/iossimulator-arm64/Flower.Tests.iOS.app \
+  Tests/Flower.Tests.iOS/bin/Release/net10.0-ios26.5/iossimulator-arm64/Flower.Tests.iOS.app \
   com.yanos.flower.tests flower-tests.log 'FLOWER-TESTS ' 1200 summarize
 
 if [ "$IOS_TALLY" != "FLOWER-TESTS exit 0" ]; then

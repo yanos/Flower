@@ -7,27 +7,58 @@
 # `simctl launch --console-pty`, and a run that passes but prints nothing is
 # indistinguishable from a hang - see Tests/iOSRunner/RunnerTranscript.cs.
 
-# Sets IOS_SIMULATOR to the named simulator, or to the newest iPhone when no
-# name is given, and boots it.
+# "4m07s" from a number of seconds - for the build and run timings below.
+ios_simulator_duration() {
+  printf '%dm%02ds' $(( $1 / 60 )) $(( $1 % 60 ))
+}
+
+# Sets IOS_SIMULATOR to a simulator's UDID and boots it: the newest iPhone,
+# or the one named by the argument, on the newest iOS runtime - or, when
+# IOS_SIMULATOR_RUNTIME is set (a major version, "26"), on the newest runtime of
+# that version, failing rather than falling back when there is none.
 #
-# Newest runtime last in simctl's output, so the last match is the most current
-# iOS available rather than the oldest still installed - which is also the one
-# that first shows what the next iOS breaks. iOS 27 killing both runners at
-# launch, for not adopting the scene lifecycle, was found exactly that way.
+# By UDID rather than by name, because a name is not one simulator: "iPhone 17"
+# exists once per installed runtime, and booting it by name took whichever
+# simctl resolved first, so which iOS a run was on was not something the run
+# said. CI names its iOS legs after the version, and pins it here.
+#
+# Newest by default because the newest runtime is the one that first shows
+# what the next iOS breaks. iOS 27 killing both runners at launch, for not
+# adopting the scene lifecycle, was found exactly that way.
 ios_simulator_boot() {
-  IOS_SIMULATOR="${1:-}"
-  if [ -z "$IOS_SIMULATOR" ]; then
-    IOS_SIMULATOR=$(xcrun simctl list devices available | grep -oE '^\s+iPhone [^(]+' | tail -1 | xargs)
+  local name="${1:-}" major="${IOS_SIMULATOR_RUNTIME:-}" chosen
+
+  chosen=$(xcrun simctl list devices available -j | jq -r --arg name "$name" --arg major "$major" '
+    [ .devices | to_entries[]
+      | select(.key | test("SimRuntime\\.iOS-[0-9]"))
+      | (.key | capture("iOS-(?<v>[0-9-]+)$").v | split("-") | map(tonumber)) as $version
+      | select($major == "" or ($version[0] | tostring) == $major)
+      | .value[]
+      | select(.name | startswith("iPhone"))
+      | select($name == "" or .name == $name)
+      | { version: $version, udid, name } ]
+    | sort_by(.version) | last
+    | if . == null then empty else "\(.udid)\t\(.name) on iOS \(.version | map(tostring) | join("."))" end')
+
+  if [ -z "$chosen" ]; then
+    echo "==> No available iPhone simulator${name:+ named \"$name\"}${major:+ on iOS $major}. Installed runtimes:"
+    xcrun simctl list runtimes | grep -i 'ios' || true
+    exit 1
   fi
 
-  echo "==> Simulator: $IOS_SIMULATOR"
+  IOS_SIMULATOR="${chosen%%$'\t'*}"
+  echo "==> Simulator: ${chosen#*$'\t'}"
 
   # Booting an already-booted simulator is an error, not a no-op.
   xcrun simctl boot "$IOS_SIMULATOR" 2>/dev/null || true
   xcrun simctl bootstatus "$IOS_SIMULATOR" -b >/dev/null
 }
 
-# Builds a runner from clean: ios_simulator_build <project> <dir to clean>...
+# Builds a runner from clean, in Release: ios_simulator_build <project> <dir to clean>...
+#
+# Release because it is optimized and compiled ahead of time, which is what a
+# release runs, and running anything on iOS is only worth it for running what
+# ships. The runner lands in bin/Release/<tfm>/iossimulator-arm64/.
 #
 # Always from clean, for the reason Flower.iOS/deploy.sh gives at length: an
 # incremental iOS build here reliably launches into a Mono AOT crash ("Managed
@@ -45,14 +76,16 @@ ios_simulator_build() {
   done
 
   echo "==> Building"
-  local log
+  local log started=$SECONDS
   log=$(mktemp)
-  if ! dotnet build "$project" -c Debug -r iossimulator-arm64 >"$log" 2>&1; then
+  if ! dotnet build "$project" -c Release -r iossimulator-arm64 >"$log" 2>&1; then
     cat "$log"
     rm -f "$log"
+    echo "==> Build failed after $(ios_simulator_duration $(( SECONDS - started )))"
     exit 1
   fi
   rm -f "$log"
+  echo "==> Built in $(ios_simulator_duration $(( SECONDS - started )))"
 }
 
 # Installs and launches a runner, waits for its tally, prints the transcript,
@@ -81,6 +114,7 @@ ios_simulator_run() {
   rm -f "$log"
 
   echo "==> Running"
+  local started=$SECONDS
   xcrun simctl launch "$IOS_SIMULATOR" "$bundle_id" >/dev/null
 
   local _
@@ -93,6 +127,9 @@ ios_simulator_run() {
 
   xcrun simctl terminate "$IOS_SIMULATOR" "$bundle_id" 2>/dev/null || true
 
+  local ran
+  ran=$(ios_simulator_duration $(( SECONDS - started )))
+
   if [ ! -f "$log" ] || ! grep -q "^$tally_prefix" "$log"; then
     echo "==> No tally after ${timeout}s - the run did not finish. What there was:"
     if [ -f "$log" ]; then
@@ -104,5 +141,6 @@ ios_simulator_run() {
   fi
 
   "$summarize" "$log"
+  echo "==> Ran in $ran"
   IOS_TALLY=$(grep "^$tally_prefix" "$log" | tail -1)
 }

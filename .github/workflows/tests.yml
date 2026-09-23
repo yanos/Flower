@@ -4,33 +4,62 @@ on:
   push:
 
 jobs:
-  # One leg per platform the app runs on. `os` is the platform, which is what
-  # the job is named for; `runner` is the machine it runs on, which for the two
-  # phones is not the same thing - iOS runs on a Mac's simulator, and Android
-  # is built on Linux.
+  # One leg per thing built or tested, all in parallel, each named for exactly
+  # what it builds or tests and where - so a red leg says what broke without
+  # anyone opening it. `kind` is what the steps below key on; `runner` is the
+  # machine, pinned rather than `-latest` so the version in a leg's name stays
+  # true when GitHub moves the label.
   #
-  # The desktops build, test and decode-check, and test the server, which runs
-  # on all three. The decode checks used to be a second job with the same
-  # three-OS matrix, duplicating this one's checkout and restore, because they
-  # needed a VLC install that a package mirror could fail on its own. With
-  # LibVLC gone they are simply another filter of an assembly this job has
-  # already built, so the duplicate runner has no reason to exist. They get a
-  # step of their own anyway, so a run shows them per platform rather than
-  # folded invisibly into the suite.
+  # The three desktops build and test Flower.Tests and Flower.Server.Tests, the
+  # server being supported on all three. The decode checks used to be a second
+  # job with the same three-OS matrix, duplicating this one's checkout and
+  # restore, because they needed a VLC install that a package mirror could fail
+  # on its own. With LibVLC gone they are simply another filter of an assembly
+  # these legs have already built. They get a step of their own anyway, so a
+  # run shows them per platform rather than folded invisibly into the suite.
   #
-  # iOS runs the same suite on the iOS runtime, and Android is build-only - its
-  # decode checks are local-only for now, see CLAUDE.md, "Device Checks".
+  # iOS runs Flower.Tests on the iOS runtime. Each app head is built in a leg of
+  # its own rather than after the tests in the same one, because steps in a job
+  # run one after another and a head is a long build: in its own leg it runs on
+  # its own machine, at the same time. Building one in the background of a test
+  # leg instead would have two builds writing the shared Flower project's obj/
+  # at once, on a three-core runner.
+  #
+  # Android's decode checks are local-only for now - see CLAUDE.md, "Device
+  # Checks" - so Android is build-only, as is the browser.
   test:
-    name: ${{ matrix.job }} (${{ matrix.os }})
+    name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { job: test,  os: ubuntu-latest,  runner: ubuntu-latest,  desktop: true }
-          - { job: test,  os: windows-latest, runner: windows-latest, desktop: true }
-          - { job: test,  os: macos-latest,   runner: macos-latest,   desktop: true }
-          - { job: test,  os: ios-latest,     runner: macos-latest,   desktop: false }
-          - { job: build, os: android-latest, runner: ubuntu-latest,  desktop: false }
+          - name: build and test Flower.Tests, Flower.Server.Tests (linux-ubuntu-24.04)
+            kind: desktop-test
+            runner: ubuntu-24.04
+          - name: build and test Flower.Tests, Flower.Server.Tests (windows-2025)
+            kind: desktop-test
+            runner: windows-2025
+          - name: build and test Flower.Tests, Flower.Server.Tests (macos-26)
+            kind: desktop-test
+            runner: macos-26
+          - name: build and test Flower.Tests (ios-26)
+            kind: ios-test
+            runner: macos-26
+          - name: build Flower.Desktop (linux-ubuntu-24.04)
+            kind: desktop-build
+            runner: ubuntu-24.04
+          - name: build Flower.MacOS (macos-26)
+            kind: macos-build
+            runner: macos-26
+          - name: build Flower.iOS, Flower.DeviceChecks.iOS (ios-26)
+            kind: ios-build
+            runner: macos-26
+          - name: build Flower.Android (android-36)
+            kind: android-build
+            runner: ubuntu-24.04
+          - name: build Flower.Web (browser-wasm)
+            kind: web-build
+            runner: ubuntu-24.04
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -55,7 +84,10 @@ jobs:
             Flower.Server/Flower.Server.csproj
             Tests/Flower.Server.Tests/Flower.Server.Tests.csproj
             Tests/Flower.Tests.iOS/Flower.Tests.iOS.csproj
+            Flower.iOS/Flower.iOS.csproj
+            Flower.MacOS/Flower.MacOS.csproj
             Flower.Android/Flower.Android.csproj
+            Flower.Web/Flower.Web.csproj
 
       # The whole suite, RequiresFfmpeg included - the only filter is the decode
       # checks, split into the next step. This used to exclude the
@@ -70,14 +102,14 @@ jobs:
       # report an empty decoder list and every check quietly not happen - which
       # is the exact failure this whole area keeps hitting.
       - name: Run tests
-        if: matrix.desktop
+        if: matrix.kind == 'desktop-test'
         env:
           FLOWER_REQUIRE_DECODERS: FFmpeg
         run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --filter 'FullyQualifiedName!~DeviceChecksTests'
 
       # The same assembly, already built by the step above.
       - name: Run decode checks
-        if: matrix.desktop
+        if: matrix.kind == 'desktop-test'
         env:
           FLOWER_REQUIRE_DECODERS: FFmpeg
         run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --no-build --filter 'FullyQualifiedName~DeviceChecksTests'
@@ -94,26 +126,41 @@ jobs:
       # created it was a case-insensitive filesystem - which is macOS and
       # Windows, the two platforms that job never ran on.
       - name: Run server tests
-        if: matrix.desktop
+        if: matrix.kind == 'desktop-test'
         run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
 
-      # Flower.Desktop is the one project no test job reaches - the test jobs
-      # get to Flower/Flower.Core through Flower.Tests, and the server through
-      # its own tests - so without this nothing would ever compile it, and a
-      # project CI never compiles is a project that silently rots.
-      #
-      # It rides along in this job rather than owning one because everything
-      # it needs is already restored and built here by the time the tests have
-      # run; all that is left is the thin head itself. Linux only, and that is
+      # Flower.Desktop is a project no test leg reaches - they get to
+      # Flower/Flower.Core through Flower.Tests, and the server through its own
+      # tests - so without this nothing would ever compile it, and a project CI
+      # never compiles is a project that silently rots. Linux only, and that is
       # not a gap: Flower.Desktop targets plain net10.0, so the Windows and
-      # macOS compiles of it would be the same compile. Running it on all
-      # three would cost three times as much for no additional signal.
-      #
-      # After the tests rather than before, so a compile break in the head
-      # never delays the answer to the question this job is mostly asked.
+      # macOS compiles of it would be the same compile.
       - name: Build Flower.Desktop
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.kind == 'desktop-build'
         run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
+
+      # Flower.MacOS is the only head that cannot be compiled anywhere but a
+      # mac. Flower.Desktop still runs on macOS, but as plain net10.0 - which is
+      # exactly the point of this head: net10.0-macos is what puts AVKit/AppKit
+      # in reach, so every Apple-framework call in the app is code that only
+      # this build can check.
+      #
+      # No ValidateXcodeVersion=false here, deliberately, even though this head
+      # hits the same check the iOS builds turn off. Flower.MacOS's TFM is
+      # unversioned (net10.0-macos), so it takes whatever macOS pack the SDK
+      # ships - 26.5 today - which wants Xcode 26.6. On iOS that check is a
+      # formality and turning it off costs nothing. Here it is load-bearing:
+      # with the check disabled the build gets as far as ILLink and fails with
+      # MM0179, needing the macOS 26.5 SDK headers for real. Disabling it would
+      # only trade a clear message for an obscure one - and a head that cannot
+      # be built is a head that cannot ship.
+      - name: Install macOS workload
+        if: matrix.kind == 'macos-build'
+        run: dotnet workload install macos
+
+      - name: Build Flower.MacOS
+        if: matrix.kind == 'macos-build'
+        run: dotnet build Flower.MacOS/Flower.MacOS.csproj --configuration Release
 
       # The test suite, on an actual iOS runtime.
       #
@@ -134,155 +181,87 @@ jobs:
       # and turns it into an exit code. MusicListViewGestureTests are left out
       # because they alone took seventeen minutes - see
       # Flower.Tests.iOS/AppDelegate.cs.
+      #
+      # Every iOS build here is Release - optimized and compiled ahead of time
+      # - even though that is most of this leg's time. It is what a release
+      # runs, and the point of running anything on iOS is to run what ships.
       - name: Install iOS workload
-        if: matrix.os == 'ios-latest'
+        if: matrix.kind == 'ios-test' || matrix.kind == 'ios-build'
         run: dotnet workload install ios
 
       # Flower.Tests.iOS targets net10.0-ios26.5, same as Flower.iOS, so it
-      # hits the same _ValidateXcodeVersion equality check that build-apple
-      # disables - see the long note there. The script takes no build
+      # hits the same _ValidateXcodeVersion equality check the Flower.iOS build
+      # disables - see the long note on that step. The script takes no build
       # arguments, but MSBuild reads environment variables as properties, so
       # this reaches its `dotnet build` unchanged.
       #
       # The script's `rm -rf obj bin` costs nothing on a fresh runner; it is
       # there for a developer's incremental build, which reliably launches
       # into a Mono AOT crash that reads exactly like a failing test.
+      # IOS_SIMULATOR_RUNTIME is what makes "ios-26" in this leg's name true:
+      # the script runs on an iOS 26 simulator, and fails rather than quietly
+      # picking another when the image has none.
       - name: Run tests on a simulator
-        if: matrix.os == 'ios-latest'
+        if: matrix.kind == 'ios-test'
         env:
           ValidateXcodeVersion: 'false'
+          IOS_SIMULATOR_RUNTIME: '26'
         run: scripts/ios-tests.sh
 
-      - name: Install Android workload
-        if: matrix.os == 'android-latest'
-        run: dotnet workload install android
-
-      - name: Build for Android
-        if: matrix.os == 'android-latest'
-        run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
-
-  # Both Apple heads in one job. They share a runner because the macOS
-  # runners are the scarce and expensive ones, and the second head is a few
-  # seconds of compile on top of a checkout, restore and workload install that
-  # have already been paid for.
-  build-apple:
-    runs-on: macos-latest
-
-    steps:
-      # Full history, so MinVer sees the tags and commit height it versions
-      # these binaries from. actions/checkout defaults to depth 1, which
-      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: |
-            Flower/Flower.csproj
-            Flower.iOS/Flower.iOS.csproj
-            Flower.MacOS/Flower.MacOS.csproj
-
-      - name: Install iOS and macOS workloads
-        run: dotnet workload install ios macos
-
-      # Build-only: this catches the app head's compile breaks. What runs on
-      # the iOS runtime is test (ios-latest), which runs the whole suite there.
-      #
-      # ValidateXcodeVersion=false is what keeps this job at a couple of
-      # minutes instead of fifteen, and the chain behind it is worth writing
-      # down because none of it is visible from here.
+      # ValidateXcodeVersion=false keeps this at minutes rather than a quarter
+      # of an hour, and the chain behind it is worth writing down because none
+      # of it is visible from here.
       #
       # Flower.iOS targets net10.0-ios26.5, which selects the
       # Microsoft.iOS.Sdk.net10.0_26.5 pack, whose _RecommendedXcodeVersion is
       # 26.6. Xamarin.Shared.Sdk.targets' _ValidateXcodeVersion compares
       # major.minor for *equality*, not "at least" - so the build accepts
       # Xcode 26.6.x and nothing else, whichever side of the runner image's
-      # default that lands on. This job used to pin it, and then had to spend ~10-15 minutes
-      # on `xcodebuild -downloadPlatform iOS` for every single push, because
-      # the image's preinstalled simulator runtimes are matched to its newer
-      # default Xcodes and actool will not compile an asset catalog without a
-      # matching one (actions/runner-images#13317). A multi-gigabyte download,
-      # uncached, to satisfy a version equality check.
+      # default that lands on. This used to be pinned, and then had to spend
+      # ~10-15 minutes on `xcodebuild -downloadPlatform iOS` for every single
+      # push, because the image's preinstalled simulator runtimes are matched
+      # to its newer default Xcodes and actool will not compile an asset
+      # catalog without a matching one (actions/runner-images#13317). A
+      # multi-gigabyte download, uncached, to satisfy a version equality check.
       #
       # Turning the check off lets the runner use its own default Xcode, whose
-      # runtime is already installed, and nothing is skipped: the asset
-      # catalog still compiles, so this still builds what it always built.
-      # What it gives up is the guarantee that the Xcode underneath is the one
+      # runtime is already installed, and nothing is skipped: the asset catalog
+      # still compiles, so this still builds what it always built. What it
+      # gives up is the guarantee that the Xcode underneath is the one
       # Microsoft blessed for this pack - acceptable for a gate that exists to
       # catch compile breaks, and not something to carry into a build that
-      # ships. The TFM has since moved (26.0 -> 26.5, to match the Xcode a
-      # developer mac actually has), which changes nothing here: the check
-      # wants exact equality in both directions, so any TFM is one image
-      # update away from disagreeing with the runner's default Xcode again.
-      - name: Build for iOS simulator
+      # ships. Any TFM is one image update away from disagreeing with the
+      # runner's default Xcode again, since the check wants exact equality.
+      - name: Build Flower.iOS
+        if: matrix.kind == 'ios-build'
         run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false
 
-      # Flower.MacOS is the only head that cannot be compiled anywhere but a
-      # mac, and until now nothing compiled it at all. Flower.Desktop still
-      # runs on macOS, but as plain net10.0 - which is exactly the point of
-      # this head: net10.0-macos is what puts AVKit/AppKit in reach, so every
-      # Apple-framework call in the app is code that only this build can check.
-      #
-      # No ValidateXcodeVersion=false here, deliberately, even though this head
-      # hits the same check. Flower.MacOS's TFM is unversioned (net10.0-macos),
-      # so it takes whatever macOS pack the SDK ships - 26.5 today - which wants
-      # Xcode 26.6. On iOS that check is a formality and turning it off costs
-      # nothing. Here it is load-bearing: with the check disabled the build gets
-      # as far as ILLink and fails with MM0179, needing the macOS 26.5 SDK
-      # headers for real. Disabling it would only trade a clear message for an
-      # obscure one.
-      #
-      # So this job is honest about the toolchain it needs, and if the runner's
-      # default Xcode is behind that pack it will say so out loud - which is
-      # true information, since a head that cannot be built is a head that
-      # cannot ship. It cannot be built on a developer mac one Xcode release
-      # behind either, which is how it went uncompiled long enough for CI never
-      # to have covered it.
-      - name: Build Flower.MacOS
-        run: dotnet build Flower.MacOS/Flower.MacOS.csproj --configuration Release
-
-      # The decode-checks runner no job runs any more - test (ios-latest) runs
-      # the same checks inside the suite - but it is still the one to put on a
-      # physical phone (no Avalonia, readable on screen with no cable), and a
-      # project CI never compiles is a project that silently rots. So it is
-      # compiled here, where the workload is already installed.
-      #
-      # Debug and interpreted, because all this asks is whether it compiles. A
-      # Release build compiles the whole runner ahead of time, and made this
-      # the slowest job in the workflow at 32 minutes.
+      # The decode-checks runner no leg runs any more - the iOS test leg runs
+      # the same checks inside the suite - but it is still the one to put on a physical phone
+      # (no Avalonia, readable on screen with no cable), and a project CI never
+      # compiles is a project that silently rots.
       - name: Build Flower.DeviceChecks.iOS
-        run: dotnet build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj --configuration Debug -p:MtouchInterpreter=all -p:ValidateXcodeVersion=false
+        if: matrix.kind == 'ios-build'
+        run: dotnet build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj --configuration Release -p:ValidateXcodeVersion=false
 
-  build-web:
-    runs-on: ubuntu-latest
+      - name: Install Android workload
+        if: matrix.kind == 'android-build'
+        run: dotnet workload install android
 
-    steps:
-      # Full history, so MinVer sees the tags and commit height it versions
-      # these binaries from. actions/checkout defaults to depth 1, which
-      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: |
-            Flower/Flower.csproj
-            Flower.Web/Flower.Web.csproj
+      - name: Build for Android
+        if: matrix.kind == 'android-build'
+        run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
 
       # WasmBuildNative (see Flower.Web.csproj) needs wasm-tools' Emscripten
       # toolchain to statically link libSkiaSharp/libHarfBuzzSharp into the
       # WASM bundle - without it the build fails outright (NETSDK1147), not
       # just renders broken.
       - name: Install wasm-tools workload
+        if: matrix.kind == 'web-build'
         run: dotnet workload install wasm-tools
 
       - name: Build for browser-wasm
+        if: matrix.kind == 'web-build'
         run: dotnet build Flower.Web/Flower.Web.csproj --configuration Release
 
   # The server image, built and pushed to GHCR - on a `v*` tag only, and only
@@ -310,10 +289,8 @@ jobs:
     name: Build and publish Docker image
     needs:
       - test
-      - build-apple
-      - build-web
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # Scoped to this job rather than the workflow: every other job here needs
     # nothing but the checkout, and this is the only one handed a token that
