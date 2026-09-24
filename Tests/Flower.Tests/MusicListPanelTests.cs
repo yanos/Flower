@@ -32,7 +32,14 @@ public class MusicListPanelTests : PinnedDataDirectory
 
     public MusicListPanelTests() => TestIoc.EnsureConfigured();
 
-    private MusicListPanel NewPanel() => new(_columns);
+    // The art column is hidden unless asked for: with it shown, a run shorter
+    // than MinAlbumGroupRows is padded with phantom rows, and the tests that
+    // are about virtualization want row index and row position to coincide.
+    private MusicListPanel NewPanel(bool art = false)
+    {
+        _columns.ShowAlbumArt = art;
+        return new(_columns);
+    }
 
     // Rows in one album of `groupSize` each, which is what TrackListBuilder
     // produces: the first row of each group is its leader and carries the art
@@ -219,7 +226,7 @@ public class MusicListPanelTests : PinnedDataDirectory
 
         Layout(panel);
 
-        var expected = TrackRowViewModel.ArtColumnWidth + _columns.VisibleColumns.Sum(c => c.Width);
+        var expected = _columns.ArtColumnWidth + _columns.VisibleColumns.Sum(c => c.Width);
         Assert.Equal(expected, panel.DesiredSize.Width);
     }
 
@@ -269,5 +276,111 @@ public class MusicListPanelTests : PinnedDataDirectory
         Layout(panel);
 
         Assert.All(panel.Children.Where(c => !c.IsVisible), c => Assert.Equal(default, c.Bounds));
+    }
+
+    // ── Phantom rows ──────────────────────────────────────────────────────────
+
+    // Consecutive album runs of the given lengths.
+    private static List<TrackRowViewModel> Runs(params int[] lengths)
+    {
+        var rows = new List<TrackRowViewModel>();
+        for (int album = 0; album < lengths.Length; album++)
+        {
+            for (int k = 0; k < lengths[album]; k++)
+                rows.Add(new TrackRowViewModel
+                {
+                    Track = new Track { Path = $"/music/{album}-{k}.mp3", Title = $"Track {k}", Album = $"Album {album}" },
+                    IsFirstInAlbumGroup = k == 0,
+                    AlbumGroupSize = lengths[album],
+                });
+        }
+        return rows;
+    }
+
+    [AvaloniaFact]
+    public void A_run_too_short_for_full_size_art_is_followed_by_phantom_rows()
+    {
+        // Slots: album 0 = 0 (+1, 2 phantom), album 1 = 3, 4 (+5 phantom),
+        // album 2 = 6..9.
+        var items = Runs(1, 2, 4);
+        var panel = NewPanel(art: true);
+        panel.SetViewport(scrollOffset: 0, viewportHeight: 20 * RowHeight, viewportWidth: 800);
+        panel.SetItems(items);
+
+        Layout(panel);
+
+        int[] expectedSlots = [0, 3, 4, 6, 7, 8, 9];
+        foreach (var child in panel.Children.Where(c => c.IsVisible))
+        {
+            var index = items.IndexOf((TrackRowViewModel)child.DataContext!);
+            Assert.Equal(expectedSlots[index] * RowHeight, child.Bounds.Y);
+        }
+        Assert.Equal(10 * RowHeight, panel.DesiredSize.Height);
+    }
+
+    [AvaloniaFact]
+    public void The_last_run_is_padded_too_so_its_art_is_not_cut_off_at_the_bottom()
+    {
+        var panel = NewPanel(art: true);
+        panel.SetItems(Runs(3, 1));
+
+        Layout(panel);
+
+        Assert.Equal(6 * RowHeight, panel.DesiredSize.Height);
+    }
+
+    [AvaloniaFact]
+    public void A_phantom_slot_hit_tests_as_no_row()
+    {
+        var panel = NewPanel(art: true);
+        panel.SetItems(Runs(1, 2));
+
+        Assert.Equal(0, panel.RowIndexAt(0.5 * RowHeight));
+        Assert.Equal(-1, panel.RowIndexAt(1.5 * RowHeight));
+        Assert.Equal(-1, panel.RowIndexAt(2.5 * RowHeight));
+        Assert.Equal(1, panel.RowIndexAt(3.5 * RowHeight));
+        Assert.Equal(-1, panel.RowIndexAt(20 * RowHeight));
+    }
+
+    [AvaloniaFact]
+    public void A_drop_inside_the_phantom_padding_lands_after_that_album()
+    {
+        var panel = NewPanel(art: true);
+        panel.SetItems(Runs(1, 2));
+
+        Assert.Equal(0, panel.InsertionIndexAt(0.2 * RowHeight));
+        Assert.Equal(1, panel.InsertionIndexAt(1.2 * RowHeight));
+        Assert.Equal(1, panel.InsertionIndexAt(2.8 * RowHeight));
+        Assert.Equal(1, panel.InsertionIndexAt(3 * RowHeight));
+        Assert.Equal(2, panel.InsertionIndexAt(4 * RowHeight));
+        Assert.Equal(3, panel.InsertionIndexAt(40 * RowHeight));
+        // The end of the list is the bottom of its last row, above the padding.
+        Assert.Equal(5 * RowHeight, panel.RowTop(3));
+    }
+
+    [AvaloniaFact]
+    public void A_viewport_opening_on_phantom_slots_keeps_the_album_whose_art_hangs_into_them()
+    {
+        var items = Runs(1, 1, 1, 1);
+        var panel = NewPanel(art: true);
+        panel.SetItems(items);
+
+        // Slot 4 is album 1's first phantom; album 1 itself is at slot 3.
+        panel.SetViewport(scrollOffset: 4 * RowHeight, viewportHeight: 2 * RowHeight, viewportWidth: 800);
+
+        Assert.Equal(1, RenderedIndices(panel, items)[0]);
+    }
+
+    [AvaloniaFact]
+    public void Hiding_the_art_column_removes_the_phantom_rows()
+    {
+        var panel = NewPanel(art: true);
+        panel.SetItems(Runs(1, 1, 1));
+
+        _columns.ShowAlbumArt = false;
+        Layout(panel);
+
+        Assert.Equal(3 * RowHeight, panel.DesiredSize.Height);
+        Assert.Equal(2, panel.RowIndexAt(2.5 * RowHeight));
     }
 }

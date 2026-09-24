@@ -364,9 +364,9 @@ public partial class MusicListView : UserControl
         Focus();
 
         Scroller.UpdateLayout();
-        double rowTop     = index * TrackRowViewModel.RowHeight;
+        double rowTop     = _panel.RowTop(index);
         double target     = rowTop - (Scroller.Viewport.Height - TrackRowViewModel.RowHeight) / 2;
-        double maxOffset  = Math.Max(0, _items.Count * TrackRowViewModel.RowHeight - Scroller.Viewport.Height);
+        double maxOffset  = Math.Max(0, _panel.ExtentHeight - Scroller.Viewport.Height);
         Scroller.Offset   = new Vector(0, Math.Clamp(target, 0, maxOffset));
         return true;
     }
@@ -700,7 +700,7 @@ public partial class MusicListView : UserControl
     private TrackRowViewModel? HitTestRow(Point panelPoint)
     {
         // panelPoint is already in the panel's local coordinate space (scroll included)
-        int index = (int)Math.Floor(panelPoint.Y / TrackRowViewModel.RowHeight);
+        int index = _panel.RowIndexAt(panelPoint.Y);
         if (index < 0 || index >= _items.Count)
             return null;
         return _items[index];
@@ -778,7 +778,7 @@ public partial class MusicListView : UserControl
         }
 
         int index = InsertionIndexAt(movedPt.Y);
-        _dropIndicator.Margin = new Thickness(0, Math.Max(0, index * TrackRowViewModel.RowHeight - 1), 0, 0);
+        _dropIndicator.Margin = new Thickness(0, Math.Max(0, _panel.RowTop(index) - 1), 0, 0);
     }
 
     private void Panel_PointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -809,7 +809,7 @@ public partial class MusicListView : UserControl
     }
 
     private int InsertionIndexAt(double panelY)
-        => Math.Clamp((int)Math.Round(panelY / TrackRowViewModel.RowHeight), 0, _items.Count);
+        => Math.Clamp(_panel.InsertionIndexAt(panelY), 0, _items.Count);
 
     private void Panel_DoubleTapped(object? sender, TappedEventArgs e)
     {
@@ -887,7 +887,7 @@ public partial class MusicListView : UserControl
 
     private void EnsureVisible(int index)
     {
-        double top    = index * TrackRowViewModel.RowHeight;
+        double top    = _panel.RowTop(index);
         double bottom = top + TrackRowViewModel.RowHeight;
         double vpTop  = Scroller.Offset.Y;
         double vpBot  = vpTop + Scroller.Viewport.Height;

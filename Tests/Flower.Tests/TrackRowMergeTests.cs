@@ -177,7 +177,6 @@ public class TrackRowMergeTests : IDisposable
 
         Assert.Contains(nameof(TrackRowViewModel.IsFirstInAlbumGroup), changed);
         Assert.Contains(nameof(TrackRowViewModel.AlbumGroupSize), changed);
-        Assert.Contains(nameof(TrackRowViewModel.AlbumArtDisplaySize), changed);
     }
 
     [Fact]

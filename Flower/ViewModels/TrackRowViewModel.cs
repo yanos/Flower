@@ -94,7 +94,6 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
         {
             _albumGroupSize = plan.AlbumGroupSize;
             OnPropertyChanged(nameof(AlbumGroupSize));
-            OnPropertyChanged(nameof(AlbumArtDisplaySize));
         }
 
         IsCurrentlyPlaying = plan.IsCurrentlyPlaying;
@@ -115,10 +114,6 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
         a.Path == b.Path &&
         a.OriginAlbumArtId == b.OriginAlbumArtId &&
         a.OriginDeviceFingerprint == b.OriginDeviceFingerprint;
-
-    // Height of the album art image — capped at ArtMaxSize so it never bleeds into the next group.
-    // For short albums (1–2 tracks) the image is proportionally smaller; for 3+ tracks it's square.
-    public double AlbumArtDisplaySize => Math.Min(AlbumGroupSize * RowHeight, ArtMaxSize);
 
     // ── Display helpers ───────────────────────────────────────────────────────
 

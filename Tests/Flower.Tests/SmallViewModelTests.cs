@@ -34,18 +34,6 @@ public class TrackRowViewModelTests
     private static TrackRowViewModel Row(Track track, bool first = true, int groupSize = 1) =>
         new() { Track = track, IsFirstInAlbumGroup = first, AlbumGroupSize = groupSize };
 
-    // Art is capped so a short album's image never bleeds down into the next
-    // group, and is proportionally smaller for 1-2 track albums.
-    [Theory]
-    [InlineData(1, 28.0)]
-    [InlineData(2, 56.0)]
-    [InlineData(3, 76.0)]  // 3*28 = 84, capped at ArtMaxSize
-    [InlineData(20, 76.0)]
-    public void AlbumArtDisplaySize_is_the_group_height_capped_at_ArtMaxSize(int groupSize, double expected)
-    {
-        Assert.Equal(expected, Row(new Track(), groupSize: groupSize).AlbumArtDisplaySize);
-    }
-
     [Fact]
     public void TrackNumberDisplay_is_blank_when_there_is_no_track_number()
     {
