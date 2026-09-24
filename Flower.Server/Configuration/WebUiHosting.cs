@@ -164,6 +164,46 @@ public static class WebUiHosting
     // page=settings is separate from the code because pairing and administering
     // are different things: an ordinary listener pairs a tab and gets a jukebox,
     // and only a link that says so opens the settings overlay.
+    // Where a person should open the web UI, best first: the origin an operator
+    // advertised, then this server's own TLS listener at each address the
+    // machine holds, then plain http on this machine.
+    //
+    // Only https ones from anywhere but here, because of the same browser rule
+    // BrowserOriginFor works around: crypto.subtle - which a tab needs to hold
+    // a device key and pair - exists only in a secure context. http://localhost
+    // is one; http://192.168.x.y is not, and a tab opened there cannot pair.
+    // The TLS listener's own certificate names every one of these addresses
+    // (ServerTls), so a browser warns once that it does not know the issuer
+    // and, past that, is a secure context like any other.
+    //
+    // On a headless server, which is most of them, the localhost entry is the
+    // one nobody can open - it is last for that reason, and still there for
+    // the operator sitting at the machine.
+    public static List<string> BrowserOrigins(FlowerServerOptions options, string localOrigin)
+    {
+        var origins = new List<string>();
+
+        if (options.HttpsPort > 0)
+        {
+            // Reachable puts an advertised origin first; after it, IPv4 before
+            // IPv6, since 192.168.1.40 is the one a person recognises and types.
+            origins.AddRange(LocalAddresses.Reachable(options.HttpsPort, options.AdvertisedHost, "https")
+                .Where(origin => origin.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                .Select((origin, index) => (origin, index))
+                .OrderBy(entry => entry.index == 0 && !string.IsNullOrWhiteSpace(options.AdvertisedHost) ? 0 : entry.origin.Contains("://[") ? 2 : 1)
+                .ThenBy(entry => entry.index)
+                .Select(entry => entry.origin));
+        }
+        else if (Uri.TryCreate(options.AdvertisedHost, UriKind.Absolute, out var advertised) && advertised.Scheme == Uri.UriSchemeHttps)
+        {
+            // TLS off here, but something in front of this server terminates it.
+            origins.Add(advertised.GetLeftPart(UriPartial.Authority));
+        }
+
+        origins.Add(localOrigin);
+        return origins;
+    }
+
     public static string BuildBrowserPairingUrl(string origin, string code) =>
         $"{origin.TrimEnd('/')}/#pair={Uri.EscapeDataString(code)}&page=settings";
 

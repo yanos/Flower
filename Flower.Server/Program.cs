@@ -256,6 +256,21 @@ app.Logger.LogInformation("Flower.Server starting: {Build}", AppVersion.StartupD
 app.Logger.LogInformation("Data directory: {DataDirectory}", dataDirectory);
 app.Logger.LogInformation("Logging to: {LogFile}", logFile);
 
+// Where to open the web UI, on every start rather than only while a pairing
+// code is being printed - an operator on a headless box has no other way to
+// learn it. Not a credential, so through the logger like everything else.
+{
+    var serverOptions = app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
+    if (WebUiHosting.Resolve(app.Environment, serverOptions) != null)
+    {
+        var origins = WebUiHosting.BrowserOrigins(serverOptions, LocalOrigin(builder.Configuration["Urls"], "localhost:4533"));
+        app.Logger.LogInformation(
+            "Web interface: {WebUiAddresses}{CertificateNote}",
+            string.Join(", ", origins.Select(origin => origin + OnThisMachine(origin))),
+            origins.Any(origin => IsOwnTls(origin, serverOptions.HttpsPort)) ? " - https uses this server's own certificate, so a browser warns once" : "");
+    }
+}
+
 // Break the bootstrap circularity: pairing codes are issued from /api/admin,
 // and /api/admin can only be reached by a device that already paired as an
 // admin, so a server nobody has ever administered can't be administered at
@@ -308,19 +323,20 @@ app.Logger.LogInformation("Logging to: {LogFile}", logFile);
         // credential, which is also why it goes to stdout rather than through
         // the ILogger.
         //
-        // Addressed differently from the pairing invite above: that one is for
-        // some *other* device, so a wildcard bind honestly reads as
-        // "<this-server>", while this one is for whoever is reading this console,
-        // who is on the machine. So it resolves the configured bind address and
-        // turns a wildcard into localhost, giving a link that can just be clicked.
-        //
-        // localhost matters for a second reason now: crypto.subtle is only
-        // exposed to a secure context, and http://localhost is one where
-        // http://192.168.x.y is not. See WebUiHosting.BuildBrowserPairingUrl.
-        var browserHost = ResolveLocalHost(builder.Configuration["Urls"]) ?? host;
+        // One link per address a browser can pair at - see
+        // WebUiHosting.BrowserOrigins for which those are and why only https
+        // ones from another machine. This used to be the localhost link alone,
+        // which is the one address nobody can open on a headless server - and
+        // a headless server is what this mostly runs on.
+        var browserOrigins = WebUiHosting.BrowserOrigins(serverOptions, LocalOrigin(builder.Configuration["Urls"], "localhost:4533"));
         Console.WriteLine();
         Console.WriteLine("  Or set it up in a browser (same code, valid just as long):");
-        Console.WriteLine($"  {WebUiHosting.BuildBrowserPairingUrl($"http://{browserHost}", code)}");
+        foreach (var origin in browserOrigins)
+            Console.WriteLine($"  {WebUiHosting.BuildBrowserPairingUrl(origin, code)}{OnThisMachine(origin)}");
+        if (browserOrigins.Any(origin => IsOwnTls(origin, serverOptions.HttpsPort)))
+            Console.WriteLine("  (An https address uses this server's own certificate, so the browser warns once - continue past it.)");
+        else if (browserOrigins.Count == 1)
+            Console.WriteLine("  (TLS is off - Flower:HttpsPort is 0 - so only a browser on this machine can pair: see docs/SELF-HOSTING.md.)");
         Console.WriteLine();
     }
 }
@@ -583,6 +599,20 @@ AppLogging.Shutdown();
 // "localhost:4533" out of "http://0.0.0.0:4533" - the address to type into a
 // browser running on this machine. Null when there is nothing configured to
 // resolve, in which case the caller keeps its own fallback.
+// The plain-http origin a browser on this machine opens, from the configured
+// bind address - see ResolveLocalHost.
+static string LocalOrigin(string? configuredUrls, string fallbackHost) =>
+    $"http://{ResolveLocalHost(configuredUrls) ?? fallbackHost}";
+
+static string OnThisMachine(string origin) =>
+    origin.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase) ? " (on this machine)" : "";
+
+// An https origin on this server's own TLS listener, whose self-signed
+// certificate a browser warns about - as opposed to an advertised proxy's
+// https://music.example.com, which has a real one and a port of its own.
+static bool IsOwnTls(string origin, int httpsPort) =>
+    Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && uri.Port == httpsPort;
+
 static string? ResolveLocalHost(string? configuredUrls)
 {
     var first = configuredUrls?.Split(';', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();

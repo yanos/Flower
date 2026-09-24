@@ -35,7 +35,7 @@ Server logs are under `logs/`. Logs pushed by paired clients are kept for seven
 days as daily JSON Lines files in `logs/devices/<alias>--<fingerprint>/`, for
 example `2026-08-28T00-00-00Z.logs.jsonl`.
 
-On first run it prints a pairing code and a browser link to the terminal,
+On first run it prints a pairing code and browser links to the terminal,
 because no device can administer it yet:
 
 ```
@@ -44,7 +44,18 @@ because no device can administer it yet:
   Or open: flower://pair?host=<this-server>:4533&code=G6RJR&fp=...
 
   Or set it up in a browser (same code, valid just as long):
-  http://localhost:4533/#pair=G6RJR&page=settings
+  https://192.168.1.20:4534/#pair=G6RJR&page=settings
+  http://localhost:4533/#pair=G6RJR&page=settings (on this machine)
+  (An https address uses this server's own certificate, so the browser warns once - continue past it.)
+```
+
+There is one https link per address the machine holds - an `AdvertisedHost`
+first, when one is set - so on a headless server, which is most of them, open
+the LAN one from any computer on the network. Every start also logs where the
+web interface is, whether or not a code is being printed:
+
+```
+Web interface: https://192.168.1.20:4534, http://localhost:4533 (on this machine) - https uses this server's own certificate, so a browser warns once
 ```
 
 One code, two ways to spend it. Enter it in a Flower client's **Pairing code**
@@ -63,9 +74,14 @@ each browser pairs separately, and clearing site data un-pairs it.
 > WebCrypto, which browsers only expose in a secure context. `http://localhost`
 > on the machine running the server counts; `http://192.168.1.20:4533` from
 > another machine does not, and a tab opened there will say so and show an empty
-> library. The remote-access options below all terminate TLS, so this only bites
-> plain-HTTP LAN browsing. Flower *clients* are unaffected — they hold their own
-> keys and never needed a browser.
+> library. Which is why the links above are the server's own TLS port,
+> `https://192.168.1.20:4534`: its certificate is self-signed, so the browser
+> warns once that it does not know who issued it, and past that warning the tab
+> is a secure context and pairs normally. The remote-access options below serve
+> a real certificate and skip the warning. With TLS turned off
+> (`Flower:HttpsPort` = 0) only a browser on the server itself can pair. Flower
+> *clients* are unaffected — they hold their own keys and never needed a
+> browser.
 
 ### Adding devices later
 
