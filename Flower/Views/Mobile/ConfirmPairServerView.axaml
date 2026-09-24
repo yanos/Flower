@@ -62,7 +62,7 @@
              read next to the code that caused it - see
              MobileMainViewModel.SettleCodePairing. The text is the server's own
              words where it gave any (PeerPairingService.DescribeRejectionAsync). -->
-        <TextBlock Text="{Binding Main.PairingCodeError}"
+        <SelectableTextBlock Text="{Binding Main.PairingCodeError}"
                    IsVisible="{Binding Main.PairingCodeError, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                    Foreground="{DynamicResource AppWarningBrush}"
                    FontSize="13" TextWrapping="Wrap" />

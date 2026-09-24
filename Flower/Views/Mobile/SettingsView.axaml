@@ -240,7 +240,7 @@
           <TextBlock IsVisible="{Binding Main.IssuedPairingInvite, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                      Text="Send the link rather than the code. A device given the link refuses to pair with anything but this server; a device given five characters trusts whatever answers."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
-          <TextBlock IsVisible="{Binding Main.IssuedPairingCodeError, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+          <SelectableTextBlock IsVisible="{Binding Main.IssuedPairingCodeError, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                      Text="{Binding Main.IssuedPairingCodeError}"
                      Foreground="{DynamicResource AppWarningBrush}"
                      FontSize="12" TextWrapping="Wrap"/>

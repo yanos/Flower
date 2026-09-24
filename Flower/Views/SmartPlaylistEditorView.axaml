@@ -209,7 +209,7 @@
       <CheckBox Content="Live updating" IsChecked="{Binding LiveUpdating, Mode=TwoWay}"
                 ToolTip.Tip="Keep re-evaluating these rules as the library changes. Off means fill the playlist in once, now, and then leave it alone."/>
 
-      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}"
+      <SelectableTextBlock Text="{Binding Error}" IsVisible="{Binding HasError}"
                  Foreground="{DynamicResource AppErrorBrush}" TextWrapping="Wrap"/>
     </StackPanel>
 
