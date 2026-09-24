@@ -138,11 +138,22 @@ public static class PlaylistSyncPlanner
             var localChanged  = baseline == null || l.UpdatedAt > baseline;
             var remoteChanged = baseline == null || r.UpdatedAt > baseline;
 
+            // Different content with neither side moved past the baseline is
+            // not two edits: nobody edited anything. It is what the last apply
+            // left behind - PlaylistSyncMapper.ResolveTracks drops every track
+            // the receiving side cannot match and keeps UpdatedAt as it was, so
+            // a peer missing some of a playlist's tracks stores a shorter copy
+            // at the same timestamp. Reporting that as a conflict asked the
+            // user to pick between versions they never made, and picking one
+            // went through the same lossy matching and asked again next sync.
+            // Local wins because it is the copy that lost nothing on this
+            // device, and it is what gets pushed back regardless.
             var kind = (localChanged, remoteChanged) switch
             {
-                (true, false) => PlaylistSyncDecisionKind.KeepLocal,
-                (false, true) => PlaylistSyncDecisionKind.AdoptRemote,
-                _             => PlaylistSyncDecisionKind.Conflict,
+                (true, false)  => PlaylistSyncDecisionKind.KeepLocal,
+                (false, true)  => PlaylistSyncDecisionKind.AdoptRemote,
+                (false, false) => PlaylistSyncDecisionKind.KeepLocal,
+                _              => PlaylistSyncDecisionKind.Conflict,
             };
             decisions.Add(new PlaylistSyncDecision(id, kind, l, r));
         }

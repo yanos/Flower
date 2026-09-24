@@ -402,7 +402,7 @@ public static class SyncEndpoints
             return Results.BadRequest();
 
         var playlists = manifest.Playlists
-            .Select(dto => PlaylistSyncMapper.ToPlaylist(dto, library.Tracks))
+            .Select(dto => PlaylistSyncMapper.ToPlaylist(dto, library.Tracks, logger))
             .ToList();
         // Persists itself, through the same PlaylistRepository the client's
         // own Library writes through.

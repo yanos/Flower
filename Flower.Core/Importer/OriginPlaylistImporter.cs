@@ -52,7 +52,7 @@ public sealed class OriginPlaylistImporter(
 
         var playlists = new List<Playlist>();
         foreach (var dto in manifest?.Playlists ?? [])
-            playlists.Add(PlaylistSyncMapper.ToPlaylist(dto, library));
+            playlists.Add(PlaylistSyncMapper.ToPlaylist(dto, library, logger));
 
         logger.LogInformation("Origin server at {BaseUrl}: fetched {PlaylistCount} playlist(s)", baseUrl, playlists.Count);
         return playlists;

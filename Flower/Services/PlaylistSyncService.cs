@@ -189,7 +189,7 @@ public class PlaylistSyncService
             {
                 PlaylistSyncDecisionKind.NoChange  => decision.Local!,
                 PlaylistSyncDecisionKind.KeepLocal => decision.Local!,
-                PlaylistSyncDecisionKind.AdoptRemote => PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks),
+                PlaylistSyncDecisionKind.AdoptRemote => PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks, _logger),
                 PlaylistSyncDecisionKind.Conflict => await ResolveConflictAsync(decision, remoteDisplayName),
                 _ => throw new ArgumentOutOfRangeException(),
             };
@@ -262,7 +262,7 @@ public class PlaylistSyncService
         // both desktop and mobile - see docs/ARCHITECTURE-REVIEW.md.
         if (decision.Local == null || decision.Remote == null)
         {
-            var survivor = decision.Local ?? PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks);
+            var survivor = decision.Local ?? PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks, _logger);
             _logger.LogInformation(
                 "Playlist {Name}: deleted on {DeletedSide} but edited on the other side since they last agreed - keeping the edit rather than propagating the delete",
                 survivor.Name, decision.Local == null ? "this device" : remoteAlias);
@@ -287,6 +287,6 @@ public class PlaylistSyncService
             decision.Local!.Name, remoteAlias, choice);
         return choice == PlaylistConflictChoice.KeepLocal
             ? decision.Local!
-            : PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks);
+            : PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks, _logger);
     }
 }

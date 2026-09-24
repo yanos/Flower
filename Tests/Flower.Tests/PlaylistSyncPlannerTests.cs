@@ -94,6 +94,23 @@ public class PlaylistSyncPlannerTests
         Assert.Equal(PlaylistSyncDecisionKind.Conflict, Assert.Single(decisions).Kind);
     }
 
+    // What an apply leaves behind when the receiving side cannot match every
+    // track: a shorter copy at the same UpdatedAt the two devices agreed on.
+    // Nobody edited anything, so there is nothing to ask the user about - this
+    // used to prompt on every sync after pairing with a server missing tracks.
+    [Fact]
+    public void Differing_content_with_neither_side_past_the_baseline_keeps_local_without_a_conflict()
+    {
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var local = new Playlist(id, "Favorites", new List<Track> { T("A"), T("B"), T("C") }, baseline);
+        var remote = new PlaylistSyncPlaylistDto(id, "Favorites", baseline, new List<PlaylistSyncTrackDto> { Dto("A") });
+
+        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, Assert.Single(decisions).Kind);
+    }
+
     [Fact]
     public void Differing_content_with_no_prior_baseline_is_a_conflict_not_an_automatic_pick()
     {

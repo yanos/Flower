@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Models;
 
 namespace Flower.Services;
@@ -29,17 +31,24 @@ public static class PlaylistSyncMapper
     // silently dropped from the resulting playlist - actual file transfer is a
     // later phase (see SYNC-PLAN.md), so a synced playlist can only ever reference
     // tracks already present on both sides.
-    public static List<Track> ResolveTracks(IEnumerable<PlaylistSyncTrackDto> tracks, IReadOnlyList<Track> localLibrary)
+    public static List<Track> ResolveTracks(
+        IEnumerable<PlaylistSyncTrackDto> tracks, IReadOnlyList<Track> localLibrary, out List<PlaylistSyncTrackDto> unmatched)
     {
         var byKey = localLibrary
             .GroupBy(t => t.SyncKey)
             .ToDictionary(g => g.Key, g => g.First());
 
-        return tracks
-            .Select(dto => Track.BuildSyncKey(dto.Title, dto.Artists, dto.Album, dto.DurationSeconds))
-            .Where(byKey.ContainsKey)
-            .Select(key => byKey[key])
-            .ToList();
+        var resolved = new List<Track>();
+        unmatched = [];
+        foreach (var dto in tracks)
+        {
+            if (byKey.TryGetValue(Track.BuildSyncKey(dto.Title, dto.Artists, dto.Album, dto.DurationSeconds), out var track))
+                resolved.Add(track);
+            else
+                unmatched.Add(dto);
+        }
+
+        return resolved;
     }
 
     // A smart playlist arrives carrying both its rules and whatever the peer
@@ -50,6 +59,22 @@ public static class PlaylistSyncMapper
     // from then on. Nothing has to schedule that evaluation - installing the
     // merged set raises Library.PlaylistsChanged, which SmartPlaylistRefresher
     // is already subscribed to.
-    public static Playlist ToPlaylist(PlaylistSyncPlaylistDto dto, IReadOnlyList<Track> localLibrary) =>
-        new(dto.Id, dto.Name, ResolveTracks(dto.Tracks, localLibrary), dto.UpdatedAt, rules: dto.Rules);
+    //
+    // The drop is logged when a logger is given, because nothing else records
+    // it: the playlist keeps its UpdatedAt, so a shorter copy looks like the
+    // same version everywhere, and "why does the server's playlist have fewer
+    // songs" used to take reading both databases to answer.
+    public static Playlist ToPlaylist(PlaylistSyncPlaylistDto dto, IReadOnlyList<Track> localLibrary, ILogger? logger = null)
+    {
+        var tracks = ResolveTracks(dto.Tracks, localLibrary, out var unmatched);
+        if (unmatched.Count > 0)
+        {
+            logger?.LogInformation(
+                "Playlist {Name} ({PlaylistId}): {Dropped} of {Total} track(s) are not in this library and were dropped: {Tracks}",
+                dto.Name, dto.Id, unmatched.Count, dto.Tracks.Count,
+                string.Join("; ", unmatched.Select(t => $"{t.Artists} - {t.Title} [{t.Album}, {t.DurationSeconds}s]")));
+        }
+
+        return new(dto.Id, dto.Name, tracks, dto.UpdatedAt, rules: dto.Rules);
+    }
 }
