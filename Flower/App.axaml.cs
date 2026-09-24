@@ -824,6 +824,8 @@ public partial class App : Application
 
                 var stopwatch = Stopwatch.StartNew();
                 var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
+                if (OperatingSystem.IsBrowser())
+                    ReportBrowserPairing(importer, mainViewModel);
                 rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
 
                 // Update the playlist first so navigation is consistent when LibraryChanged fires
@@ -952,6 +954,36 @@ public partial class App : Application
     // the desktop button isn't: nothing client-side can know that without
     // asking, and the panel showing the server's own refusal is a better answer
     // than a row that isn't there.
+    // What an unpaired browser tab is told instead of showing an empty library.
+    // Every request such a tab makes is refused, and without this it had no way
+    // to learn why or what to do: its settings page offered a "Generate Pairing
+    // Code" that can only ever come back "not paired", since issuing one takes
+    // an administrator. A tab pairs by being opened through a pairing link, and
+    // the server prints one - so this points at the server's log.
+    internal const string BrowserNotPairedHelp =
+        "This browser isn't paired with this server, so it can't show the library or change any settings.\n\n"
+        + "A browser pairs by opening a pairing link. The server prints one when it starts without an administrator - "
+        + "restart it and open the https link from its log - in the terminal it runs in, or for Docker:\n"
+        + "    docker compose restart flower\n"
+        + "    docker compose logs flower\n"
+        + "A link is valid for ten minutes, and only on the server that printed it. If the server already has an "
+        + "administrator, it prints one only when started with --pairing-code - stop it and start it that way once:\n"
+        + "    docker compose stop flower\n"
+        + "    docker compose run --rm --service-ports flower --pairing-code\n"
+        + "then, once paired, stop that with Ctrl+C and run docker compose up -d. Or, from a Flower app that is an "
+        + "administrator, select the server and choose Open in Browser.";
+
+    private static void ReportBrowserPairing(Importer.IMusicImporter importer, MainViewModel mainViewModel)
+    {
+        // A page that cannot hold a key never had anything to pair, so its
+        // reason comes first - the "not paired" advice would send its user
+        // round a loop (see BrowserPeerCredentials.UnauthenticatedReason).
+        var problem = Ioc.Default.GetService<BrowserPeerCredentials>()?.UnauthenticatedReason
+            ?? (importer is Importer.OriginLibraryImporter { OriginTrustsThisClient: false } ? BrowserNotPairedHelp : null);
+
+        Dispatcher.UIThread.Post(() => mainViewModel.BrowserPairingProblem = problem);
+    }
+
     internal static SettingsViewModel CreateOriginServerSettings()
     {
         // The fourth argument is why this page is worth special-casing at all: a

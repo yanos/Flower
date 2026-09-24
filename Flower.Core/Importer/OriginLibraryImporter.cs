@@ -41,29 +41,66 @@ public sealed class OriginLibraryImporter(
 
     public bool ScansLocalFiles => false;
 
+    // Whether the origin server holds a key for this client, as it said on the
+    // /info handshake: false is "never paired, or revoked since", null is that
+    // it said nothing about it - the request carried no identity (a page that
+    // cannot hold a key), or its signature did not verify on the way.
+    //
+    // It is the one thing an unpaired browser tab needs to be told. Every
+    // request it makes is refused, and before this it showed an empty library
+    // and a settings page whose every button came back "not paired", with no
+    // word of how pairing happens. See MainViewModel.BrowserPairingProblem.
+    public bool? OriginTrustsThisClient { get; private set; }
+
     public async Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null)
     {
-        _importer ??= new RemoteLibraryImporter(
-            http, baseUrl, credentials,
-            originFingerprint: await ResolveOriginFingerprintAsync(),
+        if (_importer == null)
+        {
+            var originFingerprint = await ResolveOriginFingerprintAsync();
+
+            // Not asked for a catalog it would refuse, and not remembered
+            // either: the next import asks again, which is how a tab that pairs
+            // in the meantime gets its library without a reload.
+            if (OriginTrustsThisClient == false)
+            {
+                logger.LogWarning("Origin server at {BaseUrl} does not know this client - it has not been paired "
+                    + "with it, or was unpaired. Nothing to import until it is.", baseUrl);
+                return [];
+            }
+
+            _importer = CreateImporter(originFingerprint);
+        }
+
+        return await _importer.ImportAsync(libraryPaths);
+    }
+
+    private RemoteLibraryImporter CreateImporter(string originFingerprint) =>
+        new(http, baseUrl, credentials,
+            originFingerprint: originFingerprint,
             // Nothing has ever played anything here for the server to echo back
             // under our name - see RemoteLibraryImporter's own remarks on why
             // an empty string is the right answer rather than a missing one.
             ownFingerprint: string.Empty,
             importerLogger);
 
-        return await _importer.ImportAsync(libraryPaths);
-    }
-
     // Throws on a server that will not identify itself, rather than importing a
     // catalog of tracks that could never be played: the caller's rescan already
     // logs and survives a failed import, and an empty library is a far more
     // honest outcome than a full one made of dead rows.
+    //
+    // Signed, although /info is ungated, because that is what makes the server
+    // say whether it knows us (TrustsCaller) - unsigned, it has nobody to
+    // answer about. Signing is also what spends a pairing code the page
+    // arrived with (BrowserPeerCredentials redeems on first use), so a tab
+    // that has just paired is already trusted by the time this asks.
     private async Task<string> ResolveOriginFingerprintAsync()
     {
-        var info = await http.GetFromJsonAsync(
-            $"{baseUrl.TrimEnd('/')}{SyncProtocol.InfoPath}",
-            SyncProtocolJsonContext.Default.SyncInfoResponseDto);
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl.TrimEnd('/')}{SyncProtocol.InfoPath}");
+        await request.AddPeerCredentialsAsync(credentials);
+        using var response = await http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var info = await response.Content.ReadFromJsonAsync(SyncProtocolJsonContext.Default.SyncInfoResponseDto);
+        OriginTrustsThisClient = info?.TrustsCaller;
 
         if (string.IsNullOrEmpty(info?.Fingerprint))
             throw new HttpRequestException($"{baseUrl} did not identify itself at {SyncProtocol.InfoPath}.");

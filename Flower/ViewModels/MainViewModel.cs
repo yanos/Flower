@@ -682,6 +682,24 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool CanOpenSelectedServerSettings =>
         IsSelectedDeviceTrustConfirmed && _signingKey != null && _deviceIdentity != null;
 
+    // Browser only: why this tab cannot show the server's library, and what to
+    // do about it - set at startup (App.ReportBrowserPairing) when the server
+    // says it does not know this tab, or the page cannot hold a key at all.
+    // MainView shows it over the empty track list. Null means nothing is wrong,
+    // or this is not a browser.
+    private string? _browserPairingProblem;
+    public string? BrowserPairingProblem
+    {
+        get => _browserPairingProblem;
+        set
+        {
+            if (_browserPairingProblem == value)
+                return;
+            _browserPairingProblem = value;
+            OnPropertyChanged();
+        }
+    }
+
     // Set when minting a browser session against the selected server failed -
     // most usefully when this device is paired but not an administrator, which is
     // an ordinary outcome and so is said inline next to the button rather than

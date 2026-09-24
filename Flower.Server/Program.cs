@@ -305,8 +305,15 @@ app.Logger.LogInformation("Logging to: {LogFile}", logFile);
         // terminal or `docker logs` right now, and it must not be swallowed by
         // a log level, routed to a file, or shipped off to a log aggregator
         // where a live credential has no business being.
+        //
+        // The invite names a real address to dial - an advertised one, else this
+        // machine's LAN address - where it used to say "<this-server>:4533"
+        // whenever nothing was advertised: a placeholder, in a link meant to be
+        // opened on another device, that no app can dial. A client given the
+        // invite still checks the fingerprint in it, so a wrong guess of address
+        // fails to pair rather than pairing with the wrong thing.
         var host = string.IsNullOrWhiteSpace(serverOptions.AdvertisedHost)
-            ? "<this-server>:4533"
+            ? LanHost(builder.Configuration["Urls"])
             : serverOptions.AdvertisedHost;
         Console.WriteLine();
         Console.WriteLine(forcePairingCode
@@ -599,6 +606,24 @@ AppLogging.Shutdown();
 // "localhost:4533" out of "http://0.0.0.0:4533" - the address to type into a
 // browser running on this machine. Null when there is nothing configured to
 // resolve, in which case the caller keeps its own fallback.
+// "host:port" of this machine on its LAN, for a pairing invite: the first
+// address LocalAddresses finds - IPv4 first, the one a person recognises - on
+// the configured http port. On a Docker bridge that is the container's own
+// 172.x address, which is why an AdvertisedHost wins over it (see
+// docker-compose.bridge.yml).
+static string LanHost(string? configuredUrls)
+{
+    var first = configuredUrls?.Split(';', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+    var port = first != null && Uri.TryCreate(first.Trim(), UriKind.Absolute, out var uri) ? uri.Port : 4533;
+    var address = LocalAddresses.Own()
+        .OrderBy(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? 1 : 0)
+        .FirstOrDefault();
+
+    return address == null ? $"<this-server>:{port}"
+        : address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{address}]:{port}"
+        : $"{address}:{port}";
+}
+
 // The plain-http origin a browser on this machine opens, from the configured
 // bind address - see ResolveLocalHost.
 static string LocalOrigin(string? configuredUrls, string fallbackHost) =>

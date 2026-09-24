@@ -425,7 +425,7 @@
                     Margin="8,0,0,0" VerticalAlignment="Center"/>
             <!-- A wrong or expired code is an ordinary outcome, so it is said
                  plainly next to the box rather than raised as a dialog. -->
-            <TextBlock Text="{Binding PairingCodeError}"
+            <SelectableTextBlock Text="{Binding PairingCodeError}"
                        IsVisible="{Binding PairingCodeError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                        Foreground="{DynamicResource AppErrorBrush}" FontSize="12"
                        VerticalAlignment="Center" Margin="8,0,0,0"/>
@@ -450,7 +450,7 @@
             <!-- "Paired, but not an administrator of that server" is the common
                  case here, and it is an ordinary outcome rather than a fault -
                  said plainly next to the button, same as PairingCodeError. -->
-            <TextBlock Text="{Binding ServerSettingsError}"
+            <SelectableTextBlock Text="{Binding ServerSettingsError}"
                        IsVisible="{Binding ServerSettingsError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                        Foreground="{DynamicResource AppErrorBrush}" FontSize="12" TextWrapping="Wrap"
                        MaxWidth="260"
@@ -499,6 +499,23 @@
         </StackPanel>
       </Border>
     </Grid>
+
+    <!-- Browser only: why this tab has no library, and how to pair it (see
+         MainViewModel.BrowserPairingProblem). Over the content row rather than
+         in it - the library behind it is empty anyway - and last in the grid so
+         it draws on top. Selectable, because what it says is commands to copy. -->
+    <Border Grid.Row="1"
+            IsVisible="{Binding BrowserPairingProblem, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            MaxWidth="560" Margin="24" Padding="20"
+            CornerRadius="8" BorderThickness="1"
+            Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+      <StackPanel Spacing="10">
+        <TextBlock Text="This browser can't reach the library" FontSize="18" FontWeight="SemiBold"/>
+        <SelectableTextBlock Text="{Binding BrowserPairingProblem}" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
 
   </Grid>
 

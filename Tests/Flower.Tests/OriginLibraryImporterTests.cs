@@ -35,8 +35,8 @@ public class OriginLibraryImporterTests
 
     private const string ServerFingerprint = "server-fingerprint";
 
-    private static OriginLibraryImporter Importer(FakePeerHttpServer server) =>
-        new(Http, $"http://127.0.0.1:{server.Port}", new NoCredentials(),
+    private static OriginLibraryImporter Importer(FakePeerHttpServer server, IPeerCredentials? credentials = null) =>
+        new(Http, $"http://127.0.0.1:{server.Port}", credentials ?? new NoCredentials(),
             NullLogger<RemoteLibraryImporter>.Instance, NullLogger<OriginLibraryImporter>.Instance);
 
     private static TrackDto Song(string title) => new(
@@ -51,16 +51,19 @@ public class OriginLibraryImporterTests
     // Both routes a browser's library needs, on one host: the identity handshake
     // and the bulk manifest.
     private static FakePeerHttpServer Server(
-        List<TrackDto> songs, string? fingerprint = ServerFingerprint, List<string>? requested = null) =>
+        List<TrackDto> songs, string? fingerprint = ServerFingerprint, List<string>? requested = null,
+        bool? trustsCaller = null, List<string?>? infoIdentities = null) =>
         new(async context =>
         {
             var path = context.Request.Url!.AbsolutePath;
             requested?.Add(path);
+            if (path == SyncProtocol.InfoPath)
+                infoIdentities?.Add(context.Request.Headers["X-Flower-Fingerprint"]);
 
             object payload = path == SyncProtocol.InfoPath
                 ? new SyncInfoResponseDto(
                     "Study Server", "2.0", null, "server", fingerprint!, "public-key",
-                    Download: false, TrustsCaller: null, LibraryToken: "token-1")
+                    Download: false, TrustsCaller: trustsCaller, LibraryToken: "token-1")
                 : new LibrarySyncManifestDto(ServerFingerprint, songs);
 
             var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, payload.GetType(), JsonOptions));
@@ -124,6 +127,60 @@ public class OriginLibraryImporterTests
         // answer rather than something the filesystem scanner states itself.
         Assert.True(((IMusicImporter)new Flower.Importer.Importer(NullLogger<Flower.Importer.Importer>.Instance))
             .ScansLocalFiles);
+    }
+
+    // A tab the server has never paired with is refused everything, and used to
+    // find out only as an empty library and a settings page whose every button
+    // said "not paired". The handshake says so up front, and the importer
+    // reports it (App.ReportBrowserPairing shows it) instead of asking for a
+    // catalog it would be refused.
+    [Fact]
+    public async Task A_server_that_does_not_know_this_client_is_reported_and_not_asked_for_a_library()
+    {
+        var requested = new List<string>();
+        using var server = Server([Song("One")], requested: requested, trustsCaller: false);
+        var importer = Importer(server);
+
+        var tracks = await importer.ImportAsync();
+
+        Assert.Empty(tracks);
+        Assert.False(importer.OriginTrustsThisClient);
+        Assert.DoesNotContain(RemoteLibraryImporter.LibraryPath, requested);
+    }
+
+    // And asks again next time, rather than remembering the refusal: a tab that
+    // pairs while open gets its library on the next refresh, not the next reload.
+    [Fact]
+    public async Task A_refusal_is_not_remembered()
+    {
+        var requested = new List<string>();
+        using var server = Server([Song("One")], requested: requested, trustsCaller: false);
+        var importer = Importer(server);
+
+        await importer.ImportAsync();
+        await importer.ImportAsync();
+
+        Assert.Equal(2, requested.Count(p => p == SyncProtocol.InfoPath));
+    }
+
+    // The server only says whether it knows a caller who said who they are, so
+    // the handshake has to carry the tab's identity like any other request.
+    [Fact]
+    public async Task The_handshake_carries_this_clients_identity()
+    {
+        var identities = new List<string?>();
+        using var server = Server([Song("One")], infoIdentities: identities, trustsCaller: true);
+
+        await Importer(server, new FingerprintCredentials("tab-fingerprint")).ImportAsync();
+
+        Assert.Equal(["tab-fingerprint"], identities);
+    }
+
+    private sealed class FingerprintCredentials(string fingerprint) : IPeerCredentials
+    {
+        public Task<IReadOnlyList<(string Key, string Value)>> AuthorizeAsync(
+            string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body) =>
+            Task.FromResult<IReadOnlyList<(string Key, string Value)>>([("X-Flower-Fingerprint", fingerprint)]);
     }
 
     // The browser presents a signature; this test's server does not check
