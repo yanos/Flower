@@ -92,6 +92,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 ENV Flower__DataDirectory=/data \
     Flower__LibraryPaths__0=/music
 
+# Cleared, because the base image sets it to 8080 for every container and
+# Flower.Server chooses its own ports (UseUrls in Program.cs: 4533, and 4534
+# for TLS). Left set, ASP.NET logs on every start that it is "Overriding
+# HTTP_PORTS '8080'" - nothing listens on 8080 either way, but a warning on
+# every healthy start is one an operator learns to skim past.
+ENV ASPNETCORE_HTTP_PORTS=
+
 # 4533 plain, 4534 TLS - the latter served with a certificate minted from the
 # server's own device key, so paired Flower clients validate it without a CA
 # (see ServerTls). Both are informational under `network_mode: host`, which is
