@@ -251,6 +251,8 @@ builder.Services.AddSingleton(new DeviceSigningKey(deviceKey, devicePublicKeyRaw
 
 var app = builder.Build();
 
+// Which build this is and when it was built, first - see AppVersion.
+app.Logger.LogInformation("Flower.Server starting: {Build}", AppVersion.StartupDescription);
 app.Logger.LogInformation("Data directory: {DataDirectory}", dataDirectory);
 app.Logger.LogInformation("Logging to: {LogFile}", logFile);
 

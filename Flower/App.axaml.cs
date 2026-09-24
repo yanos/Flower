@@ -138,7 +138,9 @@ public partial class App : Application
             PlatformCrashInfo.PendingAndroidExitReasons = null;
         }
 
-        logger.LogInformation("Flower starting. Log file: {LogPath}", logPath);
+        // Which build this is and when it was built, first - a log is only
+        // evidence once it says which build wrote it.
+        logger.LogInformation("Flower starting: {Build}. Log file: {LogPath}", AppVersion.StartupDescription, logPath);
 
         if (ApplicationLifetime is IActivityApplicationLifetime activityLifetime)
         {

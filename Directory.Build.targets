@@ -13,4 +13,25 @@
       <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
     </PropertyGroup>
   </Target>
+
+  <!-- When this build happened, stamped as [AssemblyMetadata("BuildDate", ...)]
+       and logged at startup beside the version (AppVersion.BuildDate).
+
+       Only into executables that are not test projects - the app heads and
+       the server - and that is the point rather than an allow-list: nothing
+       references them, so a value that changes on every build recompiles a
+       few-line head and nothing else. Stamped into Flower.Core instead, it
+       would change that assembly's reference assembly on every build and
+       recompile every project above it, including a full AOT pass on iOS.
+       In a target rather than a static item because the time has to be read
+       when the build runs, not when the project is parsed. An Android app is
+       OutputType Library - the APK is packaging around it - so it is known by
+       AndroidApplication instead. -->
+  <Target Name="_StampFlowerBuildDate"
+          BeforeTargets="GetAssemblyAttributes"
+          Condition="('$(OutputType)' == 'Exe' OR '$(OutputType)' == 'WinExe' OR '$(AndroidApplication)' == 'true') AND '$(IsTestProject)' != 'true'">
+    <ItemGroup>
+      <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))" />
+    </ItemGroup>
+  </Target>
 </Project>

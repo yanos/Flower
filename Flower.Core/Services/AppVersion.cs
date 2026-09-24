@@ -32,6 +32,46 @@ public static class AppVersion
     // to someone who just wants to know they are on 0.1.0.
     public static string Display { get; } = StripBuildMetadata(Full);
 
+    // When this build happened, as the build stamped it into the executable
+    // that was started (see _StampFlowerBuildDate in Directory.Build.targets),
+    // or null when nothing loaded carries a stamp - a library loaded by a test
+    // host, say.
+    //
+    // Found among the loaded assemblies rather than through
+    // Assembly.GetEntryAssembly(), for the reason Source gives: that can be
+    // null depending on how the process was started, and a phone or a browser
+    // is exactly where it tends to be.
+    public static DateTimeOffset? BuildDate => Stamp?.Date;
+
+    // Which executable carries that stamp - Flower.MacOS, Flower.iOS,
+    // Flower.Server - i.e. which entry point this process is.
+    public static string EntryPoint => Stamp?.Assembly ?? "unknown";
+
+    private static readonly (string Assembly, DateTimeOffset Date)? Stamp = FindStamp();
+
+    private static (string, DateTimeOffset)? FindStamp()
+    {
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            foreach (var metadata in assembly.GetCustomAttributes<AssemblyMetadataAttribute>())
+            {
+                if (metadata.Key == "BuildDate"
+                    && DateTimeOffset.TryParse(metadata.Value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var date))
+                {
+                    return (assembly.GetName().Name ?? "unknown", date);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // The one startup line every entry point logs: which executable, which
+    // build, when it was built, on what.
+    public static string StartupDescription =>
+        $"{EntryPoint} {Full}, built {(BuildDate is { } date ? date.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", System.Globalization.CultureInfo.InvariantCulture) : "at an unknown time")}, "
+        + $"on {System.Runtime.InteropServices.RuntimeInformation.OSDescription} ({System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture})";
+
     // Also for another assembly's version - the decoder's, when it comes from
     // the FFAudio.NET package (see DecoderVersion).
     public static string StripBuildMetadata(string version)
