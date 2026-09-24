@@ -358,31 +358,36 @@
               IsVisible="{Binding IsShowingDeviceDetail}"
               Margin="24" RowDefinitions="Auto,*">
           <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,16">
-            <!-- Server vs. plain-device icon - see MainViewModel.DeviceSidebarIcon;
-                 SelectedSidebarItem.Icon is the same one shown in the sidebar row. -->
-            <materialIcons:MaterialIcon Kind="{Binding SelectedSidebarItem.Icon}" Width="28" Height="28" VerticalAlignment="Center"/>
             <StackPanel VerticalAlignment="Center" Spacing="2">
               <StackPanel Orientation="Horizontal" Spacing="6">
-                <!-- Only once the paired server has actually approved this
-                     device (see MainViewModel.IsSelectedDeviceTrustConfirmed)
-                     - not just requested, which is IsSelectedDevicePaired
-                     alone (see PairActionLabel's "Waiting for server..."
-                     state below). While it is still requested, or a sync is
-                     running, the same glyph spins instead - which is why the
-                     pairing row further down no longer carries a spinner of
-                     its own. -->
-                <controls:ConnectionStatusIcon
-                    IsConnected="{Binding IsSelectedDeviceTrustConfirmed}"
-                    IsBusy="{Binding IsSelectedDeviceBusy}"
-                    IconSize="18"
-                    VerticalAlignment="Center"/>
                 <!-- SelectedSidebarItem.Name, not SelectedDevice.Alias - the sidebar
                      row already resolves a local nickname override (DeviceNicknameStore)
                      over the peer's raw self-reported alias and keeps it live-updated
                      on rename; SelectedDevice.Alias is that raw, unresolved value. -->
                 <TextBlock Text="{Binding SelectedSidebarItem.Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <!-- Reachable/unreachable come from the selected sidebar row
+                     itself (SidebarItem.ShowReachableIcon/ShowUnreachableIcon),
+                     the same two properties the row's own glyph binds, so the
+                     header and the sidebar cannot disagree. This used to bind
+                     IsSelectedDeviceTrustConfirmed, which is about the pairing
+                     rather than the server being there, and so showed a green
+                     check beside a sidebar warning for a server that had gone
+                     away. Busy is the one addition: a pairing still awaiting
+                     approval spins here as well as a sync, which is why the
+                     pairing row further down no longer carries a spinner of
+                     its own. After the name, the way the sidebar row puts it. -->
+                <controls:ConnectionStatusIcon
+                    IsConnected="{Binding SelectedSidebarItem.ShowReachableIcon}"
+                    IsUnreachable="{Binding SelectedSidebarItem.ShowUnreachableIcon}"
+                    IsBusy="{Binding IsSelectedDeviceBusy}"
+                    IconSize="18"
+                    VerticalAlignment="Center"/>
               </StackPanel>
-              <TextBlock Text="{Binding SelectedDevice.Origin}" Opacity="0.5" FontSize="13"/>
+              <!-- Collapsed rather than blank with no live endpoint (the
+                   pinned row of a paired server that has dropped off the
+                   network): an empty line still takes its height. -->
+              <TextBlock Text="{Binding SelectedDevice.Origin}" Opacity="0.5" FontSize="13"
+                         IsVisible="{Binding SelectedDevice, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
               <!-- The key this device actually pinned, so it can be compared
                    against what the server says about itself. Only useful for a
                    pairing made with a bare code - one made from a flower://
@@ -444,7 +449,7 @@
             <Button Content="Open in Browser…"
                     ToolTip.Tip="Pairs a browser tab with this server as an administrator and opens its settings page there."
                     IsVisible="{Binding CanOpenSelectedServerSettings}"
-                    IsEnabled="{Binding !IsOpeningServerSettings}"
+                    IsEnabled="{Binding IsOpenSelectedServerSettingsEnabled}"
                     Click="ServerSettingsButton_Click"
                     Margin="12,0,0,0" VerticalAlignment="Center"/>
             <!-- "Paired, but not an administrator of that server" is the common
@@ -466,7 +471,7 @@
           <!-- Why there is no panel, when there is none: a server that has not
                approved this device yet has nothing it will let us read, and one
                that has approved us but not as an administrator says so itself. -->
-          <TextBlock Grid.Row="1" x:Name="ServerSettingsMessage"
+          <SelectableTextBlock Grid.Row="1" x:Name="ServerSettingsMessage"
                      Opacity="0.6" FontSize="13" TextWrapping="Wrap"
                      VerticalAlignment="Top"/>
 

@@ -255,6 +255,8 @@ public partial class MainView : UserControl
                 break;
             case nameof(MainViewModel.SelectedServerSettings):
             case nameof(MainViewModel.IsSelectedDevicePaired):
+            case nameof(MainViewModel.IsSelectedServerReachable):
+            case nameof(MainViewModel.IsPairAwaitingApproval):
                 UpdateServerSettingsPane();
                 break;
             case nameof(MainViewModel.IsShowingServerSettings):
@@ -1653,9 +1655,27 @@ public partial class MainView : UserControl
     }
 
     // The panel only earns its place once the server has actually answered with
-    // its settings. Until then this says why it has not: not paired, not yet
-    // approved, or - the common one - paired as an ordinary listener rather than
-    // an administrator, which is the server's own refusal message.
+    // its settings. Until then this says why it has not: not paired, not
+    // reachable, not yet approved, or - the common one - paired as an ordinary
+    // listener rather than an administrator, which is the server's own refusal
+    // message.
+    //
+    // "Not yet approved" is asked rather than assumed. It used to be the
+    // fallback for everything else, so a server that had approved this device
+    // long ago and then dropped off the network was reported as waiting to
+    // approve it.
+    // Written for a listener rather than the owner, since the owner is the one
+    // person who never needs telling: what pairing gets them, and where the
+    // code comes from - which is somebody else, so the message says who to ask.
+    // The owner's own route is the code the server prints to its log while
+    // nothing can administer it (see docs/SELF-HOSTING.md). Single-use and ten minutes is the server's rule,
+    // see docs/SELF-HOSTING.md.
+    private const string NotPairedMessage =
+        "Pair with this server to stream and download its music on this device.\n\n"
+        + "To pair, you need a pairing code or invite link from whoever runs this server. "
+        + "If it's your own server and nothing is paired with it yet, it prints a pairing code in its log when it starts.\n\n"
+        + "A code works once and expires after ten minutes, so use it soon after you get it.";
+
     private void UpdateServerSettingsMessage()
     {
         var vm = _viewModel;
@@ -1667,8 +1687,10 @@ public partial class MainView : UserControl
         ServerSettingsMessage.Text =
             settings?.ErrorMessage is { Length: > 0 } error ? error :
             settings != null ? "Loading this server's settings…" :
-            vm is null || !vm.IsSelectedDevicePaired ? "Pair with this server to manage it." :
-            "Waiting for this server to approve this device.";
+            vm is null || !vm.IsSelectedDevicePaired ? NotPairedMessage :
+            !vm.IsSelectedServerReachable ? "This server can't be reached right now. Its settings will appear here once it's back on the network." :
+            vm.IsPairAwaitingApproval ? "Waiting for this server to approve this device." :
+            "This server's settings can't be managed from this device.";
     }
 
     // Device-detail header's Pair/Unpair button - mirrors ServerPickerView's
@@ -1682,19 +1704,27 @@ public partial class MainView : UserControl
 
     private async void PairActionButton_Click(object? sender, RoutedEventArgs e)
     {
-        if (_viewModel is not { SelectedDevice: { } device } vm)
+        if (_viewModel is not { } vm)
             return;
         if (TopLevel.GetTopLevel(this) is not Window owner)
             return;
 
-        var alias = vm.SelectedSidebarItem?.Name ?? device.Alias;
+        // No SelectedDevice is an ordinary state for the paired server's row:
+        // it stays pinned in the sidebar after the server drops off the
+        // network, with no live endpoint behind it (see
+        // DeviceSidebarSection.RemoveItem). Unpairing needs none - it only
+        // forgets this side of the pairing - so only the pair path below asks
+        // for one. Requiring it up front is what once left Unpair doing
+        // nothing on exactly the row where it is most wanted.
+        var device = vm.SelectedDevice;
+        var alias = vm.SelectedSidebarItem?.Name ?? device?.Alias ?? "this server";
 
         if (vm.IsSelectedDevicePaired)
         {
             var confirmedUnpair = await ConfirmDialogWindow.ShowAsync(
                 owner,
                 $"Unpair From \"{alias}\"?",
-                $"This device will no longer bulk-sync library/playlist data with \"{alias}\". Browsing and streaming will still work.",
+                MainViewModel.UnpairConsequences(alias),
                 "Unpair");
             if (confirmedUnpair)
                 vm.UnpairServer();
@@ -1709,6 +1739,9 @@ public partial class MainView : UserControl
         // Nothing is being asked: a server is headless, so the admin-issued
         // code the user already holds is the whole of the approval, and the
         // copy says so rather than promising a prompt nobody will ever see.
+        if (device == null)
+            return;
+
         if (string.IsNullOrWhiteSpace(vm.PairingCode))
         {
             vm.PairingCodeError = "Enter the pairing code first.";

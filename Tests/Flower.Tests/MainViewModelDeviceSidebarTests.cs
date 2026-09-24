@@ -488,6 +488,25 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         Assert.True(vm.CanOpenSelectedServerSettings);
     }
 
+    // An approved server that has dropped off the network keeps its pinned row
+    // with no endpoint behind it. Selecting that row must read as unreachable -
+    // the same answer the row's own glyph gives - not as waiting for approval,
+    // and must still offer Unpair while greying out Open in Browser.
+    [AvaloniaFact]
+    public void An_approved_server_that_is_gone_reads_as_unreachable_not_awaiting_approval()
+    {
+        var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
+        var row = SingleDeviceRow(vm);
+        vm.SelectedSidebarItem = row;
+
+        Assert.True(row.ShowUnreachableIcon);
+        Assert.False(vm.IsSelectedServerReachable);
+        Assert.False(vm.IsPairAwaitingApproval);
+        Assert.False(vm.IsOpenSelectedServerSettingsEnabled);
+        Assert.True(vm.CanPairWithSelectedDevice);
+        Assert.Equal("Unpair", vm.PairActionLabel);
+    }
+
     // Mobile's Settings sheet asks the paired server rather than a selected row,
     // and resolves it through PairedServerReachability - which nothing has
     // populated here, so there is no reachable server to ask.

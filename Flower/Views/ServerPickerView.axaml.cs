@@ -359,7 +359,7 @@ public partial class ServerPickerView : UserControl
             var confirmed = await ConfirmDialogWindow.ShowAsync(
                 owner,
                 $"Unpair From \"{row.Alias}\"?",
-                $"This device will stop getting music and playlists from \"{row.Alias}\". You can still browse and play from it.",
+                MainViewModel.UnpairConsequences(row.Alias),
                 "Unpair");
             if (!confirmed)
                 return;

@@ -609,5 +609,10 @@
                             IsOpen="{Binding IsShowingConfirmDeletePlaylist}">
       <views:ConfirmDeletePlaylistView />
     </controls:SlidingSheet>
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingConfirmUnpairServer}">
+      <views:ConfirmUnpairServerView />
+    </controls:SlidingSheet>
   </Grid>
 </UserControl>

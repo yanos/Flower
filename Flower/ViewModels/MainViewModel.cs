@@ -240,6 +240,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public void UnpairServer() => Sync.UnpairServer();
 
+    // What unpairing costs, said the same way by all three places that ask
+    // before doing it: the server's detail page, Settings' Devices tab, and
+    // the phone's Settings sheet. What it says is PeerSyncCoordinator.
+    // UnpairServer's behaviour: a downloaded file is this device's own and
+    // stays, a placeholder was only ever a promise the server would stream it
+    // and goes (see Library.RemoveTracksFromOrigin).
+    public static string UnpairConsequences(string alias) =>
+        $"Songs you downloaded from \"{alias}\" stay in your library. The rest of its songs will be removed from this device, since nothing can play them once it stops being paired. "
+        + "To get them back, pair again with a new code from the server.";
+
     public bool IsPairedServerReachable => Sync.IsPairedServerReachable;
 
     // The two above as one bindable value, for the views that hand "what
@@ -727,8 +737,25 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 return;
             _isOpeningServerSettings = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsOpenSelectedServerSettingsEnabled));
         }
     }
+
+    // Whether the selected server can be talked to right now. Read off the
+    // sidebar row's own glyph (SidebarItem.ShowUnreachableIcon) rather than
+    // worked out again here, so the device-detail header and the row beside it
+    // cannot disagree about it - they once did, a warning in the sidebar and a
+    // green check in the header for the same unreachable server. A row with no
+    // live endpoint at all (the pinned paired-server placeholder, see
+    // DeviceSidebarSection.RemoveItem) has no address to reach, whatever it
+    // says.
+    public bool IsSelectedServerReachable =>
+        SelectedDevice != null && !(_selectedSidebarItem?.ShowUnreachableIcon ?? false);
+
+    // Open in Browser stays visible for a paired server that has dropped off
+    // the network, so it is clear the action exists, but greyed out: it has to
+    // sign a request against that server, and there is nothing to send it to.
+    public bool IsOpenSelectedServerSettingsEnabled => IsSelectedServerReachable && !IsOpeningServerSettings;
 
     // Opens the selected server's own settings page in the OS browser.
     //
@@ -1064,7 +1091,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // runs off the 5s peer poll, where the answer is the same every time, and
     // each of these is a computed property the bindings then re-evaluate.
     // See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
-    private (bool, bool, bool, bool, bool, bool, string?, bool, string?, bool, bool, bool)? _lastPairButtonState;
+    private (bool, bool, bool, bool, bool, bool, string?, bool, string?, bool, bool, bool, bool)? _lastPairButtonState;
 
     private void NotifyPairButtonPropertiesChanged()
     {
@@ -1080,6 +1107,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             PairActionHint,
             IsPairingCodeRequired,
             CanOpenSelectedServerSettings,
+            IsSelectedServerReachable,
             // Carries its own term because it is gated on being an administrator
             // of the server in question, which the 5s /info poll can flip on its
             // own - see DiscoveredDevice.WeAreAdmin.
@@ -1114,6 +1142,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsPairingCodeRequired));
         OnPropertyChanged(nameof(IsPairSubmittable));
         OnPropertyChanged(nameof(CanOpenSelectedServerSettings));
+        OnPropertyChanged(nameof(IsSelectedServerReachable));
+        OnPropertyChanged(nameof(IsOpenSelectedServerSettingsEnabled));
         // Mobile's Settings sheet asks the *paired* server rather than the
         // selected one.
         OnPropertyChanged(nameof(CanInviteDeviceToPairedServer));
@@ -1427,6 +1457,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             // which resolves the server through this same service.
             OnPropertyChanged(nameof(CanInviteDeviceToPairedServer));
             _deviceSidebar.SyncPairedServerRow();
+            // After the row's glyph, which IsSelectedServerReachable reads.
+            NotifyPairButtonPropertiesChanged();
             Browser.ApplyTrackAvailability(PairedServerFingerprint, reachability.IsReachable);
             ReachabilityChanged?.Invoke(this, EventArgs.Empty);
         },

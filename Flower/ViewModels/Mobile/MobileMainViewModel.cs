@@ -38,7 +38,7 @@ public enum MobileNavigationTransition { None, FromRight, FromLeft }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist }
+public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -175,6 +175,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand DeleteAlbumActionTargetLocalFilesCommand { get; }
     public ICommand PairWithServerCommand { get; }
     public ICommand UnpairServerCommand { get; }
+    public ICommand ConfirmUnpairServerCommand { get; }
+    public ICommand CancelUnpairServerCommand { get; }
 
     // Hands out a one-time pairing code for somebody else's device, if this
     // phone is an administrator of the server it is paired with - desktop's
@@ -1047,6 +1049,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingConfirmPairServer));
             OnPropertyChanged(nameof(IsShowingConfirmDeleteFile));
             OnPropertyChanged(nameof(IsShowingConfirmDeletePlaylist));
+            OnPropertyChanged(nameof(IsShowingConfirmUnpairServer));
 
             // Sampling costs a timer tick a second, so it runs only while the
             // readout that consumes it is actually on screen - a diagnostics
@@ -1209,6 +1212,17 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public bool IsShowingConfirmPairServer => ActiveSheet == MobileSheet.ConfirmPairServer;
     public bool IsShowingConfirmDeleteFile => ActiveSheet == MobileSheet.ConfirmDeleteFile;
     public bool IsShowingConfirmDeletePlaylist => ActiveSheet == MobileSheet.ConfirmDeletePlaylist;
+    public bool IsShowingConfirmUnpairServer => ActiveSheet == MobileSheet.ConfirmUnpairServer;
+
+    // Unpairing is asked about rather than done on the tap, the way desktop's
+    // two Unpair buttons ask: it removes every song this phone has not
+    // downloaded, and getting them back takes a fresh code from the server's
+    // owner. The sheet takes Settings' place, as the pairing one does, and puts
+    // it back whichever way it is answered - see _sheetBeforePairing.
+    private MobileSheet _sheetBeforeUnpair = MobileSheet.None;
+
+    public string ConfirmUnpairServerTitle => $"Unpair From \"{Main.PairedServerAlias}\"?";
+    public string ConfirmUnpairServerMessage => MainViewModel.UnpairConsequences(Main.PairedServerAlias ?? "this server");
 
     // Set by PairWithServerCommand (Settings' server list) before switching to
     // the ConfirmPairServer sheet, cleared once ConfirmPairServerCommand/
@@ -2206,7 +2220,19 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsConfirmPairServerEnabled));
             ActiveSheet = MobileSheet.ConfirmPairServer;
         });
-        UnpairServerCommand = new RelayCommand(Main.UnpairServer);
+        UnpairServerCommand = new RelayCommand(() =>
+        {
+            _sheetBeforeUnpair = ActiveSheet;
+            OnPropertyChanged(nameof(ConfirmUnpairServerTitle));
+            OnPropertyChanged(nameof(ConfirmUnpairServerMessage));
+            ActiveSheet = MobileSheet.ConfirmUnpairServer;
+        });
+        ConfirmUnpairServerCommand = new RelayCommand(() =>
+        {
+            Main.UnpairServer();
+            ActiveSheet = _sheetBeforeUnpair;
+        });
+        CancelUnpairServerCommand = new RelayCommand(() => ActiveSheet = _sheetBeforeUnpair);
         InviteDeviceCommand = new RelayCommand(async () => await Main.InviteDeviceToPairedServerAsync());
         AddManualServerCommand = new RelayCommand(async () =>
         {
