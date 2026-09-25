@@ -13,9 +13,11 @@ namespace Flower.Server.Services;
 //
 // Which means an outbound request to somebody else's server, so:
 //
-// - It is only made when a settings page is actually being rendered, never on a
-//   timer and never at startup. An operator who never opens the network tab
-//   never contacts either of these hosts.
+// - It is made when a settings page is being rendered, and otherwise only
+//   while AllowPublicAccess is on - PublicReachability then re-asks on a timer,
+//   because the answer is what clients are told to dial from outside. A server
+//   whose door is shut, and whose operator never opens the network tab, never
+//   contacts either of these hosts.
 // - It fails quietly. A server with no route out, or one deliberately kept off
 //   the internet, is not broken - it just has no public address to show, which
 //   is exactly what the page then says.
@@ -53,6 +55,14 @@ public sealed class PublicAddressProbe : IDisposable
     private string? _cached;
     private DateTimeOffset _cachedAt;
 
+    // The last address any lookup found, however old, and without asking. For
+    // the one caller that cannot wait on a third party - /info, answering every
+    // paired device every few seconds (see PublicReachability.OriginFor). Kept
+    // past the cache's expiry on purpose: a failed lookup says the link out is
+    // down, not that the address changed.
+    public string? LastKnown => Volatile.Read(ref _lastKnown);
+    private string? _lastKnown;
+
     public PublicAddressProbe(ILogger<PublicAddressProbe> logger, HttpMessageHandler? handler = null)
     {
         _logger = logger;
@@ -86,6 +96,7 @@ public sealed class PublicAddressProbe : IDisposable
 
                 _cached = address;
                 _cachedAt = DateTimeOffset.UtcNow;
+                Volatile.Write(ref _lastKnown, address);
                 return address;
             }
 

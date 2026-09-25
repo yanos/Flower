@@ -60,7 +60,7 @@ public static class DiscoveryEndpoints
         app.MapGet(SyncProtocol.InfoPath, async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> optionsMonitor,
             DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, Library library,
-            NonceReplayGuard replayGuard, IServer boundServer) =>
+            NonceReplayGuard replayGuard, IServer boundServer, PublicReachability publicReachability) =>
         {
             // Monitor, not IOptions, for the same reason Program.cs's LanGuard
             // gate uses one: both settings this reads - the alias and
@@ -150,7 +150,7 @@ public static class DiscoveryEndpoints
                 // its identity, and it is only ever of use to a peer that has
                 // paired - which is exactly the peer that can sign for it.
                 callerIsTrusted
-                    ? ReachableOrigins(boundServer, options)
+                    ? ReachableOrigins(boundServer, options, publicReachability.OriginFor(options))
                     : null,
                 // Whether this caller is one of this server's administrators,
                 // on the same terms as TrustsCaller above: only a caller whose
@@ -185,7 +185,12 @@ public static class DiscoveryEndpoints
     // to an operator (AdminEndpoints.Describe), and "where can this server be
     // reached" having two answers - one told to clients, one shown on the page
     // that configures it - is the drift worth not having.
-    internal static List<string> ReachableOrigins(IServer boundServer, FlowerServerOptions options)
+    //
+    // publicOrigin is PublicReachability.OriginFor's answer: the address the
+    // internet reaches this server at, when the operator has opened the door
+    // and not said where it is themselves. Last, because every address above it
+    // is cheaper to reach from anywhere it works at all.
+    internal static List<string> ReachableOrigins(IServer boundServer, FlowerServerOptions options, string? publicOrigin)
     {
         var bound = boundServer.Features.Get<IServerAddressesFeature>()?.Addresses ?? [];
         var origins = new List<string>();
@@ -202,6 +207,9 @@ public static class DiscoveryEndpoints
         origins.AddRange(LocalAddresses.Reachable(
             MdnsAdvertiser.AdvertisablePort(bound, Uri.UriSchemeHttp) ?? SyncProtocol.DefaultPort,
             options.AdvertisedHost));
+
+        if (publicOrigin != null && !origins.Contains(publicOrigin, StringComparer.OrdinalIgnoreCase))
+            origins.Add(publicOrigin);
 
         return origins;
     }

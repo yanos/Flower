@@ -230,8 +230,13 @@ builder.Services.AddSingleton(services =>
 builder.Services.AddSingleton<DeviceKeyStore>();
 // Answers "what does the internet see this server as" for the settings page's
 // network tab, by asking somebody else - see PublicAddressProbe. Nothing calls
-// it until that page is opened.
+// it until that page is opened, or until AllowPublicAccess is turned on.
 builder.Services.AddSingleton<PublicAddressProbe>();
+
+// With AllowPublicAccess on, advertises the public address to clients and
+// checks that it leads back here - see PublicReachability.
+builder.Services.AddSingleton<PublicReachability>();
+builder.Services.AddHostedService(services => services.GetRequiredService<PublicReachability>());
 
 // Announces the server on the LAN so it shows up in a client's sidebar without
 // anyone typing an address. Registered as a lifecycle service because the port

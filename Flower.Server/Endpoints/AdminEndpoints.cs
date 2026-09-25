@@ -213,9 +213,9 @@ public static class AdminEndpoints
 
         authenticated.MapGet("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IServer boundServer,
-            PublicAddressProbe publicAddress, DeviceSigningKey signingKey) =>
+            PublicAddressProbe publicAddress, PublicReachability publicReachability, DeviceSigningKey signingKey) =>
             Results.Json(
-                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, signingKey, context.RequestAborted),
+                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, publicReachability, signingKey, context.RequestAborted),
                 jsonOptions));
 
         // Read from the raw (buffered, rewound) stream rather than a bound
@@ -223,7 +223,7 @@ public static class AdminEndpoints
         authenticated.MapPut("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
             LibraryRescanCoordinator rescans, IServer boundServer, PublicAddressProbe publicAddress,
-            DeviceSigningKey signingKey) =>
+            PublicReachability publicReachability, DeviceSigningKey signingKey) =>
         {
             ServerSettingsUpdateDto? update;
             try
@@ -359,7 +359,7 @@ public static class AdminEndpoints
                 rescans.TryStart();
             }
 
-            var described = await DescribeAsync(after, boundServer, publicAddress, signingKey, context.RequestAborted);
+            var described = await DescribeAsync(after, boundServer, publicAddress, publicReachability, signingKey, context.RequestAborted);
             return Results.Json(described with { RestartRequired = restartRequired }, jsonOptions);
         });
 
@@ -616,10 +616,18 @@ public static class AdminEndpoints
     // the machine name - that is what mDNS announces and what every client's
     // sidebar shows - and a settings page that answers "what is this server
     // called" with an empty box is wrong about a name that plainly exists.
+    //
+    // The reachability check runs first because it is what looks the public
+    // address up, and the address list below includes the origin built from it
+    // - so a page that has just opened the door shows the address it opened it
+    // at, in both places, on the same response.
     private static async Task<ServerSettingsDto> DescribeAsync(
         FlowerServerOptions options, IServer boundServer, PublicAddressProbe publicAddress,
-        DeviceSigningKey signingKey, CancellationToken ct) =>
-        new(MdnsAdvertiser.InstanceName(options),
+        PublicReachability publicReachability, DeviceSigningKey signingKey, CancellationToken ct)
+    {
+        var reachability = await publicReachability.CheckAsync(options, ct);
+
+        return new(MdnsAdvertiser.InstanceName(options),
             options.AdvertisedHost,
             options.AdvertiseOnLan,
             options.TrustTailscaleRange,
@@ -633,10 +641,13 @@ public static class AdminEndpoints
             options.DataDirectory,
             AppVersion.Display,
             options.AllowPublicAccess,
-            DiscoveryEndpoints.ReachableOrigins(boundServer, options),
+            DiscoveryEndpoints.ReachableOrigins(boundServer, options, publicReachability.OriginFor(options)),
             await publicAddress.GetAsync(ct),
             RestartRequired: null,
-            Fingerprint: signingKey.Fingerprint);
+            Fingerprint: signingKey.Fingerprint,
+            PublicOrigin: reachability?.Origin,
+            PublicReachability: reachability?.Status.ToString());
+    }
 
     // The host in the invite is the address the admin's own browser reached
     // this server on, not a configured one: on a box with a LAN address, a

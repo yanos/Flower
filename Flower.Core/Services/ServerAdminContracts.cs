@@ -67,7 +67,15 @@ public sealed record ServerSettingsDto(
     // being checked - a screen someone is looking at. Matters most for a
     // device paired with a bare code, which had nothing to verify at the time
     // (see PairingEntry).
-    string? Fingerprint = null);
+    string? Fingerprint = null,
+    // The public address this server advertises on its own, as the origin a
+    // client is told to dial - null unless AllowPublicAccess is on and
+    // AdvertisedHost is empty (see PublicReachability) - and what dialling it
+    // from here found: "Reachable", "Unreachable" or "OtherServerAnswered".
+    // A string rather than an enum so this record needs nothing new from
+    // either end's serializer context.
+    string? PublicOrigin = null,
+    string? PublicReachability = null);
 
 public sealed record ServerSettingsUpdateDto(
     string? Alias,
