@@ -80,3 +80,32 @@ public sealed record ServerSettingsUpdateDto(
     bool? SyncPlayCountFromITunes,
     bool? SyncDateAddedFromITunes,
     bool? AllowPublicAccess);
+
+// POST /api/admin/library/remove - "Remove from Library" from an admin device,
+// carried out on the server's own library (see LibraryRemoval). TrackIds are
+// the server's catalog ids (TrackDto.Id, a client's Track.OriginTrackId).
+// DeleteFiles deletes the files from the server's disk as well; without it they
+// stay, and the server's scans leave them out from then on.
+public sealed record LibraryRemovalRequestDto(List<string> TrackIds, bool DeleteFiles);
+
+// Removed counts the ids that were in the library; an id that was not is not an
+// error, since another device may have removed the same song a moment earlier.
+// FilesTrashed went to the server's trash, FilesDeleted are gone for good (a
+// server on a platform with no trash), FilesNotDeleted are still where they
+// were - most often a read-only music mount, which is how docker-compose.yml
+// mounts it.
+public sealed record LibraryRemovalResponseDto(int Removed, int FilesTrashed, int FilesDeleted, int FilesNotDeleted);
+
+// GET /api/admin/library/removed - the server's "Removed Songs": files an admin
+// removed from the library and kept on disk, which its scans leave out (see
+// Library.ExcludedPaths). StillOnDisk is false for one deleted by hand since,
+// whose Restore only tidies the list.
+public sealed record RemovedFileDto(string Path, System.DateTimeOffset RemovedAt, bool StillOnDisk);
+
+// POST /api/admin/library/removed/restore - takes these off the list and starts
+// a rescan, which is what brings the songs back. Restored counts the paths that
+// were on the list.
+public sealed record RestoreRemovedFilesRequestDto(List<string> Paths);
+
+public sealed record RestoreRemovedFilesResponseDto(int Restored);
+

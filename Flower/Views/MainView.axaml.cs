@@ -40,6 +40,7 @@ public partial class MainView : UserControl
     // fetch - see UpdateDownloadItem.
     private MenuItem    _downloadItem = new();
     private MenuItem    _deleteLocalFileItem = new();
+    private MenuItem    _removeFromLibraryItem = new();
     private readonly ContextMenu _sidebarItemMenu = new();
     private SidebarItem? _dropTargetPlaylistItem;
 
@@ -598,6 +599,7 @@ public partial class MainView : UserControl
         PopulateAddToPlaylistMenu(MusicList.SelectedTracks);
         UpdateDownloadItem(_downloadItem, MusicList.SelectedTracks);
         LocalFileDeletionDialog.UpdateMenuItem(_deleteLocalFileItem, MusicList.SelectedTracks);
+        LibraryRemovalDialog.UpdateMenuItem(_removeFromLibraryItem, MusicList.SelectedTracks);
         _trackMenu.Open(MusicList);
     }
 
@@ -996,6 +998,10 @@ public partial class MainView : UserControl
                 await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, MusicList.SelectedTracks);
         };
 
+        _removeFromLibraryItem = new MenuItem { Header = "Remove from Library" };
+        _removeFromLibraryItem.Click += async (_, _) =>
+            await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), MusicList.SelectedTracks);
+
         _trackMenu = new ContextMenu();
         _trackMenu.Items.Add(getInfoItem);
         _trackMenu.Items.Add(_addToPlaylistItem);
@@ -1003,6 +1009,7 @@ public partial class MainView : UserControl
         _trackMenu.Items.Add(_downloadItem);
         _trackMenu.Items.Add(new Separator());
         _trackMenu.Items.Add(_deleteLocalFileItem);
+        _trackMenu.Items.Add(_removeFromLibraryItem);
     }
 
     private void PopulateAddToPlaylistMenu(IReadOnlyList<Track> tracks)
@@ -1076,8 +1083,13 @@ public partial class MainView : UserControl
             if (_viewModel is { } vm)
                 await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);
         };
+        var removeFromLibraryItem = new MenuItem();
+        LibraryRemovalDialog.UpdateMenuItem(removeFromLibraryItem, tracks);
+        removeFromLibraryItem.Click += async (_, _) =>
+            await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), tracks);
         menu.Items.Add(new Separator());
         menu.Items.Add(deleteLocalFileItem);
+        menu.Items.Add(removeFromLibraryItem);
         return menu;
     }
 

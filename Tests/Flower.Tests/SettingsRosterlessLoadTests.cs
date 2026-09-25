@@ -58,6 +58,12 @@ public class SettingsRosterlessLoadTests
         public Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
+        public Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<RemovedFileRow>>([]);
+
+        public Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
+            Task.FromResult("");
+
         public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>
             throw new NotSupportedException();
 

@@ -98,6 +98,12 @@ namespace Flower.Models
         // remember.
         private readonly IPlaylistStore? _playlistStore;
 
+        // Files removed from the library on purpose and kept on disk, which no
+        // rescan may bring back - see RemoveTracks. Case-insensitive for the
+        // same reason UpdateTracks' path matching is.
+        private readonly IExcludedPathStore? _excludedPathStore;
+        private readonly Dictionary<string, DateTimeOffset> _excludedPaths = new(StringComparer.OrdinalIgnoreCase);
+
         // Guards every read-modify-write of Tracks. EndReached fires on a LibVLC
         // callback thread (see CLAUDE.md's Binding Notes) while the startup/rescan
         // Task.Run (App.axaml.cs) runs on a threadpool thread - both touch this
@@ -274,12 +280,28 @@ namespace Flower.Models
             List<Track> tracks,
             ILogger<Library> logger,
             ITrackStore? store = null,
-            IPlaylistStore? playlistStore = null)
+            IPlaylistStore? playlistStore = null,
+            IExcludedPathStore? excludedPathStore = null)
         {
             Tracks = new List<Track>(tracks);
             _logger = logger;
             _store = store;
             _playlistStore = playlistStore;
+            _excludedPathStore = excludedPathStore;
+
+            // Caught rather than allowed to fail construction: the worst an
+            // unreadable exclusion list costs is a removed file showing up
+            // again after a rescan, and a library that would not load at all
+            // over that is a far worse trade.
+            try
+            {
+                foreach (var excluded in excludedPathStore?.LoadExcludedPaths() ?? [])
+                    _excludedPaths[excluded.Path] = excluded.ExcludedAt;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not read the list of files removed from the library; a rescan may bring them back");
+            }
         }
 
         // A rescan (see Importer) produces brand-new Track instances read straight
@@ -312,6 +334,11 @@ namespace Flower.Models
             int beforeCount, afterCount, carriedForwardCount;
             lock (_lock)
             {
+                // Before anything else: a file removed on purpose is not a file
+                // this scan found, however plainly it is sitting on disk.
+                if (_excludedPaths.Count > 0)
+                    tracks = WithoutExcluded(tracks);
+
                 beforeCount = Tracks.Count;
                 var previousByPath = Tracks
                     .Where(t => t.Path != null)
@@ -459,6 +486,140 @@ namespace Flower.Models
                 tracks.Count, carriedForwardCount, beforeCount, afterCount);
 
             LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        // A scan's result minus the files removed from the library on purpose -
+        // for a caller that hands the same list to something other than
+        // UpdateTracks too (the play queue, on the client's rescans), which
+        // UpdateTracks' own filtering cannot reach.
+        public List<Track> WithoutExcluded(List<Track> tracks)
+        {
+            lock (_excludedPaths)
+            {
+                return _excludedPaths.Count == 0
+                    ? tracks
+                    : tracks.Where(t => t.Path == null || !_excludedPaths.ContainsKey(t.Path)).ToList();
+            }
+        }
+
+        // The files RemoveTracks has been told to keep out of every scan, newest
+        // removal first - what Settings' "Removed Songs" lists.
+        public IReadOnlyList<ExcludedPath> ExcludedPaths
+        {
+            get
+            {
+                lock (_excludedPaths)
+                {
+                    return _excludedPaths
+                        .Select(kv => new ExcludedPath(kv.Key, kv.Value))
+                        .OrderByDescending(e => e.ExcludedAt)
+                        .ToList();
+                }
+            }
+        }
+
+        // Takes files back off that list - Settings' Restore. That is all it
+        // does: the song reappears the next time a scan finds the file, which
+        // is the caller's to start (a rescan is not this class's to run - see
+        // UpdateTracks). Returns how many of the paths were on the list.
+        public int RestoreExcludedPaths(IReadOnlyCollection<string> paths)
+        {
+            List<string> restored;
+            lock (_excludedPaths)
+            {
+                restored = paths.Where(p => _excludedPaths.Remove(p)).ToList();
+            }
+
+            if (restored.Count == 0)
+                return 0;
+
+            if (_excludedPathStore is { } exclusions)
+            {
+                try
+                {
+                    exclusions.RemoveExcludedPaths(restored);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Could not forget {Count} removed file(s); they will be excluded again after a restart", restored.Count);
+                }
+            }
+
+            _logger.LogInformation("Restored {Count} removed file(s) to future scans", restored.Count);
+            return restored.Count;
+        }
+
+        // Takes tracks out of the library on purpose - the user's "Remove from
+        // Library", on either host - as distinct from a rescan no longer
+        // finding a file or a server no longer listing a song, which are what
+        // every other removal in this class is.
+        //
+        // What that adds over simply dropping the rows:
+        //
+        //   - The tracks leave every ordinary playlist too, as an edit to that
+        //     playlist - it syncs like one, so the removal reaches every other
+        //     device's copy. A smart playlist is left to re-evaluate, since its
+        //     contents are not an edit anyone made.
+        //   - excludePaths are remembered, and no later scan brings them back.
+        //     They are the files the caller is leaving on disk: without this, a
+        //     song removed from the library but kept as a file would be found
+        //     by the very next rescan and quietly put back. Deleting the files
+        //     is the caller's business (see LibraryRemoval), because a Library
+        //     is a model of files, not the thing that owns them.
+        //
+        // Returns the tracks actually removed.
+        public IReadOnlyList<Track> RemoveTracks(IReadOnlyCollection<Track> tracks, IReadOnlyCollection<string> excludePaths)
+        {
+            var ids = tracks.Select(t => t.Id).ToHashSet();
+            List<Track> removed;
+            lock (_lock)
+            {
+                removed = Tracks.Where(t => ids.Contains(t.Id)).ToList();
+                if (removed.Count > 0)
+                {
+                    Tracks = Tracks.Where(t => !ids.Contains(t.Id)).ToList();
+                    InvalidateIndexes();
+                    Persist(() => _store!.Delete(removed.Select(t => t.Id).ToList()));
+                }
+
+                if (excludePaths.Count > 0)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    lock (_excludedPaths)
+                    {
+                        foreach (var path in excludePaths)
+                            _excludedPaths[path] = now;
+                    }
+
+                    if (_excludedPathStore is { } exclusions)
+                    {
+                        try
+                        {
+                            exclusions.AddExcludedPaths(excludePaths);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Could not record {Count} removed file(s); a rescan may bring them back", excludePaths.Count);
+                        }
+                    }
+                }
+            }
+
+            if (removed.Count == 0)
+                return removed;
+
+            // Outside the lock: each is a playlist edit, and an edit raises
+            // Changed, which runs subscriber code (persistence, the sidebar).
+            foreach (var playlist in Playlists)
+            {
+                if (!playlist.IsSmart)
+                    playlist.RemoveTracks(ids);
+            }
+
+            _logger.LogInformation("Removed {Count} track(s) from the library, keeping {Kept} file(s) on disk out of future scans",
+                removed.Count, excludePaths.Count);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+            return removed;
         }
 
         // Whether a track with no local file still has an origin that could

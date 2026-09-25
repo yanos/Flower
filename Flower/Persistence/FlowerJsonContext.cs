@@ -71,6 +71,11 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(AdminLogSliceDto))]
     [JsonSerializable(typeof(AdminDeviceLogDto))]
     [JsonSerializable(typeof(CoverArtWriteDto))]
+    [JsonSerializable(typeof(LibraryRemovalRequestDto))]
+    [JsonSerializable(typeof(LibraryRemovalResponseDto))]
+    [JsonSerializable(typeof(List<RemovedFileDto>), TypeInfoPropertyName = "RemovedFileList")]
+    [JsonSerializable(typeof(RestoreRemovedFilesRequestDto))]
+    [JsonSerializable(typeof(RestoreRemovedFilesResponseDto))]
     internal partial class FlowerJsonContext : JsonSerializerContext
     {
     }

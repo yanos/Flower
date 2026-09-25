@@ -30,6 +30,15 @@ public sealed class SimulatedFlowerServer : IDisposable
     public const string PlaylistsPath = "/api/flower/v1/playlists";
     public const string ApplyPath = "/api/flower/v1/playlists/apply";
     public const string TrackStatePath = "/api/flower/v1/track-state";
+    public const string RemoveFromLibraryPath = "/api/admin/library/remove";
+
+    // The admin surface answers camelCase (AdminEndpoints' own options).
+    private static readonly JsonSerializerOptions AdminJson = new(JsonSerializerDefaults.Web);
+
+    // False makes the server unreachable for admin calls - a 503, the way a
+    // proxy in front of a server that is down answers.
+    public bool AdminReachable { get; set; } = true;
+
     // SyncEndpoints' own options: PascalCase, nulls omitted, read case-insensitively.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -105,6 +114,31 @@ public sealed class SimulatedFlowerServer : IDisposable
                     Library.MergeReportedTrackState(fingerprint, report!.Tracks, CallerIsAdmin);
                     context.Response.Headers[TrackStateReportHeaders.LibraryToken] = Library.ChangeToken;
                     context.Response.StatusCode = 204;
+                    return;
+                }
+                case ("POST", RemoveFromLibraryPath):
+                {
+                    if (!AdminReachable)
+                    {
+                        context.Response.StatusCode = 503;
+                        return;
+                    }
+                    if (!CallerIsAdmin)
+                    {
+                        context.Response.StatusCode = 403;
+                        return;
+                    }
+
+                    using var reader = new StreamReader(context.Request.InputStream);
+                    var request = JsonSerializer.Deserialize<LibraryRemovalRequestDto>(await reader.ReadToEndAsync(), AdminJson)!;
+                    var tracks = request.TrackIds.Select(Library.Find).OfType<Track>().ToList();
+                    var result = LibraryRemoval.Remove(Library, tracks, request.DeleteFiles,
+                        Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(
+                        new LibraryRemovalResponseDto(result.Removed, result.FilesTrashed, result.FilesDeleted, result.FilesNotDeleted.Count), AdminJson);
+                    context.Response.ContentType = "application/json";
+                    context.Response.ContentLength64 = bytes.Length;
+                    await context.Response.OutputStream.WriteAsync(bytes);
                     return;
                 }
                 default:

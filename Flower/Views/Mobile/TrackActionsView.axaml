@@ -98,6 +98,19 @@
             <TextBlock Text="Delete Local File" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
           </StackPanel>
         </Button>
+
+        <!-- Takes the song out of the library itself, not just its file -
+             and off the server too when an admin does it. Confirmed first,
+             with a choice to delete the files (ConfirmRemoveFromLibraryView).
+             Hidden for a server song on a phone that is not the server's
+             admin: see LibraryRemovalService. -->
+        <Button Classes="action" Command="{Binding RemoveFromLibraryCommand}"
+                IsVisible="{Binding CanRemoveActionTargetFromLibrary}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="MusicNoteOff" Width="22" Height="22" Foreground="{DynamicResource AppErrorBrush}" />
+            <TextBlock Text="Remove from Library" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
+          </StackPanel>
+        </Button>
       </StackPanel>
     </Border>
   </Grid>

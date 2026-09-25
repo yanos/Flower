@@ -614,5 +614,10 @@
                             IsOpen="{Binding IsShowingConfirmUnpairServer}">
       <views:ConfirmUnpairServerView />
     </controls:SlidingSheet>
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingConfirmRemoveFromLibrary}">
+      <views:ConfirmRemoveFromLibraryView />
+    </controls:SlidingSheet>
   </Grid>
 </UserControl>

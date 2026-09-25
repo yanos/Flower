@@ -11,7 +11,7 @@ namespace Flower.Persistence.Sql
 {
     // Reading and writing tracks, shared by the client and Flower.Server - see
     // FlowerDb's remarks.
-    public sealed class TrackRepository(FlowerDb db) : ITrackStore
+    public sealed class TrackRepository(FlowerDb db) : ITrackStore, IExcludedPathStore
     {
         // Every column in declaration order, reused by both the reader and the
         // upsert so the two cannot drift apart in ordering.
@@ -176,6 +176,84 @@ namespace Flower.Persistence.Sql
             }
 
             WriteRemotePlayCounts(connection, transaction, [track], [track.Id]);
+            transaction.Commit();
+        }
+
+        public void Delete(IReadOnlyCollection<Guid> ids)
+        {
+            if (ids.Count == 0)
+                return;
+
+            using var connection = db.Open();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "DELETE FROM tracks WHERE id = $id;";
+            var parameter = command.Parameters.Add("$id", SqliteType.Text);
+            foreach (var id in ids)
+            {
+                parameter.Value = id.ToKey();
+                command.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+
+        public IReadOnlyList<ExcludedPath> LoadExcludedPaths()
+        {
+            using var connection = db.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT path, excluded_at FROM excluded_paths;";
+            using var reader = command.ExecuteReader();
+            var paths = new List<ExcludedPath>();
+            while (reader.Read())
+                paths.Add(new ExcludedPath(reader.GetString(0), new DateTimeOffset(reader.GetInt64(1), TimeSpan.Zero)));
+            return paths;
+        }
+
+        public void RemoveExcludedPaths(IReadOnlyCollection<string> paths)
+        {
+            if (paths.Count == 0)
+                return;
+
+            using var connection = db.Open();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            // COLLATE NOCASE on the column makes this match however the path
+            // was cased when it was excluded.
+            command.CommandText = "DELETE FROM excluded_paths WHERE path = $path;";
+            var path = command.Parameters.Add("$path", SqliteType.Text);
+            foreach (var value in paths)
+            {
+                path.Value = value;
+                command.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+
+        public void AddExcludedPaths(IReadOnlyCollection<string> paths)
+        {
+            if (paths.Count == 0)
+                return;
+
+            using var connection = db.Open();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO excluded_paths (path, excluded_at) VALUES ($path, $at)
+                ON CONFLICT (path) DO UPDATE SET excluded_at = excluded.excluded_at;
+                """;
+            var path = command.Parameters.Add("$path", SqliteType.Text);
+            command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.UtcTicks);
+            foreach (var value in paths)
+            {
+                path.Value = value;
+                command.ExecuteNonQuery();
+            }
+
             transaction.Commit();
         }
 

@@ -32,7 +32,28 @@ namespace Flower.Models
         void Upsert(Track track);
 
         void ReplaceAll(IEnumerable<Track> tracks);
+
+        // Removing tracks from the library on purpose - see Library.RemoveTracks.
+        // A handful of rows, so a delete by id rather than a whole-table rewrite.
+        void Delete(IReadOnlyCollection<Guid> ids);
     }
+
+    // The files a user removed from the library while keeping them on disk,
+    // which every rescan has to leave out - see Library.RemoveTracks. Its own
+    // interface rather than more of ITrackStore because this one is read as
+    // well as written: Library loads the set once, when it is built.
+    public interface IExcludedPathStore
+    {
+        IReadOnlyList<ExcludedPath> LoadExcludedPaths();
+
+        void AddExcludedPaths(IReadOnlyCollection<string> paths);
+
+        // Settings' "Removed Songs" Restore - see Library.RestoreExcludedPaths.
+        void RemoveExcludedPaths(IReadOnlyCollection<string> paths);
+    }
+
+    // A file removed from the library and kept on disk, and when.
+    public sealed record ExcludedPath(string Path, DateTimeOffset ExcludedAt);
 
     // The playlist half of the same idea. One method, because a playlist set
     // is small (tens, not thousands) and PlaylistRepository.Save is already an

@@ -200,7 +200,8 @@ builder.Services.AddSingleton(services => new Library(
     services.GetRequiredService<TrackRepository>().LoadAll(),
     services.GetRequiredService<ILogger<Library>>(),
     services.GetRequiredService<TrackRepository>(),
-    services.GetRequiredService<PlaylistRepository>()));
+    services.GetRequiredService<PlaylistRepository>(),
+    services.GetRequiredService<TrackRepository>()));
 
 builder.Services.AddScoped<LibraryImportService>();
 // Keeps smart playlists in step with the catalog. Registered on the server as

@@ -61,6 +61,12 @@ public class SettingsLogTabTests
         // amounts to for a log that is only ever appended to: everything past
         // afterSequence, and the index of the last line as the cursor to come
         // back with.
+        public Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<RemovedFileRow>>([]);
+
+        public Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
+            Task.FromResult("");
+
         public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default)
         {
             if (ServerLogFails)

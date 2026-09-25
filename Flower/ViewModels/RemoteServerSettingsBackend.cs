@@ -140,6 +140,17 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
 
     public Task RescanAsync(CancellationToken ct = default) => client.RescanAsync(ct);
 
+    public async Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default) =>
+        (await client.GetRemovedFilesAsync(ct))
+            .Select(f => new RemovedFileRow(f.Path, f.RemovedAt, f.StillOnDisk))
+            .ToList();
+
+    // The server starts its own rescan once the list has changed - see
+    // AdminEndpoints' /library/removed/restore.
+    public async Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
+        LocalSettingsBackend.RestoredMessage(
+            (await client.RestoreRemovedFilesAsync(new RestoreRemovedFilesRequestDto(paths.ToList()), ct)).Restored);
+
     public Task RebuildDatabaseAsync(CancellationToken ct = default) =>
         throw new NotSupportedException("A server migrates its own schema on startup.");
 

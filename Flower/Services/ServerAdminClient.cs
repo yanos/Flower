@@ -123,6 +123,19 @@ public sealed class ServerAdminClient(
     public Task<AdminLibraryStatusDto> RescanAsync(CancellationToken ct = default) =>
         SendAsync<AdminLibraryStatusDto>(HttpMethod.Post, "/api/admin/library/rescan", null, ct);
 
+    // "Remove from Library" on the server's own library - see AdminEndpoints'
+    // POST /library/remove.
+    public Task<LibraryRemovalResponseDto> RemoveFromLibraryAsync(
+        LibraryRemovalRequestDto request, CancellationToken ct = default) =>
+        SendAsync<LibraryRemovalResponseDto>(HttpMethod.Post, "/api/admin/library/remove", request, ct);
+
+    public Task<List<RemovedFileDto>> GetRemovedFilesAsync(CancellationToken ct = default) =>
+        SendAsync<List<RemovedFileDto>>(HttpMethod.Get, "/api/admin/library/removed", null, ct);
+
+    public Task<RestoreRemovedFilesResponseDto> RestoreRemovedFilesAsync(
+        RestoreRemovedFilesRequestDto request, CancellationToken ct = default) =>
+        SendAsync<RestoreRemovedFilesResponseDto>(HttpMethod.Post, "/api/admin/library/removed/restore", request, ct);
+
     public Task<AdminLogSliceDto> GetLogAsync(int limit, long after, CancellationToken ct = default) =>
         SendAsync<AdminLogSliceDto>(HttpMethod.Get, $"/api/admin/logs?limit={limit}&after={after}", null, ct);
 

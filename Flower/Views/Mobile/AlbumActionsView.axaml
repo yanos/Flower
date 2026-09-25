@@ -128,6 +128,17 @@
           </StackPanel>
         </Button>
 
+        <!-- Every song on the album (or by the artist) that this device may
+             remove - see the song menu's own entry. Never shown over a
+             playlist; see CanRemoveAlbumActionTargetFromLibrary. -->
+        <Button Classes="action" Command="{Binding RemoveAlbumFromLibraryCommand}"
+                IsVisible="{Binding CanRemoveAlbumActionTargetFromLibrary}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="MusicNoteOff" Width="22" Height="22" Foreground="{DynamicResource AppErrorBrush}" />
+            <TextBlock Text="Remove from Library" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
+          </StackPanel>
+        </Button>
+
         <!-- Last, and in the destructive colour, under everything that is not:
              it is the one entry here that cannot be undone. It confirms first
              (ConfirmDeletePlaylistView) - and the songs themselves are

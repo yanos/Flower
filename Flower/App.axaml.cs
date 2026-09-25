@@ -229,7 +229,8 @@ public partial class App : Application
                     sp.GetRequiredService<LibraryStore>().Load(),
                     sp.GetRequiredService<ILogger<Library>>(),
                     sp.GetRequiredService<TrackRepository>(),
-                    sp.GetRequiredService<PlaylistRepository>());
+                    sp.GetRequiredService<PlaylistRepository>(),
+                    sp.GetRequiredService<TrackRepository>());
 
                 // The app's answer to "is this placeholder's origin still
                 // someone we can ask" - the same rule PeerTrackResolver applies
@@ -353,6 +354,9 @@ public partial class App : Application
             .AddSingleton<PeerPairingService>()
             .AddSingleton<PairedServerReachability>()
             .AddSingleton<PeerTrackResolver>()
+            // "Remove from Library" - here because a song the paired server
+            // serves is removed there first, which needs the peer stack.
+            .AddSingleton<LibraryRemovalService>()
             // How this device proves who it is to a peer, for every signed call
             // into one (see IPeerCredentials). On this branch because it needs
             // the signing key, which the browser head has no way to produce.
@@ -823,7 +827,10 @@ public partial class App : Application
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var freshTracks = await importer.ImportAsync(appSettings.LibraryPaths);
+                // Minus anything removed from the library on purpose, before
+                // the queue sees it as well as the library - see
+                // Library.RemoveTracks.
+                var freshTracks = library.WithoutExcluded(await importer.ImportAsync(appSettings.LibraryPaths));
                 if (OperatingSystem.IsBrowser())
                     ReportBrowserPairing(importer, mainViewModel);
                 rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);

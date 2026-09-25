@@ -142,6 +142,28 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<RemovedFileRow>>(ViewModel.Library.ExcludedPaths
+            .Select(e => new RemovedFileRow(e.Path, e.ExcludedAt, File.Exists(e.Path)))
+            .ToList());
+
+    // Unawaited rescan, like SaveAsync's: it shows on the main window's busy
+    // spinner, and the settings screen has nothing to wait for.
+    public Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default)
+    {
+        var restored = ViewModel.Library.RestoreExcludedPaths(paths);
+        if (restored > 0)
+            _ = ViewModel.RescanLibraryAsync();
+        return Task.FromResult(RestoredMessage(restored));
+    }
+
+    internal static string RestoredMessage(int restored) => restored switch
+    {
+        0 => "Nothing to restore.",
+        1 => "Restored. The song will be back once the library has been rescanned.",
+        _ => $"Restored {restored} files. They will be back once the library has been rescanned.",
+    };
+
     public Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
         throw new NotSupportedException("An app peer pairs by approving a request, not by issuing a code.");
 

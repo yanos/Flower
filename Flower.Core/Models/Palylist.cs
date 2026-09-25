@@ -199,6 +199,18 @@ namespace Flower.Models
             Touch();
         }
 
+        // Every entry for any of these tracks, as one edit - or no edit at all,
+        // UpdatedAt untouched, when none of them is here. See
+        // Library.RemoveTracks.
+        public void RemoveTracks(IReadOnlySet<Guid> ids)
+        {
+            if (!_tracks.Any(t => ids.Contains(t.Id)))
+                return;
+
+            _tracks = _tracks.Where(t => !ids.Contains(t.Id)).ToList();
+            Touch();
+        }
+
         public void ReplaceAll(List<Track> tracks)
         {
             _tracks = new List<Track>(tracks);

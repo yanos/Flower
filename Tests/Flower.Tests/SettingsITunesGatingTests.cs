@@ -50,6 +50,12 @@ public class SettingsITunesGatingTests
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;
 
+        public Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<RemovedFileRow>>([]);
+
+        public Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
+            Task.FromResult("");
+
         public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>
             Task.FromResult(new LogSlice(InMemoryLogStore.BeforeFirstSequence, []));
 

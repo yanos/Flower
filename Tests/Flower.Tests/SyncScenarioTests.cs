@@ -112,6 +112,22 @@ public class SyncScenarioTests : PinnedDataDirectory
                 LibrarySync.SyncWithAsync(server.Device));
         }
 
+        // "Remove from Library" as this device would run it, paired with
+        // `server` and reaching it through a resolver that always answers
+        // with that server - PairedServerReachability without the discovery.
+        public LibraryRemovalService RemovalAgainst(SimulatedFlowerServer server) =>
+            new(Library,
+                new AppSettings { PairedServerFingerprint = server.Fingerprint },
+                new FixedResolver(server),
+                new SignedDeviceCredentials(new DeviceIdentity { Fingerprint = Key.Fingerprint, Alias = "Phone" }, Key),
+                NullLogger<LibraryRemovalService>.Instance);
+
+        private sealed class FixedResolver(SimulatedFlowerServer server) : PeerTrackResolver
+        {
+            public override DiscoveredDevice? Resolve(Track track) =>
+                track.OriginDeviceFingerprint == server.Fingerprint ? server.Device : null;
+        }
+
         public Track Single(string title) => Library.Tracks.Single(t => t.Title == title);
 
         public Playlist Playlist(string name) => Library.Playlists.Single(p => p.Name == name);
@@ -737,5 +753,119 @@ public class SyncScenarioTests : PinnedDataDirectory
         await writer.InFlight;
 
         Assert.Equal(["Keep"], server.Library.Playlists.Select(p => p.Name));
+    }
+
+    // ── Remove from Library ──────────────────────────────────────────────
+
+    // The owner's phone removes a song the server serves. It goes from the
+    // server, from the phone, and - through the next pull and playlist sync -
+    // from every other device's library and playlists, and stays gone.
+    [Fact]
+    public async Task An_admin_removing_a_server_song_removes_it_everywhere()
+    {
+        var keep = ServerTrack("Keep");
+        var drop = ServerTrack("Drop");
+        using var server = new SimulatedFlowerServer([keep, drop]);
+        server.Library.AddPlaylist(new Playlist("Mix", [keep, drop]));
+        var phone = NewClient();
+        var tablet = NewClient();
+        foreach (var c in new[] { phone, tablet })
+        {
+            await c.PullLibraryAsync(server);
+            await c.SyncPlaylistsAsync(server);
+        }
+
+        var outcome = await phone.RemovalAgainst(server).RemoveAsync([phone.Single("Drop")], deleteFiles: false);
+        await phone.PullLibraryAsync(server);
+        await tablet.PullLibraryAsync(server);
+        await tablet.SyncPlaylistsAsync(server);
+
+        Assert.Null(outcome.Error);
+        Assert.DoesNotContain(server.Library.Tracks, t => t.Title == "Drop");
+        Assert.DoesNotContain(phone.Library.Tracks, t => t.Title == "Drop");
+        Assert.DoesNotContain(tablet.Library.Tracks, t => t.Title == "Drop");
+        Assert.Equal(["Keep"], Titles(server.Library.Playlists.Single()));
+        Assert.Equal(["Keep"], Titles(phone.Playlist("Mix")));
+        Assert.Equal(["Keep"], Titles(tablet.Playlist("Mix")));
+    }
+
+    // With "also delete the files" ticked, the server deletes its file and the
+    // phone its downloaded copy.
+    [Fact]
+    public async Task An_admin_removing_with_the_files_deletes_the_servers_file_and_the_local_copy()
+    {
+        var dir = System.IO.Path.Combine(DataDirectory, "files");
+        System.IO.Directory.CreateDirectory(dir);
+        var serverFile = System.IO.Path.Combine(dir, "server.flac");
+        var phoneFile = System.IO.Path.Combine(dir, "phone.flac");
+        System.IO.File.WriteAllBytes(serverFile, [1]);
+        System.IO.File.WriteAllBytes(phoneFile, [1]);
+        using var server = new SimulatedFlowerServer([ServerTrack("Drop", path: serverFile)]);
+        var phone = NewClient();
+        await phone.PullLibraryAsync(server);
+        phone.Single("Drop").Path = phoneFile;
+        phone.Single("Drop").IsLocallyDownloaded = true;
+
+        var outcome = await phone.RemovalAgainst(server).RemoveAsync([phone.Single("Drop")], deleteFiles: true);
+
+        Assert.Null(outcome.Error);
+        Assert.False(System.IO.File.Exists(serverFile));
+        Assert.False(System.IO.File.Exists(phoneFile));
+        Assert.Empty(phone.Library.Tracks);
+    }
+
+    // A listener's phone: the server's songs are not its to remove, so it is
+    // not offered them, and asking anyway changes nothing anywhere. Its own
+    // files are another matter.
+    [Fact]
+    public async Task A_listener_can_remove_its_own_files_but_not_the_servers_songs()
+    {
+        using var server = new SimulatedFlowerServer([ServerTrack("Theirs")]) { CallerIsAdmin = false };
+        var phone = NewClient([LocalFile("Mine", artist: "Me")]);
+        await phone.PullLibraryAsync(server);
+        var removal = phone.RemovalAgainst(server);
+
+        Assert.False(removal.CanRemove(phone.Single("Theirs")));
+        Assert.True(removal.CanRemove(phone.Single("Mine")));
+
+        var outcome = await removal.RemoveAsync([phone.Single("Theirs"), phone.Single("Mine")], deleteFiles: false);
+
+        Assert.Equal(1, outcome.Removed);
+        Assert.Contains(server.Library.Tracks, t => t.Title == "Theirs");
+        Assert.Equal(["Theirs"], phone.Library.Tracks.Select(t => t.Title));
+    }
+
+    // The server does not answer. Removing only the phone's half would look
+    // like it worked until the next pull put the song back - so nothing is
+    // removed, and the phone says why.
+    [Fact]
+    public async Task Removing_a_server_song_while_the_server_is_unreachable_removes_nothing()
+    {
+        using var server = new SimulatedFlowerServer([ServerTrack("Drop")]);
+        var phone = NewClient([LocalFile("Mine", artist: "Me")]);
+        await phone.PullLibraryAsync(server);
+        server.AdminReachable = false;
+
+        var outcome = await phone.RemovalAgainst(server).RemoveAsync(
+            [phone.Single("Drop"), phone.Single("Mine")], deleteFiles: false);
+
+        Assert.NotNull(outcome.Error);
+        Assert.Equal(2, phone.Library.Tracks.Count);
+        Assert.Single(server.Library.Tracks);
+    }
+
+    // A file of the phone's own, removed and kept on disk: the next rescan
+    // finds it where it always was, and must leave it out.
+    [Fact]
+    public async Task A_removed_file_kept_on_disk_does_not_come_back_with_the_next_rescan()
+    {
+        using var server = new SimulatedFlowerServer([]);
+        var mine = LocalFile("Mine", artist: "Me");
+        var phone = NewClient([mine]);
+
+        await phone.RemovalAgainst(server).RemoveAsync([mine], deleteFiles: false);
+        phone.Library.UpdateTracks([LocalFile("Mine", artist: "Me")]);
+
+        Assert.Empty(phone.Library.Tracks);
     }
 }

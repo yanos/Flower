@@ -235,6 +235,16 @@ Two directories matter:
 | `/data` | Everything the server owns: `flower.db`, the device key, the trusted-device list, the logs, `flower-server.json`. Back this up — lose it and every paired device unpairs. |
 | `/music` | Your library, mounted read-only. The server scans and streams; it never writes here. |
 
+Read-only means two admin actions can't reach your files: editing album art, and
+**Remove from Library** with "also delete the files" ticked. The song still leaves
+the library, for every device, but its file stays on disk; the server remembers
+the file and won't scan it back in. To let those actions write, drop the `:ro`
+from the `/music` line in `docker-compose.yml`, and make sure uid `1654` can
+write there. A file the server deletes isn't gone for good: it goes to
+`/music/.Trash-1654/`, which is the freedesktop.org trash for that drive, and a
+scan never looks inside it. To restore a file, move it back out of `files/` in
+that folder; to free the space, empty the folder.
+
 ### Why `/data` is a named volume
 
 The server runs as uid `1654` — the non-root user the .NET base images ship —

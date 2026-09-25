@@ -31,3 +31,22 @@ internal static class ServerTestDataDirectory
             System.IO.Directory.CreateTempSubdirectory("flower-server-test-appdata").FullName;
     }
 }
+
+// And out of the real Trash: POST /library/remove with deleteFiles moves the
+// file there on any host that has one. See FileTrash.Override.
+internal static class ServerTestTrash
+{
+    public static string Folder { get; } =
+        System.IO.Directory.CreateTempSubdirectory("flower-server-test-trash").FullName;
+
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    public static void KeepEveryTestOutOfTheRealTrash()
+    {
+        Flower.Services.FileTrash.Override = path =>
+        {
+            System.IO.File.Move(path, System.IO.Path.Combine(Folder, System.Guid.NewGuid().ToString("N")));
+            return true;
+        };
+    }
+}
+

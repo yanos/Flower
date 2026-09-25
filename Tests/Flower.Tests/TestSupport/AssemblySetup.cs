@@ -68,6 +68,24 @@ internal static class AssemblySetup
     {
         PlatformDataDirectory.Current = DefaultDataDirectory;
     }
+
+    // Where "the trash" is for this test run: a folder of its own, never the
+    // developer's real one. See FileTrash.Override. The tests that are about
+    // the real platform trash clear this for their own duration.
+    public static string TestTrash { get; } =
+        Directory.CreateTempSubdirectory("flower-test-trash").FullName;
+
+    public static bool MoveToTestTrash(string path)
+    {
+        File.Move(path, Path.Combine(TestTrash, System.Guid.NewGuid().ToString("N") + Path.GetExtension(path)));
+        return true;
+    }
+
+    [ModuleInitializer]
+    public static void KeepEveryTestOutOfTheRealTrash()
+    {
+        Flower.Services.FileTrash.Override = MoveToTestTrash;
+    }
 }
 
 // ── A note on Dispatcher.UIThread.MainLoop in tests ──────────────────────────

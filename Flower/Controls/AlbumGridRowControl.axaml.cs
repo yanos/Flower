@@ -253,6 +253,11 @@ public partial class AlbumGridRowControl : UserControl
         deleteLocalFileItem.Click += async (_, _) =>
             await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, selectedTracks);
 
+        var removeFromLibraryItem = new MenuItem();
+        LibraryRemovalDialog.UpdateMenuItem(removeFromLibraryItem, selectedTracks);
+        removeFromLibraryItem.Click += async (_, _) =>
+            await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), selectedTracks);
+
         var menu = new ContextMenu();
         menu.Items.Add(getInfoItem);
         menu.Items.Add(addToPlaylistItem);
@@ -260,6 +265,7 @@ public partial class AlbumGridRowControl : UserControl
         menu.Items.Add(downloadItem);
         menu.Items.Add(new Separator());
         menu.Items.Add(deleteLocalFileItem);
+        menu.Items.Add(removeFromLibraryItem);
         return menu;
     }
 

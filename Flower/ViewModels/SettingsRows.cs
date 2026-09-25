@@ -26,6 +26,24 @@ public sealed record LibraryPathRow(string Path, int SongCount)
     };
 }
 
+// One file in the Library tab's "Removed Songs": removed from the library with
+// its file kept, and so left out of every scan until it is restored (see
+// Library.ExcludedPaths). The path may be the server's rather than this
+// machine's, so it is split on either separator rather than through
+// System.IO.Path, which only knows this machine's.
+public sealed record RemovedFileRow(string Path, DateTimeOffset RemovedAt, bool StillOnDisk)
+{
+    private int LastSeparator => Path.LastIndexOfAny(['/', '\\']);
+
+    public string FileName => LastSeparator < 0 ? Path : Path[(LastSeparator + 1)..];
+
+    public string Folder => LastSeparator <= 0 ? "" : Path[..LastSeparator];
+
+    public string Detail => StillOnDisk
+        ? $"Removed {RemovedAt.LocalDateTime:g} · {Folder}"
+        : $"Removed {RemovedAt.LocalDateTime:g} · no longer on disk, restoring only clears it from this list";
+}
+
 // Extends ViewModelBase (not a plain record) for IsConfirmingForget alone - the
 // inline "Forget?" state below needs to notify. Alias is the name the peer
 // reported for itself at pairing time and is shown as-is: the roster only ever

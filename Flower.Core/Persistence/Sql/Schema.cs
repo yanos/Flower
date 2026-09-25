@@ -243,5 +243,19 @@ namespace Flower.Persistence.Sql
         public const string V7 = """
             ALTER TABLE tracks RENAME COLUMN origin_album_art_hash TO origin_album_art_id;
             """;
+
+        // Files the user removed from the library while keeping them on disk
+        // (see Library.RemoveTracks). A rescan finds every file under the
+        // library folders, so without a record of the ones that were removed on
+        // purpose, the next scan would put them straight back. Keyed by path,
+        // because a path is the one thing a scan knows about a file before it
+        // has read it. A step rather than a fold into V1: it is a new table,
+        // and a database stamped at V7 would otherwise never get it.
+        public const string V8 = """
+            CREATE TABLE IF NOT EXISTS excluded_paths (
+                path        TEXT    NOT NULL PRIMARY KEY COLLATE NOCASE,
+                excluded_at INTEGER NOT NULL
+            );
+            """;
     }
 }

@@ -119,6 +119,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public ObservableCollection<TrustedPeerRow> Devices { get; } = [];
     public ObservableCollection<DeniedPeerRow> DeniedDevices { get; } = [];
 
+    // The Library tab's "Removed Songs" - see ISettingsBackend.LoadRemovedFilesAsync.
+    // Hidden while empty, which it is for anyone who has never removed a song
+    // and kept its file.
+    public ObservableCollection<RemovedFileRow> RemovedFiles { get; } = [];
+    public bool HasRemovedFiles => RemovedFiles.Count > 0;
+
     // The pending list, which the rows above are a rendering of. Kept separately
     // because the rows carry a song count that has to be recomputed whenever the
     // list changes, and because comparing against _originalPaths on save is a set
@@ -418,6 +424,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
             if (Capabilities.TrustedDevices)
                 await RefreshDevicesAsync(ct);
 
+            await RefreshRemovedFilesAsync(ct);
+
             IsLoaded = true;
             DeviceListChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -505,6 +513,34 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     [RelayCommand]
     private Task RebuildDatabaseAsync() => RunAsync(ct => _backend.RebuildDatabaseAsync(ct));
+
+    // Straight away rather than on Save, like Forget on the Devices tab: it is
+    // an action on the library, not a setting waiting to be committed.
+    [RelayCommand]
+    private Task RestoreRemovedFileAsync(RemovedFileRow? row) =>
+        row == null ? Task.CompletedTask : RestoreRemovedFilesAsync([row.Path]);
+
+    [RelayCommand]
+    private Task RestoreAllRemovedFilesAsync() =>
+        RestoreRemovedFilesAsync(RemovedFiles.Select(r => r.Path).ToList());
+
+    private Task RestoreRemovedFilesAsync(IReadOnlyList<string> paths) => RunAsync(async ct =>
+    {
+        if (paths.Count == 0)
+            return;
+
+        var message = await _backend.RestoreRemovedFilesAsync(paths, ct);
+        await RefreshRemovedFilesAsync(ct);
+        StatusMessage = message;
+    });
+
+    public async Task RefreshRemovedFilesAsync(CancellationToken ct = default)
+    {
+        RemovedFiles.Clear();
+        foreach (var row in await _backend.LoadRemovedFilesAsync(ct))
+            RemovedFiles.Add(row);
+        OnPropertyChanged(nameof(HasRemovedFiles));
+    }
 
     // What the next code will grant, ticked beside the one button that issues
     // them. Two buttons ("Add Device…"/"Add Administrator…") used to say this

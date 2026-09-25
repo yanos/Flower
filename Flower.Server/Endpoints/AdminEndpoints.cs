@@ -379,6 +379,85 @@ public static class AdminEndpoints
                 jsonOptions);
         });
 
+        // "Remove from Library" from an admin device - see LibraryRemoval, which
+        // the device runs on its own copy of the same songs once this answers.
+        //
+        // An owner's act for the same reason the cover-art write below is one,
+        // and more so: with DeleteFiles it deletes files from this machine's
+        // disk. What bounds that is what can be named - a catalog id, resolved
+        // against this library - so the only files a caller can reach are ones
+        // this server already serves; no path ever arrives from the wire.
+        authenticated.MapPost("/library/remove", async (HttpContext context, Library library) =>
+        {
+            LibraryRemovalRequestDto? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync<LibraryRemovalRequestDto>(
+                    context.Request.Body, jsonOptions, context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                request = null;
+            }
+
+            if (request?.TrackIds is not { Count: > 0 } ids)
+                return Results.BadRequest(new { error = "Name at least one track to remove." });
+
+            var tracks = ids
+                .Select(library.Find)
+                .OfType<Track>()
+                .DistinctBy(t => t.Id)
+                .ToList();
+            var result = LibraryRemoval.Remove(library, tracks, request.DeleteFiles, logger);
+
+            logger.LogInformation(
+                "{Fingerprint} removed {Removed} of {Asked} track(s) from the library ({Trashed} file(s) to the trash, {Deleted} deleted, {NotDeleted} left where they were)",
+                context.Items[AdminFingerprintKey], result.Removed, ids.Count, result.FilesTrashed, result.FilesDeleted, result.FilesNotDeleted.Count);
+
+            return Results.Json(
+                new LibraryRemovalResponseDto(result.Removed, result.FilesTrashed, result.FilesDeleted, result.FilesNotDeleted.Count), jsonOptions);
+        });
+
+        // The other half of Remove from Library: the files removed and kept,
+        // and the way back for them. Restore touches no file - it only takes
+        // paths off the list the scans consult - so the paths it is handed need
+        // no checking beyond that: one that is not on the list does nothing.
+        authenticated.MapGet("/library/removed", (Library library) =>
+            Results.Json(
+                library.ExcludedPaths
+                    .Select(e => new RemovedFileDto(e.Path, e.ExcludedAt, File.Exists(e.Path)))
+                    .ToList(),
+                jsonOptions));
+
+        authenticated.MapPost("/library/removed/restore", async (
+            HttpContext context, Library library, LibraryRescanCoordinator rescans) =>
+        {
+            RestoreRemovedFilesRequestDto? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync<RestoreRemovedFilesRequestDto>(
+                    context.Request.Body, jsonOptions, context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                request = null;
+            }
+
+            if (request?.Paths is not { Count: > 0 } paths)
+                return Results.BadRequest(new { error = "Name at least one file to restore." });
+
+            var restored = library.RestoreExcludedPaths(paths);
+
+            // A restored file is back in the library the moment a scan finds
+            // it, and nothing else would scan until the next startup.
+            if (restored > 0)
+                rescans.TryStart();
+
+            logger.LogInformation("{Fingerprint} restored {Restored} removed file(s) to the library",
+                context.Items[AdminFingerprintKey], restored);
+            return Results.Json(new RestoreRemovedFilesResponseDto(restored), jsonOptions);
+        });
+
         // Album art, written into the server's own files.
         //
         // This is the admin surface's one *content* write, and it is on the admin

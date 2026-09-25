@@ -72,10 +72,32 @@ namespace Flower.Importer
             return tracks;
         }
 
+        // Anything below a folder whose name starts with a dot. Those are
+        // other programs' bookkeeping, never the user's music: a trash folder
+        // above all - macOS's .Trashes at the root of a volume, and the
+        // .Trash-<uid> a Linux desktop (or Flower.Server, see FileTrash) makes
+        // at the top of a drive the home folder is not on. Scanned, a song
+        // moved to the trash on purpose came straight back with the next scan.
+        // The configured root itself is exempt: a library the user pointed at
+        // a dot-folder is one they meant.
+        internal static bool IsUnderHiddenFolder(string root, string file)
+        {
+            var relative = Path.GetRelativePath(root, file);
+            var folders = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            for (var i = 0; i < folders.Length - 1; i++)
+            {
+                if (folders[i].StartsWith('.') && folders[i] != "..")
+                    return true;
+            }
+
+            return false;
+        }
+
         private void ImportFrom(string path, List<Track> tracks, HashSet<string> seenFiles)
         {
             var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
-                .Where(f => _validExtensions.Contains(Path.GetExtension(f).ToLower()));
+                .Where(f => _validExtensions.Contains(Path.GetExtension(f).ToLower()))
+                .Where(f => !IsUnderHiddenFolder(path, f));
 
             foreach (var file in files)
             {

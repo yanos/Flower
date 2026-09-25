@@ -15,6 +15,12 @@
                Opacity="0.75"
                FontSize="12"/>
 
+    <!-- Only for a confirmation that carries a choice of its own - "also
+         delete the files" on Remove from Library. Hidden otherwise. -->
+    <CheckBox x:Name="OptionCheckBox"
+              IsVisible="False"
+              FontSize="12"/>
+
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
       <Button x:Name="CancelButton" Content="Cancel" Click="CancelButton_Click" IsDefault="True" IsCancel="True"/>
       <Button x:Name="ConfirmButton" Click="ConfirmButton_Click"/>

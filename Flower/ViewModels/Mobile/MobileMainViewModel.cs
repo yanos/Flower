@@ -38,7 +38,7 @@ public enum MobileNavigationTransition { None, FromRight, FromLeft }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer }
+public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer, ConfirmRemoveFromLibrary }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -1024,6 +1024,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
                 PlaylistActionTarget = null;
                 _playlistTargets = null;
                 _albumDeleteTargets = null;
+                _removalPrompt = null;
+                RemoveFromLibraryError = null;
                 // A confirmation still waiting for an answer when its sheet
                 // goes away has been answered: no. Nothing else resolves it,
                 // and PlaylistManagementViewModel.DeleteAsync is sitting on
@@ -1050,6 +1052,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingConfirmDeleteFile));
             OnPropertyChanged(nameof(IsShowingConfirmDeletePlaylist));
             OnPropertyChanged(nameof(IsShowingConfirmUnpairServer));
+            OnPropertyChanged(nameof(IsShowingConfirmRemoveFromLibrary));
 
             // Sampling costs a timer tick a second, so it runs only while the
             // readout that consumes it is actually on screen - a diagnostics
@@ -1212,6 +1215,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     public bool IsShowingConfirmPairServer => ActiveSheet == MobileSheet.ConfirmPairServer;
     public bool IsShowingConfirmDeleteFile => ActiveSheet == MobileSheet.ConfirmDeleteFile;
     public bool IsShowingConfirmDeletePlaylist => ActiveSheet == MobileSheet.ConfirmDeletePlaylist;
+    public bool IsShowingConfirmRemoveFromLibrary => ActiveSheet == MobileSheet.ConfirmRemoveFromLibrary;
     public bool IsShowingConfirmUnpairServer => ActiveSheet == MobileSheet.ConfirmUnpairServer;
 
     // Unpairing is asked about rather than done on the tap, the way desktop's
@@ -1349,6 +1353,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanDownloadAlbumActionTarget));
             OnPropertyChanged(nameof(CanDeleteAlbumActionTargetLocalFiles));
+            OnPropertyChanged(nameof(CanRemoveAlbumActionTargetFromLibrary));
         }
     }
 
@@ -1368,6 +1373,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             _playlistActionTarget = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsActingOnAPlaylist));
+            OnPropertyChanged(nameof(CanRemoveAlbumActionTargetFromLibrary));
         }
     }
 
@@ -1497,6 +1503,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsRecoverableDownload));
             OnPropertyChanged(nameof(ConfirmDeleteFileTitle));
             OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
+            OnPropertyChanged(nameof(CanRemoveActionTargetFromLibrary));
         }
     }
 
@@ -1543,6 +1550,130 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         (true, true) => "This removes the downloaded copies from this device. Your paired server still has them, so you can download them again later.",
         (true, false) => "Your currently paired server doesn't have some of these files, so they won't be synced back automatically. Deleting them now will remove your only copy.",
     };
+
+    // ── Remove from Library ───────────────────────────────────────────────
+    //
+    // A song's or an album's, confirmed through one sheet with an "also delete
+    // the files" choice - the wording is LibraryRemovalPrompt's, shared with
+    // the desktop dialog. Null service means a head with no peer stack, which
+    // offers no entry at all.
+
+    private readonly LibraryRemovalService? _libraryRemoval;
+    private LibraryRemovalPrompt? _removalPrompt;
+
+    public bool CanRemoveActionTargetFromLibrary =>
+        ActionTarget is { } track && _libraryRemoval?.CanRemove(track) == true;
+
+    // Not over a playlist: there it would sit beside Delete Playlist, which
+    // leaves the songs alone, and the two are far too easy to mistake for
+    // each other when one of them takes every song in the list out of the
+    // library. A playlist's songs can still be removed one at a time.
+    public bool CanRemoveAlbumActionTargetFromLibrary =>
+        AlbumActionTarget is { } tile && !IsActingOnAPlaylist && _libraryRemoval?.Removable(tile.Tracks).Count > 0;
+
+    public string RemoveFromLibraryTitle => _removalPrompt?.Title ?? "";
+    public string RemoveFromLibraryMessage => _removalPrompt?.Message ?? "";
+    public string RemoveFromLibraryDeleteFilesLabel => _removalPrompt?.DeleteFilesLabel ?? "";
+    public bool OffersRemoveFromLibraryDeleteFiles => _removalPrompt?.DeleteFilesLabel != null;
+
+    // Off every time the sheet opens: deleting files is the choice to make on
+    // purpose, never one left ticked from last time.
+    private bool _removeFromLibraryDeleteFiles;
+    public bool RemoveFromLibraryDeleteFiles
+    {
+        get => _removeFromLibraryDeleteFiles;
+        set
+        {
+            _removeFromLibraryDeleteFiles = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // What went wrong with the last attempt, shown in the sheet rather than
+    // closing it - "your server isn't reachable" is worth reading before the
+    // sheet goes away.
+    private string? _removeFromLibraryError;
+    public string? RemoveFromLibraryError
+    {
+        get => _removeFromLibraryError;
+        private set
+        {
+            _removeFromLibraryError = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasRemoveFromLibraryError));
+        }
+    }
+
+    public bool HasRemoveFromLibraryError => _removeFromLibraryError != null;
+
+    private bool _isRemovingFromLibrary;
+    public bool IsRemovingFromLibrary
+    {
+        get => _isRemovingFromLibrary;
+        private set
+        {
+            _isRemovingFromLibrary = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public ICommand RemoveFromLibraryCommand { get; private set; } = null!;
+    public ICommand RemoveAlbumFromLibraryCommand { get; private set; } = null!;
+    public ICommand ConfirmRemoveFromLibraryCommand { get; private set; } = null!;
+    public ICommand CancelRemoveFromLibraryCommand { get; private set; } = null!;
+
+    private void ConfirmRemovingFromLibrary(IReadOnlyList<Track> tracks)
+    {
+        if (_libraryRemoval == null || LibraryRemovalPrompt.For(_libraryRemoval, tracks) is not { } prompt)
+            return;
+
+        _removalPrompt = prompt;
+        RemoveFromLibraryDeleteFiles = false;
+        RemoveFromLibraryError = null;
+        OnPropertyChanged(nameof(RemoveFromLibraryTitle));
+        OnPropertyChanged(nameof(RemoveFromLibraryMessage));
+        OnPropertyChanged(nameof(RemoveFromLibraryDeleteFilesLabel));
+        OnPropertyChanged(nameof(OffersRemoveFromLibraryDeleteFiles));
+        ActiveSheet = MobileSheet.ConfirmRemoveFromLibrary;
+    }
+
+    private void InitializeLibraryRemovalCommands()
+    {
+        RemoveFromLibraryCommand = new RelayCommand(() =>
+        {
+            if (ActionTarget is { } track)
+                ConfirmRemovingFromLibrary([track]);
+        });
+        RemoveAlbumFromLibraryCommand = new RelayCommand(() =>
+        {
+            if (AlbumActionTarget is { } tile)
+                ConfirmRemovingFromLibrary(tile.Tracks.ToList());
+        });
+        ConfirmRemoveFromLibraryCommand = new RelayCommand(async () =>
+        {
+            if (_libraryRemoval == null || _removalPrompt is not { } prompt || IsRemovingFromLibrary)
+                return;
+
+            IsRemovingFromLibrary = true;
+            try
+            {
+                var outcome = await _libraryRemoval.RemoveAsync(prompt.Tracks, RemoveFromLibraryDeleteFiles);
+                if (outcome.Error is { } error && outcome.Removed == 0)
+                {
+                    RemoveFromLibraryError = error;
+                    return;
+                }
+                if (outcome.Error is { } partial)
+                    _logger.LogWarning("Remove from Library: {Problem}", partial);
+                ActiveSheet = MobileSheet.None;
+            }
+            finally
+            {
+                IsRemovingFromLibrary = false;
+            }
+        });
+        CancelRemoveFromLibraryCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
+    }
 
     private void ConfirmDeleting(IReadOnlyList<Track>? albumFiles)
     {
@@ -1715,12 +1846,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         MainViewModel main,
         PlaylistControlViewModel playlistControl,
         CurrentlyPlayingControlViewModel currentlyPlaying,
-        ILogger<MobileMainViewModel> logger)
+        ILogger<MobileMainViewModel> logger,
+        LibraryRemovalService? libraryRemoval = null)
     {
         Main = main;
         PlaylistControl = playlistControl;
         CurrentlyPlaying = currentlyPlaying;
         _logger = logger;
+        _libraryRemoval = libraryRemoval;
 
         _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
@@ -2060,6 +2193,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         // Confirmed first, like a song's Delete. The confirm sheet replaces the
         // menu without passing through None, so AlbumActionTarget is still set
         // for its title.
+        InitializeLibraryRemovalCommands();
         DeleteAlbumActionTargetLocalFilesCommand = new RelayCommand(() =>
         {
             if (AlbumActionTarget is not { } tile)

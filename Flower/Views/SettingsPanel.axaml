@@ -165,115 +165,156 @@
            rebuilding its own database doesn't make sense here. -->
       <TabItem Header="Library" x:Name="LibraryTab">
         <ScrollViewer>
-          <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
-                Margin="0,12,0,0"
-                IsEnabled="{Binding CanManageLibrary}">
+          <StackPanel>
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
+                  Margin="0,12,0,0"
+                  IsEnabled="{Binding CanManageLibrary}">
 
-            <!-- Master switch for the whole Music.app integration (see
-                 AppSettings.IntegrateWithITunes / FlowerServerOptions.IntegrateWithITunes):
-                 with it off, Music.app's media folder is no longer auto-added to
-                 the library paths below and neither per-track import runs. A
-                 folder already in that list stays there, though - unchecking this
-                 stops Flower re-adding it, and the Remove button below is what
-                 takes it out. The two sub-checkboxes stay visible but disabled,
-                 keeping their own remembered values for when it is switched back
-                 on.
+              <!-- Master switch for the whole Music.app integration (see
+                   AppSettings.IntegrateWithITunes / FlowerServerOptions.IntegrateWithITunes):
+                   with it off, Music.app's media folder is no longer auto-added to
+                   the library paths below and neither per-track import runs. A
+                   folder already in that list stays there, though - unchecking this
+                   stops Flower re-adding it, and the Remove button below is what
+                   takes it out. The two sub-checkboxes stay visible but disabled,
+                   keeping their own remembered values for when it is switched back
+                   on.
 
-                 All three are disabled outright, with the note in row 4 in place of
-                 the source description, when the machine being configured has no
-                 Music.app library folder at all - see
-                 SettingsViewModel.HasAppleMusicFolder. -->
-            <CheckBox Grid.Row="0"
-                      Content="Use iTunes/Music.app library"
-                      IsChecked="{Binding IntegrateWithITunes, Mode=TwoWay}"
-                      IsEnabled="{Binding CanIntegrateWithITunes}"
-                      IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+                   All three are disabled outright, with the note in row 4 in place of
+                   the source description, when the machine being configured has no
+                   Music.app library folder at all - see
+                   SettingsViewModel.HasAppleMusicFolder. -->
+              <CheckBox Grid.Row="0"
+                        Content="Use iTunes/Music.app library"
+                        IsChecked="{Binding IntegrateWithITunes, Mode=TwoWay}"
+                        IsEnabled="{Binding CanIntegrateWithITunes}"
+                        IsVisible="{Binding Capabilities.ITunesIntegration}"/>
 
-            <CheckBox Grid.Row="1"
-                      Content="Sync play count from iTunes/Music.app"
-                      Margin="20,4,0,0"
-                      IsChecked="{Binding SyncPlayCountFromITunes, Mode=TwoWay}"
-                      IsEnabled="{Binding CanSyncFromITunes}"
-                      IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+              <CheckBox Grid.Row="1"
+                        Content="Sync play count from iTunes/Music.app"
+                        Margin="20,4,0,0"
+                        IsChecked="{Binding SyncPlayCountFromITunes, Mode=TwoWay}"
+                        IsEnabled="{Binding CanSyncFromITunes}"
+                        IsVisible="{Binding Capabilities.ITunesIntegration}"/>
 
-            <CheckBox Grid.Row="2"
-                      Content="Sync date added from iTunes/Music.app"
-                      Margin="20,4,0,0"
-                      IsChecked="{Binding SyncDateAddedFromITunes, Mode=TwoWay}"
-                      IsEnabled="{Binding CanSyncFromITunes}"
-                      IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+              <CheckBox Grid.Row="2"
+                        Content="Sync date added from iTunes/Music.app"
+                        Margin="20,4,0,0"
+                        IsChecked="{Binding SyncDateAddedFromITunes, Mode=TwoWay}"
+                        IsEnabled="{Binding CanSyncFromITunes}"
+                        IsVisible="{Binding Capabilities.ITunesIntegration}"/>
 
-            <TextBlock Grid.Row="3"
-                       Text="{Binding ITunesLibraryDescription}"
-                       Margin="40,2,0,0" FontSize="11" Opacity="0.6"
-                       TextTrimming="CharacterEllipsis"
-                       IsEnabled="{Binding CanSyncFromITunes}"
-                       IsVisible="{Binding CanIntegrateWithITunes}"/>
+              <TextBlock Grid.Row="3"
+                         Text="{Binding ITunesLibraryDescription}"
+                         Margin="40,2,0,0" FontSize="11" Opacity="0.6"
+                         TextTrimming="CharacterEllipsis"
+                         IsEnabled="{Binding CanSyncFromITunes}"
+                         IsVisible="{Binding CanIntegrateWithITunes}"/>
 
-            <!-- Why the three switches above are greyed out. Deliberately in the
-                 same place the source description would have been, rather than
-                 beside them: it answers the same question ("where would this read
-                 from?") in the case where the answer is "nowhere". -->
-            <TextBlock Grid.Row="4"
-                       Text="{Binding ITunesUnavailableMessage}"
-                       Margin="20,4,0,0" FontSize="11" Opacity="0.6"
-                       TextWrapping="Wrap"
-                       IsVisible="{Binding ShowsITunesUnavailable}"/>
+              <!-- Why the three switches above are greyed out. Deliberately in the
+                   same place the source description would have been, rather than
+                   beside them: it answers the same question ("where would this read
+                   from?") in the case where the answer is "nowhere". -->
+              <TextBlock Grid.Row="4"
+                         Text="{Binding ITunesUnavailableMessage}"
+                         Margin="20,4,0,0" FontSize="11" Opacity="0.6"
+                         TextWrapping="Wrap"
+                         IsVisible="{Binding ShowsITunesUnavailable}"/>
 
-            <TextBlock Grid.Row="5" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"/>
+              <TextBlock Grid.Row="5" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"/>
 
-            <Border Grid.Row="6" MinHeight="140"
-                    BorderThickness="1"
-                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
-              <ListBox x:Name="PathsList" ItemsSource="{Binding LibraryPaths}">
-                <ListBox.ItemTemplate>
-                  <DataTemplate x:DataType="vm:LibraryPathRow">
-                    <Grid ColumnDefinitions="*,Auto,Auto">
-                      <TextBlock Grid.Column="0"
-                                 Text="{Binding Path}"
-                                 VerticalAlignment="Center"
-                                 TextTrimming="CharacterEllipsis"
-                                 Margin="4,0"/>
-                      <TextBlock Grid.Column="1"
-                                 Text="{Binding SongCountDisplay}"
-                                 IsVisible="{Binding HasSongCount}"
-                                 VerticalAlignment="Center"
-                                 Opacity="0.6" FontSize="11" Margin="8,0"/>
-                      <Button Grid.Column="2"
-                              Width="26" Height="26" Padding="4"
-                              Click="RevealFolderButton_Click"
-                              ToolTip.Tip="Reveal in File Manager">
-                        <materialIcons:MaterialIcon Kind="FolderOpen" Width="16" Height="16"/>
-                      </Button>
-                    </Grid>
-                  </DataTemplate>
-                </ListBox.ItemTemplate>
-              </ListBox>
-            </Border>
+              <Border Grid.Row="6" MinHeight="140"
+                      BorderThickness="1"
+                      BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+                <ListBox x:Name="PathsList" ItemsSource="{Binding LibraryPaths}">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LibraryPathRow">
+                      <Grid ColumnDefinitions="*,Auto,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding Path}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="4,0"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding SongCountDisplay}"
+                                   IsVisible="{Binding HasSongCount}"
+                                   VerticalAlignment="Center"
+                                   Opacity="0.6" FontSize="11" Margin="8,0"/>
+                        <Button Grid.Column="2"
+                                Width="26" Height="26" Padding="4"
+                                Click="RevealFolderButton_Click"
+                                ToolTip.Tip="Reveal in File Manager">
+                          <materialIcons:MaterialIcon Kind="FolderOpen" Width="16" Height="16"/>
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </Border>
 
-            <!-- The three things you can do to the folder list above, on its own
-                 row: the two that change what is in it on the left, and the one
-                 that acts on all of it pushed to the right, away from them. -->
-            <Grid Grid.Row="7" Margin="0,12,0,0">
-              <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="8">
-                <Button Content="Add Folder…" Click="AddFolderButton_Click"/>
-                <Button Content="Remove Selected"
-                        Command="{Binding RemoveLibraryPathCommand}"
-                        CommandParameter="{Binding #PathsList.SelectedItem}"/>
+              <!-- The three things you can do to the folder list above, on its own
+                   row: the two that change what is in it on the left, and the one
+                   that acts on all of it pushed to the right, away from them. -->
+              <Grid Grid.Row="7" Margin="0,12,0,0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="8">
+                  <Button Content="Add Folder…" Click="AddFolderButton_Click"/>
+                  <Button Content="Remove Selected"
+                          Command="{Binding RemoveLibraryPathCommand}"
+                          CommandParameter="{Binding #PathsList.SelectedItem}"/>
+                </StackPanel>
+                <Button Content="Rescan Files"
+                        HorizontalAlignment="Right"
+                        Command="{Binding RescanCommand}"
+                        IsVisible="{Binding !Capabilities.RebuildDatabase}"/>
+              </Grid>
+
+              <StackPanel Grid.Row="8" Orientation="Horizontal" Margin="0,8,0,0"
+                          HorizontalAlignment="Left" Spacing="8"
+                          IsVisible="{Binding Capabilities.RebuildDatabase}">
+                <Button Content="Rebuild Database"
+                        Command="{Binding RebuildDatabaseCommand}"/>
               </StackPanel>
-              <Button Content="Rescan Files"
-                      HorizontalAlignment="Right"
-                      Command="{Binding RescanCommand}"
-                      IsVisible="{Binding !Capabilities.RebuildDatabase}"/>
             </Grid>
 
-            <StackPanel Grid.Row="8" Orientation="Horizontal" Margin="0,8,0,0"
-                        HorizontalAlignment="Left" Spacing="8"
-                        IsVisible="{Binding Capabilities.RebuildDatabase}">
-              <Button Content="Rebuild Database"
-                      Command="{Binding RebuildDatabaseCommand}"/>
+            <!-- Songs removed from the library with their files kept, which every
+                 scan leaves out until they are restored here (see
+                 Library.ExcludedPaths). Outside the grid above on purpose: that
+                 one is disabled while this device is paired, and a paired device
+                 can still have removed files of its own to bring back. Hidden
+                 while there are none. -->
+            <StackPanel Margin="0,24,0,0" Spacing="8" IsVisible="{Binding HasRemovedFiles}">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="2">
+                  <TextBlock Text="Removed Songs" FontWeight="SemiBold"/>
+                  <TextBlock Text="Removed from the library with their files kept. Scans leave these files out until you restore them."
+                             FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Restore All" VerticalAlignment="Top" Margin="12,0,0,0"
+                        Command="{Binding RestoreAllRemovedFilesCommand}"/>
+              </Grid>
+
+              <Border MaxHeight="240"
+                      BorderThickness="1"
+                      BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+                <ListBox ItemsSource="{Binding RemovedFiles}">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:RemovedFileRow">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Margin="4,2" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
+                          <TextBlock Text="{Binding Detail}" FontSize="11" Opacity="0.6"
+                                     TextTrimming="CharacterEllipsis"
+                                     ToolTip.Tip="{Binding Path}"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Restore" Padding="10,4" VerticalAlignment="Center"
+                                Click="RestoreRemovedFileButton_Click"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </Border>
             </StackPanel>
-          </Grid>
+          </StackPanel>
         </ScrollViewer>
       </TabItem>
 

@@ -188,6 +188,15 @@ public interface ISettingsBackend
     // anything in between fell out of the ring and is not coming back.
     Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default);
 
+    // The Library tab's "Removed Songs": files removed from the library and
+    // kept on disk, which every scan leaves out (see Library.ExcludedPaths).
+    // Both backends have one - this device's own library and a server's.
+    Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default);
+
+    // Takes them off that list and starts the rescan that brings the songs
+    // back. Returns a sentence for the status line.
+    Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default);
+
     // One paired device's own log, as last pushed to the server at the end of a
     // sync (see AppSettings.ShareLogsWithPairedServer on the pushing side). The
     // point of the feature is that the person who runs the server is the one who

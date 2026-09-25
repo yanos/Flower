@@ -240,6 +240,12 @@ public partial class SettingsPanel : UserControl
             _viewModel.ForgetDenialCommand.Execute(row);
     }
 
+    private void RestoreRemovedFileButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.DataContext is RemovedFileRow row)
+            _viewModel.RestoreRemovedFileCommand.Execute(row);
+    }
+
     // Hosted inside another page rather than in a window or a full-page overlay
     // (MainView's device-detail pane): there is nothing to close, so Cancel -
     // which only ever meant "close without saving" - has nothing to mean either,
