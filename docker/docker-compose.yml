@@ -20,7 +20,8 @@ name: flower
 services:
   flower:
     # Moves only on `docker compose pull`. Pin a version (:0.2.1) to stay put.
-    image: ghcr.io/yanos/flower-server:latest
+    # FLOWER_IMAGE swaps in an unreleased build (scripts/build-server-image.sh).
+    image: ${FLOWER_IMAGE:-ghcr.io/yanos/flower-server:latest}
     # Or build from source (then `docker compose up -d --build`):
     # build:
     #   context: ..
