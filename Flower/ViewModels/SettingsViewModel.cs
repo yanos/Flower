@@ -357,6 +357,26 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public bool HasPublicAddress => _snapshot.PublicAddress is { Length: > 0 };
 
+    // Whether the address the server advertises from outside led back to it -
+    // see PublicReachability on the server. Shown under the public address as
+    // a check mark or a warning, and not at all when the server advertises no
+    // such address (door shut, or an advertised address of its own).
+    public bool HasPublicReachability => _snapshot.PublicOrigin is { Length: > 0 };
+
+    public bool IsPubliclyReachable => _snapshot.PublicReachability == "Reachable";
+
+    public bool IsPubliclyUnreachable => HasPublicReachability && !IsPubliclyReachable;
+
+    public string PublicReachabilityMessage => _snapshot.PublicReachability switch
+    {
+        "Reachable" =>
+            $"Reachable from the internet at {_snapshot.PublicOrigin}. Paired devices are told to use it when they are away from this network.",
+        "OtherServerAnswered" =>
+            $"Something other than this server answered at {_snapshot.PublicOrigin}. Check that your router forwards that port to this machine.",
+        _ =>
+            $"Could not reach this server at {_snapshot.PublicOrigin}. Check that your router forwards that port to this machine. Some routers cannot connect back to themselves, so this can be a false alarm: try from a phone off WiFi.",
+    };
+
     public string VersionDisplay => _snapshot.Version is { Length: > 0 } version ? $"Version {version}" : "";
 
     // See SettingsSnapshot.IsPairedToServer. A server always manages its own
@@ -406,6 +426,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasAddresses));
             OnPropertyChanged(nameof(PublicAddressDisplay));
             OnPropertyChanged(nameof(HasPublicAddress));
+            OnPropertyChanged(nameof(HasPublicReachability));
+            OnPropertyChanged(nameof(IsPubliclyReachable));
+            OnPropertyChanged(nameof(IsPubliclyUnreachable));
+            OnPropertyChanged(nameof(PublicReachabilityMessage));
             OnPropertyChanged(nameof(ITunesLibraryDescription));
             OnPropertyChanged(nameof(VersionDisplay));
             OnPropertyChanged(nameof(CanManageLibrary));

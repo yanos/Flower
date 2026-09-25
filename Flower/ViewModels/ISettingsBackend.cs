@@ -88,6 +88,13 @@ public sealed record SettingsSnapshot
     // behind a router cannot see its own public address.
     public string? PublicAddress { get; init; }
 
+    // The origin the server advertises to clients from that address, and
+    // whether it could reach itself there - see ServerSettingsDto.PublicOrigin.
+    // Null unless the server has opened itself to the internet without naming
+    // an address of its own.
+    public string? PublicOrigin { get; init; }
+    public string? PublicReachability { get; init; }
+
     // Shown read-only, for the "where does this thing keep its stuff" question
     // that is otherwise unanswerable about a machine you are not sitting at.
     public string DataDirectory { get; init; } = "";

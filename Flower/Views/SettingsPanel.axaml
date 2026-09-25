@@ -535,9 +535,24 @@
                                    VerticalAlignment="Center"/>
             </StackPanel>
 
+            <!-- Whether that address, at the https port, led back to this
+                 server when it dialled itself - see PublicReachability. The
+                 mark carries the colour and the sentence stays readable. -->
+            <Grid ColumnDefinitions="Auto,*" Margin="0,6,0,0"
+                  IsVisible="{Binding HasPublicReachability}">
+              <TextBlock Grid.Column="0" Text="✓" FontSize="13" FontWeight="Bold" Margin="0,0,6,0"
+                         Foreground="{DynamicResource AppSuccessBrush}"
+                         IsVisible="{Binding IsPubliclyReachable}"/>
+              <TextBlock Grid.Column="0" Text="⚠" FontSize="13" Margin="0,0,6,0"
+                         Foreground="{DynamicResource AppWarningBrush}"
+                         IsVisible="{Binding IsPubliclyUnreachable}"/>
+              <SelectableTextBlock Grid.Column="1" Text="{Binding PublicReachabilityMessage}"
+                                   FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center"/>
+            </Grid>
+
             <TextBlock Text="Advertised address" FontWeight="SemiBold" Margin="0,20,0,4"/>
             <controls:TextInput Text="{Binding AdvertisedHost, Mode=TwoWay}" PlaceholderText="host:port"/>
-            <TextBlock Text="The address to put in pairing invites, when it isn't the one this server sees requests arrive on - behind a proxy, or in a container that changes the port. Leave empty otherwise."
+            <TextBlock Text="The address to put in pairing invites, when it isn't the one this server sees requests arrive on - behind a proxy, or in a container that changes the port. Leave empty otherwise: with outside connections accepted, the public address above is used, at this server's HTTPS port."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
             <CheckBox Content="Trust the Tailscale range (100.64.0.0/10)"
