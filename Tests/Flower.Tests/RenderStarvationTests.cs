@@ -80,6 +80,13 @@ public class RenderStarvationTests
 
             for (var frame = 0; frame < _totalFrames && !_retired; frame += _framesPerWrite)
             {
+                // A seek in progress: nothing more from before it.
+                if (_seekRequested)
+                {
+                    SpinWait.SpinUntil(() => _seekLanded || _retired);
+                    _seekRequested = false;
+                }
+
                 var value = _postSeekValue ?? _value;
                 for (var i = 0; i < _framesPerWrite; i++)
                 {
@@ -98,17 +105,27 @@ public class RenderStarvationTests
                 Drained?.Invoke();
         }
 
+        private volatile bool _seekRequested;
+        private volatile bool _seekLanded;
+
+        // As a real decoder does, stop producing pre-seek audio. Before this
+        // the decode thread went on writing it into the freshly flushed ring
+        // until the test got round to SeekTo, and on a loaded runner that was
+        // heard. Deliberately no flush of its own: the flush is the
+        // coordinator's, and is what the seek test is about.
         public void Seek(float position)
         {
+            _seekLanded = false;
+            _seekRequested = true;
         }
 
-        // What a real seek looks like from the coordinator's side, minus the
-        // asynchrony: the decoder starts producing different audio. The ring
-        // flush is GaplessCoordinator.Seek's job, which is the thing under
-        // test.
+        // Where the seek lands: the decoder starts producing different audio.
+        // The ring flush is GaplessCoordinator.Seek's job, which is the thing
+        // under test.
         public void SeekTo(Func<int, short> value)
         {
             _postSeekValue = value;
+            _seekLanded = true;
             SeekSettled?.Invoke(0);
         }
 
@@ -311,7 +328,8 @@ public class RenderStarvationTests
         harness.Sink.Pause();
 
         // One render period may already have been in flight when Seek
-        // returned; beyond that, nothing from before the seek may appear.
+        // returned, and one decoder write may have been mid-copy when the ring
+        // was flushed; beyond that, nothing from before the seek may appear.
         var after = harness.Sink.Captured.AsSpan((int)capturedAtSeek);
         var preSeekFrames = 0;
         var samples = Pcm.AsSamples(after);
@@ -321,6 +339,6 @@ public class RenderStarvationTests
                 preSeekFrames++;
         }
 
-        Assert.True(preSeekFrames <= 480, $"{preSeekFrames} frames of pre-seek audio played after the seek");
+        Assert.True(preSeekFrames <= 480 + 240, $"{preSeekFrames} frames of pre-seek audio played after the seek");
     }
 }
