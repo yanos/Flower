@@ -63,7 +63,8 @@ box and that device becomes an admin; or open the browser link, and the tab
 pairs *itself* — it generates its own keypair, spends the code on it, and gets
 the settings page. Whichever gets there first is the device that pairs, because
 the code is single-use. Lost the moment? Restart with `--pairing-code` to issue
-a fresh one.
+a fresh one — see "Getting back in, with no admin device left" below, which is
+the same flag and the Docker form of it.
 
 A browser tab is a device like any other from then on: it appears in the device
 list, it is revoked on its own, and it does not need a link with anything in it
@@ -174,6 +175,61 @@ They should be the same string. If they differ, that device is talking to
 something that is not this server, and the fix is to unpair it and pair again
 with the link. This is SSH's model — the check is worth making late if it was
 not made early, and worth not needing at all, which is what the link buys.
+
+### Getting back in, with no admin device left
+
+Every code after the first is issued by an administrator, so the one situation
+with no way forward is having lost all of them at once — a browser profile
+cleared, a phone replaced, a device key regenerated underneath the app. Nothing
+can reach `/api/admin` to mint a code, and the code is what `/api/admin`
+requires.
+
+The way back in is a flag on the server process:
+
+```bash
+dotnet run --project Flower.Server -- --pairing-code
+```
+
+That prints exactly what a first run prints — a code, a `flower://pair?...`
+link, and a browser link — even though an admin is already on file, and the
+code it prints grants admin like the first one did. Existing devices are
+untouched; this adds an administrator rather than replacing anybody.
+
+It has to be a flag on the process, not a command against a running one, and
+that is not an oversight: outstanding codes live only in `PairingCodeService`'s
+memory, so the process that prints a code is the only process that can honour
+the redeem. Which also means a restart mid-pairing throws the code away — spend
+it, or issue another.
+
+In Docker the image's entrypoint is the server itself, so anything you pass the
+container arrives as an argument to it. The awkward part is that the container
+printing the code must also be the one holding the port, since a second one
+would print a code nothing can redeem against:
+
+```bash
+docker compose stop flower
+docker compose run --rm flower --pairing-code   # prints the code, and keeps serving
+# redeem it against this container, then Ctrl-C and:
+docker compose up -d
+```
+
+Under the bridge override, `run` publishes no ports by default — add
+`--service-ports` so the container you are pairing against is reachable.
+
+If you would rather not juggle containers, add the flag to the service:
+
+```yaml
+    command: ["--pairing-code"]
+```
+
+then `docker compose up -d`, read `docker compose logs flower`, and **take the
+line out again** once you are back in. Left in, every restart prints a live
+admin-granting credential into a log that is ordinarily safe to paste into a
+bug report.
+
+The alternative, if you want to know what the flag saves you from: editing
+`trusted-peers.json` in the data directory by hand to remove the last admin, so
+that the server's own first-run check fires again on the next boot.
 
 ### Settings
 
@@ -1235,6 +1291,35 @@ else. The good answers are the ones above: a real certificate, or a proxy that
 terminates TLS for you (`tailscale serve`, Cloudflare, Caddy). On the machine
 running the server, `http://localhost:4533` remains the simplest option of all.
 
+### A LAN-only server, no warning
+
+A real certificate needs a name, not an open port, so a server nobody reaches
+from outside can still have one. Two ways, both with Caddy in front as in
+"Port forwarding" but with nothing forwarded and **AllowPublicAccess** left off
+(with `TrustedProxies` set, each listener arrives with its real LAN address,
+which the allow-list already admits):
+
+- **A name you control, issued over DNS-01.** Point a domain — or a free DuckDNS
+  subdomain — at the server's LAN address. DNS-01 proves ownership through a TXT
+  record rather than an inbound connection, so the certificate issues for a name
+  that resolves to `192.168.1.40`. Stock Caddy does not speak DNS-01; it needs a
+  build carrying your DNS provider's module (`xcaddy build --with
+  github.com/caddy-dns/<provider>`, or a prebuilt image that includes it).
+- **No name at all: `tls internal`.** Caddy runs its own certificate authority:
+
+  ```
+  192.168.1.40 {
+      tls internal
+      reverse_proxy localhost:4533
+  }
+  ```
+
+  Browsers trust it only once Caddy's root CA is installed on the device.
+  `caddy trust` does that for the server machine itself; every other device that
+  will browse needs the root (`/data/caddy/pki/authorities/local/root.crt` in the
+  container, under Caddy's data directory otherwise) installed by hand. One step
+  per device, and no warning afterwards.
+
 ## Not yet covered
 
 - **Certificates the server obtains for itself**, via LettuceEncrypt, so a
@@ -1311,6 +1396,11 @@ advertises into nothing and everything else about it keeps working.
 **A client paired at home cannot reach the server while away.** Check that both
 ends are on the tailnet (`tailscale status`), and that the server's tailnet
 address has not changed since the client last synced at home.
+
+**The settings page has no Generate Pairing Code button, and no device can
+administer the server.** Nothing paired is an administrator any more. Restart
+the server with `--pairing-code` — see "Getting back in, with no admin device
+left".
 
 **Two servers fight over one name in the sidebar.** Two instances are running
 and advertising. Stop one, and give the survivor a distinct `Alias`.

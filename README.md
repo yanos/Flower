@@ -67,9 +67,37 @@ Or open: flower://pair?host=...&code=G6RJR&fp=11ada0ed...
 
 - **Send the link, not the code.** The link carries the server's fingerprint, so
   the app verifies what it is trusting. A bare code trusts whatever answers.
-- One code, one device, ten minutes.
-- Later codes: settings page → **Generate Pairing Code**.
-- Lost the moment? Restart with `--pairing-code`.
+- One code, one device, ten minutes. It grants **admin**, so whoever redeems it
+  can change the library paths and add or remove devices.
+- Later codes: settings page → **Generate Pairing Code**, or the same button in
+  the desktop and phone apps. Needs a device that is already an admin.
+
+### Lost every admin device
+
+Then nothing can reach `/api/admin` to mint a code, and the way back in is a
+flag on the process — codes live in memory, so the process that prints one has
+to be the process that answers the redeem.
+
+```bash
+dotnet run --project Flower.Server -- --pairing-code
+```
+
+In Docker the entrypoint takes the flag as an argument, and the container
+holding the port has to be the one that prints:
+
+```bash
+docker compose stop flower
+docker compose run --rm flower --pairing-code   # prints the code, keeps serving
+# redeem it against this container, then Ctrl-C and:
+docker compose up -d
+```
+
+Under the bridge override, add `--service-ports` to that `run`, or it publishes
+no ports and nothing can reach the container to redeem against it.
+
+Or add `command: ["--pairing-code"]` to the `flower` service, `docker compose up
+-d`, read `docker compose logs flower`, and take the line out again afterwards —
+left in, it prints a live admin credential to the log on every boot.
 
 ---
 
@@ -130,6 +158,40 @@ rate-limit bucket.
 > and the pairing throttle all go quiet. A device signature is still required on
 > every route, but do not forward a router port at that setup. Use host
 > networking on Linux, or the Caddy / Cloudflare override.
+
+---
+
+## The web UI, and the certificate warning
+
+The server serves a full Flower UI in a browser — `http://localhost:4533` on the
+machine running it, and nothing to install.
+
+From any *other* machine that address stops working, and the reason is not the
+network: a tab holds its own key, and browsers only expose the cryptography for
+it over **HTTPS or `localhost`**. So `http://192.168.1.40:4533` loads a page
+that says it cannot pair. `https://192.168.1.40:4534` does work — after an
+interstitial, because that certificate is self-signed and a browser has no
+pairing to check it against. Fine for you, not something to ask of a guest, and
+it asks again after every restart.
+
+The warning goes away with a real certificate, which needs a name rather than an
+address — Let's Encrypt does not issue for IPs. It does *not* need an open port:
+
+| You have | Do this |
+|---|---|
+| A tailnet | `tailscale serve` — a `ts.net` name and a certificate, no Caddy at all |
+| A domain, server reachable from outside | Caddy in front, 80 and 443 forwarded: `FLOWER_HOSTNAME=music.example.com docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d`. Also turn **AllowPublicAccess** on, from the settings page |
+| A domain (or a free DuckDNS name), LAN only | Point it at the LAN address and issue over **DNS-01** — proves ownership by TXT record, so nothing is forwarded and nothing is public |
+| No name at all | Caddy with `tls internal`, then install its root CA on every device that will browse. No warning afterwards, at the cost of that one step per device |
+
+Leave **AllowPublicAccess** off for the LAN-only rows: with `TrustedProxies`
+set, the server sees each listener's real LAN address through the proxy, and the
+allow-list already admits it.
+
+The steps for each, with and without Docker, are in
+[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md) — "Port forwarding" for Caddy,
+"Reaching it from a browser" for the LAN-only options. Flower's own apps need
+none of this: they pin the server's key and move to `4534` on their own.
 
 ---
 
