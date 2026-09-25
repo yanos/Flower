@@ -45,7 +45,7 @@ public class FileTrashTests : PinnedDataDirectory
         Assert.True(File.Exists(Path.Combine(homeTrash, "files", "Song #1.flac")));
         var info = File.ReadAllLines(Path.Combine(homeTrash, "info", "Song #1.flac.trashinfo"));
         Assert.Equal("[Trash Info]", info[0]);
-        Assert.Equal("Path=" + string.Join('/', song.Split('/').Select(Uri.EscapeDataString)), info[1]);
+        Assert.Equal("Path=" + string.Join('/', song.Split('/', Path.DirectorySeparatorChar).Select(Uri.EscapeDataString)), info[1]);
         Assert.StartsWith("DeletionDate=", info[2]);
     }
 

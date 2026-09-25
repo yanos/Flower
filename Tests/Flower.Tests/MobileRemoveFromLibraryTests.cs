@@ -31,7 +31,9 @@ public class MobileRemoveFromLibraryTests : PinnedDataDirectory
             NullLogger<LibraryRemovalService>.Instance);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
             NullLogger<MobileMainViewModel>.Instance, removal);
-        Dispatcher.UIThread.RunJobs();
+        // The rows are built off the UI thread; one pump is not enough on a
+        // loaded runner.
+        UiWait.Settle(() => mobile.Main.Rows.Count == library.Tracks.Count, "the song list never filled in");
         return new MainViewModelHarness.MobileParts(mobile, parts);
     }
 
@@ -56,7 +58,7 @@ public class MobileRemoveFromLibraryTests : PinnedDataDirectory
         Assert.Single(library.Tracks);
 
         scope.Mobile.ConfirmRemoveFromLibraryCommand.Execute(null);
-        Dispatcher.UIThread.RunJobs();
+        UiWait.Settle(() => library.Tracks.Count == 0 && !scope.Mobile.IsShowingConfirmRemoveFromLibrary, "the song was never removed");
 
         Assert.Empty(library.Tracks);
         Assert.False(scope.Mobile.IsShowingConfirmRemoveFromLibrary);

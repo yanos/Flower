@@ -278,8 +278,9 @@ public sealed class LinuxTrash(string homeTrash, Func<string, string> mountPoint
     }
 
     // Percent-encoded per segment, the way a URL path is - the spec's rule.
+    // Always '/'-separated, whatever this OS separates with.
     private static string EncodePath(string path) =>
-        string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
+        string.Join('/', path.Split('/', Path.DirectorySeparatorChar).Select(Uri.EscapeDataString));
 
     private static void CreatePrivateDirectory(string path)
     {
