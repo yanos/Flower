@@ -1,44 +1,22 @@
 # syntax=docker/dockerfile:1
 
 # ── Build ───────────────────────────────────────────────────────────────────
-#
-# Pinned to $BUILDPLATFORM rather than the image's target platform on purpose.
-# This is a framework-dependent publish: the output is IL plus SQLitePCLRaw's
-# runtimes/ folder, which carries the native e_sqlite3 for every RID and picks
-# one at run time. Nothing produced here is architecture-specific, so an amd64
-# host can build the payload that goes into the arm64 image directly instead of
-# running the whole SDK under QEMU - the difference between a multi-arch build
-# that takes minutes and one that takes most of an hour.
+# Runs on the build host's architecture: the publish is framework-dependent and
+# arch-neutral, so a multi-arch build needs no QEMU.
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
-# Whether to build the Avalonia WebAssembly browser UI into the image. On by
-# default: without it the server still serves its API, but a browser reaching
-# the settings page gets WebUiHosting's "not deployed" placeholder instead. It
-# costs a wasm-tools workload install and an Emscripten link step - several
-# minutes and a few hundred MB, all of it confined to this stage and none of it
-# reaching the runtime image.
+# Build the browser UI too. Costs a few minutes in this stage only; without it
+# a browser gets a "not deployed" placeholder.
 ARG INCLUDE_WEB_UI=true
 
-# Normally empty. .git is deliberately *not* excluded by .dockerignore (it is
-# ~40 MB), so MinVer computes the version from the tags here exactly as it does
-# on a local build, and a bare `docker build -f docker/Dockerfile .` produces a
-# correctly stamped image with no other flags. Set this when building from a
-# shallow clone or an exported tarball, where MinVer would otherwise fall back
-# to 0.1.0-alpha.0 without saying so. It maps to MinVerVersionOverride rather
-# than Version because MinVer's own target assigns Version and would overwrite
-# a -p:Version.
+# Version override for builds without git tags (shallow clone, tarball).
+# Normally empty: MinVer reads the tags from .git.
 ARG VERSION=
 
 WORKDIR /src
 
-# python3 alongside the workload, because Emscripten's entry points are shell
-# wrappers around python scripts and on Linux and macOS they use the *system*
-# python rather than one the SDK carries (EmSdkRepo.Defaults.props says so in
-# as many words; only Windows gets an EmscriptenPythonToolsPath). The dotnet
-# SDK image ships no python at all, so emcc exits 1 with "unable to find python
-# in $PATH" the moment the browser UI reaches its link step. emcc looks for
-# python3 before python, so the one package is enough and python-is-python3 is
-# not needed.
+# The wasm workload for the browser UI, plus python3, which Emscripten needs
+# and the SDK image lacks.
 RUN if [ "$INCLUDE_WEB_UI" = "true" ]; then \
       apt-get update \
    && apt-get install -y --no-install-recommends python3 \
@@ -46,10 +24,7 @@ RUN if [ "$INCLUDE_WEB_UI" = "true" ]; then \
    && dotnet workload install wasm-tools --skip-sign-check; \
     fi
 
-# Restore against the project files alone, before the sources land, so that
-# editing a .cs file doesn't re-download the whole package graph. The four
-# copied here are Flower.Server plus its transitive project references
-# (Flower.Core) and, for the browser UI, Flower.Web -> Flower -> Flower.Core.
+# Restore from project files alone, so a source edit doesn't re-download packages.
 COPY Directory.Build.props Directory.Build.targets ./
 COPY Flower.Core/Flower.Core.csproj Flower.Core/
 COPY Flower.Server/Flower.Server.csproj Flower.Server/
@@ -60,11 +35,7 @@ RUN dotnet restore Flower.Server/Flower.Server.csproj \
 
 COPY . .
 
-# No separate step for the browser UI: Flower.Server's own build targets
-# publish Flower.Web and copy the bundle into the publish directory when the
-# Emscripten toolchain is present, and skip it silently when it is not - see
-# "The browser UI" in Flower.Server.csproj. Installing the workload above is
-# the whole of the wiring.
+# Flower.Server's build publishes the browser UI itself when the workload is there.
 RUN set -e; \
     args=""; \
     if [ -n "$VERSION" ]; then args="$args -p:MinVerVersionOverride=$VERSION"; fi; \
@@ -72,55 +43,25 @@ RUN set -e; \
     dotnet publish Flower.Server/Flower.Server.csproj -c Release -o /app --nologo $args
 
 # ── Runtime ─────────────────────────────────────────────────────────────────
-#
-# Debian-based, not Alpine. Flower.Server deliberately does not set
-# InvariantGlobalization - its csproj records the real bug that caused
-# (invariant mode turns string.Normalize into a silent no-op, which breaks the
-# decomposed/precomposed path matching the iTunes play-count importer is built
-# on) - so the image has to carry ICU. Debian ships it; a musl image would need
-# icu-libs installed by hand, which is the trade this declines.
+# Debian, not Alpine: the server needs ICU (see InvariantGlobalization in its csproj).
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
-# /data is everything the server owns and must survive an image rebuild:
-# flower.db, the device key, the trusted- and denied-peer lists, the logs and
-# the operator-editable flower-server.json. /music is where the library is
-# expected to be mounted, read-only. Both are set as environment variables
-# rather than baked into appsettings.json because the environment outranks the
-# flower-server.json on the data volume, and a setting the deployment owns
-# should not be overridable by a file the operator edits (see Program.cs on why
-# the two config layers sit in that order).
+# /data: database, device key, logs, flower-server.json. /music: the library, read-only.
+# Set here so flower-server.json cannot override them.
 ENV Flower__DataDirectory=/data \
     Flower__LibraryPaths__0=/music
 
-# Cleared, because the base image sets it to 8080 for every container and
-# Flower.Server chooses its own ports (UseUrls in Program.cs: 4533, and 4534
-# for TLS). Left set, ASP.NET logs on every start that it is "Overriding
-# HTTP_PORTS '8080'" - nothing listens on 8080 either way, but a warning on
-# every healthy start is one an operator learns to skim past.
+# The server picks its own ports; clearing this silences a startup warning.
 ENV ASPNETCORE_HTTP_PORTS=
 
-# 4533 plain, 4534 TLS - the latter served with a certificate minted from the
-# server's own device key, so paired Flower clients validate it without a CA
-# (see ServerTls). Both are informational under `network_mode: host`, which is
-# how this is meant to run - see docs/SELF-HOSTING.md for why.
+# 4533 HTTP, 4534 HTTPS (self-signed from the device key, pinned by clients).
 EXPOSE 4533 4534
 
 COPY --from=build /app /app
 WORKDIR /app
 
-# $APP_UID is the non-root uid the .NET base images ship (1654). This chown is
-# what lets docker-compose.yml ask for nothing before `up`: Docker initialises a
-# fresh *named* volume from this directory, ownership included, so /data arrives
-# writable by the uid that has to write it. A bind mount gets no such treatment
-# - the daemon creates the host path as root and the first write to flower.db
-# fails - which is why the compose file does not use one. Declared as a volume
-# so that a `docker run` without an explicit mount keeps its database instead of
-# discarding it with the container.
-#
-# These two lines are in this order on purpose, and swapping them breaks the
-# install with nothing to show for it: a filesystem change to a path already
-# declared as VOLUME is discarded at the end of the layer, so a chown after it
-# would build fine, report nothing, and hand every fresh volume back to root.
+# Chown before VOLUME: changes after VOLUME are discarded. A fresh named volume
+# then starts out owned by the app user (1654), so no setup is needed.
 RUN mkdir -p /data /music && chown $APP_UID:$APP_UID /data
 VOLUME /data
 USER $APP_UID

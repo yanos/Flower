@@ -1,10 +1,5 @@
-# The whole configuration. Caddy obtains a Let's Encrypt certificate for this
-# name, renews it unasked, redirects HTTP to HTTPS, and proxies to Flower -
-# which goes on speaking plain HTTP on loopback, exactly as it does behind
-# `tailscale serve`.
-#
-# FLOWER_HOSTNAME comes from the environment (docker-compose.caddy.yml passes
-# it), so this file is the same for everyone.
+# Caddy gets and renews the certificate, redirects HTTP to HTTPS, and proxies to
+# Flower on loopback. FLOWER_HOSTNAME comes from docker-compose.caddy.yml.
 
 {$FLOWER_HOSTNAME} {
 	reverse_proxy localhost:4533
