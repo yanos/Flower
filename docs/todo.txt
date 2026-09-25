@@ -117,4 +117,16 @@ Why the fix isn't a one-liner. The client can't decide with two values; it needs
 
 That's a three-way merge, the same shape as git's: common ancestor, mine, theirs. Doable, but it means the baseline has to be trustworthy every time (including the moment between a pull landing and a push being acknowledged), the push and pull have to be ordered against each other, and each of those branches wants a test. Not something to bolt onto the end of this change — which is why I stopped where the behaviour is strictly "never loses data", named the gap, and left it as its own piece.
   
+  
+Situations I didn't resolve
+
+1. The server's music folder goes missing during a rescan (NAS unmounted, drive asleep). The server's own library drops those tracks. When they come back they get new ids, a new date added, and lose their play counts and stars; clients then see brand-new songs. The fix belongs in the rescan ("folder not there, skip this scan"), and I didn't check how the importer handles a missing folder.
+2. Editing a playlist on a client that's missing some of its songs. The edit is genuinely newer, so the server takes it and loses the entries the client couldn't match. This is now a short window after first contact, but it isn't closed.
+3. Playlists keep entries for files deleted on the server, on both the server and the client, as unplayable rows. The existing code does this on purpose. Should they be removed?
+4. A file both moved and retagged on the server in one go gets a new server id, so clients see it as a delete plus an add. Only content fingerprinting would fix this.
+5. Two identically tagged files on the server (the same album ripped twice) now show up as two rows on the client, mirroring the server. A client with its own single copy sees that file plus one server-only row. I picked this deliberately.
+6. The ±2s length tolerance could merge two genuinely different recordings with identical tags and nearly identical lengths. That should be rare.
+7. A listener's star (paired but not an admin) stays on their device only and never reaches the server. The test assumes that's intended.
+8. Re-pairing with a reinstalled server starts with no sync history, so every playlist that differs will prompt a conflict.
+9. An unanswered conflict prompt now makes other playlist syncs wait until the user answers.
  

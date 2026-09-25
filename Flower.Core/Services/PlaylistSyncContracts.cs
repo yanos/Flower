@@ -11,7 +11,14 @@ namespace Flower.Services;
 // local filesystem path and never means the same thing on two devices), and needs a
 // stable Id/UpdatedAt pair that the local Playlist model didn't have before sync.
 
-public sealed record PlaylistSyncTrackDto(string? Title, string? Artists, string? Album, int DurationSeconds);
+// Id is the song's id in its origin's catalog - the same value TrackDto.Id
+// carries, and Track.OriginTrackId holds on a device that pulled it. Tried
+// before the tags, because the tags are not always something both ends read
+// the same way: a file with no title tag goes out in the catalog under its
+// file name and in a playlist under nothing, and the two never matched. Null
+// for a song only the sender has, which the far side then looks for by tags
+// alone, the way every entry used to be.
+public sealed record PlaylistSyncTrackDto(string? Title, string? Artists, string? Album, int DurationSeconds, string? Id = null);
 
 public sealed record PlaylistSyncPlaylistDto(
     Guid Id,
@@ -29,7 +36,9 @@ public sealed record PlaylistSyncPlaylistDto(
 // GET /api/flower/v1/playlists returns one of these describing the responding
 // device's current playlists. POST /api/flower/v1/playlists/apply sends one back:
 // by the time a POST happens the initiator has already resolved every conflict, so
-// the receiving side just replaces its playlist collection to match - no merge logic
-// runs on that end, avoiding two independent (and possibly divergent) conflict
-// resolutions for the same sync session.
-public sealed record PlaylistSyncManifestDto(string DeviceFingerprint, List<PlaylistSyncPlaylistDto> Playlists);
+// the receiving side runs no conflict resolution of its own. It does not replace its
+// collection wholesale, though - see PlaylistSyncMapper.ApplyPushedManifest: a
+// playlist missing from the push is kept unless Deleted names it, and a pushed copy
+// no newer than the one held is not taken.
+public sealed record PlaylistSyncManifestDto(
+    string DeviceFingerprint, List<PlaylistSyncPlaylistDto> Playlists, List<Guid>? Deleted = null);

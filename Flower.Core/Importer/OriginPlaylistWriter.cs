@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -19,10 +20,11 @@ namespace Flower.Importer;
 // Still not the peer-to-peer merge PlaylistSyncService runs, and deliberately
 // so. A tab has no durable identity to be a party to a merge and nothing of
 // its own to contribute: its playlists *are* the server's, so an edit made in
-// a tab is an edit to the server's set and the honest way to send it is
-// wholesale replacement - which is exactly what POST /playlists/apply already
-// means (the peer path resolves every conflict on the initiator and posts the
-// result; here the tab is the only editor, so there is nothing to resolve).
+// a tab is an edit to the server's set and the honest way to send it is the
+// whole set, plus the ids it no longer holds - POST /playlists/apply keeps a
+// playlist a push leaves out, so a deletion has to be named (the peer path
+// resolves every conflict on the initiator and posts the result; here the tab
+// is the only editor, so there is nothing to resolve).
 //
 // Two things this has to get right that a single fire-and-forget POST would
 // not:
@@ -56,6 +58,11 @@ public sealed class OriginPlaylistWriter(
     // and from NoteOriginState, compared against before every send.
     private string? _originState;
 
+    // The playlists the origin is believed to hold, by id - what a push has to
+    // name as deleted, since the server keeps whatever a push leaves out (see
+    // PlaylistSyncMapper.ApplyPushedManifest).
+    private HashSet<Guid> _originIds = [];
+
     private IReadOnlyList<Playlist>? _pending;
 
     public Task InFlight { get; private set; } = Task.CompletedTask;
@@ -65,6 +72,7 @@ public sealed class OriginPlaylistWriter(
         lock (_gate)
         {
             _originState = Serialize(playlists);
+            _originIds = playlists.Select(p => p.Id).ToHashSet();
         }
     }
 
@@ -104,15 +112,18 @@ public sealed class OriginPlaylistWriter(
     private async Task PushAsync(IReadOnlyList<Playlist> playlists)
     {
         var json = Serialize(playlists);
+        List<Guid> deleted;
         lock (_gate)
         {
             if (json == _originState)
                 return;
+
+            deleted = _originIds.Except(playlists.Select(p => p.Id)).ToList();
         }
 
         try
         {
-            var body = Encoding.UTF8.GetBytes(json);
+            var body = Encoding.UTF8.GetBytes(Serialize(playlists, deleted));
 
             using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}{ApplyPath}")
             {
@@ -127,6 +138,7 @@ public sealed class OriginPlaylistWriter(
             lock (_gate)
             {
                 _originState = json;
+                _originIds = playlists.Select(p => p.Id).ToHashSet();
             }
 
             logger.LogInformation(
@@ -143,8 +155,8 @@ public sealed class OriginPlaylistWriter(
         }
     }
 
-    private static string Serialize(IReadOnlyList<Playlist> playlists) =>
+    private static string Serialize(IReadOnlyList<Playlist> playlists, IReadOnlyList<Guid>? deleted = null) =>
         JsonSerializer.Serialize(
-            PlaylistSyncMapper.ToManifest(BrowserFingerprint, playlists),
+            PlaylistSyncMapper.ToManifest(BrowserFingerprint, playlists, deleted),
             PlaylistSyncJsonContext.Default.PlaylistSyncManifestDto);
 }

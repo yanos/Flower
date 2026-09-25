@@ -40,10 +40,15 @@ public static class PlaylistSyncPlanner
     // baselineFor returns the UpdatedAt both sides agreed on the last time this pair
     // of devices synced this playlist, or null if they never have (fresh pairing, or
     // a playlist created since). See PlaylistSyncStateStore.
+    //
+    // index is this device's library, for reading the remote entries as the
+    // tracks they would become here. Without one, content is compared by
+    // SyncKey alone and a copy that lost entries is never recognised as such.
     public static IReadOnlyList<PlaylistSyncDecision> Plan(
         IReadOnlyList<Playlist> local,
         IReadOnlyList<PlaylistSyncPlaylistDto> remote,
-        Func<Guid, DateTimeOffset?> baselineFor)
+        Func<Guid, DateTimeOffset?> baselineFor,
+        PlaylistTrackIndex? index = null)
     {
         var localById  = local.ToDictionary(p => p.Id);
         var remoteById = remote.ToDictionary(p => p.Id);
@@ -129,7 +134,7 @@ public static class PlaylistSyncPlanner
                 continue;
             }
 
-            if (ContentEquals(l, r))
+            if (ContentEquals(l, r, index))
             {
                 decisions.Add(new PlaylistSyncDecision(id, PlaylistSyncDecisionKind.NoChange, l, r));
                 continue;
@@ -147,12 +152,22 @@ public static class PlaylistSyncPlanner
             // user to pick between versions they never made, and picking one
             // went through the same lossy matching and asked again next sync.
             // Local wins because it is the copy that lost nothing on this
-            // device, and it is what gets pushed back regardless.
+            // device, and the server keeps its own copy of an unedited
+            // playlist whatever is pushed (PlaylistSyncMapper.ApplyPushedManifest).
+            //
+            // Unless the remote copy now reads as everything local has and
+            // more. That is the other direction of the same loss: this device
+            // took the remote copy while its library lacked some of the songs -
+            // a phone whose first playlist sync ran before its first catalog
+            // pull resolved none of them - and nothing would ever have moved
+            // either timestamp to make it look again.
             var kind = (localChanged, remoteChanged) switch
             {
                 (true, false)  => PlaylistSyncDecisionKind.KeepLocal,
                 (false, true)  => PlaylistSyncDecisionKind.AdoptRemote,
-                (false, false) => PlaylistSyncDecisionKind.KeepLocal,
+                (false, false) => index != null && IsStrictSuperset(index.Resolve(r.Tracks, out _), l.Tracks)
+                    ? PlaylistSyncDecisionKind.AdoptRemote
+                    : PlaylistSyncDecisionKind.KeepLocal,
                 _              => PlaylistSyncDecisionKind.Conflict,
             };
             decisions.Add(new PlaylistSyncDecision(id, kind, l, r));
@@ -161,10 +176,16 @@ public static class PlaylistSyncPlanner
         return decisions;
     }
 
-    private static bool ContentEquals(Playlist local, PlaylistSyncPlaylistDto remote)
+    // Given an index, against what the remote entries resolve to here - an
+    // entry this library has no track for is one this device could never
+    // hold, and is not a difference it can do anything about.
+    private static bool ContentEquals(Playlist local, PlaylistSyncPlaylistDto remote, PlaylistTrackIndex? index)
     {
         if (local.Name != remote.Name)
             return false;
+
+        if (index != null)
+            return index.Resolve(remote.Tracks, out _).Select(t => t.Id).SequenceEqual(local.Tracks.Select(t => t.Id));
         if (local.Tracks.Count != remote.Tracks.Count)
             return false;
 
@@ -173,6 +194,24 @@ public static class PlaylistSyncPlanner
             var remoteKey = Track.BuildSyncKey(remote.Tracks[i].Title, remote.Tracks[i].Artists, remote.Tracks[i].Album, remote.Tracks[i].DurationSeconds);
             if (local.Tracks[i].SyncKey != remoteKey)
                 return false;
+        }
+
+        return true;
+    }
+
+    // Every entry of `smaller` (counting repeats) is in `larger`, and larger
+    // has more.
+    private static bool IsStrictSuperset(IReadOnlyList<Track> larger, IReadOnlyList<Track> smaller)
+    {
+        if (larger.Count <= smaller.Count)
+            return false;
+
+        var remaining = larger.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.Count());
+        foreach (var track in smaller)
+        {
+            if (remaining.GetValueOrDefault(track.Id) == 0)
+                return false;
+            remaining[track.Id]--;
         }
 
         return true;

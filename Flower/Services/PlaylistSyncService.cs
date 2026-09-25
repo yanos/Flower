@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -91,6 +92,26 @@ public class PlaylistSyncService
     // its comment, and docs/ARCHITECTURE-REVIEW.md Tier 5.6.
     public virtual async Task SyncWithAsync(DiscoveredDevice device, bool forceInitiator = false)
     {
+        // One session at a time. Several triggers can fire together - first
+        // contact, a playlists-token change, the pass after a catalog pull
+        // brought new songs in - and two sessions interleaved each plan
+        // against a library the other is about to replace, and save baselines
+        // over each other's.
+        await _sessionGate.WaitAsync();
+        try
+        {
+            await SyncOnceAsync(device, forceInitiator);
+        }
+        finally
+        {
+            _sessionGate.Release();
+        }
+    }
+
+    private readonly SemaphoreSlim _sessionGate = new(1, 1);
+
+    private async Task SyncOnceAsync(DiscoveredDevice device, bool forceInitiator)
+    {
         if (string.IsNullOrEmpty(device.Fingerprint))
         {
             _logger.LogTrace("Playlist sync skipped for {Alias}: no resolved fingerprint yet", device.Alias);
@@ -157,13 +178,20 @@ public class PlaylistSyncService
             device.Alias, remotePlaylists.Count, _library.Playlists.Count);
 
         var baselines = _syncStateStore.LoadBaselines(device.Fingerprint);
+        var index = new PlaylistTrackIndex(_library.Tracks);
         var decisions = PlaylistSyncPlanner.Plan(
             _library.Playlists,
             remotePlaylists,
-            id => baselines.TryGetValue(id, out var v) ? v : null);
+            id => baselines.TryGetValue(id, out var v) ? v : null,
+            index);
 
         var finalPlaylists = new List<Playlist>();
         var newBaselines = new Dictionary<Guid, DateTimeOffset>(baselines);
+
+        // Deleted here, and still there: the peer is told outright, because
+        // it no longer reads a playlist missing from the push as deleted (see
+        // PlaylistSyncMapper.ApplyPushedManifest).
+        var deletedHere = new List<Guid>();
 
         foreach (var decision in decisions)
         {
@@ -182,6 +210,8 @@ public class PlaylistSyncService
             if (decision.Kind == PlaylistSyncDecisionKind.Delete)
             {
                 newBaselines.Remove(decision.PlaylistId);
+                if (decision.Remote != null)
+                    deletedHere.Add(decision.PlaylistId);
                 continue;
             }
 
@@ -189,8 +219,8 @@ public class PlaylistSyncService
             {
                 PlaylistSyncDecisionKind.NoChange  => decision.Local!,
                 PlaylistSyncDecisionKind.KeepLocal => decision.Local!,
-                PlaylistSyncDecisionKind.AdoptRemote => PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks, _logger),
-                PlaylistSyncDecisionKind.Conflict => await ResolveConflictAsync(decision, remoteDisplayName),
+                PlaylistSyncDecisionKind.AdoptRemote => PlaylistSyncMapper.ToPlaylist(decision.Remote!, index, _logger),
+                PlaylistSyncDecisionKind.Conflict => await ResolveConflictAsync(decision, remoteDisplayName, index),
                 _ => throw new ArgumentOutOfRangeException(),
             };
 
@@ -204,7 +234,7 @@ public class PlaylistSyncService
 
         try
         {
-            var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, finalPlaylists);
+            var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, finalPlaylists, deletedHere);
             var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, FlowerJsonContext.Default.PlaylistSyncManifestDto));
             const string postPath = "/api/flower/v1/playlists/apply";
             using var content = new ByteArrayContent(bodyBytes);
@@ -243,7 +273,7 @@ public class PlaylistSyncService
         request.Headers.ConnectionClose = true;
     }
 
-    private async Task<Playlist> ResolveConflictAsync(PlaylistSyncDecision decision, string remoteAlias)
+    private async Task<Playlist> ResolveConflictAsync(PlaylistSyncDecision decision, string remoteAlias, PlaylistTrackIndex index)
     {
         // Delete-vs-edit: one side deleted a playlist the two devices had
         // previously agreed on, while the other side edited it since that same
@@ -262,7 +292,7 @@ public class PlaylistSyncService
         // both desktop and mobile - see docs/ARCHITECTURE-REVIEW.md.
         if (decision.Local == null || decision.Remote == null)
         {
-            var survivor = decision.Local ?? PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks, _logger);
+            var survivor = decision.Local ?? PlaylistSyncMapper.ToPlaylist(decision.Remote!, index, _logger);
             _logger.LogInformation(
                 "Playlist {Name}: deleted on {DeletedSide} but edited on the other side since they last agreed - keeping the edit rather than propagating the delete",
                 survivor.Name, decision.Local == null ? "this device" : remoteAlias);
@@ -271,7 +301,11 @@ public class PlaylistSyncService
 
         var handler = ConflictDetected;
         if (handler == null)
-            return decision.Local!; // No UI listening (e.g. sync running before the view attaches) - keep local rather than silently discarding it.
+        {
+            // No UI listening (e.g. sync running before the view attaches) -
+            // keep local rather than silently discarding it.
+            return KeepLocalOver(decision.Local!, decision.Remote!);
+        }
 
         var tcs = new TaskCompletionSource<PlaylistConflictChoice>();
         handler.Invoke(this, new PlaylistConflictEventArgs
@@ -286,7 +320,18 @@ public class PlaylistSyncService
         _logger.LogInformation("Playlist conflict for {Name} with {RemoteAlias} resolved: {Choice}",
             decision.Local!.Name, remoteAlias, choice);
         return choice == PlaylistConflictChoice.KeepLocal
-            ? decision.Local!
-            : PlaylistSyncMapper.ToPlaylist(decision.Remote!, _library.Tracks, _logger);
+            ? KeepLocalOver(decision.Local!, decision.Remote!)
+            : PlaylistSyncMapper.ToPlaylist(decision.Remote!, index, _logger);
+    }
+
+    // Keeping this device's version of a conflict is an edit made after the
+    // remote one, whatever the two clocks said: the peer takes a pushed copy
+    // only when it is newer than its own (PlaylistSyncMapper.ApplyPushedManifest),
+    // so a local copy that happened to carry the older timestamp was kept here
+    // and quietly refused there.
+    private static Playlist KeepLocalOver(Playlist local, PlaylistSyncPlaylistDto remote)
+    {
+        local.MarkEditedAfter(remote.UpdatedAt);
+        return local;
     }
 }

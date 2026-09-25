@@ -391,8 +391,9 @@ public static class SyncEndpoints
             "application/json");
 
     // The initiator resolved every conflict before POSTing here (see
-    // PlaylistSyncService), so this side replaces its collection wholesale -
-    // no second, independently divergent merge runs on this end.
+    // PlaylistSyncService), so no second merge runs on this end - but the push
+    // is not taken wholesale either: see PlaylistSyncMapper.ApplyPushedManifest
+    // for what is kept, and why.
     private static async Task<IResult> ApplyPlaylists(HttpContext context, Library library, ILogger logger)
     {
         using var reader = new StreamReader(context.Request.Body);
@@ -401,12 +402,9 @@ public static class SyncEndpoints
         if (manifest == null)
             return Results.BadRequest();
 
-        var playlists = manifest.Playlists
-            .Select(dto => PlaylistSyncMapper.ToPlaylist(dto, library.Tracks, logger))
-            .ToList();
         // Persists itself, through the same PlaylistRepository the client's
         // own Library writes through.
-        library.ReplacePlaylists(playlists);
+        var playlists = PlaylistSyncMapper.ApplyPushedManifest(library, manifest, logger);
 
         logger.LogInformation(
             "Applied {Count} playlist(s) pushed by {Fingerprint}",

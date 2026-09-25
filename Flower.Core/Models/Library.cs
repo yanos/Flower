@@ -509,11 +509,7 @@ namespace Flower.Models
                     if (track.Path == null)
                         continue;
 
-                    track.OriginDeviceFingerprint = null;
-                    track.OriginTrackId = null;
-                    track.OriginFileExtension = null;
-                    track.OriginRelativePath = null;
-                    track.OriginAlbumArtId = null;
+                    ClearOrigin(track);
                     kept.Add(track);
                 }
 
@@ -559,14 +555,48 @@ namespace Flower.Models
         // it's gone (see carriedForwardSyncTracks above for the same
         // reasoning), and silently deleting a user's playlist entry is a much
         // worse failure than briefly showing a stale one.
+        //
+        // By Id first, and only then by what the entry says it is. An entry
+        // whose Id has gone can still be a song this library has again: a
+        // placeholder pruned while its server's library folder was briefly
+        // unavailable, or dropped by an unpair, comes back from the next pull
+        // as a new Track with a new Id - and the playlist entry, which kept
+        // its old instance per the paragraph above, would otherwise stay
+        // pointing at a row the library no longer has, forever. The server's
+        // own id for the song is the better second key when the entry has
+        // one (it survives a retag); SyncKey is the last.
         private void RebindPlaylistTracks()
         {
             var byId = new Dictionary<Guid, Track>(Tracks.Count);
+            Dictionary<(string, string), Track>? byOrigin = null;
+            Dictionary<string, Track>? byKey = null;
             foreach (var track in Tracks)
                 byId.TryAdd(track.Id, track);
 
+            Track? Current(Track entry)
+            {
+                if (byId.TryGetValue(entry.Id, out var current))
+                    return current;
+
+                if (entry is { OriginDeviceFingerprint: { } origin, OriginTrackId: { Length: > 0 } originId })
+                {
+                    byOrigin ??= Tracks
+                        .Where(t => t is { OriginDeviceFingerprint: not null, OriginTrackId.Length: > 0 })
+                        .GroupBy(t => (t.OriginDeviceFingerprint!, t.OriginTrackId!))
+                        .ToDictionary(g => g.Key, g => g.First());
+                    if (byOrigin.TryGetValue((origin, originId), out var sameSong))
+                        return sameSong;
+                }
+
+                if (string.IsNullOrWhiteSpace(entry.Title))
+                    return null;
+
+                byKey ??= Tracks.GroupBy(t => t.SyncKey).ToDictionary(g => g.Key, g => g.First());
+                return byKey.GetValueOrDefault(entry.SyncKey);
+            }
+
             foreach (var playlist in Playlists)
-                playlist.RebindTracks(byId);
+                playlist.RebindTracks(Current);
         }
 
         // THE list of everything about a Track that a rescan must not reset.
@@ -676,17 +706,16 @@ namespace Flower.Models
             int removedCount;
             lock (_lock)
             {
-                var byKey = Tracks
-                    .GroupBy(t => t.SyncKey)
-                    .ToDictionary(g => g.Key, g => g.First());
-                var incomingKeys = new HashSet<string>();
+                var matches = SyncedTrackMatcher.Match(Tracks, sourceDeviceFingerprint, incoming);
+                var claimed = new HashSet<Track>(ReferenceEqualityComparer.Instance);
 
                 var merged = new List<Track>(Tracks);
-                foreach (var remote in incoming)
+                for (var i = 0; i < incoming.Count; i++)
                 {
-                    incomingKeys.Add(remote.SyncKey);
-                    if (byKey.TryGetValue(remote.SyncKey, out var existing))
+                    var remote = incoming[i];
+                    if (matches[i] is { } existing)
                     {
+                        claimed.Add(existing);
                         existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
                         existing.OriginTrackId = remote.OriginTrackId;
                         existing.OriginFileExtension = remote.OriginFileExtension;
@@ -706,17 +735,32 @@ namespace Flower.Models
                     }
 
                     merged.Add(remote);
-                    byKey[remote.SyncKey] = remote; // Guards against duplicate SyncKeys within `incoming` itself.
+                    claimed.Add(remote);
                 }
 
-                var stale = new HashSet<Track>(merged.Where(t =>
-                    t.Path == null &&
-                    t.OriginDeviceFingerprint == sourceDeviceFingerprint &&
-                    !incomingKeys.Contains(t.SyncKey)));
+                // Whatever of this source's the pull did not account for. A
+                // placeholder goes: the source was its only reason to exist. A
+                // real file stays - it is this device's own - but stops
+                // claiming the source has a copy, which it used to go on
+                // claiming indefinitely: the phone's delete-a-download warning
+                // then called deleting it reversible, of a song the server no
+                // longer had.
+                var stale = new HashSet<Track>(ReferenceEqualityComparer.Instance);
+                foreach (var track in merged)
+                {
+                    if (track.OriginDeviceFingerprint != sourceDeviceFingerprint || claimed.Contains(track))
+                        continue;
+
+                    if (track.Path == null)
+                        stale.Add(track);
+                    else
+                        ClearOrigin(track);
+                }
                 merged.RemoveAll(stale.Contains);
 
                 Tracks = merged;
                 InvalidateIndexes();
+                RebindPlaylistTracks();
                 removedCount = stale.Count;
 
                 // See UpdateTracks - same write, same reason for being under
@@ -728,6 +772,15 @@ namespace Flower.Models
 
             LibraryChanged?.Invoke(this, EventArgs.Empty);
             return removedCount;
+        }
+
+        private static void ClearOrigin(Track track)
+        {
+            track.OriginDeviceFingerprint = null;
+            track.OriginTrackId = null;
+            track.OriginFileExtension = null;
+            track.OriginRelativePath = null;
+            track.OriginAlbumArtId = null;
         }
 
         // A matched track kept its original metadata forever: the merge above
@@ -753,13 +806,20 @@ namespace Flower.Models
         // Restricted to the fields TrackDto actually carries (see
         // LibrarySyncMapper.ToPlaceholderTrack) rather than every tag on Track -
         // copying a field the wire never filled would blank out good data with a
-        // default. The four in the SyncKey itself are excluded as well, since a
-        // match already proves they agree.
+        // default.
         private static void RefreshPlaceholderMetadata(Track existing, Track remote)
         {
             if (existing.Path != null)
                 return;
 
+            // The key fields too, which a SyncKey match proves agree but a
+            // match on the server's own id does not: that is how a title
+            // fixed on the server reaches a placeholder that keeps its Id,
+            // its playlist entries and its plays.
+            existing.Title = remote.Title;
+            existing.Artists = remote.Artists;
+            existing.Album = remote.Album;
+            existing.Duration = remote.Duration;
             existing.AlbumArtists = remote.AlbumArtists;
             existing.IsCompilation = remote.IsCompilation;
             existing.Genre = remote.Genre;
@@ -1533,9 +1593,14 @@ namespace Flower.Models
         }
 
         // Id+UpdatedAt (bumped by Playlist on every rename/track add/remove/reorder -
-        // see Playlist.UpdatedAt) is enough to tell "identical" apart from "changed"
-        // without a deep track-by-track comparison. Order matters too, since the
-        // sidebar renders playlists in list order.
+        // see Playlist.UpdatedAt) tells an edit apart from no edit, but not two
+        // copies of one version apart from each other: a copy resolved against a
+        // library missing some of its songs keeps the version's UpdatedAt and
+        // holds fewer tracks. So the tracks are compared as well - by Id, which
+        // is cheap next to the sidebar rebuild this exists to skip - or a sync
+        // replacing that short copy with the whole one was skipped as "nothing
+        // changed". Order matters too, since the sidebar renders playlists in
+        // list order.
         private static bool PlaylistsUnchanged(IReadOnlyList<Playlist> a, IReadOnlyList<Playlist> b)
         {
             if (a.Count != b.Count)
@@ -1544,6 +1609,8 @@ namespace Flower.Models
             for (var i = 0; i < a.Count; i++)
             {
                 if (a[i].Id != b[i].Id || a[i].UpdatedAt != b[i].UpdatedAt)
+                    return false;
+                if (!ReferenceEquals(a[i], b[i]) && !a[i].Tracks.Select(t => t.Id).SequenceEqual(b[i].Tracks.Select(t => t.Id)))
                     return false;
             }
 

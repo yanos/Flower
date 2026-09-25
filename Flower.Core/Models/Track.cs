@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json.Serialization;
 
 namespace Flower.Models
@@ -417,8 +418,13 @@ namespace Flower.Models
         public static string BuildLooseKey(string? title, string? artists, string? album) =>
             $"{Normalize(title)}|{Normalize(artists)}|{Normalize(album)}";
 
+        // Composed form (NFC) first, because the same visible text arrives in
+        // two spellings: macOS and some taggers write "é" as "e" plus a
+        // combining accent, most everything else as the one precomposed
+        // character. Without it a client's own copy of "Café" and its server's
+        // copy of the same file were two songs.
         private static string Normalize(string? value) =>
-            value?.Trim().ToLowerInvariant() ?? "";
+            value?.Normalize(NormalizationForm.FormC).Trim().ToLowerInvariant() ?? "";
 
         // Identity is Id and nothing else. Note what this does NOT fix: adding
         // the same track to a playlist twice puts the same instance (hence the

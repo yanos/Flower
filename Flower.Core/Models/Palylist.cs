@@ -107,10 +107,34 @@ namespace Flower.Models
         // for why that has to happen here rather than at each UI call site.
         public event EventHandler? Changed;
 
-        private void Touch()
+        // Never backwards, and never standing still: an edit is always later
+        // than the version it edited. UpdatedAt is compared across devices
+        // (PlaylistSyncPlanner, and the server taking a push only when it is
+        // newer), and a copy adopted from a device whose clock runs ahead
+        // carries that device's time - so on a device whose clock runs behind,
+        // "now" could be earlier than the playlist being edited, and the edit
+        // read everywhere as no edit at all.
+        private void Touch() => Touch(DateTimeOffset.UtcNow);
+
+        private void Touch(DateTimeOffset now)
         {
-            UpdatedAt = DateTimeOffset.UtcNow;
+            var next = UpdatedAt.AddMilliseconds(1);
+            UpdatedAt = now > next ? now : next;
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Stamps this copy as an edit made after `other` - for a copy chosen
+        // over another one that is newer on the clock, which is what keeping
+        // your own version of a conflict is. Without it the choice is made
+        // here and then undone by every device comparing timestamps.
+        public void MarkEditedAfter(DateTimeOffset other)
+        {
+            if (UpdatedAt > other)
+                return;
+
+            var justAfter = other.AddMilliseconds(1);
+            var now = DateTimeOffset.UtcNow;
+            Touch(justAfter > now ? justAfter : now);
         }
 
         // Bumped on every mutation (rename, track add/remove/reorder). Sync uses
@@ -228,13 +252,13 @@ namespace Flower.Models
         // is the only caller and explains why. Not a mutation in the sense the
         // methods above are: same songs, same order, same playlist, just the
         // objects a rescan replaced underneath it.
-        internal void RebindTracks(IReadOnlyDictionary<Guid, Track> byId)
+        internal void RebindTracks(Func<Track, Track?> current)
         {
             var next = new List<Track>(_tracks);
             for (var i = 0; i < next.Count; i++)
             {
-                if (byId.TryGetValue(next[i].Id, out var current))
-                    next[i] = current;
+                if (current(next[i]) is { } replacement)
+                    next[i] = replacement;
             }
             _tracks = next;
         }

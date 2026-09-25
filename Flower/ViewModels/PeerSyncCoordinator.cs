@@ -706,6 +706,21 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         }
 
         NoteThrottling(device, result);
+        await ResyncPlaylistsIfTracksArrived(device, result);
+    }
+
+    // The playlist sync and the catalog pull start together, so the playlist
+    // one routinely resolves the server's entries against a library that does
+    // not have them yet - on first contact, against an empty one - and keeps
+    // what it could match. Once the pull has brought those songs in, another
+    // pass picks the whole copies up (PlaylistSyncPlanner's superset rule);
+    // without one, nothing asks again until some playlist next changes.
+    private async Task ResyncPlaylistsIfTracksArrived(DiscoveredDevice device, LibrarySyncResult result)
+    {
+        if (!result.Success || result.AddedCount <= 0 || _playlistSyncService == null)
+            return;
+
+        await _playlistSyncService.SyncWithAsync(device, forceInitiator: true);
     }
 
     // How long to leave a peer alone after it says 429. One second longer than
@@ -962,6 +977,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
                 RecordSyncedNow(device.Fingerprint);
             }
             NoteThrottling(device, libraryResult);
+            await ResyncPlaylistsIfTracksArrived(device, libraryResult);
 
             LastForceSyncResult = !libraryResult.Success
                 ? DescribeFailure(libraryResult.Failure, device.Alias)
