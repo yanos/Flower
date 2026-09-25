@@ -3,6 +3,11 @@
 # ── Build ───────────────────────────────────────────────────────────────────
 # Runs on the build host's architecture: the publish is framework-dependent and
 # arch-neutral, so a multi-arch build needs no QEMU.
+#
+# Declared so the legacy builder (`docker build` with no buildx plugin) can be
+# handed it as a --build-arg: it never sets BUILDPLATFORM itself, and a FROM
+# sees only args declared above it. BuildKit still fills it in automatically.
+ARG BUILDPLATFORM
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 # Build the browser UI too. Costs a few minutes in this stage only; without it
