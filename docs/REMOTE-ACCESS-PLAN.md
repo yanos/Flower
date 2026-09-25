@@ -298,6 +298,34 @@ A warning rather than a refusal, for the same reason `MdnsAdvertiser` logs
 instead of failing: a server nobody can find is degraded, not broken, and an
 operator mid-setup should not be locked out by advice.
 
+### The public address, advertised without being asked
+
+The route verified above needed two settings, and operators set one: they turn
+on `AllowPublicAccess`, which opens the door, and leave `AdvertisedHost` empty,
+which means no client is ever told where the door is. The server did look up its
+public IP (`PublicAddressProbe`), but only to show on the settings page.
+
+`PublicReachability` now closes that (September 2026). With `AllowPublicAccess`
+on and `AdvertisedHost` empty, `/info` ends its address list with
+`https://<public IP>:<https port>`. The IP is looked up again every fifteen
+minutes, and at once when the setting changes, so an address that changes
+follows without anyone editing anything. Nothing is looked up while the door is
+shut. The assumption it cannot verify alone - that the router forwards the same
+port - it checks by dialling that origin's `/info` and comparing the fingerprint
+that answers with its own. The Network tab shows the result as a check mark or a
+warning, and the log says it once per change.
+
+The check is informational, never a gate. It leaves through the router it
+returns through, and a router without hairpin NAT fails it for a server the rest
+of the internet reaches fine. Withholding the address on that evidence would
+break exactly the deployments it is meant to fix, while advertising a dead one
+costs a client one failed probe. An `AdvertisedHost` replaces all of this, since
+an operator who named an address (tunnel, proxy, DNS name) has said the home IP
+is not the way in.
+
+What it does not fix is the section below: a new IP reaches only the devices
+that can still reach the old one, or the LAN.
+
 ### Learning an address requires already having one
 
 The third is structural rather than a mistake, and it is worth stating because

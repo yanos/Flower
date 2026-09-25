@@ -470,15 +470,28 @@ Two of the four need nothing added, for unrelated reasons.
 **Port forwarding needs no override when every listener is a paired Flower app**,
 because the port you forward is then `4534` — the server's own TLS port, whose
 certificate those clients validate against a key they already hold. No proxy, so
-nothing to run beside the server and no `TrustedProxies`; give it its outside
-address in `flower-server.json` on the data volume and that is the whole of it:
+nothing to run beside the server and no `TrustedProxies`. Forward 4534 to the
+same port, turn on **Accept connections from outside of LAN** in Network, and
+that is the whole of it: with `AdvertisedHost` empty, the server looks up its own
+public IP, tells paired devices `https://<that IP>:4534`, looks again every
+fifteen minutes so a changed address follows, and dials itself there to check the
+forward leads back to it. The Network tab shows the result under the public
+address — a check mark, or a warning naming what went wrong. A warning can be a
+false alarm on a router that does not loop connections back to itself, so the
+address is advertised either way; a phone with Wi-Fi off is the real test.
+
+Set `AdvertisedHost` only to use a name instead (dynamic DNS), or when the
+outside port is not 4534. It then replaces the looked-up address entirely:
 
 ```json
 { "Flower": { "AdvertisedHost": "https://music.example.com:4534" } }
 ```
 
 A name from dynamic DNS or a bare public IP both work there, because nothing in
-that path asks a certificate authority for anything. The moment a browser is one
+that path asks a certificate authority for anything. A paired device learns a
+new address only while it can still reach the server, so after the public IP
+changes, a phone that was away from home the whole time needs one visit to the
+LAN before it can reach the server from outside again. The moment a browser is one
 of the listeners that stops being true — it cannot pin, sees a self-signed
 certificate for the wrong name, and warns — which is what the Caddy override is
 for, and why it insists on a real hostname: Let's Encrypt will not issue for an
