@@ -690,7 +690,8 @@ public partial class App : Application
                     new DynamicResourceExtension("SystemControlBackgroundAltHighBrush");
                 singleView = browserRoot;
 
-                OpenServerSettingsFromUrl(browserMainView, logger);
+                WireBrowserPairing(mainViewModel);
+                OpenServerSettingsFromUrl(mainViewModel, logger);
             }
             else
             {
@@ -803,6 +804,12 @@ public partial class App : Application
         if (playReporter != null)
             library.TrackChanged += (_, e) => playReporter.Report(e);
 
+        // As soon as the server has said who this tab is, not once the whole
+        // catalog has arrived - until then the page is held blank (see
+        // MainViewModel.IsCheckingBrowserPairing).
+        if (importer is Importer.OriginLibraryImporter origin)
+            origin.HandshakeAnswered += () => ReportBrowserPairing(origin, mainViewModel);
+
         _ = Task.Run(async () =>
         {
             var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");
@@ -831,8 +838,6 @@ public partial class App : Application
                 // the queue sees it as well as the library - see
                 // Library.RemoveTracks.
                 var freshTracks = library.WithoutExcluded(await importer.ImportAsync(appSettings.LibraryPaths));
-                if (OperatingSystem.IsBrowser())
-                    ReportBrowserPairing(importer, mainViewModel);
                 rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
 
                 // Update the playlist first so navigation is consistent when LibraryChanged fires
@@ -891,6 +896,13 @@ public partial class App : Application
                 // here instead.
                 rescanLogger.LogError(ex, "Startup rescan failed");
             }
+            finally
+            {
+                // A server that never answered leaves nothing to wait for: the
+                // page shows what it has rather than staying blank.
+                if (OperatingSystem.IsBrowser())
+                    Dispatcher.UIThread.Post(() => mainViewModel.IsCheckingBrowserPairing = false);
+            }
         });
 
         return mainView;
@@ -917,7 +929,7 @@ public partial class App : Application
     // opening a screen of its own, so arriving from that button and finding the
     // page yourself are the same place - and so the top bar's transport stays
     // on screen either way.
-    private static void OpenServerSettingsFromUrl(MainView mainView, Microsoft.Extensions.Logging.ILogger logger)
+    private static void OpenServerSettingsFromUrl(MainViewModel mainViewModel, Microsoft.Extensions.Logging.ILogger logger)
     {
         try
         {
@@ -930,8 +942,10 @@ public partial class App : Application
 
             // Posted rather than called inline: the view is not attached to a
             // visual tree yet at this point in OnFrameworkInitializationCompleted,
-            // and SettingsPanel's own load path expects to be.
-            Dispatcher.UIThread.Post(mainView.SelectServerSettingsPage);
+            // and SettingsPanel's own load path expects to be. A request rather
+            // than a selection, because the row only exists once the server has
+            // said this tab is an administrator - which it has not yet.
+            Dispatcher.UIThread.Post(mainViewModel.RequestServerSettingsPage);
         }
         catch (Exception ex)
         {
@@ -957,38 +971,39 @@ public partial class App : Application
     // Music.app, no app-data folder to reveal) and written to an in-memory
     // filesystem a refresh empties.
     //
-    // Not gated on this tab actually being an administrator, for the same reason
-    // the desktop button isn't: nothing client-side can know that without
-    // asking, and the panel showing the server's own refusal is a better answer
-    // than a row that isn't there.
-    // What an unpaired browser tab is told instead of showing an empty library.
-    // Every request such a tab makes is refused, and without this it had no way
-    // to learn why or what to do: its settings page offered a "Generate Pairing
-    // Code" that can only ever come back "not paired", since issuing one takes
-    // an administrator. A tab pairs by being opened through a pairing link, and
-    // the server prints one - so this points at the server's log.
-    internal const string BrowserNotPairedHelp =
-        "This browser isn't paired with this server, so it can't show the library or change any settings.\n\n"
-        + "A browser pairs by opening a pairing link. The server prints one when it starts without an administrator - "
-        + "restart it and open the https link from its log - in the terminal it runs in, or for Docker:\n"
-        + "    docker compose restart flower\n"
-        + "    docker compose logs flower\n"
-        + "A link is valid for ten minutes, and only on the server that printed it. If the server already has an "
-        + "administrator, it prints one only when started with --pairing-code - stop it and start it that way once:\n"
-        + "    docker compose stop flower\n"
-        + "    docker compose run --rm --service-ports flower --pairing-code\n"
-        + "then, once paired, stop that with Ctrl+C and run docker compose up -d. Or, from a Flower app that is an "
-        + "administrator, select the server and choose Open in Browser.";
-
-    private static void ReportBrowserPairing(Importer.IMusicImporter importer, MainViewModel mainViewModel)
+    // Reached only from a tab the server made an administrator: the sidebar
+    // row that opens it is added once /info says so (MainViewModel.IsBrowserAdmin).
+    // The server still re-checks every request, so this is a display decision.
+    // What the server's /info answer means for this tab (see MainViewModel's
+    // browser pairing section): unpaired shows the pairing screen and nothing
+    // else, and only an administrator's tab is offered Server Settings. A page
+    // that cannot hold a key never had anything to pair, so its reason wins -
+    // a code box would send its user round a loop (see
+    // BrowserPeerCredentials.UnauthenticatedReason).
+    private static void ReportBrowserPairing(Importer.OriginLibraryImporter origin, MainViewModel mainViewModel)
     {
-        // A page that cannot hold a key never had anything to pair, so its
-        // reason comes first - the "not paired" advice would send its user
-        // round a loop (see BrowserPeerCredentials.UnauthenticatedReason).
-        var problem = Ioc.Default.GetService<BrowserPeerCredentials>()?.UnauthenticatedReason
-            ?? (importer is Importer.OriginLibraryImporter { OriginTrustsThisClient: false } ? BrowserNotPairedHelp : null);
+        var cannotPair = Ioc.Default.GetService<BrowserPeerCredentials>()?.UnauthenticatedReason;
+        var unpaired = origin.OriginTrustsThisClient == false;
+        var admin = origin.OriginCallerIsAdmin == true;
 
-        Dispatcher.UIThread.Post(() => mainViewModel.BrowserPairingProblem = problem);
+        Dispatcher.UIThread.Post(() =>
+        {
+            mainViewModel.BrowserCannotPairReason = cannotPair;
+            mainViewModel.IsBrowserUnpaired = unpaired;
+            mainViewModel.IsBrowserAdmin = admin;
+            mainViewModel.IsCheckingBrowserPairing = false;
+        });
+    }
+
+    // The pairing screen's two hooks, for the browser head only: spending a
+    // typed code with this tab's own key, and starting the page over once it
+    // is spent.
+    private static void WireBrowserPairing(MainViewModel mainViewModel)
+    {
+        var credentials = Ioc.Default.GetRequiredService<BrowserPeerCredentials>();
+        mainViewModel.IsCheckingBrowserPairing = true;
+        mainViewModel.BrowserPairer = credentials.PairAsync;
+        mainViewModel.AfterBrowserPaired = BrowserLocation.Reload;
     }
 
     internal static SettingsViewModel CreateOriginServerSettings()

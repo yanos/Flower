@@ -25,9 +25,15 @@ public static partial class BrowserLocation
 
         [JSImport("getOrigin", ModuleName)]
         public static partial string GetOrigin();
+
+        [JSImport("reload", ModuleName)]
+        public static partial void Reload();
     }
 
     public static Uri Origin => new(Interop.GetOrigin());
+
+    // Starts the page over - see weblocation.js.
+    public static void Reload() => Interop.Reload();
 
     // Reads the fragment's key=value pairs and immediately erases it from the
     // address bar - see weblocation.js for why. Called once, at startup: a caller

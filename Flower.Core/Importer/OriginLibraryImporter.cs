@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -52,6 +53,19 @@ public sealed class OriginLibraryImporter(
     // word of how pairing happens. See MainViewModel.BrowserPairingProblem.
     public bool? OriginTrustsThisClient { get; private set; }
 
+    // Whether the server made this client one of its administrators - the
+    // same /info answer, read off the same signed handshake. What decides
+    // whether the browser head offers its Server Settings page at all: a
+    // listener's tab would only ever be refused there. Null when the server
+    // did not say, which is read as no.
+    public bool? OriginCallerIsAdmin { get; private set; }
+
+    // Raised once the /info handshake has answered, before the catalog is
+    // fetched: the two flags above are what a browser tab needs to decide what
+    // to show, and waiting for a whole library to arrive first would leave it
+    // showing the wrong thing in the meantime.
+    public event Action? HandshakeAnswered;
+
     public async Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null)
     {
         if (_importer == null)
@@ -101,6 +115,8 @@ public sealed class OriginLibraryImporter(
         response.EnsureSuccessStatusCode();
         var info = await response.Content.ReadFromJsonAsync(SyncProtocolJsonContext.Default.SyncInfoResponseDto);
         OriginTrustsThisClient = info?.TrustsCaller;
+        OriginCallerIsAdmin = info?.CallerIsAdmin;
+        HandshakeAnswered?.Invoke();
 
         if (string.IsNullOrEmpty(info?.Fingerprint))
             throw new HttpRequestException($"{baseUrl} did not identify itself at {SyncProtocol.InfoPath}.");

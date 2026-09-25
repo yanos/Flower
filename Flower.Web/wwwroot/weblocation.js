@@ -22,3 +22,11 @@ export function clearHash() {
 export function getOrigin() {
     return globalThis.location.origin ?? "";
 }
+
+// A fresh start once this tab has just paired: every service the app built at
+// startup was built for a tab the server did not know, and reloading is the
+// one way to have them all ask again. The key survives it - it lives in
+// IndexedDB, not in the page.
+export function reload() {
+    globalThis.location.reload();
+}

@@ -692,22 +692,230 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool CanOpenSelectedServerSettings =>
         IsSelectedDeviceTrustConfirmed && _signingKey != null && _deviceIdentity != null;
 
-    // Browser only: why this tab cannot show the server's library, and what to
-    // do about it - set at startup (App.ReportBrowserPairing) when the server
-    // says it does not know this tab, or the page cannot hold a key at all.
-    // MainView shows it over the empty track list. Null means nothing is wrong,
-    // or this is not a browser.
-    private string? _browserPairingProblem;
-    public string? BrowserPairingProblem
+    // ── Browser pairing ───────────────────────────────────────────────────
+    //
+    // A browser tab is a device like any other: until the server knows its
+    // key, every request it makes is refused. Such a tab shows nothing but a
+    // pairing screen - a box for a code, and where to get one - because
+    // everything else on the page could only ever be empty or refused. Set at
+    // startup by App.ReportBrowserPairing, from the server's own answer on the
+    // /info handshake. All of it is false/null on every other head.
+
+    // The server said it does not know this tab.
+    private bool _isBrowserUnpaired;
+    public bool IsBrowserUnpaired
     {
-        get => _browserPairingProblem;
+        get => _isBrowserUnpaired;
         set
         {
-            if (_browserPairingProblem == value)
+            if (_isBrowserUnpaired == value)
                 return;
-            _browserPairingProblem = value;
+            _isBrowserUnpaired = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowsBrowserPairingScreen));
+            OnPropertyChanged(nameof(CoversBrowserPage));
+            OnPropertyChanged(nameof(CanEnterBrowserPairingCode));
+        }
+    }
+
+    // Why this tab cannot pair at all - a page that cannot hold a key (plain
+    // http from another machine, storage blocked). A code would not help, so
+    // the screen says this instead of offering the box.
+    private string? _browserCannotPairReason;
+    public string? BrowserCannotPairReason
+    {
+        get => _browserCannotPairReason;
+        set
+        {
+            if (_browserCannotPairReason == value)
+                return;
+            _browserCannotPairReason = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowsBrowserPairingScreen));
+            OnPropertyChanged(nameof(CoversBrowserPage));
+            OnPropertyChanged(nameof(CanEnterBrowserPairingCode));
+        }
+    }
+
+    // Until the server has answered, the tab does not know which of the two
+    // pages it is, so it shows neither - an opaque blank rather than a flash
+    // of the library before the pairing screen covers it.
+    private bool _isCheckingBrowserPairing;
+    public bool IsCheckingBrowserPairing
+    {
+        get => _isCheckingBrowserPairing;
+        set
+        {
+            if (_isCheckingBrowserPairing == value)
+                return;
+            _isCheckingBrowserPairing = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CoversBrowserPage));
+        }
+    }
+
+    public bool ShowsBrowserPairingScreen => IsBrowserUnpaired || BrowserCannotPairReason != null;
+    public bool CoversBrowserPage => IsCheckingBrowserPairing || ShowsBrowserPairingScreen;
+    public bool CanEnterBrowserPairingCode => IsBrowserUnpaired && BrowserCannotPairReason == null;
+
+    // Where a code comes from - shown under the box. One string, so the
+    // screen and the tests read the same words.
+    public const string BrowserPairingHelp =
+        "Pairing lets this browser play music from this server. You need a pairing code, which an administrator "
+        + "of the server creates:\n\n"
+        + "  •  In the Flower app on a computer: select the server in the sidebar and press Generate Pairing Code.\n"
+        + "  •  In the Flower app on a phone: Settings, then Generate Pairing Code.\n"
+        + "  •  In a browser that is already paired as an administrator: Server Settings, Devices, Generate Pairing Code.\n\n"
+        + "Tick Administrator when creating it if this browser should also be able to change the server's settings. "
+        + "Without it, this browser can play music but won't see the settings.\n\n"
+        + "Nobody can create one? The server prints an administrator code in its log when it starts with no "
+        + "administrator, or when it is started with --pairing-code (for Docker: docker compose logs flower). "
+        + "A code works once, for ten minutes.";
+
+    private string _browserPairingCode = "";
+    public string BrowserPairingCode
+    {
+        get => _browserPairingCode;
+        set
+        {
+            if (_browserPairingCode == value)
+                return;
+            _browserPairingCode = value;
             OnPropertyChanged();
         }
+    }
+
+    private string? _browserPairingError;
+    public string? BrowserPairingError
+    {
+        get => _browserPairingError;
+        private set
+        {
+            if (_browserPairingError == value)
+                return;
+            _browserPairingError = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private bool _isPairingBrowser;
+    public bool IsPairingBrowser
+    {
+        get => _isPairingBrowser;
+        private set
+        {
+            if (_isPairingBrowser == value)
+                return;
+            _isPairingBrowser = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // What spends a code, and what happens once one is spent - the browser
+    // head's BrowserPeerCredentials.PairAsync and a page reload, handed in by
+    // App so this view model neither knows about WebCrypto nor calls into
+    // JavaScript. The pairer answers null for success, or the sentence to show.
+    public Func<string, Task<string?>>? BrowserPairer { get; set; }
+    public Action? AfterBrowserPaired { get; set; }
+
+    private IAsyncRelayCommand? _pairBrowserCommand;
+    public IAsyncRelayCommand PairBrowserCommand => _pairBrowserCommand ??= new AsyncRelayCommand(PairBrowserAsync);
+
+    private async Task PairBrowserAsync()
+    {
+        if (BrowserPairer is not { } pair || IsPairingBrowser)
+            return;
+
+        IsPairingBrowser = true;
+        BrowserPairingError = null;
+        try
+        {
+            if (await pair(BrowserPairingCode) is { } error)
+            {
+                BrowserPairingError = error;
+                return;
+            }
+
+            // Everything the page built at startup was built for a tab the
+            // server did not know. Starting over is how all of it asks again.
+            AfterBrowserPaired?.Invoke();
+        }
+        finally
+        {
+            IsPairingBrowser = false;
+        }
+    }
+
+    // Whether the server made this tab one of its administrators. Decides
+    // whether the sidebar offers Server Settings: a listener's tab can play
+    // everything, and would only be refused on that page. False until the
+    // server has said otherwise.
+    private bool _isBrowserAdmin;
+    public bool IsBrowserAdmin
+    {
+        get => _isBrowserAdmin;
+        set
+        {
+            if (_isBrowserAdmin == value)
+                return;
+            _isBrowserAdmin = value;
+            OnPropertyChanged();
+            UpdateServerSettingsSidebarRows();
+        }
+    }
+
+    // A page opened at #page=settings asks for the settings before the server
+    // has said whether this tab may see them - see RequestServerSettingsPage.
+    private bool _serverSettingsPageRequested;
+
+    // Lands on Server Settings now if this tab may see it, or as soon as the
+    // server says it may. Asked for by a page opened with page=settings.
+    public void RequestServerSettingsPage()
+    {
+        if (_sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.ServerSettings) is { } row)
+        {
+            SelectedSidebarItem = row;
+            return;
+        }
+
+        _serverSettingsPageRequested = true;
+    }
+
+    // Whether this head's sidebar has a Server Settings page at all - the
+    // browser's, and only the browser's. A property rather than the platform
+    // check inline so a test can stand in for a browser.
+    internal bool HostsServerSettingsPage { get; set; } = OperatingSystem.IsBrowser();
+
+    private void UpdateServerSettingsSidebarRows()
+    {
+        if (!HostsServerSettingsPage)
+            return;
+
+        var existing = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.ServerSettings);
+        if (IsBrowserAdmin && existing == null)
+        {
+            AddServerSettingsSidebarRows();
+            if (_serverSettingsPageRequested)
+            {
+                _serverSettingsPageRequested = false;
+                RequestServerSettingsPage();
+            }
+        }
+        else if (!IsBrowserAdmin && existing != null)
+        {
+            var index = _sidebarItems.IndexOf(existing);
+            if (SelectedSidebarItem == existing)
+                SelectedSidebarItem = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
+            _sidebarItems.RemoveAt(index);
+            if (index > 0 && _sidebarItems[index - 1] is { Kind: SidebarItemKind.Header, Name: "Server" })
+                _sidebarItems.RemoveAt(index - 1);
+        }
+    }
+
+    private void AddServerSettingsSidebarRows()
+    {
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Server"));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.ServerSettings, "Server Settings", MaterialIconKind.Cog));
     }
 
     // Set when minting a browser session against the selected server failed -
@@ -1686,11 +1894,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // the device-detail pane instead. What it opens is the server this tab
         // was served from (App.CreateOriginServerSettings), which is the only
         // server a tab has.
-        if (OperatingSystem.IsBrowser())
-        {
-            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Server"));
-            _sidebarItems.Add(new SidebarItem(SidebarItemKind.ServerSettings, "Server Settings", MaterialIconKind.Cog));
-        }
+        //
+        // Only for a tab the server made an administrator (IsBrowserAdmin),
+        // added later if that answer arrives after this first build.
+        if (HostsServerSettingsPage && IsBrowserAdmin)
+            AddServerSettingsSidebarRows();
 
         // Restores whichever view (see AppSettings.LastSidebarKind/
         // LastPlaylistName's own doc comment) the user was on when the app

@@ -505,21 +505,51 @@
       </Border>
     </Grid>
 
-    <!-- Browser only: why this tab has no library, and how to pair it (see
-         MainViewModel.BrowserPairingProblem). Over the content row rather than
-         in it - the library behind it is empty anyway - and last in the grid so
-         it draws on top. Selectable, because what it says is commands to copy. -->
-    <Border Grid.Row="1"
-            IsVisible="{Binding BrowserPairingProblem, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
-            HorizontalAlignment="Center" VerticalAlignment="Center"
-            MaxWidth="560" Margin="24" Padding="20"
-            CornerRadius="8" BorderThickness="1"
-            Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
-            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
-      <StackPanel Spacing="10">
-        <TextBlock Text="This browser can't reach the library" FontSize="18" FontWeight="SemiBold"/>
-        <SelectableTextBlock Text="{Binding BrowserPairingProblem}" TextWrapping="Wrap"/>
-      </StackPanel>
+    <!-- Browser only: the whole page, for a tab the server does not know (see
+         MainViewModel's browser pairing section). Over every row and opaque,
+         because everything underneath could only be empty or refused - the
+         library, the transport, the settings. What remains is the one thing
+         such a tab can do: take a pairing code. Or, when the page cannot hold
+         a key at all, say so instead of offering a box no code would help.
+         Blank until the server has said which (IsCheckingBrowserPairing). -->
+    <Border Grid.Row="0" Grid.RowSpan="3"
+            IsVisible="{Binding CoversBrowserPage}"
+            Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+      <ScrollViewer IsVisible="{Binding ShowsBrowserPairingScreen}">
+        <StackPanel MaxWidth="520" Margin="24,48" Spacing="16" HorizontalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <materialIcons:MaterialIcon Kind="LinkVariant" Width="28" Height="28"/>
+            <TextBlock Text="Pair this browser" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+
+          <StackPanel Spacing="12" IsVisible="{Binding CanEnterBrowserPairingCode}">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBox x:Name="BrowserPairingCodeBox"
+                       Text="{Binding BrowserPairingCode}"
+                       Watermark="Pairing code"
+                       FontSize="18"
+                       IsEnabled="{Binding !IsPairingBrowser}">
+                <TextBox.KeyBindings>
+                  <KeyBinding Gesture="Enter" Command="{Binding PairBrowserCommand}"/>
+                </TextBox.KeyBindings>
+              </TextBox>
+              <Button Grid.Column="1" Content="Pair" Margin="8,0,0,0" Padding="20,8"
+                      VerticalAlignment="Stretch" VerticalContentAlignment="Center"
+                      Command="{Binding PairBrowserCommand}"
+                      IsEnabled="{Binding !IsPairingBrowser}"/>
+            </Grid>
+            <SelectableTextBlock Text="{Binding BrowserPairingError}"
+                                 IsVisible="{Binding BrowserPairingError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                                 Foreground="{DynamicResource AppErrorBrush}" TextWrapping="Wrap"/>
+            <SelectableTextBlock Text="{x:Static vm:MainViewModel.BrowserPairingHelp}"
+                                 TextWrapping="Wrap" Opacity="0.8"/>
+          </StackPanel>
+
+          <SelectableTextBlock Text="{Binding BrowserCannotPairReason}"
+                               IsVisible="{Binding BrowserCannotPairReason, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+                               TextWrapping="Wrap"/>
+        </StackPanel>
+      </ScrollViewer>
     </Border>
 
   </Grid>

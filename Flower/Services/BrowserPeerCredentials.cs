@@ -197,6 +197,29 @@ public sealed class BrowserPeerCredentials(
         return key;
     }
 
+    // A code typed into the pairing screen, rather than one that arrived in the
+    // page URL. Null when the server took it, otherwise the sentence to show
+    // under the box - a wrong or expired code is an ordinary outcome of typing
+    // one, not a fault.
+    public async Task<string?> PairAsync(string code)
+    {
+        var trimmed = code.Trim().ToUpperInvariant();
+        if (trimmed.Length == 0)
+            return "Enter the pairing code.";
+
+        if (await IdentityAsync() is not { } key)
+            return UnauthenticatedReason ?? "This page cannot hold a device key, so it cannot be paired.";
+
+        return await RedeemAsync(key, trimmed) switch
+        {
+            RedeemOutcome.Paired => null,
+            RedeemOutcome.Refused => "That code wasn't accepted. Codes are single-use and last ten minutes - ask for a new one.",
+            _ => "Couldn't reach the server. Check the connection and try again.",
+        };
+    }
+
+    private enum RedeemOutcome { Paired, Refused, Unreachable }
+
     // The same self-signed redeem every other device does (see
     // PeerPairingService.RedeemPairingCodeAsync and Flower.Server's
     // PairingEndpoints): the server has never seen this key, so the signature
@@ -206,7 +229,7 @@ public sealed class BrowserPeerCredentials(
     // cause by far is a code that was already spent - a reload of a page whose
     // fragment survived, or a tab that was already paired - and in that case
     // this tab's signatures work perfectly well without it.
-    private async Task RedeemAsync(BrowserSigningKey key, string code)
+    private async Task<RedeemOutcome> RedeemAsync(BrowserSigningKey key, string code)
     {
         try
         {
@@ -227,13 +250,18 @@ public sealed class BrowserPeerCredentials(
 
             using var response = await http.SendAsync(request);
             if (response.IsSuccessStatusCode)
+            {
                 logger.LogInformation("This browser is now paired with the server as {Alias} ({Fingerprint})", key.Alias, key.Fingerprint);
-            else
-                logger.LogInformation("The pairing code in the page URL was refused ({Status})", response.StatusCode);
+                return RedeemOutcome.Paired;
+            }
+
+            logger.LogInformation("The pairing code was refused ({Status})", response.StatusCode);
+            return RedeemOutcome.Refused;
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Could not redeem the pairing code in the page URL");
+            logger.LogWarning(ex, "Could not redeem the pairing code");
+            return RedeemOutcome.Unreachable;
         }
     }
 }

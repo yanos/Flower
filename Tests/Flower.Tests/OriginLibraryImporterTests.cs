@@ -52,7 +52,7 @@ public class OriginLibraryImporterTests
     // and the bulk manifest.
     private static FakePeerHttpServer Server(
         List<TrackDto> songs, string? fingerprint = ServerFingerprint, List<string>? requested = null,
-        bool? trustsCaller = null, List<string?>? infoIdentities = null) =>
+        bool? trustsCaller = null, List<string?>? infoIdentities = null, bool? callerIsAdmin = null) =>
         new(async context =>
         {
             var path = context.Request.Url!.AbsolutePath;
@@ -63,7 +63,7 @@ public class OriginLibraryImporterTests
             object payload = path == SyncProtocol.InfoPath
                 ? new SyncInfoResponseDto(
                     "Study Server", "2.0", null, "server", fingerprint!, "public-key",
-                    Download: false, TrustsCaller: trustsCaller, LibraryToken: "token-1")
+                    Download: false, TrustsCaller: trustsCaller, LibraryToken: "token-1", CallerIsAdmin: callerIsAdmin)
                 : new LibrarySyncManifestDto(ServerFingerprint, songs);
 
             var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, payload.GetType(), JsonOptions));
@@ -146,6 +146,38 @@ public class OriginLibraryImporterTests
         Assert.Empty(tracks);
         Assert.False(importer.OriginTrustsThisClient);
         Assert.DoesNotContain(RemoteLibraryImporter.LibraryPath, requested);
+    }
+
+    // What decides whether the browser offers its Server Settings page: only a
+    // tab the server made an administrator gets one.
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(null, null)]
+    public async Task It_reports_whether_the_server_made_this_client_an_administrator(bool? answered, bool? reported)
+    {
+        using var server = Server([Song("One")], trustsCaller: true, callerIsAdmin: answered);
+        var importer = Importer(server);
+
+        await importer.ImportAsync();
+
+        Assert.Equal(reported, importer.OriginCallerIsAdmin);
+    }
+
+    // A browser tab decides what to show from the handshake, so it hears as
+    // soon as that answers - before the catalog, which can take a while.
+    [Fact]
+    public async Task It_says_the_handshake_answered_before_fetching_the_catalog()
+    {
+        var requested = new List<string>();
+        using var server = Server([Song("One")], requested: requested, trustsCaller: true);
+        var importer = Importer(server);
+        List<string>? requestedWhenAnswered = null;
+        importer.HandshakeAnswered += () => requestedWhenAnswered = [.. requested];
+
+        await importer.ImportAsync();
+
+        Assert.Equal([SyncProtocol.InfoPath], requestedWhenAnswered);
     }
 
     // And asks again next time, rather than remembering the refusal: a tab that

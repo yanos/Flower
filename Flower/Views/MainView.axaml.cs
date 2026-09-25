@@ -263,6 +263,28 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.IsShowingServerSettings):
                 UpdateServerSettingsPage();
                 break;
+            // The pairing screen is the whole page, and typing a code is the
+            // one thing to do on it. Posted, so the box is visible - and so
+            // focusable - by the time it is asked.
+            case nameof(MainViewModel.ShowsBrowserPairingScreen):
+                if (_viewModel!.CanEnterBrowserPairingCode)
+                    Dispatcher.UIThread.Post(() => BrowserPairingCodeBox.Focus());
+                break;
+            // The box is disabled while a code is being checked, which takes
+            // the keyboard focus off it - and nothing gave it back, so after a
+            // refused code the next keystrokes went nowhere until the box was
+            // clicked. Back into it, with the refused code selected so typing
+            // replaces it.
+            case nameof(MainViewModel.IsPairingBrowser):
+                if (!_viewModel!.IsPairingBrowser && _viewModel.CanEnterBrowserPairingCode)
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        BrowserPairingCodeBox.Focus();
+                        BrowserPairingCodeBox.SelectAll();
+                    });
+                }
+                break;
         }
     }
 
