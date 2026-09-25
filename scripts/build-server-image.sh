@@ -13,8 +13,8 @@
 #
 #   FLOWER_IMAGE=flower-server:local docker compose up -d
 #
-# with docker-compose.bridge.yml added on macOS, where host networking cannot
-# work. It runs against the same data volume as the published image - that is
+# with docker-compose.non-linux.yml added anywhere but Linux, where host
+# networking cannot work. It runs against the same data volume as the published image - that is
 # the point, a new server tried on the real pairings and library - and going
 # back is a plain `docker compose up -d` from docker/.
 #
@@ -64,8 +64,8 @@ echo "built $image"
 
 if [ "$up" = true ]; then
   compose=(-f docker-compose.yml)
-  if [ "$(uname)" = Darwin ]; then
-    compose+=(-f docker-compose.bridge.yml)
+  if [ "$(uname)" != Linux ]; then
+    compose+=(-f docker-compose.non-linux.yml)
   fi
   cd docker
   FLOWER_IMAGE="$image" docker compose "${compose[@]}" up -d

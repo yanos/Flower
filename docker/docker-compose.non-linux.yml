@@ -1,10 +1,11 @@
-# Published ports instead of host networking.
+# Published ports instead of host networking, for Docker anywhere but Linux.
 #
-#   docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.non-linux.yml up -d
 #
-# Use on macOS/Windows (host networking binds to Docker's VM, not your machine),
-# or on Linux when the server is reached only via a proxy or tailnet.
-# Not for LAN discovery on Linux: a bridge drops mDNS.
+# On macOS/Windows containers run in a VM, and host networking binds to the VM
+# rather than your machine. On Linux, don't: a bridge drops mDNS, so the server
+# vanishes from clients' sidebars. That includes port forwarding - a router
+# forwards to a host-networked server directly, no published ports needed.
 
 services:
   flower:

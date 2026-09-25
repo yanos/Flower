@@ -23,11 +23,11 @@ That is the whole install — no directories to create, no ownership to fix, no
 `sudo`. Every `docker compose` command runs from `docker/`, where the compose
 files and that `.env` live.
 
-**On macOS or Windows, add the bridge override.** Containers there run in a
+**On macOS or Windows, add the non-Linux override.** Containers there run in a
 Linux VM, so host networking binds to the VM and nothing reaches you:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.non-linux.yml up -d
 ```
 
 | | |
@@ -92,7 +92,7 @@ docker compose run --rm flower --pairing-code   # prints the code, keeps serving
 docker compose up -d
 ```
 
-Under the bridge override, add `--service-ports` to that `run`, or it publishes
+Under the non-Linux override, add `--service-ports` to that `run`, or it publishes
 no ports and nothing can reach the container to redeem against it.
 
 Or add `command: ["--pairing-code"]` to the `flower` service, `docker compose up

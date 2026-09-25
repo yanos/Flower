@@ -213,7 +213,7 @@ docker compose run --rm flower --pairing-code   # prints the code, and keeps ser
 docker compose up -d
 ```
 
-Under the bridge override, `run` publishes no ports by default — add
+Under the non-Linux override, `run` publishes no ports by default — add
 `--service-ports` so the container you are pairing against is reachable.
 
 If you would rather not juggle containers, add the flag to the service:
@@ -344,7 +344,7 @@ until the volume is handed over:
 docker compose run --rm --user root --entrypoint chown flower -R 1000:1000 /data
 ```
 
-### Host networking, and when bridge is right instead
+### Host networking, and why a bridge is only for other OSes
 
 `docker-compose.yml` uses `network_mode: host` instead of mapping ports, and
 which one you want follows from where your listeners are rather than from
@@ -362,19 +362,19 @@ So **host networking, for a server and listeners on the same LAN** — the
 announcement is what spares anyone having to know an IP address, which is most
 of the point of running this at home.
 
-And **bridge, for a server reached only through Tailscale, a tunnel, or a
-reverse proxy.** mDNS is useless to those listeners regardless of this setting,
-since link-local multicast crosses neither a tailnet nor a tunnel. They pair by
-redeeming a code against an address they were given, and from then on the server
-reports its own reachable addresses and the client keeps up without ever hearing
-an announcement (`PairedServerReachability`). Bridge costs that deployment
-nothing, which is why the compose file carries the settings for it rather than
-warning you off them.
+On Linux that is the answer whoever the listeners are. A server reached only
+through Tailscale, a tunnel or a reverse proxy gets nothing from mDNS — link-local
+multicast crosses neither a tailnet nor a tunnel, and those clients follow the
+server's reported addresses instead (`PairedServerReachability`) — but it loses
+nothing to host networking either, and the caddy and cloudflared overrides both
+assume it. Port forwarding is the same: the router forwards to the machine, and a
+host-networked server is already listening there.
 
-If you genuinely want a bridge, there is an override file for it:
+Where host networking cannot work at all — macOS and Windows, see below — there
+is an override that swaps it for a bridge with published ports:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.non-linux.yml up -d
 ```
 
 It publishes `4533`/`4534` (remap with `FLOWER_HTTP_PORT`/`FLOWER_HTTPS_PORT`),
@@ -446,14 +446,14 @@ VM's network, and your LAN is on the other side of a NAT the multicast will not
 cross.
 
 For a real deployment, run the server directly on those machines, or put it on a
-Linux box. For **trying it out**, the bridge override is the way — published
+Linux box. For **trying it out**, the non-Linux override is the way — published
 ports are forwarded out of the VM to your `localhost`, so the browser UI and
 pairing both work:
 
 ```bash
 cd docker
 echo "FLOWER_MUSIC=$HOME/Music" > .env
-docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.non-linux.yml up -d
 docker compose logs flower
 open http://localhost:4533
 ```
@@ -514,7 +514,7 @@ on top of it rather than a copy of it:
 | Port forwarding, with a browser among the listeners | `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d` |
 | Cloudflare Tunnel | `docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d` |
 
-`docker-compose.bridge.yml` is not in this table, because it answers a different
+`docker-compose.non-linux.yml` is not in this table, because it answers a different
 question. These four are about who carries traffic from outside; that one is
 about whether the container shares your machine's network stack, which is
 decided by the OS you are on rather than by where your listeners are. It

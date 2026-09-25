@@ -6,7 +6,7 @@
 #   docker compose logs flower     # the pairing code is in here
 #
 # Overrides, merged on top with -f:
-#   docker-compose.bridge.yml       macOS/Windows, or no host networking
+#   docker-compose.non-linux.yml    macOS/Windows, where host networking cannot work
 #   docker-compose.caddy.yml        port forwarding with a real certificate (for browsers)
 #   docker-compose.cloudflared.yml  Cloudflare Tunnel
 #
@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
 
     # Required for LAN discovery: a bridge drops mDNS multicast. Linux only.
-    # Elsewhere, use docker-compose.bridge.yml instead of editing this.
+    # Elsewhere, use docker-compose.non-linux.yml instead of editing this.
     network_mode: host
 
     volumes:

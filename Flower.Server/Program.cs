@@ -616,7 +616,7 @@ AppLogging.Shutdown();
 // address LocalAddresses finds - IPv4 first, the one a person recognises - on
 // the configured http port. On a Docker bridge that is the container's own
 // 172.x address, which is why an AdvertisedHost wins over it (see
-// docker-compose.bridge.yml).
+// docker-compose.non-linux.yml).
 static string LanHost(string? configuredUrls)
 {
     var first = configuredUrls?.Split(';', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
