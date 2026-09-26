@@ -25,12 +25,18 @@ FLOWER_BUNDLE_ID="com.yanos.flower"
 # `localNetwork`, and a device that is merely paired-and-absent has no
 # transport at all. devicectl fixes the column order itself, so the fields are
 # read as first and last rather than by position.
+#
+# Rows are also required to start with something UDID-shaped (hex and dashes).
+# With nothing connected, devicectl does not print nothing: it prints "No
+# devices found." to stdout, which has three fields, and was read as a phone
+# whose UDID is "No" - so the "no connected device" message never fired and the
+# run failed later, in xcodebuild, listing every simulator on the machine.
 ios_connected_devices() {
   xcrun devicectl list devices \
     --hide-headers --hide-default-columns \
     --columns "Identifier" --columns "CoreDevice ID" \
     --filter 'connectionProperties.transportType IN {"wired","localNetwork"}' \
-    2>/dev/null | awk 'NF >= 2 { print $1, $NF }'
+    2>/dev/null | awk 'NF >= 2 && $1 ~ /^[0-9A-Fa-f-]+$/ && length($1) >= 20 { print $1, $NF }'
 }
 
 # Sets IOS_DEVICE_UDID and IOS_DEVICE_ID for the one connected device, or the
