@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -103,6 +104,18 @@ public sealed class RemoteLibraryImporter : IMusicImporter
     // Placeholders for someone else's files, every one of them.
     public bool ScansLocalFiles => false;
 
+    // The catalog is parsed as it streams in, a megabyte at a time, rather than
+    // read into one string and parsed in one go. The difference is only felt in
+    // a browser tab, where there is one thread and every await on the network
+    // hands it back to the page: a 16k-track catalog is 12 MB, and parsing it
+    // whole under the WASM interpreter held that thread for 0.9s, with the UI
+    // already on screen and ignoring input. A megabyte keeps each slice near
+    // 150ms without costing total time - the default 16KB buffer made the same
+    // parse take 3.8s, in 750 round trips through the event loop.
+    private static readonly JsonTypeInfo<LibrarySyncManifestDto> ManifestInChunks =
+        (JsonTypeInfo<LibrarySyncManifestDto>)new JsonSerializerOptions(LibrarySyncJsonContext.Default.Options) { DefaultBufferSize = 1 << 20 }
+            .GetTypeInfo(typeof(LibrarySyncManifestDto));
+
     // Throws rather than swallowing: a 403 off this route means the peer has
     // revoked us and a 401 means one request's signature was rejected, and only
     // the caller knows what to do about either (see LibrarySyncService's own
@@ -117,7 +130,15 @@ public sealed class RemoteLibraryImporter : IMusicImporter
         if (_closeConnection)
             request.Headers.ConnectionClose = true;
 
-        using var response = await _http.SendAsync(request);
+        // Without this a browser's HttpClient buffers the whole body before
+        // SendAsync returns, and the parse below never yields to the page -
+        // see ManifestInChunks. The option is what .NET's own
+        // SetBrowserResponseStreamingEnabled sets, spelled out because that
+        // extension lives in an assembly Flower.Core does not reference.
+        if (OperatingSystem.IsBrowser())
+            request.Options.Set(new HttpRequestOptionsKey<bool>("WebAssemblyEnableStreamingResponse"), true);
+
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         if (response.StatusCode == HttpStatusCode.NotModified)
         {
             _logger.LogTrace("Remote library at {BaseUrl}: catalog unchanged since {Token}", _baseUrl, ifNoneMatch);
@@ -132,8 +153,8 @@ public sealed class RemoteLibraryImporter : IMusicImporter
         var servedToken = response.Headers.ETag?.Tag
             ?? (response.Headers.TryGetValues("ETag", out var etags) ? etags.FirstOrDefault() : null);
 
-        var json = await response.Content.ReadAsStringAsync();
-        var manifest = JsonSerializer.Deserialize(json, LibrarySyncJsonContext.Default.LibrarySyncManifestDto);
+        await using var body = await response.Content.ReadAsStreamAsync();
+        var manifest = await JsonSerializer.DeserializeAsync(body, ManifestInChunks);
         var songs = manifest?.Songs ?? [];
 
         var tracks = songs

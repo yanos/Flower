@@ -225,10 +225,19 @@ public partial class App : Application
             // solve for playlists: a new mutation path could simply forget.
             .AddSingleton(sp =>
             {
+                // No track store in a browser tab. Its database file lives on
+                // the WASM runtime's in-memory filesystem, which nothing mounts
+                // onto persistent storage, so it is gone on every reload and
+                // the tab re-fetches the whole catalog anyway. Writing it was
+                // pure cost: ReplaceAll of a 16k-track catalog took 3.6s under
+                // the interpreter, on the tab's only thread, straight after the
+                // UI appeared - a page that ignored every click for five
+                // seconds. Playlists and exclusions keep their stores: a few
+                // rows each, and harmless.
                 var library = new Library(
                     sp.GetRequiredService<LibraryStore>().Load(),
                     sp.GetRequiredService<ILogger<Library>>(),
-                    sp.GetRequiredService<TrackRepository>(),
+                    OperatingSystem.IsBrowser() ? null : sp.GetRequiredService<TrackRepository>(),
                     sp.GetRequiredService<PlaylistRepository>(),
                     sp.GetRequiredService<TrackRepository>());
 
