@@ -19,9 +19,17 @@ namespace Flower.Persistence
     // key material - splitting them leaves room to harden just this file
     // later (OS keychain) without touching the identity file's shape.
     //
-    // Accepted limitation, not fixed here: no OS-keychain integration, so
-    // the private key sits in plaintext JSON like every other store in this
-    // codebase (trusted-peers.json, device.json itself) - anyone with
+    // Where the platform has one (iOS - see PlatformSecureStore), the key is
+    // also kept in the OS credential store, and read from there first. Not for
+    // secrecy, though it does no harm: for survival. A Keychain item outlives
+    // the app being deleted, so a reinstalled phone comes back with the
+    // identity its server already trusts instead of as a stranger. The file
+    // below stays as it was - the store on every other platform, and on iOS a
+    // copy the rest of the app can go on assuming exists.
+    //
+    // Accepted limitation, not fixed here: outside iOS, no OS-keychain
+    // integration, so the private key sits in plaintext JSON like every other
+    // store in this codebase (trusted-peers.json, device.json itself) - anyone with
     // filesystem access to this device can extract it and impersonate this
     // device to its peers. That threat (local filesystem compromise) is
     // already far more severe than the LAN-spoofing threat this signing
@@ -34,17 +42,47 @@ namespace Flower.Persistence
     // list); there is still no way to invalidate a stolen key remotely.
     public class DeviceKeyStore
     {
+        // The name of the key's entry in PlatformSecureStore.
+        public const string SecureStoreName = "device-key";
+
         private readonly ILogger<DeviceKeyStore> _logger;
+        private readonly ISecureStore? _secureStore;
 
         public DeviceKeyStore(ILogger<DeviceKeyStore> logger)
+            : this(logger, PlatformSecureStore.Current)
+        {
+        }
+
+        public DeviceKeyStore(ILogger<DeviceKeyStore> logger, ISecureStore? secureStore)
         {
             _logger = logger;
+            _secureStore = secureStore;
         }
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "device-key.json");
 
         public (ECDsa Key, byte[] PublicKeyRaw) Load()
         {
+            // The secure store first, because it is the copy that survives a
+            // reinstall: after one, the file below is gone and this is the only
+            // place the key this device was paired with still exists. The file
+            // is put back from it, so the two agree again.
+            if (ReadSecure() is { } kept)
+            {
+                try
+                {
+                    var restored = Import(kept);
+                    if (!File.Exists(StorePath))
+                        SaveFile(kept);
+
+                    return restored;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "The device key kept in the secure store could not be imported; using the one on disk");
+                }
+            }
+
             var path = StorePath;
             try
             {
@@ -58,9 +96,12 @@ namespace Flower.Persistence
                 var material = AtomicJsonFile.Read(path, FlowerCoreJsonContext.Default.DeviceKeyMaterial, _logger);
                 if (material is { PrivateKeyPkcs8Base64.Length: > 0 })
                 {
-                    var ecdsa = ECDsa.Create();
-                    ecdsa.ImportPkcs8PrivateKey(Convert.FromBase64String(material.PrivateKeyPkcs8Base64), out _);
-                    return (ecdsa, PublicKeyRaw(ecdsa));
+                    var loaded = Import(material);
+                    // A key that predates the secure store - every existing
+                    // install, on its first launch with it - is copied in, so
+                    // it is the one a later reinstall finds.
+                    WriteSecure(material);
+                    return loaded;
                 }
             }
             catch (Exception ex)
@@ -93,13 +134,65 @@ namespace Flower.Persistence
             return raw;
         }
 
+        private static (ECDsa Key, byte[] PublicKeyRaw) Import(DeviceKeyMaterial material)
+        {
+            var ecdsa = ECDsa.Create();
+            ecdsa.ImportPkcs8PrivateKey(Convert.FromBase64String(material.PrivateKeyPkcs8Base64), out _);
+            return (ecdsa, PublicKeyRaw(ecdsa));
+        }
+
         private void Save(ECDsa ecdsa, byte[] publicKeyRaw)
         {
             var material = new DeviceKeyMaterial(
                 "ECDSA-P256",
                 Convert.ToBase64String(ecdsa.ExportPkcs8PrivateKey()),
                 Convert.ToBase64String(publicKeyRaw));
+            SaveFile(material);
+            WriteSecure(material);
+        }
+
+        private static void SaveFile(DeviceKeyMaterial material) =>
             AtomicJsonFile.Write(StorePath, material, FlowerCoreJsonContext.Default.DeviceKeyMaterial, ownerOnly: true);
+
+        // Null when there is no secure store, nothing in it, or something in it
+        // that is not a usable key - in which case the file is the answer, as
+        // it was before the secure store existed.
+        private DeviceKeyMaterial? ReadSecure()
+        {
+            if (_secureStore is null)
+                return null;
+
+            try
+            {
+                if (_secureStore.Read(SecureStoreName) is not { Length: > 0 } json)
+                    return null;
+
+                var material = JsonSerializer.Deserialize(json, FlowerCoreJsonContext.Default.DeviceKeyMaterial);
+                return material is { PrivateKeyPkcs8Base64.Length: > 0 } ? material : null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "The device key kept in the secure store could not be read; using the one on disk");
+                return null;
+            }
+        }
+
+        // Best effort: a device whose secure store refuses a write still has
+        // its key on disk, and is only as badly off as it was before this
+        // existed - it loses the key on a reinstall.
+        private void WriteSecure(DeviceKeyMaterial material)
+        {
+            if (_secureStore is null)
+                return;
+
+            try
+            {
+                _secureStore.Write(SecureStoreName, JsonSerializer.Serialize(material, FlowerCoreJsonContext.Default.DeviceKeyMaterial));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not keep the device key in the secure store; it will not survive the app being reinstalled");
+            }
         }
     }
 }

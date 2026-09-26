@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<dict>
+	<!-- The app's own Keychain group, where KeychainSecureStore keeps the
+	     device key and the pairing so they survive a reinstall. A device
+	     build would get it from its provisioning profile anyway; a simulator
+	     build has no profile, and without this every Keychain call there
+	     fails with errSecMissingEntitlement. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.yanos.flower</string>
+	</array>
+</dict>
 </plist>

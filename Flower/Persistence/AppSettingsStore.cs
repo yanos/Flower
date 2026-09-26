@@ -218,10 +218,18 @@ namespace Flower.Persistence
         // DI-configured ILogger<AppSettingsStore>.
         public AppSettingsStore() : this(NullLogger<AppSettingsStore>.Instance) { }
 
-        public AppSettingsStore(ILogger<AppSettingsStore> logger)
+        public AppSettingsStore(ILogger<AppSettingsStore> logger) : this(logger, null) { }
+
+        // pairingBackup keeps the pairing in the platform's secure store as
+        // well, so it survives the app being reinstalled - see PairingBackup.
+        // Null in tests, and wherever there is nothing to back up into.
+        public AppSettingsStore(ILogger<AppSettingsStore> logger, PairingBackup? pairingBackup)
         {
             _logger = logger;
+            _pairingBackup = pairingBackup;
         }
+
+        private readonly PairingBackup? _pairingBackup;
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "settings.json");
 
@@ -230,6 +238,12 @@ namespace Flower.Persistence
             var stored = LoadFromDisk();
             var settings = stored ?? new AppSettings();
             var changed = false;
+
+            // No settings file at all is a fresh install - which, when the
+            // secure store still holds a pairing, means a reinstall. Put the
+            // pairing back before anything reads the settings.
+            if (stored is null && _pairingBackup?.RestoreInto(settings) == true)
+                changed = true;
 
             // Auto-register Apple Music's configured media folder, if found and not
             // already present, so it shows up in Settings without the user having to
@@ -264,6 +278,12 @@ namespace Flower.Persistence
 
             if (changed)
                 Save(settings);
+            else
+                // An install that was already paired before the secure store
+                // existed is backed up now, rather than at whatever settings
+                // save happens to come next - the reinstall it is meant for
+                // could come first.
+                _pairingBackup?.Mirror(settings);
 
             return settings;
         }
@@ -329,6 +349,7 @@ namespace Flower.Persistence
             try
             {
                 await AtomicJsonFile.WriteAsync(StorePath, settings, FlowerJsonContext.Default.AppSettings);
+                _pairingBackup?.Mirror(settings);
             }
             finally
             {
@@ -344,6 +365,7 @@ namespace Flower.Persistence
             try
             {
                 AtomicJsonFile.Write(StorePath, settings, FlowerJsonContext.Default.AppSettings);
+                _pairingBackup?.Mirror(settings);
             }
             finally
             {

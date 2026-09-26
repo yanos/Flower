@@ -194,6 +194,12 @@ public partial class App : Application
             .AddSingleton<PlaylistRepository>()
             .AddSingleton<LibraryStore>()
             .AddSingleton<AppSettingsStore>()
+            // Only does anything where the platform set a secure store (iOS),
+            // which is where a reinstall would otherwise lose the pairing.
+            .AddSingleton(sp => new PairingBackup(
+                PlatformSecureStore.Current,
+                sp.GetRequiredService<TrustedPeerStore>(),
+                sp.GetRequiredService<ILogger<PairingBackup>>()))
             .AddSingleton<PlaylistStore>()
             .AddSingleton<DeviceKeyStore>()
             .AddSingleton<DeviceIdentityStore>()

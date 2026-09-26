@@ -35,6 +35,7 @@ namespace Flower.Persistence
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         PropertyNameCaseInsensitive = true)]
     [JsonSerializable(typeof(AppSettings))]
+    [JsonSerializable(typeof(PairingBackupRecord))]
     [JsonSerializable(typeof(List<Track>), TypeInfoPropertyName = "TrackList")]
     [JsonSerializable(typeof(IEnumerable<Track>), TypeInfoPropertyName = "TrackEnumerable")]
     [JsonSerializable(typeof(List<JsonLibraryImport.PlaylistRecord>), TypeInfoPropertyName = "PlaylistRecordList")]

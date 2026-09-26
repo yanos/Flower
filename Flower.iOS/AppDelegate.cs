@@ -17,6 +17,7 @@ using UIKit;
 
 using Flower.Logging;
 using Flower.Audio;
+using Flower.Persistence;
 using Flower.Services;
 
 namespace Flower.iOS;
@@ -59,6 +60,12 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // container) starts, same timing as Flower.Android's PlatformDataDirectory/
         // PlatformPermissions wiring in MainActivity.
         PlatformMdns.Current = new BonjourMdnsBackend();
+
+        // The Keychain, so the device key and the pairing survive the app
+        // being deleted and installed again - see ISecureStore. Before
+        // Avalonia starts, since DeviceKeyStore and PairingBackup read it the
+        // moment the container builds them.
+        PlatformSecureStore.Current = new KeychainSecureStore();
 
         // Wi-Fi giving way to cellular, reported as it happens rather than
         // discovered from a request to an address that is gone - see
