@@ -6,29 +6,34 @@
              x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource AppBackgroundBrush}">
 
-  <!-- Artist name picker -->
-  <ListBox Classes="screenScroll" Background="Transparent"
-           ItemsSource="{Binding ArtistPickerItems}"
-           controls:RubberBandScroll.IsEnabled="True"
-           SelectionMode="Single">
-    <ListBox.ItemTemplate>
-      <DataTemplate x:DataType="vm:ArtistPickerRow">
-        <Button Classes="pickerRow"
-                Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistCommand}"
-                CommandParameter="{Binding Name}"
-                controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}"
-                controls:LongPress.CommandParameter="{Binding Name}">
-          <!-- The album count, right-aligned: how many tiles a tap opens. -->
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="1"
-                       Text="{Binding AlbumCountText}"
-                       FontSize="14"
-                       Opacity="0.5"
-                       VerticalAlignment="Center" />
-          </Grid>
-        </Button>
-      </DataTemplate>
-    </ListBox.ItemTemplate>
-  </ListBox>
+  <!-- Artist name picker, with the A-Z bar in a column of its own beside
+       it rather than over it: a row's album count is right-aligned, and the
+       bar would sit on top of it. -->
+  <Grid ColumnDefinitions="*,Auto">
+    <ListBox x:Name="Artists" Classes="screenScroll" Background="Transparent"
+             ItemsSource="{Binding ArtistPickerItems}"
+             controls:RubberBandScroll.IsEnabled="True"
+             SelectionMode="Single">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:ArtistPickerRow">
+          <Button Classes="pickerRow"
+                  Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistCommand}"
+                  CommandParameter="{Binding Name}"
+                  controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}"
+                  controls:LongPress.CommandParameter="{Binding Name}">
+            <!-- The album count, right-aligned: how many tiles a tap opens. -->
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+              <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
+              <TextBlock Grid.Column="1"
+                         Text="{Binding AlbumCountText}"
+                         FontSize="14"
+                         Opacity="0.5"
+                         VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <controls:ScrollIndexBar x:Name="IndexBar" Grid.Column="1" Target="{Binding #Artists}" />
+  </Grid>
 </UserControl>

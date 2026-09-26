@@ -19,9 +19,14 @@ namespace Flower.Controls;
 // this sees it.
 //
 // All three grids write the one shared property. They are mutually exclusive
-// screens of equal width so they always agree; a grid that isn't laid out
-// reports 0, which ColumnsFor floors to the two-column default rather than
-// letting it clobber a good value.
+// screens, and nearly always agree - but not quite always: Albums and Recently
+// Added give up a column to the index bar (ScrollIndexBar) and an artist's
+// albums do not, so they are 20px narrower, and at a width just past a column
+// boundary (a small phone in landscape) the two land a column apart. The last
+// one laid out wins, which costs the other tiles a few pixels under
+// MinTileWidth rather than anything worse. A grid that isn't laid out reports
+// 0, which ColumnsFor floors to the two-column default rather than letting it
+// clobber a good value.
 public static class AlbumGridColumnSizing
 {
     public static readonly AttachedProperty<bool> IsEnabledProperty =

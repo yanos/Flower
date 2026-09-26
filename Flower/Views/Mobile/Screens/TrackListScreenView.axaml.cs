@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 
+using Flower.Services;
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 
@@ -149,6 +150,20 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         private set => SetValue(IsPlaylistModeProperty, value);
     }
 
+    public static readonly StyledProperty<bool> IsSongsModeProperty =
+        AvaloniaProperty.Register<TrackListScreenView, bool>(nameof(IsSongsMode));
+
+    /// <summary>
+    /// Whether this is the flat Songs list - the one shape of this screen in
+    /// title order, and so the one with an A-Z bar. From the frame when
+    /// frozen, like IsAlbumMode, for the same reason.
+    /// </summary>
+    public bool IsSongsMode
+    {
+        get => GetValue(IsSongsModeProperty);
+        private set => SetValue(IsSongsModeProperty, value);
+    }
+
     public static readonly StyledProperty<bool> ShowsRowArtistProperty =
         AvaloniaProperty.Register<TrackListScreenView, bool>(nameof(ShowsRowArtist), defaultValue: true);
 
@@ -213,6 +228,11 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         TrackListBox.AddHandler(PointerMovedEvent, DragHandle_PointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         TrackListBox.AddHandler(PointerReleasedEvent, DragHandle_PointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         TrackListBox.AddHandler(PointerCaptureLostEvent, DragHandle_PointerCaptureLost, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        // Songs are sorted on their title's sort-as value with punctuation
+        // stripped (TrackListBuilder), so the letter is worked out the same way.
+        IndexBar.IndexOfLetter = letter => AlphabetIndex.FirstIndexFor(
+            DisplayRows, r => AlphabetIndex.LetterOf(r.Track.TitleSortValue, skipPunctuation: true), letter);
     }
 
     // Called by ScreenStackPanel whenever this instance is the CURRENT
@@ -247,6 +267,7 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         DisplayHeader = frame.FrozenHeader;
         IsAlbumMode = frame.IsAlbumTrackList;
         IsPlaylistMode = frame.IsPlaylistTrackList;
+        IsSongsMode = frame.Tab == MobileTab.Songs && !IsAlbumMode;
         ListHeader = IsPlaylistMode ? frame.FrozenHeader : null;
     }
 
@@ -270,6 +291,7 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
             return;
         IsAlbumMode = _observedVm.IsShowingAlbumTrackList;
         IsPlaylistMode = _observedVm.IsShowingPlaylistTracks;
+        IsSongsMode = _observedVm.SelectedTab == MobileTab.Songs && !IsAlbumMode;
         DisplayRows = IsAlbumMode ? _observedVm.AlbumDetailRows : _observedVm.Main.Rows;
         DisplayHeader = _observedVm.CurrentAlbumHeader;
         ListHeader = _observedVm.CurrentPlaylistHeader;

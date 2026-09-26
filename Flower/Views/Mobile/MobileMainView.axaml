@@ -213,6 +213,17 @@
     <Style Selector="ScrollViewer.screenScroll > StackPanel, ScrollViewer.screenScroll > ItemsControl">
       <Setter Property="Margin" Value="{DynamicResource ScreenScrollInset}" />
     </Style>
+    <!-- The A-Z (or dots) strip down the right of the long lists. Held to the
+         same band the lists show their content in - below the header, above
+         the mini player and tabs - so every letter is somewhere a thumb can
+         reach, and BringToTop lines a letter's first entry up with its top. -->
+    <Style Selector="controls|ScrollIndexBar">
+      <Setter Property="Margin" Value="{DynamicResource ScreenScrollInset}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+      <Setter Property="ActiveBackground" Value="{DynamicResource AppAccentSoftBrush}" />
+      <Setter Property="BubbleBackground" Value="{DynamicResource AppElevatedSurfaceBrush}" />
+      <Setter Property="BubbleForeground" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
     <!-- Border.floating and Button.pill, the floating controls over the top of
          the screens, are app-wide now: Styles/IconButtons.axaml. -->
     <Style Selector="Button.pickerRow, Button.trackRow">

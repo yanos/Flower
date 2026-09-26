@@ -171,14 +171,23 @@
          cost exactly the virtualization that makes that bearable. ListHeader
          is null on the flat Songs list, which stands for the whole library
          and is nobody's one thing. -->
-    <ListBox Classes="screenScroll" IsVisible="{Binding !#Root.IsAlbumMode}"
-              x:Name="TrackListBox"
-              controls:ScreenScroll.Header="{Binding #Root.ListHeader}"
-              Background="Transparent"
-              ItemsSource="{Binding #Root.DisplayRows}"
-              ItemTemplate="{StaticResource TrackRowTemplate}"
-              controls:RubberBandScroll.IsEnabled="True"
-              SelectionMode="Single" />
+    <!-- The A-Z bar is the flat Songs list's alone - an album or a playlist
+         is in its own order, where a letter means nothing - and takes a
+         column rather than floating over the rows, whose "..." button is at
+         their right edge. -->
+    <Grid IsVisible="{Binding !#Root.IsAlbumMode}" ColumnDefinitions="*,Auto">
+      <ListBox Classes="screenScroll"
+               x:Name="TrackListBox"
+               controls:ScreenScroll.Header="{Binding #Root.ListHeader}"
+               Background="Transparent"
+               ItemsSource="{Binding #Root.DisplayRows}"
+               ItemTemplate="{StaticResource TrackRowTemplate}"
+               controls:RubberBandScroll.IsEnabled="True"
+               SelectionMode="Single" />
+      <controls:ScrollIndexBar x:Name="IndexBar" Grid.Column="1"
+                               IsVisible="{Binding #Root.IsSongsMode}"
+                               Target="{Binding #TrackListBox}" />
+    </Grid>
 
     <!-- Drop-position indicator for the playlist drag-to-reorder gesture -->
     <Border x:Name="DropIndicator"

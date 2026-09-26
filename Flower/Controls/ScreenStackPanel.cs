@@ -472,9 +472,13 @@ public sealed class ScreenStackPanel : Panel
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         _finishEasing?.Invoke();
-        _swipeStart = e.GetPosition(this);
         _capturedForSwipe = false;
         _interactiveDirection = SwipeDirection.None;
+
+        // A drag down the index bar is the bar's, however sideways it
+        // wanders - taking it for a swipe would steal the pointer mid-scrub.
+        var onIndexBar = e.Source is Visual source && source.FindAncestorOfType<ScrollIndexBar>(includeSelf: true) != null;
+        _swipeStart = onIndexBar ? null : e.GetPosition(this);
     }
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
