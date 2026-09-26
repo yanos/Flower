@@ -361,6 +361,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // see PublicReachability on the server. Shown under the public address as
     // a check mark or a warning, and not at all when the server advertises no
     // such address (door shut, or an advertised address of its own).
+    public bool HasAdvertisedAs => _snapshot.AdvertisedAs is { Length: > 0 };
+
+    public string AdvertisedAsMessage =>
+        $"Another server on this network is already called \"{_snapshot.Alias}\", so this one appears as \"{_snapshot.AdvertisedAs}\". Choose another name to tell them apart.";
+
     public bool HasPublicReachability => _snapshot.PublicOrigin is { Length: > 0 };
 
     public bool IsPubliclyReachable => _snapshot.PublicReachability == "Reachable";
@@ -426,6 +431,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasAddresses));
             OnPropertyChanged(nameof(PublicAddressDisplay));
             OnPropertyChanged(nameof(HasPublicAddress));
+            OnPropertyChanged(nameof(HasAdvertisedAs));
+            OnPropertyChanged(nameof(AdvertisedAsMessage));
             OnPropertyChanged(nameof(HasPublicReachability));
             OnPropertyChanged(nameof(IsPubliclyReachable));
             OnPropertyChanged(nameof(IsPubliclyUnreachable));

@@ -407,7 +407,7 @@ public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<
     public async Task Reports_an_AdvertisedHost_changed_since_startup_without_a_restart()
     {
         // The settings route lets an administrator edit AdvertisedHost and
-        // promises no restart (AdminEndpoints leaves it out of RestartRequired).
+        // promises it applies without a restart.
         // This route is what has to make that promise true: bound through
         // IOptions it answered with the value from process start, so the page
         // showed the new host while every client kept being handed the old one.

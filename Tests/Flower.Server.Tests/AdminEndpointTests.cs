@@ -176,13 +176,12 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
 
             // And the other half of reporting it resolved: sending it straight
             // back must be a no-op rather than a write. Opening the page and
-            // pressing OK is not a rename, and must not announce a restart.
+            // pressing OK is not a rename.
             var echoed = await ReadAsync<ServerSettingsDto>(await SignedAsync(
                 admin, "PUT", "/api/admin/settings",
                 body: JsonSerializer.Serialize(new { alias = Environment.MachineName })));
 
             Assert.Equal(Environment.MachineName, echoed.Alias);
-            Assert.Empty(echoed.RestartRequired!);
         }
         finally
         {
@@ -226,9 +225,8 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
                 admin, "PUT", "/api/admin/settings", body: "{\"allowPublicAccess\":true}"));
 
             Assert.True(opened.AllowPublicAccess);
-            // No restart entry: the gate reads this per request (Program.cs),
-            // which is the property the assertion below actually pins.
-            Assert.Empty(opened.RestartRequired!);
+            // The gate reads this per request (Program.cs), so it applies at
+            // once - which is what the assertion below pins.
             Assert.Equal(HttpStatusCode.OK, await UnsignedInfoAsync("203.0.113.11"));
 
             var written = await File.ReadAllTextAsync(
@@ -294,12 +292,6 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         Assert.Equal("Basement NAS", settings.Alias);
         Assert.False(settings.AdvertiseOnLan);
         Assert.Equal(["10.8.0.0/24"], settings.AllowedCidrs);
-
-        // Both of these are read once by MdnsAdvertiser when the hosted
-        // service starts, so the page has to be told they are not live yet.
-        Assert.NotNull(settings.RestartRequired);
-        Assert.Contains(nameof(FlowerServerOptions.Alias), settings.RestartRequired!);
-        Assert.Contains(nameof(FlowerServerOptions.AdvertiseOnLan), settings.RestartRequired!);
 
         var written = await File.ReadAllTextAsync(
             Path.Combine(settings.DataDirectory, ServerDataDirectory.SettingsFileName), TestContext.Current.CancellationToken);

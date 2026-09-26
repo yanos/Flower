@@ -93,6 +93,10 @@ public sealed record SettingsSnapshot
     // Null unless the server has opened itself to the internet without naming
     // an address of its own.
     public string? PublicOrigin { get; init; }
+
+    // The name the server is actually announced under, when another server
+    // already had Alias - see ServerSettingsDto.AdvertisedAs.
+    public string? AdvertisedAs { get; init; }
     public string? PublicReachability { get; init; }
 
     // Shown read-only, for the "where does this thing keep its stuff" question

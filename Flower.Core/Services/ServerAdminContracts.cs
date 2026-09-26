@@ -56,10 +56,6 @@ public sealed record ServerSettingsDto(
     // so none of them answers "what do I forward to, and what do I then type
     // into a phone that is not on this network".
     string? PublicAddress,
-    // The fields whose new value is on disk and bound but not yet acted on, so
-    // the page can say so instead of appearing to have done nothing:
-    // MdnsAdvertiser reads its options once, when the hosted service starts.
-    List<string>? RestartRequired = null,
     // This server's own identity fingerprint, read-only. It is the other half
     // of a check a paired device can only half-make on its own: the device
     // shows what it pinned, and the answer to "is that the right machine?"
@@ -74,6 +70,13 @@ public sealed record ServerSettingsDto(
     // from here found: "Reachable", "Unreachable" or "OtherServerAnswered".
     // A string rather than an enum so this record needs nothing new from
     // either end's serializer context.
+    // The name this server is actually announced under, when it is not
+    // Alias: another server on the network already answered to Alias, so this
+    // one took "Alias (2)" (see MdnsAdvertiser). Null when they are the same.
+    // Kept apart from Alias because Alias is the editable value - folding the
+    // suffix into it would save "(2)" into the settings the next time the page
+    // was submitted.
+    string? AdvertisedAs = null,
     string? PublicOrigin = null,
     string? PublicReachability = null);
 

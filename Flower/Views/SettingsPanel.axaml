@@ -28,6 +28,14 @@
                caption underneath to say what the field was for. -->
           <TextBlock Text="Name" FontWeight="SemiBold" Margin="0,0,0,8"/>
           <controls:TextInput Text="{Binding Alias, Mode=TwoWay}"/>
+          <!-- Only when the server could not have this name on the network
+               because another server already answers to it - see
+               MdnsAdvertiser. The box keeps the name as typed; this says what
+               clients are actually shown. -->
+          <TextBlock Text="{Binding AdvertisedAsMessage}"
+                     IsVisible="{Binding HasAdvertisedAs}"
+                     Foreground="{DynamicResource AppWarningBrush}"
+                     Margin="0,4,0,0" FontSize="11" TextWrapping="Wrap"/>
 
           <TextBlock Text="Theme"
                      FontWeight="SemiBold"

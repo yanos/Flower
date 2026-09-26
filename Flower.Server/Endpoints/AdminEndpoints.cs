@@ -213,9 +213,10 @@ public static class AdminEndpoints
 
         authenticated.MapGet("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IServer boundServer,
-            PublicAddressProbe publicAddress, PublicReachability publicReachability, DeviceSigningKey signingKey) =>
+            PublicAddressProbe publicAddress, PublicReachability publicReachability, DeviceSigningKey signingKey,
+            MdnsAdvertiser advertiser) =>
             Results.Json(
-                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, publicReachability, signingKey, context.RequestAborted),
+                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, publicReachability, advertiser, signingKey, context.RequestAborted),
                 jsonOptions));
 
         // Read from the raw (buffered, rewound) stream rather than a bound
@@ -223,7 +224,7 @@ public static class AdminEndpoints
         authenticated.MapPut("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
             LibraryRescanCoordinator rescans, IServer boundServer, PublicAddressProbe publicAddress,
-            PublicReachability publicReachability, DeviceSigningKey signingKey) =>
+            PublicReachability publicReachability, DeviceSigningKey signingKey, MdnsAdvertiser advertiser) =>
         {
             ServerSettingsUpdateDto? update;
             try
@@ -241,7 +242,6 @@ public static class AdminEndpoints
 
             var before = options.CurrentValue;
             var values = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
-            var restartRequired = new List<string>();
 
             // Applied over a copy rather than re-read afterwards. Re-reading looks
             // more honest but is not: flower-server.json is watched with
@@ -274,7 +274,6 @@ public static class AdminEndpoints
             {
                 after.Alias = alias.Trim();
                 values[nameof(FlowerServerOptions.Alias)] = JsonValue.Create(after.Alias);
-                restartRequired.Add(nameof(FlowerServerOptions.Alias));
             }
             if (update.AdvertisedHost is { } advertisedHost && advertisedHost.Trim() != before.AdvertisedHost)
             {
@@ -285,7 +284,6 @@ public static class AdminEndpoints
             {
                 after.AdvertiseOnLan = advertiseOnLan;
                 values[nameof(FlowerServerOptions.AdvertiseOnLan)] = JsonValue.Create(advertiseOnLan);
-                restartRequired.Add(nameof(FlowerServerOptions.AdvertiseOnLan));
             }
             if (update.TrustTailscaleRange is { } trustTailscale && trustTailscale != before.TrustTailscaleRange)
             {
@@ -359,8 +357,9 @@ public static class AdminEndpoints
                 rescans.TryStart();
             }
 
-            var described = await DescribeAsync(after, boundServer, publicAddress, publicReachability, signingKey, context.RequestAborted);
-            return Results.Json(described with { RestartRequired = restartRequired }, jsonOptions);
+            return Results.Json(
+                await DescribeAsync(after, boundServer, publicAddress, publicReachability, advertiser, signingKey, context.RequestAborted),
+                jsonOptions);
         });
 
         authenticated.MapGet("/library", (LibraryRescanCoordinator rescans) =>
@@ -623,8 +622,9 @@ public static class AdminEndpoints
     // at, in both places, on the same response.
     private static async Task<ServerSettingsDto> DescribeAsync(
         FlowerServerOptions options, IServer boundServer, PublicAddressProbe publicAddress,
-        PublicReachability publicReachability, DeviceSigningKey signingKey, CancellationToken ct)
+        PublicReachability publicReachability, MdnsAdvertiser advertiser, DeviceSigningKey signingKey, CancellationToken ct)
     {
+
         var reachability = await publicReachability.CheckAsync(options, ct);
 
         return new(MdnsAdvertiser.InstanceName(options),
@@ -643,8 +643,8 @@ public static class AdminEndpoints
             options.AllowPublicAccess,
             DiscoveryEndpoints.ReachableOrigins(boundServer, options, publicReachability.OriginFor(options)),
             await publicAddress.GetAsync(ct),
-            RestartRequired: null,
             Fingerprint: signingKey.Fingerprint,
+            AdvertisedAs: advertiser.ClaimedInsteadOf == MdnsAdvertiser.InstanceName(options) ? advertiser.Name : null,
             PublicOrigin: reachability?.Origin,
             PublicReachability: reachability?.Status.ToString());
     }

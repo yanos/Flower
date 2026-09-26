@@ -63,6 +63,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             Addresses = settings.Addresses,
             PublicAddress = settings.PublicAddress,
             PublicOrigin = settings.PublicOrigin,
+            AdvertisedAs = settings.AdvertisedAs,
             PublicReachability = settings.PublicReachability,
             DataDirectory = settings.DataDirectory,
             Version = settings.Version,
@@ -97,14 +98,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         if (draft.LibraryPathsChanged)
             await client.RescanAsync(ct);
 
-        if (result.RestartRequired is not { Count: > 0 } restart)
-            return draft.LibraryPathsChanged ? "Saved. Scanning the library folders now." : null;
-
-        // MdnsAdvertiser reads its options once, when the hosted service starts,
-        // so these are on disk and bound but not yet announced. Said plainly
-        // rather than silently: the alternative is an operator renaming a server
-        // and watching the old name stay in every client's sidebar.
-        return $"Saved. Restart the server to apply: {string.Join(", ", restart)}.";
+        return draft.LibraryPathsChanged ? "Saved. Scanning the library folders now." : null;
     }
 
     // A server's catalog is not in this process, and attributing tracks to folders

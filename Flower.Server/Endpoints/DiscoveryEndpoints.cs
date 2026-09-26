@@ -60,7 +60,8 @@ public static class DiscoveryEndpoints
         app.MapGet(SyncProtocol.InfoPath, async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> optionsMonitor,
             DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, Library library,
-            NonceReplayGuard replayGuard, IServer boundServer, PublicReachability publicReachability) =>
+            NonceReplayGuard replayGuard, IServer boundServer, PublicReachability publicReachability,
+            MdnsAdvertiser advertiser) =>
         {
             // Monitor, not IOptions, for the same reason Program.cs's LanGuard
             // gate uses one: both settings this reads - the alias and
@@ -116,8 +117,11 @@ public static class DiscoveryEndpoints
                     previousAlias, caller.Fingerprint, claimedAlias);
             }
 
+            // The name this server actually announced, not the configured
+            // one: they differ when another server already had it, and a
+            // client labels the row it found by what this says.
             var response = new SyncInfoResponseDto(
-                MdnsAdvertiser.InstanceName(options),
+                advertiser.Name,
                 "2.0",
                 null,
                 "server",
