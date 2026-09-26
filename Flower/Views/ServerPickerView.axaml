@@ -7,7 +7,7 @@
   <Grid RowDefinitions="*,Auto,Auto,Auto" Margin="0,12,0,0">
     <Grid Grid.Row="0">
       <TextBlock x:Name="EmptyStateText"
-                 Text="No servers found on this network yet."
+                 Text="No servers found on this Wi-Fi."
                  Opacity="0.6"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>

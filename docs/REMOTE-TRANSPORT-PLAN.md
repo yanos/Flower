@@ -125,7 +125,7 @@ phone.
    `OPEN-INTERNET-REVIEW.md`), so it is now `FlowerServerOptions
    .AllowPublicAccess` rather than an `AllowedCidrs` of `0.0.0.0/0` that a
    reader might not recognise for what it is. It warns at every startup, and it
-   is on the settings page as "Accept connections from outside this network"
+   is on the settings page as "Allow connections from the internet"
    (see `OPEN-INTERNET-REVIEW.md` point 3 for why that reversed). The original
    note follows, and it is what the setting is for. Today it admits RFC1918,
    loopback and `100.64/10`, and everything else is dropped without a reply — so

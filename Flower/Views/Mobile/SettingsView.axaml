@@ -18,8 +18,11 @@
       <Setter Property="Margin" Value="20,4,20,20" />
       <Setter Property="Spacing" Value="6" />
     </Style>
+    <!-- Capitals are typed into each header's Text: Avalonia has no text
+         transform to do it here. -->
     <Style Selector="TextBlock.section-header">
-      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="LetterSpacing" Value="0.8" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Opacity" Value="0.6" />
       <Setter Property="Margin" Value="0,0,0,2" />
@@ -59,26 +62,24 @@
            am on, and which is about adding another one" is not answerable from
            spacing alone. -->
       <StackPanel Classes="section">
-        <TextBlock Classes="section-header" Text="General"/>
+        <TextBlock Classes="section-header" Text="GENERAL"/>
 
         <TextBlock Text="Device Name" FontSize="13" Opacity="0.6"/>
         <controls:TextInput Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"
                             controls:SoftKeyboard.ReopenOnTap="True"/>
-        <TextBlock Text="Shown on the server this device syncs with"
-                   FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
 
         <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Margin="0,10,0,0" Spacing="8">
           <StackPanel IsVisible="{Binding !HasMediaPermission}" Spacing="8">
-            <TextBlock Text="Music access permission was denied, so Flower cannot see your library."
+            <TextBlock Text="Flower can't see your music. Allow access in Settings."
                        FontSize="14"
                        Opacity="0.7"
                        TextWrapping="Wrap" />
             <Button Command="{Binding OpenAppSettingsCommand}" HorizontalAlignment="Left">
-              <TextBlock Text="Open App Settings" FontSize="14" />
+              <TextBlock Text="Open Settings" FontSize="14" />
             </Button>
           </StackPanel>
           <TextBlock IsVisible="{Binding HasMediaPermission}"
-                     Text="Music access permission is granted."
+                     Text="Music access allowed."
                      FontSize="14"
                      Opacity="0.5" />
         </StackPanel>
@@ -89,7 +90,7 @@
            is about that server; reaching a different one is the next section
            down. -->
       <StackPanel Classes="section">
-        <TextBlock Classes="section-header" Text="Paired server"/>
+        <TextBlock Classes="section-header" Text="SERVER"/>
 
         <Grid IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
               ColumnDefinitions="*,Auto">
@@ -120,7 +121,7 @@
             </StackPanel>
             <!-- Pairing requested but not yet approved by the server - see
                  MainViewModel.IsPairedServerAwaitingApproval. -->
-            <TextBlock Text="Waiting for server..."
+            <TextBlock Text="Waiting for approval…"
                        Opacity="0.6" FontSize="12"
                        VerticalAlignment="Center"
                        IsVisible="{Binding Main.IsPairedServerAwaitingApproval}"/>
@@ -134,14 +135,14 @@
              equivalent is the sidebar's own check/exclamation glyph next to
              the paired server's row. -->
         <TextBlock IsVisible="{Binding Main.ShowPairedServerUnreachableWarning}"
-                   Text="Server not reachable"
+                   Text="Can't reach server"
                    Foreground="{DynamicResource AppWarningBrush}"
                    FontSize="12" Margin="0,2,0,0"/>
         <TextBlock IsVisible="{Binding Main.LastForceSyncResult, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                    Text="{Binding Main.LastForceSyncResult}"
                    Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
         <TextBlock IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"
-                   Text="Not paired with a server" Opacity="0.5" FontSize="14"/>
+                   Text="Not paired" Opacity="0.5" FontSize="14"/>
 
         <!-- How the server is being reached, when it is not the ordinary
              at-home case - see MainViewModel.PairedServerRouteDescription. A
@@ -154,9 +155,11 @@
         <!-- On by default, same as desktop: whoever runs the server is the one
              who ends up diagnosing a phone, and a phone's owner cannot be asked
              to find a log file. Directly under the server it names, since that
-             is the server the logs go to. See
+             is the server the logs go to - and hidden with no server, since
+             there is nowhere for them to go. See
              AppSettings.ShareLogsWithPairedServer. -->
-        <CheckBox Content="Send logs to paired server"
+        <CheckBox Content="Send logs to server"
+                  IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                   IsChecked="{Binding Main.ShareLogsWithPairedServer}"
                   Margin="0,6,0,0"/>
 
@@ -188,9 +191,7 @@
                too late to inform it. The ordinary grant is not nothing either -
                a listener's playlists replace the server's - so both halves are
                stated rather than only the administrator one. -->
-          <TextBlock Text="A paired device plays the whole library and adds its plays to the server's counts, and its playlists replace the ones there - so it can add or remove playlists for everyone."
-                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
-          <TextBlock Text="An administrator can also change the server's settings, including which folders the library is read from, so it can add or remove music. It can star tracks for everyone, and add and remove devices."
+          <TextBlock Text="The new device can play everything and edit shared playlists. An administrator can also change server settings and manage devices."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
           <!-- Copying is the actual gesture on a phone - the code goes into a
                message to whoever is holding the other device, and a selection
@@ -216,7 +217,7 @@
                     VerticalAlignment="Stretch" VerticalContentAlignment="Center"/>
           </Grid>
           <TextBlock IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                     Text="Enter this code on the device you are adding. It works once."
+                     Text="Enter this code on the new device. Works once."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
           <!-- The link is the safer of the two renderings, so it is offered
                rather than hidden behind the code: a device given the whole
@@ -238,7 +239,7 @@
                     VerticalAlignment="Center"/>
           </Grid>
           <TextBlock IsVisible="{Binding Main.IssuedPairingInvite, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                     Text="Send the link rather than the code. A device given the link refuses to pair with anything but this server; a device given five characters trusts whatever answers."
+                     Text="Or send this link instead - it's safer, as it only pairs with this server."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
           <SelectableTextBlock IsVisible="{Binding Main.IssuedPairingCodeError, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
                      Text="{Binding Main.IssuedPairingCodeError}"
@@ -248,7 +249,7 @@
       </StackPanel>
 
       <StackPanel Classes="section">
-        <TextBlock Classes="section-header" Text="Add new server"/>
+        <TextBlock Classes="section-header" Text="ADD SERVER"/>
 
         <!-- Bootstrap only: a server this phone has never shared a network
              with, and so could never discover. A server paired with at home
@@ -291,8 +292,8 @@
              DataContext here is a DiscoveredDevice instead. -->
         <StackPanel Margin="0,8,0,0" Spacing="4"
                     IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
-          <TextBlock Text="Servers on this network" FontSize="13" Opacity="0.6"/>
-          <TextBlock Text="No servers found yet. One has to be running and on the same Wi-Fi."
+          <TextBlock Text="Nearby servers" FontSize="13" Opacity="0.6"/>
+          <TextBlock Text="None found on this Wi-Fi."
                      FontSize="12" Opacity="0.5" TextWrapping="Wrap"
                      IsVisible="{Binding !Main.HasAvailableServers}"/>
           <ItemsControl ItemsSource="{Binding Main.AvailableServers}">
@@ -317,31 +318,40 @@
            and a stuttering track is a question about CPU and memory, and until
            this existed there was no way to ask it from the device. -->
       <StackPanel Classes="section" Margin="20,4,20,24">
-        <TextBlock Classes="section-header" Text="Additional information"/>
+        <TextBlock Classes="section-header" Text="ADDITIONAL INFORMATION"/>
 
-        <TextBlock x:Name="VersionTextBlock" FontSize="12" Opacity="0.5"/>
+        <!-- Both columns in one font and centred on their row: a monospace
+             value beside a proportional label is two different line boxes,
+             and top-aligned they sat visibly out of line with each other. -->
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+          <Grid.Styles>
+            <Style Selector="TextBlock">
+              <Setter Property="FontSize" Value="14" />
+              <Setter Property="VerticalAlignment" Value="Center" />
+              <Setter Property="Margin" Value="0,2" />
+            </Style>
+            <Style Selector="TextBlock.label">
+              <Setter Property="Opacity" Value="0.55" />
+              <Setter Property="Margin" Value="0,2,14,2" />
+            </Style>
+          </Grid.Styles>
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="label" Text="CPU" />
+          <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resources.CpuText}" />
 
-        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,4,0,0">
-          <TextBlock Grid.Row="0" Grid.Column="0" Text="CPU" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
-          <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resources.CpuText}"
-                     FontSize="14" FontFamily="monospace" Margin="0,2" />
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="label" Text="Memory" />
+          <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Resources.MemoryText}" />
 
-          <TextBlock Grid.Row="1" Grid.Column="0" Text="Memory" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
-          <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Resources.MemoryText}"
-                     FontSize="14" FontFamily="monospace" Margin="0,2" />
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="Heap" />
+          <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Resources.HeapText}" />
 
-          <TextBlock Grid.Row="2" Grid.Column="0" Text="Heap" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
-          <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Resources.HeapText}"
-                     FontSize="14" FontFamily="monospace" Margin="0,2" />
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="label" Text="GC" />
+          <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Resources.GcText}" />
 
-          <TextBlock Grid.Row="3" Grid.Column="0" Text="GC" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
-          <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Resources.GcText}"
-                     FontSize="14" FontFamily="monospace" Margin="0,2" />
-
-          <TextBlock Grid.Row="4" Grid.Column="0" Text="Threads" FontSize="14" Opacity="0.55" Margin="0,2,14,2" />
-          <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Resources.ThreadsText}"
-                     FontSize="14" FontFamily="monospace" Margin="0,2" />
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="label" Text="Threads" />
+          <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Resources.ThreadsText}" />
         </Grid>
+
+        <TextBlock x:Name="VersionTextBlock" FontSize="12" Opacity="0.5" Margin="0,8,0,0"/>
       </StackPanel>
     </StackPanel>
     </ScrollViewer>

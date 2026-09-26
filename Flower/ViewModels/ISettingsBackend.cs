@@ -24,7 +24,7 @@ public sealed record SettingsCapabilities
     // and neither does a browser.
     public bool ITunesIntegration { get; init; }
 
-    // "Send logs to paired server", and the Devices tab's server picker: the
+    // "Send logs to server", and the Devices tab's server picker: the
     // things that only mean something for a device that pairs *to* a server.
     // A Flower.Server does none of them - it is the thing being paired with.
     public bool PairedServerPicker { get; init; }

@@ -408,6 +408,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public bool CanManageLibrary =>
         !Capabilities.PairedServerPicker || !_snapshot.IsPairedToServer;
 
+    // Logs go to the paired server, so with none there is nothing to switch.
+    public bool ShowsShareLogs => Capabilities.PairedServerPicker && _snapshot.IsPairedToServer;
+
     public bool ShowsDeniedDevices => DeniedDevices.Count > 0;
     public bool HasDevices => Devices.Count > 0;
 
@@ -468,6 +471,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(ITunesLibraryDescription));
             OnPropertyChanged(nameof(VersionDisplay));
             OnPropertyChanged(nameof(CanManageLibrary));
+            OnPropertyChanged(nameof(ShowsShareLogs));
             OnPropertyChanged(nameof(HasAppleMusicFolder));
             OnPropertyChanged(nameof(CanIntegrateWithITunes));
             OnPropertyChanged(nameof(CanSyncFromITunes));
@@ -618,7 +622,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         var grantsAdmin = PairingCodeGrantsAdmin;
         (PairingCode, PairingInvite) = await _backend.IssuePairingCodeAsync(grantsAdmin, ct);
-        StatusMessage = "Enter this code on the device you are adding. It expires in a few minutes.";
+        StatusMessage = "Enter this code on the new device.";
     });
 
     [RelayCommand]

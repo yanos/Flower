@@ -527,7 +527,7 @@ Two of the four need nothing added, for unrelated reasons.
 because the port you forward is then `4534` — the server's own TLS port, whose
 certificate those clients validate against a key they already hold. No proxy, so
 nothing to run beside the server and no `TrustedProxies`. Forward 4534 to the
-same port, turn on **Accept connections from outside of LAN** in Network, and
+same port, turn on **Allow connections from the internet** in Network, and
 that is the whole of it: with `AdvertisedHost` empty, the server looks up its own
 public IP, tells paired devices `https://<that IP>:4534`, looks again every
 fifteen minutes so a changed address follows, and dials itself there to check the
@@ -770,8 +770,8 @@ Three settings change it, and they answer different questions:
   is*. See below. Deployment-shaped, so it is read once at startup.
 - **`AllowPublicAccess`** — *turn the allow-list off entirely*. For a server
   deliberately published to the internet, through a tunnel or a mapped port. Off
-  by default. On the settings page it is **Accept connections from outside of
-  LAN with port forwarding**, in Network, with the server's own addresses shown
+  by default. On the settings page it is **Allow connections from the
+  internet**, in Network, with the server's own addresses shown
   above it; it applies immediately, in both directions.
 
 Turning that last one on is the single most consequential thing you can do to
