@@ -9,7 +9,7 @@
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Wraps one materialized screen control together with that screen's own
-       header (back and settings buttons, and the oval between them), so
+       header (back and menu buttons, and the oval between them), so
        ScreenStackPanel's existing swipe transform - applied to this whole
        control - carries the header along with the screen content instead of
        leaving it behind in a static bar. Frame is reassigned wholesale on
@@ -45,6 +45,24 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
     </Style>
+    <!-- The screen menu's card: the recent-searches dropdown's look, so the
+         two things that drop down from the band are one kind of thing. -->
+    <Style Selector="FlyoutPresenter.screenMenu">
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="0,4" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="Button.screenMenuRow">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="16,11" />
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="52,*">
@@ -54,7 +72,7 @@
          scroller, under the back button, and moves with the list
          (ScreenTitle). -->
 
-    <!-- The back and settings buttons, in this slot's own header band so they
+    <!-- The back and menu buttons, in this slot's own header band so they
          go wherever the screen goes: a screen sliding in brings its back
          button with it, and a swipe back takes it away and uncovers the one
          underneath with its own. Whether there is a back button is the slot's
@@ -81,7 +99,7 @@
 
       <!-- The screen's filter, pulled down from the top of its list (see
            RubberBandScroll.PulledDownEvent and MobileMainViewModel's
-           "Pull-down filter"), between the back and settings buttons and as
+           "Pull-down filter"), between the back and menu buttons and as
            tall as they are. Part of the slot rather than fixed over the
            stack, so it slides with its screen: a screen being left keeps its
            oval until the next one has slid over it, and Back brings a
@@ -164,17 +182,31 @@
         </Grid>
       </Border>
 
-      <!-- Settings, in a pill of its own with one button in it - so a circle,
-           the size of the back button facing it across the band. -->
-      <Border x:Name="SettingsPill"
+      <!-- The screen's menu, in a pill of its own with one button in it - so a
+           circle, the size of the back button facing it across the band.
+           Settings is always its last entry; what sits above it depends on
+           the screen (MobileMainViewModel.BuildScreenMenu), so the entries
+           are built by the code-behind as the menu opens rather than bound. -->
+      <Border x:Name="MenuPill"
               Grid.Column="2"
               Classes="floating"
               Width="40"
               BoxShadow="0 0 16 1.6 #4D000000">
-        <Button Classes="pill"
-                Command="{Binding OpenSettingsCommand}"
+        <Button x:Name="MenuButton"
+                Classes="pill"
                 HorizontalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="Cog" Width="20" Height="20" />
+          <Button.Flyout>
+            <Flyout
+                    Placement="BottomEdgeAlignedRight"
+                    VerticalOffset="8"
+                    FlyoutPresenterClasses="screenMenu"
+                    Opening="ScreenMenu_Opening"
+                    Opened="ScreenMenu_Opened"
+                    Closing="ScreenMenu_Closing">
+              <StackPanel x:Name="ScreenMenuItems" MinWidth="220" />
+            </Flyout>
+          </Button.Flyout>
+          <materialIcons:MaterialIcon Kind="Menu" Width="20" Height="20" />
         </Button>
       </Border>
     </Grid>

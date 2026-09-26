@@ -477,7 +477,7 @@
 
     <!-- Tab oval - Recently Added first/leftmost, matching it being the app's
          default/home tab (see MobileMainViewModel._selectedTab). The same
-         floating look as the back button and the settings button, drawn
+         floating look as the back button and the menu button, drawn
          taller to fit a label under each icon. Its bottom margin comes from
          the safe area (MobileMainView.axaml.cs), which lifts it off the home
          indicator. The star columns centre it at 97% of the width between

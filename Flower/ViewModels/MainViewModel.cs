@@ -511,6 +511,17 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         SaveSettings();
     }
 
+    // What a phone screen's header menu last sorted it by - null when never
+    // chosen. See MobileMainViewModel's "Screen menu".
+    public string? MobileSortFor(string screen) =>
+        _appSettings.MobileSorts.GetValueOrDefault(screen);
+
+    public void PersistMobileSort(string screen, string order)
+    {
+        _appSettings.MobileSorts[screen] = order;
+        SaveSettings();
+    }
+
     // ── Busy state ────────────────────────────────────────────────────
 
     // The counter itself lives in BusyState, shared with the collaborators

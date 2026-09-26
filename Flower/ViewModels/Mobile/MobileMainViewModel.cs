@@ -44,7 +44,7 @@ public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInf
 // navigation model into tab+drill-down navigation for a phone screen, without changing
 // MainViewModel itself. Songs is a flat list; Albums/Artists/Playlists show a picker
 // (album/artist names, or playlist entries) until the user taps into one.
-public class MobileMainViewModel : ViewModelBase, IDisposable
+public partial class MobileMainViewModel : ViewModelBase, IDisposable
 {
     private readonly ILogger _logger;
 
@@ -1427,7 +1427,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         ActiveSheet = MobileSheet.None;
         if (tile == null)
             return;
-        var tracks = InAlbumOrder(tile);
+        PlayTracks(InAlbumOrder(tile), shuffle);
+    }
+
+    // Plays these songs as the queue: from the first in order, or with
+    // shuffle turned on from a random one. Through ToggleShuffle rather than
+    // the property, so the choice persists like the Now Playing toggle.
+    private void PlayTracks(IReadOnlyList<Track> tracks, bool shuffle)
+    {
         if (tracks.Count == 0)
             return;
         if (PlaylistControl.IsShuffleEnabled != shuffle)
@@ -2497,7 +2504,7 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
         RefillAlbumRows(_recentlyAddedGrid, RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks));
 
     private void RebuildAlbumGrid() =>
-        RefillAlbumRows(_albumGrid, AlbumGridBuilder.Build(Main.Library.Tracks));
+        RefillAlbumRows(_albumGrid, InGridOrder(AlbumGridBuilder.Build(Main.Library.Tracks), MobileSortScreen.Albums));
 
     // Re-chunks a grid from freshly built tiles, keeping the tile instances
     // that are still on screen - these grids are rebuilt on every library
@@ -2536,7 +2543,8 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
 
         RefillAlbumRows(
             _artistAlbumGrid,
-            AlbumGridBuilder.Build(Main.Library.Tracks.Where(t => t.Artists == _selectedArtistName)));
+            InGridOrder(AlbumGridBuilder.Build(Main.Library.Tracks.Where(t => t.Artists == _selectedArtistName)),
+                MobileSortScreen.ArtistAlbums));
     }
 
     private CancellationTokenSource? _searchResultsCts;
@@ -2708,8 +2716,14 @@ public class MobileMainViewModel : ViewModelBase, IDisposable
     // so the rebuild that the scope change causes is already the right sort
     // and nothing is sorted twice. Set rather than persisted (see
     // LibraryBrowserViewModel.UseSort): it is not a choice anyone made.
-    private void UseTheSortThisScreenWants(bool flatSongs) =>
-        Main.Browser.UseSort(flatSongs ? "Title" : "TrackNumber", ascending: true);
+    //
+    // The flat Songs list is the exception since the header menu (see "Screen
+    // menu"): the order it offers there is persisted, and applied here.
+    private void UseTheSortThisScreenWants(bool flatSongs)
+    {
+        var (column, ascending) = flatSongs ? SongsColumn() : ("TrackNumber", true);
+        Main.Browser.UseSort(column, ascending);
+    }
 
     // Albums tab grid tiles only now - Artists' own name picker uses
     // SelectArtist below instead, so tapping an artist lands on that artist's

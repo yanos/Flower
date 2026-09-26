@@ -430,7 +430,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         ScrollerOf(slot).RaiseEvent(new PullingDownEventArgs(progress));
 
     // The view half: pulling the list down opens the oval in the header band,
-    // between the back and settings buttons, with focus in it, what is typed reaches the view model, putting
+    // between the back and menu buttons, with focus in it, what is typed reaches the view model, putting
     // the keyboard away leaves it up and the list filtered, and its x closes
     // it and turns the filtering off.
     [AvaloniaFact]
@@ -456,10 +456,10 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         Assert.Equal(1, oval.Opacity);
         Assert.True(box.IsFocused);
         Assert.Equal("Filter albums", box.PlaceholderText);
-        // In the band, left of the settings button, and the screen below it
+        // In the band, left of the menu button, and the screen below it
         // does not move to make room.
         var ovalTop = oval.TranslatePoint(default, window)!.Value;
-        var settingsLeft = slot.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "SettingsPill")
+        var settingsLeft = slot.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "MenuPill")
             .TranslatePoint(default, window)!.Value.X;
         Assert.True(ovalTop.Y + oval.Bounds.Height <= ScreenSlot.HeaderHeight, $"oval ends at {ovalTop.Y + oval.Bounds.Height}");
         Assert.True(ovalTop.X + oval.Bounds.Width <= settingsLeft, $"oval ends at {ovalTop.X + oval.Bounds.Width}, settings starts at {settingsLeft}");

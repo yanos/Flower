@@ -346,11 +346,38 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
         return box;
     }
 
+    // The screen menu grows out of its button and folds back into it. What
+    // matters beyond the look: it ends up whole once open, and the close the
+    // animation holds back still goes through once it has played.
+    [AvaloniaFact]
+    public void The_screen_menu_opens_whole_and_still_closes_after_folding_away()
+    {
+        using var h = new Harness(NarrowPhone);
+        h.Vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
+        Harness.Pump(400);
+        h.Layout(NarrowPhone);
+        var slot = h.Window.GetVisualDescendants().OfType<ScreenSlot>().Single(s => s.IsLive);
+        var button = slot.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "MenuButton");
+        var flyout = (Flyout)button.Flyout!;
+
+        flyout.ShowAt(button);
+        Harness.Pump(400);
+        var card = ((Control)flyout.Content!).FindAncestorOfType<FlyoutPresenter>()!;
+        Assert.True(flyout.IsOpen);
+        Assert.Equal(1, card.Opacity, 3);
+        Assert.Equal(1, ((ScaleTransform)card.RenderTransform!).ScaleX, 3);
+
+        flyout.Hide();
+        Assert.True(flyout.IsOpen, "closed at once, with no fold to play");
+        Harness.Pump(400);
+        Assert.False(flyout.IsOpen);
+    }
+
     // The two floating buttons face each other across the same 52px band, and
-    // with Search gone the settings one is a single circle like the back one -
+    // with Search gone the menu one is a single circle like the back one -
     // not the stadium the two of them used to share.
     [AvaloniaFact]
-    public void The_settings_button_is_the_size_of_the_back_button()
+    public void The_menu_button_is_the_size_of_the_back_button()
     {
         using var h = new Harness(NarrowPhone);
         // The back button only appears on a screen with somewhere to go back
@@ -364,10 +391,10 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
 
         var slot = h.Window.GetVisualDescendants().OfType<ScreenSlot>().Single(s => s.IsLive);
         var back = slot.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "BackPill");
-        var settings = slot.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "SettingsPill");
+        var menu = slot.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "MenuPill");
 
         Assert.True(back.IsVisible, "the back button never appeared");
-        Assert.Equal(back.Bounds.Size, settings.Bounds.Size);
-        Assert.Equal(40, Math.Round(settings.Bounds.Width));
+        Assert.Equal(back.Bounds.Size, menu.Bounds.Size);
+        Assert.Equal(40, Math.Round(menu.Bounds.Width));
     }
 }

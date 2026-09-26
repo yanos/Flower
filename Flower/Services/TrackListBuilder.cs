@@ -177,7 +177,7 @@ public static class TrackListBuilder
     // This counts first, then fills exactly once - and returns the input
     // untouched when there was nothing to strip, which allocates nothing at
     // all. See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
-    private static string SortKey(string? s)
+    internal static string SortKey(string? s)
     {
         if (string.IsNullOrEmpty(s))
             return "";

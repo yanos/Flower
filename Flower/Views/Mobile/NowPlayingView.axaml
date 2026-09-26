@@ -50,7 +50,7 @@
        sheets, but the tab oval MobileMainView keeps floating over this one -
        which already clears the safe area itself. -->
   <!-- No horizontal padding on the root: the top bar has to line up with the
-       back and settings buttons over every screen (ScreenSlot's header band),
+       back and menu buttons over every screen (ScreenSlot's header band),
        inset from the window edge, so the 24px inset belongs to the rows below
        it rather than to the whole sheet. -->
   <Grid RowDefinitions="Auto,*" Margin="0,0,0,10">

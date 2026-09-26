@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
 
-  <!-- Icon-only buttons, app-wide: the floating back and settings buttons over
+  <!-- Icon-only buttons, app-wide: the floating back and menu buttons over
        the mobile screens, the tabs in the oval below them, the back buttons of
        the Now Playing and Settings sheets, an album's action group, and every
        download button (TrackDownloadButton puts the class on its own inner
@@ -11,7 +11,7 @@
        a square around its glyph while everything beside it lit up a circle. -->
 
   <!-- A pill round at both ends, and a circle when it is 40 wide. Every oval on
-       the phone is one - the back button, search and settings, an album's
+       the phone is one - the back button, search and the menu, an album's
        actions, the mini player and the tab bar - and each is ringed by a
        single pixel of the primary red at half strength. -->
   <Style Selector="Border.floating">

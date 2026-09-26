@@ -60,6 +60,11 @@ namespace Flower.Persistence
         // however they happened to appear - see MainViewModel.SortArtistAlbumsByYear.
         public bool SortArtistAlbumsByYear { get; set; }
 
+        // The order a phone's screens are in, picked from the menu in their
+        // header, by screen - see MobileMainViewModel's "Screen menu". Keys and
+        // values are its MobileSortScreen and MobileSortOrder names.
+        public Dictionary<string, string> MobileSorts { get; set; } = new();
+
         // Whether the track list keeps its album-art well - see
         // ColumnManager.ShowAlbumArt, which is what reads and writes this, and
         // ColumnSelectorWindow, where it sits alongside the columns proper.
