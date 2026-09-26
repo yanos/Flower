@@ -361,6 +361,24 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // see PublicReachability on the server. Shown under the public address as
     // a check mark or a warning, and not at all when the server advertises no
     // such address (door shut, or an advertised address of its own).
+    // One per server setting the page edits: greyed out, with the reason under
+    // it, when something the page cannot change sets it - an environment
+    // variable in a compose file, say. Keyed by the FlowerServerOptions names
+    // the server reports them under.
+    public SettingLock AliasLock => LockFor("Alias");
+    public SettingLock AdvertisedHostLock => LockFor("AdvertisedHost");
+    public SettingLock AdvertiseOnLanLock => LockFor("AdvertiseOnLan");
+    public SettingLock TrustTailscaleRangeLock => LockFor("TrustTailscaleRange");
+    public SettingLock AllowedCidrsLock => LockFor("AllowedCidrs");
+    public SettingLock LibraryPathsLock => LockFor("LibraryPaths");
+    public SettingLock IntegrateWithITunesLock => LockFor("IntegrateWithITunes");
+    public SettingLock SyncPlayCountFromITunesLock => LockFor("SyncPlayCountFromITunes");
+    public SettingLock SyncDateAddedFromITunesLock => LockFor("SyncDateAddedFromITunes");
+    public SettingLock AllowPublicAccessLock => LockFor("AllowPublicAccess");
+
+    private SettingLock LockFor(string setting) =>
+        _snapshot.Overridden.TryGetValue(setting, out var source) ? new SettingLock(source) : SettingLock.None;
+
     public bool HasAdvertisedAs => _snapshot.AdvertisedAs is { Length: > 0 };
 
     public string AdvertisedAsMessage =>
@@ -431,6 +449,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasAddresses));
             OnPropertyChanged(nameof(PublicAddressDisplay));
             OnPropertyChanged(nameof(HasPublicAddress));
+            OnPropertyChanged(nameof(AliasLock));
+            OnPropertyChanged(nameof(AdvertisedHostLock));
+            OnPropertyChanged(nameof(AdvertiseOnLanLock));
+            OnPropertyChanged(nameof(TrustTailscaleRangeLock));
+            OnPropertyChanged(nameof(AllowedCidrsLock));
+            OnPropertyChanged(nameof(LibraryPathsLock));
+            OnPropertyChanged(nameof(IntegrateWithITunesLock));
+            OnPropertyChanged(nameof(SyncPlayCountFromITunesLock));
+            OnPropertyChanged(nameof(SyncDateAddedFromITunesLock));
+            OnPropertyChanged(nameof(AllowPublicAccessLock));
             OnPropertyChanged(nameof(HasAdvertisedAs));
             OnPropertyChanged(nameof(AdvertisedAsMessage));
             OnPropertyChanged(nameof(HasPublicReachability));

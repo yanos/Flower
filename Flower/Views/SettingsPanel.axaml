@@ -27,7 +27,14 @@
                this screen - the one place that put them side by side needed a
                caption underneath to say what the field was for. -->
           <TextBlock Text="Name" FontWeight="SemiBold" Margin="0,0,0,8"/>
-          <controls:TextInput Text="{Binding Alias, Mode=TwoWay}"/>
+          <controls:TextInput Text="{Binding Alias, Mode=TwoWay}" IsEnabled="{Binding AliasLock.IsEditable}"
+                              ShowsClearButton="{Binding AliasLock.IsEditable}"/>
+          <!-- Why the box above is greyed out: the name comes from somewhere
+               ranked above what this page saves - see SettingsOverrides. Every
+               *Lock below is the same thing for its own field. -->
+          <TextBlock Text="{Binding AliasLock.Message}"
+                     IsVisible="{Binding AliasLock.IsLocked}"
+                     Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
           <!-- Only when the server could not have this name on the network
                because another server already answers to it - see
                MdnsAdvertiser. The box keeps the name as typed; this says what
@@ -174,7 +181,7 @@
       <TabItem Header="Library" x:Name="LibraryTab">
         <ScrollViewer>
           <StackPanel>
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto"
                   Margin="0,12,0,0"
                   IsEnabled="{Binding CanManageLibrary}">
 
@@ -195,22 +202,40 @@
               <CheckBox Grid.Row="0"
                         Content="Use iTunes/Music.app library"
                         IsChecked="{Binding IntegrateWithITunes, Mode=TwoWay}"
-                        IsEnabled="{Binding CanIntegrateWithITunes}"
-                        IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+                        IsVisible="{Binding Capabilities.ITunesIntegration}">
+                <CheckBox.IsEnabled>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="CanIntegrateWithITunes"/>
+                    <Binding Path="IntegrateWithITunesLock.IsEditable"/>
+                  </MultiBinding>
+                </CheckBox.IsEnabled>
+              </CheckBox>
 
               <CheckBox Grid.Row="1"
                         Content="Sync play count from iTunes/Music.app"
                         Margin="20,4,0,0"
                         IsChecked="{Binding SyncPlayCountFromITunes, Mode=TwoWay}"
-                        IsEnabled="{Binding CanSyncFromITunes}"
-                        IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+                        IsVisible="{Binding Capabilities.ITunesIntegration}">
+                <CheckBox.IsEnabled>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="CanSyncFromITunes"/>
+                    <Binding Path="SyncPlayCountFromITunesLock.IsEditable"/>
+                  </MultiBinding>
+                </CheckBox.IsEnabled>
+              </CheckBox>
 
               <CheckBox Grid.Row="2"
                         Content="Sync date added from iTunes/Music.app"
                         Margin="20,4,0,0"
                         IsChecked="{Binding SyncDateAddedFromITunes, Mode=TwoWay}"
-                        IsEnabled="{Binding CanSyncFromITunes}"
-                        IsVisible="{Binding Capabilities.ITunesIntegration}"/>
+                        IsVisible="{Binding Capabilities.ITunesIntegration}">
+                <CheckBox.IsEnabled>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="CanSyncFromITunes"/>
+                    <Binding Path="SyncDateAddedFromITunesLock.IsEditable"/>
+                  </MultiBinding>
+                </CheckBox.IsEnabled>
+              </CheckBox>
 
               <TextBlock Grid.Row="3"
                          Text="{Binding ITunesLibraryDescription}"
@@ -223,11 +248,18 @@
                    same place the source description would have been, rather than
                    beside them: it answers the same question ("where would this read
                    from?") in the case where the answer is "nowhere". -->
-              <TextBlock Grid.Row="4"
-                         Text="{Binding ITunesUnavailableMessage}"
-                         Margin="20,4,0,0" FontSize="11" Opacity="0.6"
-                         TextWrapping="Wrap"
-                         IsVisible="{Binding ShowsITunesUnavailable}"/>
+              <StackPanel Grid.Row="4">
+                <TextBlock Text="{Binding ITunesUnavailableMessage}"
+                           Margin="20,4,0,0" FontSize="11" Opacity="0.6"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding ShowsITunesUnavailable}"/>
+                <TextBlock Text="{Binding IntegrateWithITunesLock.Message}" IsVisible="{Binding IntegrateWithITunesLock.IsLocked}"
+                           Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding SyncPlayCountFromITunesLock.Message}" IsVisible="{Binding SyncPlayCountFromITunesLock.IsLocked}"
+                           Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding SyncDateAddedFromITunesLock.Message}" IsVisible="{Binding SyncDateAddedFromITunesLock.IsLocked}"
+                           Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+              </StackPanel>
 
               <TextBlock Grid.Row="5" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"/>
 
@@ -264,7 +296,8 @@
                    row: the two that change what is in it on the left, and the one
                    that acts on all of it pushed to the right, away from them. -->
               <Grid Grid.Row="7" Margin="0,12,0,0">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="8">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="8"
+                            IsEnabled="{Binding LibraryPathsLock.IsEditable}">
                   <Button Content="Add Folder…" Click="AddFolderButton_Click"/>
                   <Button Content="Remove Selected"
                           Command="{Binding RemoveLibraryPathCommand}"
@@ -275,6 +308,10 @@
                         Command="{Binding RescanCommand}"
                         IsVisible="{Binding !Capabilities.RebuildDatabase}"/>
               </Grid>
+
+              <TextBlock Grid.Row="9" Text="{Binding LibraryPathsLock.Message}"
+                         IsVisible="{Binding LibraryPathsLock.IsLocked}"
+                         Margin="0,8,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
               <StackPanel Grid.Row="8" Orientation="Horizontal" Margin="0,8,0,0"
                           HorizontalAlignment="Left" Spacing="8"
@@ -510,7 +547,10 @@
         <ScrollViewer>
           <StackPanel Margin="0,12,0,0" Spacing="0">
             <CheckBox Content="Announce this server on the local network"
-                      IsChecked="{Binding AdvertiseOnLan, Mode=TwoWay}"/>
+                      IsChecked="{Binding AdvertiseOnLan, Mode=TwoWay}"
+                      IsEnabled="{Binding AdvertiseOnLanLock.IsEditable}"/>
+            <TextBlock Text="{Binding AdvertiseOnLanLock.Message}" IsVisible="{Binding AdvertiseOnLanLock.IsLocked}"
+                       Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             <TextBlock Text="Flower apps on the same network find this server by themselves, with nothing to type in. Turn it off if everyone reaches it through a tunnel or proxy instead."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
@@ -523,7 +563,10 @@
                  nowhere else to go. -->
             <CheckBox Content="Accept connections from outside of LAN"
                       Margin="0,20,0,0"
-                      IsChecked="{Binding AllowPublicAccess, Mode=TwoWay}"/>
+                      IsChecked="{Binding AllowPublicAccess, Mode=TwoWay}"
+                      IsEnabled="{Binding AllowPublicAccessLock.IsEditable}"/>
+            <TextBlock Text="{Binding AllowPublicAccessLock.Message}" IsVisible="{Binding AllowPublicAccessLock.IsLocked}"
+                       Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             <TextBlock Text="Allow connections that arrive through a forwarded port, tunnel, or proxy. When this is off, outside connection attempts are silently ignored, making it difficult for internet scanners to detect that the server exists. When enabled, outside users can reach the server's login and may be able to identify and repeatedly probe it. Authentication still protects access, but the server itself is exposed."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             <TextBlock Text="If possible, use Tailscale instead. It lets your devices connect privately without exposing the server to the internet, so this option can stay off."
@@ -559,20 +602,31 @@
             </Grid>
 
             <TextBlock Text="Advertised address" FontWeight="SemiBold" Margin="0,20,0,4"/>
-            <controls:TextInput Text="{Binding AdvertisedHost, Mode=TwoWay}" PlaceholderText="host:port"/>
+            <controls:TextInput Text="{Binding AdvertisedHost, Mode=TwoWay}" PlaceholderText="host:port"
+                                IsEnabled="{Binding AdvertisedHostLock.IsEditable}"
+                                ShowsClearButton="{Binding AdvertisedHostLock.IsEditable}"/>
+            <TextBlock Text="{Binding AdvertisedHostLock.Message}" IsVisible="{Binding AdvertisedHostLock.IsLocked}"
+                       Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             <TextBlock Text="The address to put in pairing invites, when it isn't the one this server sees requests arrive on - behind a proxy, or in a container that changes the port. Leave empty otherwise: with outside connections accepted, the public address above is used, at this server's HTTPS port."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
             <CheckBox Content="Trust the Tailscale range (100.64.0.0/10)"
                       Margin="0,20,0,0"
-                      IsChecked="{Binding TrustTailscaleRange, Mode=TwoWay}"/>
+                      IsChecked="{Binding TrustTailscaleRange, Mode=TwoWay}"
+                      IsEnabled="{Binding TrustTailscaleRangeLock.IsEditable}"/>
+            <TextBlock Text="{Binding TrustTailscaleRangeLock.Message}" IsVisible="{Binding TrustTailscaleRangeLock.IsLocked}"
+                       Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             <TextBlock Text="Leave this on if you use Tailscale to reach this server from outside. Turn it off if you don't."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
 
             <TextBlock Text="Additional allowed networks" FontWeight="SemiBold" Margin="0,20,0,4"/>
             <controls:TextInput Text="{Binding AllowedCidrsText, Mode=TwoWay}"
+                                IsEnabled="{Binding AllowedCidrsLock.IsEditable}"
+                                ShowsClearButton="{Binding AllowedCidrsLock.IsEditable}"
                                 AcceptsReturn="True" Height="80"
                                 PlaceholderText="One CIDR per line, e.g. 10.8.0.0/24"/>
+            <TextBlock Text="{Binding AllowedCidrsLock.Message}" IsVisible="{Binding AllowedCidrsLock.IsLocked}"
+                       Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             <TextBlock Text="Your own network is always allowed, and Tailscale too if it's ticked above. Add a range here for a tunnel or proxy that sits on its own network."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
           </StackPanel>

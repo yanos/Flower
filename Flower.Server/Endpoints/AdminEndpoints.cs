@@ -214,9 +214,9 @@ public static class AdminEndpoints
         authenticated.MapGet("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IServer boundServer,
             PublicAddressProbe publicAddress, PublicReachability publicReachability, DeviceSigningKey signingKey,
-            MdnsAdvertiser advertiser) =>
+            MdnsAdvertiser advertiser, IConfiguration configuration) =>
             Results.Json(
-                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, publicReachability, advertiser, signingKey, context.RequestAborted),
+                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, publicReachability, advertiser, configuration, signingKey, context.RequestAborted),
                 jsonOptions));
 
         // Read from the raw (buffered, rewound) stream rather than a bound
@@ -242,6 +242,12 @@ public static class AdminEndpoints
 
             var before = options.CurrentValue;
             var values = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+
+            // A setting something above flower-server.json sets is left alone:
+            // the write would be outranked the moment it landed, and the page
+            // greys the field out for that reason (SettingsOverrides).
+            var locked = SettingsOverrides.Describe(configuration);
+            bool Editable(string option) => !locked.ContainsKey(option);
 
             // Applied over a copy rather than re-read afterwards. Re-reading looks
             // more honest but is not: flower-server.json is watched with
@@ -270,22 +276,22 @@ public static class AdminEndpoints
             // the raw empty string would make simply opening the settings page
             // and pressing OK write the machine name into flower-server.json and
             // announce a restart to apply a change nobody made.
-            if (update.Alias is { } alias && alias.Trim() != MdnsAdvertiser.InstanceName(before))
+            if (update.Alias is { } alias && alias.Trim() != MdnsAdvertiser.InstanceName(before) && Editable(nameof(FlowerServerOptions.Alias)))
             {
                 after.Alias = alias.Trim();
                 values[nameof(FlowerServerOptions.Alias)] = JsonValue.Create(after.Alias);
             }
-            if (update.AdvertisedHost is { } advertisedHost && advertisedHost.Trim() != before.AdvertisedHost)
+            if (update.AdvertisedHost is { } advertisedHost && advertisedHost.Trim() != before.AdvertisedHost && Editable(nameof(FlowerServerOptions.AdvertisedHost)))
             {
                 after.AdvertisedHost = advertisedHost.Trim();
                 values[nameof(FlowerServerOptions.AdvertisedHost)] = JsonValue.Create(after.AdvertisedHost);
             }
-            if (update.AdvertiseOnLan is { } advertiseOnLan && advertiseOnLan != before.AdvertiseOnLan)
+            if (update.AdvertiseOnLan is { } advertiseOnLan && advertiseOnLan != before.AdvertiseOnLan && Editable(nameof(FlowerServerOptions.AdvertiseOnLan)))
             {
                 after.AdvertiseOnLan = advertiseOnLan;
                 values[nameof(FlowerServerOptions.AdvertiseOnLan)] = JsonValue.Create(advertiseOnLan);
             }
-            if (update.TrustTailscaleRange is { } trustTailscale && trustTailscale != before.TrustTailscaleRange)
+            if (update.TrustTailscaleRange is { } trustTailscale && trustTailscale != before.TrustTailscaleRange && Editable(nameof(FlowerServerOptions.TrustTailscaleRange)))
             {
                 after.TrustTailscaleRange = trustTailscale;
                 values[nameof(FlowerServerOptions.TrustTailscaleRange)] = JsonValue.Create(trustTailscale);
@@ -293,33 +299,33 @@ public static class AdminEndpoints
             // No restart entry: the gate in Program.cs reads this per request
             // through IOptionsMonitor, so it is shut - or opened - by the time
             // this response is written.
-            if (update.AllowPublicAccess is { } allowPublic && allowPublic != before.AllowPublicAccess)
+            if (update.AllowPublicAccess is { } allowPublic && allowPublic != before.AllowPublicAccess && Editable(nameof(FlowerServerOptions.AllowPublicAccess)))
             {
                 after.AllowPublicAccess = allowPublic;
                 values[nameof(FlowerServerOptions.AllowPublicAccess)] = JsonValue.Create(allowPublic);
             }
-            if (update.AllowedCidrs is { } allowedCidrs && !Same(allowedCidrs, before.AllowedCidrs))
+            if (update.AllowedCidrs is { } allowedCidrs && !Same(allowedCidrs, before.AllowedCidrs) && Editable(nameof(FlowerServerOptions.AllowedCidrs)))
             {
                 after.AllowedCidrs = Normalize(allowedCidrs);
                 values[nameof(FlowerServerOptions.AllowedCidrs)] = ToJsonArray(after.AllowedCidrs);
             }
-            if (update.LibraryPaths is { } libraryPaths && !Same(libraryPaths, before.LibraryPaths))
+            if (update.LibraryPaths is { } libraryPaths && !Same(libraryPaths, before.LibraryPaths) && Editable(nameof(FlowerServerOptions.LibraryPaths)))
             {
                 after.LibraryPaths = Normalize(libraryPaths);
                 values[nameof(FlowerServerOptions.LibraryPaths)] = ToJsonArray(after.LibraryPaths);
             }
 
-            if (update.IntegrateWithITunes is { } integrate && integrate != before.IntegrateWithITunes)
+            if (update.IntegrateWithITunes is { } integrate && integrate != before.IntegrateWithITunes && Editable(nameof(FlowerServerOptions.IntegrateWithITunes)))
             {
                 after.IntegrateWithITunes = integrate;
                 values[nameof(FlowerServerOptions.IntegrateWithITunes)] = JsonValue.Create(integrate);
             }
-            if (update.SyncPlayCountFromITunes is { } syncPlayCount && syncPlayCount != before.SyncPlayCountFromITunes)
+            if (update.SyncPlayCountFromITunes is { } syncPlayCount && syncPlayCount != before.SyncPlayCountFromITunes && Editable(nameof(FlowerServerOptions.SyncPlayCountFromITunes)))
             {
                 after.SyncPlayCountFromITunes = syncPlayCount;
                 values[nameof(FlowerServerOptions.SyncPlayCountFromITunes)] = JsonValue.Create(syncPlayCount);
             }
-            if (update.SyncDateAddedFromITunes is { } syncDateAdded && syncDateAdded != before.SyncDateAddedFromITunes)
+            if (update.SyncDateAddedFromITunes is { } syncDateAdded && syncDateAdded != before.SyncDateAddedFromITunes && Editable(nameof(FlowerServerOptions.SyncDateAddedFromITunes)))
             {
                 after.SyncDateAddedFromITunes = syncDateAdded;
                 values[nameof(FlowerServerOptions.SyncDateAddedFromITunes)] = JsonValue.Create(syncDateAdded);
@@ -358,7 +364,7 @@ public static class AdminEndpoints
             }
 
             return Results.Json(
-                await DescribeAsync(after, boundServer, publicAddress, publicReachability, advertiser, signingKey, context.RequestAborted),
+                await DescribeAsync(after, boundServer, publicAddress, publicReachability, advertiser, configuration, signingKey, context.RequestAborted),
                 jsonOptions);
         });
 
@@ -622,7 +628,8 @@ public static class AdminEndpoints
     // at, in both places, on the same response.
     private static async Task<ServerSettingsDto> DescribeAsync(
         FlowerServerOptions options, IServer boundServer, PublicAddressProbe publicAddress,
-        PublicReachability publicReachability, MdnsAdvertiser advertiser, DeviceSigningKey signingKey, CancellationToken ct)
+        PublicReachability publicReachability, MdnsAdvertiser advertiser, IConfiguration configuration,
+        DeviceSigningKey signingKey, CancellationToken ct)
     {
 
         var reachability = await publicReachability.CheckAsync(options, ct);
@@ -644,6 +651,7 @@ public static class AdminEndpoints
             DiscoveryEndpoints.ReachableOrigins(boundServer, options, publicReachability.OriginFor(options)),
             await publicAddress.GetAsync(ct),
             Fingerprint: signingKey.Fingerprint,
+            Overridden: SettingsOverrides.Describe(configuration),
             AdvertisedAs: advertiser.ClaimedInsteadOf == MdnsAdvertiser.InstanceName(options) ? advertiser.Name : null,
             PublicOrigin: reachability?.Origin,
             PublicReachability: reachability?.Status.ToString());

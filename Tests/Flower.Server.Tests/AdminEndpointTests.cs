@@ -157,6 +157,54 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         }
     }
 
+    // The fixture pins its library folder and the iTunes switch from outside
+    // flower-server.json, the way the Docker image pins /music - so the page
+    // is told those two are not its to change, and says by what.
+    [Fact]
+    public async Task The_settings_page_is_told_which_settings_are_set_elsewhere()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(
+                await SignedAsync(admin, "GET", "/api/admin/settings"));
+
+            Assert.NotNull(settings.Overridden);
+            Assert.Equal(
+                [nameof(FlowerServerOptions.IntegrateWithITunes), nameof(FlowerServerOptions.LibraryPaths)],
+                settings.Overridden!.Keys.Order());
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // And a save leaves them alone: written to flower-server.json it would be
+    // outranked the moment it landed, so the page would appear to save a
+    // folder that was never scanned.
+    [Fact]
+    public async Task A_save_does_not_write_a_setting_that_is_set_elsewhere()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(await SignedAsync(
+                admin, "PUT", "/api/admin/settings",
+                body: """{"libraryPaths":["/somewhere/else"],"integrateWithITunes":true}"""));
+
+            Assert.DoesNotContain("/somewhere/else", settings.LibraryPaths);
+            Assert.False(settings.IntegrateWithITunes);
+            var written = await File.ReadAllTextAsync(
+                Path.Combine(settings.DataDirectory, ServerDataDirectory.SettingsFileName), TestContext.Current.CancellationToken);
+            Assert.DoesNotContain("/somewhere/else", written);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
     // The settings page used to render an empty Name box on a server that
     // plainly had a name - every client's sidebar was showing it - because an
     // unset Alias means "the machine name" everywhere except in the DTO, which

@@ -77,6 +77,11 @@ public sealed record ServerSettingsDto(
     // suffix into it would save "(2)" into the settings the next time the page
     // was submitted.
     string? AdvertisedAs = null,
+    // Settings the page cannot change, each with what sets it instead - "the
+    // Flower__Alias environment variable" - for the page to grey the field out
+    // and say why. Something ranked above flower-server.json (the environment,
+    // the command line) wins over anything saved here; see SettingsOverrides.
+    Dictionary<string, string>? Overridden = null,
     string? PublicOrigin = null,
     string? PublicReachability = null);
 

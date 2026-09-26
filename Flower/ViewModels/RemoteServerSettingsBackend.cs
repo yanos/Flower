@@ -64,6 +64,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             PublicAddress = settings.PublicAddress,
             PublicOrigin = settings.PublicOrigin,
             AdvertisedAs = settings.AdvertisedAs,
+            Overridden = settings.Overridden ?? [],
             PublicReachability = settings.PublicReachability,
             DataDirectory = settings.DataDirectory,
             Version = settings.Version,

@@ -97,6 +97,10 @@ public sealed record SettingsSnapshot
     // The name the server is actually announced under, when another server
     // already had Alias - see ServerSettingsDto.AdvertisedAs.
     public string? AdvertisedAs { get; init; }
+
+    // Settings something outside the page sets, with what sets them - see
+    // ServerSettingsDto.Overridden. Empty on a client, which has no such thing.
+    public IReadOnlyDictionary<string, string> Overridden { get; init; } = new Dictionary<string, string>();
     public string? PublicReachability { get; init; }
 
     // Shown read-only, for the "where does this thing keep its stuff" question
