@@ -66,6 +66,7 @@ public sealed class ScreenControlFactory
         MobileScreenKind.PlaylistPicker => new PlaylistPickerScreenView(),
         MobileScreenKind.TrackList => new TrackListScreenView(),
         MobileScreenKind.SearchResults => new SearchResultsScreenView(),
+        MobileScreenKind.Queue => new QueueScreenView(),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 }

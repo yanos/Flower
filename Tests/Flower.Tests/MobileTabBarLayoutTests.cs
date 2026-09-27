@@ -53,7 +53,8 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
                 Album = $"Album {i / 5}", Artists = $"Artist {i / 5}",
             }).ToList();
 
-            _parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+            // The bar the app ships with, since this is about how it looks.
+            _parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks), tabs: MobileTabs.Default);
             View = new MobileMainView { DataContext = Vm };
             // TestAppBuilder runs a bare Application with no theme, so without
             // this nothing has a control template and the tree comes back
@@ -118,12 +119,28 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     [AvaloniaTheory]
     [InlineData(NarrowPhone)]
     [InlineData(LargePhone)]
-    public void All_six_tabs_are_in_the_bar_in_reading_order(double width)
+    public void The_default_six_tabs_are_in_the_bar_in_reading_order(double width)
     {
         using var h = new Harness(width);
 
         Assert.Equal(
-            new[] { "Recent", "Songs", "Albums", "Artists", "Playlists", "Search" },
+            new[] { "Albums", "Artists", "Songs", "Playlists", "Queue", "Search" },
+            h.Tabs.Select(t => Harness.LabelOf(t).Text));
+    }
+
+    // The bar is the user's to arrange in Settings: what it shows follows the
+    // choice at once, and a tab taken out is out of the tree, not just hidden.
+    [AvaloniaFact]
+    public void The_bar_follows_the_tabs_chosen_in_settings()
+    {
+        using var h = new Harness(NarrowPhone);
+        var songs = h.Vm.TabSettingRows.Single(r => r.Tab == MobileTab.Songs);
+        h.Vm.MoveTabUpCommand.Execute(songs);
+        h.Vm.ToggleTabShownCommand.Execute(h.Vm.TabSettingRows.Single(r => r.Tab == MobileTab.Queue));
+        h.Layout(NarrowPhone);
+
+        Assert.Equal(
+            new[] { "Albums", "Songs", "Artists", "Playlists", "Search" },
             h.Tabs.Select(t => Harness.LabelOf(t).Text));
     }
 

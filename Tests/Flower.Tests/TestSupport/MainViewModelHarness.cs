@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Threading;
@@ -272,12 +273,32 @@ public static class MainViewModelHarness
             networkDiscovery, reachability, mdnsBackend, stubLibrarySync, stubPlaylistSync);
     }
 
+    // The bar the mobile tests were written against, from before it was the
+    // user's to choose: opening on Recently Added, with every tab to the right
+    // of it in the order they read. Most of those tests are about navigation -
+    // which side a tab arrives from, what a swipe pages to - and that is still
+    // what they check; which tabs the app ships with is MobileTabsTests'.
+    public static readonly IReadOnlyList<MobileTab> SuiteTabs =
+    [
+        MobileTab.RecentlyAdded, MobileTab.Songs, MobileTab.Albums,
+        MobileTab.Artists, MobileTab.Playlists, MobileTab.Search,
+    ];
+
+    // For a test building its own MobileMainViewModel over these parts:
+    // before constructing it, which is when the bar is read.
+    public static void UseSuiteTabs(Parts parts, IReadOnlyList<MobileTab>? tabs = null) =>
+        parts.AppSettings.MobileTabs = (tabs ?? SuiteTabs).Select(t => t.ToString()).ToList();
+
     // smartPlaylists is the caller's to dispose, like any other service it
     // hands in - it is what lets the rule editor open at all.
+    //
+    // tabs is the bar, left to right. Left out, it is SuiteTabs rather than
+    // the app's own default: see there.
     public static MobileParts BuildMobile(Library library, MainPlaylist mainPlaylist,
-        SmartPlaylistRefresher? smartPlaylists = null)
+        SmartPlaylistRefresher? smartPlaylists = null, IReadOnlyList<MobileTab>? tabs = null)
     {
         var parts = BuildParts(library, mainPlaylist, smartPlaylists: smartPlaylists);
+        UseSuiteTabs(parts, tabs);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
         return new MobileParts(mobile, parts);
     }

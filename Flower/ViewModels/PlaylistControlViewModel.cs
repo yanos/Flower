@@ -372,6 +372,7 @@ namespace Flower.ViewModels
             // isn't (the queue changed under a track that keeps playing),
             // ResolveQueueIndex searches the new list instead.
             _queueIndex = -1;
+            OnPropertyChanged(nameof(CurrentPlaylist));
         }
 
         // The slot CurrentlyPlayingTrack occupies in the queue, or -1 when it

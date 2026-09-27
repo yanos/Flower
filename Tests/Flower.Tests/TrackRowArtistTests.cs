@@ -47,6 +47,7 @@ public class TrackRowArtistTests : PinnedDataDirectory
     {
         var tracks = artists.Select((a, i) => TrackBy("Song " + i, a)).ToList();
         var parts = MainViewModelHarness.BuildParts(new Library(tracks), new MainPlaylist(new List<Track>()));
+        MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
             NullLogger<MobileMainViewModel>.Instance);
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));

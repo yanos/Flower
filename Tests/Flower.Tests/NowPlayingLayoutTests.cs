@@ -49,6 +49,7 @@ public class NowPlayingLayoutTests : PinnedDataDirectory
     {
         var parts = MainViewModelHarness.BuildParts(new Library(new List<Track>()), new MainPlaylist(new List<Track>()));
         using var scope = parts;
+        MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
             NullLogger<MobileMainViewModel>.Instance);
         Dispatcher.UIThread.RunJobs();

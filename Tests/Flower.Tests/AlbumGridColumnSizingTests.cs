@@ -50,6 +50,7 @@ public class AlbumGridColumnSizingTests : PinnedDataDirectory
     {
         var tracks = Enumerable.Range(0, count).Select(i => TrackIn("Album " + i)).ToList();
         var parts = MainViewModelHarness.BuildParts(new Library(tracks), new MainPlaylist(new List<Track>()));
+        MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
             NullLogger<MobileMainViewModel>.Instance);
         Dispatcher.UIThread.RunJobs();

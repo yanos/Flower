@@ -65,6 +65,11 @@ namespace Flower.Persistence
         // values are its MobileSortScreen and MobileSortOrder names.
         public Dictionary<string, string> MobileSorts { get; set; } = new();
 
+        // The tabs a phone's bar shows, left to right, by MobileTab name - set
+        // in the phone's Settings. Null until changed there, which is
+        // MobileTabs.Default.
+        public List<string>? MobileTabs { get; set; }
+
         // Whether the track list keeps its album-art well - see
         // ColumnManager.ShowAlbumArt, which is what reads and writes this, and
         // ColumnSelectorWindow, where it sits alongside the columns proper.

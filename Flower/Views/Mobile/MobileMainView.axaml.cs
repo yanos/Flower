@@ -20,6 +20,7 @@ public partial class MobileMainView : UserControl
     public MobileMainView()
     {
         InitializeComponent();
+        LayOutTabs();
         ScreenStack.Settled += (_, _) => EmptyStateHost.IsVisible = true;
         ScreenStack.Moving += (_, _) => EmptyStateHost.IsVisible = false;
 
@@ -237,6 +238,57 @@ public partial class MobileMainView : UserControl
         // takes NowPlayingBottomInset instead, the tab oval over it.
         Resources["SheetBottomInset"] = new Thickness(0, 0, 0, safeArea.Bottom);
     }
+
+    // ── Tab bar ───────────────────────────────────────────────────────
+    //
+    // Every tab is declared in the XAML; the ones the user chose go into
+    // TabGrid's columns in their order, and the rest are left out of the tree
+    // rather than hidden, so nothing that walks the bar finds a tab that is
+    // not in it. See MobileMainViewModel.VisibleTabs.
+    private MobileMainViewModel? _tabsSource;
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        if (_tabsSource != null)
+            _tabsSource.PropertyChanged -= TabsSource_PropertyChanged;
+        _tabsSource = DataContext as MobileMainViewModel;
+        if (_tabsSource != null)
+            _tabsSource.PropertyChanged += TabsSource_PropertyChanged;
+        LayOutTabs();
+    }
+
+    private void TabsSource_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MobileMainViewModel.VisibleTabs))
+            LayOutTabs();
+    }
+
+    private void LayOutTabs()
+    {
+        var tabs = _tabsSource?.VisibleTabs ?? MobileTabs.Default;
+        TabGrid.Children.Clear();
+        TabGrid.ColumnDefinitions.Clear();
+        for (var i = 0; i < tabs.Count; i++)
+        {
+            var button = TabButton(tabs[i]);
+            TabGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            Grid.SetColumn(button, i);
+            TabGrid.Children.Add(button);
+        }
+    }
+
+    private Button TabButton(MobileTab tab) => tab switch
+    {
+        MobileTab.RecentlyAdded => RecentlyAddedTab,
+        MobileTab.Songs => SongsTab,
+        MobileTab.Albums => AlbumsTab,
+        MobileTab.Artists => ArtistsTab,
+        MobileTab.Playlists => PlaylistsTab,
+        MobileTab.Queue => QueueTab,
+        MobileTab.Search => SearchTab,
+        _ => throw new ArgumentOutOfRangeException(nameof(tab)),
+    };
 
     // Tapping the Search tab icon while already on the Search tab is a no-op
     // as far as SelectTabCommand/SelectedTab's setter are concerned (it

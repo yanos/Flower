@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             x:Class="Flower.Views.Mobile.Screens.QueueScreenView"
+             x:DataType="vm:MobileMainViewModel"
+             Background="{DynamicResource AppBackgroundBrush}">
+
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://Flower/Views/Mobile/Screens/TrackRowTemplate.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <!-- The Queue tab: the song playing, then what plays after it - see
+       MobileMainViewModel.QueueRows. A ScrollViewer over an ItemsControl
+       rather than the screenScroll ListBox, because the caption goes between
+       the title and the rows and that ListBox's template has room only for a
+       playlist header there. The rows still virtualize: the panel sizes itself
+       off the effective viewport, which the StackPanel around it does not
+       change, and a queue can be the whole library.
+
+       No pull-down filter (MobileNavigationFrame.CanFilter): the queue is in
+       the order it plays in, and a filtered one would hide what is next. -->
+  <ScrollViewer Classes="screenScroll">
+    <StackPanel>
+      <controls:ScreenTitle />
+      <TextBlock Text="{Binding QueueCaption}"
+                 IsVisible="{Binding QueueCaption, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                 FontSize="13" Opacity="0.55" TextWrapping="Wrap"
+                 Margin="16,0,16,8" />
+      <ItemsControl ItemsSource="{Binding QueueRows}" ItemTemplate="{StaticResource TrackRowTemplate}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

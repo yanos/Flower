@@ -71,6 +71,7 @@ public class ScrollIndexBarTests : PinnedDataDirectory
         }
 
         var parts = MainViewModelHarness.BuildParts(new Library(tracks), new MainPlaylist(new List<Track>()));
+        MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
             NullLogger<MobileMainViewModel>.Instance);
         Dispatcher.UIThread.RunJobs();
@@ -385,6 +386,7 @@ public class ScrollIndexBarTests : PinnedDataDirectory
         var tracks = Enumerable.Range(0, albums)
             .Select(i => TrackFor("Song " + i, "Album " + i, "Band", i)).ToList();
         var parts = MainViewModelHarness.BuildParts(new Library(tracks), new MainPlaylist(new List<Track>()));
+        MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
             NullLogger<MobileMainViewModel>.Instance);
         Dispatcher.UIThread.RunJobs();

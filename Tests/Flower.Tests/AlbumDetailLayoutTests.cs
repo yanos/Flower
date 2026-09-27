@@ -55,6 +55,7 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
     {
         var tracks = Enumerable.Range(0, 8).Select(i => TrackIn("Song " + i)).ToList();
         var parts = MainViewModelHarness.BuildParts(new Library(tracks), new MainPlaylist(new List<Track>()));
+        MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
             NullLogger<MobileMainViewModel>.Instance);
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));

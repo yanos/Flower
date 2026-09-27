@@ -21,6 +21,7 @@ public enum MobileScreenKind
     PlaylistPicker,
     TrackList,
     SearchResults,
+    Queue,
 }
 
 // A snapshot of everything MobileMainViewModel.PushHistory used to capture
@@ -89,6 +90,11 @@ public sealed record MobileNavigationFrame(
     // MobileMainViewModel.IsShowingSearchTabBox's own former doc comment.
     public bool IsSearchScreen => ScreenKind == MobileScreenKind.SearchResults;
 
+    // Whether pulling this screen down opens its filter oval. Not on Search,
+    // whose box is already a search, nor on the Queue, which is in the order
+    // it plays in and short of the one thing a filter would hide.
+    public bool CanFilter => ScreenKind is not (MobileScreenKind.SearchResults or MobileScreenKind.Queue);
+
     // Whether this frame's TrackList (if any) is showing one album's own
     // tracks vs. a flat Songs/playlist list - mirrors
     // MobileMainViewModel.IsShowingAlbumTrackList's own condition exactly.
@@ -123,6 +129,8 @@ public sealed record MobileNavigationFrame(
     {
         if (tab == MobileTab.Search)
             return MobileScreenKind.SearchResults;
+        if (tab == MobileTab.Queue)
+            return MobileScreenKind.Queue;
         if (tab == MobileTab.Albums && !hasDrilledIn)
             return MobileScreenKind.AlbumGrid;
         if (tab == MobileTab.Artists && !hasDrilledIn)

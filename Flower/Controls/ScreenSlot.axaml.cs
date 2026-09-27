@@ -197,8 +197,8 @@ public partial class ScreenSlot : UserControl
     {
         var filter = ShownFilter;
         var isSearch = Frame is { IsSearchScreen: true };
-        var isOpen = filter != null && Frame is { IsSearchScreen: false };
-        var isPeeking = !isOpen && IsLive && Frame is { IsSearchScreen: false } && _pullProgress > 0;
+        var isOpen = filter != null && Frame is { CanFilter: true };
+        var isPeeking = !isOpen && IsLive && Frame is { CanFilter: true } && _pullProgress > 0;
         IsFilterShown = isOpen || isPeeking;
         IsOvalShown = IsFilterShown || isSearch;
         FilterOval.IsVisible = IsOvalShown;

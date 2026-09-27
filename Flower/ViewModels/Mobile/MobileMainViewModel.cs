@@ -21,12 +21,14 @@ using Flower.Services;
 
 namespace Flower.ViewModels.Mobile;
 
-// RecentlyAdded is first/default (see MobileMainViewModel's _selectedTab) - an
-// album grid ordered by recency, the app's home screen. The middle four mirror
-// desktop's Songs/Albums/Artists/Playlists sidebar sections. Search is mobile-only
-// (desktop has no equivalent standalone tab - its search box works over whichever
-// sidebar section is already selected) - see IsShowingSearchPrompt.
-public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists, Search }
+// Which of these the bar shows, and in what order, is the user's to choose in
+// Settings - see MobileTabs, which also holds the default. RecentlyAdded is an
+// album grid ordered by recency. Songs/Albums/Artists/Playlists mirror
+// desktop's sidebar sections. Queue is what plays next - see QueueRows. Search
+// is mobile-only (desktop has no equivalent standalone tab - its search box
+// works over whichever sidebar section is already selected) - see
+// IsShowingSearchPrompt.
+public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists, Queue, Search }
 
 // Which way a newly-navigated-to screen should arrive on screen. Read (and
 // cleared) by ScreenStackPanel on every navigation - see
@@ -359,7 +361,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // keeps this ViewModel from needing to know Views/Controls exist.
     public event EventHandler? NavigationChanged;
 
-    private MobileTab _selectedTab = MobileTab.RecentlyAdded;
+    // The first tab in the bar - set in the constructor, once the saved order
+    // is readable.
+    private MobileTab _selectedTab;
     public MobileTab SelectedTab
     {
         get => _selectedTab;
@@ -373,7 +377,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // to the left from the left - the same way the swipe that reaches
             // it would. Drill-ins below have no such spatial ordering and all
             // use the default, arriving from the right like a pushed screen.
-            PushHistory(value > _selectedTab
+            PushHistory(IsRightOf(value, _selectedTab)
                 ? MobileNavigationTransition.FromRight
                 : MobileNavigationTransition.FromLeft);
             if (RememberedScreens(value) is { Count: > 0 } screens)
@@ -489,6 +493,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     public bool IsShowingArtistAlbumGrid => SelectedTab == MobileTab.Artists && _hasDrilledIn && !_hasDrilledIntoArtistAlbum;
     public bool IsShowingPlaylistPicker => SelectedTab == MobileTab.Playlists && !_hasDrilledIn;
     public bool IsShowingRecentlyAddedAlbums => SelectedTab == MobileTab.RecentlyAdded && !_hasDrilledIn;
+    public bool IsShowingQueue => SelectedTab == MobileTab.Queue;
 
     // ── Pull-down filter ──────────────────────────────────────────────
     //
@@ -544,7 +549,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // results a filter would only be a search of.
     public bool OpenScreenFilter()
     {
-        if (CurrentFrame.IsSearchScreen)
+        if (!CurrentFrame.CanFilter)
             return false;
         if (_screenFilter == null)
             ScreenFilter = "";
@@ -796,7 +801,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     public bool IsShowingTrackList =>
         !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingArtistAlbumGrid
-        && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums && SelectedTab != MobileTab.Search;
+        && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums && !IsShowingQueue
+        && SelectedTab != MobileTab.Search;
     public bool CanGoBack => _navigationHistory.Count > 0;
 
     // Whether the screen one back (PeekOneBack) has one behind it in turn -
@@ -1746,6 +1752,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         (IsShowingArtistAlbumGrid && ArtistAlbumGridRows.Count == 0) ||
         (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0 && !IsNamingNewPlaylist) ||
         (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbumRows.Count == 0) ||
+        (IsShowingQueue && QueueRows.Count == 0) ||
         IsShowingSearchPrompt ||
         (IsShowingSearchResults && !HasSearchAlbumResults && !HasSearchArtistResults && !HasSearchSongResults) ||
         // Not while the rows for this scope are still being built: until they
@@ -1791,6 +1798,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 return "Search Your Library";
             if (IsShowingSearchResults)
                 return "No Results";
+            if (IsShowingQueue)
+                return "Nothing Queued";
             if (ActiveScreenFilter != null)
                 return "No Matches";
             if (Main.Library.Tracks.Count == 0)
@@ -1808,6 +1817,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 return "";
             if (IsShowingSearchResults)
                 return $"No matches for \"{SearchQuery}\".";
+            if (IsShowingQueue)
+                return "Play a song, and what comes after it shows here.";
             if (ActiveScreenFilter is { } filter)
                 return $"Nothing here matches \"{filter}\".";
             if (Main.Library.Tracks.Count > 0)
@@ -1867,6 +1878,11 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (e.PropertyName == nameof(PlaylistControlViewModel.CurrentlyPlayingTrack) &&
                 PlaylistControl.CurrentlyPlayingTrack == null)
                 ActiveSheet = MobileSheet.None;
+            if (e.PropertyName is nameof(PlaylistControlViewModel.CurrentlyPlayingTrack)
+                or nameof(PlaylistControlViewModel.CurrentPlaylist)
+                or nameof(PlaylistControlViewModel.IsShuffleEnabled)
+                or nameof(PlaylistControlViewModel.IsRepeatEnabled))
+                QueueChanged();
         },
             h => PlaylistControl.PropertyChanged += h, h => PlaylistControl.PropertyChanged -= h);
 
@@ -1929,6 +1945,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         {
             TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
             TrackAvailability.Apply(SmartPlaylistPreviewRows, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+            TrackAvailability.Apply(QueueRows, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
             ApplyAlbumTileAvailability();
             RefreshDownloadAllIndicator();
         },
@@ -1937,6 +1954,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         RebuildRecentlyAddedAlbums();
         RebuildAlbumGrid();
         RebuildArtistAlbumGrid();
+        _visibleTabs = MobileTabs.Parse(Main.MobileTabsSetting);
+        _selectedTab = _visibleTabs[0];
+        RebuildTabSettingRows();
         ApplyTabSelection();
 
         RefreshSearchSuggestions();
@@ -1964,7 +1984,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             {
                 if (tab != SelectedTab)
                 {
-                    var forward = tab > SelectedTab;
+                    var forward = IsRightOf(tab, SelectedTab);
                     SelectedTab = tab;
                     NowPlayingExitsForward = forward;
                 }
@@ -2021,6 +2041,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // playing, so reusing it here paused instead of switching tracks.
             if (track == null)
                 return;
+            // The queue is not re-anchored from its own screen: that screen
+            // is the queue, and a tap on it is a jump along it.
+            if (IsShowingQueue && QueueIndexOf(row!) is var slot and >= 0)
+            {
+                PlaylistControl.Play(track, slot);
+                return;
+            }
             // Desktop's own row-activation path (MainViewModel.PlayTrack) always
             // re-anchors the Next/Previous queue to whatever's currently on
             // screen before playing - this was missing here entirely, so
@@ -2979,22 +3006,14 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         ActiveSheet = sheet;
     }
 
-    // First and last MobileTab in bottom-bar order (see the enum's own
-    // declaration) - the clamp bounds for swipe paging below. Named constants
-    // rather than Enum.GetValues<MobileTab>() reflection, which can be trimmed
-    // away under iOS AOT and silently mis-size the range.
-    private const MobileTab FirstTab = MobileTab.RecentlyAdded;
-    private const MobileTab LastTab = MobileTab.Search;
-
     // Horizontal swipe-to-navigate (see ScreenStackPanel's own pointer
     // gesture detection) - a swipe right means "go back" in whichever sense
     // is locally relevant: undo the last Back/Forward-tracked navigation if
     // there is one (same as the chevron button), else page to the previous
-    // tab in the bottom bar's left-to-right order (MobileTab's own
-    // declaration order). A swipe left is symmetrically "forward": redo
+    // tab in the bottom bar's left-to-right order (VisibleTabs). A swipe left is symmetrically "forward": redo
     // whatever the most recent Back undid if there is one, else page to the
     // next tab. Tab-paging is clamped, not wrapping, at either end of the
-    // bar - a swipe past Recently Added or past Search is just a no-op
+    // bar - a swipe past the first or the last tab is just a no-op
     // rather than an unexpected jump to the other end.
     public void SwipeBack() => SwipeBackAsync().Forget(_logger, "Swipe back");
 
@@ -3005,8 +3024,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             await GoBack();
             return;
         }
-        if (SelectedTab > FirstTab)
-            SelectedTab = SelectedTab - 1;
+        var position = PositionInBar(SelectedTab);
+        if (position > 0)
+            SelectedTab = VisibleTabs[position - 1];
     }
 
     public void SwipeForward() => SwipeForwardAsync().Forget(_logger, "Swipe forward");
@@ -3018,8 +3038,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             await GoForward();
             return;
         }
-        if (SelectedTab < LastTab)
-            SelectedTab = SelectedTab + 1;
+        var position = PositionInBar(SelectedTab);
+        if (position >= 0 && position < VisibleTabs.Count - 1)
+            SelectedTab = VisibleTabs[position + 1];
     }
 
     // Called by ScreenStackPanel's interactive live-drag gesture once its
@@ -3040,6 +3061,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsShowingArtistAlbumGrid));
         OnPropertyChanged(nameof(IsShowingPlaylistPicker));
         OnPropertyChanged(nameof(IsShowingRecentlyAddedAlbums));
+        OnPropertyChanged(nameof(IsShowingQueue));
         OnPropertyChanged(nameof(IsShowingSearchPrompt));
         OnPropertyChanged(nameof(IsShowingSearchResults));
         OnPropertyChanged(nameof(IsShowingTrackList));
@@ -3062,6 +3084,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             RefreshSearchResultsNow();
         else
             _searchResultsCts?.Cancel();
+        if (IsShowingQueue && _queueRowsStale)
+            RebuildQueueRows();
         // Before NavigationChanged, so the screen is already cut by its own
         // filter when ScreenStackPanel puts its scroll position back.
         ApplyScreenFilter();

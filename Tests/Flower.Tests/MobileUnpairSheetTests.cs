@@ -31,6 +31,7 @@ public class MobileUnpairSheetTests : PinnedDataDirectory
             PairedServerTrustConfirmed = true,
         };
         var parts = MainViewModelHarness.BuildParts(new Library(new List<Track>()), new MainPlaylist(new List<Track>()), settings);
+        MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
         Dispatcher.UIThread.RunJobs();
         return new MainViewModelHarness.MobileParts(mobile, parts);

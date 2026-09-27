@@ -522,6 +522,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         SaveSettings();
     }
 
+    // The tabs a phone's bar shows, in order - null when never chosen. See
+    // MobileMainViewModel's "Tab bar".
+    public IReadOnlyList<string>? MobileTabsSetting => _appSettings.MobileTabs;
+
+    public void PersistMobileTabs(IEnumerable<string> tabs)
+    {
+        _appSettings.MobileTabs = tabs.ToList();
+        SaveSettings();
+    }
+
     // ── Busy state ────────────────────────────────────────────────────
 
     // The counter itself lives in BusyState, shared with the collaborators

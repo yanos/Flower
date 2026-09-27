@@ -29,6 +29,7 @@ public class MobileRemoveFromLibraryTests : PinnedDataDirectory
         var parts = MainViewModelHarness.BuildParts(library, new MainPlaylist(new List<Track>()), settings);
         var removal = new LibraryRemovalService(library, settings, resolver: null, credentials: null,
             NullLogger<LibraryRemovalService>.Instance);
+        MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
             NullLogger<MobileMainViewModel>.Instance, removal);
         // The rows are built off the UI thread; one pump is not enough on a

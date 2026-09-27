@@ -34,6 +34,7 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
     private static MainViewModelHarness.MobileParts Build(params Track[] tracks)
     {
         var parts = MainViewModelHarness.BuildParts(new Library(tracks.ToList()), new MainPlaylist(new List<Track>()));
+        MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying, NullLogger<MobileMainViewModel>.Instance);
         Dispatcher.UIThread.RunJobs();
         return new MainViewModelHarness.MobileParts(mobile, parts);
